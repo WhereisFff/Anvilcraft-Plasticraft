@@ -1,0 +1,61 @@
+neoForge {
+    version = libs.versions.neoForge.get()
+
+    // Keep the interface surface supplied by AnvilCraft available when the
+    // addon uses a locally built AnvilCraft JAR.  Passing that JAR directly to
+    // interfaceInjectionData would make JST try to decode binary bytes as JSON.
+    interfaceInjectionData {
+        from file('src/main/resources/interface_injections.json')
+        publish file('src/main/resources/interface_injections.json')
+    }
+
+    parchment {
+        minecraftVersion = project.parchment_minecraft_version
+        mappingsVersion = project.parchment_mappings_version
+    }
+
+    runs {
+        configureEach {
+            systemProperty 'forge.logging.markers', 'REGISTRIES'
+            systemProperty 'terminal.jline', 'true'
+            logLevel = org.slf4j.event.Level.DEBUG
+
+            if (System.getProperty('java.vm.vendor').contains('JetBrains')) {
+                jvmArgument '-XX:+AllowEnhancedClassRedefinition'
+            }
+        }
+
+        client {
+            client()
+            programArguments.addAll '--width', '1440', '--height', '841'
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+
+        server {
+            server()
+            programArgument '--nogui'
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+
+        gameTestServer {
+            type = 'gameTestServer'
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+
+        data {
+            data()
+            programArguments.addAll(
+                '--mod', project.mod_id,
+                '--all',
+                '--output', file('src/generated/resources').absolutePath,
+                '--existing', file('src/main/resources').absolutePath
+            )
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+        }
+    }
+}

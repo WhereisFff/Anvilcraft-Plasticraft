@@ -1,0 +1,11 @@
+{
+  "block.anvilcraftplasticraft.plastic_anvil": "\u5851\u6599\u94c1\u7827",
+  "item.anvilcraftplasticraft.plastic_anvil": "\u5851\u6599\u94c1\u7827",
+  "entity.anvilcraftplasticraft.plastic_anvil": "\u5851\u6599\u94c1\u7827",
+  "itemGroup.anvilcraftplasticraft.main": "\u94c1\u7827\u5de5\u827a\uff1a\u5851\u6599\u5de5\u827a",
+  "jei.anvilcraftplasticraft.plastic_anvil.info": "\u53ef\u63a8\u52a8\u7684\u5b9e\u4f53\u94c1\u7827\uff0c\u4f7f\u7528\u7687\u5bb6\u94c1\u7827\u7684\u4fee\u590d\u5de5\u4f5c\u6d41\u3002",
+  "tooltip.anvilcraftplasticraft.jade.color": "\u5851\u6599\u989c\u8272\uff1a%s",
+  "tooltip.anvilcraftplasticraft.jade.pushable": "\u53ef\u88ab\u5b9e\u4f53\u63a8\u52a8",
+  "config.jade.plugin_anvilcraftplasticraft.plastic_anvil": "\u5851\u6599\u94c1\u7827",
+  "config.jade.plugin_anvilcraft.fluid_tank": "\u6d41\u4f53\u50a8\u7f50"
+}

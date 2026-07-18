@@ -1,0 +1,29 @@
+artifacts {
+    archives tasks.jar
+    archives tasks.sourcesJar
+}
+
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            groupId = project.group
+            artifactId = project.base.archivesName.get()
+            version = project.version
+            from components.java
+            artifact sourcesJar
+        }
+    }
+
+    repositories {
+        def mavenUrl = System.getenv('MAVEN_URL')
+        if (mavenUrl != null) {
+            maven {
+                url = mavenUrl
+                credentials {
+                    username = System.getenv('MAVEN_USERNAME')
+                    password = System.getenv('MAVEN_PASSWORD')
+                }
+            }
+        }
+    }
+}

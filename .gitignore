@@ -1,0 +1,17 @@
+.gradle/
+.idea/
+*.iml
+*.ipr
+*.iws
+*.log
+*.class
+build/
+out/
+run/
+runs/
+**/build/
+**/.cache/
+local-mods/
+
+# Gradle wrapper must remain versioned.
+!gradle/wrapper/gradle-wrapper.jar

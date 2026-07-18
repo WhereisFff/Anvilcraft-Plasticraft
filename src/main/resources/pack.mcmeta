@@ -1,0 +1,7 @@
+{
+  "pack": {
+    "description": "AnvilCraft: Plastic Craft resources",
+    "pack_format": 35,
+    "forge:server_data_pack_format": 48
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "block.anvilcraftplasticraft.plastic_anvil": "Plastic Anvil",
+  "config.jade.plugin_anvilcraft.fluid_tank": "Fluid Tank",
+  "config.jade.plugin_anvilcraftplasticraft.plastic_anvil": "Plastic Anvil",
+  "entity.anvilcraftplasticraft.plastic_anvil": "Plastic Anvil",
+  "item.anvilcraftplasticraft.plastic_anvil": "Plastic Anvil",
+  "itemGroup.anvilcraftplasticraft.main": "Anvilcraft: Plasticraft",
+  "jei.anvilcraftplasticraft.plastic_anvil.info": "A solid, pushable anvil entity with the vanilla anvil workflow.",
+  "tooltip.anvilcraftplasticraft.jade.color": "Plastic color: %s",
+  "tooltip.anvilcraftplasticraft.jade.pushable": "Can be pushed by entities"
+}

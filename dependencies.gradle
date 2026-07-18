@@ -1,0 +1,44 @@
+dependencies {
+    // AnvilLib is used directly for Registrum and its data providers.
+    api(libs.anvillib)
+    interfaceInjectionData(libs.anvillib.recipe)
+    interfaceInjectionData(libs.anvillib.moveableEntityBlock)
+
+    // The published remote snapshot is the reproducible default. A local jar is
+    // opt-in so an older build in ../AnvilCraft cannot silently override the
+    // remote HEAD; use -Panvilcraft_jar=... (or -Puse_local_anvilcraft=true)
+    // for an IDEA run against a freshly built sibling project.
+    File localAnvilCraftJar = null
+    if (project.hasProperty('anvilcraft_jar')) {
+        File configured = project.file(project.property('anvilcraft_jar'))
+        if (configured.isFile()) localAnvilCraftJar = configured
+    } else if (project.findProperty('use_local_anvilcraft')?.toString()?.toBoolean()) {
+        File localBuildDir = project.file('../AnvilCraft/build/libs')
+        if (localBuildDir.isDirectory()) {
+            Set<File> candidates = project.fileTree(localBuildDir) {
+                include 'anvilcraft-neoforge-1.21.1-*.jar'
+                exclude '*-sources.jar'
+            }.files
+            if (!candidates.isEmpty()) localAnvilCraftJar = candidates.max { it.lastModified() }
+        }
+    }
+
+    if (localAnvilCraftJar != null) {
+        logger.lifecycle("Using local AnvilCraft artifact: ${localAnvilCraftJar}")
+        implementation(files(localAnvilCraftJar))
+        // A JAR is a binary artifact, not an interface-injection text file.
+        // The matching JSON is registered in moddevgradle.gradle below.
+    } else {
+        implementation(libs.anvilcraft) { transitive = false }
+        interfaceInjectionData(libs.anvilcraft) { transitive = false }
+    }
+
+    // Optional integrations stay out of the published jar. The base mod normally
+    // supplies Ageratum, while these runtime entries make local Client runs richer.
+    compileOnly(libs.ageratum)
+    compileOnly(libs.jei.common.api)
+    compileOnly(libs.jei.forge.api)
+    runtimeOnly(libs.jei.forge)
+    compileOnly(libs.jade)
+    runtimeOnly(libs.jade)
+}
