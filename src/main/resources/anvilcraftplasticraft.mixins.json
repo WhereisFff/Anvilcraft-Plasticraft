@@ -1,9 +1,13 @@
 {
-  "required": false,
+  "required": true,
   "minVersion": "0.8",
   "package": "dev.anvilcraft.plasticraft.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": [],
+  "mixins": [
+    "EntityCarrierCollisionMixin",
+    "EntityGetterMixin",
+    "GravityManagerMixin"
+  ],
   "client": [],
   "injectors": {
     "defaultRequire": 1

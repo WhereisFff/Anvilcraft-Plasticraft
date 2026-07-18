@@ -10,7 +10,7 @@ public final class PlasticEntities {
     public static final EntityEntry<PlasticAnvilEntity> PLASTIC_ANVIL = REGISTRUM
         .<PlasticAnvilEntity>entity("plastic_anvil", PlasticAnvilEntity::new, MobCategory.MISC)
         .properties(builder -> builder
-            .sized(1.0F, 1.0F)
+            .sized(PlasticAnvilEntity.COLLISION_SIZE, PlasticAnvilEntity.COLLISION_SIZE)
             .clientTrackingRange(10)
             .updateInterval(1))
         .renderer(() -> dev.anvilcraft.plasticraft.client.renderer.entity.PlasticAnvilRenderer::new)

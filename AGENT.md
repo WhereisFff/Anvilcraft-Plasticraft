@@ -32,3 +32,13 @@ porting boundary explicit.
 When the 26.1 port begins, preserve the 1.21 source in a branch and port one
 vertical slice at a time: registrations, entity/menu behavior, client screen,
 data generation, then integrations and manual pages.
+
+## Client and rendering validation
+
+- Never use Computer Use, desktop automation, or other UI-control tooling for
+  this project.
+- Do not launch the Minecraft client to inspect rendering. Review renderer,
+  model, and asset code statically; the user will report visual discrepancies
+  that require follow-up.
+- Validate changes with compilation, builds, dedicated-server/GameTest runs,
+  and direct inspection of generated run arguments and packaged resources.

@@ -1,4 +1,6 @@
 dependencies {
+    gameTestImplementation("net.neoforged:testframework:${neo_version}") { transitive = false }
+
     // AnvilLib is used directly for Registrum and its data providers.
     api(libs.anvillib)
     interfaceInjectionData(libs.anvillib.recipe)

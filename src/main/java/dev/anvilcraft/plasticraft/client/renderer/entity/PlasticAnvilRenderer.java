@@ -6,8 +6,10 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
-import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.neoforged.neoforge.client.model.data.ModelData;
 
 /** Renders the synced Royal-anvil-shaped block state without placing a block. */
 public class PlasticAnvilRenderer extends EntityRenderer<PlasticAnvilEntity> {
@@ -15,7 +17,7 @@ public class PlasticAnvilRenderer extends EntityRenderer<PlasticAnvilEntity> {
 
     public PlasticAnvilRenderer(EntityRendererProvider.Context context) {
         super(context);
-        this.shadowRadius = 0.5F;
+        this.shadowRadius = 0.0F;
         this.dispatcher = context.getBlockRenderDispatcher();
     }
 
@@ -29,13 +31,15 @@ public class PlasticAnvilRenderer extends EntityRenderer<PlasticAnvilEntity> {
         int packedLight
     ) {
         pose.pushPose();
-        pose.translate(-0.5D, 0.0D, -0.5D);
+        PlasticAnvilRenderTransforms.apply(pose, entity.getOrientation());
         this.dispatcher.renderSingleBlock(
-            entity.getDisplayState(),
+            PlasticAnvilRenderTransforms.canonicalize(entity.getDisplayState()),
             pose,
             buffers,
             packedLight,
-            net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY
+            OverlayTexture.NO_OVERLAY,
+            ModelData.EMPTY,
+            null
         );
         pose.popPose();
         super.render(entity, yaw, partialTick, pose, buffers, packedLight);
@@ -43,6 +47,6 @@ public class PlasticAnvilRenderer extends EntityRenderer<PlasticAnvilEntity> {
 
     @Override
     public ResourceLocation getTextureLocation(PlasticAnvilEntity entity) {
-        return TextureAtlas.LOCATION_BLOCKS;
+        return InventoryMenu.BLOCK_ATLAS;
     }
 }
