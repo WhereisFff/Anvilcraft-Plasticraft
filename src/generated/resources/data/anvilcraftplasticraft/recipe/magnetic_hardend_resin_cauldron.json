@@ -1,0 +1,28 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "H": {
+      "item": "anvilcraft:hardend_resin"
+    },
+    "M": {
+      "item": "anvilcraft:magnet_ingot"
+    }
+  },
+  "pattern": [
+    "M M",
+    "H H",
+    "HHH"
+  ],
+  "result": {
+    "components": {
+      "minecraft:custom_data": {
+        "Magnetized": 1,
+        "PlasticMaterial": "hardened_resin"
+      },
+      "minecraft:custom_model_data": 1
+    },
+    "count": 1,
+    "id": "anvilcraftplasticraft:hardend_resin_cauldron"
+  }
+}

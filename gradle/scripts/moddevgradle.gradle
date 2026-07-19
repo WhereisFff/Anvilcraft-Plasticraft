@@ -1,9 +1,8 @@
 neoForge {
     version = libs.versions.neoForge.get()
 
-    // Keep the interface surface supplied by AnvilCraft available when the
-    // addon uses a locally built AnvilCraft JAR.  Passing that JAR directly to
-    // interfaceInjectionData would make JST try to decode binary bytes as JSON.
+    // 附属模组使用本地构建的 AnvilCraft JAR 时，仍需提供 AnvilCraft 注入的接口。
+    // 若将该 JAR 直接传给 interfaceInjectionData，JST 会尝试把二进制数据解码为 JSON。
     interfaceInjectionData {
         from file('src/main/resources/interface_injections.json')
         publish file('src/main/resources/interface_injections.json')

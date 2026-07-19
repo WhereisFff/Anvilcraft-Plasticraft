@@ -7,7 +7,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.testframework.conf.FrameworkConfiguration;
 import net.neoforged.testframework.impl.MutableTestFramework;
 
-/** Test-only second entry point, absent from the published main source set. */
+/** 仅供测试使用的第二入口点，不包含在发布的主源码集中。 */
 @Mod(PlasticraftGameTestEntrypoint.MOD_ID)
 public final class PlasticraftGameTestEntrypoint {
     public static final String MOD_ID = AnvilcraftPlasticraft.MOD_ID + "_tests";

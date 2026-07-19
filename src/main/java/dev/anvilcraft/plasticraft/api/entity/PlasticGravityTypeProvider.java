@@ -4,7 +4,7 @@ import dev.dubhe.anvilcraft.api.entity.IAnvilCraftEntityExtension;
 import dev.dubhe.anvilcraft.util.GravityType;
 
 /**
- * Supplies the AnvilCraft gravity profile used by a Plasticraft entity.
+ * 提供 Plasticraft 实体使用的 AnvilCraft 重力配置。
  */
 @FunctionalInterface
 public interface PlasticGravityTypeProvider extends IAnvilCraftEntityExtension {

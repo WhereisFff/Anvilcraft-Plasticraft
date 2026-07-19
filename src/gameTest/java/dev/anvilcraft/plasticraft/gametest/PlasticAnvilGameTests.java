@@ -1,24 +1,37 @@
 package dev.anvilcraft.plasticraft.gametest;
 
+import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
-import dev.dubhe.anvilcraft.entity.MagnetizedNodeEntity;
-import dev.dubhe.anvilcraft.init.block.ModBlocks;
+import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
+import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
+import dev.dubhe.anvilcraft.block.fluid.PipeBlock;
+import dev.dubhe.anvilcraft.event.anvil.AnvilEventListener;
+import dev.dubhe.anvilcraft.init.block.ModBlockTags;
 import dev.dubhe.anvilcraft.init.item.ModItems;
+import dev.dubhe.anvilcraft.init.recipe.ModRecipeTypes;
+import dev.dubhe.anvilcraft.recipe.anvil.wrap.FastCookingRecipe;
 import dev.dubhe.anvilcraft.util.AccelerateManager;
 import dev.dubhe.anvilcraft.util.GravityManager;
 import dev.dubhe.anvilcraft.util.GravityType;
-import dev.anvilcraft.plasticraft.block.PlasticAnvilBlock;
-import dev.anvilcraft.plasticraft.entity.PlasticAnvilEntity;
-import dev.anvilcraft.plasticraft.entity.PlasticAnvilOrientation;
-import dev.anvilcraft.plasticraft.entity.PlasticAnvilPhysics;
-import dev.anvilcraft.plasticraft.entity.PlasticPotEntity;
-import dev.anvilcraft.plasticraft.init.PlasticBlocks;
-import dev.anvilcraft.plasticraft.init.PlasticEntities;
-import dev.anvilcraft.plasticraft.item.PlasticAnvilItem;
+import dev.anvilcraft.plasticraft.block.HardenedResinAnvilBlock;
+import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
+import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
+import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.entity.ModEntities;
+import dev.anvilcraft.plasticraft.init.ModMenuTypes;
+import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
+import dev.anvilcraft.plasticraft.item.DyeableMaterial;
+import dev.anvilcraft.plasticraft.item.HardenedResinAnvilItem;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
+import dev.dubhe.anvilcraft.init.item.ModComponents;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.nbt.CompoundTag;
@@ -35,7 +48,11 @@ import net.minecraft.world.entity.vehicle.Minecart;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.CustomModelData;
 import net.minecraft.world.item.context.UseOnContext;
+import net.minecraft.world.item.crafting.CraftingInput;
+import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.crafting.ShapedRecipe;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
@@ -52,12 +69,13 @@ import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 import net.neoforged.testframework.gametest.GameTestPlayer;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/** Runtime coverage for the persistent falling-block physics contract. */
+/** 对持久化落方块物理约定的运行时测试。 */
 public final class PlasticAnvilGameTests {
     private static final double EPSILON = 1.0E-6D;
 
@@ -70,16 +88,16 @@ public final class PlasticAnvilGameTests {
         Vec3 cellCenter = Vec3.atCenterOf(cell);
         for (Direction face : Direction.values()) {
             for (int turn = 0; turn < 4; turn++) {
-                PlasticAnvilOrientation orientation = new PlasticAnvilOrientation(face, turn);
+                PlasticEntityOrientation orientation = new PlasticEntityOrientation(face, turn);
                 check(packed.add(Byte.toUnsignedInt(orientation.pack())), "orientation packing collided");
-                check(PlasticAnvilOrientation.unpack(orientation.pack()).equals(orientation), "orientation did not round-trip");
+                check(PlasticEntityOrientation.unpack(orientation.pack()).equals(orientation), "orientation did not round-trip");
                 check(orientation.longAxis().getAxis() != face.getAxis(), "long axis is not in the attachment plane");
                 check(orientation.orthogonalAxis().getAxis() != face.getAxis(), "cross axis is not in the attachment plane");
                 check(orientation.longAxis().getAxis() != orientation.orthogonalAxis().getAxis(), "model basis is not orthogonal");
 
                 Vec3 offset = orientation.collisionCenter(cell).subtract(cellCenter);
                 Vec3 expected = Vec3.atLowerCornerOf(face.getNormal())
-                    .scale(-PlasticAnvilOrientation.ATTACHMENT_INSET);
+                    .scale(-PlasticEntityOrientation.ATTACHMENT_INSET);
                 check(close(offset, expected), "collision center does not preserve the requested face gaps");
             }
         }
@@ -92,13 +110,13 @@ public final class PlasticAnvilGameTests {
     @TestHolder(description = "Floor placement keeps the anvil's long axis perpendicular to the player")
     static void placementFacesLongSideTowardPlayer(ExtendedGameTestHelper helper) {
         for (Direction playerDirection : Direction.Plane.HORIZONTAL) {
-            PlasticAnvilOrientation floor = PlasticAnvilOrientation.forPlacement(Direction.UP, playerDirection);
+            PlasticEntityOrientation floor = PlasticEntityOrientation.forPlacement(Direction.UP, playerDirection);
             check(
                 floor.longAxis().getAxis() != playerDirection.getAxis(),
                 playerDirection + " placement showed the short end to the player"
             );
 
-            PlasticAnvilOrientation ceiling = PlasticAnvilOrientation.forPlacement(Direction.DOWN, playerDirection);
+            PlasticEntityOrientation ceiling = PlasticEntityOrientation.forPlacement(Direction.DOWN, playerDirection);
             check(
                 ceiling.longAxis().getAxis() != playerDirection.getAxis(),
                 playerDirection + " ceiling placement showed the short end to the player"
@@ -114,7 +132,7 @@ public final class PlasticAnvilGameTests {
         BlockPos clicked = new BlockPos(3, 3, 3);
         helper.setBlock(clicked, Blocks.STONE);
         for (Direction face : Direction.values()) {
-            ItemStack stack = PlasticBlocks.PLASTIC_ANVIL.asStack();
+            ItemStack stack = ModBlocks.HARDEND_RESIN_ANVIL.asStack();
             Player player = helper.makeMockPlayer(GameType.SURVIVAL);
             player.setYRot(0.0F);
             BlockHitResult hit = new BlockHitResult(
@@ -132,11 +150,11 @@ public final class PlasticAnvilGameTests {
             ));
             check(result.consumesAction(), "item placement failed on " + face);
 
-            Vec3 expectedCenter = PlasticAnvilOrientation.forPlacement(face, player)
+            Vec3 expectedCenter = PlasticEntityOrientation.forPlacement(face, player)
                 .collisionCenter(helper.absolutePos(clicked.relative(face)));
-            PlasticAnvilEntity placed = helper.getLevel()
+            HardenedResinAnvilEntity placed = helper.getLevel()
                 .getEntitiesOfClass(
-                    PlasticAnvilEntity.class,
+                    HardenedResinAnvilEntity.class,
                     new AABB(expectedCenter, expectedCenter).inflate(0.6D)
                 )
                 .stream()
@@ -154,7 +172,7 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate("5x8x5")
     @TestHolder(description = "A plastic anvil uses normal falling-block gravity in air and remains a persistent entity")
     static void fallsInAir(ExtendedGameTestHelper helper) {
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 6.0D, 2.5D));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 6.0D, 2.5D));
         double startY = anvil.getY();
         helper.runAfterDelay(10, () -> {
             check(anvil.isAlive(), "plastic anvil was discarded or converted into a block");
@@ -175,7 +193,7 @@ public final class PlasticAnvilGameTests {
                 }
             }
         }
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 1.2D, 2.5D));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 1.2D, 2.5D));
         double startY = anvil.getY();
         helper.runAfterDelay(10, () -> {
             check(anvil.isAlive(), "submerged plastic anvil was discarded");
@@ -189,7 +207,7 @@ public final class PlasticAnvilGameTests {
     @TestHolder(description = "A buoyant plastic anvil settles half-submerged at the water surface")
     static void settlesHalfSubmergedAtWaterSurface(ExtendedGameTestHelper helper) {
         fillWater(helper, 1, 5, 1, 4, 1, 5);
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(3.5D, 1.2D, 3.5D));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(3.5D, 1.2D, 3.5D));
         double surfaceY = helper.absolutePos(new BlockPos(0, 5, 0)).getY();
         helper.runAfterDelay(60, () -> {
             double centerY = anvil.getBoundingBox().getCenter().y;
@@ -205,7 +223,7 @@ public final class PlasticAnvilGameTests {
     static void waterSurfaceCeilingStopsBuoyantAnvil(ExtendedGameTestHelper helper) {
         fillWater(helper, 1, 5, 1, 4, 1, 5);
         helper.setBlock(3, 5, 3, Blocks.STONE);
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(3.5D, 1.2D, 3.5D));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(3.5D, 1.2D, 3.5D));
         double ceilingY = helper.absolutePos(new BlockPos(3, 5, 3)).getY();
         helper.runAfterDelay(60, () -> {
             check(anvil.getBoundingBox().maxY <= ceilingY + 0.002D, "buoyant anvil crossed the ceiling block");
@@ -225,7 +243,7 @@ public final class PlasticAnvilGameTests {
             start.x,
             start.y,
             start.z,
-            PlasticBlocks.PLASTIC_ANVIL.asStack()
+            ModBlocks.HARDEND_RESIN_ANVIL.asStack()
         );
         check(helper.getLevel().addFreshEntity(item), "failed to add buoyant plastic item");
         double surfaceY = helper.absolutePos(new BlockPos(0, 5, 0)).getY();
@@ -246,11 +264,11 @@ public final class PlasticAnvilGameTests {
     static void entityHeadSupportsFallingAnvil(ExtendedGameTestHelper helper) {
         Zombie support = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 1.0D, 2.5D));
         support.setNoGravity(true);
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 4.3D, 2.5D));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 4.3D, 2.5D));
         helper.runAfterDelay(30, () -> {
             double gap = anvil.getBoundingBox().minY - support.getBoundingBox().maxY;
             check(anvil.isAlive(), "supported plastic anvil stopped being an entity");
-            check(Math.abs(gap) <= PlasticAnvilPhysics.SUPPORT_PROBE_DEPTH + 0.02D, "anvil did not settle on the entity head");
+            check(Math.abs(gap) <= PlasticEntityPhysics.SUPPORT_PROBE_DEPTH + 0.02D, "anvil did not settle on the entity head");
             check(helper.getLevel().getBlockState(anvil.blockPosition()).isAir(), "supported anvil converted into a block");
             helper.succeed();
         });
@@ -260,7 +278,7 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate(value = "5x7x5", floor = true)
     @TestHolder(description = "A server-ticked player can stand on the plastic anvil without pushing it aside")
     static void playerStandsWithoutPushingAnvil(ExtendedGameTestHelper helper) {
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 1.0D, 2.5D));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 1.0D, 2.5D));
         anvil.setNoGravity(true);
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 playerPosition = helper.absoluteVec(new Vec3(2.68D, 1.98D, 2.61D));
@@ -279,28 +297,29 @@ public final class PlasticAnvilGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate
-    @TestHolder(description = "Orientation, color, drop stack, and gravity survive an entity NBT round trip")
+    @TestHolder(description = "Hardened resin migrates legacy colour data while preserving entity state")
     static void stateSurvivesSaveLoad(ExtendedGameTestHelper helper) {
-        PlasticAnvilEntity original = createAnvil(helper, new Vec3(1.5D, 1.0D, 1.5D));
-        PlasticAnvilOrientation orientation = new PlasticAnvilOrientation(Direction.WEST, 3);
+        HardenedResinAnvilEntity original = createAnvil(helper, new Vec3(1.5D, 1.0D, 1.5D));
+        PlasticEntityOrientation orientation = new PlasticEntityOrientation(Direction.WEST, 3);
         original.setOrientation(orientation);
-        original.setDisplayState(PlasticAnvilBlock.withColor(original.getDisplayState(), net.minecraft.world.item.DyeColor.CYAN));
-        ItemStack drop = PlasticBlocks.PLASTIC_ANVIL.asStack();
-        dev.anvilcraft.plasticraft.item.PlasticAnvilItem.setColor(drop, net.minecraft.world.item.DyeColor.CYAN);
+        ItemStack drop = ModBlocks.HARDEND_RESIN_ANVIL.asStack();
+        HardenedResinAnvilItem.setColor(drop, net.minecraft.world.item.DyeColor.CYAN);
         original.setDropStack(drop);
 
         CompoundTag saved = original.saveWithoutId(new CompoundTag());
-        PlasticAnvilEntity loaded = new PlasticAnvilEntity(PlasticEntities.PLASTIC_ANVIL.get(), helper.getLevel());
+        HardenedResinAnvilEntity loaded = new HardenedResinAnvilEntity(ModEntities.HARDEND_RESIN_ANVIL.get(), helper.getLevel());
         loaded.load(saved);
         check(loaded.getOrientation().equals(orientation), "orientation did not survive NBT");
+        check(!loaded.getDisplayState().hasProperty(DyeableMaterial.COLOR), "hardened resin still exposes a colour state");
+        ItemStack normalizedDrop = loaded.getDropStack();
         check(
-            loaded.getDisplayState().getValue(PlasticAnvilBlock.COLOR) == net.minecraft.world.item.DyeColor.CYAN,
-            "display color did not survive NBT"
+            "hardened_resin".equals(PlasticItemData.getMaterial(normalizedDrop)),
+            "legacy drop did not migrate to hardened resin"
         );
         check(
-            dev.anvilcraft.plasticraft.item.PlasticAnvilItem.getColor(loaded.getDropStack())
-                == net.minecraft.world.item.DyeColor.CYAN,
-            "colored drop stack did not survive NBT"
+            normalizedDrop.get(DataComponents.CUSTOM_DATA) == null
+                || !normalizedDrop.get(DataComponents.CUSTOM_DATA).contains(DyeableMaterial.COLOR_KEY),
+            "fixed-colour drop retained legacy PlasticColor data"
         );
         check(!loaded.isNoGravity(), "gravity flag changed during NBT round trip");
         original.discard();
@@ -309,31 +328,414 @@ public final class PlasticAnvilGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate
-    @TestHolder(description = "Runtime display-state changes are carried by synchronized entity data")
+    @TestHolder(description = "Runtime magnetic-model changes are carried by synchronized entity data")
     static void displayStateSynchronizesAtRuntime(ExtendedGameTestHelper helper) {
-        PlasticAnvilEntity server = createAnvil(helper, new Vec3(1.5D, 1.0D, 1.5D));
-        PlasticAnvilEntity client = new PlasticAnvilEntity(PlasticEntities.PLASTIC_ANVIL.get(), helper.getLevel());
+        HardenedResinAnvilEntity server = createAnvil(helper, new Vec3(1.5D, 1.0D, 1.5D));
+        HardenedResinAnvilEntity client = new HardenedResinAnvilEntity(ModEntities.HARDEND_RESIN_ANVIL.get(), helper.getLevel());
         server.getEntityData().packDirty();
 
-        BlockState cyan = PlasticAnvilBlock.withColor(server.getDisplayState(), net.minecraft.world.item.DyeColor.CYAN);
-        server.setDisplayState(cyan);
+        BlockState magnetic = server.getDisplayState().setValue(
+            dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock.MAGNETIZED,
+            true
+        );
+        server.setDisplayState(magnetic);
         var update = server.getEntityData().packDirty();
         check(update != null && !update.isEmpty(), "display-state change did not mark synchronized data dirty");
         client.getEntityData().assignValues(update);
 
-        check(client.getDisplayState().equals(cyan), "client display state did not receive the runtime change");
-        check(client.blockState.equals(cyan), "inherited falling-block state diverged after synchronization");
-        check(server.getBlockState().equals(cyan), "AnvilCraft-facing block state diverged from the display state");
+        check(client.getDisplayState().equals(magnetic), "client display state did not receive the runtime change");
+        check(client.blockState.equals(magnetic), "inherited falling-block state diverged after synchronization");
+        check(server.getBlockState().equals(magnetic), "AnvilCraft-facing block state diverged from the display state");
+        check(client.isMagnetized(), "magnetic entity state did not synchronize with the model state");
         server.discard();
         helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate
+    @TestHolder(description = "Resin and magnet-ingot centers select the ordinary and magnetic crafting recipes")
+    static void resinAnvilCraftingRecipesSelectMagnetism(ExtendedGameTestHelper helper) {
+        RecipeHolder<?> ordinaryHolder = helper.getLevel().getRecipeManager()
+            .byKey(AnvilcraftPlasticraft.of("resin_anvil"))
+            .orElseThrow(() -> new GameTestAssertException("ordinary resin anvil recipe was not loaded"));
+        RecipeHolder<?> magneticHolder = helper.getLevel().getRecipeManager()
+            .byKey(AnvilcraftPlasticraft.of("magnetic_resin_anvil"))
+            .orElseThrow(() -> new GameTestAssertException("magnetic resin anvil recipe was not loaded"));
+        check(ordinaryHolder.value() instanceof ShapedRecipe, "ordinary resin anvil recipe was not shaped");
+        check(magneticHolder.value() instanceof ShapedRecipe, "magnetic resin anvil recipe was not shaped");
+        ShapedRecipe ordinaryRecipe = (ShapedRecipe) ordinaryHolder.value();
+        ShapedRecipe magneticRecipe = (ShapedRecipe) magneticHolder.value();
+
+        CraftingInput ordinaryInput = resinAnvilCraftingInput(ModItems.RESIN.asStack());
+        CraftingInput magneticInput = resinAnvilCraftingInput(ModItems.MAGNET_INGOT.asStack());
+        check(ordinaryRecipe.matches(ordinaryInput, helper.getLevel()), "resin center did not match the ordinary recipe");
+        check(!ordinaryRecipe.matches(magneticInput, helper.getLevel()), "magnet-ingot center also matched the ordinary recipe");
+        check(magneticRecipe.matches(magneticInput, helper.getLevel()), "magnet-ingot center did not match the magnetic recipe");
+        check(!magneticRecipe.matches(ordinaryInput, helper.getLevel()), "resin center also matched the magnetic recipe");
+
+        ItemStack ordinary = ordinaryRecipe.assemble(ordinaryInput, helper.getLevel().registryAccess());
+        ItemStack magnetic = magneticRecipe.assemble(magneticInput, helper.getLevel().registryAccess());
+        check(ordinary.is(ModBlocks.RESIN_ANVIL.asItem()), "ordinary recipe returned the wrong item");
+        check(!PlasticItemData.isMagnetized(ordinary), "ordinary recipe returned a magnetic anvil");
+        check("resin".equals(PlasticItemData.getMaterial(ordinary)), "ordinary recipe lost its resin identity");
+        check(magnetic.is(ModBlocks.RESIN_ANVIL.asItem()), "magnetic recipe returned the wrong item");
+        check(PlasticItemData.isMagnetized(magnetic), "magnetic recipe did not set magnetic state");
+        check(
+            magnetic.getOrDefault(DataComponents.CUSTOM_MODEL_DATA, CustomModelData.DEFAULT).value() == 1,
+            "magnetic recipe did not select the magnetic item model"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate
+    @TestHolder(description = "Hardened resin and magnet-ingot rims select the ordinary and magnetic cauldron recipes")
+    static void hardenedResinCauldronCraftingRecipesSelectMagnetism(ExtendedGameTestHelper helper) {
+        RecipeHolder<?> ordinaryHolder = helper.getLevel().getRecipeManager()
+            .byKey(AnvilcraftPlasticraft.of("hardend_resin_cauldron"))
+            .orElseThrow(() -> new GameTestAssertException("ordinary hardened resin cauldron recipe was not loaded"));
+        RecipeHolder<?> magneticHolder = helper.getLevel().getRecipeManager()
+            .byKey(AnvilcraftPlasticraft.of("magnetic_hardend_resin_cauldron"))
+            .orElseThrow(() -> new GameTestAssertException("magnetic hardened resin cauldron recipe was not loaded"));
+        check(ordinaryHolder.value() instanceof ShapedRecipe, "ordinary hardened resin cauldron recipe was not shaped");
+        check(magneticHolder.value() instanceof ShapedRecipe, "magnetic hardened resin cauldron recipe was not shaped");
+        ShapedRecipe ordinaryRecipe = (ShapedRecipe) ordinaryHolder.value();
+        ShapedRecipe magneticRecipe = (ShapedRecipe) magneticHolder.value();
+
+        CraftingInput ordinaryInput = hardenedResinCauldronCraftingInput(ModItems.HARDEND_RESIN.asStack());
+        CraftingInput magneticInput = hardenedResinCauldronCraftingInput(ModItems.MAGNET_INGOT.asStack());
+        check(ordinaryRecipe.matches(ordinaryInput, helper.getLevel()), "hardened resin rim did not match the ordinary recipe");
+        check(!ordinaryRecipe.matches(magneticInput, helper.getLevel()), "magnet-ingot rim also matched the ordinary recipe");
+        check(magneticRecipe.matches(magneticInput, helper.getLevel()), "magnet-ingot rim did not match the magnetic recipe");
+        check(!magneticRecipe.matches(ordinaryInput, helper.getLevel()), "hardened resin rim also matched the magnetic recipe");
+
+        ItemStack ordinary = ordinaryRecipe.assemble(ordinaryInput, helper.getLevel().registryAccess());
+        ItemStack magnetic = magneticRecipe.assemble(magneticInput, helper.getLevel().registryAccess());
+        check(ordinary.is(ModBlocks.HARDEND_RESIN_CAULDRON.asItem()), "ordinary recipe returned the wrong item");
+        check(!PlasticItemData.isMagnetized(ordinary), "ordinary recipe returned a magnetic cauldron");
+        check(magnetic.is(ModBlocks.HARDEND_RESIN_CAULDRON.asItem()), "magnetic recipe returned the wrong item");
+        check(PlasticItemData.isMagnetized(magnetic), "magnetic recipe did not set magnetic state");
+        check(
+            magnetic.getOrDefault(DataComponents.CUSTOM_MODEL_DATA, CustomModelData.DEFAULT).value() == 1,
+            "magnetic cauldron recipe did not select the magnetic item model"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate
+    @TestHolder(description = "Hardened resin products use their migrated IDs and no legacy plastic IDs remain registered")
+    static void hardenedResinRegistryIdsAreMigrated(ExtendedGameTestHelper helper) {
+        check(
+            BuiltInRegistries.BLOCK.getKey(ModBlocks.HARDEND_RESIN_ANVIL.get())
+                .equals(AnvilcraftPlasticraft.of("hardend_resin_anvil")),
+            "hardened resin anvil block kept the legacy registry id"
+        );
+        check(
+            BuiltInRegistries.BLOCK.getKey(ModBlocks.HARDEND_RESIN_CAULDRON.get())
+                .equals(AnvilcraftPlasticraft.of("hardend_resin_cauldron")),
+            "hardened resin cauldron block kept the legacy registry id"
+        );
+        check(
+            BuiltInRegistries.ITEM.getKey(ModBlocks.HARDEND_RESIN_ANVIL.asItem())
+                .equals(AnvilcraftPlasticraft.of("hardend_resin_anvil")),
+            "hardened resin anvil item kept the legacy registry id"
+        );
+        check(
+            BuiltInRegistries.ITEM.getKey(ModBlocks.HARDEND_RESIN_CAULDRON.asItem())
+                .equals(AnvilcraftPlasticraft.of("hardend_resin_cauldron")),
+            "hardened resin cauldron item kept the legacy registry id"
+        );
+        check(
+            BuiltInRegistries.ENTITY_TYPE.getKey(ModEntities.HARDEND_RESIN_ANVIL.get())
+                .equals(AnvilcraftPlasticraft.of("hardend_resin_anvil")),
+            "hardened resin anvil entity kept the legacy registry id"
+        );
+        check(
+            BuiltInRegistries.ENTITY_TYPE.getKey(ModEntities.HARDEND_RESIN_CAULDRON.get())
+                .equals(AnvilcraftPlasticraft.of("hardend_resin_cauldron")),
+            "hardened resin cauldron entity kept the legacy registry id"
+        );
+        check(
+            BuiltInRegistries.MENU.getKey(ModMenuTypes.HARDEND_RESIN_ANVIL.get())
+                .equals(AnvilcraftPlasticraft.of("hardend_resin_anvil")),
+            "hardened resin anvil menu kept the legacy registry id"
+        );
+        check(BuiltInRegistries.BLOCK.getOptional(AnvilcraftPlasticraft.of("plastic_anvil")).isEmpty(),
+            "legacy plastic_anvil block id is still registered");
+        check(BuiltInRegistries.BLOCK.getOptional(AnvilcraftPlasticraft.of("plastic_pot")).isEmpty(),
+            "legacy plastic_pot block id is still registered");
+        check(BuiltInRegistries.ITEM.getOptional(AnvilcraftPlasticraft.of("plastic_anvil")).isEmpty(),
+            "legacy plastic_anvil item id is still registered");
+        check(BuiltInRegistries.ITEM.getOptional(AnvilcraftPlasticraft.of("plastic_pot")).isEmpty(),
+            "legacy plastic_pot item id is still registered");
+        check(BuiltInRegistries.ENTITY_TYPE.getOptional(AnvilcraftPlasticraft.of("plastic_anvil")).isEmpty(),
+            "legacy plastic_anvil entity id is still registered");
+        check(BuiltInRegistries.ENTITY_TYPE.getOptional(AnvilcraftPlasticraft.of("plastic_pot")).isEmpty(),
+            "legacy plastic_pot entity id is still registered");
+        check(BuiltInRegistries.MENU.getOptional(AnvilcraftPlasticraft.of("plastic_anvil")).isEmpty(),
+            "legacy plastic_anvil menu id is still registered");
+        check(ModBlocks.HARDEND_RESIN_ANVIL.get().defaultBlockState().is(ModBlockTags.NON_MAGNETIC),
+            "hardened resin compatibility block can bypass crafted magnetism");
+        check(ModBlocks.RESIN_ANVIL.get().defaultBlockState().is(ModBlockTags.NON_MAGNETIC),
+            "resin compatibility block can bypass crafted magnetism");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate
+    @TestHolder(description = "Fast cooking hardens ordinary and magnetic resin anvils without mixing their states")
+    static void fastCookingPreservesResinAnvilMagnetism(ExtendedGameTestHelper helper) {
+        FastCookingRecipe ordinaryRecipe = fastCookingRecipe(helper, "fast_cooking/harden_resin_anvil");
+        FastCookingRecipe magneticRecipe = fastCookingRecipe(helper, "fast_cooking/harden_magnetic_resin_anvil");
+        ItemStack ordinaryInput = ModBlocks.RESIN_ANVIL.asStack();
+        ItemStack magneticInput = ModBlocks.RESIN_ANVIL.asStack();
+        PlasticItemData.setMagnetized(magneticInput, true);
+
+        check(ordinaryRecipe.getInputItems().getFirst().test(ordinaryInput), "ordinary hardening rejected ordinary resin");
+        check(!ordinaryRecipe.getInputItems().getFirst().test(magneticInput), "ordinary hardening accepted magnetic resin");
+        check(magneticRecipe.getInputItems().getFirst().test(magneticInput), "magnetic hardening rejected magnetic resin");
+        check(!magneticRecipe.getInputItems().getFirst().test(ordinaryInput), "magnetic hardening accepted ordinary resin");
+
+        ItemStack ordinaryOutput = ordinaryRecipe.getResultItems().getFirst().stack();
+        ItemStack magneticOutput = magneticRecipe.getResultItems().getFirst().stack();
+        check(ordinaryOutput.is(ModBlocks.HARDEND_RESIN_ANVIL.asItem()), "ordinary hardening returned the wrong item");
+        check(!PlasticItemData.isMagnetized(ordinaryOutput), "ordinary hardening added magnetism");
+        check("hardened_resin".equals(PlasticItemData.getMaterial(ordinaryOutput)), "ordinary output was not hardened resin");
+        check(magneticOutput.is(ModBlocks.HARDEND_RESIN_ANVIL.asItem()), "magnetic hardening returned the wrong item");
+        check(PlasticItemData.isMagnetized(magneticOutput), "magnetic hardening lost magnetism");
+        check("hardened_resin".equals(PlasticItemData.getMaterial(magneticOutput)), "magnetic output was not hardened resin");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate
+    @TestHolder(description = "Pure renaming is free and keeps the prior-work penalty unchanged")
+    static void hardenedResinPureRenameIsFree(ExtendedGameTestHelper helper) {
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.experienceLevel = 12;
+        HardenedResinAnvilMenu menu = new HardenedResinAnvilMenu(1, player.getInventory(), -1);
+        ItemStack input = new ItemStack(Items.DIAMOND_SWORD);
+        input.set(DataComponents.REPAIR_COST, 7);
+        menu.getSlot(0).set(input);
+        check(menu.setItemName("Free Rename"), "rename request was rejected");
+
+        ItemStack output = menu.getSlot(2).getItem();
+        check(!output.isEmpty(), "pure rename produced no output");
+        check(output.getHoverName().getString().equals("Free Rename"), "output did not receive the requested name");
+        check(menu.getCost() == 0, "pure rename retained an experience cost of " + menu.getCost());
+        check(output.getOrDefault(DataComponents.REPAIR_COST, 0) == 7, "pure rename changed the prior-work penalty");
+        check(menu.getSlot(2).mayPickup(player), "zero-cost rename output could not be taken");
+        int experienceBefore = player.experienceLevel;
+        menu.getSlot(2).onTake(player, output.copy());
+        check(player.experienceLevel == experienceBefore, "taking a pure rename output consumed experience");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "A resin anvil never opens a menu when used")
+    static void resinAnvilHasNoMenu(ExtendedGameTestHelper helper) {
+        ResinAnvilEntity anvil = createResinAnvil(helper, new Vec3(3.5D, 1.0D, 3.5D), ModBlocks.RESIN_ANVIL.asStack());
+        anvil.setNoGravity(true);
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        var menuBefore = player.containerMenu;
+        InteractionResult result = anvil.interact(player, InteractionHand.MAIN_HAND);
+        check(result == InteractionResult.PASS, "empty resin anvil consumed a normal use");
+        check(player.containerMenu == menuBefore, "resin anvil opened or replaced the player's menu");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "9x8x9", floor = true)
+    @TestHolder(description = "A captured mob can be placed inside a resin anvil, saved, loaded, and released")
+    static void resinAnvilCapturedMobSurvivesAndReleases(ExtendedGameTestHelper helper) {
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        ItemStack resinAnvil = ModBlocks.RESIN_ANVIL.asStack();
+        player.setItemInHand(InteractionHand.MAIN_HAND, resinAnvil);
+        Entity capturedMob = helper.spawnWithNoFreeWill(EntityType.COW, new Vec3(2.5D, 1.0D, 2.5D));
+        InteractionResult captureResult = resinAnvil.interactLivingEntity(
+            player,
+            (net.minecraft.world.entity.LivingEntity) capturedMob,
+            InteractionHand.MAIN_HAND
+        );
+        check(captureResult.consumesAction(), "resin anvil item did not capture the mob");
+        check(!capturedMob.isAlive(), "captured mob remained in the world");
+        ItemStack capturedStack = findCapturedResinAnvil(player);
+        check(!capturedStack.isEmpty(), "captured resin anvil was not returned to the player");
+
+        BlockPos support = new BlockPos(4, 1, 4);
+        helper.setBlock(support, Blocks.STONE);
+        player.setShiftKeyDown(true);
+        player.setItemInHand(InteractionHand.MAIN_HAND, capturedStack);
+        BlockHitResult hit = new BlockHitResult(
+            helper.absolutePos(support).getCenter(),
+            Direction.UP,
+            helper.absolutePos(support),
+            false
+        );
+        InteractionResult placeResult = capturedStack.useOn(new UseOnContext(
+            helper.getLevel(),
+            player,
+            InteractionHand.MAIN_HAND,
+            capturedStack,
+            hit
+        ));
+        check(placeResult.consumesAction(), "sneak-use did not place the captured resin anvil");
+        ResinAnvilEntity placed = helper.getLevel().getEntitiesOfClass(
+            ResinAnvilEntity.class,
+            new AABB(helper.absolutePos(support.above())).inflate(0.1D)
+        ).stream().findFirst().orElseThrow(() -> new GameTestAssertException("captured resin anvil entity was not placed"));
+        check(placed.hasCapturedMob(), "placed resin anvil lost its captured mob");
+
+        CompoundTag saved = placed.saveWithoutId(new CompoundTag());
+        placed.discard();
+        ResinAnvilEntity loaded = new ResinAnvilEntity(ModEntities.RESIN_ANVIL.get(), helper.getLevel());
+        loaded.load(saved);
+        check(loaded.hasCapturedMob(), "captured mob component did not survive entity NBT");
+        check(helper.getLevel().addFreshEntity(loaded), "failed to restore the saved resin anvil");
+        player.setShiftKeyDown(false);
+        player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+        InteractionResult releaseResult = loaded.interact(player, InteractionHand.MAIN_HAND);
+        check(releaseResult.consumesAction(), "empty-hand use did not release the captured mob");
+        check(!loaded.hasCapturedMob(), "resin anvil retained the captured component after release");
+        check(
+            !helper.getLevel().getEntitiesOfClass(
+                net.minecraft.world.entity.animal.Cow.class,
+                loaded.getBoundingBox().inflate(3.0D),
+                Entity::isAlive
+            ).isEmpty(),
+            "released cow was not added back to the world"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("15x12x15")
+    @TestHolder(description = "A resin anvil reflects its velocity from block impacts on all six faces")
+    static void resinAnvilBouncesFromBlocksInAllDirections(ExtendedGameTestHelper helper) {
+        List<Direction> directions = List.of(
+            Direction.DOWN,
+            Direction.UP,
+            Direction.NORTH,
+            Direction.SOUTH,
+            Direction.WEST,
+            Direction.EAST
+        );
+        List<BlockPos> cells = List.of(
+            new BlockPos(2, 4, 2),
+            new BlockPos(6, 4, 2),
+            new BlockPos(10, 4, 2),
+            new BlockPos(2, 4, 8),
+            new BlockPos(6, 4, 8),
+            new BlockPos(10, 4, 8)
+        );
+        List<ResinAnvilEntity> anvils = new ArrayList<>();
+        for (int index = 0; index < directions.size(); index++) {
+            Direction direction = directions.get(index);
+            BlockPos cell = cells.get(index);
+            helper.setBlock(cell.relative(direction), Blocks.STONE);
+            ResinAnvilEntity anvil = createResinAnvilInCell(helper, cell, ModBlocks.RESIN_ANVIL.asStack());
+            anvil.setNoGravity(true);
+            anvil.setDeltaMovement(Vec3.atLowerCornerOf(direction.getNormal()).scale(0.32D));
+            anvils.add(anvil);
+        }
+
+        helper.runAfterDelay(2, () -> {
+            for (int index = 0; index < directions.size(); index++) {
+                Direction direction = directions.get(index);
+                ResinAnvilEntity anvil = anvils.get(index);
+                double reflectedSpeed = anvil.getDeltaMovement().dot(Vec3.atLowerCornerOf(direction.getNormal()));
+                check(reflectedSpeed < -0.04D, direction + " block impact did not reflect velocity: " + anvil.getDeltaMovement());
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x5x7", floor = true)
+    @TestHolder(description = "A resin anvil bounces from an entity and applies a bounded outward impulse")
+    static void resinAnvilBouncesFromEntity(ExtendedGameTestHelper helper) {
+        ResinAnvilEntity anvil = createResinAnvilInCell(
+            helper,
+            new BlockPos(3, 2, 3),
+            ModBlocks.RESIN_ANVIL.asStack()
+        );
+        anvil.setNoGravity(true);
+        Zombie target = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.35D, 2.0D, 3.5D));
+        target.setNoGravity(true);
+        anvil.setDeltaMovement(0.32D, 0.0D, 0.0D);
+        helper.runAfterDelay(2, () -> {
+            check(anvil.getDeltaMovement().x < -0.04D, "entity impact did not bounce the resin anvil");
+            check(target.getDeltaMovement().x > 0.0D, "entity impact did not push the target outward");
+            check(target.getDeltaMovement().x <= 0.45D + EPSILON, "entity impulse exceeded its configured bound");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x8x7", floor = true)
+    @TestHolder(description = "A player falling onto a resin anvil rebounds like landing on a resin block")
+    static void playerBouncesFromResinAnvil(ExtendedGameTestHelper helper) {
+        ResinAnvilEntity anvil = createResinAnvil(
+            helper,
+            new Vec3(3.5D, 1.0D, 3.5D),
+            ModBlocks.RESIN_ANVIL.asStack()
+        );
+        anvil.setNoGravity(true);
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        Vec3 start = helper.absoluteVec(new Vec3(3.5D, 2.45D, 3.5D));
+        player.moveTo(start.x, start.y, start.z);
+        player.setDeltaMovement(0.0D, -0.75D, 0.0D);
+
+        player.move(MoverType.SELF, player.getDeltaMovement());
+
+        check(player.getDeltaMovement().y > 0.70D, "falling player did not rebound from the resin anvil");
+        check(
+            Math.abs(player.getBoundingBox().minY - anvil.getBoundingBox().maxY) < 0.03D,
+            "falling player was not collision-clipped at the resin anvil surface"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x6x7")
+    @TestHolder(description = "A player continuously transfers lateral movement to a resin anvil")
+    static void playerPushesResinAnvilContinuously(ExtendedGameTestHelper helper) {
+        for (int x = 1; x < 10; x++) {
+            helper.setBlock(x, 1, 3, Blocks.STONE);
+        }
+        ResinAnvilEntity anvil = createResinAnvil(
+            helper,
+            new Vec3(5.5D, 2.0D, 3.5D),
+            ModBlocks.RESIN_ANVIL.asStack()
+        );
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.71D, 2.0D, 3.5D));
+        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        helper.runAfterDelay(3, () -> {
+            double startX = anvil.getX();
+            double playerStartX = player.getX();
+            player.move(MoverType.SELF, new Vec3(0.18D, 0.0D, 0.0D));
+            player.move(MoverType.SELF, new Vec3(0.18D, 0.0D, 0.0D));
+            double playerMovement = player.getX() - playerStartX;
+            double anvilMovement = anvil.getX() - startX;
+            check(playerMovement > 0.30D, "resin anvil clipped repeated player movement: " + playerMovement);
+            check(anvilMovement > 0.30D, "resin anvil did not follow repeated player movement: " + anvilMovement);
+            check(
+                Math.abs(anvilMovement - playerMovement) < 0.03D,
+                "resin anvil did not remain against the moving player"
+            );
+            helper.succeed();
+        });
     }
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate("9x5x7")
     @TestHolder(description = "Only magnetized plastic anvils and pots qualify for magnetic acceleration")
     static void magnetizationControlsAcceleration(ExtendedGameTestHelper helper) {
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 2.0D, 2.5D));
-        PlasticPotEntity pot = createPot(helper, new Vec3(6.5D, 2.0D, 2.5D), PlasticAnvilOrientation.DEFAULT);
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 2.0D, 2.5D));
+        HardenedResinCauldronEntity pot = createPot(helper, new Vec3(6.5D, 2.0D, 2.5D), PlasticEntityOrientation.DEFAULT);
         check(!AccelerateManager.canBeAccelerated(anvil), "unmagnetized plastic anvil entered an acceleration ring");
         check(!AccelerateManager.canBeAccelerated(pot), "unmagnetized plastic pot entered an acceleration ring");
         anvil.setMagnetized(true);
@@ -346,56 +748,195 @@ public final class PlasticAnvilGameTests {
     }
 
     @GameTest(timeoutTicks = 20)
-    @EmptyTemplate("7x6x7")
-    @TestHolder(description = "Shift-using the AnvilCraft magnet magnetizes a plastic pot without spawning a node")
-    static void magnetToolMagnetizesPlasticPot(ExtendedGameTestHelper helper) {
-        BlockPos support = new BlockPos(3, 1, 3);
-        helper.setBlock(support, Blocks.STONE);
-        PlasticPotEntity pot = createPot(helper, new Vec3(3.5D, 2.0D, 3.5D), PlasticAnvilOrientation.DEFAULT);
+    @EmptyTemplate("9x6x7")
+    @TestHolder(description = "Creative Shift-use magnetizes resin products but not survival targets")
+    static void creativeMagnetToolMagnetizesResinProducts(ExtendedGameTestHelper helper) {
+        HardenedResinAnvilEntity hardened = createAnvil(helper, new Vec3(1.5D, 2.0D, 3.5D));
+        ResinAnvilEntity resin = createResinAnvil(
+            helper,
+            new Vec3(3.5D, 2.0D, 3.5D),
+            ModBlocks.RESIN_ANVIL.asStack()
+        );
+        HardenedResinCauldronEntity pot = createPot(helper, new Vec3(5.5D, 2.0D, 3.5D), PlasticEntityOrientation.DEFAULT);
+        Player creative = helper.makeMockPlayer(GameType.CREATIVE);
+        creative.setShiftKeyDown(true);
+        ItemStack magnet = ModItems.MAGNET.asStack();
+        creative.setItemInHand(InteractionHand.MAIN_HAND, magnet);
+        check(
+            hardened.interact(creative, InteractionHand.MAIN_HAND).consumesAction(),
+            "creative magnet interaction did not handle the hardened resin anvil"
+        );
+        check(hardened.isMagnetized(), "creative magnet did not magnetize the hardened resin anvil");
+        check(
+            resin.interact(creative, InteractionHand.MAIN_HAND).consumesAction(),
+            "creative magnet interaction did not handle the resin anvil"
+        );
+        check(resin.isMagnetized(), "creative magnet did not magnetize the resin anvil");
+        check(
+            pot.interact(creative, InteractionHand.MAIN_HAND).consumesAction(),
+            "creative magnet interaction did not handle the hardened resin cauldron"
+        );
+        check(pot.isMagnetized(), "creative magnet did not magnetize the hardened resin cauldron");
+
+        HardenedResinAnvilEntity survivalTarget = createAnvil(helper, new Vec3(7.5D, 2.0D, 3.5D));
+        Player survival = helper.makeMockPlayer(GameType.SURVIVAL);
+        survival.setShiftKeyDown(true);
+        survival.setItemInHand(InteractionHand.MAIN_HAND, ModItems.MAGNET.asStack());
+        check(
+            survivalTarget.interact(survival, InteractionHand.MAIN_HAND) == InteractionResult.PASS,
+            "survival magnet unexpectedly handled the hardened resin anvil"
+        );
+        check(!survivalTarget.isMagnetized(), "survival magnet changed the hardened resin anvil");
+
+        hardened.discard();
+        resin.discard();
+        pot.discard();
+        survivalTarget.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("13x6x7")
+    @TestHolder(description = "Sneak-use places AnvilCraft pipes against resin product faces")
+    static void shiftUsePlacesPipesOnResinProducts(ExtendedGameTestHelper helper) {
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(3.5D, 2.0D, 3.5D));
+        HardenedResinCauldronEntity cauldron = createPot(
+            helper,
+            new Vec3(8.5D, 2.0D, 3.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        anvil.setNoGravity(true);
+        cauldron.setNoGravity(true);
+
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         player.setShiftKeyDown(true);
-        ItemStack magnet = ModItems.MAGNET.asStack();
-        player.setItemInHand(InteractionHand.MAIN_HAND, magnet);
-        BlockHitResult hit = new BlockHitResult(
-            helper.absolutePos(support).getCenter(),
-            Direction.UP,
-            helper.absolutePos(support),
-            false
+        player.setYRot(0.0F);
+
+        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.PIPE.asStack());
+        InteractionResult anvilResult = anvil.interactAt(
+            player,
+            new Vec3(0.0D, anvil.getBbHeight() * 0.5D, -anvil.getBbWidth() * 0.5D),
+            InteractionHand.MAIN_HAND
+        );
+        check(anvilResult.consumesAction(), "sneak-use did not place a pipe on the hardened resin anvil");
+        check(
+            helper.getBlockState(new BlockPos(3, 2, 2)).getBlock() instanceof PipeBlock,
+            "the pipe item did not create a pipe block beside the hardened resin anvil"
         );
 
-        InteractionResult result = magnet.useOn(new UseOnContext(
-            helper.getLevel(),
+        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.PIPE.asStack());
+        InteractionResult cauldronResult = cauldron.interactAt(
             player,
-            InteractionHand.MAIN_HAND,
-            magnet,
-            hit
-        ));
-        check(result.consumesAction(), "magnet did not consume the entity magnetization interaction");
-        check(pot.isMagnetized(), "magnet interaction did not mark the plastic pot");
-        check(
-            helper.getLevel().getEntitiesOfClass(
-                MagnetizedNodeEntity.class,
-                pot.getBoundingBox().inflate(1.0D),
-                Entity::isAlive
-            ).isEmpty(),
-            "magnet interaction spawned a node instead of magnetizing the pot"
+            new Vec3(0.0D, cauldron.getBbHeight() * 0.5D, -cauldron.getBbWidth() * 0.5D),
+            InteractionHand.MAIN_HAND
         );
-        pot.discard();
+        check(cauldronResult.consumesAction(), "sneak-use did not place a pipe on the hardened resin cauldron");
+        BlockState cauldronPipe = helper.getBlockState(new BlockPos(8, 2, 2));
+        check(cauldronPipe.getBlock() instanceof PipeBlock, "the pipe item did not create a pipe beside the cauldron");
+        check(
+            cauldronPipe.getValue(PipeBlock.AXIS) == Direction.Axis.Z,
+            "the pipe placed against the entity fluid endpoint did not face the cauldron"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate("7x9x7")
+    @TestHolder(description = "Hardened resin cauldrons use arbitrary-volume container semantics in pipe networks")
+    static void hardenedResinCauldronConnectsToFluidPipes(ExtendedGameTestHelper helper) {
+        HardenedResinCauldronEntity source = createPot(
+            helper,
+            new Vec3(3.5D, 6.0D, 3.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        HardenedResinCauldronEntity target = createPot(
+            helper,
+            new Vec3(3.5D, 1.0D, 3.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        source.setNoGravity(true);
+        target.setNoGravity(true);
+        source.getFluidHandler().fill(
+            new FluidStack(Fluids.WATER, 375),
+            IFluidHandler.FluidAction.EXECUTE
+        );
+
+        BlockState pipe = dev.dubhe.anvilcraft.init.block.ModBlocks.PIPE_STRAIGHT.get().defaultBlockState()
+            .setValue(PipeBlock.AXIS, Direction.Axis.Y);
+        for (int y = 2; y <= 5; y++) {
+            helper.setBlock(new BlockPos(3, y, 3), pipe);
+        }
+
+        BlockPos sourcePos = BlockPos.containing(source.getBoundingBox().getCenter());
+        FluidContainerLookup.Result endpoint = FluidContainerLookup.find(helper.getLevel(), sourcePos, Direction.DOWN);
+        check(endpoint != null, "pipe API did not discover the hardened resin cauldron entity");
+        check(endpoint.handler() == source.getFluidHandler(), "pipe API returned the wrong cauldron fluid handler");
+        check(!endpoint.cauldron(), "tank-backed entity was assigned whole-cauldron transfer semantics");
+        check(
+            PipeBlock.isFluidHandlerOrConnectablePump(helper.getLevel(), sourcePos, Direction.DOWN),
+            "pipe placement lookup did not recognize the hardened resin cauldron"
+        );
+
+        helper.runAfterDelay(8, () -> {
+            check(source.getFluidHandler().getFluid().isEmpty(), "pipe network did not drain the upper cauldron");
+            check(
+                target.getFluidHandler().getFluidAmount() == 375,
+                "pipe network did not transfer the arbitrary fluid amount"
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("7x6x7")
+    @TestHolder(description = "A hardened resin cauldron stores at most one stack of each input item")
+    static void hardenedResinCauldronLimitsEachInputToOneStack(ExtendedGameTestHelper helper) {
+        HardenedResinCauldronEntity cauldron = createPot(
+            helper,
+            new Vec3(3.5D, 2.0D, 3.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        cauldron.setNoGravity(true);
+        for (int i = 0; i < 8; i++) {
+            ItemEntity bucket = new ItemEntity(
+                helper.getLevel(),
+                cauldron.getX(),
+                cauldron.getBoundingBox().maxY,
+                cauldron.getZ(),
+                new ItemStack(Items.LAVA_BUCKET)
+            );
+            bucket.setNoGravity(true);
+            bucket.anvilcraft$setIsAdsorbable(true);
+            check(helper.getLevel().addFreshEntity(bucket), "failed to add a lava bucket item entity");
+        }
+
+        cauldron.tick();
+
+        check(
+            countItem(cauldron.getInput(), Items.LAVA_BUCKET) == 1,
+            "the cauldron stored the same unstackable input in more than one slot"
+        );
+        int remainingBuckets = helper.getLevel().getEntitiesOfClass(
+            ItemEntity.class,
+            cauldron.getBoundingBox().inflate(2.0D),
+            item -> item.isAlive() && item.getItem().is(Items.LAVA_BUCKET)
+        ).stream().mapToInt(item -> item.getItem().getCount()).sum();
+        check(remainingBuckets == 7, "excess lava buckets were consumed instead of remaining outside: " + remainingBuckets);
         helper.succeed();
     }
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate("9x6x7")
     @TestHolder(description = "Magnet forces target only magnetized plastic entities")
-    static void magnetForcesPlasticEntitiesSelectively(ExtendedGameTestHelper helper) {
+    static void magnetForcesModEntitiesSelectively(ExtendedGameTestHelper helper) {
         BlockPos magnetPos = new BlockPos(1, 2, 3);
-        helper.setBlock(magnetPos, ModBlocks.MAGNET_BLOCK.get().defaultBlockState());
-        PlasticAnvilEntity magnetized = createAnvil(helper, new Vec3(4.5D, 2.0D, 3.5D));
-        PlasticAnvilEntity plain = createAnvil(helper, new Vec3(6.5D, 2.0D, 3.5D));
+        helper.setBlock(magnetPos, dev.dubhe.anvilcraft.init.block.ModBlocks.MAGNET_BLOCK.get().defaultBlockState());
+        HardenedResinAnvilEntity magnetized = createAnvil(helper, new Vec3(4.5D, 2.0D, 3.5D));
+        HardenedResinAnvilEntity plain = createAnvil(helper, new Vec3(6.5D, 2.0D, 3.5D));
         magnetized.setMagnetized(true);
 
         Vec3 pointForce = magnetized.anvilcraft$getAdditionalGravity(0.04D);
-        check(pointForce.x < -PlasticAnvilPhysics.FACE_EPSILON, "magnet block did not pull the magnetized anvil");
+        check(pointForce.x < -PlasticEntityPhysics.FACE_EPSILON, "magnet block did not pull the magnetized anvil");
         check(plain.anvilcraft$getAdditionalGravity(0.04D).lengthSqr() <= EPSILON * EPSILON,
             "magnet block affected an unmagnetized plastic anvil");
 
@@ -406,7 +947,10 @@ public final class PlasticAnvilGameTests {
         player.setItemInHand(InteractionHand.MAIN_HAND, magnet);
         Vec3 before = magnetized.getDeltaMovement();
         magnet.use(helper.getLevel(), player, InteractionHand.MAIN_HAND);
-        check(magnetized.getDeltaMovement().x < before.x, "handheld magnet did not pull the magnetized anvil");
+        check(
+            magnetized.getDeltaMovement().distanceToSqr(before) <= EPSILON * EPSILON,
+            "removed handheld magnet event still changed the magnetized anvil"
+        );
         magnetized.discard();
         plain.discard();
         helper.succeed();
@@ -416,22 +960,22 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate("13x6x7")
     @TestHolder(description = "A non-magnetic plastic pot spills full fluid only through a side or bottom opening")
     static void plasticPotSpillsFluidByOrientation(ExtendedGameTestHelper helper) {
-        PlasticPotEntity side = createPot(
+        HardenedResinCauldronEntity side = createPot(
             helper,
             new Vec3(2.5D, 2.0D, 2.5D),
-            new PlasticAnvilOrientation(Direction.EAST, 0)
+            new PlasticEntityOrientation(Direction.EAST, 0)
         );
         side.setNoGravity(true);
-        side.getFluidHandler().fill(new FluidStack(Fluids.WATER, PlasticPotEntity.CAPACITY), IFluidHandler.FluidAction.EXECUTE);
+        side.getFluidHandler().fill(new FluidStack(Fluids.WATER, HardenedResinCauldronEntity.CAPACITY), IFluidHandler.FluidAction.EXECUTE);
 
-        PlasticPotEntity magnetic = createPot(
+        HardenedResinCauldronEntity magnetic = createPot(
             helper,
             new Vec3(7.5D, 2.0D, 2.5D),
-            new PlasticAnvilOrientation(Direction.EAST, 0)
+            new PlasticEntityOrientation(Direction.EAST, 0)
         );
         magnetic.setNoGravity(true);
         magnetic.setMagnetized(true);
-        magnetic.getFluidHandler().fill(new FluidStack(Fluids.WATER, PlasticPotEntity.CAPACITY), IFluidHandler.FluidAction.EXECUTE);
+        magnetic.getFluidHandler().fill(new FluidStack(Fluids.WATER, HardenedResinCauldronEntity.CAPACITY), IFluidHandler.FluidAction.EXECUTE);
 
         helper.runAfterDelay(3, () -> {
             BlockPos sideTarget = BlockPos.containing(side.getBoundingBox().getCenter()).relative(Direction.EAST);
@@ -439,7 +983,7 @@ public final class PlasticAnvilGameTests {
             check(helper.getLevel().getFluidState(sideTarget).isSource(), "side-facing pot did not spill a source fluid");
             check(side.getFluidHandler().getFluid().isEmpty(), "side-facing pot retained spilled fluid");
             check(
-                magnetic.getFluidHandler().getFluidAmount() == PlasticPotEntity.CAPACITY,
+                magnetic.getFluidHandler().getFluidAmount() == HardenedResinCauldronEntity.CAPACITY,
                 "magnetized pot spilled fluid despite being a sealed container"
             );
             check(helper.getLevel().getFluidState(magneticTarget).isEmpty(), "magnetized pot created an external fluid source");
@@ -451,14 +995,14 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate("7x5x7")
     @TestHolder(description = "Plastic pot item and fluid contents survive entity persistence")
     static void plasticPotContentsSurviveSaveLoad(ExtendedGameTestHelper helper) {
-        PlasticPotEntity original = createPot(helper, new Vec3(3.5D, 2.0D, 3.5D), PlasticAnvilOrientation.DEFAULT);
+        HardenedResinCauldronEntity original = createPot(helper, new Vec3(3.5D, 2.0D, 3.5D), PlasticEntityOrientation.DEFAULT);
         original.setNoGravity(true);
         original.setMagnetized(true);
         original.getInput().insertItem(0, new ItemStack(Items.COBBLESTONE, 3), false);
         original.getFluidHandler().fill(new FluidStack(Fluids.WATER, 500), IFluidHandler.FluidAction.EXECUTE);
 
         CompoundTag saved = original.saveWithoutId(new CompoundTag());
-        PlasticPotEntity loaded = new PlasticPotEntity(PlasticEntities.PLASTIC_POT.get(), helper.getLevel());
+        HardenedResinCauldronEntity loaded = new HardenedResinCauldronEntity(ModEntities.HARDEND_RESIN_CAULDRON.get(), helper.getLevel());
         loaded.load(saved);
         check(loaded.isMagnetized(), "pot magnetized state did not survive NBT");
         check(loaded.getInput().getStackInSlot(0).getCount() == 3, "pot input contents did not survive NBT");
@@ -473,13 +1017,95 @@ public final class PlasticAnvilGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate("9x7x9")
+    @TestHolder(description = "Fish tank outputs become inputs on the next anvil impact")
+    static void fishTankReprocessesItsOutputWithoutDuplicatingInput(ExtendedGameTestHelper helper) {
+        BlockPos tankPos = new BlockPos(3, 2, 3);
+        helper.setBlock(tankPos, dev.dubhe.anvilcraft.init.block.ModBlocks.FISH_TANK.get().defaultBlockState());
+        BlockPos absoluteTankPos = helper.absolutePos(tankPos);
+        check(
+            helper.getLevel().getBlockEntity(absoluteTankPos) instanceof FishTankBlockEntity,
+            "fish tank block entity was not created"
+        );
+        FishTankBlockEntity tank = (FishTankBlockEntity) helper.getLevel().getBlockEntity(absoluteTankPos);
+        check(
+            tank.getInputHandler().insertItem(0, new ItemStack(Items.STICK), false).isEmpty(),
+            "failed to insert the first fish tank recipe input"
+        );
+
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(3.5D, 3.0D, 3.5D));
+        anvil.setNoGravity(true);
+        AnvilEventListener.handleNeoAnvilRecipe(
+            new AnvilEvent.OnLand(helper.getLevel(), absoluteTankPos.above(), anvil, 1.0F)
+        );
+        check(tank.getInputHandler().getStackInSlot(0).isEmpty(), "fish tank did not consume the initial input");
+        check(countItem(tank.getOutputHandler(), Items.DIAMOND) == 1, "fish tank did not create the first output");
+
+        helper.runAfterDelay(1, () -> {
+            AnvilEventListener.handleNeoAnvilRecipe(
+                new AnvilEvent.OnLand(helper.getLevel(), absoluteTankPos.above(), anvil, 1.0F)
+            );
+            check(
+                countItem(tank.getOutputHandler(), Items.DIAMOND) == 0,
+                "fish tank created the second result without consuming its first output"
+            );
+            check(countItem(tank.getOutputHandler(), Items.EMERALD) == 1, "fish tank did not reprocess its output");
+            anvil.discard();
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("9x7x9")
+    @TestHolder(description = "Hardened resin cauldron outputs become inputs on the next impact")
+    static void hardenedResinCauldronReprocessesItsOutputWithoutDuplicatingInput(
+        ExtendedGameTestHelper helper
+    ) {
+        HardenedResinCauldronEntity cauldron = createPot(
+            helper,
+            new Vec3(3.5D, 2.0D, 3.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(3.5D, 3.0D, 3.5D));
+        cauldron.setNoGravity(true);
+        anvil.setNoGravity(true);
+        check(
+            cauldron.getInput().insertItem(0, new ItemStack(Items.STICK), false).isEmpty(),
+            "failed to insert the first cauldron recipe input"
+        );
+
+        cauldron.processAnvilImpact(anvil, Direction.DOWN);
+        check(countItem(cauldron.getOutput(), Items.DIAMOND) == 1, "cauldron did not create the first output");
+        cauldron.processAnvilImpact(anvil, Direction.DOWN);
+        check(
+            countItem(cauldron.getOutput(), Items.DIAMOND) == 1
+                && countItem(cauldron.getOutput(), Items.EMERALD) == 0,
+            "continuous contact reprocessed the cauldron output without a new impact"
+        );
+        anvil.setPos(anvil.position().add(0.0D, 0.25D, 0.0D));
+
+        helper.runAfterDelay(1, () -> {
+            anvil.setPos(helper.absoluteVec(new Vec3(3.5D, 3.0D, 3.5D)));
+            cauldron.processAnvilImpact(anvil, Direction.DOWN);
+            check(
+                countItem(cauldron.getOutput(), Items.DIAMOND) == 0,
+                "cauldron created the second result without consuming its first output"
+            );
+            check(countItem(cauldron.getOutput(), Items.EMERALD) == 1, "cauldron did not reprocess its output");
+            cauldron.discard();
+            anvil.discard();
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("9x7x9")
     @TestHolder(description = "A plastic pot reuses AnvilCraft recipes from either valid impact direction")
     static void plasticPotProcessesRecipesFromBothImpactDirections(ExtendedGameTestHelper helper) {
-        PlasticPotEntity pot = createPot(helper, new Vec3(3.5D, 2.0D, 3.5D), PlasticAnvilOrientation.DEFAULT);
-        PlasticAnvilEntity anvil = createAnvil(
+        HardenedResinCauldronEntity pot = createPot(helper, new Vec3(3.5D, 2.0D, 3.5D), PlasticEntityOrientation.DEFAULT);
+        HardenedResinAnvilEntity anvil = createAnvil(
             helper,
             new Vec3(3.5D, 3.0D, 3.5D),
-            PlasticAnvilOrientation.DEFAULT
+            PlasticEntityOrientation.DEFAULT
         );
         pot.setNoGravity(true);
         anvil.setNoGravity(true);
@@ -491,12 +1117,40 @@ public final class PlasticAnvilGameTests {
         pot.processAnvilImpact(anvil, Direction.DOWN);
         check(pot.getInput().getStackInSlot(0).isEmpty(), "anvil-down impact did not consume the pot input");
         check(countItem(pot.getOutput(), Items.DIAMOND) == 1, "anvil-down impact did not write the recipe output");
+        anvil.setPos(anvil.position().add(0.0D, 0.25D, 0.0D));
 
+        helper.runAfterDelay(1, () -> {
+            anvil.setPos(helper.absoluteVec(new Vec3(3.5D, 3.0D, 3.5D)));
+            pot.getInput().insertItem(0, new ItemStack(Items.STICK), false);
+            pot.processAnvilImpact(anvil, Direction.UP);
+            check(pot.getInput().getStackInSlot(0).isEmpty(), "pot-up impact did not consume the pot input");
+            check(countItem(pot.getOutput(), Items.DIAMOND) == 2, "pot-up impact did not merge the recipe output");
+
+            pot.discard();
+            anvil.discard();
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("7x6x7")
+    @TestHolder(description = "A resin anvil uses the same plastic-pot recipe path as hardened resin")
+    static void resinAnvilProcessesPotRecipes(ExtendedGameTestHelper helper) {
+        HardenedResinCauldronEntity pot = createPot(helper, new Vec3(3.5D, 1.0D, 3.5D), PlasticEntityOrientation.DEFAULT);
+        ResinAnvilEntity anvil = createResinAnvil(
+            helper,
+            new Vec3(3.5D, 2.0D, 3.5D),
+            ModBlocks.RESIN_ANVIL.asStack()
+        );
+        pot.setNoGravity(true);
+        anvil.setNoGravity(true);
         pot.getInput().insertItem(0, new ItemStack(Items.STICK), false);
-        pot.processAnvilImpact(anvil, Direction.UP);
-        check(pot.getInput().getStackInSlot(0).isEmpty(), "pot-up impact did not consume the pot input");
-        check(countItem(pot.getOutput(), Items.DIAMOND) == 2, "pot-up impact did not merge the recipe output");
 
+        pot.processAnvilImpact(anvil, Direction.DOWN);
+
+        check(pot.getInput().getStackInSlot(0).isEmpty(), "resin anvil did not consume the pot input");
+        check(countItem(pot.getOutput(), Items.DIAMOND) == 1, "resin anvil did not create the pot output");
+        check(anvil.isAlive(), "ordinary pot processing consumed the resin anvil");
         pot.discard();
         anvil.discard();
         helper.succeed();
@@ -506,10 +1160,10 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate("7x8x7")
     @TestHolder(description = "A falling plastic anvil physically processes a plastic pot on impact")
     static void fallingPlasticAnvilProcessesPot(ExtendedGameTestHelper helper) {
-        PlasticPotEntity pot = createPot(helper, new Vec3(3.5D, 1.0D, 3.5D), PlasticAnvilOrientation.DEFAULT);
+        HardenedResinCauldronEntity pot = createPot(helper, new Vec3(3.5D, 1.0D, 3.5D), PlasticEntityOrientation.DEFAULT);
         pot.setNoGravity(true);
         pot.getInput().insertItem(0, new ItemStack(Items.STICK), false);
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(3.5D, 5.0D, 3.5D));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(3.5D, 5.0D, 3.5D));
 
         helper.runAfterDelay(40, () -> {
             check(pot.getInput().getStackInSlot(0).isEmpty(), "falling anvil did not process the pot input");
@@ -534,8 +1188,8 @@ public final class PlasticAnvilGameTests {
         );
         helper.addEndListener(ignored -> GravityManager.GravitySourceManager.removeSource(helper.getLevel(), sourceId));
 
-        PlasticPotEntity pot = createPot(helper, new Vec3(3.5D, 1.0D, 3.5D), PlasticAnvilOrientation.DEFAULT);
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(3.5D, 4.0D, 3.5D));
+        HardenedResinCauldronEntity pot = createPot(helper, new Vec3(3.5D, 1.0D, 3.5D), PlasticEntityOrientation.DEFAULT);
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(3.5D, 4.0D, 3.5D));
         anvil.setNoGravity(true);
         pot.getInput().insertItem(0, new ItemStack(Items.STICK), false);
         check(
@@ -545,7 +1199,19 @@ public final class PlasticAnvilGameTests {
 
         helper.runAfterDelay(40, () -> {
             check(pot.getInput().getStackInSlot(0).isEmpty(), "rising pot did not process its input against the anvil");
-            check(countItem(pot.getOutput(), Items.DIAMOND) == 1, "rising pot did not create the recipe output");
+            int diamonds = countItem(pot.getOutput(), Items.DIAMOND);
+            int emeralds = countItem(pot.getOutput(), Items.EMERALD);
+            int looseDiamonds = helper.getLevel().getEntitiesOfClass(
+                ItemEntity.class,
+                pot.getBoundingBox().inflate(4.0D),
+                item -> item.getItem().is(Items.DIAMOND)
+            ).stream().mapToInt(item -> item.getItem().getCount()).sum();
+            check(
+                diamonds == 1,
+                "rising pot did not retain the recipe output: diamonds=" + diamonds
+                    + ", emeralds=" + emeralds
+                    + ", looseDiamonds=" + looseDiamonds
+            );
             check(anvil.isAlive(), "ordinary rising-pot processing consumed the plastic anvil");
             helper.succeed();
         });
@@ -555,9 +1221,9 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate("9x7x9")
     @TestHolder(description = "A side-attached plastic pot keeps the canonical recipe context")
     static void sideAttachedPlasticPotProcessesRecipes(ExtendedGameTestHelper helper) {
-        PlasticAnvilOrientation sideOrientation = new PlasticAnvilOrientation(Direction.EAST, 0);
-        PlasticPotEntity pot = createPot(helper, new Vec3(3.5D, 2.0D, 3.5D), sideOrientation);
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(4.5D, 2.0D, 3.5D), sideOrientation);
+        PlasticEntityOrientation sideOrientation = new PlasticEntityOrientation(Direction.EAST, 0);
+        HardenedResinCauldronEntity pot = createPot(helper, new Vec3(3.5D, 2.0D, 3.5D), sideOrientation);
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(4.5D, 2.0D, 3.5D), sideOrientation);
         pot.setNoGravity(true);
         anvil.setNoGravity(true);
         pot.getInput().insertItem(0, new ItemStack(Items.STICK), false);
@@ -575,32 +1241,32 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate("15x7x15")
     @TestHolder(description = "Only an anvil physical bottom against a pot opening processes a side impact")
     static void sideImpactRequiresAnvilBottomAndPotOpening(ExtendedGameTestHelper helper) {
-        PlasticAnvilOrientation potOpenEast = new PlasticAnvilOrientation(Direction.EAST, 0);
-        PlasticAnvilOrientation anvilBottomWest = new PlasticAnvilOrientation(Direction.EAST, 0);
-        PlasticPotEntity validPot = createPot(helper, new Vec3(3.5D, 2.0D, 3.5D), potOpenEast);
-        PlasticAnvilEntity validAnvil = createAnvil(helper, new Vec3(5.0D, 2.0D, 3.5D), anvilBottomWest);
+        PlasticEntityOrientation potOpenEast = new PlasticEntityOrientation(Direction.EAST, 0);
+        PlasticEntityOrientation anvilBottomWest = new PlasticEntityOrientation(Direction.EAST, 0);
+        HardenedResinCauldronEntity validPot = createPot(helper, new Vec3(3.5D, 2.0D, 3.5D), potOpenEast);
+        HardenedResinAnvilEntity validAnvil = createAnvil(helper, new Vec3(5.0D, 2.0D, 3.5D), anvilBottomWest);
         validPot.setNoGravity(true);
         validAnvil.setNoGravity(true);
         validPot.getInput().insertItem(0, new ItemStack(Items.STICK), false);
         validAnvil.setDeltaMovement(-0.65D, 0.0D, 0.0D);
 
-        PlasticPotEntity sideFacePot = createPot(helper, new Vec3(3.5D, 2.0D, 7.5D), potOpenEast);
-        PlasticAnvilEntity sideFaceAnvil = createAnvil(
+        HardenedResinCauldronEntity sideFacePot = createPot(helper, new Vec3(3.5D, 2.0D, 7.5D), potOpenEast);
+        HardenedResinAnvilEntity sideFaceAnvil = createAnvil(
             helper,
             new Vec3(5.0D, 2.0D, 7.5D),
-            new PlasticAnvilOrientation(Direction.UP, 0)
+            new PlasticEntityOrientation(Direction.UP, 0)
         );
         sideFacePot.setNoGravity(true);
         sideFaceAnvil.setNoGravity(true);
         sideFacePot.getInput().insertItem(0, new ItemStack(Items.STICK), false);
         sideFaceAnvil.setDeltaMovement(-0.65D, 0.0D, 0.0D);
 
-        PlasticPotEntity closedFacePot = createPot(
+        HardenedResinCauldronEntity closedFacePot = createPot(
             helper,
             new Vec3(9.5D, 2.0D, 3.5D),
-            new PlasticAnvilOrientation(Direction.UP, 0)
+            new PlasticEntityOrientation(Direction.UP, 0)
         );
-        PlasticAnvilEntity closedFaceAnvil = createAnvil(helper, new Vec3(11.0D, 2.0D, 3.5D), anvilBottomWest);
+        HardenedResinAnvilEntity closedFaceAnvil = createAnvil(helper, new Vec3(11.0D, 2.0D, 3.5D), anvilBottomWest);
         closedFacePot.setNoGravity(true);
         closedFaceAnvil.setNoGravity(true);
         closedFacePot.getInput().insertItem(0, new ItemStack(Items.STICK), false);
@@ -625,7 +1291,7 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate("5x5x5")
     @TestHolder(description = "The plastic pot entity owns a full one-block collision box")
     static void plasticPotUsesFullBlockCollisionSize(ExtendedGameTestHelper helper) {
-        PlasticPotEntity pot = createPot(helper, new Vec3(2.5D, 1.0D, 2.5D), PlasticAnvilOrientation.DEFAULT);
+        HardenedResinCauldronEntity pot = createPot(helper, new Vec3(2.5D, 1.0D, 2.5D), PlasticEntityOrientation.DEFAULT);
         check(Math.abs(pot.getBbWidth() - 1.0F) < 1.0E-6F, "pot width is not one block");
         check(Math.abs(pot.getBbHeight() - 1.0F) < 1.0E-6F, "pot height is not one block");
         check(Math.abs(pot.getBoundingBox().getXsize() - 1.0D) < EPSILON, "pot bounding box width is not one block");
@@ -637,8 +1303,8 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate("7x7x7")
     @TestHolder(description = "A DamageAnvil recipe outcome consumes the plastic anvil after pot processing")
     static void plasticPotAppliesDamageAnvilOutcome(ExtendedGameTestHelper helper) {
-        PlasticPotEntity pot = createPot(helper, new Vec3(2.5D, 2.0D, 2.5D), PlasticAnvilOrientation.DEFAULT);
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 3.0D, 2.5D), PlasticAnvilOrientation.DEFAULT);
+        HardenedResinCauldronEntity pot = createPot(helper, new Vec3(2.5D, 2.0D, 2.5D), PlasticEntityOrientation.DEFAULT);
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 3.0D, 2.5D), PlasticEntityOrientation.DEFAULT);
         pot.setNoGravity(true);
         anvil.setNoGravity(true);
         pot.getInput().insertItem(0, new ItemStack(Items.BLAZE_ROD), false);
@@ -657,7 +1323,7 @@ public final class PlasticAnvilGameTests {
         Zombie support = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 1.0D, 2.5D));
         support.setNoGravity(true);
         Vec3 anvilPosition = helper.absoluteVec(new Vec3(2.5D, 1.0D + support.getBbHeight(), 2.5D));
-        PlasticAnvilEntity anvil = createAnvilAbsolute(helper, anvilPosition);
+        HardenedResinAnvilEntity anvil = createAnvilAbsolute(helper, anvilPosition);
 
         helper.runAfterDelay(2, () -> support.setPos(support.getX() + 0.3D, support.getY(), support.getZ()));
         helper.runAfterDelay(4, () -> {
@@ -688,7 +1354,7 @@ public final class PlasticAnvilGameTests {
         support.setNoGravity(true);
         Vec3 supportPosition = support.position();
         Vec3 anvilPosition = new Vec3(supportPosition.x, supportPosition.y - 0.98D, supportPosition.z);
-        PlasticAnvilEntity anvil = createAnvilAbsolute(helper, anvilPosition);
+        HardenedResinAnvilEntity anvil = createAnvilAbsolute(helper, anvilPosition);
 
         helper.runAfterDelay(2, () -> support.setPos(support.getX() + 0.3D, support.getY(), support.getZ()));
         helper.runAfterDelay(4, () -> {
@@ -709,10 +1375,10 @@ public final class PlasticAnvilGameTests {
     @TestHolder(description = "A command-placed plastic-anvil block converts to the persistent custom entity")
     static void blockStateConvertsToEntity(ExtendedGameTestHelper helper) {
         BlockPos pos = new BlockPos(2, 2, 2);
-        helper.setBlock(pos, PlasticBlocks.PLASTIC_ANVIL.get());
+        helper.setBlock(pos, ModBlocks.HARDEND_RESIN_ANVIL.get());
         helper.runAfterDelay(5, () -> {
-            check(!helper.getBlockState(pos).is(PlasticBlocks.PLASTIC_ANVIL.get()), "compatibility block did not convert");
-            helper.assertEntityPresent(PlasticEntities.PLASTIC_ANVIL.get(), pos, 1.5D);
+            check(!helper.getBlockState(pos).is(ModBlocks.HARDEND_RESIN_ANVIL.get()), "compatibility block did not convert");
+            helper.assertEntityPresent(ModEntities.HARDEND_RESIN_ANVIL.get(), pos, 1.5D);
             helper.succeed();
         });
     }
@@ -735,18 +1401,18 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate
     @TestHolder(description = "Top contact does not trigger horizontal soft-push geometry")
     static void topContactIsNotSideContact(ExtendedGameTestHelper helper) {
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(1.5D, 1.0D, 1.5D));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(1.5D, 1.0D, 1.5D));
         Zombie top = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(1.5D, 1.98D, 1.5D));
         top.setNoGravity(true);
-        check(!PlasticAnvilPhysics.isSideContact(anvil, top), "top face was classified as a side contact");
+        check(!PlasticEntityPhysics.isSideContact(anvil, top), "top face was classified as a side contact");
         top.setPos(anvil.getX(), anvil.getBoundingBox().maxY - 0.005D, anvil.getZ());
-        check(!PlasticAnvilPhysics.isSideContact(anvil, top), "slightly embedded feet were classified as a side contact");
+        check(!PlasticEntityPhysics.isSideContact(anvil, top), "slightly embedded feet were classified as a side contact");
 
         double touchingCenterX = anvil.getBoundingBox().maxX + top.getBbWidth() * 0.5D;
         top.setPos(touchingCenterX, anvil.getY(), anvil.getZ());
-        check(PlasticAnvilPhysics.isSideContact(anvil, top), "real side contact was not detected");
+        check(PlasticEntityPhysics.isSideContact(anvil, top), "real side contact was not detected");
         top.setPos(touchingCenterX + 0.19D, anvil.getY(), anvil.getZ());
-        check(!PlasticAnvilPhysics.isSideContact(anvil, top), "side push reached across an air gap");
+        check(!PlasticEntityPhysics.isSideContact(anvil, top), "side push reached across an air gap");
         helper.succeed();
     }
 
@@ -757,7 +1423,7 @@ public final class PlasticAnvilGameTests {
         Zombie support = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 1.0D, 3.5D));
         support.setNoGravity(true);
         Vec3 anvilPosition = helper.absoluteVec(new Vec3(3.5D, 1.0D + support.getBbHeight(), 3.5D));
-        PlasticAnvilEntity anvil = createAnvilAbsolute(helper, anvilPosition);
+        HardenedResinAnvilEntity anvil = createAnvilAbsolute(helper, anvilPosition);
 
         helper.runAfterDelay(3, () -> {
             double supportStartY = support.getY();
@@ -776,7 +1442,7 @@ public final class PlasticAnvilGameTests {
         helper.setBlock(3, 4, 3, Blocks.STONE);
         Zombie support = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 1.0D, 3.5D));
         support.setNoGravity(true);
-        PlasticAnvilEntity anvil = createAnvilAbsolute(
+        HardenedResinAnvilEntity anvil = createAnvilAbsolute(
             helper,
             helper.absoluteVec(new Vec3(3.5D, 1.0D + support.getBbHeight(), 3.5D))
         );
@@ -806,7 +1472,7 @@ public final class PlasticAnvilGameTests {
         baseline.setNoGravity(true);
         Zombie support = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 1.0D, 3.5D));
         support.setNoGravity(true);
-        PlasticAnvilEntity anvil = createAnvilAbsolute(
+        HardenedResinAnvilEntity anvil = createAnvilAbsolute(
             helper,
             helper.absoluteVec(new Vec3(2.5D, 1.0D + support.getBbHeight(), 3.5D))
         );
@@ -847,7 +1513,7 @@ public final class PlasticAnvilGameTests {
         Boat boat = new Boat(helper.getLevel(), boatPosition.x, boatPosition.y, boatPosition.z);
         boat.setNoGravity(true);
         check(helper.getLevel().addFreshEntity(boat), "failed to add boat carrier");
-        PlasticAnvilEntity boatAnvil = createAnvilAbsolute(
+        HardenedResinAnvilEntity boatAnvil = createAnvilAbsolute(
             helper,
             new Vec3(boat.getX(), boat.getBoundingBox().maxY, boat.getZ())
         );
@@ -861,7 +1527,7 @@ public final class PlasticAnvilGameTests {
         );
         minecart.setNoGravity(true);
         check(helper.getLevel().addFreshEntity(minecart), "failed to add minecart carrier");
-        PlasticAnvilEntity minecartAnvil = createAnvilAbsolute(
+        HardenedResinAnvilEntity minecartAnvil = createAnvilAbsolute(
             helper,
             new Vec3(minecart.getX(), minecart.getBoundingBox().maxY, minecart.getZ())
         );
@@ -889,7 +1555,7 @@ public final class PlasticAnvilGameTests {
         Zombie support = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 1.0D, 3.5D));
         support.setNoGravity(true);
         Vec3 anvilPosition = helper.absoluteVec(new Vec3(3.5D, 1.0D + support.getBbHeight(), 3.5D));
-        PlasticAnvilEntity anvil = createAnvilAbsolute(helper, anvilPosition);
+        HardenedResinAnvilEntity anvil = createAnvilAbsolute(helper, anvilPosition);
 
         helper.runAfterDelay(2, () -> anvil.setNoGravity(true));
         helper.runAfterDelay(4, () -> {
@@ -904,7 +1570,7 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate
     @TestHolder(description = "The effective gravity face is never classified as a lateral soft-push face")
     static void sixAxisSupportFacesAreNotSideContacts(ExtendedGameTestHelper helper) {
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(1.5D, 1.0D, 1.5D));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(1.5D, 1.0D, 1.5D));
         Zombie other = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(1.5D, 1.0D, 1.5D));
         other.setNoGravity(true);
         for (Direction gravity : Direction.values()) {
@@ -922,7 +1588,7 @@ public final class PlasticAnvilGameTests {
             }
             other.setPos(x, y, z);
             check(
-                !PlasticAnvilPhysics.isSideContact(anvil, other, gravity),
+                !PlasticEntityPhysics.isSideContact(anvil, other, gravity),
                 gravity + " support face was classified as a side contact"
             );
         }
@@ -934,7 +1600,7 @@ public final class PlasticAnvilGameTests {
     @TestHolder(description = "A plastic anvil preserves the landing block's bounce response")
     static void slimeBlockBounceIsPreserved(ExtendedGameTestHelper helper) {
         helper.setBlock(2, 1, 2, Blocks.SLIME_BLOCK);
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 4.0D, 2.5D));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 4.0D, 2.5D));
         helper.runAfterDelay(12, () -> {
             check(anvil.getDeltaMovement().y > 0.01D, "slime block bounce velocity was cleared after move");
             helper.succeed();
@@ -949,8 +1615,8 @@ public final class PlasticAnvilGameTests {
             helper.setBlock(3, 1, z, Blocks.STONE);
             helper.setBlock(10, 1, z, Blocks.PACKED_ICE);
         }
-        PlasticAnvilEntity ordinary = createAnvil(helper, new Vec3(3.5D, 2.0D, 3.5D));
-        PlasticAnvilEntity ice = createAnvil(helper, new Vec3(10.5D, 2.0D, 3.5D));
+        HardenedResinAnvilEntity ordinary = createAnvil(helper, new Vec3(3.5D, 2.0D, 3.5D));
+        HardenedResinAnvilEntity ice = createAnvil(helper, new Vec3(10.5D, 2.0D, 3.5D));
         ordinary.setDeltaMovement(0.0D, 0.0D, 0.35D);
         ice.setDeltaMovement(0.0D, 0.0D, 0.35D);
         double ordinaryStart = ordinary.getZ();
@@ -970,7 +1636,7 @@ public final class PlasticAnvilGameTests {
         for (int x = 2; x <= 8; x++) {
             helper.setBlock(x, 1, 5, Blocks.STONE);
         }
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(5.5D, 2.0D, 5.5D));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(5.5D, 2.0D, 5.5D));
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 playerPosition = helper.absoluteVec(new Vec3(4.71D, 2.0D, 5.5D));
         player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
@@ -1002,6 +1668,42 @@ public final class PlasticAnvilGameTests {
 
     @GameTest(timeoutTicks = 30)
     @EmptyTemplate("11x6x11")
+    @TestHolder(description = "A player push is clipped to place a plastic body flush against a wall")
+    static void playerPushStopsPlasticEntityAtWall(ExtendedGameTestHelper helper) {
+        for (int x = 2; x <= 8; x++) {
+            helper.setBlock(x, 1, 5, Blocks.STONE);
+        }
+        BlockPos wallPos = new BlockPos(7, 2, 5);
+        helper.setBlock(wallPos, Blocks.STONE);
+        HardenedResinCauldronEntity pot = createPot(
+            helper,
+            new Vec3(5.5D, 2.0D, 5.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.69D, 2.0D, 5.5D));
+        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+
+        helper.runAfterDelay(3, () -> {
+            double playerStart = player.getX();
+            player.move(MoverType.SELF, new Vec3(0.7D, 0.0D, 0.0D));
+            player.move(MoverType.SELF, new Vec3(0.7D, 0.0D, 0.0D));
+
+            double wallMinX = helper.absolutePos(wallPos).getX();
+            double wallGap = wallMinX - pot.getBoundingBox().maxX;
+            check(wallGap >= -PlasticEntityPhysics.FACE_EPSILON, "pushed pot overlapped the wall: gap=" + wallGap);
+            check(wallGap <= 1.0E-3D, "pushed pot stopped before reaching the wall: gap=" + wallGap);
+            check(player.getX() - playerStart > 0.9D, "player was stopped before moving the pot to the wall");
+            check(
+                player.getBoundingBox().maxX <= pot.getBoundingBox().minX + 1.0E-3D,
+                "player overlapped the wall-blocked pot"
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate("11x6x11")
     @TestHolder(description = "Diagonal walking transfers only the contacted face normal to a plastic body")
     static void diagonalPlayerMovementSlidesAlongPlasticFace(ExtendedGameTestHelper helper) {
         for (int x = 2; x <= 8; x++) {
@@ -1009,7 +1711,7 @@ public final class PlasticAnvilGameTests {
                 helper.setBlock(x, 1, z, Blocks.STONE);
             }
         }
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(5.5D, 2.0D, 5.5D));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(5.5D, 2.0D, 5.5D));
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 playerPosition = helper.absoluteVec(new Vec3(4.71D, 2.0D, 5.5D));
         player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
@@ -1037,8 +1739,8 @@ public final class PlasticAnvilGameTests {
                 helper.setBlock(x, 1, z, Blocks.STONE);
             }
         }
-        PlasticAnvilEntity rear = createAnvil(helper, new Vec3(5.5D, 2.0D, 5.5D));
-        PlasticPotEntity front = createPot(helper, new Vec3(6.49D, 2.0D, 5.5D), PlasticAnvilOrientation.DEFAULT);
+        HardenedResinAnvilEntity rear = createAnvil(helper, new Vec3(5.5D, 2.0D, 5.5D));
+        HardenedResinCauldronEntity front = createPot(helper, new Vec3(6.49D, 2.0D, 5.5D), PlasticEntityOrientation.DEFAULT);
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 playerPosition = helper.absoluteVec(new Vec3(4.71D, 2.0D, 5.5D));
         player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
@@ -1067,8 +1769,8 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate("15x7x9")
     @TestHolder(description = "Sneak-use treats every plastic entity face as a solid placement surface")
     static void shiftUsePlacesBlocksOnPlasticEntityFaces(ExtendedGameTestHelper helper) {
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(3.5D, 2.0D, 3.5D));
-        PlasticPotEntity pot = createPot(helper, new Vec3(8.5D, 2.0D, 3.5D), PlasticAnvilOrientation.DEFAULT);
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(3.5D, 2.0D, 3.5D));
+        HardenedResinCauldronEntity pot = createPot(helper, new Vec3(8.5D, 2.0D, 3.5D), PlasticEntityOrientation.DEFAULT);
         anvil.setNoGravity(true);
         pot.setNoGravity(true);
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
@@ -1084,7 +1786,7 @@ public final class PlasticAnvilGameTests {
         check(blockResult.consumesAction(), "sneak-use did not place the held vanilla block");
         check(helper.getBlockState(new BlockPos(4, 2, 3)).is(Blocks.STONE), "vanilla block was not placed on the entity's east face");
 
-        ItemStack plastic = PlasticBlocks.PLASTIC_ANVIL.asStack();
+        ItemStack plastic = ModBlocks.HARDEND_RESIN_ANVIL.asStack();
         player.setItemInHand(InteractionHand.MAIN_HAND, plastic);
         InteractionResult entityResult = pot.interactAt(
             player,
@@ -1094,7 +1796,7 @@ public final class PlasticAnvilGameTests {
         check(entityResult.consumesAction(), "sneak-use did not place the held plastic entity item");
         AABB targetCell = new AABB(helper.absolutePos(new BlockPos(9, 2, 3)));
         check(
-            helper.getLevel().getEntitiesOfClass(PlasticAnvilEntity.class, targetCell.inflate(0.05D)).size() == 1,
+            helper.getLevel().getEntitiesOfClass(HardenedResinAnvilEntity.class, targetCell.inflate(0.05D)).size() == 1,
             "plastic entity was not placed on the pot's east face"
         );
         helper.succeed();
@@ -1112,7 +1814,7 @@ public final class PlasticAnvilGameTests {
             0.0D
         );
         AccelerationTestAnvilEntity anvil = new AccelerationTestAnvilEntity(
-            PlasticEntities.PLASTIC_ANVIL.get(),
+            ModEntities.HARDEND_RESIN_ANVIL.get(),
             helper.getLevel(),
             helper.absoluteVec(new Vec3(2.5D, 5.0D, 3.5D)),
             acceleration
@@ -1129,7 +1831,7 @@ public final class PlasticAnvilGameTests {
 
         helper.runAfterDelay(2, () -> {
             check(
-                anvil.getY() < startY - 1.0D && PlasticAnvilPhysics.hasBlockSupport(anvil, Direction.DOWN),
+                anvil.getY() < startY - 1.0D && PlasticEntityPhysics.hasBlockSupport(anvil, Direction.DOWN),
                 "acceleration correction did not stop on the floor: startY=" + startY
                     + ", box=" + anvil.getBoundingBox()
             );
@@ -1141,7 +1843,7 @@ public final class PlasticAnvilGameTests {
                     + ", delta=" + anvil.getDeltaMovement()
                     + ", distance=" + anvil.anvilcraft$getFallDistance()
                     + ", gravity=" + GravityManager.getNetGravityVectorForFallingBlock(anvil)
-                    + ", floorSupport=" + PlasticAnvilPhysics.hasBlockSupport(anvil, Direction.DOWN)
+                    + ", floorSupport=" + PlasticEntityPhysics.hasBlockSupport(anvil, Direction.DOWN)
             );
             check(fallDistance[0] > 1.0F, "acceleration correction was absent from directional fall distance");
             helper.succeed();
@@ -1152,7 +1854,7 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate(value = "5x8x5", floor = true)
     @TestHolder(description = "AnvilCraft receives exactly one landing-edge event with accumulated fall distance")
     static void landingEventFiresOnce(ExtendedGameTestHelper helper) {
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 5.0D, 2.5D));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 5.0D, 2.5D));
         AtomicInteger eventCount = new AtomicInteger();
         float[] fallDistance = {0.0F};
         helper.addTemporaryListener((AnvilEvent.OnLand event) -> {
@@ -1173,8 +1875,8 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate(value = "5x8x5", floor = true)
     @TestHolder(description = "A non-bottom face impact never posts an AnvilCraft landing recipe event")
     static void nonBottomImpactDoesNotFireLandingEvent(ExtendedGameTestHelper helper) {
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 5.0D, 2.5D));
-        anvil.setOrientation(new PlasticAnvilOrientation(Direction.DOWN, 0));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 5.0D, 2.5D));
+        anvil.setOrientation(new PlasticEntityOrientation(Direction.DOWN, 0));
         AtomicInteger eventCount = new AtomicInteger();
         helper.addTemporaryListener((AnvilEvent.OnLand event) -> {
             if (event.getEntity() == anvil) eventCount.incrementAndGet();
@@ -1190,7 +1892,7 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate(value = "5x5x5", floor = true)
     @TestHolder(description = "A plastic anvil created in floor contact does not fabricate a landing impact")
     static void stationaryContactDoesNotFireLandingEvent(ExtendedGameTestHelper helper) {
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 0.0D, 2.5D));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 0.0D, 2.5D));
         AtomicInteger eventCount = new AtomicInteger();
         helper.addTemporaryListener((AnvilEvent.OnLand event) -> {
             if (event.getEntity() == anvil) eventCount.incrementAndGet();
@@ -1205,7 +1907,7 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate(value = "5x8x5", floor = true)
     @TestHolder(description = "AnvilCraft landing damage consumes a plastic anvil without duplicating its item")
     static void landingDamageConsumesEntityWithoutDrop(ExtendedGameTestHelper helper) {
-        PlasticAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 5.0D, 2.5D));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 5.0D, 2.5D));
         helper.addTemporaryListener((AnvilEvent.OnLand event) -> {
             if (event.getEntity() == anvil) {
                 event.setAnvilDamage(true);
@@ -1214,7 +1916,7 @@ public final class PlasticAnvilGameTests {
         helper.runAfterDelay(35, () -> {
             check(!anvil.isAlive(), "landing-damage request left the plastic anvil alive");
             helper.assertItemEntityCountIsAtLeast(
-                PlasticBlocks.PLASTIC_ANVIL.get().asItem(),
+                ModBlocks.HARDEND_RESIN_ANVIL.get().asItem(),
                 new BlockPos(2, 1, 2),
                 3.0D,
                 0
@@ -1223,7 +1925,7 @@ public final class PlasticAnvilGameTests {
                 helper.getLevel().getEntitiesOfClass(
                     net.minecraft.world.entity.item.ItemEntity.class,
                     new AABB(helper.absolutePos(new BlockPos(2, 1, 2))).inflate(3.0D),
-                    item -> item.getItem().is(PlasticBlocks.PLASTIC_ANVIL.get().asItem())
+                    item -> item.getItem().is(ModBlocks.HARDEND_RESIN_ANVIL.get().asItem())
                 ).isEmpty(),
                 "landing damage duplicated the plastic-anvil item"
             );
@@ -1251,17 +1953,17 @@ public final class PlasticAnvilGameTests {
             new Vec3(3.5D - 0.49D - EntityType.ZOMBIE.getWidth() * 0.5D, 1.0D, 3.5D)
         );
         support.setNoGravity(true);
-        PlasticAnvilEntity anvil = createAnvilAbsolute(helper, anvilPosition);
+        HardenedResinAnvilEntity anvil = createAnvilAbsolute(helper, anvilPosition);
         Vec3 gravity = GravityManager.getNetGravityVectorForFallingBlock(anvil);
         check(Direction.getNearest(gravity) == Direction.WEST, "test source did not create westward gravity");
 
         helper.runAfterDelay(3, () -> {
             EntityType<?> supportType = support.getType();
             check(
-                PlasticAnvilPhysics.findSupport(anvil, Direction.WEST) == support,
+                PlasticEntityPhysics.findSupport(anvil, Direction.WEST) == support,
                 "westward gravity did not acquire the entity support face: anvil=" + anvil.getBoundingBox()
                     + ", support=" + support.getBoundingBox()
-                    + ", candidate=" + PlasticAnvilPhysics.isSupportCandidate(anvil, support, Direction.WEST)
+                    + ", candidate=" + PlasticEntityPhysics.isSupportCandidate(anvil, support, Direction.WEST)
                     + ", collidable=" + anvil.canCollideWith(support)
                     + ", supportType=" + supportType
                     + ", gravity=" + GravityManager.getNetGravityVectorForFallingBlock(anvil)
@@ -1275,50 +1977,129 @@ public final class PlasticAnvilGameTests {
         });
     }
 
-    private static PlasticAnvilEntity createAnvil(ExtendedGameTestHelper helper, Vec3 relativeBottomCenter) {
-        return createAnvil(helper, relativeBottomCenter, PlasticAnvilOrientation.DEFAULT);
+    private static CraftingInput resinAnvilCraftingInput(ItemStack center) {
+        ItemStack resinBlock = new ItemStack(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get());
+        ItemStack resin = ModItems.RESIN.asStack();
+        return CraftingInput.of(3, 3, List.of(
+            resinBlock.copy(), resinBlock.copy(), resinBlock.copy(),
+            ItemStack.EMPTY, center, ItemStack.EMPTY,
+            resin.copy(), resin.copy(), resin.copy()
+        ));
     }
 
-    private static PlasticAnvilEntity createAnvil(
+    private static CraftingInput hardenedResinCauldronCraftingInput(ItemStack topCorner) {
+        ItemStack hardenedResin = ModItems.HARDEND_RESIN.asStack();
+        return CraftingInput.of(3, 3, List.of(
+            topCorner.copy(), ItemStack.EMPTY, topCorner.copy(),
+            hardenedResin.copy(), ItemStack.EMPTY, hardenedResin.copy(),
+            hardenedResin.copy(), hardenedResin.copy(), hardenedResin.copy()
+        ));
+    }
+
+    private static FastCookingRecipe fastCookingRecipe(ExtendedGameTestHelper helper, String path) {
+        RecipeHolder<?> holder = helper.getLevel().getRecipeManager()
+            .byKey(AnvilcraftPlasticraft.of(path))
+            .orElseThrow(() -> new GameTestAssertException(path + " recipe was not loaded"));
+        check(holder.value() instanceof FastCookingRecipe, path + " did not load as a fast-cooking recipe");
+        FastCookingRecipe recipe = (FastCookingRecipe) holder.value();
+        check(recipe.getType() == ModRecipeTypes.FAST_COOKING_TYPE.get(), path + " has the wrong recipe type");
+        return recipe;
+    }
+
+    private static ItemStack findCapturedResinAnvil(Player player) {
+        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            if (stack.is(ModBlocks.RESIN_ANVIL.asItem()) && stack.has(ModComponents.SAVED_ENTITY)) {
+                return stack;
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    private static ResinAnvilEntity createResinAnvil(
         ExtendedGameTestHelper helper,
         Vec3 relativeBottomCenter,
-        PlasticAnvilOrientation orientation
+        ItemStack dropStack
+    ) {
+        ResinAnvilEntity anvil = new ResinAnvilEntity(
+            ModEntities.RESIN_ANVIL.get(),
+            helper.getLevel(),
+            helper.absoluteVec(relativeBottomCenter),
+            ModBlocks.RESIN_ANVIL.get().defaultBlockState(),
+            dropStack,
+            PlasticEntityOrientation.DEFAULT
+        );
+        check(helper.getLevel().addFreshEntity(anvil), "failed to add resin anvil to the test level");
+        return anvil;
+    }
+
+    private static ResinAnvilEntity createResinAnvilInCell(
+        ExtendedGameTestHelper helper,
+        BlockPos relativeCell,
+        ItemStack dropStack
+    ) {
+        EntityType<? extends ResinAnvilEntity> type = ModEntities.RESIN_ANVIL.get();
+        Vec3 position = PlasticEntityOrientation.DEFAULT.entityPosition(
+            helper.absolutePos(relativeCell),
+            type.getWidth(),
+            type.getHeight()
+        );
+        ResinAnvilEntity anvil = new ResinAnvilEntity(
+            type,
+            helper.getLevel(),
+            position,
+            ModBlocks.RESIN_ANVIL.get().defaultBlockState(),
+            dropStack,
+            PlasticEntityOrientation.DEFAULT
+        );
+        check(helper.getLevel().addFreshEntity(anvil), "failed to add resin anvil to the test level");
+        return anvil;
+    }
+
+    private static HardenedResinAnvilEntity createAnvil(ExtendedGameTestHelper helper, Vec3 relativeBottomCenter) {
+        return createAnvil(helper, relativeBottomCenter, PlasticEntityOrientation.DEFAULT);
+    }
+
+    private static HardenedResinAnvilEntity createAnvil(
+        ExtendedGameTestHelper helper,
+        Vec3 relativeBottomCenter,
+        PlasticEntityOrientation orientation
     ) {
         return createAnvilAbsolute(helper, helper.absoluteVec(relativeBottomCenter), orientation);
     }
 
-    private static PlasticAnvilEntity createAnvilAbsolute(ExtendedGameTestHelper helper, Vec3 position) {
-        return createAnvilAbsolute(helper, position, PlasticAnvilOrientation.DEFAULT);
+    private static HardenedResinAnvilEntity createAnvilAbsolute(ExtendedGameTestHelper helper, Vec3 position) {
+        return createAnvilAbsolute(helper, position, PlasticEntityOrientation.DEFAULT);
     }
 
-    private static PlasticAnvilEntity createAnvilAbsolute(
+    private static HardenedResinAnvilEntity createAnvilAbsolute(
         ExtendedGameTestHelper helper,
         Vec3 position,
-        PlasticAnvilOrientation orientation
+        PlasticEntityOrientation orientation
     ) {
-        PlasticAnvilEntity anvil = new PlasticAnvilEntity(
-            PlasticEntities.PLASTIC_ANVIL.get(),
+        HardenedResinAnvilEntity anvil = new HardenedResinAnvilEntity(
+            ModEntities.HARDEND_RESIN_ANVIL.get(),
             helper.getLevel(),
             position,
-            PlasticBlocks.PLASTIC_ANVIL.get().defaultBlockState(),
-            new ItemStack(PlasticBlocks.PLASTIC_ANVIL.get()),
+            ModBlocks.HARDEND_RESIN_ANVIL.get().defaultBlockState(),
+            new ItemStack(ModBlocks.HARDEND_RESIN_ANVIL.get()),
             orientation
         );
         check(helper.getLevel().addFreshEntity(anvil), "failed to add plastic anvil to the test level");
         return anvil;
     }
 
-    private static PlasticPotEntity createPot(
+    private static HardenedResinCauldronEntity createPot(
         ExtendedGameTestHelper helper,
         Vec3 relativeBottomCenter,
-        PlasticAnvilOrientation orientation
+        PlasticEntityOrientation orientation
     ) {
-        PlasticPotEntity pot = new PlasticPotEntity(
-            PlasticEntities.PLASTIC_POT.get(),
+        HardenedResinCauldronEntity pot = new HardenedResinCauldronEntity(
+            ModEntities.HARDEND_RESIN_CAULDRON.get(),
             helper.getLevel(),
             helper.absoluteVec(relativeBottomCenter),
-            PlasticBlocks.PLASTIC_POT.get().defaultBlockState(),
-            PlasticBlocks.PLASTIC_POT.asStack(),
+            ModBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
+            ModBlocks.HARDEND_RESIN_CAULDRON.asStack(),
             orientation
         );
         check(helper.getLevel().addFreshEntity(pot), "failed to add plastic pot to the test level");
@@ -1343,12 +2124,12 @@ public final class PlasticAnvilGameTests {
         }
     }
 
-    /** Supplies the public AccelerateManager entry point without constructing a powered multiblock in this test. */
-    private static final class AccelerationTestAnvilEntity extends PlasticAnvilEntity {
+    /** 为测试提供公开的 AccelerateManager 入口点，无需构造已供能的多方块结构。 */
+    private static final class AccelerationTestAnvilEntity extends HardenedResinAnvilEntity {
         private AccelerateManager.AccelerationEntry acceleration;
 
         private AccelerationTestAnvilEntity(
-            EntityType<? extends PlasticAnvilEntity> entityType,
+            EntityType<? extends HardenedResinAnvilEntity> entityType,
             Level level,
             Vec3 position,
             AccelerateManager.AccelerationEntry acceleration
@@ -1357,9 +2138,9 @@ public final class PlasticAnvilGameTests {
                 entityType,
                 level,
                 position,
-                PlasticBlocks.PLASTIC_ANVIL.get().defaultBlockState(),
-                new ItemStack(PlasticBlocks.PLASTIC_ANVIL.get()),
-                PlasticAnvilOrientation.DEFAULT
+                ModBlocks.HARDEND_RESIN_ANVIL.get().defaultBlockState(),
+                new ItemStack(ModBlocks.HARDEND_RESIN_ANVIL.get()),
+                PlasticEntityOrientation.DEFAULT
             );
             this.acceleration = acceleration;
         }
@@ -1393,28 +2174,28 @@ public final class PlasticAnvilGameTests {
         );
         check(Direction.getNearest(gravity) == direction, "test source did not create " + direction + " gravity: " + gravity);
 
-        BlockState state = PlasticAnvilBlock.withColor(
-            PlasticBlocks.PLASTIC_ANVIL.get().defaultBlockState().setValue(PlasticAnvilBlock.FACING, Direction.EAST),
-            net.minecraft.world.item.DyeColor.CYAN
-        );
+        BlockState state = ModBlocks.HARDEND_RESIN_ANVIL.get()
+            .defaultBlockState()
+            .setValue(HardenedResinAnvilBlock.FACING, Direction.EAST);
         helper.setBlock(pos, state);
         helper.runAfterDelay(5, () -> {
-            check(!helper.getBlockState(pos).is(PlasticBlocks.PLASTIC_ANVIL.get()), "compatibility block did not convert");
+            check(!helper.getBlockState(pos).is(ModBlocks.HARDEND_RESIN_ANVIL.get()), "compatibility block did not convert");
             List<FallingBlockEntity> fallingBlocks = helper.getLevel().getEntitiesOfClass(
                 FallingBlockEntity.class,
                 new AABB(blockCenter, blockCenter).inflate(3.0D)
             );
             check(fallingBlocks.size() == 1, "expected one converted falling-block entity, got " + fallingBlocks.size());
             check(
-                fallingBlocks.getFirst() instanceof PlasticAnvilEntity,
+                fallingBlocks.getFirst() instanceof HardenedResinAnvilEntity,
                 direction + " gravity created vanilla " + fallingBlocks.getFirst().getClass().getName()
             );
-            PlasticAnvilEntity anvil = (PlasticAnvilEntity) fallingBlocks.getFirst();
+            HardenedResinAnvilEntity anvil = (HardenedResinAnvilEntity) fallingBlocks.getFirst();
             check(anvil.getDisplayState().equals(state), direction + " conversion lost the placed block state");
             check(
-                PlasticAnvilItem.getColor(anvil.getDropStack()) == net.minecraft.world.item.DyeColor.CYAN,
-                direction + " conversion lost the drop-stack color"
+                "hardened_resin".equals(PlasticItemData.getMaterial(anvil.getDropStack())),
+                direction + " conversion lost the hardened resin material"
             );
+            check(!anvil.getDisplayState().hasProperty(DyeableMaterial.COLOR), "fixed material gained a colour state");
             helper.succeed();
         });
     }

@@ -1,0 +1,14 @@
+{
+  "parent": "anvilcraftplasticraft:block/hardend_resin_anvil",
+  "render_type": "minecraft:translucent",
+  "textures": {
+    "particle": "anvilcraftplasticraft:block/resin_anvil_side",
+    "body": "anvilcraftplasticraft:block/resin_anvil",
+    "base": "anvilcraftplasticraft:block/resin_anvil",
+    "side": "anvilcraftplasticraft:block/resin_anvil_side",
+    "top": "anvilcraftplasticraft:block/resin_anvil_top",
+    "bottom": "anvilcraftplasticraft:block/resin_anvil_bottom",
+    "base_bottom": "anvilcraftplasticraft:block/resin_anvil_bottom",
+    "connection": "anvilcraftplasticraft:block/resin_anvil"
+  }
+}

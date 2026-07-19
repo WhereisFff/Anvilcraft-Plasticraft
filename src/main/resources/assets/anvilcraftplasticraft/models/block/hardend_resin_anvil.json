@@ -1,0 +1,67 @@
+{
+  "credit": "Anvilcraft: Plasticraft",
+  "parent": "minecraft:block/block",
+  "render_type": "minecraft:cutout",
+  "textures": {
+    "particle": "anvilcraftplasticraft:block/hardend_resin_anvil",
+    "body": "anvilcraftplasticraft:block/hardend_resin_anvil",
+    "base": "anvilcraftplasticraft:block/hardend_resin_anvil",
+    "side": "anvilcraftplasticraft:block/hardend_resin_anvil_side",
+    "top": "anvilcraftplasticraft:block/hardend_resin_anvil_top",
+    "bottom": "anvilcraftplasticraft:block/hardend_resin_anvil_bottom",
+    "base_bottom": "anvilcraftplasticraft:block/hardend_resin_anvil_bottom",
+    "connection": "anvilcraftplasticraft:block/hardend_resin_anvil"
+  },
+  "elements": [
+    {
+      "from": [2, 0, 2], "to": [14, 4, 14],
+      "faces": {
+        "north": {"uv": [2, 12, 14, 16], "tintindex": 0, "texture": "#base"},
+        "east": {"uv": [2, 12, 14, 16], "tintindex": 0, "texture": "#base"},
+        "south": {"uv": [2, 12, 14, 16], "tintindex": 0, "texture": "#base"},
+        "west": {"uv": [2, 12, 14, 16], "tintindex": 0, "texture": "#base"},
+        "up": {"uv": [2, 2, 14, 14], "tintindex": 0, "texture": "#base_bottom"},
+        "down": {"uv": [2, 2, 14, 14], "tintindex": 0, "texture": "#base_bottom", "cullface": "down"}
+      }
+    },
+    {
+      "from": [6, 4, 6], "to": [10, 10, 10],
+      "faces": {
+        "east": {"uv": [6, 6, 10, 12], "tintindex": 0, "texture": "#connection"},
+        "west": {"uv": [6, 6, 10, 12], "tintindex": 0, "texture": "#connection"}
+      }
+    },
+    {
+      "from": [5, 4, 4], "to": [11, 10, 6],
+      "faces": {
+        "north": {"uv": [5, 6, 11, 12], "tintindex": 0, "texture": "#connection"},
+        "east": {"uv": [10, 6, 12, 12], "tintindex": 0, "texture": "#connection"},
+        "south": {"uv": [5, 6, 11, 12], "tintindex": 0, "texture": "#connection"},
+        "west": {"uv": [4, 6, 6, 12], "tintindex": 0, "texture": "#connection"}
+      }
+    },
+    {
+      "from": [5, 4, 10], "to": [11, 10, 12],
+      "faces": {
+        "north": {"uv": [5, 6, 11, 12], "tintindex": 0, "texture": "#connection"},
+        "east": {"uv": [4, 6, 6, 12], "tintindex": 0, "texture": "#connection"},
+        "south": {"uv": [5, 6, 11, 12], "tintindex": 0, "texture": "#connection"},
+        "west": {"uv": [10, 6, 12, 12], "tintindex": 0, "texture": "#connection"}
+      }
+    },
+    {
+      "from": [3, 10, 0], "to": [13, 16, 16],
+      "faces": {
+        "north": {"uv": [3, 0, 13, 6], "tintindex": 0, "texture": "#side", "cullface": "north"},
+        "east": {"uv": [0, 0, 16, 6], "tintindex": 0, "texture": "#body"},
+        "south": {"uv": [3, 0, 13, 6], "tintindex": 0, "texture": "#side", "cullface": "south"},
+        "west": {"uv": [0, 0, 16, 6], "tintindex": 0, "texture": "#body"},
+        "up": {"uv": [3, 0, 13, 16], "tintindex": 0, "texture": "#top", "cullface": "up"},
+        "down": {"uv": [3, 0, 13, 16], "tintindex": 0, "texture": "#top"}
+      }
+    }
+  ],
+  "display": {
+    "fixed": {"rotation": [0, 90, 0], "scale": [0.5, 0.5, 0.5]}
+  }
+}

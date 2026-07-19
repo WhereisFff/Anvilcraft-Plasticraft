@@ -1,0 +1,23 @@
+---
+navigation:
+  title: "硬化树脂炼药锅"
+  icon: "anvilcraftplasticraft:hardend_resin_cauldron"
+items:
+  - anvilcraftplasticraft:hardend_resin_cauldron
+---
+
+# 硬化树脂炼药锅
+
+<recipe id="anvilcraftplasticraft:hardend_resin_cauldron"/>
+
+<recipe id="anvilcraftplasticraft:magnetic_hardend_resin_cauldron"/>
+
+硬化树脂炼药锅是可移动、受重力和浮力影响的实体炼药锅，可附着在六个方向。它能保存物品和最多一桶流体，并作为铁砧工艺配方中的锅使用；Jade 会显示其中保存的物品和流体。
+
+- 普通配方沿用原版炼药锅形状，将七个铁锭全部替换为硬化树脂。
+- 磁性配方将最上方的两个硬化树脂替换为磁铁锭，成品能参与磁力与加速机制。
+- 空手右击会取回其中的物品，手持普通流体容器右击可按容器支持的任意容量装入或取出流体。
+- 任意一面都能连接管道头、泵或控制阀；储罐按普通容器传输，不采用炼药锅整层或整锅规则。
+- 创造模式玩家可用磁铁或磁铁模式多用工具潜行右击，使炼药锅变为磁性。
+- 非磁性锅在开口朝向侧面或下方且装满流体时会从开口倾倒；磁性锅不会自行倾倒。
+- 锅体使用遮罩渲染，半透明流体不会让水面以下的内壁错误消失。

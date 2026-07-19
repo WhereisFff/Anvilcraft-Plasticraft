@@ -1,17 +1,21 @@
 package dev.anvilcraft.plasticraft;
 
 import com.mojang.logging.LogUtils;
-import dev.anvilcraft.plasticraft.data.PlasticDatagen;
-import dev.anvilcraft.plasticraft.entity.PlasticMagnetism;
-import dev.anvilcraft.plasticraft.init.PlasticBlocks;
-import dev.anvilcraft.plasticraft.init.PlasticEntities;
-import dev.anvilcraft.plasticraft.init.PlasticItemGroups;
-import dev.anvilcraft.plasticraft.init.PlasticMenuTypes;
+import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
+import dev.anvilcraft.plasticraft.data.PlasticraftDatagen;
+import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.entity.ModEntities;
+import dev.anvilcraft.plasticraft.init.item.ModItemGroups;
+import dev.anvilcraft.plasticraft.init.ModMenuTypes;
 import dev.anvilcraft.lib.v2.registrum.Registrum;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.CreativeModeTab;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import org.slf4j.Logger;
@@ -25,16 +29,31 @@ public final class AnvilcraftPlasticraft {
         .defaultCreativeTab((ResourceKey<CreativeModeTab>) null);
 
     public AnvilcraftPlasticraft(IEventBus modEventBus, ModContainer ignored) {
-        PlasticItemGroups.register(modEventBus);
-        PlasticBlocks.register();
-        PlasticEntities.register();
-        PlasticMenuTypes.register();
-        PlasticDatagen.init();
-        modEventBus.addListener(PlasticMagnetism::onUseMagnet);
+        ModItemGroups.register(modEventBus);
+        ModBlocks.register();
+        PlasticItemTooltipManager.init();
+        ModEntities.register();
+        ModMenuTypes.register();
+        PlasticraftDatagen.init();
+        NeoForge.EVENT_BUS.addListener(AnvilcraftPlasticraft::addItemTooltips);
+        modEventBus.addListener(ModBlocks::registerDispenserBehavior);
+        modEventBus.addListener(AnvilcraftPlasticraft::registerCapabilities);
         LOGGER.info("Loading {}", MOD_NAME);
     }
 
     public static ResourceLocation of(String path) {
         return ResourceLocation.fromNamespaceAndPath(MOD_ID, path);
+    }
+
+    private static void addItemTooltips(ItemTooltipEvent event) {
+        PlasticItemTooltipManager.addTooltip(event.getItemStack(), event.getToolTip());
+    }
+
+    private static void registerCapabilities(RegisterCapabilitiesEvent event) {
+        event.registerEntity(
+            Capabilities.FluidHandler.ENTITY,
+            ModEntities.HARDEND_RESIN_CAULDRON.get(),
+            (cauldron, side) -> cauldron.getFluidHandler()
+        );
     }
 }

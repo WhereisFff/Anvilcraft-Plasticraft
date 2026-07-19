@@ -1,22 +1,22 @@
 package dev.anvilcraft.plasticraft.integration.jade;
 
-import dev.anvilcraft.plasticraft.entity.AbstractPlasticAnvilEntity;
-import dev.anvilcraft.plasticraft.integration.jade.provider.PlasticAnvilProvider;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.integration.jade.provider.PlasticEntityProvider;
 import snownee.jade.api.IWailaClientRegistration;
 import snownee.jade.api.IWailaCommonRegistration;
 import snownee.jade.api.IWailaPlugin;
 import snownee.jade.api.WailaPlugin;
 
-/** Jade integration for the movable plastic anvil entity. */
+/** 可移动 Plasticraft 实体的 Jade 集成。 */
 @WailaPlugin
 public final class PlasticraftJadePlugin implements IWailaPlugin {
     @Override
     public void register(IWailaCommonRegistration registration) {
-        registration.registerEntityDataProvider(PlasticAnvilProvider.INSTANCE, AbstractPlasticAnvilEntity.class);
+        registration.registerEntityDataProvider(PlasticEntityProvider.INSTANCE, AbstractPlasticEntity.class);
     }
 
     @Override
     public void registerClient(IWailaClientRegistration registration) {
-        registration.registerEntityComponent(PlasticAnvilProvider.INSTANCE, AbstractPlasticAnvilEntity.class);
+        registration.registerEntityComponent(PlasticEntityProvider.INSTANCE, AbstractPlasticEntity.class);
     }
 }

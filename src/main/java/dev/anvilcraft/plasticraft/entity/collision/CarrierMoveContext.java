@@ -1,13 +1,14 @@
 package dev.anvilcraft.plasticraft.entity.collision;
 
 import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
+import dev.anvilcraft.plasticraft.api.entity.ElasticCollisionEntity;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/** One reentrant Entity.move invocation; targets are allocated only when needed. */
+/** 一次可重入的 Entity.move 调用，仅在需要时分配目标集合。 */
 public final class CarrierMoveContext {
     @Nullable
     private final CarrierMoveContext parent;
@@ -15,6 +16,8 @@ public final class CarrierMoveContext {
     private final Vec3 requestedMovement;
     @Nullable
     private List<CarrierMovableEntity> targets;
+    @Nullable
+    private List<ElasticCollisionEntity> elasticCollisionTargets;
     @Nullable
     private List<CarrierMovableEntity> retryCollisionTargets;
     private boolean retryingCollision;
@@ -77,5 +80,19 @@ public final class CarrierMoveContext {
     public void endCollisionRetry() {
         this.retryingCollision = false;
         this.retryCollisionTargets = null;
+    }
+
+    public void addElasticCollisionTarget(ElasticCollisionEntity target) {
+        if (this.elasticCollisionTargets == null) {
+            this.elasticCollisionTargets = new ArrayList<>(1);
+        }
+        if (!this.elasticCollisionTargets.contains(target)) {
+            this.elasticCollisionTargets.add(target);
+        }
+    }
+
+    @Nullable
+    public List<ElasticCollisionEntity> elasticCollisionTargets() {
+        return this.elasticCollisionTargets;
     }
 }

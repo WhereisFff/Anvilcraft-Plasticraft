@@ -1,0 +1,9 @@
+{
+  "parent": "anvilcraftplasticraft:block/resin_anvil",
+  "overrides": [
+    {
+      "predicate": {"custom_model_data": 1},
+      "model": "anvilcraftplasticraft:item/resin_anvil_magnetic"
+    }
+  ]
+}

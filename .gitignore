@@ -13,5 +13,5 @@ runs/
 **/.cache/
 local-mods/
 
-# Gradle wrapper must remain versioned.
+# Gradle 包装器必须纳入版本控制。
 !gradle/wrapper/gradle-wrapper.jar

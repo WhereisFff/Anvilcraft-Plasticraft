@@ -4,16 +4,16 @@
         "https://checkstyle.org/dtds/configuration_1_3.dtd">
 
 <!--
-    Checkstyle configuration that checks the Google coding conventions from Google Java Style
-    that can be found at https://google.github.io/styleguide/javaguide.html
+    用于检查 Google Java Style 编码规范的 Checkstyle 配置，
+    规范内容参见 https://google.github.io/styleguide/javaguide.html
 
-    Checkstyle is very configurable. Be sure to read the documentation at
-    http://checkstyle.org (or in your downloaded distribution).
+    Checkstyle 提供丰富的配置选项，请阅读 http://checkstyle.org
+    或下载发行版中附带的文档。
 
-    To completely disable a check, just comment it out or delete it from the file.
-    To suppress certain violations please review suppression filters.
+    如需完全禁用某项检查，可将其注释掉或从文件中删除。
+    如需抑制特定违规项，请查阅抑制过滤器。
 
-    Authors: Max Vetrenko, Mauryan Kansara, Ruslan Diachenko, Roman Ivanov.
+    作者：Max Vetrenko、Mauryan Kansara、Ruslan Diachenko、Roman Ivanov。
  -->
 
 <module name="Checker">
@@ -27,8 +27,8 @@
 
     <property name="fileExtensions" value="java, properties, xml"/>
     <!-- 文件扩展名 -->
-    <!-- Excludes all 'module-info.java' files              -->
-    <!-- See https://checkstyle.org/filefilters/index.html -->
+    <!-- 排除所有 'module-info.java' 文件 -->
+    <!-- 参考：https://checkstyle.org/filefilters/index.html -->
     <module name="BeforeExecutionExclusionFileFilter">
         <!-- 排除执行前过滤器 -->
         <property name="fileNamePattern" value="module\-info\.java$"/>
@@ -38,7 +38,7 @@
     <module name="SuppressWarningsFilter"/>
     <!-- 抑制警告过滤器 -->
 
-    <!-- https://checkstyle.org/filters/suppressionfilter.html -->
+    <!-- 参考：https://checkstyle.org/filters/suppressionfilter.html -->
     <module name="SuppressionFilter">
         <!-- 抑制过滤器 -->
         <property name="file" value="${org.checkstyle.google.suppressionfilter.config}"
@@ -48,7 +48,7 @@
         <!-- 可选 -->
     </module>
 
-    <!-- https://checkstyle.org/filters/suppresswithnearbytextfilter.html -->
+    <!-- 参考：https://checkstyle.org/filters/suppresswithnearbytextfilter.html -->
     <module name="SuppressWithNearbyTextFilter">
         <!-- 附近文本抑制过滤器 -->
         <property name="nearbyTextPattern"
@@ -60,8 +60,8 @@
         <!-- 行范围 -->
     </module>
 
-    <!-- Checks for whitespace                               -->
-    <!-- See http://checkstyle.org/checks/whitespace/index.html -->
+    <!-- 空白检查 -->
+    <!-- 参考：http://checkstyle.org/checks/whitespace/index.html -->
     <module name="FileTabCharacter">
         <!-- 文件制表符检查 -->
         <property name="eachLine" value="true"/>
@@ -78,7 +78,7 @@
                   value="^package.*|^import.*|href\s*=\s*&quot;[^&quot;]*&quot;|http://|https://|ftp://"/>
         <!-- 忽略模式 -->
     </module>
-    <!--  Suppression to prevent LineLength Check from flagging lines in Text-blocks -->
+    <!-- 避免 LineLength 检查将文本块中的行标记为违规 -->
     <module name="SuppressWithPlainTextCommentFilter">
         <!-- 纯文本注释抑制过滤器 -->
         <property name="checkFormat" value="LineLength"/>
@@ -97,7 +97,7 @@
         <module name="MatchXpath">
             <!-- XPath匹配 -->
             <property name="id" value="singleLineCommentStartWithSpace"/>
-            <!-- ID -->
+            <!-- 标识符 -->
             <property name="query"
                       value="//SINGLE_LINE_COMMENT[./COMMENT_CONTENT[not(starts-with(@text, ' '))
                        and not(starts-with(@text, '/'))
@@ -143,7 +143,7 @@
         <module name="LeftCurly">
             <!-- 左花括号 -->
             <property name="id" value="LeftCurlyEol"/>
-            <!-- ID -->
+            <!-- 标识符 -->
             <property name="tokens"
                       value="ANNOTATION_DEF, CLASS_DEF, CTOR_DEF, ENUM_CONSTANT_DEF, ENUM_DEF,
                     INTERFACE_DEF, LAMBDA, LITERAL_CATCH,
@@ -155,7 +155,7 @@
         <module name="LeftCurly">
             <!-- 左花括号 -->
             <property name="id" value="LeftCurlyNl"/>
-            <!-- ID -->
+            <!-- 标识符 -->
             <property name="option" value="nl"/>
             <!-- 选项 -->
             <property name="tokens"
@@ -163,17 +163,17 @@
             <!-- 令牌 -->
         </module>
         <module name="SuppressionXpathSingleFilter">
-            <!-- LITERAL_CASE, LITERAL_DEFAULT are reused in SWITCH_RULE  -->
+            <!-- LITERAL_CASE 和 LITERAL_DEFAULT 会在 SWITCH_RULE 中复用 -->
             <!-- 单一XPath抑制过滤器 -->
             <property name="id" value="LeftCurlyNl"/>
-            <!-- ID -->
+            <!-- 标识符 -->
             <property name="query" value="//SWITCH_RULE/SLIST"/>
             <!-- 查询 -->
         </module>
         <module name="RightCurly">
             <!-- 右花括号 -->
             <property name="id" value="RightCurlySame"/>
-            <!-- ID -->
+            <!-- 标识符 -->
             <property name="tokens"
                       value="LITERAL_TRY, LITERAL_CATCH, LITERAL_IF, LITERAL_ELSE,
                     LITERAL_DO"/>
@@ -182,7 +182,7 @@
         <module name="SuppressionXpathSingleFilter">
             <!-- 单一XPath抑制过滤器 -->
             <property name="id" value="RightCurlySame"/>
-            <!-- ID -->
+            <!-- 标识符 -->
             <property name="query" value="//RCURLY[parent::SLIST[parent::LITERAL_CATCH
                                and not(parent::LITERAL_CATCH/following-sibling::*)]]"/>
             <!-- 查询 -->
@@ -190,7 +190,7 @@
         <module name="RightCurly">
             <!-- 右花括号 -->
             <property name="id" value="RightCurlyAlone"/>
-            <!-- ID -->
+            <!-- 标识符 -->
             <property name="option" value="alone"/>
             <!-- 选项 -->
             <property name="tokens"
@@ -201,10 +201,10 @@
             <!-- 令牌 -->
         </module>
         <module name="SuppressionXpathSingleFilter">
-            <!-- suppression is required till https://github.com/checkstyle/checkstyle/issues/7541 -->
+            <!-- 在 https://github.com/checkstyle/checkstyle/issues/7541 解决前需要此抑制规则 -->
             <!-- 单一XPath抑制过滤器 -->
             <property name="id" value="RightCurlyAlone"/>
-            <!-- ID -->
+            <!-- 标识符 -->
             <property name="query" value="//RCURLY[parent::SLIST[count(./*)=1
                                and not(parent::LITERAL_CATCH)]
                                or (preceding-sibling::*[last()][self::LCURLY]
@@ -307,7 +307,7 @@
         <module name="SeparatorWrap">
             <!-- 分隔符包装 -->
             <property name="id" value="SeparatorWrapDot"/>
-            <!-- ID -->
+            <!-- 标识符 -->
             <property name="tokens" value="DOT"/>
             <!-- 令牌 -->
             <property name="option" value="nl"/>
@@ -316,27 +316,27 @@
         <module name="SeparatorWrap">
             <!-- 分隔符包装 -->
             <property name="id" value="SeparatorWrapComma"/>
-            <!-- ID -->
+            <!-- 标识符 -->
             <property name="tokens" value="COMMA"/>
             <!-- 令牌 -->
             <property name="option" value="EOL"/>
             <!-- 选项 -->
         </module>
         <module name="SeparatorWrap">
-            <!-- ELLIPSIS is EOL until https://github.com/google/styleguide/issues/259 -->
+            <!-- 在 https://github.com/google/styleguide/issues/259 解决前，ELLIPSIS 视为 EOL -->
             <!-- 分隔符包装 -->
             <property name="id" value="SeparatorWrapEllipsis"/>
-            <!-- ID -->
+            <!-- 标识符 -->
             <property name="tokens" value="ELLIPSIS"/>
             <!-- 令牌 -->
             <property name="option" value="EOL"/>
             <!-- 选项 -->
         </module>
         <module name="SeparatorWrap">
-            <!-- ARRAY_DECLARATOR is EOL until https://github.com/google/styleguide/issues/258 -->
+            <!-- 在 https://github.com/google/styleguide/issues/258 解决前，ARRAY_DECLARATOR 视为 EOL -->
             <!-- 分隔符包装 -->
             <property name="id" value="SeparatorWrapArrayDeclarator"/>
-            <!-- ID -->
+            <!-- 标识符 -->
             <property name="tokens" value="ARRAY_DECLARATOR"/>
             <!-- 令牌 -->
             <property name="option" value="EOL"/>
@@ -345,7 +345,7 @@
         <module name="SeparatorWrap">
             <!-- 分隔符包装 -->
             <property name="id" value="SeparatorWrapMethodRef"/>
-            <!-- ID -->
+            <!-- 标识符 -->
             <property name="tokens" value="METHOD_REF"/>
             <!-- 令牌 -->
             <property name="option" value="nl"/>
@@ -561,7 +561,7 @@
         <module name="AnnotationLocation">
             <!-- 注解位置 -->
             <property name="id" value="AnnotationLocationMostCases"/>
-            <!-- ID -->
+            <!-- 标识符 -->
             <property name="tokens"
                       value="CLASS_DEF, INTERFACE_DEF, ENUM_DEF, METHOD_DEF, CTOR_DEF,
                       RECORD_DEF, COMPACT_CTOR_DEF, PACKAGE_DEF"/>
@@ -570,7 +570,7 @@
         <module name="AnnotationLocation">
             <!-- 注解位置 -->
             <property name="id" value="AnnotationLocationVariables"/>
-            <!-- ID -->
+            <!-- 标识符 -->
             <property name="tokens" value="VARIABLE_DEF"/>
             <!-- 令牌 -->
             <property name="allowSamelineMultipleAnnotations" value="true"/>
@@ -681,7 +681,7 @@
             <property name="tokens" value="SINGLE_LINE_COMMENT, BLOCK_COMMENT_BEGIN"/>
             <!-- 令牌 -->
         </module>
-        <!-- https://checkstyle.org/filters/suppressionxpathfilter.html -->
+        <!-- 参考：https://checkstyle.org/filters/suppressionxpathfilter.html -->
         <module name="SuppressionXpathFilter">
             <!-- XPath抑制过滤器 -->
             <property name="file" value="${org.checkstyle.google.suppressionxpathfilter.config}"
@@ -705,11 +705,11 @@
             <!-- 附近注释抑制过滤器 -->
             <property name="commentFormat" value="CHECKSTYLE.SUPPRESS\: ([\w\|]+)"/>
             <!-- 注释格式 -->
-            <!-- $1 refers to the first match group in the regex defined in commentFormat -->
+            <!-- $1 指 commentFormat 所定义正则表达式中的第一个匹配组 -->
             <!-- $1指注释格式中正则表达式定义的第一个匹配组 -->
             <property name="checkFormat" value="$1"/>
             <!-- 检查格式 -->
-            <!-- The check is suppressed in the next line of code after the comment -->
+            <!-- 该检查会在注释后的下一行代码中被抑制 -->
             <!-- 检查在注释后的下一行代码中被抑制 -->
             <property name="influenceFormat" value="1"/>
             <!-- 影响格式 -->

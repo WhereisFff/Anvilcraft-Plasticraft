@@ -1,0 +1,8 @@
+{
+  "parent": "anvilcraftplasticraft:block/resin_anvil",
+  "textures": {
+    "base": "minecraft:block/iron_block",
+    "base_bottom": "minecraft:block/iron_block",
+    "connection": "minecraft:block/iron_block"
+  }
+}

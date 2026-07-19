@@ -1,15 +1,15 @@
 dependencies {
     gameTestImplementation("net.neoforged:testframework:${neo_version}") { transitive = false }
 
-    // AnvilLib is used directly for Registrum and its data providers.
+    // AnvilLib 直接用于 Registrum 及其数据提供器。
     api(libs.anvillib)
     interfaceInjectionData(libs.anvillib.recipe)
     interfaceInjectionData(libs.anvillib.moveableEntityBlock)
 
-    // The published remote snapshot is the reproducible default. A local jar is
-    // opt-in so an older build in ../AnvilCraft cannot silently override the
-    // remote HEAD; use -Panvilcraft_jar=... (or -Puse_local_anvilcraft=true)
-    // for an IDEA run against a freshly built sibling project.
+    // 默认使用已发布的远程快照以保证构建可复现。本地 JAR 必须显式启用，
+    // 以免 ../AnvilCraft 中的旧构建在无提示的情况下覆盖远程 HEAD；
+    // 如需在 IDEA 中使用刚构建的相邻项目，请指定 -Panvilcraft_jar=...
+    //（或 -Puse_local_anvilcraft=true）。
     File localAnvilCraftJar = null
     if (project.hasProperty('anvilcraft_jar')) {
         File configured = project.file(project.property('anvilcraft_jar'))
@@ -28,15 +28,15 @@ dependencies {
     if (localAnvilCraftJar != null) {
         logger.lifecycle("Using local AnvilCraft artifact: ${localAnvilCraftJar}")
         implementation(files(localAnvilCraftJar))
-        // A JAR is a binary artifact, not an interface-injection text file.
-        // The matching JSON is registered in moddevgradle.gradle below.
+        // JAR 是二进制产物，不是接口注入文本文件。
+        // 对应的 JSON 在下方的 moddevgradle.gradle 中注册。
     } else {
         implementation(libs.anvilcraft) { transitive = false }
         interfaceInjectionData(libs.anvilcraft) { transitive = false }
     }
 
-    // Optional integrations stay out of the published jar. The base mod normally
-    // supplies Ageratum, while these runtime entries make local Client runs richer.
+    // 可选集成不打入发布的 JAR。Ageratum 通常由本体模组提供，
+    // 这些运行时依赖仅用于完善本地客户端的运行环境。
     compileOnly(libs.ageratum)
     compileOnly(libs.jei.common.api)
     compileOnly(libs.jei.forge.api)

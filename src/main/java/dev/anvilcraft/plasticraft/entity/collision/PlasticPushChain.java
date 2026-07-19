@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.entity.collision;
 
-import dev.anvilcraft.plasticraft.entity.AbstractPlasticAnvilEntity;
-import dev.anvilcraft.plasticraft.entity.PlasticAnvilPhysics;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.Shapes;
@@ -14,19 +14,53 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Collision preflight and ordered movement for a row of touching plastic bodies. */
+/** 一列相接塑料实体的碰撞预检和有序移动。 */
 public final class PlasticPushChain {
+    private static final int CLIP_SEARCH_STEPS = 12;
+    private static final double MIN_CLIPPED_MOVEMENT = 1.0E-4D;
+
     private PlasticPushChain() {
     }
 
+    /** Returns the greatest prefix of {@code rootMovement} that the complete push chain can perform. */
+    public static ClippedPlan clip(AbstractPlasticEntity root, Entity pusher, Vec3 rootMovement) {
+        Plan fullPlan = create(root, pusher, rootMovement);
+        if (fullPlan != null) {
+            return new ClippedPlan(rootMovement, fullPlan);
+        }
+
+        double length = rootMovement.length();
+        double probeScale = Math.min(1.0D, MIN_CLIPPED_MOVEMENT / length);
+        Vec3 probeMovement = rootMovement.scale(probeScale);
+        Plan probePlan = create(root, pusher, probeMovement);
+        if (probePlan == null) {
+            return new ClippedPlan(Vec3.ZERO, new Plan(List.of()));
+        }
+
+        double lower = probeScale;
+        double upper = 1.0D;
+        Plan lowerPlan = probePlan;
+        for (int i = 0; i < CLIP_SEARCH_STEPS; i++) {
+            double middle = (lower + upper) * 0.5D;
+            Plan middlePlan = create(root, pusher, rootMovement.scale(middle));
+            if (middlePlan == null) {
+                upper = middle;
+            } else {
+                lower = middle;
+                lowerPlan = middlePlan;
+            }
+        }
+        return new ClippedPlan(rootMovement.scale(lower), lowerPlan);
+    }
+
     @Nullable
-    public static Plan create(AbstractPlasticAnvilEntity root, Entity pusher, Vec3 rootMovement) {
+    public static Plan create(AbstractPlasticEntity root, Entity pusher, Vec3 rootMovement) {
         if (rootMovement.lengthSqr()
-            <= PlasticAnvilPhysics.FACE_EPSILON * PlasticAnvilPhysics.FACE_EPSILON) {
+            <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
             return new Plan(List.of());
         }
-        Map<AbstractPlasticAnvilEntity, Vec3> movements = new IdentityHashMap<>();
-        List<AbstractPlasticAnvilEntity> visiting = new ArrayList<>();
+        Map<AbstractPlasticEntity, Vec3> movements = new IdentityHashMap<>();
+        List<AbstractPlasticEntity> visiting = new ArrayList<>();
         movements.put(root, rootMovement);
         if (!collect(root, pusher, rootMovement, movements, visiting)) return null;
 
@@ -38,11 +72,11 @@ public final class PlasticPushChain {
     }
 
     private static boolean collect(
-        AbstractPlasticAnvilEntity entity,
+        AbstractPlasticEntity entity,
         Entity pusher,
         Vec3 movement,
-        Map<AbstractPlasticAnvilEntity, Vec3> movements,
-        List<AbstractPlasticAnvilEntity> visiting
+        Map<AbstractPlasticEntity, Vec3> movements,
+        List<AbstractPlasticEntity> visiting
     ) {
         if (visiting.contains(entity)) return false;
         visiting.add(entity);
@@ -50,7 +84,7 @@ public final class PlasticPushChain {
             List<VoxelShape> blockingShapes = new ArrayList<>();
             List<Entity> candidates = entity.level().getEntities(
                 entity,
-                entity.getBoundingBox().expandTowards(movement).inflate(PlasticAnvilPhysics.FACE_EPSILON),
+                entity.getBoundingBox().expandTowards(movement).inflate(PlasticEntityPhysics.FACE_EPSILON),
                 other -> !other.isRemoved()
                     && !other.isSpectator()
                     && other != pusher
@@ -58,8 +92,8 @@ public final class PlasticPushChain {
                     && entity.canCollideWith(other)
             );
             for (Entity other : candidates) {
-                if (other instanceof AbstractPlasticAnvilEntity plastic) {
-                    Vec3 nextMovement = PlasticAnvilPhysics.sidePushMovement(
+                if (other instanceof AbstractPlasticEntity plastic) {
+                    Vec3 nextMovement = PlasticEntityPhysics.sidePushMovement(
                         plastic,
                         entity,
                         entity.getBoundingBox(),
@@ -67,13 +101,13 @@ public final class PlasticPushChain {
                         movement
                     );
                     if (nextMovement == null || nextMovement.lengthSqr()
-                        <= PlasticAnvilPhysics.FACE_EPSILON * PlasticAnvilPhysics.FACE_EPSILON) {
+                        <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
                         blockingShapes.add(Shapes.create(other.getBoundingBox()));
                         continue;
                     }
                     Vec3 existing = movements.get(plastic);
                     if (existing != null && existing.distanceToSqr(nextMovement)
-                        > PlasticAnvilPhysics.FACE_EPSILON * PlasticAnvilPhysics.FACE_EPSILON) {
+                        > PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
                         return false;
                     }
                     if (existing == null) {
@@ -93,13 +127,16 @@ public final class PlasticPushChain {
                 blockingShapes
             );
             return allowed.distanceToSqr(movement)
-                <= PlasticAnvilPhysics.FACE_EPSILON * PlasticAnvilPhysics.FACE_EPSILON;
+                <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON;
         } finally {
             visiting.remove(entity);
         }
     }
 
-    private record Entry(AbstractPlasticAnvilEntity entity, Vec3 movement) {
+    private record Entry(AbstractPlasticEntity entity, Vec3 movement) {
+    }
+
+    public record ClippedPlan(Vec3 movement, Plan plan) {
     }
 
     public static final class Plan {
@@ -109,7 +146,7 @@ public final class PlasticPushChain {
             this.entries = entries;
         }
 
-        public void move(AbstractPlasticAnvilEntity root, Entity pusher) {
+        public void move(AbstractPlasticEntity root, Entity pusher) {
             for (Entry entry : this.entries) {
                 if (entry.entity() == root) continue;
                 entry.entity().plasticraft$applyTransferredPush(pusher, entry.movement());

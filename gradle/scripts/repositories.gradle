@@ -29,9 +29,9 @@ repositories {
         content { includeGroup 'mezz.jei' }
     }
 
-    // Local Maven is only a fallback for unrelated development artifacts.
-    // Keep the AnvilCraft ecosystem remote-first; a sibling AnvilCraft build
-    // must be selected explicitly with -Puse_local_anvilcraft=true.
+    // 本地 Maven 仅作为其他开发产物的备用来源。
+    // AnvilCraft 生态依赖优先使用远程仓库；如需使用相邻的 AnvilCraft 构建，
+    // 必须通过 -Puse_local_anvilcraft=true 显式选择。
     mavenLocal {
         content {
             excludeGroupByRegex 'dev\\.dubhe(\\..*)?'

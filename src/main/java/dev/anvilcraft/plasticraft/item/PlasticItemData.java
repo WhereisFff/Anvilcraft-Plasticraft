@@ -5,22 +5,44 @@ import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 
-/** Stable item data shared by all movable plastic block variants. */
+/** 所有可移动塑料方块变体共用的稳定物品数据。 */
 public final class PlasticItemData {
-    private static final String COLOR_KEY = "PlasticColor";
+    private static final String MATERIAL_KEY = "PlasticMaterial";
     private static final String MAGNETIZED_KEY = "Magnetized";
 
     private PlasticItemData() {
     }
 
     public static DyeColor getColor(ItemStack stack) {
-        CustomData data = stack.get(DataComponents.CUSTOM_DATA);
-        if (data == null || !data.contains(COLOR_KEY)) return DyeColor.WHITE;
-        return DyeColor.byName(data.copyTag().getString(COLOR_KEY), DyeColor.WHITE);
+        return DyeableMaterial.getColor(stack);
     }
 
     public static void setColor(ItemStack stack, DyeColor color) {
-        CustomData.update(DataComponents.CUSTOM_DATA, stack, tag -> tag.putString(COLOR_KEY, color.getName()));
+        DyeableMaterial.setColor(stack, color);
+    }
+
+    public static void clearColor(ItemStack stack) {
+        DyeableMaterial.clearColor(stack);
+    }
+
+    /** 返回持久化材料键，并将旧塑料标识作为迁移默认值。 */
+    public static String getMaterial(ItemStack stack) {
+        CustomData data = stack.get(DataComponents.CUSTOM_DATA);
+        if (data == null || !data.contains(MATERIAL_KEY)) {
+            // 普通有序配方产出的新树脂砧物品堆有意不含自定义数据，
+            // 因此从物品 ID 推断其材料。
+            return stack.getItem() instanceof ResinAnvilItem ? "resin" : "hardened_resin";
+        }
+        String value = data.copyTag().getString(MATERIAL_KEY);
+        return value.isBlank()
+            ? (stack.getItem() instanceof ResinAnvilItem ? "resin" : "hardened_resin")
+            : value;
+    }
+
+    public static void setMaterial(ItemStack stack, String materialKey) {
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, tag ->
+            tag.putString(MATERIAL_KEY, materialKey)
+        );
     }
 
     public static boolean isMagnetized(ItemStack stack) {
@@ -36,5 +58,8 @@ public final class PlasticItemData {
                 tag.remove(MAGNETIZED_KEY);
             }
         });
+        // 将模型选择器保存在类型化组件中，使配方谓词无需解析自定义 NBT，
+        // 即可区分磁性和普通物品堆。
+        DyeableMaterial.setModelVariant(stack, magnetized ? 1 : 0);
     }
 }

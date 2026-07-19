@@ -1,8 +1,0 @@
-{
-  "multipart": [
-    {"when": {"facing": "east"}, "apply": {"model": "anvilcraftplasticraft:block/plastic_pot", "y": 270}},
-    {"when": {"facing": "north"}, "apply": {"model": "anvilcraftplasticraft:block/plastic_pot", "y": 180}},
-    {"when": {"facing": "south"}, "apply": {"model": "anvilcraftplasticraft:block/plastic_pot"}},
-    {"when": {"facing": "west"}, "apply": {"model": "anvilcraftplasticraft:block/plastic_pot", "y": 90}}
-  ]
-}

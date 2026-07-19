@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "H": {
+      "item": "anvilcraft:hardend_resin"
+    }
+  },
+  "pattern": [
+    "H H",
+    "H H",
+    "HHH"
+  ],
+  "result": {
+    "count": 1,
+    "id": "anvilcraftplasticraft:hardend_resin_cauldron"
+  }
+}

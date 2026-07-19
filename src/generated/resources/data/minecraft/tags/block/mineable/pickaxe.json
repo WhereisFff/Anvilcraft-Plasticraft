@@ -1,6 +1,7 @@
 {
   "values": [
-    "anvilcraftplasticraft:plastic_anvil",
-    "anvilcraftplasticraft:plastic_pot"
+    "anvilcraftplasticraft:hardend_resin_anvil",
+    "anvilcraftplasticraft:hardend_resin_cauldron",
+    "anvilcraftplasticraft:resin_anvil"
   ]
 }

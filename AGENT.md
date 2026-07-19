@@ -8,6 +8,13 @@ porting boundary explicit.
 
 - Keep game-facing logic in small common classes and isolate NeoForge/client
   registration in `init` and `client` packages.
+- Follow AnvilCraft's registry split: block registrations and tags live in
+  `init.block`, entity registrations in `init.entity`, item groups and tags in
+  `init.item`, and menu registrations in the `init` root. Keep reusable entity
+  mechanics in `entity.physics` and in-world recipe bridges in `recipe`.
+- Keep `neoforge.mods.toml` in `src/main/resources/META-INF` and expand its
+  properties through `processResources`; do not add a separate `templates`
+  source tree for mod metadata.
 - Prefer vanilla and AnvilCraft public APIs (`Entity`, `AnvilMenu`,
   `ItemCombinerScreen`, `ResourceLocation`, `Holder`, and data builders) over
   mappings-specific helpers or reflection.
@@ -42,3 +49,7 @@ data generation, then integrations and manual pages.
   that require follow-up.
 - Validate changes with compilation, builds, dedicated-server/GameTest runs,
   and direct inspection of generated run arguments and packaged resources.
+
+## 注释语言
+
+- 新增或修改的代码注释必须使用中文；API 标识符、类名、方法名、资源 ID 和协议关键字可保留原文。

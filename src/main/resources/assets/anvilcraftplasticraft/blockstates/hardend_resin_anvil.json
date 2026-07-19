@@ -1,0 +1,12 @@
+{
+  "multipart": [
+    {"when": {"facing": "east", "magnetized": false}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_anvil", "y": 270}},
+    {"when": {"facing": "north", "magnetized": false}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_anvil", "y": 180}},
+    {"when": {"facing": "south", "magnetized": false}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_anvil"}},
+    {"when": {"facing": "west", "magnetized": false}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_anvil", "y": 90}},
+    {"when": {"facing": "east", "magnetized": true}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_anvil_magnetic", "y": 270}},
+    {"when": {"facing": "north", "magnetized": true}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_anvil_magnetic", "y": 180}},
+    {"when": {"facing": "south", "magnetized": true}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_anvil_magnetic"}},
+    {"when": {"facing": "west", "magnetized": true}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_anvil_magnetic", "y": 90}}
+  ]
+}

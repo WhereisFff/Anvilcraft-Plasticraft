@@ -1,0 +1,10 @@
+{
+  "credit": "Anvilcraft: Plasticraft",
+  "parent": "anvilcraftplasticraft:block/hardend_resin_cauldron",
+  "render_type": "minecraft:cutout",
+  "textures": {
+    "particle": "minecraft:block/iron_block",
+    "top": "minecraft:block/iron_block",
+    "side": "minecraft:block/iron_block"
+  }
+}
