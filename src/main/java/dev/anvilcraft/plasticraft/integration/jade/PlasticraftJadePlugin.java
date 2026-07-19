@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.integration.jade;
 
-import dev.anvilcraft.plasticraft.entity.PlasticAnvilEntity;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticAnvilEntity;
 import dev.anvilcraft.plasticraft.integration.jade.provider.PlasticAnvilProvider;
 import snownee.jade.api.IWailaClientRegistration;
 import snownee.jade.api.IWailaCommonRegistration;
@@ -12,11 +12,11 @@ import snownee.jade.api.WailaPlugin;
 public final class PlasticraftJadePlugin implements IWailaPlugin {
     @Override
     public void register(IWailaCommonRegistration registration) {
-        registration.registerEntityDataProvider(PlasticAnvilProvider.INSTANCE, PlasticAnvilEntity.class);
+        registration.registerEntityDataProvider(PlasticAnvilProvider.INSTANCE, AbstractPlasticAnvilEntity.class);
     }
 
     @Override
     public void registerClient(IWailaClientRegistration registration) {
-        registration.registerEntityComponent(PlasticAnvilProvider.INSTANCE, PlasticAnvilEntity.class);
+        registration.registerEntityComponent(PlasticAnvilProvider.INSTANCE, AbstractPlasticAnvilEntity.class);
     }
 }

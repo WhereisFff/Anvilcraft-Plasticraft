@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft;
 
 import com.mojang.logging.LogUtils;
 import dev.anvilcraft.plasticraft.data.PlasticDatagen;
+import dev.anvilcraft.plasticraft.entity.PlasticMagnetism;
 import dev.anvilcraft.plasticraft.init.PlasticBlocks;
 import dev.anvilcraft.plasticraft.init.PlasticEntities;
 import dev.anvilcraft.plasticraft.init.PlasticItemGroups;
@@ -29,6 +30,7 @@ public final class AnvilcraftPlasticraft {
         PlasticEntities.register();
         PlasticMenuTypes.register();
         PlasticDatagen.init();
+        modEventBus.addListener(PlasticMagnetism::onUseMagnet);
         LOGGER.info("Loading {}", MOD_NAME);
     }
 

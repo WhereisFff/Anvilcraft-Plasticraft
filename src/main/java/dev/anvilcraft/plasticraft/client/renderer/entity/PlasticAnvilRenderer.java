@@ -6,10 +6,8 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
-import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.InventoryMenu;
-import net.neoforged.neoforge.client.model.data.ModelData;
 
 /** Renders the synced Royal-anvil-shaped block state without placing a block. */
 public class PlasticAnvilRenderer extends EntityRenderer<PlasticAnvilEntity> {
@@ -31,16 +29,8 @@ public class PlasticAnvilRenderer extends EntityRenderer<PlasticAnvilEntity> {
         int packedLight
     ) {
         pose.pushPose();
-        PlasticAnvilRenderTransforms.apply(pose, entity.getOrientation());
-        this.dispatcher.renderSingleBlock(
-            PlasticAnvilRenderTransforms.canonicalize(entity.getDisplayState()),
-            pose,
-            buffers,
-            packedLight,
-            OverlayTexture.NO_OVERLAY,
-            ModelData.EMPTY,
-            null
-        );
+        PlasticAnvilRenderTransforms.apply(pose, entity);
+        PlasticEntityRenderHelper.renderBlock(entity, this.dispatcher, pose, buffers, packedLight);
         pose.popPose();
         super.render(entity, yaw, partialTick, pose, buffers, packedLight);
     }
@@ -49,4 +39,5 @@ public class PlasticAnvilRenderer extends EntityRenderer<PlasticAnvilEntity> {
     public ResourceLocation getTextureLocation(PlasticAnvilEntity entity) {
         return InventoryMenu.BLOCK_ATLAS;
     }
+
 }

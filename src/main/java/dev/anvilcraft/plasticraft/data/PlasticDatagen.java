@@ -18,6 +18,8 @@ public final class PlasticDatagen {
         REGISTRUM.addDataGenerator(ProviderType.LANG, provider -> {
             provider.add(PlasticItemGroups.TITLE_KEY, "Anvilcraft: Plasticraft");
             provider.add("item.anvilcraftplasticraft.plastic_anvil", "Plastic Anvil");
+            provider.add("item.anvilcraftplasticraft.plastic_pot", "Plastic Pot");
+            provider.add("tooltip.anvilcraftplasticraft.magnetized", "Magnetized");
             provider.add(
                 "jei.anvilcraftplasticraft.plastic_anvil.info",
                 "A solid, pushable anvil entity with the vanilla anvil workflow."

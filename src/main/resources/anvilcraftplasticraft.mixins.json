@@ -5,8 +5,7 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "EntityCarrierCollisionMixin",
-    "EntityGetterMixin",
-    "GravityManagerMixin"
+    "EntityGetterMixin"
   ],
   "client": [],
   "injectors": {

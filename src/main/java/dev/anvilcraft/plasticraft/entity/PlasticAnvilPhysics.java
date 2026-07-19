@@ -1,11 +1,13 @@
 package dev.anvilcraft.plasticraft.entity;
 
+import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
 import dev.dubhe.anvilcraft.util.GravityManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySelector;
 import net.minecraft.world.entity.item.FallingBlockEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -81,18 +83,24 @@ public final class PlasticAnvilPhysics {
      */
     @Nullable
     public static Entity findSupport(FallingBlockEntity entity, Direction gravityDirection) {
+        return findSupport(entity, entity.getBoundingBox(), gravityDirection);
+    }
+
+    /** Finds a support using a recorded box, before a scoped acceleration move changes it. */
+    @Nullable
+    public static Entity findSupport(FallingBlockEntity entity, AABB entityBox, Direction gravityDirection) {
         List<Entity> candidates = entity.level().getEntities(
             entity,
-            supportProbe(entity.getBoundingBox(), gravityDirection),
-            other -> isSupportCandidate(entity, other, gravityDirection)
+            supportProbe(entityBox, gravityDirection),
+            other -> isSupportCandidate(entity, entityBox, other, gravityDirection)
         );
         Entity best = null;
         double bestDistance = Double.POSITIVE_INFINITY;
         double bestOverlap = Double.NEGATIVE_INFINITY;
         int bestId = Integer.MAX_VALUE;
         for (Entity candidate : candidates) {
-            double distance = Math.abs(supportGap(entity.getBoundingBox(), candidate.getBoundingBox(), gravityDirection));
-            double overlap = tangentialOverlap(entity.getBoundingBox(), candidate.getBoundingBox(), gravityDirection);
+            double distance = Math.abs(supportGap(entityBox, candidate.getBoundingBox(), gravityDirection));
+            double overlap = tangentialOverlap(entityBox, candidate.getBoundingBox(), gravityDirection);
             int id = candidate.getId();
             if (distance < bestDistance - FACE_EPSILON
                 || Math.abs(distance - bestDistance) <= FACE_EPSILON && overlap > bestOverlap + FACE_EPSILON
@@ -114,16 +122,47 @@ public final class PlasticAnvilPhysics {
         Entity candidate,
         Direction gravityDirection
     ) {
+        return isSupportCandidate(entity, entity.getBoundingBox(), candidate, gravityDirection);
+    }
+
+    /** Returns whether a candidate supports a recorded entity box. */
+    public static boolean isSupportCandidate(
+        FallingBlockEntity entity,
+        AABB entityBox,
+        Entity candidate,
+        Direction gravityDirection
+    ) {
         if (candidate.isRemoved()
             || candidate.isSpectator()
             || entity.isPassengerOfSameVehicle(candidate)
             || !entity.canCollideWith(candidate)) {
             return false;
         }
-        double gap = supportGap(entity.getBoundingBox(), candidate.getBoundingBox(), gravityDirection);
+        double gap = supportGap(entityBox, candidate.getBoundingBox(), gravityDirection);
         return gap >= -SUPPORT_PROBE_DEPTH - FACE_EPSILON
             && gap <= SUPPORT_PROBE_DEPTH + FACE_EPSILON
-            && tangentialOverlap(entity.getBoundingBox(), candidate.getBoundingBox(), gravityDirection) > FACE_EPSILON;
+            && tangentialOverlap(entityBox, candidate.getBoundingBox(), gravityDirection) > FACE_EPSILON;
+    }
+
+    /** True only when the two support faces are actually touching, not merely inside the acquisition probe. */
+    public static boolean hasImmediateEntityContact(
+        FallingBlockEntity entity,
+        Entity support,
+        Direction gravityDirection
+    ) {
+        return hasImmediateEntityContact(entity, entity.getBoundingBox(), support, gravityDirection);
+    }
+
+    /** Tests immediate contact against a recorded entity box. */
+    public static boolean hasImmediateEntityContact(
+        FallingBlockEntity entity,
+        AABB entityBox,
+        Entity support,
+        Direction gravityDirection
+    ) {
+        return isSupportCandidate(entity, entityBox, support, gravityDirection)
+            && Math.abs(supportGap(entityBox, support.getBoundingBox(), gravityDirection))
+                <= FACE_EPSILON * 4.0D;
     }
 
     /** Returns the center of the support box face that points back toward the carried entity. */
@@ -212,6 +251,95 @@ public final class PlasticAnvilPhysics {
         return requestedMovement.dot(gravityNormal) <= FACE_EPSILON;
     }
 
+    /**
+     * Returns whether a player movement reaches a lateral face and can transfer
+     * its surface-tangential displacement to the plastic body.
+     */
+    public static boolean canPushFromSide(
+        FallingBlockEntity target,
+        Entity pusher,
+        Direction gravityDirection,
+        Vec3 requestedMovement
+    ) {
+        return sidePushMovement(
+            target,
+            pusher,
+            pusher.getBoundingBox(),
+            gravityDirection,
+            requestedMovement
+        ) != null;
+    }
+
+    /** Tests a side push against an explicitly recorded pre-move pusher box. */
+    public static boolean canPushFromSide(
+        FallingBlockEntity target,
+        Entity pusher,
+        AABB pusherBox,
+        Direction gravityDirection,
+        Vec3 requestedMovement
+    ) {
+        return sidePushMovement(target, pusher, pusherBox, gravityDirection, requestedMovement) != null;
+    }
+
+    /**
+     * Resolves a lateral push to the contacted face normals. Movement parallel
+     * to that face remains with the pusher, so diagonal walking slides past the
+     * body instead of carrying it sideways.
+     *
+     * @return the displacement transferred to the target, or {@code null} when no lateral face is reached
+     */
+    @Nullable
+    public static Vec3 sidePushMovement(
+        FallingBlockEntity target,
+        Entity pusher,
+        AABB pusherBox,
+        Direction gravityDirection,
+        Vec3 requestedMovement
+    ) {
+        if (!(pusher instanceof Player) && !(pusher instanceof CarrierMovableEntity)
+            || pusher.isRemoved()
+            || pusher.isSpectator()
+            || pusher.noPhysics
+            || target.isPassengerOfSameVehicle(pusher)
+            || !isWithinCarryDistance(requestedMovement)) {
+            return null;
+        }
+
+        AABB targetBox = target.getBoundingBox();
+        AABB sweptPusherBox = pusherBox.expandTowards(requestedMovement).inflate(FACE_EPSILON);
+        double bestProgress = Double.POSITIVE_INFINITY;
+        Vec3 transferred = Vec3.ZERO;
+        for (Direction direction : Direction.values()) {
+            if (direction.getAxis() == gravityDirection.getAxis()) continue;
+            int sign = direction.getAxisDirection().getStep();
+            double movement = requestedMovement.get(direction.getAxis()) * sign;
+            if (movement <= FACE_EPSILON) continue;
+
+            double pusherFace = faceCoordinate(pusherBox, direction);
+            double targetFace = faceCoordinate(targetBox, direction.getOpposite());
+            double gap = (targetFace - pusherFace) * sign;
+            if (gap < -SIDE_PUSH_QUERY_DISTANCE - FACE_EPSILON || gap > movement + FACE_EPSILON) continue;
+            if (tangentialOverlap(sweptPusherBox, targetBox, direction) <= FACE_EPSILON) continue;
+
+            double contactDistance = Math.max(0.0D, gap);
+            double progress = contactDistance / movement;
+            double transfer = Math.max(0.0D, movement - contactDistance) * sign;
+            if (progress < bestProgress - FACE_EPSILON) {
+                bestProgress = progress;
+                transferred = axisVector(direction.getAxis(), transfer);
+            } else if (Math.abs(progress - bestProgress) <= FACE_EPSILON) {
+                transferred = transferred.add(axisVector(direction.getAxis(), transfer));
+            }
+        }
+        return bestProgress == Double.POSITIVE_INFINITY ? null : transferred;
+    }
+
+    /** Removes the component normal to the current gravity support face. */
+    public static Vec3 tangentialMovement(Vec3 movement, Direction gravityDirection) {
+        Vec3 normal = Vec3.atLowerCornerOf(gravityDirection.getNormal());
+        return movement.subtract(normal.scale(movement.dot(normal)));
+    }
+
     /** Limits each axis independently so an ordinary diagonal step is not mistaken for a teleport. */
     public static boolean isWithinCarryDistance(Vec3 movement) {
         return isFinite(movement)
@@ -273,6 +401,34 @@ public final class PlasticAnvilPhysics {
         Vec3 normal = Vec3.atLowerCornerOf(gravityDirection.getNormal());
         double component = velocity.dot(normal);
         return component > 0.0D ? velocity.subtract(normal.scale(component)) : velocity;
+    }
+
+    /** Clears only velocity components still aimed into faces clipped by this move. */
+    public static Vec3 removeClippedVelocity(Vec3 velocity, Vec3 requested, Vec3 actual) {
+        double x = clippedIntoFace(velocity.x, requested.x, actual.x) ? 0.0D : velocity.x;
+        double y = clippedIntoFace(velocity.y, requested.y, actual.y) ? 0.0D : velocity.y;
+        double z = clippedIntoFace(velocity.z, requested.z, actual.z) ? 0.0D : velocity.z;
+        return new Vec3(x, y, z);
+    }
+
+    /** Returns the world faces on which this move was collision-clipped. */
+    public static int clippedDirectionMask(Vec3 requested, Vec3 actual, double minimumSpeed) {
+        int contacts = 0;
+        for (Direction direction : Direction.values()) {
+            double requestedComponent = requested.get(direction.getAxis());
+            double actualComponent = actual.get(direction.getAxis());
+            int sign = direction.getAxisDirection().getStep();
+            if (requestedComponent * sign <= minimumSpeed) continue;
+            if (Math.abs(requestedComponent - actualComponent) <= FACE_EPSILON) continue;
+            contacts |= directionMask(direction);
+        }
+        return contacts;
+    }
+
+    private static boolean clippedIntoFace(double velocity, double requested, double actual) {
+        return Math.abs(requested - actual) > FACE_EPSILON
+            && Math.abs(requested) > FACE_EPSILON
+            && Math.signum(velocity) == Math.signum(requested);
     }
 
     /** Position used by AnvilCraft's landing event for any of the six gravity faces. */
@@ -358,6 +514,14 @@ public final class PlasticAnvilPhysics {
             case X -> Direction.EAST;
             case Y -> Direction.UP;
             case Z -> Direction.SOUTH;
+        };
+    }
+
+    private static Vec3 axisVector(Direction.Axis axis, double value) {
+        return switch (axis) {
+            case X -> new Vec3(value, 0.0D, 0.0D);
+            case Y -> new Vec3(0.0D, value, 0.0D);
+            case Z -> new Vec3(0.0D, 0.0D, value);
         };
     }
 

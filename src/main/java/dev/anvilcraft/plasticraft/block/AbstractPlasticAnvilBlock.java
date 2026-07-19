@@ -39,7 +39,7 @@ public abstract class AbstractPlasticAnvilBlock<E extends AbstractPlasticAnvilEn
         E entity = this.createPlasticAnvilEntity(
             entityType,
             level,
-            orientation.entityPosition(pos),
+            orientation.entityPosition(pos, entityType.getWidth(), entityType.getHeight()),
             state,
             this.createDropStack(state),
             orientation

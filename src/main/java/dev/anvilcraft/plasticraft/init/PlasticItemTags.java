@@ -11,6 +11,14 @@ public final class PlasticItemTags {
         Registries.ITEM,
         ResourceLocation.fromNamespaceAndPath(AnvilcraftPlasticraft.MOD_ID, "plastic_anvils")
     );
+    public static final TagKey<Item> BUOYANT_PLASTIC_ITEMS = TagKey.create(
+        Registries.ITEM,
+        ResourceLocation.fromNamespaceAndPath(AnvilcraftPlasticraft.MOD_ID, "buoyant_plastic_items")
+    );
+    public static final TagKey<Item> PLASTIC_POTS = TagKey.create(
+        Registries.ITEM,
+        ResourceLocation.fromNamespaceAndPath(AnvilcraftPlasticraft.MOD_ID, "plastic_pots")
+    );
 
     private PlasticItemTags() {
     }

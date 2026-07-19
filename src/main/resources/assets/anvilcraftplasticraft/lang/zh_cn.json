@@ -1,4 +1,8 @@
 {
+  "block.anvilcraftplasticraft.plastic_pot": "\u5851\u6599\u9505",
+  "item.anvilcraftplasticraft.plastic_pot": "\u5851\u6599\u9505",
+  "entity.anvilcraftplasticraft.plastic_pot": "\u5851\u6599\u9505",
+  "tooltip.anvilcraftplasticraft.magnetized": "\u5df2\u78c1\u5316",
   "block.anvilcraftplasticraft.plastic_anvil": "\u5851\u6599\u94c1\u7827",
   "item.anvilcraftplasticraft.plastic_anvil": "\u5851\u6599\u94c1\u7827",
   "entity.anvilcraftplasticraft.plastic_anvil": "\u5851\u6599\u94c1\u7827",

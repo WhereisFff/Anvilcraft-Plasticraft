@@ -20,7 +20,10 @@ public final class PlasticItemGroups {
         "main",
         () -> CreativeModeTab.builder()
             .icon(PlasticBlocks.PLASTIC_ANVIL::asStack)
-            .displayItems((parameters, output) -> output.accept(PlasticBlocks.PLASTIC_ANVIL.asItem()))
+            .displayItems((parameters, output) -> {
+                output.accept(PlasticBlocks.PLASTIC_ANVIL.asItem());
+                output.accept(PlasticBlocks.PLASTIC_POT.asItem());
+            })
             .title(Component.translatable(TITLE_KEY))
             .withTabsAfter(ModItemGroups.ANVILCRAFT_INGREDIENTS.getId())
             .build()

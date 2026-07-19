@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.client.renderer.entity;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticAnvilOrientation;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.state.BlockState;
@@ -30,18 +31,21 @@ public final class PlasticAnvilRenderTransforms {
      * Moves from Entity's bottom-center origin to the visual block center, applies
      * the discrete orientation, then restores the block model's [0, 1] cube origin.
      */
-    public static void apply(PoseStack pose, PlasticAnvilOrientation orientation) {
+    public static void apply(PoseStack pose, AbstractPlasticAnvilEntity entity) {
         Objects.requireNonNull(pose, "pose");
+        Objects.requireNonNull(entity, "entity");
+        PlasticAnvilOrientation orientation = entity.getOrientation();
         Objects.requireNonNull(orientation, "orientation");
 
-        pose.translate(0.0D, PlasticAnvilOrientation.COLLISION_HALF_SIZE, 0.0D);
+        pose.translate(0.0D, entity.getBbHeight() * 0.5D, 0.0D);
         Direction face = orientation.attachmentFace();
-        // The collision cube is inset toward its support face; move the visual model
-        // back to the occupied cell so its attachment face remains flush like a block.
+        double faceSize = face.getAxis() == Direction.Axis.Y ? entity.getBbHeight() : entity.getBbWidth();
+        double attachmentInset = Math.max(0.0D, (1.0D - faceSize) * 0.5D);
+        // Move from the collision center back to the occupied block-cell center.
         pose.translate(
-            face.getStepX() * PlasticAnvilOrientation.ATTACHMENT_INSET,
-            face.getStepY() * PlasticAnvilOrientation.ATTACHMENT_INSET,
-            face.getStepZ() * PlasticAnvilOrientation.ATTACHMENT_INSET
+            face.getStepX() * attachmentInset,
+            face.getStepY() * attachmentInset,
+            face.getStepZ() * attachmentInset
         );
         pose.mulPose(ROTATIONS[rotationIndex(orientation)]);
         pose.translate(-0.5D, -0.5D, -0.5D);

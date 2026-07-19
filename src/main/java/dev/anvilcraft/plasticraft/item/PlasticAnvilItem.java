@@ -3,11 +3,9 @@ package dev.anvilcraft.plasticraft.item;
 import dev.anvilcraft.plasticraft.block.PlasticAnvilBlock;
 import dev.anvilcraft.plasticraft.entity.PlasticAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticAnvilOrientation;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
@@ -45,14 +43,10 @@ public class PlasticAnvilItem extends AbstractPlasticAnvilItem<PlasticAnvilEntit
 
     /** Reads the stable color component shared by future plastic variants. */
     public static DyeColor getColor(ItemStack stack) {
-        CustomData data = stack.get(DataComponents.CUSTOM_DATA);
-        if (data == null || !data.contains("PlasticColor")) {
-            return DyeColor.WHITE;
-        }
-        return DyeColor.byName(data.copyTag().getString("PlasticColor"), DyeColor.WHITE);
+        return PlasticItemData.getColor(stack);
     }
 
     public static void setColor(ItemStack stack, DyeColor color) {
-        CustomData.update(DataComponents.CUSTOM_DATA, stack, tag -> tag.putString("PlasticColor", color.getName()));
+        PlasticItemData.setColor(stack, color);
     }
 }

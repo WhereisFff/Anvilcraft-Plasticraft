@@ -168,6 +168,26 @@ public record PlasticAnvilOrientation(Direction attachmentFace, int quarterTurn)
         return this.collisionCenter(occupiedPos).subtract(0.0D, COLLISION_HALF_SIZE, 0.0D);
     }
 
+    /**
+     * Returns the bottom-center position for an entity whose collision box may
+     * differ from the vanilla falling-block 0.98 cube.
+     */
+    public Vec3 entityPosition(BlockPos occupiedPos, double width, double height) {
+        Objects.requireNonNull(occupiedPos, "occupiedPos");
+        if (!Double.isFinite(width) || !Double.isFinite(height) || width <= 0.0D || height <= 0.0D) {
+            throw new IllegalArgumentException("Entity dimensions must be finite and positive");
+        }
+        double faceSize = this.attachmentFace.getAxis() == Direction.Axis.Y ? height : width;
+        double attachmentInset = Math.max(0.0D, (1.0D - faceSize) * 0.5D);
+        return Vec3.atCenterOf(occupiedPos)
+            .add(
+                -this.attachmentFace.getStepX() * attachmentInset,
+                -this.attachmentFace.getStepY() * attachmentInset,
+                -this.attachmentFace.getStepZ() * attachmentInset
+            )
+            .subtract(0.0D, height * 0.5D, 0.0D);
+    }
+
     /** Converts a collision-box center back to the entity's bottom-center position. */
     public static Vec3 entityPositionFromCollisionCenter(Vec3 collisionCenter) {
         Objects.requireNonNull(collisionCenter, "collisionCenter");
