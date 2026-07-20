@@ -50,6 +50,11 @@ public class HardenedResinAnvilEntity extends AbstractPlasticEntity {
     }
 
     @Override
+    protected boolean supportsHammerRotation() {
+        return true;
+    }
+
+    @Override
     protected void openAnvilMenu(ServerPlayer player) {
         HardenedResinAnvilMenu.open(player, this);
     }

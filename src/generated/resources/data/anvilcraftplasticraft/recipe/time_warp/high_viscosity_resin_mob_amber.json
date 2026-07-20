@@ -1,0 +1,103 @@
+{
+  "type": "anvillib_recipe:in_world_recipe",
+  "compatible": true,
+  "conflicting": [
+    {
+      "type": "anvillib_recipe:has_item_ingredient",
+      "functions": [
+        {
+          "type": "anvillib_recipe:save_component_2_tag",
+          "component": "anvilcraft:saved_entity",
+          "path": "anvilcraftplasticraft:saved_entity"
+        }
+      ],
+      "item": {
+        "items": "anvilcraftplasticraft:high_viscosity_resin_block",
+        "predicates": {
+          "anvillib:not": {
+            "anvilcraft:saved_entity": {
+              "is_monster": true
+            }
+          }
+        }
+      },
+      "offset": [
+        0.0,
+        -0.375,
+        0.0
+      ],
+      "range": [
+        0.75,
+        0.75,
+        0.75
+      ]
+    }
+  ],
+  "icon": {
+    "components": {
+      "anvilcraft:saved_entity": {
+        "isMonster": false,
+        "tag": {
+          "id": "minecraft:mooshroom"
+        }
+      }
+    },
+    "count": 1,
+    "id": "anvilcraft:mob_amber_block"
+  },
+  "max_efficiency": 1,
+  "non_conflicting": [
+    {
+      "type": "anvilcraft:has_cauldron",
+      "offset": [
+        0.0,
+        -1.0,
+        0.0
+      ]
+    },
+    {
+      "type": "anvillib_recipe:has_block",
+      "offset": [
+        0.0,
+        -2.0,
+        0.0
+      ],
+      "predicate": {
+        "blocks": "anvilcraft:corrupted_beacon",
+        "properties": [
+          {
+            "lit": "true"
+          }
+        ]
+      }
+    }
+  ],
+  "outcomes": [
+    {
+      "type": "anvillib_recipe:spawn_item",
+      "components": {
+        "anvilcraft:saved_entity": {
+          "isMonster": false,
+          "tag": {
+            "id": "minecraft:mooshroom"
+          }
+        }
+      },
+      "functions": [
+        {
+          "type": "anvillib_recipe:apply_tag_2_component",
+          "component": "anvilcraft:saved_entity",
+          "path": "anvilcraftplasticraft:saved_entity"
+        }
+      ],
+      "item": "anvilcraft:mob_amber_block",
+      "offset": [
+        0.0,
+        -0.75,
+        0.0
+      ]
+    }
+  ],
+  "priority": 5,
+  "trigger": "anvilcraft:on_anvil_fall_on"
+}

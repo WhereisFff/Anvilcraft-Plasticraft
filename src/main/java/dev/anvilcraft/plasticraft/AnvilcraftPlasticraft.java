@@ -3,11 +3,16 @@ package dev.anvilcraft.plasticraft;
 import com.mojang.logging.LogUtils;
 import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
 import dev.anvilcraft.plasticraft.data.PlasticraftDatagen;
+import dev.anvilcraft.plasticraft.event.HighViscosityResinEvents;
+import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import dev.anvilcraft.plasticraft.init.item.ModItemGroups;
+import dev.anvilcraft.plasticraft.init.item.ModItems;
 import dev.anvilcraft.plasticraft.init.ModMenuTypes;
 import dev.anvilcraft.lib.v2.registrum.Registrum;
+import dev.anvilcraft.lib.v2.network.register.NetworkRegistrar;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.CreativeModeTab;
@@ -16,6 +21,7 @@ import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import org.slf4j.Logger;
@@ -30,14 +36,20 @@ public final class AnvilcraftPlasticraft {
 
     public AnvilcraftPlasticraft(IEventBus modEventBus, ModContainer ignored) {
         ModItemGroups.register(modEventBus);
+        ModFluids.register(modEventBus);
         ModBlocks.register();
+        ModItems.register();
         PlasticItemTooltipManager.init();
         ModEntities.register();
         ModMenuTypes.register();
+        ModRecipeTypes.register(modEventBus);
         PlasticraftDatagen.init();
         NeoForge.EVENT_BUS.addListener(AnvilcraftPlasticraft::addItemTooltips);
+        NeoForge.EVENT_BUS.addListener(HighViscosityResinEvents::useEntity);
+        modEventBus.addListener(HighViscosityResinEvents::registerCauldronFluidContent);
         modEventBus.addListener(ModBlocks::registerDispenserBehavior);
         modEventBus.addListener(AnvilcraftPlasticraft::registerCapabilities);
+        modEventBus.addListener(AnvilcraftPlasticraft::registerPayloads);
         LOGGER.info("Loading {}", MOD_NAME);
     }
 
@@ -55,5 +67,9 @@ public final class AnvilcraftPlasticraft {
             ModEntities.HARDEND_RESIN_CAULDRON.get(),
             (cauldron, side) -> cauldron.getFluidHandler()
         );
+    }
+
+    private static void registerPayloads(RegisterPayloadHandlersEvent event) {
+        NetworkRegistrar.register(event.registrar("1"), MOD_ID);
     }
 }

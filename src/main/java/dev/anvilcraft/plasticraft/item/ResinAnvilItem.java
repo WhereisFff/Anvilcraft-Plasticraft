@@ -1,5 +1,7 @@
 package dev.anvilcraft.plasticraft.item;
 
+import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.dubhe.anvilcraft.block.item.HasMobBlockItem;
@@ -53,6 +55,16 @@ public class ResinAnvilItem extends AbstractPlasticEntityItem<ResinAnvilEntity> 
         Supplier<BlockState> displayState
     ) {
         super(block, properties, entityType, displayState);
+        PlasticItemTooltipManager.register(
+            AnvilcraftPlasticraft.of("resin_anvil"),
+            "A resin block kneaded into an anvil shape, full of elasticity",
+            """
+                Elastic and pushable; rebounds from blocks and entities
+                Retains Resin Block capture and time-warp behavior
+                Dry fast cooking hardens it
+                Creative players can Shift-use a magnet to magnetize it
+                Can be placed in any direction; only impacts on its bottom face can process recipes"""
+        );
     }
 
     @Override

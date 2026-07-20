@@ -12,6 +12,8 @@ import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.block.item.PipeBlockItem;
+import dev.dubhe.anvilcraft.init.ModSoundEvents;
+import dev.dubhe.anvilcraft.item.AnvilHammerItem;
 import dev.dubhe.anvilcraft.item.MagnetItem;
 import dev.dubhe.anvilcraft.item.MultitoolItem;
 import dev.dubhe.anvilcraft.util.AccelerateManager;
@@ -1127,8 +1129,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     @Override
     public final InteractionResult interact(Player player, InteractionHand hand) {
+        ItemStack stack = player.getItemInHand(hand);
         if (player.isShiftKeyDown()) {
-            if (this.anvilcraft$acceptMagnetization(player, player.getItemInHand(hand))) {
+            if (this.anvilcraft$acceptMagnetization(player, stack)) {
                 return InteractionResult.sidedSuccess(this.level().isClientSide);
             }
             return InteractionResult.PASS;
@@ -1144,8 +1147,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             || !isMagnetizationTool(stack)) {
             return false;
         }
-        if (!this.level().isClientSide && !this.isMagnetized()) {
-            this.setMagnetized(true);
+        if (!this.level().isClientSide) {
+            boolean magnetized = !this.isMagnetized();
+            this.setMagnetized(magnetized);
             this.hasImpulse = true;
             this.hurtMarked = true;
             player.getCooldowns().addCooldown(stack.getItem(), 5);
@@ -1155,7 +1159,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
                 SoundEvents.LODESTONE_COMPASS_LOCK,
                 SoundSource.PLAYERS,
                 0.8F,
-                1.15F
+                magnetized ? 1.15F : 0.85F
             );
             this.gameEvent(GameEvent.ENTITY_INTERACT, player);
         }
@@ -1163,6 +1167,71 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     }
 
     protected boolean supportsCreativeMagnetization() {
+        return true;
+    }
+
+    protected boolean supportsHammerRotation() {
+        return false;
+    }
+
+    public final boolean supportsAnvilHammerOrientationMenu() {
+        return this.supportsHammerRotation();
+    }
+
+    /** 执行铁砧锤快速释放时的默认实体交互。 */
+    public final InteractionResult plasticraft$useAnvilHammer(
+        Player player,
+        InteractionHand hand,
+        Direction interactionFace
+    ) {
+        if (player.isShiftKeyDown()
+            || !(player.getItemInHand(hand).getItem() instanceof AnvilHammerItem)) {
+            return InteractionResult.PASS;
+        }
+        return this.interactWithAnvilHammer(player, hand, interactionFace);
+    }
+
+    /** 子类可在此实现铁砧锤快速释放行为，例如切换釜的输出口。 */
+    protected InteractionResult interactWithAnvilHammer(
+        Player player,
+        InteractionHand hand,
+        Direction interactionFace
+    ) {
+        return this.interactNormally(player, hand);
+    }
+
+    /** 应用铁砧锤环形菜单选中的附着面。 */
+    public final boolean plasticraft$changeAttachmentFace(
+        Player player,
+        InteractionHand hand,
+        Direction attachmentFace
+    ) {
+        ItemStack stack = player.getItemInHand(hand);
+        BlockPos occupiedPos = BlockPos.containing(this.getBoundingBox().getCenter());
+        if (player.isShiftKeyDown()
+            || !(stack.getItem() instanceof AnvilHammerItem)
+            || !this.supportsHammerRotation()
+            || !player.getAbilities().mayBuild
+            || !this.level().mayInteract(player, occupiedPos)) {
+            return false;
+        }
+
+        PlasticEntityOrientation current = this.getOrientation();
+        if (current.attachmentFace() == attachmentFace) return true;
+        PlasticEntityOrientation changed = new PlasticEntityOrientation(attachmentFace, current.quarterTurn());
+        this.setOrientation(changed);
+        this.setPos(changed.entityPosition(occupiedPos, this.getBbWidth(), this.getBbHeight()));
+        this.hasImpulse = true;
+        this.hurtMarked = true;
+        this.level().playSound(
+            null,
+            this.blockPosition(),
+            ModSoundEvents.ANVIL_HAMMER_ROTATE_BLOCK.get(),
+            SoundSource.BLOCKS,
+            2.0F,
+            1.0F
+        );
+        this.gameEvent(GameEvent.ENTITY_INTERACT, player);
         return true;
     }
 
@@ -1187,9 +1256,15 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     @Override
     public InteractionResult interactAt(Player player, Vec3 location, InteractionHand hand) {
+        ItemStack stack = player.getItemInHand(hand);
+        if (!player.isShiftKeyDown() && stack.getItem() instanceof AnvilHammerItem) {
+            return this.plasticraft$useAnvilHammer(player, hand, this.nearestInteractionFace(location));
+        }
         if (!player.isShiftKeyDown()) return InteractionResult.PASS;
 
-        ItemStack stack = player.getItemInHand(hand);
+        if (this.anvilcraft$acceptMagnetization(player, stack)) {
+            return InteractionResult.sidedSuccess(this.level().isClientSide);
+        }
         if (stack.isEmpty()) return InteractionResult.PASS;
         Direction face = this.nearestInteractionFace(location);
         BlockPos occupiedPos = BlockPos.containing(this.getBoundingBox().getCenter());
@@ -1207,7 +1282,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         return InteractionResult.PASS;
     }
 
-    private Direction nearestInteractionFace(Vec3 relativeLocation) {
+    public final Direction nearestInteractionFace(Vec3 relativeLocation) {
         AABB box = this.getBoundingBox();
         Vec3 absolute = this.position().add(relativeLocation);
         Direction best = Direction.UP;

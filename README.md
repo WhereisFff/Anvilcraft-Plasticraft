@@ -20,6 +20,8 @@
 - 原版铁砧流程：硬化树脂铁砧支持修复、附魔合并与重命名；仅重命名时不消耗经验。
 - 树脂捕获玩法：树脂铁砧可保存生物，并与铁砧工艺已有的树脂、怨念和时移机制联动。
 - 硬化树脂锅：可配合移动铁砧，从不同方向触发铁砧工艺的世界内配方。
+- 液态高粘性树脂：可在水锅或鱼缸中快速烹饪获得，缓慢流动两格并粘住接触的实体。
+- 高粘性树脂块：保留本体树脂机制且不限制捕获体型，提供双向活塞粘连与分组推动预算。
 - JEI、Jade 与 Ageratum 集成，便于查询配方、状态和模组手册。
 
 项目仍处于早期开发阶段，现有玩法、配方和美术资源均可能继续调整。
@@ -81,6 +83,23 @@ Linux 或 macOS：
 
 欢迎通过 [Issue](https://github.com/WhereisFff/Anvilcraft-Plasticraft/issues) 反馈问题或提出建议，也欢迎提交 Pull Request。
 参与开发前请先阅读[贡献指南](CONTRIBUTING.md)。
+
+## 赞助者
+
+感谢以下赞助者对塑料工艺开发的支持：
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="docs/assets/sponsors/yanqiu-lumia.jpg" width="96" height="96" alt="言秋Lumia 的头像"><br>
+      <strong>言秋Lumia</strong>
+    </td>
+    <td align="center">
+      <img src="docs/assets/sponsors/pi.jpg" width="96" height="96" alt="Π 的头像"><br>
+      <strong>Π</strong>
+    </td>
+  </tr>
+</table>
 
 ## 许可
 

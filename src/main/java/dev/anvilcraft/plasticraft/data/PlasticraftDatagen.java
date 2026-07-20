@@ -6,9 +6,11 @@ import dev.anvilcraft.lib.v2.recipe.data.advancement.predicate.item.NotPredicate
 import dev.anvilcraft.lib.v2.recipe.init.LibItemSubPredicates;
 import dev.anvilcraft.lib.v2.util.predicate.ItemIngredientPredicate;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.item.ModItemGroups;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
+import dev.anvilcraft.plasticraft.recipe.FluidFastCookingRecipe;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItemSubPredicates;
 import dev.dubhe.anvilcraft.init.item.ModItems;
@@ -27,6 +29,7 @@ import net.minecraft.data.recipes.ShapedRecipeBuilder;
 import net.minecraft.core.component.DataComponentPredicate;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomModelData;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.Ingredient;
@@ -37,6 +40,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.block.Blocks;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -63,6 +67,12 @@ public final class PlasticraftDatagen {
             provider.add("tooltip.anvilcraftplasticraft.jade.item_count", "%1$s x %2$s");
             provider.add("config.jade.plugin_anvilcraftplasticraft.hardend_resin_anvil", "Hardened Resin Anvil");
             provider.add("config.jade.plugin_anvilcraft.fluid_tank", "Fluid Tank");
+            provider.add("screen.anvilcraftplasticraft.hammer_direction.up", "Up");
+            provider.add("screen.anvilcraftplasticraft.hammer_direction.down", "Down");
+            provider.add("screen.anvilcraftplasticraft.hammer_direction.north", "North");
+            provider.add("screen.anvilcraftplasticraft.hammer_direction.east", "East");
+            provider.add("screen.anvilcraftplasticraft.hammer_direction.south", "South");
+            provider.add("screen.anvilcraftplasticraft.hammer_direction.west", "West");
         });
 
         REGISTRUM.addDataGenerator(ProviderType.RECIPE, PlasticraftDatagen::generateRecipes);
@@ -134,6 +144,19 @@ public final class PlasticraftDatagen {
             .result(magneticOutput)
             .save(provider, AnvilcraftPlasticraft.of("fast_cooking/harden_magnetic_resin_anvil"));
 
+        FluidFastCookingRecipe.fluidBuilder()
+            .cauldron(Blocks.WATER_CAULDRON)
+            .consume(1000)
+            .transform(ModFluids.liquidHighViscosityResinId())
+            .produce(1000)
+            .requires(ModItems.RESIN.get(), 4)
+            .requires(Items.SLIME_BALL, 4)
+            .requires(ModItems.LIME_POWDER.get())
+            .unlockedBy("has_resin", provider.has(ModItems.RESIN))
+            .unlockedBy("has_slime_ball", provider.has(Items.SLIME_BALL))
+            .unlockedBy("has_lime_powder", provider.has(ModItems.LIME_POWDER))
+            .save(provider, AnvilcraftPlasticraft.of("fast_cooking/liquid_high_viscosity_resin"));
+
         ShapedRecipeBuilder.shaped(RecipeCategory.DECORATIONS, ModBlocks.HARDEND_RESIN_CAULDRON.asItem())
             .pattern("H H")
             .pattern("H H")
@@ -172,6 +195,16 @@ public final class PlasticraftDatagen {
     }
 
     private static void generateResinTimeWarpRecipes(RegistrumRecipeProvider provider) {
+        TimeWarpRecipe.builder()
+            .fluid(ModFluids.liquidHighViscosityResinId())
+            .consume(1000)
+            .result(ModBlocks.HIGH_VISCOSITY_RESIN_BLOCK)
+            .unlockedBy(
+                "has_liquid_high_viscosity_resin_bucket",
+                provider.has(dev.anvilcraft.plasticraft.init.item.ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET)
+            )
+            .save(provider, AnvilcraftPlasticraft.of("time_warp/high_viscosity_resin_block"));
+
         TimeWarpRecipe.builder()
             .requires(ItemIngredientPredicate.Builder.item()
                 .of(ModBlocks.RESIN_ANVIL.asItem())
@@ -231,5 +264,73 @@ public final class PlasticraftDatagen {
             .group("time_warp")
             .icon(dev.dubhe.anvilcraft.init.block.ModBlocks.RESENTFUL_AMBER_BLOCK.asStack())
             .save(provider, AnvilcraftPlasticraft.of("resin_anvil_resentful_amber"));
+
+        TimeWarpRecipe.builder()
+            .requires(ItemIngredientPredicate.Builder.item()
+                .of(ModBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
+                .withSubPredicate(
+                    LibItemSubPredicates.NOT.get(),
+                    NotPredicate.of(ModItemSubPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.any())
+                )
+                .build())
+            .result(dev.dubhe.anvilcraft.init.block.ModBlocks.AMBER_BLOCK)
+            .unlockedBy(
+                "has_high_viscosity_resin_block",
+                provider.has(ModBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
+            )
+            .save(provider, AnvilcraftPlasticraft.of("time_warp/high_viscosity_resin_to_amber"));
+
+        ExtendInWorldRecipeBuilder.extendCompatible(ModRecipeTriggers.ON_ANVIL_FALL_ON)
+            .hasCauldron(0, -1, 0)
+            .hasBlock(builder -> builder
+                .of(dev.dubhe.anvilcraft.init.block.ModBlocks.CORRUPTED_BEACON.get())
+                .with(CorruptedBeaconBlock.LIT, true)
+                .offset(0, -2, 0))
+            .hasItemIngredient(builder -> builder
+                .of(ModBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
+                .offset(0.0, -0.375, 0.0)
+                .range(0.75, 0.75, 0.75)
+                .with(
+                    LibItemSubPredicates.NOT.get(),
+                    NotPredicate.of(ModItemSubPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.monster())
+                )
+                .saveComponent(ModComponents.SAVED_ENTITY, AnvilcraftPlasticraft.of("saved_entity")))
+            .spawnItem(builder -> builder
+                .item(dev.dubhe.anvilcraft.init.block.ModBlocks.MOB_AMBER_BLOCK)
+                .offset(0.0, -0.75, 0.0)
+                .applyComponent(ModComponents.SAVED_ENTITY, AnvilcraftPlasticraft.of("saved_entity")))
+            .maxEfficiency(1)
+            .unlockedBy(
+                "has_high_viscosity_resin_block",
+                provider.has(ModBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
+            )
+            .group("time_warp")
+            .icon(dev.dubhe.anvilcraft.init.block.ModBlocks.MOB_AMBER_BLOCK.asStack())
+            .save(provider, AnvilcraftPlasticraft.of("high_viscosity_resin_mob_amber"));
+
+        ExtendInWorldRecipeBuilder.extendCompatible(ModRecipeTriggers.ON_ANVIL_FALL_ON)
+            .hasCauldron(0, -1, 0)
+            .hasBlock(builder -> builder
+                .of(dev.dubhe.anvilcraft.init.block.ModBlocks.CORRUPTED_BEACON.get())
+                .with(CorruptedBeaconBlock.LIT, true)
+                .offset(0, -2, 0))
+            .hasItemIngredient(builder -> builder
+                .of(ModBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
+                .offset(0.0, -0.375, 0.0)
+                .range(0.75, 0.75, 0.75)
+                .with(ModItemSubPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.monster())
+                .saveComponent(ModComponents.SAVED_ENTITY, AnvilcraftPlasticraft.of("saved_entity")))
+            .out(new ResentmentAmberOutcome(
+                new Vec3(0.0, -0.75, 0.0),
+                AnvilcraftPlasticraft.of("saved_entity")
+            ))
+            .maxEfficiency(1)
+            .unlockedBy(
+                "has_high_viscosity_resin_block",
+                provider.has(ModBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
+            )
+            .group("time_warp")
+            .icon(dev.dubhe.anvilcraft.init.block.ModBlocks.RESENTFUL_AMBER_BLOCK.asStack())
+            .save(provider, AnvilcraftPlasticraft.of("high_viscosity_resin_resentful_amber"));
     }
 }

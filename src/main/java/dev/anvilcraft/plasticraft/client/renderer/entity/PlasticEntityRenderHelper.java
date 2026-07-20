@@ -2,18 +2,27 @@ package dev.anvilcraft.plasticraft.client.renderer.entity;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import dev.dubhe.anvilcraft.AnvilCraft;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
+import dev.dubhe.anvilcraft.client.init.ModRenderTypes;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.Sheets;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.resources.model.ModelResourceLocation;
 import net.minecraft.world.level.block.state.BlockState;
 
 /** 实体化塑料制品共用的方块模型渲染逻辑。 */
 public final class PlasticEntityRenderHelper {
+    private static final ModelResourceLocation HAMMER_AXIS_MODEL = ModelResourceLocation.standalone(
+        AnvilCraft.of("block/axis")
+    );
+
     private PlasticEntityRenderHelper() {
     }
 
@@ -43,6 +52,52 @@ public final class PlasticEntityRenderHelper {
             green,
             blue,
             packedLight,
+            OverlayTexture.NO_OVERLAY
+        );
+    }
+
+    /** 使用本体铁砧锤的蓝色半透明材质渲染方向预览。 */
+    public static void renderHammerPreviewModel(
+        AbstractPlasticEntity entity,
+        BlockRenderDispatcher dispatcher,
+        PoseStack pose,
+        MultiBufferSource buffers
+    ) {
+        BlockState state = PlasticEntityRenderTransforms.canonicalize(entity.getDisplayState());
+        BakedModel model = dispatcher.getBlockModel(state);
+        VertexConsumer consumer = buffers.getBuffer(ModRenderTypes.TRANSLUCENT_COLORED_OVERLAY);
+        dispatcher.getModelRenderer().renderModel(
+            pose.last(),
+            consumer,
+            state,
+            model,
+            1.0F,
+            1.0F,
+            1.0F,
+            LightTexture.FULL_BLOCK,
+            OverlayTexture.NO_OVERLAY
+        );
+    }
+
+    /** 渲染固定在世界坐标轴上的蓝色方向轴。 */
+    public static void renderHammerAxis(
+        AbstractPlasticEntity entity,
+        BlockRenderDispatcher dispatcher,
+        PoseStack pose,
+        MultiBufferSource buffers
+    ) {
+        BlockState state = PlasticEntityRenderTransforms.canonicalize(entity.getDisplayState());
+        VertexConsumer consumer = buffers.getBuffer(ModRenderTypes.TRANSLUCENT_COLORED_OVERLAY);
+        BakedModel axis = Minecraft.getInstance().getModelManager().getModel(HAMMER_AXIS_MODEL);
+        dispatcher.getModelRenderer().renderModel(
+            pose.last(),
+            consumer,
+            state,
+            axis,
+            1.0F,
+            1.0F,
+            1.0F,
+            LightTexture.FULL_BRIGHT,
             OverlayTexture.NO_OVERLAY
         );
     }

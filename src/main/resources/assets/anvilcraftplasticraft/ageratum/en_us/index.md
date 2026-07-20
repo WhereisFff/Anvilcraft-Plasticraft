@@ -13,4 +13,4 @@ This addon expands plastic materials from AnvilCraft's resin. The first stage co
 
 Craft <ref item="anvilcraftplasticraft:resin_anvil"/> from resin blocks and resin in an anvil-shaped pattern. Replacing the center resin with a magnet ingot makes the magnetic variant. Fast cooking a resin anvil in a dry cauldron hardens it while preserving its magnetic state.
 
-See [Resin and Hardened Resin Anvils](004_block/114_resin_anvil.md) and [Hardened Resin Cauldron](004_block/115_hardend_resin_cauldron.md) for the complete workflow.
+See [Resin and Hardened Resin Anvils](004_block/114_resin_anvil.md), [Hardened Resin Cauldron](004_block/115_hardend_resin_cauldron.md), and [High-Viscosity Resin](004_block/116_high_viscosity_resin.md) for the complete workflow.

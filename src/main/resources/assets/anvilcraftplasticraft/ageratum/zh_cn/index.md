@@ -14,4 +14,4 @@ navigation:
 
 使用树脂块与树脂按铁砧形状合成<ref item="anvilcraftplasticraft:resin_anvil"/>；把配方中心的树脂换成磁铁锭，会得到有磁性的树脂铁砧。树脂铁砧在干锅中快速烹饪后会硬化，并保留磁性状态。
 
-详见[树脂铁砧与硬化树脂铁砧](004_block/114_resin_anvil.md)页面，并参阅[硬化树脂炼药锅](004_block/115_hardend_resin_cauldron.md)。
+详见[树脂铁砧与硬化树脂铁砧](004_block/114_resin_anvil.md)、[硬化树脂炼药锅](004_block/115_hardend_resin_cauldron.md)和[高粘性树脂](004_block/116_high_viscosity_resin.md)。

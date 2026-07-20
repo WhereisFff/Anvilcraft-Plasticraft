@@ -24,6 +24,8 @@ public final class ModItemGroups {
                 output.accept(ModBlocks.RESIN_ANVIL.asItem());
                 output.accept(ModBlocks.HARDEND_RESIN_ANVIL.asItem());
                 output.accept(ModBlocks.HARDEND_RESIN_CAULDRON.asItem());
+                output.accept(dev.anvilcraft.plasticraft.init.item.ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get());
+                output.accept(ModBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem());
             })
             .title(Component.translatable(TITLE_KEY))
             // NeoForge 的排序图将 withTabsBefore(X) 记录为 X -> this，

@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.integration.jei;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.dubhe.anvilcraft.integration.jei.AnvilCraftJeiPlugin;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.constants.RecipeTypes;
@@ -25,6 +26,34 @@ import java.util.stream.Collectors;
 @JeiPlugin
 public final class PlasticraftJeiPlugin implements IModPlugin {
     private static final ResourceLocation UID = AnvilcraftPlasticraft.of("jei_plugin");
+    private static final List<mezz.jei.api.recipe.RecipeType<?>> ANVIL_PROCESSING_TYPES = List.of(
+        AnvilCraftJeiPlugin.MESH,
+        AnvilCraftJeiPlugin.BLOCK_COMPRESS,
+        AnvilCraftJeiPlugin.BLOCK_CRUSH,
+        AnvilCraftJeiPlugin.BLOCK_SMEAR,
+        AnvilCraftJeiPlugin.ITEM_CRUSH,
+        AnvilCraftJeiPlugin.SQUEEZING,
+        AnvilCraftJeiPlugin.ITEM_INJECT,
+        AnvilCraftJeiPlugin.MASS_INJECT,
+        AnvilCraftJeiPlugin.ITEM_COMPRESS,
+        AnvilCraftJeiPlugin.UNPACK,
+        AnvilCraftJeiPlugin.FAST_COOKING,
+        AnvilCraftJeiPlugin.STAMPING,
+        AnvilCraftJeiPlugin.SUPER_HEATING,
+        AnvilCraftJeiPlugin.SOLID_LIQUID,
+        AnvilCraftJeiPlugin.TIME_WARP,
+        AnvilCraftJeiPlugin.NEUTRON_IRRADIATION,
+        AnvilCraftJeiPlugin.PROCEDURAL_PROCESS
+    );
+    private static final List<mezz.jei.api.recipe.RecipeType<?>> CAULDRON_PROCESSING_TYPES = List.of(
+        AnvilCraftJeiPlugin.FAST_COOKING,
+        AnvilCraftJeiPlugin.ITEM_COMPRESS,
+        AnvilCraftJeiPlugin.NEUTRON_IRRADIATION,
+        AnvilCraftJeiPlugin.SOLID_LIQUID,
+        AnvilCraftJeiPlugin.SQUEEZING,
+        AnvilCraftJeiPlugin.SUPER_HEATING,
+        AnvilCraftJeiPlugin.TIME_WARP
+    );
 
     @Override
     public ResourceLocation getPluginUid() {
@@ -33,6 +62,14 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
 
     @Override
     public void registerRecipeCatalysts(IRecipeCatalystRegistration registration) {
+        for (mezz.jei.api.recipe.RecipeType<?> recipeType : ANVIL_PROCESSING_TYPES) {
+            registration.addRecipeCatalyst(ModBlocks.RESIN_ANVIL.asStack(), recipeType);
+            registration.addRecipeCatalyst(ModBlocks.HARDEND_RESIN_ANVIL.asStack(), recipeType);
+        }
+        // 液体混合不在此列表中，继续只接受大型炼药锅和巨型铁砧。
+        for (mezz.jei.api.recipe.RecipeType<?> recipeType : CAULDRON_PROCESSING_TYPES) {
+            registration.addRecipeCatalyst(ModBlocks.HARDEND_RESIN_CAULDRON.asStack(), recipeType);
+        }
         registration.addRecipeCatalyst(
             new ItemStack(ModBlocks.HARDEND_RESIN_ANVIL.get()),
             RecipeTypes.ANVIL

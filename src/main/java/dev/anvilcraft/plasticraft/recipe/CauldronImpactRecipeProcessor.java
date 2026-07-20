@@ -20,7 +20,7 @@ public final class CauldronImpactRecipeProcessor {
         InWorldRecipeManager manager = level.getRecipeManager().anvillib$getInWorldRecipeManager();
         // 配方按原版朝向编写，即釜位于砧下方一格。
         // 即使两个实体附着在墙面或天花板上，也以釜作为该标准原点。
-        BlockPos potCell = BlockPos.containing(pot.getBoundingBox().getCenter());
+        BlockPos potCell = recipePotCell(pot);
         Vec3 recipeOrigin = potCell.getCenter().add(0.0D, 0.5D, 0.0D);
         InWorldRecipeContext context = new InWorldRecipeContext(level, recipeOrigin, anvil);
         pot.beginRecipeProcessing();
@@ -40,5 +40,16 @@ public final class CauldronImpactRecipeProcessor {
         if (damageAnvil) {
             anvil.applyAnvilCraftRecipeDamage(BlockPos.containing(anvil.getBoundingBox().getCenter()));
         }
+    }
+
+    /** 返回原版落砧配方用于定位该实体锅的方块格。 */
+    public static BlockPos recipePotCell(HardenedResinCauldronEntity pot) {
+        Vec3 potCenter = pot.getBoundingBox().getCenter();
+        // 矮工作方块会让锅的中心仍处于其方块格内，以上沿所在格才代表配方中的锅位置。
+        return BlockPos.containing(
+            potCenter.x,
+            Math.nextDown(pot.getBoundingBox().maxY),
+            potCenter.z
+        );
     }
 }

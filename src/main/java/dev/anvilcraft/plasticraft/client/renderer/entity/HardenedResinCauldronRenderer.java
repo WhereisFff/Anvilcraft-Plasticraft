@@ -1,14 +1,23 @@
 package dev.anvilcraft.plasticraft.client.renderer.entity;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.math.Axis;
+import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.dubhe.anvilcraft.api.itemhandler.ItemHandlerUtil;
+import dev.dubhe.anvilcraft.client.init.ModRenderTypes;
 import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.Sheets;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.resources.model.ModelResourceLocation;
+import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
@@ -23,6 +32,9 @@ import org.joml.Quaternionf;
 
 /** 渲染带朝向的釜模型及其同步流体表面。 */
 public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinCauldronEntity> {
+    public static final ModelResourceLocation OUTLET_MODEL = ModelResourceLocation.standalone(
+        ResourceLocation.fromNamespaceAndPath("anvilcraft", "block/fish_tank_outlet")
+    );
     private final BlockRenderDispatcher dispatcher;
     private final RandomSource random = RandomSource.create();
 
@@ -41,13 +53,34 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
         MultiBufferSource buffers,
         int packedLight
     ) {
+        PlasticEntityOrientation preview = PlasticHammerScreen.getPreviewOrientation(entity);
+        if (preview != null) {
+            pose.pushPose();
+            PlasticEntityRenderTransforms.applyPreview(pose, entity, preview);
+            PlasticEntityRenderHelper.renderHammerPreviewModel(entity, this.dispatcher, pose, buffers);
+            this.renderOutlet(entity, pose, buffers, packedLight, true);
+            pose.popPose();
+            pose.pushPose();
+            PlasticEntityRenderTransforms.applyWorldAlignedPreview(pose, entity);
+            PlasticEntityRenderHelper.renderHammerAxis(entity, this.dispatcher, pose, buffers);
+            pose.popPose();
+            super.render(entity, yaw, partialTick, pose, buffers, packedLight);
+            return;
+        }
+        FluidStack fluid = entity.getSyncedFluid();
+        float fill = fluid.isEmpty() ? 0.0F : (float) fluid.getAmount() / HardenedResinCauldronEntity.CAPACITY;
+        List<ItemStack> items = entity.getSyncedItems();
+        boolean gravityAlignedItems = !items.isEmpty() && entity.shouldUseGravityAlignedItemLayout();
+        boolean itemsAtDownwardOpening = gravityAlignedItems
+            && entity.getOrientation().attachmentFace() == Direction.DOWN;
         pose.pushPose();
         PlasticEntityRenderTransforms.apply(pose, entity);
         PlasticEntityRenderHelper.renderBlock(entity, this.dispatcher, pose, buffers, packedLight);
+        this.renderOutlet(entity, pose, buffers, packedLight, false);
         flush(buffers);
-        FluidStack fluid = entity.getSyncedFluid();
-        float fill = fluid.isEmpty() ? 0.0F : (float) fluid.getAmount() / HardenedResinCauldronEntity.CAPACITY;
-        this.renderItems(entity, fill, pose, buffers, packedLight);
+        if (!items.isEmpty() && !gravityAlignedItems && !entity.shouldEjectStoredItems()) {
+            this.renderItems(entity, items, fill, false, false, pose, buffers, packedLight);
+        }
         flush(buffers);
         if (!fluid.isEmpty()) {
             float innerMin = 0.126F;
@@ -71,7 +104,50 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
             flush(buffers);
         }
         pose.popPose();
+        if (gravityAlignedItems) {
+            pose.pushPose();
+            this.renderItems(entity, items, fill, true, itemsAtDownwardOpening, pose, buffers, packedLight);
+            flush(buffers);
+            pose.popPose();
+        }
         super.render(entity, yaw, partialTick, pose, buffers, packedLight);
+    }
+
+    private void renderOutlet(
+        HardenedResinCauldronEntity entity,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        int packedLight,
+        boolean preview
+    ) {
+        Direction localDirection = entity.getOutletLocalDirection();
+        if (localDirection == null) return;
+        // PoseStack 使用右手系；模型北面转向东需要绕正 Y 轴旋转 -90 度。
+        float rotation = switch (localDirection) {
+            case NORTH -> 0.0F;
+            case EAST -> 270.0F;
+            case SOUTH -> 180.0F;
+            case WEST -> 90.0F;
+            default -> 0.0F;
+        };
+
+        pose.pushPose();
+        pose.translate(0.5D, 0.5D, 0.5D);
+        pose.mulPose(Axis.YP.rotationDegrees(rotation));
+        pose.translate(-0.5D, -0.5D, -0.5D);
+        BakedModel model = Minecraft.getInstance().getModelManager().getModel(OUTLET_MODEL);
+        this.dispatcher.getModelRenderer().renderModel(
+            pose.last(),
+            buffers.getBuffer(preview ? ModRenderTypes.TRANSLUCENT_COLORED_OVERLAY : Sheets.cutoutBlockSheet()),
+            entity.getDisplayState(),
+            model,
+            1.0F,
+            1.0F,
+            1.0F,
+            packedLight,
+            OverlayTexture.NO_OVERLAY
+        );
+        pose.popPose();
     }
 
     private static void flush(MultiBufferSource buffers) {
@@ -82,16 +158,21 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
 
     private void renderItems(
         HardenedResinCauldronEntity entity,
+        List<ItemStack> items,
         float fluidFill,
+        boolean gravityAligned,
+        boolean itemsAtDownwardOpening,
         PoseStack pose,
         MultiBufferSource buffers,
         int packedLight
     ) {
-        List<ItemStack> items = entity.getSyncedItems();
-        if (items.isEmpty()) return;
         this.random.setSeed(ItemHandlerUtil.hash(entity.getSyncedItemHandler()));
         float randomOffset = this.random.nextIntBetweenInclusive(-25, 25);
-        float y = Mth.clamp(0.31F + fluidFill * 0.56F, 0.31F, 0.81F);
+        float centerX = gravityAligned ? 0.0F : 0.5F;
+        float centerY = gravityAligned
+            ? itemsAtDownwardOpening ? 0.08F : 0.19F
+            : Mth.clamp(0.31F + fluidFill * 0.56F, 0.31F, 0.81F);
+        float centerZ = gravityAligned ? 0.0F : 0.5F;
         int itemCount = items.size();
         float partAngle = 360.0F / itemCount;
         int remaining = itemCount;
@@ -101,9 +182,9 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
             float radius = itemCount == 1 ? 0.0F : 0.16F;
             pose.pushPose();
             pose.translate(
-                0.5F + Mth.cos(angle) * radius,
-                y,
-                0.5F + Mth.sin(angle) * radius
+                centerX + Mth.cos(angle) * radius,
+                centerY,
+                centerZ + Mth.sin(angle) * radius
             );
             pose.mulPose(
                 new Quaternionf()

@@ -1,5 +1,7 @@
 package dev.anvilcraft.plasticraft.item;
 
+import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import net.minecraft.world.entity.EntityType;
@@ -21,6 +23,15 @@ public class HardenedResinAnvilItem extends AbstractPlasticEntityItem<HardenedRe
         Supplier<BlockState> displayState
     ) {
         super(block, properties, entityType, displayState);
+        PlasticItemTooltipManager.register(
+            AnvilcraftPlasticraft.of("hardend_resin_anvil"),
+            "A hardened resin anvil that functions as a complete anvil",
+            """
+                Pushable anvil with the vanilla anvil workflow
+                Renaming costs no experience and adds no prior-work penalty
+                Creative players can Shift-use a magnet to magnetize it
+                Can be placed in any direction; only impacts on its bottom face can process recipes"""
+        );
     }
 
     @Override

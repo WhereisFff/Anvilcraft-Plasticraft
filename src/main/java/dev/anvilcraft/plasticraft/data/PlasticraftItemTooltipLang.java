@@ -15,5 +15,11 @@ public final class PlasticraftItemTooltipLang {
                 description
             )
         );
+        PlasticItemTooltipManager.getShiftMap().forEach(
+            (itemId, description) -> provider.add(
+                PlasticItemTooltipManager.getTranslationKeyShift(itemId),
+                description
+            )
+        );
     }
 }

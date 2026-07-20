@@ -77,6 +77,11 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
     }
 
     @Override
+    protected boolean supportsHammerRotation() {
+        return true;
+    }
+
+    @Override
     protected void openAnvilMenu(ServerPlayer player) {
         // 树脂是硬化前的形态，永远不会打开铁砧界面。
     }

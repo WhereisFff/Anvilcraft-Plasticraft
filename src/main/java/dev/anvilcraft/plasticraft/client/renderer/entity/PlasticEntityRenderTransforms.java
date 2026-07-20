@@ -3,9 +3,11 @@ package dev.anvilcraft.plasticraft.client.renderer.entity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix3f;
 import org.joml.Quaternionf;
 
@@ -32,9 +34,16 @@ public final class PlasticEntityRenderTransforms {
      * 随后还原方块模型的 [0, 1] 立方体原点。
      */
     public static void apply(PoseStack pose, AbstractPlasticEntity entity) {
+        apply(pose, entity, entity.getOrientation());
+    }
+
+    public static void apply(
+        PoseStack pose,
+        AbstractPlasticEntity entity,
+        PlasticEntityOrientation orientation
+    ) {
         Objects.requireNonNull(pose, "pose");
         Objects.requireNonNull(entity, "entity");
-        PlasticEntityOrientation orientation = entity.getOrientation();
         Objects.requireNonNull(orientation, "orientation");
 
         pose.translate(0.0D, entity.getBbHeight() * 0.5D, 0.0D);
@@ -49,6 +58,39 @@ public final class PlasticEntityRenderTransforms {
         );
         pose.mulPose(ROTATIONS[rotationIndex(orientation)]);
         pose.translate(-0.5D, -0.5D, -0.5D);
+    }
+
+    /** 将预览朝向放到实体切换附着面后实际会占据的位置。 */
+    public static void applyPreview(
+        PoseStack pose,
+        AbstractPlasticEntity entity,
+        PlasticEntityOrientation orientation
+    ) {
+        BlockPos occupiedPos = BlockPos.containing(entity.getBoundingBox().getCenter());
+        Vec3 previewPosition = orientation.entityPosition(
+            occupiedPos,
+            entity.getBbWidth(),
+            entity.getBbHeight()
+        );
+        Vec3 offset = previewPosition.subtract(entity.position());
+        pose.translate(offset.x, offset.y, offset.z);
+        apply(pose, entity, orientation);
+    }
+
+    /** 将预览坐标移动到占用方块原点，但不应用实体的离散朝向。 */
+    public static void applyWorldAlignedPreview(PoseStack pose, AbstractPlasticEntity entity) {
+        Objects.requireNonNull(pose, "pose");
+        Objects.requireNonNull(entity, "entity");
+        BlockPos occupiedPos = BlockPos.containing(entity.getBoundingBox().getCenter());
+        Vec3 offset = Vec3.atLowerCornerOf(occupiedPos).subtract(entity.position());
+        pose.translate(offset.x, offset.y, offset.z);
+    }
+
+    /** 在已经移动到方块中心的 PoseStack 上应用实体的离散朝向。 */
+    public static void rotate(PoseStack pose, PlasticEntityOrientation orientation) {
+        Objects.requireNonNull(pose, "pose");
+        Objects.requireNonNull(orientation, "orientation");
+        pose.mulPose(ROTATIONS[rotationIndex(orientation)]);
     }
 
     private static Quaternionf[] createRotations() {

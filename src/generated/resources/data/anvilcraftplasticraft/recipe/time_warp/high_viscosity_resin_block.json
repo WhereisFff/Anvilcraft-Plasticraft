@@ -1,0 +1,10 @@
+{
+  "type": "anvilcraft:time_warp",
+  "consume": 1000,
+  "fluid": "anvilcraftplasticraft:liquid_high_viscosity_resin",
+  "results": [
+    {
+      "id": "anvilcraftplasticraft:high_viscosity_resin_block"
+    }
+  ]
+}

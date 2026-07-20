@@ -5,7 +5,12 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "EntityCarrierCollisionMixin",
-    "EntityGetterMixin"
+    "EntityGetterMixin",
+    "EntityHighViscosityResinMixin",
+    "FishTankBlockMixin",
+    "LargeCauldronBlockMixin",
+    "PistonStructureResolverMixin",
+    "ShockContextMixin"
   ],
   "client": [],
   "injectors": {
