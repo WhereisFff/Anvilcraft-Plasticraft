@@ -48,7 +48,6 @@ import java.util.Map;
 
 import static dev.anvilcraft.plasticraft.AnvilcraftPlasticraft.REGISTRUM;
 
-/** 首个树脂砧完整功能切片的数据生成注册。 */
 public final class PlasticraftDatagen {
     private PlasticraftDatagen() {
     }
@@ -98,6 +97,20 @@ public final class PlasticraftDatagen {
             .unlockedBy("has_resin", provider.has(ModItems.RESIN))
             .unlockedBy("has_resin_block", provider.has(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK))
             .save(provider, AnvilcraftPlasticraft.of("resin_anvil"));
+
+        ShapedRecipeBuilder.shaped(
+            RecipeCategory.TOOLS,
+            dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.get()
+        )
+            .pattern("A")
+            .pattern("L")
+            .pattern("R")
+            .define('A', Ingredient.of(ModBlocks.RESIN_ANVIL.asItem()))
+            .define('L', Ingredient.of(Items.LIGHTNING_ROD))
+            .define('R', Ingredient.of(ModItems.HARDEND_RESIN.get()))
+            .unlockedBy("has_resin_anvil", provider.has(ModBlocks.RESIN_ANVIL.asItem()))
+            .unlockedBy("has_hardend_resin", provider.has(ModItems.HARDEND_RESIN))
+            .save(provider, AnvilcraftPlasticraft.of("resin_anvil_hammer"));
 
         // 在同一中心槽放入磁铁锭可合成磁性变体。
         Map<Character, Ingredient> key = new LinkedHashMap<>();

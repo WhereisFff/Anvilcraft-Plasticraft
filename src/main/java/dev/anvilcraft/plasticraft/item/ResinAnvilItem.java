@@ -60,6 +60,7 @@ public class ResinAnvilItem extends AbstractPlasticEntityItem<ResinAnvilEntity> 
             "A resin block kneaded into an anvil shape, full of elasticity",
             """
                 Elastic and pushable; rebounds from blocks and entities
+                Shift-use with any Anvil Hammer to retrieve it directly
                 Retains Resin Block capture and time-warp behavior
                 Dry fast cooking hardens it
                 Creative players can Shift-use a magnet to magnetize it

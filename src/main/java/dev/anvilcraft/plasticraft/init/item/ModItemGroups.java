@@ -21,6 +21,7 @@ public final class ModItemGroups {
         () -> CreativeModeTab.builder()
             .icon(ModBlocks.RESIN_ANVIL::asStack)
             .displayItems((parameters, output) -> {
+                output.accept(ModItems.RESIN_ANVIL_HAMMER.get());
                 output.accept(ModBlocks.RESIN_ANVIL.asItem());
                 output.accept(ModBlocks.HARDEND_RESIN_ANVIL.asItem());
                 output.accept(ModBlocks.HARDEND_RESIN_CAULDRON.asItem());

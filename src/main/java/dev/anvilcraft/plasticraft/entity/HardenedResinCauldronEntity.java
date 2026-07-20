@@ -781,6 +781,13 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     }
 
     @Override
+    protected void prepareAnvilHammerPickup(Player player) {
+        for (ItemStack stack : this.extractAllStacks()) {
+            player.getInventory().placeItemBackInInventory(stack);
+        }
+    }
+
+    @Override
     public ItemStackHandler getInput() {
         return this.recipeInput;
     }

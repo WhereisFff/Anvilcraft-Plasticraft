@@ -89,8 +89,7 @@ public final class ModBlocks {
         .tag(
             BlockTags.MINEABLE_WITH_PICKAXE,
             BlockTags.ANVIL,
-            dev.dubhe.anvilcraft.init.block.ModBlockTags.NON_MAGNETIC,
-            ModBlockTags.RESIN_SHOCK_COMPATIBLE
+            dev.dubhe.anvilcraft.init.block.ModBlockTags.NON_MAGNETIC
         )
         .blockstate((context, provider) -> {
         })

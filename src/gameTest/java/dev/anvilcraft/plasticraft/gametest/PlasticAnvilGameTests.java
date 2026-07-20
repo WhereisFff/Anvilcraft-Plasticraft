@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
 import dev.anvilcraft.plasticraft.block.piston.HighViscosityPistonBudget;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
+import dev.dubhe.anvilcraft.api.giantanvil.ShockDropBehavior;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
@@ -24,8 +25,10 @@ import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
+import dev.anvilcraft.plasticraft.entity.physics.ResinShockDropBehavior;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
+import dev.anvilcraft.plasticraft.event.ResinAnvilHammerEvents;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import dev.anvilcraft.plasticraft.init.ModMenuTypes;
@@ -34,6 +37,7 @@ import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.HardenedResinAnvilItem;
 import dev.anvilcraft.plasticraft.item.HighViscosityResinBlockItem;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
+import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.anvilcraft.plasticraft.recipe.FluidFastCookingRecipe;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -50,7 +54,10 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlotGroup;
 import net.minecraft.world.entity.MoverType;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -79,6 +86,7 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
@@ -874,6 +882,132 @@ public final class PlasticAnvilGameTests {
     }
 
     @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x5x11")
+    @TestHolder(description = "Plastic anvil entities participate in both shock pedestal modes")
+    static void plasticAnvilsSupportShockContext(ExtendedGameTestHelper helper) {
+        BlockPos center = new BlockPos(5, 2, 5);
+        for (int x = 3; x <= 7; x++) {
+            for (int z = 3; z <= 7; z++) {
+                helper.setBlock(x, 1, z, Blocks.STONE);
+            }
+        }
+
+        for (Direction direction : ShockContext.HORIZONTAL) {
+            createResinAnvilInCell(helper, center.relative(direction), ModBlocks.RESIN_ANVIL.asStack());
+        }
+        for (Direction direction1 : ShockContext.HORIZONTAL_X) {
+            for (Direction direction2 : ShockContext.HORIZONTAL_Z) {
+                createResinAnvilInCell(
+                    helper,
+                    center.relative(direction1).relative(direction2),
+                    ModBlocks.RESIN_ANVIL.asStack()
+                );
+            }
+        }
+
+        ShockContext context = new ShockContext(
+            helper.getLevel(),
+            helper.absolutePos(center),
+            null,
+            List.of(helper.absolutePos(center.above())),
+            1.0F
+        );
+        check(
+            context.testCorner(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get()),
+            "resin anvil entities did not match the resin shock corners"
+        );
+        check(
+            context.testBorder(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get()),
+            "resin anvil entities did not match the resin shock border"
+        );
+        ShockDropBehavior resinDrop = context.getBorderAnvilBehavior()
+            .orElseThrow(() -> new GameTestAssertException("resin anvil entities did not form a shock border"))
+            .dropBehavior();
+        check(resinDrop == ResinShockDropBehavior.INSTANCE, "resin shock behavior lost its drop handler");
+
+        for (var entity : helper.getLevel().getEntitiesOfClass(ResinAnvilEntity.class, new AABB(
+            helper.absolutePos(center).getX() - 2,
+            helper.absolutePos(center).getY() - 1,
+            helper.absolutePos(center).getZ() - 2,
+            helper.absolutePos(center).getX() + 3,
+            helper.absolutePos(center).getY() + 2,
+            helper.absolutePos(center).getZ() + 3
+        ))) {
+            entity.discard();
+        }
+        for (Direction direction : ShockContext.HORIZONTAL) {
+            createHardenedResinAnvilInCell(helper, center.relative(direction));
+        }
+        ShockContext hardenedContext = new ShockContext(
+            helper.getLevel(),
+            helper.absolutePos(center),
+            null,
+            List.of(helper.absolutePos(center.above())),
+            1.0F
+        );
+        check(
+            hardenedContext.getBorderAnvilBehavior().isPresent(),
+            "hardened resin anvil entities did not form a shock border"
+        );
+        check(
+            hardenedContext.getBorderAnvilBehavior().orElseThrow().dropBehavior() == ShockDropBehavior.DEFAULT,
+            "hardened resin anvils did not use the normal shock drop behavior"
+        );
+        check(
+            ShockContext.bounceVelocityForHeight(2.0D) > ShockContext.bounceVelocityForHeight(1.0D),
+            "resin shock height multiplier did not increase the launch velocity"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("9x4x9")
+    @TestHolder(description = "Resin shock drops use a 45-degree trajectory to clear the square range")
+    static void resinShockDropTrajectory(ExtendedGameTestHelper helper) {
+        BlockPos center = helper.absolutePos(new BlockPos(4, 1, 4));
+        List<BlockPos> range = new ArrayList<>();
+        for (int dx = -8; dx <= 8; dx++) {
+            for (int dz = -8; dz <= 8; dz++) {
+                range.add(center.above().offset(dx, 0, dz));
+            }
+        }
+        ShockContext context = new ShockContext(helper.getLevel(), center, null, range, 8.0F);
+        BlockPos near = center.above().offset(1, 0, 0);
+        BlockPos edge = center.above().offset(8, 0, 0);
+        Vec3 nearVelocity = ResinShockDropBehavior.calculateLaunchVelocity(context, near);
+        Vec3 edgeVelocity = ResinShockDropBehavior.calculateLaunchVelocity(context, edge);
+        check(
+            close(Math.sqrt(nearVelocity.x * nearVelocity.x + nearVelocity.z * nearVelocity.z), nearVelocity.y),
+            "resin shock drop was not launched at 45 degrees"
+        );
+        check(nearVelocity.y > edgeVelocity.y, "drops near the center did not receive a longer launch");
+        for (BlockPos source : List.of(near, edge, center.above().offset(4, 0, 4))) {
+            Vec3 velocity = ResinShockDropBehavior.calculateLaunchVelocity(context, source);
+            Vec3 horizontal = new Vec3(velocity.x, 0.0D, velocity.z).normalize();
+            double distance = ResinShockDropBehavior.simulateHorizontalRange(velocity.y);
+            Vec3 endpoint = Vec3.atCenterOf(source).add(horizontal.scale(distance));
+            double squareRadius = Math.max(
+                Math.abs(endpoint.x - Vec3.atCenterOf(center).x),
+                Math.abs(endpoint.z - Vec3.atCenterOf(center).z)
+            );
+            check(close(squareRadius, context.getShockRadius() + 0.75D), "drop trajectory missed the shock boundary");
+        }
+
+        ItemStack sourceStack = new ItemStack(Items.COBBLESTONE);
+        Vec3 expectedVelocity = ResinShockDropBehavior.calculateLaunchVelocity(context, near);
+        ResinShockDropBehavior.INSTANCE.drop(context, near, sourceStack);
+        ItemEntity spawnedDrop = helper.getLevel().getEntitiesOfClass(ItemEntity.class, new AABB(near).inflate(1.0D))
+            .stream()
+            .filter(item -> item.getItem().is(Items.COBBLESTONE))
+            .findFirst()
+            .orElseThrow(() -> new GameTestAssertException("resin shock behavior spawned no item entity"));
+        check(close(spawnedDrop.getDeltaMovement(), expectedVelocity), "spawned drop used the wrong launch velocity");
+        check(sourceStack.getCount() == 1, "resin shock behavior consumed its input stack");
+        spawnedDrop.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
     @EmptyTemplate("20x8x8")
     @TestHolder(description = "A moved normal block discovers adjacent high-viscosity resin and its grouped load")
     static void highViscosityResinReversePistonAdhesion(ExtendedGameTestHelper helper) {
@@ -925,6 +1059,253 @@ public final class PlasticAnvilGameTests {
         int experienceBefore = player.experienceLevel;
         menu.getSlot(2).onTake(player, output.copy());
         check(player.experienceLevel == experienceBefore, "taking a pure rename output consumed experience");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate
+    @TestHolder(description = "The resin anvil hammer inherits hammer behavior, repairs with resin, and has no portable menu")
+    static void resinAnvilHammerItemContract(ExtendedGameTestHelper helper) {
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        ItemStack hammer = dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack();
+        ResinAnvilHammerItem item = (ResinAnvilHammerItem) hammer.getItem();
+        player.setItemInHand(InteractionHand.MAIN_HAND, hammer);
+
+        check(item instanceof dev.dubhe.anvilcraft.item.AnvilHammerItem, "resin hammer did not inherit AnvilHammerItem");
+        check(hammer.getMaxDamage() == 35, "resin hammer durability differs from the standard hammer");
+        var modifiers = hammer.getAttributeModifiers().modifiers();
+        var attackDamageModifier = modifiers.stream()
+            .filter(entry -> entry.attribute().equals(Attributes.ATTACK_DAMAGE))
+            .findFirst()
+            .orElseThrow(() -> new GameTestAssertException("resin hammer has no attack damage modifier"));
+        var attackSpeedModifier = modifiers.stream()
+            .filter(entry -> entry.attribute().equals(Attributes.ATTACK_SPEED))
+            .findFirst()
+            .orElseThrow(() -> new GameTestAssertException("resin hammer has no attack speed modifier"));
+        check(
+            attackDamageModifier.modifier().is(Item.BASE_ATTACK_DAMAGE_ID)
+                && attackDamageModifier.modifier().operation() == AttributeModifier.Operation.ADD_VALUE
+                && attackDamageModifier.slot() == EquipmentSlotGroup.MAINHAND
+                && Math.abs(
+                    player.getAttributeBaseValue(Attributes.ATTACK_DAMAGE)
+                        + attackDamageModifier.modifier().amount()
+                ) <= EPSILON,
+            "resin hammer tooltip attack damage is not 0"
+        );
+        check(
+            attackSpeedModifier.modifier().is(Item.BASE_ATTACK_SPEED_ID)
+                && attackSpeedModifier.modifier().operation() == AttributeModifier.Operation.ADD_VALUE
+                && attackSpeedModifier.slot() == EquipmentSlotGroup.MAINHAND
+                && Math.abs(
+                    player.getAttributeBaseValue(Attributes.ATTACK_SPEED)
+                        + attackSpeedModifier.modifier().amount()
+                        - 4.0D
+                ) <= EPSILON,
+            "resin hammer tooltip attack speed is not 4"
+        );
+        check(
+            item.isValidRepairItem(hammer, ModItems.RESIN.asStack()),
+            "resin was not accepted as the resin hammer's repair material"
+        );
+        check(
+            !item.isValidRepairItem(hammer, new ItemStack(Items.IRON_INGOT)),
+            "the resin hammer retained the standard hammer's iron repair material"
+        );
+        check(item.getAnvil() == ModBlocks.RESIN_ANVIL.get(), "resin hammer impacts did not use the resin anvil");
+        check(
+            item.use(helper.getLevel(), player, InteractionHand.MAIN_HAND).getResult() == InteractionResult.PASS,
+            "using the resin hammer in air started the portable anvil action"
+        );
+        check(!player.isUsingItem(), "resin hammer entered a held-use state for a portable menu");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate
+    @TestHolder(description = "Resin repairs in a hardened resin anvil are free and preserve prior-work penalty")
+    static void hardenedResinHammerRepairIsFree(ExtendedGameTestHelper helper) {
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.experienceLevel = 12;
+        HardenedResinAnvilMenu menu = new HardenedResinAnvilMenu(1, player.getInventory(), -1);
+        ItemStack input = dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack();
+        input.setDamageValue(30);
+        input.set(DataComponents.REPAIR_COST, 80);
+        menu.getSlot(0).set(input);
+        menu.getSlot(1).set(ModItems.RESIN.asStack());
+        menu.createResult();
+
+        ItemStack output = menu.getSlot(2).getItem();
+        check(!output.isEmpty(), "resin repair produced no output");
+        check(output.getDamageValue() < input.getDamageValue(), "resin repair restored no durability");
+        check(menu.getCost() == 0, "resin repair retained an experience cost of " + menu.getCost());
+        check(
+            output.getOrDefault(DataComponents.REPAIR_COST, 0) == 80,
+            "resin repair changed the existing prior-work penalty"
+        );
+        check(menu.getSlot(2).mayPickup(player), "zero-cost resin repair output could not be taken");
+        int experienceBefore = player.experienceLevel;
+        menu.getSlot(2).onTake(player, output.copy());
+        check(player.experienceLevel == experienceBefore, "taking a resin repair output consumed experience");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "Resin hammer left clicks cause Knockback V without damaging entities")
+    static void resinAnvilHammerKnockbackIsNonDamaging(ExtendedGameTestHelper helper) {
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.setYRot(0.0F);
+        ItemStack hammer = dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack();
+        player.setItemInHand(InteractionHand.MAIN_HAND, hammer);
+        ResinAnvilEntity target = createResinAnvil(
+            helper,
+            new Vec3(3.5D, 1.0D, 3.5D),
+            ModBlocks.RESIN_ANVIL.asStack()
+        );
+        target.setNoGravity(true);
+        target.setDeltaMovement(Vec3.ZERO);
+
+        player.attack(target);
+
+        check(target.isAlive(), "zero-damage resin hammer attack destroyed its target");
+        check(target.getDeltaMovement().z > 2.4D, "entity did not receive Knockback V away from the player's view");
+        check(hammer.getDamageValue() == 1, "entity knockback consumed the wrong amount of durability");
+        target.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate
+    @TestHolder(description = "Resin hammer block clicks recoil opposite the full view direction only on the initial click")
+    static void resinAnvilHammerBlockRecoil(ExtendedGameTestHelper helper) {
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.setYRot(0.0F);
+        player.setXRot(0.0F);
+        player.setDeltaMovement(Vec3.ZERO);
+        player.setItemInHand(
+            InteractionHand.MAIN_HAND,
+            dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack()
+        );
+        BlockPos target = helper.absolutePos(BlockPos.ZERO);
+
+        ResinAnvilHammerEvents.leftClickBlock(new PlayerInteractEvent.LeftClickBlock(
+            player,
+            target,
+            Direction.UP,
+            PlayerInteractEvent.LeftClickBlock.Action.START
+        ));
+        check(player.getDeltaMovement().z < -2.4D, "block click did not launch the player directly backward");
+
+        player.setDeltaMovement(Vec3.ZERO);
+        player.setXRot(90.0F);
+        ResinAnvilHammerEvents.leftClickBlock(new PlayerInteractEvent.LeftClickBlock(
+            player,
+            target,
+            Direction.UP,
+            PlayerInteractEvent.LeftClickBlock.Action.START
+        ));
+        check(
+            player.getDeltaMovement().y > 2.4D
+                && player.getDeltaMovement().horizontalDistanceSqr() < EPSILON,
+            "looking down did not launch the player upward"
+        );
+
+        player.setDeltaMovement(Vec3.ZERO);
+        player.setXRot(-90.0F);
+        ResinAnvilHammerEvents.leftClickBlock(new PlayerInteractEvent.LeftClickBlock(
+            player,
+            target,
+            Direction.UP,
+            PlayerInteractEvent.LeftClickBlock.Action.START
+        ));
+        check(
+            player.getDeltaMovement().y < -2.4D
+                && player.getDeltaMovement().horizontalDistanceSqr() < EPSILON,
+            "looking up did not launch the player downward"
+        );
+
+        player.setDeltaMovement(Vec3.ZERO);
+        ResinAnvilHammerEvents.leftClickBlock(new PlayerInteractEvent.LeftClickBlock(
+            player,
+            target,
+            Direction.UP,
+            PlayerInteractEvent.LeftClickBlock.Action.CLIENT_HOLD
+        ));
+        check(close(player.getDeltaMovement(), Vec3.ZERO), "holding left click repeatedly applied block recoil");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("13x6x7")
+    @TestHolder(description = "Sneak-using any anvil hammer retrieves every plastic product entity")
+    static void anvilHammerRetrievesPlasticEntities(ExtendedGameTestHelper helper) {
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.setShiftKeyDown(true);
+
+        ResinAnvilEntity resinAnvil = createResinAnvil(
+            helper,
+            new Vec3(2.5D, 2.0D, 3.5D),
+            ModBlocks.RESIN_ANVIL.asStack()
+        );
+        HardenedResinAnvilEntity hardenedAnvil = createAnvil(helper, new Vec3(6.5D, 2.0D, 3.5D));
+        HardenedResinCauldronEntity cauldron = createPot(
+            helper,
+            new Vec3(10.5D, 2.0D, 3.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        resinAnvil.setNoGravity(true);
+        hardenedAnvil.setNoGravity(true);
+        cauldron.setNoGravity(true);
+        resinAnvil.setMagnetized(true);
+        hardenedAnvil.setMagnetized(true);
+        cauldron.setMagnetized(true);
+        cauldron.getInput().insertItem(0, new ItemStack(Items.COBBLESTONE, 3), false);
+
+        ItemStack resinHammer = dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack();
+        player.setItemInHand(InteractionHand.MAIN_HAND, resinHammer);
+        check(
+            resinAnvil.interact(player, InteractionHand.MAIN_HAND).consumesAction(),
+            "resin hammer did not retrieve the resin anvil"
+        );
+        check(!resinAnvil.isAlive(), "retrieved resin anvil remained in the level");
+        check(resinHammer.getDamageValue() == 0, "retrieving an entity damaged the resin hammer");
+
+        ItemStack standardHammer = ModItems.ANVIL_HAMMER.asStack();
+        player.setItemInHand(InteractionHand.MAIN_HAND, standardHammer);
+        check(
+            hardenedAnvil.interact(player, InteractionHand.MAIN_HAND).consumesAction(),
+            "standard hammer did not retrieve the hardened resin anvil"
+        );
+        check(
+            cauldron.interact(player, InteractionHand.MAIN_HAND).consumesAction(),
+            "standard hammer did not retrieve the hardened resin cauldron"
+        );
+
+        check(!hardenedAnvil.isAlive(), "retrieved hardened resin anvil remained in the level");
+        check(!cauldron.isAlive(), "retrieved hardened resin cauldron remained in the level");
+        check(countItem(player.getInventory(), ModBlocks.RESIN_ANVIL.asItem()) == 1, "resin anvil was not returned");
+        check(
+            countItem(player.getInventory(), ModBlocks.HARDEND_RESIN_ANVIL.asItem()) == 1,
+            "hardened resin anvil was not returned"
+        );
+        check(
+            countItem(player.getInventory(), ModBlocks.HARDEND_RESIN_CAULDRON.asItem()) == 1,
+            "hardened resin cauldron was not returned"
+        );
+        check(countItem(player.getInventory(), Items.COBBLESTONE) == 3, "cauldron contents were not returned");
+        check(
+            PlasticItemData.isMagnetized(findInventoryStack(player, ModBlocks.RESIN_ANVIL.asItem())),
+            "retrieved resin anvil lost its magnetized state"
+        );
+        check(
+            PlasticItemData.isMagnetized(findInventoryStack(player, ModBlocks.HARDEND_RESIN_ANVIL.asItem())),
+            "retrieved hardened resin anvil lost its magnetized state"
+        );
+        check(
+            PlasticItemData.isMagnetized(findInventoryStack(player, ModBlocks.HARDEND_RESIN_CAULDRON.asItem())),
+            "retrieved hardened resin cauldron lost its magnetized state"
+        );
+        check(standardHammer.getDamageValue() == 0, "retrieving entities damaged the standard hammer");
         helper.succeed();
     }
 
@@ -1386,6 +1767,54 @@ public final class PlasticAnvilGameTests {
         player.attack(pot);
         check(pot.isAlive(), "anvil hammer attack destroyed the cauldron while the hammer was cooling down");
         check(hammer.getDamageValue() == 1, "a cooling-down anvil hammer consumed durability again");
+        pot.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("7x7x7")
+    @TestHolder(description = "A resin anvil hammer processes a hardened resin cauldron without dealing damage")
+    static void resinAnvilHammerProcessesHardenedResinCauldron(ExtendedGameTestHelper helper) {
+        helper.setBlock(
+            new BlockPos(3, 1, 3),
+            Blocks.CAMPFIRE.defaultBlockState().setValue(CampfireBlock.LIT, true)
+        );
+        HardenedResinCauldronEntity pot = createPot(
+            helper,
+            new Vec3(3.5D, 1.4375D, 3.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        pot.setNoGravity(true);
+        pot.getFluidHandler().fill(
+            new FluidStack(Fluids.WATER, HardenedResinCauldronEntity.CAPACITY),
+            IFluidHandler.FluidAction.EXECUTE
+        );
+        pot.getInput().insertItem(0, new ItemStack(ModItems.RESIN.get(), 4), false);
+        pot.getInput().insertItem(1, new ItemStack(Items.SLIME_BALL, 4), false);
+        pot.getInput().insertItem(2, ModItems.LIME_POWDER.asStack(), false);
+
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        ItemStack hammer = dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack();
+        player.setItemInHand(InteractionHand.MAIN_HAND, hammer);
+        player.attack(pot);
+
+        check(pot.isAlive(), "resin anvil hammer attack destroyed the hardened resin cauldron");
+        check(isEmpty(pot.getInput()), "resin anvil hammer attack did not consume every fast-cooking ingredient");
+        check(
+            pot.getFluidHandler().getFluid().is(
+                dev.anvilcraft.plasticraft.init.block.ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get()
+            ),
+            "resin anvil hammer attack did not transform the hardened resin cauldron fluid"
+        );
+        check(hammer.getDamageValue() == 1, "resin anvil hammer attack consumed the wrong amount of durability");
+        check(
+            helper.getLevel().getEntitiesOfClass(ItemEntity.class, pot.getBoundingBox().inflate(2.0D)).isEmpty(),
+            "resin anvil hammer attack dropped the cauldron or its stored ingredients"
+        );
+
+        player.attack(pot);
+        check(pot.isAlive(), "resin anvil hammer attack destroyed the cauldron while cooling down");
+        check(hammer.getDamageValue() == 1, "a cooling-down resin anvil hammer consumed durability again");
         pot.discard();
         helper.succeed();
     }
@@ -2737,6 +3166,14 @@ public final class PlasticAnvilGameTests {
         return ItemStack.EMPTY;
     }
 
+    private static ItemStack findInventoryStack(Player player, Item item) {
+        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            if (stack.is(item)) return stack;
+        }
+        return ItemStack.EMPTY;
+    }
+
     private static ResinAnvilEntity createResinAnvil(
         ExtendedGameTestHelper helper,
         Vec3 relativeBottomCenter,
@@ -2779,6 +3216,29 @@ public final class PlasticAnvilGameTests {
 
     private static HardenedResinAnvilEntity createAnvil(ExtendedGameTestHelper helper, Vec3 relativeBottomCenter) {
         return createAnvil(helper, relativeBottomCenter, PlasticEntityOrientation.DEFAULT);
+    }
+
+    private static HardenedResinAnvilEntity createHardenedResinAnvilInCell(
+        ExtendedGameTestHelper helper,
+        BlockPos relativeCell
+    ) {
+        EntityType<? extends HardenedResinAnvilEntity> type = ModEntities.HARDEND_RESIN_ANVIL.get();
+        BlockPos absoluteCell = helper.absolutePos(relativeCell);
+        Vec3 position = PlasticEntityOrientation.DEFAULT.entityPosition(
+            absoluteCell,
+            type.getWidth(),
+            type.getHeight()
+        );
+        HardenedResinAnvilEntity anvil = new HardenedResinAnvilEntity(
+            type,
+            helper.getLevel(),
+            position,
+            ModBlocks.HARDEND_RESIN_ANVIL.get().defaultBlockState(),
+            ModBlocks.HARDEND_RESIN_ANVIL.asStack(),
+            PlasticEntityOrientation.DEFAULT
+        );
+        check(helper.getLevel().addFreshEntity(anvil), "failed to add hardened resin anvil to the test level");
+        return anvil;
     }
 
     private static HardenedResinAnvilEntity createAnvil(
@@ -2923,6 +3383,10 @@ public final class PlasticAnvilGameTests {
 
     private static boolean close(Vec3 first, Vec3 second) {
         return first.distanceToSqr(second) <= EPSILON * EPSILON;
+    }
+
+    private static boolean close(double first, double second) {
+        return Math.abs(first - second) <= EPSILON;
     }
 
     private static int countItem(IItemHandler handler, Item item) {

@@ -1,0 +1,24 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "equipment",
+  "key": {
+    "A": {
+      "item": "anvilcraftplasticraft:resin_anvil"
+    },
+    "L": {
+      "item": "minecraft:lightning_rod"
+    },
+    "R": {
+      "item": "anvilcraft:hardend_resin"
+    }
+  },
+  "pattern": [
+    "A",
+    "L",
+    "R"
+  ],
+  "result": {
+    "count": 1,
+    "id": "anvilcraftplasticraft:resin_anvil_hammer"
+  }
+}

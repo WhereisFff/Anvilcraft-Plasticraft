@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.inventory;
 
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
+import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -28,6 +29,7 @@ public class HardenedResinAnvilMenu extends AnvilMenu {
     private String requestedItemName;
     private boolean calculatingVanillaResult;
     private boolean freeRename;
+    private boolean freeResinHammerRepair;
 
     public static void configureMenuType(Supplier<? extends MenuType<?>> supplier) {
         menuTypeSupplier = Objects.requireNonNull(supplier, "supplier");
@@ -83,7 +85,8 @@ public class HardenedResinAnvilMenu extends AnvilMenu {
 
     @Override
     protected boolean mayPickup(Player player, boolean hasStack) {
-        return super.mayPickup(player, hasStack) || hasStack && this.freeRename;
+        return super.mayPickup(player, hasStack)
+            || hasStack && (this.freeRename || this.freeResinHammerRepair);
     }
 
     @Override
@@ -93,7 +96,42 @@ public class HardenedResinAnvilMenu extends AnvilMenu {
             return;
         }
 
+        this.freeResinHammerRepair = false;
+
         ItemStack inputLeft = this.getSlot(0).getItem();
+        ItemStack inputRight = this.getSlot(1).getItem();
+        boolean freeResinHammerRepair = inputLeft.getItem() instanceof ResinAnvilHammerItem
+            && inputLeft.isDamaged()
+            && inputRight.is(dev.dubhe.anvilcraft.init.item.ModItems.RESIN.get());
+        Integer previousRepairCost = inputLeft.get(DataComponents.REPAIR_COST);
+
+        // 计算时临时忽略既有惩罚，避免高 RepairCost 让免费树脂修复显示“过于昂贵”。
+        if (freeResinHammerRepair && previousRepairCost != null) {
+            inputLeft.remove(DataComponents.REPAIR_COST);
+        }
+        try {
+            this.createResultInternal(inputLeft, inputRight);
+        } finally {
+            if (freeResinHammerRepair && previousRepairCost != null) {
+                inputLeft.set(DataComponents.REPAIR_COST, previousRepairCost);
+            }
+        }
+
+        if (!freeResinHammerRepair) return;
+        ItemStack output = this.getSlot(2).getItem();
+        if (output.isEmpty() || output.getDamageValue() >= inputLeft.getDamageValue()) return;
+
+        if (previousRepairCost == null) {
+            output.remove(DataComponents.REPAIR_COST);
+        } else {
+            output.set(DataComponents.REPAIR_COST, previousRepairCost);
+        }
+        this.freeResinHammerRepair = true;
+        this.setMaximumCost(0L);
+        this.broadcastChanges();
+    }
+
+    private void createResultInternal(ItemStack inputLeft, ItemStack inputRight) {
         this.freeRename = false;
 
         // 让原版使用输入物品的当前名称计算操作。
@@ -111,7 +149,6 @@ public class HardenedResinAnvilMenu extends AnvilMenu {
 
         if (!this.changesName(inputLeft)) return;
 
-        ItemStack inputRight = this.getSlot(1).getItem();
         ItemStack output = this.getSlot(2).getItem();
         if (output.isEmpty()) {
             // 没有第二项输入时，原版不会产出操作结果。

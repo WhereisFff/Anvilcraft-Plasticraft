@@ -29,9 +29,7 @@ repositories {
         content { includeGroup 'mezz.jei' }
     }
 
-    // 本地 Maven 仅作为其他开发产物的备用来源。
-    // AnvilCraft 生态依赖优先使用远程仓库；如需使用相邻的 AnvilCraft 构建，
-    // 必须通过 -Puse_local_anvilcraft=true 显式选择。
+    // 本地 Maven 仅作为其他开发产物的备用来源；AnvilCraft 始终使用远程仓库。
     mavenLocal {
         content {
             excludeGroupByRegex 'dev\\.dubhe(\\..*)?'

@@ -6,10 +6,7 @@ dependencies {
     interfaceInjectionData(libs.anvillib.recipe)
     interfaceInjectionData(libs.anvillib.moveableEntityBlock)
 
-    // 默认使用已发布的远程快照以保证构建可复现。本地 JAR 必须显式启用，
-    // 以免 ../AnvilCraft 中的旧构建在无提示的情况下覆盖远程 HEAD；
-    // 如需在 IDEA 中使用刚构建的相邻项目，请指定 -Panvilcraft_jar=...
-    //（或 -Puse_local_anvilcraft=true）。
+    // 当前附属开发阶段使用相邻目录刚构建的本体 JAR；合并本体改动后可关闭该开关恢复远程依赖。
     File localAnvilCraftJar = null
     if (project.hasProperty('anvilcraft_jar')) {
         File configured = project.file(project.property('anvilcraft_jar'))
@@ -28,8 +25,6 @@ dependencies {
     if (localAnvilCraftJar != null) {
         logger.lifecycle("Using local AnvilCraft artifact: ${localAnvilCraftJar}")
         implementation(files(localAnvilCraftJar))
-        // JAR 是二进制产物，不是接口注入文本文件。
-        // 对应的 JSON 在下方的 moddevgradle.gradle 中注册。
     } else {
         implementation(libs.anvilcraft) { transitive = false }
         interfaceInjectionData(libs.anvilcraft) { transitive = false }

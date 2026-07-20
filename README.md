@@ -71,8 +71,7 @@ Linux 或 macOS：
 .\gradlew.bat runGameTestServer
 ```
 
-如需与相邻目录中的 AnvilCraft 本地构建联调，可添加 `-Puse_local_anvilcraft=true`；也可以通过
-`-Panvilcraft_jar=<文件路径>` 指定 AnvilCraft JAR。完整约定见[贡献指南](CONTRIBUTING.md)和[开发说明](AGENT.md)。
+AnvilCraft 本体通过 `gradle/libs.versions.toml` 中的远程 Maven 构件提供，构建时无需准备本地 AnvilCraft JAR。
 
 ## 贡献者
 

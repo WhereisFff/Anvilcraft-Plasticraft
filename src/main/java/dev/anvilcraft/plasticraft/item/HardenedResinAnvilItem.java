@@ -28,6 +28,7 @@ public class HardenedResinAnvilItem extends AbstractPlasticEntityItem<HardenedRe
             "A hardened resin anvil that functions as a complete anvil",
             """
                 Pushable anvil with the vanilla anvil workflow
+                Shift-use with any Anvil Hammer to retrieve it directly
                 Renaming costs no experience and adds no prior-work penalty
                 Creative players can Shift-use a magnet to magnetize it
                 Can be placed in any direction; only impacts on its bottom face can process recipes"""

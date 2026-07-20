@@ -27,6 +27,7 @@ public class HardenedResinCauldronItem extends AbstractPlasticEntityItem<Hardene
             "A light, portable cauldron assembled from hardened resin plates",
             """
                 Pushable cauldron for items and up to 1000 mB of fluid
+                Shift-use with any Anvil Hammer to retrieve it and its stored items
                 Connects to pipe heads, pumps, and control valves from any side
                 Creative players can Shift-use a magnet to magnetize it
                 Can be placed in any direction; when it does not face up, it looks like the fluid will spill"""

@@ -1131,12 +1131,44 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     public final InteractionResult interact(Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
         if (player.isShiftKeyDown()) {
+            if (stack.getItem() instanceof AnvilHammerItem) {
+                return this.pickUpWithAnvilHammer(player);
+            }
             if (this.anvilcraft$acceptMagnetization(player, stack)) {
                 return InteractionResult.sidedSuccess(this.level().isClientSide);
             }
             return InteractionResult.PASS;
         }
         return this.interactNormally(player, hand);
+    }
+
+    private InteractionResult pickUpWithAnvilHammer(Player player) {
+        BlockPos occupiedPos = BlockPos.containing(this.getBoundingBox().getCenter());
+        if (!player.getAbilities().mayBuild || !this.level().mayInteract(player, occupiedPos)) {
+            return InteractionResult.PASS;
+        }
+
+        ItemStack drop = this.getDropStack();
+        if (drop.isEmpty()) return InteractionResult.FAIL;
+        if (this.level().isClientSide) return InteractionResult.SUCCESS;
+
+        this.prepareAnvilHammerPickup(player);
+        player.getInventory().placeItemBackInInventory(drop);
+        this.level().playSound(
+            null,
+            occupiedPos,
+            this.getDisplayState().getSoundType().getBreakSound(),
+            SoundSource.BLOCKS,
+            0.8F,
+            1.0F
+        );
+        this.gameEvent(GameEvent.ENTITY_INTERACT, player);
+        this.discard();
+        return InteractionResult.CONSUME;
+    }
+
+    /** 在铁砧锤回收前让容器实体转移自身额外保存的物品。 */
+    protected void prepareAnvilHammerPickup(Player player) {
     }
 
     @Override

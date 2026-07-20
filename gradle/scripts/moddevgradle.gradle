@@ -1,8 +1,7 @@
 neoForge {
     version = libs.versions.neoForge.get()
 
-    // 附属模组使用本地构建的 AnvilCraft JAR 时，仍需提供 AnvilCraft 注入的接口。
-    // 若将该 JAR 直接传给 interfaceInjectionData，JST 会尝试把二进制数据解码为 JSON。
+    // 提供本模组使用的 AnvilCraft 接口注入声明；本体构件通过 dependencies.gradle 引入。
     interfaceInjectionData {
         from file('src/main/resources/interface_injections.json')
         publish file('src/main/resources/interface_injections.json')

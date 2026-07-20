@@ -2,10 +2,14 @@ package dev.anvilcraft.plasticraft.entity;
 
 import dev.anvilcraft.plasticraft.api.entity.ElasticCollisionEntity;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
+import dev.anvilcraft.plasticraft.entity.physics.ResinShockDropBehavior;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
+import dev.dubhe.anvilcraft.api.giantanvil.IShockEntity;
+import dev.dubhe.anvilcraft.api.giantanvil.ShockAnvilBehavior;
 import dev.dubhe.anvilcraft.block.item.HasMobBlockItem;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
+import dev.dubhe.anvilcraft.util.BlockMiningEffect;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
@@ -25,19 +29,24 @@ import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 /**
  * 初期弹性树脂砧。它有意不提供菜单：空手使用会释放可选的已保存生物组件，
  * 常规放置和贴实体面放置仍由共用基类负责。
  */
-public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCollisionEntity {
+public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCollisionEntity, IShockEntity {
     private static final double BLOCK_RESTITUTION = 0.80D;
     private static final double ENTITY_RESTITUTION = 0.72D;
     private static final double TANGENTIAL_RETENTION = 0.68D;
     private static final double MIN_BOUNCE_SPEED = 0.06D;
     private static final double MAX_ENTITY_IMPULSE = 0.45D;
     private static final int CONTACT_COOLDOWN_TICKS = 3;
+    private static final ShockAnvilBehavior SHOCK_ANVIL_BEHAVIOR = new ShockAnvilBehavior(
+        BlockMiningEffect.NORMAL,
+        ResinShockDropBehavior.INSTANCE
+    );
 
     private static Supplier<ItemStack> defaultDropSupplier = () -> ItemStack.EMPTY;
     private final int[] contactCooldownUntil = new int[Direction.values().length];
@@ -84,6 +93,21 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
     @Override
     protected void openAnvilMenu(ServerPlayer player) {
         // 树脂是硬化前的形态，永远不会打开铁砧界面。
+    }
+
+    @Override
+    public double anvilcraft$getShockBounceHeightMultiplier() {
+        return 2.0D;
+    }
+
+    @Override
+    public Optional<ShockAnvilBehavior> anvilcraft$getShockAnvilBehavior() {
+        return Optional.of(SHOCK_ANVIL_BEHAVIOR);
+    }
+
+    @Override
+    public Optional<BlockState> anvilcraft$getShockBaseState() {
+        return Optional.of(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.getDefaultState());
     }
 
     public boolean hasCapturedMob() {
