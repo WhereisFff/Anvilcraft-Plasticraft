@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.init.block;
 
 import dev.anvilcraft.lib.v2.registrum.util.entry.BlockEntry;
+import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
@@ -13,6 +14,10 @@ import dev.anvilcraft.plasticraft.item.HardenedResinAnvilItem;
 import dev.anvilcraft.plasticraft.item.HardenedResinCauldronItem;
 import dev.anvilcraft.plasticraft.item.HighViscosityResinBlockItem;
 import dev.anvilcraft.plasticraft.item.ResinAnvilItem;
+import dev.dubhe.anvilcraft.block.item.SimpleMultiPartBlockItem;
+import dev.dubhe.anvilcraft.block.multipart.SimpleMultiPartBlock;
+import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
+import dev.dubhe.anvilcraft.util.DataGenUtil;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.Item;
@@ -28,6 +33,23 @@ import static dev.anvilcraft.plasticraft.AnvilcraftPlasticraft.REGISTRUM;
 
 /** Plasticraft 可移动制品的方块和物品注册。 */
 public final class ModBlocks {
+    public static final BlockEntry<CondenserTowerBlock> CONDENSER_TOWER = REGISTRUM
+        .block("condenser_tower", CondenserTowerBlock::new)
+        .initialProperties(() -> Blocks.IRON_BLOCK)
+        .properties(properties -> properties
+            .noOcclusion()
+            .strength(5.0F, 1200.0F)
+            .sound(SoundType.METAL))
+        .lang("Condenser Tower")
+        .loot(SimpleMultiPartBlock::loot)
+        .blockstate(DataGenUtil::noExtraModelOrState)
+        .item(SimpleMultiPartBlockItem<Cube3x3PartHalf>::new)
+        .properties(properties -> properties.stacksTo(16))
+        .model(DataGenUtil::noExtraModelOrState)
+        .build()
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE)
+        .register();
+
     public static final BlockEntry<HighViscosityResinBlock> HIGH_VISCOSITY_RESIN_BLOCK = REGISTRUM
         .block("high_viscosity_resin_block", HighViscosityResinBlock::new)
         .initialProperties(() -> dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get())

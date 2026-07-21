@@ -11,21 +11,31 @@ import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.item.ModItemGroups;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.recipe.FluidFastCookingRecipe;
+import dev.anvilcraft.plasticraft.recipe.CondenserGas;
+import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
+import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItemSubPredicates;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.init.recipe.ModRecipeTriggers;
 import dev.dubhe.anvilcraft.item.property.predicate.ItemSavedEntityPredicate;
 import dev.dubhe.anvilcraft.block.CorruptedBeaconBlock;
+import dev.dubhe.anvilcraft.block.fluid.PipeBlock;
+import dev.dubhe.anvilcraft.recipe.multiblock.BlockPredicateWithState;
+import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockConversionRecipe;
+import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.builder.ExtendInWorldRecipeBuilder;
 import dev.dubhe.anvilcraft.recipe.anvil.outcome.ResentmentAmberOutcome;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.FastCookingRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.TimeWarpRecipe;
+import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
+import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import net.minecraft.advancements.Advancement;
 import net.minecraft.advancements.AdvancementRewards;
 import net.minecraft.advancements.AdvancementRequirements;
 import net.minecraft.data.recipes.RecipeCategory;
 import net.minecraft.data.recipes.ShapedRecipeBuilder;
+import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponentPredicate;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
@@ -41,6 +51,8 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.TrapDoorBlock;
+import net.minecraft.world.level.block.state.properties.Half;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -65,7 +77,16 @@ public final class PlasticraftDatagen {
             provider.add("tooltip.anvilcraftplasticraft.jade.pushable", "Can be pushed");
             provider.add("tooltip.anvilcraftplasticraft.jade.item_count", "%1$s x %2$s");
             provider.add("config.jade.plugin_anvilcraftplasticraft.hardend_resin_anvil", "Hardened Resin Anvil");
+            provider.add("config.jade.plugin_anvilcraftplasticraft.condenser_tower", "Condenser Tower");
             provider.add("config.jade.plugin_anvilcraft.fluid_tank", "Fluid Tank");
+            provider.add("gui.anvilcraftplasticraft.category.plasma_jet_blasting", "Plasma Jet Blasting");
+            provider.add("gui.anvilcraftplasticraft.category.condenser", "Condensation");
+            provider.add("jei.anvilcraftplasticraft.gas.gaseous_oil", "Gaseous oil");
+            provider.add("jei.anvilcraftplasticraft.gas.gaseous_water", "Gaseous water");
+            provider.add("jei.anvilcraftplasticraft.gas.experience_orbs", "Experience orbs");
+            provider.add("tooltip.anvilcraftplasticraft.jade.empty", "Empty");
+            provider.add("tooltip.anvilcraftplasticraft.jade.gas", "%1$s %2$s / %3$s");
+            provider.add("tooltip.anvilcraftplasticraft.jade.fluid", "%1$s %2$s / %3$s");
             provider.add("screen.anvilcraftplasticraft.hammer_direction.up", "Up");
             provider.add("screen.anvilcraftplasticraft.hammer_direction.down", "Down");
             provider.add("screen.anvilcraftplasticraft.hammer_direction.north", "North");
@@ -191,7 +212,136 @@ public final class PlasticraftDatagen {
             .unlockedBy("has_magnet_ingot", provider.has(ModItems.MAGNET_INGOT))
             .save(provider, AnvilcraftPlasticraft.of("magnetic_hardend_resin_cauldron"));
 
+        MultiblockRecipe.builder(ModBlocks.CONDENSER_TOWER, 1)
+            .layer(" E ", "ABA", " E ")
+            .layer(" C ", "C C", " C ")
+            .layer("DCD", "CFC", "DCD")
+            .symbol('A', condenserPipe())
+            .symbol('B', BlockPredicateWithState.of("anvilcraft:heavy_iron_trapdoor")
+                .hasState(TrapDoorBlock.HALF, Half.TOP))
+            .symbol('C', "anvilcraft:cut_heavy_iron_block")
+            .symbol('D', "anvilcraftplasticraft:high_viscosity_resin_block")
+            .symbol('E', condenserPipe())
+            .symbol('F', BlockPredicateWithState.of("anvilcraft:heavy_iron_trapdoor")
+                .hasState(TrapDoorBlock.HALF, Half.BOTTOM))
+            .save(provider, AnvilcraftPlasticraft.of("multiblock/condenser_tower"));
+
+        MultiblockConversionRecipe.builder()
+            .inputLayer(" E ", "ABA", " E ")
+            .inputLayer(" C ", "C C", " C ")
+            .inputLayer("DCD", "CFC", "DCD")
+            .inputSymbol('A', condenserPipe())
+            .inputSymbol('B', BlockPredicateWithState.of("anvilcraft:heavy_iron_trapdoor")
+                .hasState(TrapDoorBlock.HALF, Half.TOP))
+            .inputSymbol('C', "anvilcraft:cut_heavy_iron_block")
+            .inputSymbol('D', "anvilcraftplasticraft:high_viscosity_resin_block")
+            .inputSymbol('E', condenserPipe())
+            .inputSymbol('F', BlockPredicateWithState.of("anvilcraft:heavy_iron_trapdoor")
+                .hasState(TrapDoorBlock.HALF, Half.BOTTOM))
+            .outputLayer("ABC", "DEF", "GHI")
+            .outputLayer("JKL", "MNO", "PQR")
+            .outputLayer("STU", "VWX", "YZ[")
+            .outputSymbol('A', condenserTowerPart(Cube3x3PartHalf.BOTTOM_WN))
+            .outputSymbol('B', condenserTowerPart(Cube3x3PartHalf.BOTTOM_N))
+            .outputSymbol('C', condenserTowerPart(Cube3x3PartHalf.BOTTOM_EN))
+            .outputSymbol('D', condenserTowerPart(Cube3x3PartHalf.BOTTOM_W))
+            .outputSymbol('E', condenserTowerPart(Cube3x3PartHalf.BOTTOM_CENTER))
+            .outputSymbol('F', condenserTowerPart(Cube3x3PartHalf.BOTTOM_E))
+            .outputSymbol('G', condenserTowerPart(Cube3x3PartHalf.BOTTOM_WS))
+            .outputSymbol('H', condenserTowerPart(Cube3x3PartHalf.BOTTOM_S))
+            .outputSymbol('I', condenserTowerPart(Cube3x3PartHalf.BOTTOM_ES))
+            .outputSymbol('J', condenserTowerPart(Cube3x3PartHalf.MID_WN))
+            .outputSymbol('K', condenserTowerPart(Cube3x3PartHalf.MID_N))
+            .outputSymbol('L', condenserTowerPart(Cube3x3PartHalf.MID_EN))
+            .outputSymbol('M', condenserTowerPart(Cube3x3PartHalf.MID_W))
+            .outputSymbol('N', condenserTowerPart(Cube3x3PartHalf.MID_CENTER))
+            .outputSymbol('O', condenserTowerPart(Cube3x3PartHalf.MID_E))
+            .outputSymbol('P', condenserTowerPart(Cube3x3PartHalf.MID_WS))
+            .outputSymbol('Q', condenserTowerPart(Cube3x3PartHalf.MID_S))
+            .outputSymbol('R', condenserTowerPart(Cube3x3PartHalf.MID_ES))
+            .outputSymbol('S', condenserTowerPart(Cube3x3PartHalf.TOP_WN))
+            .outputSymbol('T', condenserTowerPart(Cube3x3PartHalf.TOP_N))
+            .outputSymbol('U', condenserTowerPart(Cube3x3PartHalf.TOP_EN))
+            .outputSymbol('V', condenserTowerPart(Cube3x3PartHalf.TOP_W))
+            .outputSymbol('W', condenserTowerPart(Cube3x3PartHalf.TOP_CENTER))
+            .outputSymbol('X', condenserTowerPart(Cube3x3PartHalf.TOP_E))
+            .outputSymbol('Y', condenserTowerPart(Cube3x3PartHalf.TOP_WS))
+            .outputSymbol('Z', condenserTowerPart(Cube3x3PartHalf.TOP_S))
+            .outputSymbol('[', condenserTowerPart(Cube3x3PartHalf.TOP_ES))
+            .save(provider, AnvilcraftPlasticraft.of("multiblock_conversion/condenser_tower"));
+
+        generatePlasmaJetBlastingRecipes(provider);
+        generateCondenserRecipes(provider);
+
         generateResinTimeWarpRecipes(provider);
+    }
+
+    private static void generatePlasmaJetBlastingRecipes(RegistrumRecipeProvider provider) {
+        PlasmaJetBlastingRecipe.builder()
+            .fluid(dev.dubhe.anvilcraft.init.block.ModFluids.OIL.getId())
+            .consume(50)
+            .transform(CondenserGas.GASEOUS_OIL)
+            .produce(50)
+            .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/crude_oil_to_gaseous_oil"));
+
+        PlasmaJetBlastingRecipe.builder()
+            .fluid(ResourceLocation.fromNamespaceAndPath("minecraft", "water"))
+            .consume(50)
+            .transform(CondenserGas.GASEOUS_WATER)
+            .produce(50)
+            .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/water_to_gaseous_water"));
+
+        PlasmaJetBlastingRecipe.builder()
+            .requires(dev.dubhe.anvilcraft.init.item.ModItems.RUBY)
+            .transform(dev.dubhe.anvilcraft.init.block.ModFluids.MELT_GEM.getId())
+            .produce(100)
+            .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/ruby_to_molten_gem"));
+        PlasmaJetBlastingRecipe.builder()
+            .requires(dev.dubhe.anvilcraft.init.item.ModItems.SAPPHIRE)
+            .transform(dev.dubhe.anvilcraft.init.block.ModFluids.MELT_GEM.getId())
+            .produce(100)
+            .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/sapphire_to_molten_gem"));
+        PlasmaJetBlastingRecipe.builder()
+            .requires(Items.EMERALD)
+            .transform(dev.dubhe.anvilcraft.init.block.ModFluids.MELT_GEM.getId())
+            .produce(100)
+            .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/emerald_to_molten_gem"));
+        PlasmaJetBlastingRecipe.builder()
+            .requires(dev.dubhe.anvilcraft.init.item.ModItems.TOPAZ)
+            .transform(dev.dubhe.anvilcraft.init.block.ModFluids.MELT_GEM.getId())
+            .produce(100)
+            .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/topaz_to_molten_gem"));
+
+        PlasmaJetBlastingRecipe.builder()
+            .fluid(dev.dubhe.anvilcraft.init.block.ModFluids.EXP_FLUID.getId())
+            .consume(50)
+            .transform(CondenserGas.EXPERIENCE_ORBS)
+            .produce(1)
+            .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/experience_fluid_to_orbs"));
+    }
+
+    private static void generateCondenserRecipes(RegistrumRecipeProvider provider) {
+        CondenserRecipe.builder()
+            .gas(CondenserGas.GASEOUS_WATER)
+            .consume(250)
+            .fluid(ResourceLocation.fromNamespaceAndPath("minecraft", "water"))
+            .produce(250)
+            .save(provider, AnvilcraftPlasticraft.of("condenser/gaseous_water_to_water"));
+    }
+
+    private static BlockPredicateWithState condenserPipe() {
+        return BlockPredicateWithState.of("anvilcraft:pipe_straight")
+            .hasState(PipeBlock.AXIS, Direction.Axis.X)
+            .hasState(PipeBlock.HAS_END_START, true)
+            .hasState(PipeBlock.HAS_END_END, true)
+            .hasState(PipeBlock.HAS_CHECK_VALVE, true)
+            .hasState(PipeBlock.WATERLOGGED, false);
+    }
+
+    private static BlockPredicateWithState condenserTowerPart(Cube3x3PartHalf part) {
+        return BlockPredicateWithState.of(ModBlocks.CONDENSER_TOWER.get())
+            .hasState(CondenserTowerBlock.HALF, part)
+            .hasState(CondenserTowerBlock.SEALED, false);
     }
 
     private static ItemIngredientPredicate resinAnvilVariant(int modelVariant) {

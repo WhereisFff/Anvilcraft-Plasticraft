@@ -4,8 +4,10 @@ import com.mojang.logging.LogUtils;
 import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
 import dev.anvilcraft.plasticraft.data.PlasticraftDatagen;
 import dev.anvilcraft.plasticraft.event.HighViscosityResinEvents;
+import dev.anvilcraft.plasticraft.init.ModParticles;
 import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.ModBlockEntities;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import dev.anvilcraft.plasticraft.init.item.ModItemGroups;
@@ -38,10 +40,12 @@ public final class AnvilcraftPlasticraft {
         ModItemGroups.register(modEventBus);
         ModFluids.register(modEventBus);
         ModBlocks.register();
+        ModBlockEntities.register();
         ModItems.register();
         PlasticItemTooltipManager.init();
         ModEntities.register();
         ModMenuTypes.register();
+        ModParticles.register(modEventBus);
         ModRecipeTypes.register(modEventBus);
         PlasticraftDatagen.init();
         NeoForge.EVENT_BUS.addListener(AnvilcraftPlasticraft::addItemTooltips);
@@ -66,6 +70,11 @@ public final class AnvilcraftPlasticraft {
             Capabilities.FluidHandler.ENTITY,
             ModEntities.HARDEND_RESIN_CAULDRON.get(),
             (cauldron, side) -> cauldron.getFluidHandler()
+        );
+        event.registerBlock(
+            Capabilities.FluidHandler.BLOCK,
+            dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity::capability,
+            ModBlocks.CONDENSER_TOWER.get()
         );
     }
 

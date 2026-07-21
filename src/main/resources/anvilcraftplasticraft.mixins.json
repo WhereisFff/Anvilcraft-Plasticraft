@@ -9,6 +9,10 @@
     "EntityHighViscosityResinMixin",
     "FishTankBlockMixin",
     "LargeCauldronBlockMixin",
+    "LargeCauldronBlockEntityMixin",
+    "PlasmaExperienceOrbMixin",
+    "PlasmaJetsBlockMixin",
+    "PlasmaJetsBlockEntityMixin",
     "PistonStructureResolverMixin",
     "ShockContextMixin"
   ],

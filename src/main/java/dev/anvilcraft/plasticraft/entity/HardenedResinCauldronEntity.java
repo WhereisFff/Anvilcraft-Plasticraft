@@ -10,6 +10,10 @@ import dev.dubhe.anvilcraft.api.fluid.network.FluidNetworkManager;
 import dev.dubhe.anvilcraft.api.itemhandler.IItemHandlerHolder;
 import dev.dubhe.anvilcraft.api.itemhandler.ItemHandlerUtil;
 import dev.dubhe.anvilcraft.api.itemhandler.PollableItemHandler;
+import dev.dubhe.anvilcraft.block.HeaterBlock;
+import dev.dubhe.anvilcraft.block.PlasmaJetsBlock;
+import dev.dubhe.anvilcraft.init.block.ModFluidTags;
+import dev.dubhe.anvilcraft.init.item.ModItemTags;
 import dev.dubhe.anvilcraft.item.AnvilHammerItem;
 import dev.dubhe.anvilcraft.util.AnvilUtil;
 import net.minecraft.core.BlockPos;
@@ -32,10 +36,12 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EntityDimensions;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -85,6 +91,10 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     private static final EntityDataAccessor<Integer> OUTLET_SIDE = SynchedEntityData.defineId(
         HardenedResinCauldronEntity.class,
         EntityDataSerializers.INT
+    );
+    private static final EntityDataAccessor<Boolean> IGNITED = SynchedEntityData.defineId(
+        HardenedResinCauldronEntity.class,
+        EntityDataSerializers.BOOLEAN
     );
     private static Supplier<ItemStack> defaultDropSupplier = () -> ItemStack.EMPTY;
 
@@ -159,6 +169,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     private boolean processingOutput;
     private boolean autoOutputting;
     private boolean restoringData;
+    private boolean refreshingIgnited;
     private long lastRecipeProcessingGameTime = Long.MIN_VALUE;
 
     public static void configureDefaultDrop(Supplier<ItemStack> supplier) {
@@ -276,7 +287,8 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         builder.define(FLUID_ID, -1)
             .define(FLUID_AMOUNT, 0)
             .define(DISPLAY_ITEMS, new CompoundTag())
-            .define(OUTLET_SIDE, -1);
+            .define(OUTLET_SIDE, -1)
+            .define(IGNITED, false);
     }
 
     @Override
@@ -343,10 +355,87 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     public void tick() {
         super.tick();
         if (this.isRemoved() || this.level().isClientSide) return;
+        this.tryIgniteFromOpeningContacts();
+        this.refreshIgnited();
         this.refreshRecipeContact();
         this.updateFluidNetworkRegistration();
         if (!this.ejectItemsIfNeeded()) this.absorbTouchingItems();
         this.spillFluidIfNeeded();
+        this.trySpawnPlasmaJets();
+    }
+
+    /** 与鱼缸一致，开口接触到燃烧中的实体时点燃可燃流体。 */
+    private void tryIgniteFromOpeningContacts() {
+        if (this.anvilcraft$isIgnited() || !this.canIgniteFluid()) return;
+        if (this.level().getEntitiesOfClass(
+            Entity.class,
+            this.openingContactArea(),
+            entity -> entity != this && entity.isAlive() && entity.isOnFire()
+        ).isEmpty()) return;
+        this.anvilcraft$setIgnited(true);
+    }
+
+    @Override
+    public boolean anvilcraft$isIgnited() {
+        return this.entityData.get(IGNITED);
+    }
+
+    @Override
+    public void anvilcraft$setIgnited(boolean ignited) {
+        boolean next = ignited && this.canIgniteFluid();
+        if (this.entityData.get(IGNITED) == next) return;
+        this.entityData.set(IGNITED, next);
+        this.hasImpulse = true;
+        this.hurtMarked = true;
+    }
+
+    private boolean canIgniteFluid() {
+        return this.getOrientation().attachmentFace() == Direction.UP
+            && this.fluidHandler.getFluid().is(ModFluidTags.IGNITABLE);
+    }
+
+    private void refreshIgnited() {
+        if (this.refreshingIgnited) return;
+        this.refreshingIgnited = true;
+        try {
+            if (!this.canIgniteFluid()) {
+                this.anvilcraft$setIgnited(false);
+                return;
+            }
+            if (this.anvilcraft$isIgnited()) return;
+            for (ItemStackHandler handler : new ItemStackHandler[]{this.input, this.output}) {
+                for (int slot = 0; slot < handler.getSlots(); slot++) {
+                    ItemStack stack = handler.getStackInSlot(slot);
+                    if (stack.is(ModItemTags.FIRE_STARTER)) {
+                        handler.extractItem(slot, 1, false);
+                        this.anvilcraft$setIgnited(true);
+                        return;
+                    }
+                    if (stack.is(ModItemTags.UNBROKEN_FIRE_STARTER)) {
+                        this.anvilcraft$setIgnited(true);
+                        return;
+                    }
+                }
+            }
+        } finally {
+            this.refreshingIgnited = false;
+        }
+    }
+
+    private void trySpawnPlasmaJets() {
+        if (!this.anvilcraft$isIgnited()
+            || this.getOrientation().attachmentFace() != Direction.UP
+            || this.fluidHandler.getFluidAmount() < 250
+            || this.time % 10 != 0) {
+            return;
+        }
+        BlockPos occupied = BlockPos.containing(this.getBoundingBox().getCenter());
+        BlockState heater = this.level().getBlockState(occupied.below());
+        if (!heater.is(dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER)
+            || heater.getValue(HeaterBlock.OVERLOAD)) {
+            return;
+        }
+        PlasmaJetsBlock.trySpawn(occupied.above(), this.level());
     }
 
     private void updateFluidNetworkRegistration() {
@@ -657,6 +746,32 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         if (inHand.getItem() instanceof AnvilHammerItem) {
             return InteractionResult.sidedSuccess(this.level().isClientSide);
         }
+        // 原版打火石必须优先于通用物品插入逻辑处理，否则会被塞进锅内输入栏。
+        if (inHand.is(Items.FLINT_AND_STEEL)) {
+            if (!this.canIgniteFluid()) return InteractionResult.PASS;
+            if (!this.level().isClientSide && !this.anvilcraft$isIgnited()) {
+                this.anvilcraft$setIgnited(true);
+                inHand.hurtAndBreak(1, player, LivingEntity.getSlotForHand(hand));
+                this.level().playSound(
+                    null,
+                    this.blockPosition(),
+                    SoundEvents.FLINTANDSTEEL_USE,
+                    SoundSource.BLOCKS,
+                    1.0F,
+                    1.0F
+                );
+                this.gameEvent(GameEvent.BLOCK_CHANGE, null);
+            }
+            return InteractionResult.sidedSuccess(this.level().isClientSide);
+        }
+        if (inHand.is(ModItemTags.FIRE_STARTER) || inHand.is(ModItemTags.UNBROKEN_FIRE_STARTER)) {
+            if (!this.canIgniteFluid()) return InteractionResult.PASS;
+            if (!this.level().isClientSide && !this.anvilcraft$isIgnited()) {
+                this.anvilcraft$setIgnited(true);
+                if (inHand.is(ModItemTags.FIRE_STARTER) && !player.getAbilities().instabuild) inHand.shrink(1);
+            }
+            return InteractionResult.sidedSuccess(this.level().isClientSide);
+        }
         if (this.tryFluidInteraction(player, hand)) return InteractionResult.sidedSuccess(this.level().isClientSide);
         if (inHand.isEmpty()) {
             if (this.level().isClientSide) return InteractionResult.SUCCESS;
@@ -831,6 +946,13 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         return this.fluidHandler;
     }
 
+    /** 返回当前朝上的开口处液面高度，供喷流粒子定位使用。 */
+    public double getFluidSurfaceY() {
+        AABB box = this.getBoundingBox();
+        float fill = Math.clamp((float) this.fluidHandler.getFluidAmount() / CAPACITY, 0.0F, 1.0F);
+        return box.minY + 0.251D + fill * 0.685D;
+    }
+
     // 对应的 AnvilCraft API 存在于本地相邻构建中，但并非每个已发布的 1.6.0 快照都包含它。
     // 当该 API 可用时，此签名仍会正确覆写它。
     public boolean anvilcraft$usesWholeCauldronFluidTransfers() {
@@ -940,6 +1062,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         tag.put("Fluid", this.fluidHandler.writeToNBT(registries, new CompoundTag()));
         tag.put("Inputs", this.input.serializeNBT(registries));
         tag.put("Outputs", this.output.serializeNBT(registries));
+        tag.putBoolean("Ignited", this.anvilcraft$isIgnited());
         Direction outletSide = this.getOutletLocalDirection();
         if (outletSide != null) tag.putString("OutletSide", outletSide.getName());
     }
@@ -957,6 +1080,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
             this.fluidHandler.readFromNBT(registries, tag.getCompound("Fluid"));
             this.input.deserializeNBT(registries, tag.getCompound("Inputs"));
             this.output.deserializeNBT(registries, tag.getCompound("Outputs"));
+            this.anvilcraft$setIgnited(tag.getBoolean("Ignited") || tag.getBoolean("ignited"));
             this.syncFluidData();
             this.syncItemData();
         } finally {

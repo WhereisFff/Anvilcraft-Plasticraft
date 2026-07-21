@@ -1,0 +1,7 @@
+{
+  "type": "anvilcraftplasticraft:plasma_jet_blasting",
+  "consume": 50,
+  "fluid": "anvilcraft:oil",
+  "produce": 50,
+  "transform": "anvilcraftplasticraft:gaseous_oil"
+}

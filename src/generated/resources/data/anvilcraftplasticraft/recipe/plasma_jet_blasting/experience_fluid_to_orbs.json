@@ -1,0 +1,7 @@
+{
+  "type": "anvilcraftplasticraft:plasma_jet_blasting",
+  "consume": 50,
+  "fluid": "anvilcraft:exp_fluid",
+  "produce": 1,
+  "transform": "anvilcraftplasticraft:experience_orbs"
+}

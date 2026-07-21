@@ -2,11 +2,17 @@ package dev.anvilcraft.plasticraft.integration.jei;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
+import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
+import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
 import dev.dubhe.anvilcraft.integration.jei.AnvilCraftJeiPlugin;
+import dev.dubhe.anvilcraft.integration.jei.util.JeiRecipeUtil;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.constants.RecipeTypes;
 import mezz.jei.api.registration.IRecipeCatalystRegistration;
+import mezz.jei.api.registration.IRecipeCategoryRegistration;
+import mezz.jei.api.registration.IRecipeRegistration;
 import mezz.jei.api.runtime.IJeiRuntime;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
@@ -26,6 +32,14 @@ import java.util.stream.Collectors;
 @JeiPlugin
 public final class PlasticraftJeiPlugin implements IModPlugin {
     private static final ResourceLocation UID = AnvilcraftPlasticraft.of("jei_plugin");
+    public static final mezz.jei.api.recipe.RecipeType<RecipeHolder<PlasmaJetBlastingRecipe>> PLASMA_JET_BLASTING =
+        mezz.jei.api.recipe.RecipeType.createRecipeHolderType(
+            AnvilcraftPlasticraft.of("plasma_jet_blasting")
+        );
+    public static final mezz.jei.api.recipe.RecipeType<RecipeHolder<CondenserRecipe>> CONDENSER =
+        mezz.jei.api.recipe.RecipeType.createRecipeHolderType(
+            AnvilcraftPlasticraft.of("condenser")
+        );
     private static final List<mezz.jei.api.recipe.RecipeType<?>> ANVIL_PROCESSING_TYPES = List.of(
         AnvilCraftJeiPlugin.MESH,
         AnvilCraftJeiPlugin.BLOCK_COMPRESS,
@@ -61,7 +75,35 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
     }
 
     @Override
+    public void registerCategories(IRecipeCategoryRegistration registration) {
+        registration.addRecipeCategories(new PlasmaJetBlastingCategory(
+            registration.getJeiHelpers().getGuiHelper()
+        ));
+        registration.addRecipeCategories(new CondenserCategory(
+            registration.getJeiHelpers().getGuiHelper()
+        ));
+    }
+
+    @Override
+    public void registerRecipes(IRecipeRegistration registration) {
+        registration.addRecipes(
+            PLASMA_JET_BLASTING,
+            JeiRecipeUtil.getRecipeHoldersFromType(ModRecipeTypes.PLASMA_JET_BLASTING_TYPE.get())
+        );
+        registration.addRecipes(
+            CONDENSER,
+            JeiRecipeUtil.getRecipeHoldersFromType(ModRecipeTypes.CONDENSER_TYPE.get())
+        );
+    }
+
+    @Override
     public void registerRecipeCatalysts(IRecipeCatalystRegistration registration) {
+        registration.addRecipeCatalyst(
+            dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON.asStack(),
+            PLASMA_JET_BLASTING
+        );
+        registration.addRecipeCatalyst(ModBlocks.CONDENSER_TOWER.asStack(), PLASMA_JET_BLASTING);
+        registration.addRecipeCatalyst(ModBlocks.CONDENSER_TOWER.asStack(), CONDENSER);
         for (mezz.jei.api.recipe.RecipeType<?> recipeType : ANVIL_PROCESSING_TYPES) {
             registration.addRecipeCatalyst(ModBlocks.RESIN_ANVIL.asStack(), recipeType);
             registration.addRecipeCatalyst(ModBlocks.HARDEND_RESIN_ANVIL.asStack(), recipeType);

@@ -1,0 +1,11 @@
+{
+  "type": "anvilcraftplasticraft:plasma_jet_blasting",
+  "fluid": "minecraft:null",
+  "ingredients": [
+    {
+      "items": "anvilcraft:topaz"
+    }
+  ],
+  "produce": 100,
+  "transform": "anvilcraft:melt_gem"
+}

@@ -1,0 +1,14 @@
+{
+  "multipart": [
+    {
+      "when": { "half": "mid_center" },
+      "apply": { "model": "anvilcraftplasticraft:block/condenser_tower" }
+    },
+    {
+      "when": {
+        "half": "bottom_center|bottom_w|bottom_e|bottom_n|bottom_s|bottom_wn|bottom_ws|bottom_en|bottom_es|mid_w|mid_e|mid_n|mid_s|mid_wn|mid_ws|mid_en|mid_es|top_center|top_w|top_e|top_n|top_s|top_wn|top_ws|top_en|top_es"
+      },
+      "apply": { "model": "anvilcraftplasticraft:block/condenser_tower_part" }
+    }
+  ]
+}

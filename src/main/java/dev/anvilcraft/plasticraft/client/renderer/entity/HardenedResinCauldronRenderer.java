@@ -9,7 +9,9 @@ import dev.dubhe.anvilcraft.api.itemhandler.ItemHandlerUtil;
 import dev.dubhe.anvilcraft.client.init.ModRenderTypes;
 import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.Sheets;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.entity.EntityRenderer;
@@ -25,6 +27,7 @@ import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.client.model.data.ModelData;
 
 import java.util.List;
 
@@ -35,6 +38,10 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
     public static final ModelResourceLocation OUTLET_MODEL = ModelResourceLocation.standalone(
         ResourceLocation.fromNamespaceAndPath("anvilcraft", "block/fish_tank_outlet")
     );
+    private static final ModelResourceLocation FIRE_MODEL = ModelResourceLocation.standalone(
+        ResourceLocation.fromNamespaceAndPath("anvilcraft", "block/fire_cauldron_fire4")
+    );
+    private static final float FIRE_MODEL_SURFACE_Y = 1.0F - (1.0F / 16.0F + 0.001F);
     private final BlockRenderDispatcher dispatcher;
     private final RandomSource random = RandomSource.create();
 
@@ -69,6 +76,8 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
         }
         FluidStack fluid = entity.getSyncedFluid();
         float fill = fluid.isEmpty() ? 0.0F : (float) fluid.getAmount() / HardenedResinCauldronEntity.CAPACITY;
+        float fluidBottom = 0.251F;
+        float fluidTop = fluidBottom + fill * 0.685F;
         List<ItemStack> items = entity.getSyncedItems();
         boolean gravityAlignedItems = !items.isEmpty() && entity.shouldUseGravityAlignedItemLayout();
         boolean itemsAtDownwardOpening = gravityAlignedItems
@@ -85,8 +94,6 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
         if (!fluid.isEmpty()) {
             float innerMin = 0.126F;
             float innerMax = 0.874F;
-            float fluidBottom = 0.251F;
-            float fluidTop = fluidBottom + fill * 0.685F;
             FluidRenderHelper.INSTANCE.renderFluidBox(
                 fluid,
                 innerMin,
@@ -101,6 +108,10 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
                 true,
                 false
             );
+            flush(buffers);
+        }
+        if (entity.anvilcraft$isIgnited()) {
+            this.renderFire(fluidTop, pose, buffers);
             flush(buffers);
         }
         pose.popPose();
@@ -146,6 +157,25 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
             1.0F,
             packedLight,
             OverlayTexture.NO_OVERLAY
+        );
+        pose.popPose();
+    }
+
+    private void renderFire(float surfaceY, PoseStack pose, MultiBufferSource buffers) {
+        pose.pushPose();
+        pose.translate(0.0F, surfaceY - FIRE_MODEL_SURFACE_Y, 0.0F);
+        this.dispatcher.getModelRenderer().renderModel(
+            pose.last(),
+            buffers.getBuffer(RenderType.CUTOUT),
+            null,
+            this.dispatcher.getBlockModelShaper().getModelManager().getModel(FIRE_MODEL),
+            1.0F,
+            1.0F,
+            1.0F,
+            LightTexture.FULL_BRIGHT,
+            OverlayTexture.NO_OVERLAY,
+            ModelData.EMPTY,
+            RenderType.cutout()
         );
         pose.popPose();
     }
