@@ -29,7 +29,7 @@ public final class OilVaporParticle extends TextureSheetParticle {
         this.xd = speedX + (this.random.nextDouble() - 0.5D) * 0.012D;
         this.yd = speedY + this.random.nextDouble() * 0.012D;
         this.zd = speedZ + (this.random.nextDouble() - 0.5D) * 0.012D;
-        this.quadSize = 0.07F + this.random.nextFloat() * 0.08F;
+        this.quadSize = 0.16F + this.random.nextFloat() * 0.16F;
         this.lifetime = 14 + this.random.nextInt(9);
         this.setColor(0.025F, 0.003F, 0.045F);
         this.setAlpha(0.82F);

@@ -59,6 +59,8 @@ public final class CondenserTowerProcess {
     private static final int EXPERIENCE_PER_OPERATION = 3;
     private static final double LARGE_CAULDRON_MIN_Y = -0.5D + 0.001D;
     private static final double LARGE_CAULDRON_CONTENT_HEIGHT = 2.25D;
+    private static final double LARGE_CAULDRON_VAPOR_HALF_WIDTH = 1.15D;
+    private static final double SMALL_CONTAINER_VAPOR_HALF_WIDTH = 0.11D;
     private CondenserTowerProcess() {
     }
 
@@ -82,7 +84,7 @@ public final class CondenserTowerProcess {
                         IFluidHandler.FluidAction.EXECUTE
                     );
                     if (!drained.isEmpty()) {
-                        emitVaporParticles(
+                        emitLargeCauldronVaporParticles(
                             level,
                             largeCauldronSurface(cauldron),
                             jets,
@@ -113,7 +115,12 @@ public final class CondenserTowerProcess {
                 FluidStack request = stored.copyWithAmount(Math.min(VAPORIZATION_PER_JET, stored.getAmount()));
                 FluidStack drained = endpoint.handler().drain(request, IFluidHandler.FluidAction.EXECUTE);
                 if (!drained.isEmpty()) {
-                    emitVaporParticles(level, smallContainerSurface(level, targetPos, endpoint), 1, true);
+                    emitSmallContainerVaporParticles(
+                        level,
+                        smallContainerSurface(level, targetPos, endpoint),
+                        1,
+                        true
+                    );
                     return;
                 }
             }
@@ -124,7 +131,12 @@ public final class CondenserTowerProcess {
         if (!cauldron.getFluid(cache, targetPos).builtInRegistryHolder().is(ModFluidTags.OIL)) return;
         if (cauldron.consumeOnce(cache, targetPos)) {
             cache.accept();
-            emitVaporParticles(level, ordinaryCauldronSurface(targetPos, targetState), 1, true);
+            emitSmallContainerVaporParticles(
+                level,
+                ordinaryCauldronSurface(targetPos, targetState),
+                1,
+                true
+            );
         }
     }
 
@@ -358,7 +370,7 @@ public final class CondenserTowerProcess {
                     Math.max(1, fluidAmount)
                 );
             } else if (CondenserGas.isGas(outputId)) {
-                emitVaporParticles(
+                emitLargeCauldronVaporParticles(
                     level,
                     largeCauldronSurface(cauldron),
                     1,
@@ -613,24 +625,67 @@ public final class CondenserTowerProcess {
         return pos.getCenter().add(0.0, height - 0.5, 0.0);
     }
 
-    private static void emitVaporParticles(ServerLevel level, Vec3 surface, int jets, boolean oil) {
+    private static void emitLargeCauldronVaporParticles(
+        ServerLevel level,
+        Vec3 surface,
+        int jets,
+        boolean oil
+    ) {
+        RandomSource random = level.getRandom();
+        int gridSize = Math.min(5, 3 + (Math.max(1, jets) - 1) / 3);
+        ParticleOptions particle = oil ? ModParticles.OIL_VAPOR.get() : ParticleTypes.CLOUD;
+        // 每格各生成一个带抖动的粒子，既覆盖完整液面，也避免随机采样集中在局部。
+        for (int cellX = 0; cellX < gridSize; cellX++) {
+            for (int cellZ = 0; cellZ < gridSize; cellZ++) {
+                double x = surface.x + cellCoordinate(cellX, gridSize, random)
+                    * LARGE_CAULDRON_VAPOR_HALF_WIDTH;
+                double z = surface.z + cellCoordinate(cellZ, gridSize, random)
+                    * LARGE_CAULDRON_VAPOR_HALF_WIDTH;
+                sendVaporParticle(level, particle, random, x, surface.y, z);
+            }
+        }
+    }
+
+    private static void emitSmallContainerVaporParticles(
+        ServerLevel level,
+        Vec3 surface,
+        int jets,
+        boolean oil
+    ) {
         RandomSource random = level.getRandom();
         int count = Math.min(8, Math.max(2, jets * 2));
         ParticleOptions particle = oil ? ModParticles.OIL_VAPOR.get() : ParticleTypes.CLOUD;
-        // count=0 允许把后三个参数作为粒子初速度，令雾气缓慢向上喷出。
         for (int i = 0; i < count; i++) {
-            level.sendParticles(
-                particle,
-                surface.x + (random.nextDouble() - 0.5D) * 0.22D,
-                surface.y + 0.015D + random.nextDouble() * 0.025D,
-                surface.z + (random.nextDouble() - 0.5D) * 0.22D,
-                0,
-                (random.nextDouble() - 0.5D) * 0.018D,
-                0.028D + random.nextDouble() * 0.028D,
-                (random.nextDouble() - 0.5D) * 0.018D,
-                1.0D
-            );
+            double x = surface.x + (random.nextDouble() * 2.0D - 1.0D) * SMALL_CONTAINER_VAPOR_HALF_WIDTH;
+            double z = surface.z + (random.nextDouble() * 2.0D - 1.0D) * SMALL_CONTAINER_VAPOR_HALF_WIDTH;
+            sendVaporParticle(level, particle, random, x, surface.y, z);
         }
+    }
+
+    private static double cellCoordinate(int cell, int gridSize, RandomSource random) {
+        return ((cell + random.nextDouble()) / gridSize) * 2.0D - 1.0D;
+    }
+
+    private static void sendVaporParticle(
+        ServerLevel level,
+        ParticleOptions particle,
+        RandomSource random,
+        double x,
+        double surfaceY,
+        double z
+    ) {
+        // count=0 允许把后三个参数作为粒子初速度，令雾气缓慢向上喷出。
+        level.sendParticles(
+            particle,
+            x,
+            surfaceY + 0.015D + random.nextDouble() * 0.025D,
+            z,
+            0,
+            (random.nextDouble() - 0.5D) * 0.018D,
+            0.028D + random.nextDouble() * 0.028D,
+            (random.nextDouble() - 0.5D) * 0.018D,
+            1.0D
+        );
     }
 
     private static void spawnExperienceOrbs(ServerLevel level, Vec3 position, int count) {

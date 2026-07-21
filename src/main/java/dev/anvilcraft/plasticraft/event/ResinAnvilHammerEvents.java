@@ -4,8 +4,11 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.dubhe.anvilcraft.util.TriggerUtil;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -14,6 +17,7 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 
@@ -21,6 +25,17 @@ import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 @EventBusSubscriber(modid = AnvilcraftPlasticraft.MOD_ID)
 public final class ResinAnvilHammerEvents {
     private ResinAnvilHammerEvents() {
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void incomingDamage(LivingIncomingDamageEvent event) {
+        if (!(event.getEntity() instanceof Player player)
+            || !player.isFallFlying()
+            || !(player.getItemBySlot(EquipmentSlot.HEAD).getItem() instanceof ResinAnvilHammerItem)
+            || !event.getSource().is(DamageTypes.FLY_INTO_WALL)) {
+            return;
+        }
+        event.setCanceled(true);
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST, receiveCanceled = true)
@@ -51,7 +66,19 @@ public final class ResinAnvilHammerEvents {
             || !(event.getItemStack().getItem() instanceof ResinAnvilHammerItem)) {
             return;
         }
-        recoilBehindView(event.getEntity());
+        event.setCanceled(true);
+        Player player = event.getEntity();
+        recoilBehindView(player);
+        player.currentImpulseImpactPos = player.position();
+        player.setIgnoreFallDamageFromCurrentImpulse(true);
+        player.level().playSound(
+            null,
+            player.blockPosition(),
+            dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.getDefaultState().getSoundType().getHitSound(),
+            SoundSource.PLAYERS,
+            0.8F,
+            0.9F + player.getRandom().nextFloat() * 0.2F
+        );
     }
 
     /** 反冲沿完整视线的反方向，俯仰角也会影响最终的上下速度。 */

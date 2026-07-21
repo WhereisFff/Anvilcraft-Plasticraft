@@ -15,12 +15,12 @@ public final class PlasticraftJadePlugin implements IWailaPlugin {
     @Override
     public void register(IWailaCommonRegistration registration) {
         registration.registerEntityDataProvider(PlasticEntityProvider.INSTANCE, AbstractPlasticEntity.class);
-        registration.registerBlockDataProvider(CondenserTowerProvider.INSTANCE, CondenserTowerBlock.class);
+        registration.registerFluidStorage(CondenserTowerProvider.INSTANCE, CondenserTowerBlock.class);
     }
 
     @Override
     public void registerClient(IWailaClientRegistration registration) {
         registration.registerEntityComponent(PlasticEntityProvider.INSTANCE, AbstractPlasticEntity.class);
-        registration.registerBlockComponent(CondenserTowerProvider.INSTANCE, CondenserTowerBlock.class);
+        registration.registerFluidStorageClient(CondenserTowerProvider.INSTANCE);
     }
 }

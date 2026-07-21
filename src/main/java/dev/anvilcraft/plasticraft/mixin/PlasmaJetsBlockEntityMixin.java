@@ -18,7 +18,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import net.minecraft.world.phys.Vec3;
 
 import java.util.Set;
 
@@ -63,14 +62,4 @@ abstract class PlasmaJetsBlockEntityMixin {
         }
     }
 
-    @Inject(method = "getParticleEndPos", at = @At("RETURN"), cancellable = true)
-    private void plasticraft$restoreContainerClearance(CallbackInfoReturnable<Vec3> cir) {
-        PlasmaJetsBlockEntity self = (PlasmaJetsBlockEntity) (Object) this;
-        Level level = self.getLevel();
-        if (level == null) return;
-        // 大型炼药锅占用喷流上方的一格，但这格不应让喷流视觉高度少一格。
-        if (CondenserTowerProcess.isPlasmaPassThrough(level.getBlockState(self.getBlockPos().above()))) {
-            cir.setReturnValue(self.getBlockPos().above(2).getBottomCenter());
-        }
-    }
 }

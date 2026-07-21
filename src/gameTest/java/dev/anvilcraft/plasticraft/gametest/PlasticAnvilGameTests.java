@@ -54,6 +54,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.EquipmentSlotGroup;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
@@ -97,6 +98,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 /** 对持久化落方块物理约定的运行时测试。 */
 public final class PlasticAnvilGameTests {
@@ -1195,6 +1197,7 @@ public final class PlasticAnvilGameTests {
             PlayerInteractEvent.LeftClickBlock.Action.START
         ));
         check(player.getDeltaMovement().z < -2.4D, "block click did not launch the player directly backward");
+        check(player.isIgnoringFallDamageFromCurrentImpulse(), "block recoil did not suppress its resulting fall damage");
 
         player.setDeltaMovement(Vec3.ZERO);
         player.setXRot(90.0F);
@@ -1233,6 +1236,69 @@ public final class PlasticAnvilGameTests {
         ));
         check(close(player.getDeltaMovement(), Vec3.ZERO), "holding left click repeatedly applied block recoil");
         helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x7x7", floor = true)
+    @TestHolder(description = "A resin hammer helmet rebounds downward after striking a ceiling")
+    static void resinAnvilHammerHelmetBouncesFromCeiling(ExtendedGameTestHelper helper) {
+        helper.setBlock(3, 3, 3, Blocks.STONE);
+        GameTestPlayer player = makeResinHammerHelmetPlayer(helper, new Vec3(3.5D, 1.0D, 3.5D));
+        player.setOnGround(true);
+        player.setDeltaMovement(0.0D, 0.4D, 0.0D);
+
+        player.travel(Vec3.ZERO);
+
+        check(player.verticalCollision && !player.verticalCollisionBelow, "upward travel did not hit the ceiling");
+        check(close(player.getDeltaMovement().y, -0.48D), "ceiling rebound did not preserve the 1.2 restitution");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x7x7", floor = true)
+    @TestHolder(description = "A resin hammer helmet launches a headbutted entity and loses one durability")
+    static void resinAnvilHammerHelmetLaunchesEntity(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = makeResinHammerHelmetPlayer(helper, new Vec3(3.5D, 1.0D, 3.5D));
+        Zombie target = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 2.85D, 3.5D));
+        target.setNoGravity(true);
+        target.setDeltaMovement(Vec3.ZERO);
+        ItemStack hammer = player.getItemBySlot(EquipmentSlot.HEAD);
+        player.setOnGround(true);
+        player.setDeltaMovement(0.0D, 0.2D, 0.0D);
+
+        player.travel(Vec3.ZERO);
+
+        check(target.getDeltaMovement().y > 0.29D, "headbutted entity did not receive the upward impulse");
+        check(hammer.getDamageValue() == 1, "entity headbutt consumed the wrong amount of helmet durability");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 80)
+    @EmptyTemplate("7x7x7")
+    @TestHolder(description = "A resin hammer helmet rebounds from an elytra wall collision without taking damage")
+    static void resinAnvilHammerElytraWallBounceIsNonDamaging(ExtendedGameTestHelper helper) {
+        helper.setBlock(4, 2, 3, Blocks.STONE);
+        helper.setBlock(4, 3, 3, Blocks.STONE);
+        GameTestPlayer player = makeResinHammerHelmetPlayer(helper, new Vec3(3.5D, 2.0D, 3.5D));
+        player.setNoGravity(true);
+        helper.runAfterDelay(61, () -> {
+            Vec3 position = helper.absoluteVec(new Vec3(3.5D, 2.0D, 3.5D));
+            player.moveTo(position.x, position.y, position.z);
+            player.invulnerableTime = 0;
+            player.setYRot(-90.0F);
+            player.setXRot(0.0F);
+            player.setOnGround(false);
+            player.startFallFlying();
+            player.setDeltaMovement(0.9D, 0.0D, 0.0D);
+            float healthBefore = player.getHealth();
+
+            player.travel(Vec3.ZERO);
+
+            check(player.horizontalCollision, "elytra travel did not collide with the wall");
+            check(player.getDeltaMovement().x < -0.65D, "wall collision did not reflect the horizontal velocity");
+            check(close(player.getHealth(), healthBefore), "elytra wall collision damaged the helmeted player");
+            helper.succeed();
+        });
     }
 
     @GameTest(timeoutTicks = 20)
@@ -2586,6 +2652,39 @@ public final class PlasticAnvilGameTests {
     }
 
     @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "7x7x7", floor = true)
+    @TestHolder(description = "A player can jump and step up while carrying a resin anvil on their head")
+    static void playerJumpsAndStepsWithResinAnvil(ExtendedGameTestHelper helper) {
+        assertPlayerJumpsAndStepsWithHeadProduct(
+            helper,
+            "resin anvil",
+            position -> createResinAnvil(helper, position, ModBlocks.RESIN_ANVIL.asStack())
+        );
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "7x7x7", floor = true)
+    @TestHolder(description = "A player can jump and step up while carrying a hardened resin anvil on their head")
+    static void playerJumpsAndStepsWithHardenedResinAnvil(ExtendedGameTestHelper helper) {
+        assertPlayerJumpsAndStepsWithHeadProduct(
+            helper,
+            "hardened resin anvil",
+            position -> createAnvil(helper, position)
+        );
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "7x7x7", floor = true)
+    @TestHolder(description = "A player can jump and step up while carrying a hardened resin cauldron on their head")
+    static void playerJumpsAndStepsWithHardenedResinCauldron(ExtendedGameTestHelper helper) {
+        assertPlayerJumpsAndStepsWithHeadProduct(
+            helper,
+            "hardened resin cauldron",
+            position -> createPot(helper, position, PlasticEntityOrientation.DEFAULT)
+        );
+    }
+
+    @GameTest(timeoutTicks = 30)
     @EmptyTemplate("7x7x7")
     @TestHolder(description = "A carrier cannot pass through its anvil when the anvil is blocked by a solid ceiling")
     static void blockedCarrierRemainsBelowAnvil(ExtendedGameTestHelper helper) {
@@ -3285,6 +3384,65 @@ public final class PlasticAnvilGameTests {
         );
         check(helper.getLevel().addFreshEntity(pot), "failed to add plastic pot to the test level");
         return pot;
+    }
+
+    private static void assertPlayerJumpsAndStepsWithHeadProduct(
+        ExtendedGameTestHelper helper,
+        String productName,
+        Function<Vec3, AbstractPlasticEntity> productFactory
+    ) {
+        helper.setBlock(3, 1, 3, Blocks.STONE_SLAB);
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        Vec3 playerPosition = helper.absoluteVec(new Vec3(2.5D, 1.0D, 3.5D));
+        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        Vec3 relativeProductPosition = new Vec3(2.5D, 1.0D + player.getBbHeight(), 3.5D);
+        AbstractPlasticEntity product = productFactory.apply(relativeProductPosition);
+
+        helper.runAfterDelay(3, () -> {
+            Vec3 playerStart = player.position();
+            Vec3 productStart = product.position();
+            check(
+                Math.abs(product.getBoundingBox().minY - player.getBoundingBox().maxY) < 0.03D,
+                productName + " did not settle on the player's head"
+            );
+
+            player.setOnGround(true);
+            player.jumpFromGround();
+            player.travel(Vec3.ZERO);
+            check(player.getY() > playerStart.y + 0.35D, productName + " prevented the player from jumping");
+            check(product.getY() > productStart.y + 0.35D, productName + " did not follow the player's jump");
+
+            player.moveTo(playerStart.x, playerStart.y, playerStart.z);
+            product.setPos(productStart);
+            player.setDeltaMovement(Vec3.ZERO);
+            product.setDeltaMovement(Vec3.ZERO);
+            player.setOnGround(true);
+            player.setDeltaMovement(0.7D, 0.0D, 0.0D);
+            player.travel(Vec3.ZERO);
+            check(
+                player.getX() > playerStart.x + 0.4D && player.getY() > playerStart.y + 0.4D,
+                productName + " prevented the player from stepping up"
+            );
+            check(
+                product.getX() > productStart.x + 0.4D && product.getY() > productStart.y + 0.4D,
+                productName + " did not follow the player's step-up"
+            );
+            helper.succeed();
+        });
+    }
+
+    private static GameTestPlayer makeResinHammerHelmetPlayer(
+        ExtendedGameTestHelper helper,
+        Vec3 relativePosition
+    ) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        Vec3 position = helper.absoluteVec(relativePosition);
+        player.moveTo(position.x, position.y, position.z);
+        player.setItemSlot(
+            EquipmentSlot.HEAD,
+            dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack()
+        );
+        return player;
     }
 
     private static void fillWater(

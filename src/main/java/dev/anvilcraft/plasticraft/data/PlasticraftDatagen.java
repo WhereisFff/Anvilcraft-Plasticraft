@@ -213,30 +213,30 @@ public final class PlasticraftDatagen {
             .save(provider, AnvilcraftPlasticraft.of("magnetic_hardend_resin_cauldron"));
 
         MultiblockRecipe.builder(ModBlocks.CONDENSER_TOWER, 1)
-            .layer(" E ", "ABA", " E ")
-            .layer(" C ", "C C", " C ")
             .layer("DCD", "CFC", "DCD")
-            .symbol('A', condenserPipe())
-            .symbol('B', BlockPredicateWithState.of("anvilcraft:heavy_iron_trapdoor")
+            .layer(" C ", "C C", " C ")
+            .layer(" E ", "ABA", " E ")
+            .symbol('A', condenserPipe(Direction.Axis.X))
+            .symbol('B', BlockPredicateWithState.of(Blocks.COPPER_TRAPDOOR)
                 .hasState(TrapDoorBlock.HALF, Half.TOP))
-            .symbol('C', "anvilcraft:cut_heavy_iron_block")
+            .symbol('C', "anvilcraft:cut_brass_pillar")
             .symbol('D', "anvilcraftplasticraft:high_viscosity_resin_block")
-            .symbol('E', condenserPipe())
-            .symbol('F', BlockPredicateWithState.of("anvilcraft:heavy_iron_trapdoor")
+            .symbol('E', condenserPipe(Direction.Axis.Z))
+            .symbol('F', BlockPredicateWithState.of(Blocks.COPPER_TRAPDOOR)
                 .hasState(TrapDoorBlock.HALF, Half.BOTTOM))
             .save(provider, AnvilcraftPlasticraft.of("multiblock/condenser_tower"));
 
         MultiblockConversionRecipe.builder()
-            .inputLayer(" E ", "ABA", " E ")
-            .inputLayer(" C ", "C C", " C ")
             .inputLayer("DCD", "CFC", "DCD")
-            .inputSymbol('A', condenserPipe())
-            .inputSymbol('B', BlockPredicateWithState.of("anvilcraft:heavy_iron_trapdoor")
+            .inputLayer(" C ", "C C", " C ")
+            .inputLayer(" E ", "ABA", " E ")
+            .inputSymbol('A', condenserPipe(Direction.Axis.X))
+            .inputSymbol('B', BlockPredicateWithState.of(Blocks.COPPER_TRAPDOOR)
                 .hasState(TrapDoorBlock.HALF, Half.TOP))
-            .inputSymbol('C', "anvilcraft:cut_heavy_iron_block")
+            .inputSymbol('C', "anvilcraft:cut_brass_pillar")
             .inputSymbol('D', "anvilcraftplasticraft:high_viscosity_resin_block")
-            .inputSymbol('E', condenserPipe())
-            .inputSymbol('F', BlockPredicateWithState.of("anvilcraft:heavy_iron_trapdoor")
+            .inputSymbol('E', condenserPipe(Direction.Axis.Z))
+            .inputSymbol('F', BlockPredicateWithState.of(Blocks.COPPER_TRAPDOOR)
                 .hasState(TrapDoorBlock.HALF, Half.BOTTOM))
             .outputLayer("ABC", "DEF", "GHI")
             .outputLayer("JKL", "MNO", "PQR")
@@ -329,9 +329,9 @@ public final class PlasticraftDatagen {
             .save(provider, AnvilcraftPlasticraft.of("condenser/gaseous_water_to_water"));
     }
 
-    private static BlockPredicateWithState condenserPipe() {
+    private static BlockPredicateWithState condenserPipe(Direction.Axis axis) {
         return BlockPredicateWithState.of("anvilcraft:pipe_straight")
-            .hasState(PipeBlock.AXIS, Direction.Axis.X)
+            .hasState(PipeBlock.AXIS, axis)
             .hasState(PipeBlock.HAS_END_START, true)
             .hasState(PipeBlock.HAS_END_END, true)
             .hasState(PipeBlock.HAS_CHECK_VALVE, true)

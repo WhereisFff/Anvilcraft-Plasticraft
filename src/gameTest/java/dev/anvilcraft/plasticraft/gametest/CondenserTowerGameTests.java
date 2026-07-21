@@ -11,8 +11,13 @@ import dev.anvilcraft.plasticraft.recipe.CondenserGas;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
+import dev.dubhe.anvilcraft.block.fluid.PipeBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.init.block.ModFluids;
+import dev.dubhe.anvilcraft.recipe.multiblock.BlockPattern;
+import dev.dubhe.anvilcraft.recipe.multiblock.BlockPredicateWithState;
+import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockConversionRecipe;
+import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockRecipe;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
@@ -28,7 +33,9 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.Half;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidType;
@@ -130,12 +137,21 @@ public final class CondenserTowerGameTests {
         check(outward.drain(250, IFluidHandler.FluidAction.EXECUTE).getAmount() == 250,
             "tower output interface could not drain stored fluid");
 
-        check(helper.getLevel().getRecipeManager()
-                .byKey(AnvilcraftPlasticraft.of("multiblock/condenser_tower")).isPresent(),
+        var multiblockHolder = helper.getLevel().getRecipeManager()
+            .byKey(AnvilcraftPlasticraft.of("multiblock/condenser_tower"));
+        check(multiblockHolder.isPresent()
+                && multiblockHolder.get().value() instanceof MultiblockRecipe,
             "condenser tower multiblock recipe was not loaded");
-        check(helper.getLevel().getRecipeManager()
-                .byKey(AnvilcraftPlasticraft.of("multiblock_conversion/condenser_tower")).isPresent(),
+        checkCondenserInputPattern(((MultiblockRecipe) multiblockHolder.orElseThrow().value()).getPattern());
+
+        var conversionHolder = helper.getLevel().getRecipeManager()
+            .byKey(AnvilcraftPlasticraft.of("multiblock_conversion/condenser_tower"));
+        check(conversionHolder.isPresent()
+                && conversionHolder.get().value() instanceof MultiblockConversionRecipe,
             "condenser tower conversion recipe was not loaded");
+        checkCondenserInputPattern(
+            ((MultiblockConversionRecipe) conversionHolder.orElseThrow().value()).getInputPattern()
+        );
         check(helper.getLevel().getRecipeManager()
                 .byKey(AnvilcraftPlasticraft.of("condenser/gaseous_water_to_water")).isPresent(),
             "condenser collection recipe was not loaded");
@@ -360,8 +376,8 @@ public final class CondenserTowerGameTests {
         check(level.getBlockEntity(jetPos) instanceof PlasmaJetsBlockEntity, "plasma jet block entity was not created");
 
         PlasmaJetsBlockEntity jet = (PlasmaJetsBlockEntity) level.getBlockEntity(jetPos);
-        check(jet.getParticleEndPos().equals(jetPos.above(2).getBottomCenter()),
-            "large cauldron shortened the plasma jet particle endpoint by one block");
+        check(jet.getParticleEndPos().equals(jetPos.above().getBottomCenter()),
+            "large cauldron changed the plasma jet particle endpoint");
         PlasmaJetsBlockEntity.tick(level, jetPos, level.getBlockState(jetPos), jet);
         check(level.getBlockState(jetPos).is(dev.dubhe.anvilcraft.init.block.ModBlocks.PLASMA_JETS),
             "the initial jet directly below a large cauldron was removed by wall integrity checks");
@@ -413,6 +429,53 @@ public final class CondenserTowerGameTests {
             if (stack.is(item)) count += stack.getCount();
         }
         return count;
+    }
+
+    private static void checkCondenserInputPattern(BlockPattern pattern) {
+        check(pattern.getLayers().equals(List.of(
+            List.of("DCD", "CFC", "DCD"),
+            List.of(" C ", "C C", " C "),
+            List.of(" E ", "ABA", " E ")
+        )), "condenser recipe layers were not ordered from bottom to top");
+
+        checkPipePredicate(pattern.getBySymbol('A'), Direction.Axis.X, "west/east");
+        checkPipePredicate(pattern.getBySymbol('E'), Direction.Axis.Z, "north/south");
+        check(pattern.getBySymbol('C').getBlock()
+                == dev.dubhe.anvilcraft.init.block.ModBlocks.CUT_BRASS_PILLAR.get(),
+            "condenser recipe did not use cut brass pillars");
+        check(pattern.getBySymbol('D').getBlock() == ModBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get(),
+            "condenser recipe did not use high-viscosity resin blocks");
+        checkTrapdoorPredicate(pattern.getBySymbol('B'), Half.TOP, "top");
+        checkTrapdoorPredicate(pattern.getBySymbol('F'), Half.BOTTOM, "bottom");
+    }
+
+    private static void checkPipePredicate(
+        BlockPredicateWithState predicate,
+        Direction.Axis axis,
+        String position
+    ) {
+        check(predicate.getBlock() == dev.dubhe.anvilcraft.init.block.ModBlocks.PIPE_STRAIGHT.get(),
+            position + " condenser interface was not a straight pipe");
+        check(predicate.getPropertyValue(PipeBlock.AXIS) == axis,
+            position + " condenser pipe used the wrong axis");
+        check(Boolean.TRUE.equals(predicate.getPropertyValue(PipeBlock.HAS_END_START))
+                && Boolean.TRUE.equals(predicate.getPropertyValue(PipeBlock.HAS_END_END)),
+            position + " condenser pipe did not render both ends");
+        check(Boolean.TRUE.equals(predicate.getPropertyValue(PipeBlock.HAS_CHECK_VALVE)),
+            position + " condenser pipe did not include a check valve");
+        check(Boolean.FALSE.equals(predicate.getPropertyValue(PipeBlock.WATERLOGGED)),
+            position + " condenser pipe was waterlogged");
+    }
+
+    private static void checkTrapdoorPredicate(
+        BlockPredicateWithState predicate,
+        Half half,
+        String position
+    ) {
+        check(predicate.getBlock() == Blocks.COPPER_TRAPDOOR,
+            position + " condenser trapdoor was not copper");
+        check(predicate.getPropertyValue(TrapDoorBlock.HALF) == half,
+            position + " condenser trapdoor used the wrong half");
     }
 
     private static void check(boolean condition, String message) {

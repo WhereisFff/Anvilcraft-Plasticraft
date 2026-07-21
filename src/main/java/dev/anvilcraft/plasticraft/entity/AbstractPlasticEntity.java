@@ -418,6 +418,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
                 this.setRot(this.clientSnapshotYRot, this.clientSnapshotXRot);
                 this.clientSnapshotPending = false;
             }
+            // 仅重建本地玩家碰撞预测所需的支撑关系，实体运动仍由服务端快照决定。
+            this.refreshClientSupportObservation();
             this.firstTick = false;
             return;
         }
@@ -669,6 +671,25 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             this.hurtMarked = true;
         }
         this.checkBelowWorld();
+    }
+
+    private void refreshClientSupportObservation() {
+        Direction gravityDirection = null;
+        if (!this.isNoGravity() && !AccelerateManager.isControlledByRing(this)) {
+            Vec3 gravity = GravityManager.getNetGravityVectorForFallingBlock(this);
+            PlasticFluidPhysics.FluidContact fluidContact = PlasticFluidPhysics.sample(this);
+            double buoyancy = this.isBuoyantInFluids()
+                ? this.getFluidBuoyancyAcceleration(fluidContact, gravity)
+                : 0.0D;
+            gravityDirection = PlasticEntityPhysics.directionOrNull(gravity.add(0.0D, buoyancy, 0.0D));
+        }
+        Entity support = gravityDirection == null
+            ? null
+            : PlasticEntityPhysics.findSupport(this, gravityDirection);
+        this.supportObservation = support == null
+            ? null
+            : PlasticEntityPhysics.SupportObservation.capture(support);
+        this.supportDirection = support == null ? null : gravityDirection;
     }
 
     private void applySurfaceFriction(Direction gravityDirection) {

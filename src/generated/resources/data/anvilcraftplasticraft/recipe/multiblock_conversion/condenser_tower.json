@@ -3,9 +3,9 @@
   "inputPattern": {
     "layers": [
       [
-        " E ",
-        "ABA",
-        " E "
+        "DCD",
+        "CFC",
+        "DCD"
       ],
       [
         " C ",
@@ -13,9 +13,9 @@
         " C "
       ],
       [
-        "DCD",
-        "CFC",
-        "DCD"
+        " E ",
+        "ABA",
+        " E "
       ]
     ],
     "symbols": {
@@ -30,13 +30,13 @@
         }
       },
       "B": {
-        "block": "anvilcraft:heavy_iron_trapdoor",
+        "block": "minecraft:copper_trapdoor",
         "properties": {
           "half": "top"
         }
       },
       "C": {
-        "block": "anvilcraft:cut_heavy_iron_block"
+        "block": "anvilcraft:cut_brass_pillar"
       },
       "D": {
         "block": "anvilcraftplasticraft:high_viscosity_resin_block"
@@ -44,7 +44,7 @@
       "E": {
         "block": "anvilcraft:pipe_straight",
         "properties": {
-          "axis": "x",
+          "axis": "z",
           "has_check_valve": "true",
           "has_end_end": "true",
           "has_end_start": "true",
@@ -52,7 +52,7 @@
         }
       },
       "F": {
-        "block": "anvilcraft:heavy_iron_trapdoor",
+        "block": "minecraft:copper_trapdoor",
         "properties": {
           "half": "bottom"
         }

@@ -10,13 +10,17 @@
     "FishTankBlockMixin",
     "LargeCauldronBlockMixin",
     "LargeCauldronBlockEntityMixin",
+    "LivingEntityResinHeadMixin",
     "PlasmaExperienceOrbMixin",
     "PlasmaJetsBlockMixin",
     "PlasmaJetsBlockEntityMixin",
     "PistonStructureResolverMixin",
     "ShockContextMixin"
   ],
-  "client": [],
+  "client": [
+    "PlasmaJetsBlockEntityClientMixin",
+    "RecipeUtilMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   },
