@@ -9,12 +9,12 @@ import dev.anvilcraft.plasticraft.api.entity.PlasmaExperienceOrbExtension;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
 import dev.anvilcraft.plasticraft.particle.FluidVaporParticleOptions;
-import dev.anvilcraft.yukkuri.api.event.LargeCauldronProcessEvent;
-import dev.anvilcraft.yukkuri.api.vapor.IVaporConsumer;
-import dev.anvilcraft.yukkuri.api.vapor.VaporAction;
-import dev.anvilcraft.yukkuri.api.vapor.VaporizationContext;
-import dev.anvilcraft.yukkuri.api.vapor.VaporizationManager;
-import dev.anvilcraft.yukkuri.api.vapor.VaporStack;
+import dev.anvilcraft.lib.v2.yukkuri.api.event.LargeCauldronProcessEvent;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.IVaporConsumer;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporAction;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationContext;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationManager;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporStack;
 import dev.dubhe.anvilcraft.api.block.IIgnitableCauldron;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
 import dev.dubhe.anvilcraft.api.itemhandler.ItemHandlerUtil;
@@ -69,7 +69,7 @@ public final class CondenserTowerProcess {
     private CondenserTowerProcess() {
     }
 
-    /** 供测试和旧调用方使用的完整大锅处理入口；运行时由 Yukkuri 的 Mixin 调用。 */
+    /** 供测试和旧调用方使用的完整大锅处理入口；运行时由 AnvilCraft 直接调用 Yukkuri。 */
     public static void tickLargeCauldron(ServerLevel level, LargeCauldronBlockEntity cauldron) {
         VaporizationManager.tick(level, cauldron);
     }
@@ -79,7 +79,9 @@ public final class CondenserTowerProcess {
         VaporizationContext context = event.context();
         if (event.phase() == LargeCauldronProcessEvent.Phase.BEFORE_VAPORIZATION) {
             int jets = countJetsBelow(context.level(), context.cauldronPos());
-            if (jets > 0) processLargeRecipes(context.level(), context.cauldron(), jets);
+            if (jets > 0 && context.cauldron() instanceof LargeCauldronBlockEntity cauldron) {
+                processLargeRecipes(context.level(), cauldron, jets);
+            }
         } else {
             // Cached gas can finish condensing after its source has disappeared.
             condenseFirstTower(context.level(), context.cauldronPos());

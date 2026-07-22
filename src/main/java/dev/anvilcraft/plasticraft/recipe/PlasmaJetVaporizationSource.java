@@ -1,11 +1,12 @@
 package dev.anvilcraft.plasticraft.recipe;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.yukkuri.api.vapor.VaporizationContext;
-import dev.anvilcraft.yukkuri.api.vapor.VaporizationOffer;
-import dev.anvilcraft.yukkuri.api.vapor.VaporizationSource;
-import dev.anvilcraft.yukkuri.api.vapor.VaporStack;
-import dev.anvilcraft.yukkuri.api.vapor.YukkuriVaporTypes;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationContext;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationOffer;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationSource;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporStack;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.YukkuriVaporTypes;
+import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
 import dev.dubhe.anvilcraft.recipe.component.HasCauldronSimple;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -84,9 +85,10 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
 
     @Override
     public void commit(VaporizationContext context, VaporizationOffer offer) {
+        if (!(context.cauldron() instanceof LargeCauldronBlockEntity cauldron)) return;
         CondenserTowerProcess.emitLargeCauldronVaporParticles(
             context.level(),
-            CondenserTowerProcess.largeCauldronSurface(context.cauldron()),
+            CondenserTowerProcess.largeCauldronSurface(cauldron),
             CondenserTowerProcess.countJetsBelow(context.level(), context.cauldronPos()),
             offer.input()
         );

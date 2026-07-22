@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.recipe;
 
-import dev.anvilcraft.yukkuri.api.vapor.YukkuriVaporTypes;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.YukkuriVaporTypes;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 

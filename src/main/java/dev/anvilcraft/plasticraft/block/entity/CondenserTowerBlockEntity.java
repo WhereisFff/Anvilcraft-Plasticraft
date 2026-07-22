@@ -2,8 +2,8 @@ package dev.anvilcraft.plasticraft.block.entity;
 
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.recipe.CondenserGas;
-import dev.anvilcraft.yukkuri.api.vapor.IVaporConsumer;
-import dev.anvilcraft.yukkuri.api.vapor.VaporAction;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.IVaporConsumer;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporAction;
 import dev.dubhe.anvilcraft.api.fluid.IFluidHandlerHolder;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidNetworkManager;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
