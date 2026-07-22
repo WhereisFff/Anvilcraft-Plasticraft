@@ -7,8 +7,14 @@ import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
 import dev.anvilcraft.plasticraft.api.entity.PlasmaExperienceOrbExtension;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
-import dev.anvilcraft.plasticraft.init.ModParticles;
 import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
+import dev.anvilcraft.plasticraft.particle.FluidVaporParticleOptions;
+import dev.anvilcraft.yukkuri.api.event.LargeCauldronProcessEvent;
+import dev.anvilcraft.yukkuri.api.vapor.IVaporConsumer;
+import dev.anvilcraft.yukkuri.api.vapor.VaporAction;
+import dev.anvilcraft.yukkuri.api.vapor.VaporizationContext;
+import dev.anvilcraft.yukkuri.api.vapor.VaporizationManager;
+import dev.anvilcraft.yukkuri.api.vapor.VaporStack;
 import dev.dubhe.anvilcraft.api.block.IIgnitableCauldron;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
 import dev.dubhe.anvilcraft.api.itemhandler.ItemHandlerUtil;
@@ -20,7 +26,6 @@ import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.block.ModFluidTags;
-import dev.dubhe.anvilcraft.init.block.ModFluids;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.SuperHeatingRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.outcome.RoyalPreferenceOutcome;
 import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
@@ -64,39 +69,21 @@ public final class CondenserTowerProcess {
     private CondenserTowerProcess() {
     }
 
-    /** 每条贴锅喷流每刻处理 50 mB 顶层液体，并把油/水转成虚拟气体。 */
+    /** 供测试和旧调用方使用的完整大锅处理入口；运行时由 Yukkuri 的 Mixin 调用。 */
     public static void tickLargeCauldron(ServerLevel level, LargeCauldronBlockEntity cauldron) {
-        if (!cauldron.isMainPart()) return;
-        int jets = countJetsBelow(level, cauldron.getBlockPos());
-        if (jets > 0) {
-            processLargeRecipes(level, cauldron, jets);
+        VaporizationManager.tick(level, cauldron);
+    }
 
-            FluidStack topFluid = cauldron.getTopFluid();
-            if (!topFluid.isEmpty() && (topFluid.is(ModFluidTags.OIL) || topFluid.is(Fluids.WATER))) {
-                int amount = Math.min(topFluid.getAmount(), jets * VAPORIZATION_PER_JET);
-                if (amount > 0) {
-                    ResourceLocation gas = topFluid.is(ModFluidTags.OIL)
-                        ? CondenserGas.GASEOUS_OIL
-                        : CondenserGas.GASEOUS_WATER;
-                    FluidStack request = topFluid.copyWithAmount(amount);
-                    FluidStack drained = cauldron.getFluids().drainStoredFluid(
-                        request,
-                        IFluidHandler.FluidAction.EXECUTE
-                    );
-                    if (!drained.isEmpty()) {
-                        emitLargeCauldronVaporParticles(
-                            level,
-                            largeCauldronSurface(cauldron),
-                            jets,
-                            topFluid.is(ModFluidTags.OIL)
-                        );
-                        collectGas(level, cauldron.getBlockPos(), gas, drained.getAmount());
-                    }
-                }
-            }
+    /** 在通用气化事务前处理喷流配方，在事务后推进冷凝。 */
+    public static void onLargeCauldronProcess(LargeCauldronProcessEvent event) {
+        VaporizationContext context = event.context();
+        if (event.phase() == LargeCauldronProcessEvent.Phase.BEFORE_VAPORIZATION) {
+            int jets = countJetsBelow(context.level(), context.cauldronPos());
+            if (jets > 0) processLargeRecipes(context.level(), context.cauldron(), jets);
+        } else {
+            // Cached gas can finish condensing after its source has disappeared.
+            condenseFirstTower(context.level(), context.cauldronPos());
         }
-        // Cached gas can finish condensing after the spray has disappeared.
-        condenseFirstTower(level, cauldron.getBlockPos());
     }
 
     /** 普通炼药锅、鱼缸和实体锅只气化，不接入冷凝塔。 */
@@ -119,7 +106,7 @@ public final class CondenserTowerProcess {
                         level,
                         smallContainerSurface(level, targetPos, endpoint),
                         1,
-                        true
+                        drained
                     );
                     return;
                 }
@@ -128,14 +115,15 @@ public final class CondenserTowerProcess {
 
         if (!(targetState.getBlock() instanceof IIgnitableCauldron cauldron)) return;
         BlockCache cache = new BlockCache(level);
-        if (!cauldron.getFluid(cache, targetPos).builtInRegistryHolder().is(ModFluidTags.OIL)) return;
+        Fluid fluid = cauldron.getFluid(cache, targetPos);
+        if (!fluid.builtInRegistryHolder().is(ModFluidTags.OIL)) return;
         if (cauldron.consumeOnce(cache, targetPos)) {
             cache.accept();
             emitSmallContainerVaporParticles(
                 level,
                 ordinaryCauldronSurface(targetPos, targetState),
                 1,
-                true
+                new FluidStack(fluid, 1)
             );
         }
     }
@@ -166,7 +154,7 @@ public final class CondenserTowerProcess {
         return List.copyOf(towers);
     }
 
-    private static int countJetsBelow(Level level, BlockPos cauldronMain) {
+    public static int countJetsBelow(Level level, BlockPos cauldronMain) {
         int jets = 0;
         BlockPos center = cauldronMain.below(2);
         for (int x = -1; x <= 1; x++) {
@@ -175,18 +163,6 @@ public final class CondenserTowerProcess {
             }
         }
         return jets;
-    }
-
-    private static void collectGas(ServerLevel level, BlockPos cauldronMain, ResourceLocation gas, int amount) {
-        boolean condensable = level.getRecipeManager()
-            .getAllRecipesFor(ModRecipeTypes.CONDENSER_TYPE.get())
-            .stream()
-            .anyMatch(holder -> holder.value().gas().equals(gas));
-        if (!condensable) return;
-        List<CondenserTowerBlockEntity> towers = findProductiveTowers(level, cauldronMain);
-        if (towers.isEmpty()) return;
-        // 第一层负责当前验证阶段的气体收集，后续层保留给不同产物。
-        towers.getFirst().collectGas(gas, amount);
     }
 
     private static void condenseFirstTower(ServerLevel level, BlockPos cauldronMain) {
@@ -327,6 +303,9 @@ public final class CondenserTowerProcess {
 
         FluidStack fluidInput = resolveFluidInput(cauldron, definition.cauldron());
         if (definition.hasFluidInput() && fluidInput == null) return false;
+        FluidStack vaporParticleFluid = fluidInput == null
+            ? FluidStack.EMPTY
+            : fluidInput.copyWithAmount(1);
 
         List<ItemStack> results = new ArrayList<>();
         for (ChanceItemStack chance : definition.results()) {
@@ -338,6 +317,24 @@ public final class CondenserTowerProcess {
         ResourceLocation outputId = definition.cauldron().transform();
         int fluidAmount = definition.cauldron().produce();
         Fluid outputFluid = null;
+        VaporizationContext vaporContext = null;
+        VaporStack vaporOutput = null;
+        int acceptedVapor = 0;
+        if (definition.hasFluidOutput() && CondenserGas.isGas(outputId)) {
+            ResourceLocation vaporType = CondenserGas.canonicalize(outputId);
+            if (vaporType == null) return false;
+            vaporContext = new VaporizationContext(level, cauldron);
+            vaporOutput = new VaporStack(vaporType, fluidAmount);
+            IVaporConsumer consumer = VaporizationManager.findConsumer(vaporContext);
+            if (consumer != null) {
+                acceptedVapor = Math.clamp(
+                    consumer.receiveVapor(vaporOutput, VaporAction.SIMULATE, vaporContext),
+                    0,
+                    fluidAmount
+                );
+                if (consumer.sealsOutlet(vaporContext) && acceptedVapor != fluidAmount) return false;
+            }
+        }
         if (definition.hasFluidOutput() && !CondenserGas.isGas(outputId)
             && !CondenserGas.EXPERIENCE_ORBS.equals(outputId)) {
             outputFluid = BuiltInRegistries.FLUID.get(outputId);
@@ -374,9 +371,15 @@ public final class CondenserTowerProcess {
                     level,
                     largeCauldronSurface(cauldron),
                     1,
-                    CondenserGas.GASEOUS_OIL.equals(outputId)
+                    vaporParticleFluid
                 );
-                collectGas(level, cauldron.getBlockPos(), outputId, fluidAmount);
+                if (vaporContext != null && vaporOutput != null && acceptedVapor > 0) {
+                    VaporizationManager.receiveVapor(
+                        vaporContext,
+                        vaporOutput.withAmount(acceptedVapor),
+                        VaporAction.EXECUTE
+                    );
+                }
             } else if (outputFluid != null) {
                 cauldron.getFluids().fill(
                     new FluidStack(outputFluid, fluidAmount),
@@ -387,14 +390,11 @@ public final class CondenserTowerProcess {
         return true;
     }
 
-    private static boolean isDirectVaporizationRecipe(PlasmaJetBlastingRecipe recipe) {
+    public static boolean isDirectVaporizationRecipe(PlasmaJetBlastingRecipe recipe) {
         if (!recipe.getInputItems().isEmpty() || !recipe.getResultItems().isEmpty()) return false;
-        HasCauldronSimple cauldron = recipe.getHasCauldron();
-        if (cauldron.fluidTag() != null) return false;
-        return CondenserGas.GASEOUS_OIL.equals(cauldron.transform())
-                && ModFluids.OIL.getId().equals(cauldron.fluid())
-            || CondenserGas.GASEOUS_WATER.equals(cauldron.transform())
-                && BuiltInRegistries.FLUID.getKey(Fluids.WATER).equals(cauldron.fluid());
+        return recipe.hasFluidInput()
+            && recipe.hasFluidOutput()
+            && CondenserGas.isGas(recipe.getHasCauldron().transform());
     }
 
     private static boolean canApplyFluidTransform(
@@ -582,7 +582,7 @@ public final class CondenserTowerProcess {
         return FluidStack.EMPTY;
     }
 
-    private static Vec3 largeCauldronSurface(LargeCauldronBlockEntity cauldron) {
+    static Vec3 largeCauldronSurface(LargeCauldronBlockEntity cauldron) {
         float fill = Math.clamp(
             (float) cauldron.getFluids().getTotalAmount() / LargeCauldronFluidHandler.TOTAL_CAPACITY,
             0.0F,
@@ -625,15 +625,15 @@ public final class CondenserTowerProcess {
         return pos.getCenter().add(0.0, height - 0.5, 0.0);
     }
 
-    private static void emitLargeCauldronVaporParticles(
+    static void emitLargeCauldronVaporParticles(
         ServerLevel level,
         Vec3 surface,
         int jets,
-        boolean oil
+        @org.jetbrains.annotations.Nullable FluidStack sourceFluid
     ) {
         RandomSource random = level.getRandom();
         int gridSize = Math.min(5, 3 + (Math.max(1, jets) - 1) / 3);
-        ParticleOptions particle = oil ? ModParticles.OIL_VAPOR.get() : ParticleTypes.CLOUD;
+        ParticleOptions particle = vaporParticle(sourceFluid);
         // 每格各生成一个带抖动的粒子，既覆盖完整液面，也避免随机采样集中在局部。
         for (int cellX = 0; cellX < gridSize; cellX++) {
             for (int cellZ = 0; cellZ < gridSize; cellZ++) {
@@ -650,16 +650,22 @@ public final class CondenserTowerProcess {
         ServerLevel level,
         Vec3 surface,
         int jets,
-        boolean oil
+        @org.jetbrains.annotations.Nullable FluidStack sourceFluid
     ) {
         RandomSource random = level.getRandom();
         int count = Math.min(8, Math.max(2, jets * 2));
-        ParticleOptions particle = oil ? ModParticles.OIL_VAPOR.get() : ParticleTypes.CLOUD;
+        ParticleOptions particle = vaporParticle(sourceFluid);
         for (int i = 0; i < count; i++) {
             double x = surface.x + (random.nextDouble() * 2.0D - 1.0D) * SMALL_CONTAINER_VAPOR_HALF_WIDTH;
             double z = surface.z + (random.nextDouble() * 2.0D - 1.0D) * SMALL_CONTAINER_VAPOR_HALF_WIDTH;
             sendVaporParticle(level, particle, random, x, surface.y, z);
         }
+    }
+
+    private static ParticleOptions vaporParticle(@org.jetbrains.annotations.Nullable FluidStack sourceFluid) {
+        return sourceFluid == null || sourceFluid.isEmpty()
+            ? ParticleTypes.CLOUD
+            : new FluidVaporParticleOptions(sourceFluid);
     }
 
     private static double cellCoordinate(int cell, int gridSize, RandomSource random) {

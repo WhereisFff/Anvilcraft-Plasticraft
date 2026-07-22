@@ -9,7 +9,6 @@
     "EntityHighViscosityResinMixin",
     "FishTankBlockMixin",
     "LargeCauldronBlockMixin",
-    "LargeCauldronBlockEntityMixin",
     "LivingEntityResinHeadMixin",
     "PlasmaExperienceOrbMixin",
     "PlasmaJetsBlockMixin",

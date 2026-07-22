@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.gametest;
 
+import dev.anvilcraft.lib.v2.recipe.util.InWorldRecipeContext;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
 import dev.anvilcraft.plasticraft.block.piston.HighViscosityPistonBudget;
@@ -14,9 +15,12 @@ import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.event.anvil.AnvilEventListener;
 import dev.dubhe.anvilcraft.event.giantanvil.shock.ShockContext;
 import dev.dubhe.anvilcraft.init.block.ModBlockTags;
+import dev.dubhe.anvilcraft.init.item.ModItemTags;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.init.recipe.ModRecipeTypes;
+import dev.dubhe.anvilcraft.recipe.anvil.outcome.RoyalPreferenceOutcome;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.FastCookingRecipe;
+import dev.dubhe.anvilcraft.recipe.anvil.wrap.SuperHeatingRecipe;
 import dev.dubhe.anvilcraft.util.AccelerateManager;
 import dev.dubhe.anvilcraft.util.GravityManager;
 import dev.dubhe.anvilcraft.util.GravityType;
@@ -38,6 +42,7 @@ import dev.anvilcraft.plasticraft.item.HardenedResinAnvilItem;
 import dev.anvilcraft.plasticraft.item.HighViscosityResinBlockItem;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
+import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.anvilcraft.plasticraft.recipe.FluidFastCookingRecipe;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -49,6 +54,8 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.Container;
@@ -636,6 +643,81 @@ public final class PlasticAnvilGameTests {
         );
         pot.discard();
         anvil.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x7x7")
+    @TestHolder(description = "Hardened resin cauldrons apply the seed-selected royal preference")
+    static void hardenedResinCauldronAppliesRoyalPreference(ExtendedGameTestHelper helper) {
+        Item preferredGem = findRoyalPreferredItem(helper.getLevel(), ModItemTags.GEMS);
+        Item preferredGemBlock = findRoyalPreferredItem(helper.getLevel(), ModItemTags.GEM_BLOCKS);
+        SuperHeatingRecipe ingotRecipe = superHeatingRecipe(helper, "super_heating/royal_steel_ingot_base");
+        SuperHeatingRecipe blockRecipe = superHeatingRecipe(helper, "super_heating/royal_steel_block_base");
+
+        helper.setBlock(
+            new BlockPos(3, 1, 3),
+            dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER.getDefaultState()
+                .setValue(dev.dubhe.anvilcraft.block.HeaterBlock.OVERLOAD, false)
+        );
+        HardenedResinCauldronEntity ingotPot = createPot(
+            helper,
+            new Vec3(3.5D, 2.0D, 3.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        HardenedResinAnvilEntity ingotAnvil = createAnvil(helper, new Vec3(3.5D, 3.0D, 3.5D));
+        ingotPot.setNoGravity(true);
+        ingotAnvil.setNoGravity(true);
+        ingotPot.getInput().insertItem(0, new ItemStack(Items.IRON_INGOT, 2), false);
+        ingotPot.getInput().insertItem(1, new ItemStack(Items.DIAMOND), false);
+        ingotPot.getInput().insertItem(2, new ItemStack(preferredGem), false);
+
+        helper.setBlock(
+            new BlockPos(7, 1, 3),
+            dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER.getDefaultState()
+                .setValue(dev.dubhe.anvilcraft.block.HeaterBlock.OVERLOAD, false)
+        );
+        HardenedResinCauldronEntity blockPot = createPot(
+            helper,
+            new Vec3(7.5D, 2.0D, 3.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        HardenedResinAnvilEntity blockAnvil = createAnvil(helper, new Vec3(7.5D, 3.0D, 3.5D));
+        blockPot.setNoGravity(true);
+        blockAnvil.setNoGravity(true);
+        blockPot.getInput().insertItem(0, new ItemStack(Items.IRON_BLOCK, 2), false);
+        blockPot.getInput().insertItem(1, new ItemStack(Items.DIAMOND_BLOCK), false);
+        blockPot.getInput().insertItem(2, new ItemStack(preferredGemBlock), false);
+
+        processCauldronRecipe(helper.getLevel(), ingotPot, ingotAnvil, ingotRecipe);
+        processCauldronRecipe(helper.getLevel(), blockPot, blockAnvil, blockRecipe);
+
+        int royalSteelIngots = countItem(ingotPot.getOutput(), ModItems.ROYAL_STEEL_INGOT.get());
+        check(
+            isEmpty(ingotPot.getInput()),
+            "royal steel ingot recipe did not consume every input: iron="
+                + countItem(ingotPot.getInput(), Items.IRON_INGOT)
+                + ", diamond=" + countItem(ingotPot.getInput(), Items.DIAMOND)
+                + ", preferred=" + countItem(ingotPot.getInput(), preferredGem)
+                + ", output=" + royalSteelIngots
+        );
+        check(
+            royalSteelIngots == 2,
+            "preferred gem did not double the royal steel ingot output: output=" + royalSteelIngots
+        );
+        check(isEmpty(blockPot.getInput()), "royal steel block recipe did not consume every input");
+        check(
+            countItem(
+                blockPot.getOutput(),
+                dev.dubhe.anvilcraft.init.block.ModBlocks.ROYAL_STEEL_BLOCK.get().asItem()
+            ) == 2,
+            "preferred gem block did not double the royal steel block output"
+        );
+
+        ingotPot.discard();
+        ingotAnvil.discard();
+        blockPot.discard();
+        blockAnvil.discard();
         helper.succeed();
     }
 
@@ -3255,6 +3337,36 @@ public final class PlasticAnvilGameTests {
         return recipe;
     }
 
+    private static SuperHeatingRecipe superHeatingRecipe(ExtendedGameTestHelper helper, String path) {
+        RecipeHolder<?> holder = helper.getLevel().getRecipeManager()
+            .byKey(ResourceLocation.fromNamespaceAndPath("anvilcraft", path))
+            .orElseThrow(() -> new GameTestAssertException(path + " recipe was not loaded"));
+        check(holder.value() instanceof SuperHeatingRecipe, path + " did not load as a super-heating recipe");
+        SuperHeatingRecipe recipe = (SuperHeatingRecipe) holder.value();
+        check(recipe.getType() == ModRecipeTypes.SUPER_HEATING_TYPE.get(), path + " has the wrong recipe type");
+        return recipe;
+    }
+
+    private static void processCauldronRecipe(
+        ServerLevel level,
+        HardenedResinCauldronEntity cauldron,
+        AbstractPlasticEntity anvil,
+        SuperHeatingRecipe recipe
+    ) {
+        Vec3 recipeOrigin = CauldronImpactRecipeProcessor.recipePotCell(cauldron)
+            .getCenter()
+            .add(0.0D, 0.5D, 0.0D);
+        InWorldRecipeContext context = new InWorldRecipeContext(level, recipeOrigin, anvil);
+        cauldron.beginRecipeProcessing();
+        try {
+            check(recipe.matches(context, level), "royal steel recipe did not match the hardened resin cauldron");
+            recipe.assemble(context, level.registryAccess());
+            context.accept();
+        } finally {
+            cauldron.finishRecipeProcessing();
+        }
+    }
+
     private static ItemStack findCapturedResinAnvil(Player player) {
         for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
             ItemStack stack = player.getInventory().getItem(slot);
@@ -3384,6 +3496,16 @@ public final class PlasticAnvilGameTests {
         );
         check(helper.getLevel().addFreshEntity(pot), "failed to add plastic pot to the test level");
         return pot;
+    }
+
+    private static Item findRoyalPreferredItem(ServerLevel level, TagKey<Item> candidates) {
+        for (var holder : BuiltInRegistries.ITEM.getTagOrEmpty(candidates)) {
+            Item item = holder.value();
+            if (RoyalPreferenceOutcome.RoyalPreference.isRoyalPreferred(level, new ItemStack(item))) {
+                return item;
+            }
+        }
+        throw new GameTestAssertException("royal preference selected no item from " + candidates.location());
     }
 
     private static void assertPlayerJumpsAndStepsWithHeadProduct(

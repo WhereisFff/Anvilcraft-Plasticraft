@@ -1,0 +1,41 @@
+modLoader = "javafml"
+loaderVersion = "${loader_version_range}"
+license = "LGPL-3.0-or-later"
+
+[[mods]]
+modId = "yukkuri"
+version = "${yukkuri_version}"
+displayName = "Yukkuri"
+authors = "AnvilCraft Plasticraft contributors"
+description = '''A public vaporization API and runtime for AnvilCraft large cauldrons.'''
+
+[[mixins]]
+config = "yukkuri.mixins.json"
+
+[[dependencies.yukkuri]]
+modId = "neoforge"
+type = "required"
+versionRange = "${neo_version_range}"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.yukkuri]]
+modId = "minecraft"
+type = "required"
+versionRange = "${minecraft_version_range}"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.yukkuri]]
+modId = "anvilcraft"
+type = "required"
+versionRange = "[1.6.0,)"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies.yukkuri]]
+modId = "anvillib"
+type = "required"
+versionRange = "[2.0.0,)"
+ordering = "AFTER"
+side = "BOTH"

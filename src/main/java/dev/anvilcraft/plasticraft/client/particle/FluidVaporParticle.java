@@ -1,18 +1,22 @@
 package dev.anvilcraft.plasticraft.client.particle;
 
+import dev.anvilcraft.plasticraft.particle.FluidVaporParticleOptions;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleProvider;
 import net.minecraft.client.particle.ParticleRenderType;
 import net.minecraft.client.particle.SpriteSet;
 import net.minecraft.client.particle.TextureSheetParticle;
-import net.minecraft.core.particles.SimpleParticleType;
+import net.minecraft.world.level.material.Fluids;
+import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
+import net.neoforged.neoforge.fluids.FluidStack;
 
-/** 使用喷流粒子轮廓、但以原油色缓慢上升的短程蒸气。 */
-public final class OilVaporParticle extends TextureSheetParticle {
+/** A short-lived vapor particle tinted from the source fluid's client rendering extension. */
+public final class FluidVaporParticle extends TextureSheetParticle {
     private final SpriteSet sprites;
 
-    private OilVaporParticle(
+    private FluidVaporParticle(
+        FluidVaporParticleOptions options,
         ClientLevel level,
         double x,
         double y,
@@ -31,9 +35,20 @@ public final class OilVaporParticle extends TextureSheetParticle {
         this.zd = speedZ + (this.random.nextDouble() - 0.5D) * 0.012D;
         this.quadSize = 0.16F + this.random.nextFloat() * 0.16F;
         this.lifetime = 14 + this.random.nextInt(9);
-        this.setColor(0.025F, 0.003F, 0.045F);
+        this.setFluidColor(options.fluid());
         this.setAlpha(0.82F);
         this.setSpriteFromAge(sprites);
+    }
+
+    private void setFluidColor(FluidStack fluid) {
+        int tint = fluid.is(Fluids.WATER) || fluid.is(Fluids.FLOWING_WATER)
+            ? 0xFFFFFFFF
+            : IClientFluidTypeExtensions.of(fluid.getFluid()).getTintColor(fluid);
+        this.setColor(
+            (float) (tint >> 16 & 0xFF) / 255.0F,
+            (float) (tint >> 8 & 0xFF) / 255.0F,
+            (float) (tint & 0xFF) / 255.0F
+        );
     }
 
     @Override
@@ -49,7 +64,7 @@ public final class OilVaporParticle extends TextureSheetParticle {
         this.setAlpha(0.82F * (1.0F - (float) this.age / this.lifetime));
     }
 
-    public static final class Provider implements ParticleProvider<SimpleParticleType> {
+    public static final class Provider implements ParticleProvider<FluidVaporParticleOptions> {
         private final SpriteSet sprites;
 
         public Provider(SpriteSet sprites) {
@@ -58,7 +73,7 @@ public final class OilVaporParticle extends TextureSheetParticle {
 
         @Override
         public Particle createParticle(
-            SimpleParticleType type,
+            FluidVaporParticleOptions options,
             ClientLevel level,
             double x,
             double y,
@@ -67,7 +82,17 @@ public final class OilVaporParticle extends TextureSheetParticle {
             double speedY,
             double speedZ
         ) {
-            return new OilVaporParticle(level, x, y, z, speedX, speedY, speedZ, this.sprites);
+            return new FluidVaporParticle(
+                options,
+                level,
+                x,
+                y,
+                z,
+                speedX,
+                speedY,
+                speedZ,
+                this.sprites
+            );
         }
     }
 }

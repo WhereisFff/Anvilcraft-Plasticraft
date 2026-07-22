@@ -16,6 +16,8 @@ if (githubRef != null && githubRef.startsWith('refs/tags/')) {
 }
 group = maven_group
 
+evaluationDependsOn(':yukkuri')
+
 sourceSets {
     gameTest {
         compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath

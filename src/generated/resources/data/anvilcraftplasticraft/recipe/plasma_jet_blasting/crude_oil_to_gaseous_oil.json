@@ -3,5 +3,5 @@
   "consume": 50,
   "fluid": "anvilcraft:oil",
   "produce": 50,
-  "transform": "anvilcraftplasticraft:gaseous_oil"
+  "transform": "yukkuri:gaseous_oil"
 }

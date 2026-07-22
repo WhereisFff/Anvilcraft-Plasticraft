@@ -21,6 +21,8 @@ import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.core.registries.BuiltInRegistries;
 
+import java.util.Objects;
+
 /** 冷凝塔把内部虚拟气体转成真实流体的配方。 */
 public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
     private final ResourceLocation gas;
@@ -29,7 +31,7 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
     private final int produce;
 
     public CondenserRecipe(ResourceLocation gas, int consume, ResourceLocation fluid, int produce) {
-        this.gas = gas;
+        this.gas = Objects.requireNonNull(CondenserGas.canonicalize(gas), "gas");
         this.consume = consume;
         this.fluid = fluid;
         this.produce = produce;
@@ -177,8 +179,8 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
 
         @Override
         public void validate(ResourceLocation id) {
-            if (this.gas == null || !CondenserGas.isGas(this.gas)) {
-                throw new IllegalArgumentException("Condenser gas must be a registered virtual gas, RecipeId: " + id);
+            if (this.gas == null) {
+                throw new IllegalArgumentException("Condenser gas must not be empty, RecipeId: " + id);
             }
             if (this.consume <= 0 || this.produce <= 0) {
                 throw new IllegalArgumentException("Condenser amounts must be positive, RecipeId: " + id);

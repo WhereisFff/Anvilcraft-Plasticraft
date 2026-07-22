@@ -102,7 +102,10 @@ public class CondenserTowerBlock extends SimpleMultiPartBlock<Cube3x3PartHalf>
         boolean movedByPiston
     ) {
         super.onPlace(state, level, pos, oldState, movedByPiston);
-        if (!level.isClientSide() && !oldState.is(state.getBlock())) refreshSeal(level, pos, state);
+        if (!oldState.is(state.getBlock())) {
+            level.invalidateCapabilities(pos);
+            if (!level.isClientSide()) refreshSeal(level, pos, state);
+        }
     }
 
     @Override
@@ -119,11 +122,14 @@ public class CondenserTowerBlock extends SimpleMultiPartBlock<Cube3x3PartHalf>
 
     @Override
     protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
-        if (!level.isClientSide() && !state.is(newState.getBlock())) {
-            FluidNetworkManager.INSTANCE.markDirty(level);
-            if (isMainPart(state)) {
-                BlockEntity entity = level.getBlockEntity(pos);
-                if (entity instanceof CondenserTowerBlockEntity tower) tower.dropContents();
+        if (!state.is(newState.getBlock())) {
+            level.invalidateCapabilities(pos);
+            if (!level.isClientSide()) {
+                FluidNetworkManager.INSTANCE.markDirty(level);
+                if (isMainPart(state)) {
+                    BlockEntity entity = level.getBlockEntity(pos);
+                    if (entity instanceof CondenserTowerBlockEntity tower) tower.dropContents();
+                }
             }
         }
         super.onRemove(state, level, pos, newState, movedByPiston);

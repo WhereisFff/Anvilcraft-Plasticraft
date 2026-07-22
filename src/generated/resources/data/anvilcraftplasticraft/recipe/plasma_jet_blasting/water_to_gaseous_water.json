@@ -3,5 +3,5 @@
   "consume": 50,
   "fluid": "minecraft:water",
   "produce": 50,
-  "transform": "anvilcraftplasticraft:gaseous_water"
+  "transform": "yukkuri:gaseous_water"
 }

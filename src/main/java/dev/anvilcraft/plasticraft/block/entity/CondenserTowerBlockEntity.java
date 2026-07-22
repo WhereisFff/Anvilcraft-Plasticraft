@@ -2,6 +2,8 @@ package dev.anvilcraft.plasticraft.block.entity;
 
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.recipe.CondenserGas;
+import dev.anvilcraft.yukkuri.api.vapor.IVaporConsumer;
+import dev.anvilcraft.yukkuri.api.vapor.VaporAction;
 import dev.dubhe.anvilcraft.api.fluid.IFluidHandlerHolder;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidNetworkManager;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
@@ -49,6 +51,8 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
         }
     };
     private final IFluidHandler outputHandler = new OutputOnlyHandler(this.tank);
+    private final IVaporConsumer vaporConsumer = (vapor, action, context) ->
+        this.acceptGas(vapor.type(), vapor.amount(), action);
     private final List<BlockPos> registeredInterfaces = new ArrayList<>();
     private ResourceLocation gasId;
     private int gasAmount;
@@ -111,11 +115,16 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
 
     /** 将虚拟气体存入塔内，返回实际接收量。 */
     public int collectGas(ResourceLocation id, int amount) {
+        return this.getMainPart().acceptGas(id, amount, VaporAction.EXECUTE);
+    }
+
+    private int acceptGas(ResourceLocation id, int amount, VaporAction action) {
         CondenserTowerBlockEntity main = this.getMainPart();
-        if (!CondenserGas.isGas(id) || amount <= 0) return 0;
+        id = CondenserGas.canonicalize(id);
+        if (id == null || amount <= 0) return 0;
         if (main.gasId != null && !main.gasId.equals(id)) return 0;
         int accepted = Math.min(amount, CAPACITY - main.gasAmount);
-        if (accepted <= 0) return 0;
+        if (accepted <= 0 || action == VaporAction.SIMULATE) return accepted;
         main.gasId = id;
         main.gasAmount += accepted;
         main.setChanged();
@@ -133,6 +142,7 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
 
     public int drainGas(ResourceLocation id, int amount) {
         CondenserTowerBlockEntity main = this.getMainPart();
+        id = CondenserGas.canonicalize(id);
         if (amount <= 0 || main.gasId == null || !main.gasId.equals(id)) return 0;
         int drained = Math.min(amount, main.gasAmount);
         main.gasAmount -= drained;
@@ -180,9 +190,12 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
         super.loadAdditional(tag, provider);
         if (this.isMainPart()) {
             this.tank.readFromNBT(provider, tag.getCompound(TAG_TANK));
-            ResourceLocation parsed = ResourceLocation.tryParse(tag.getString(TAG_GAS_ID));
-            this.gasId = CondenserGas.isGas(parsed) ? parsed : null;
-            this.gasAmount = this.gasId == null ? 0 : Math.clamp(tag.getInt(TAG_GAS_AMOUNT), 0, CAPACITY);
+            ResourceLocation parsed = CondenserGas.canonicalize(
+                ResourceLocation.tryParse(tag.getString(TAG_GAS_ID))
+            );
+            int amount = parsed == null ? 0 : Math.clamp(tag.getInt(TAG_GAS_AMOUNT), 0, CAPACITY);
+            this.gasId = amount > 0 ? parsed : null;
+            this.gasAmount = amount;
         }
     }
 
@@ -216,6 +229,24 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
         if (output == null || side != null && side != output) return null;
         CondenserTowerBlockEntity main = getMain(level, pos, state);
         return main == null ? null : main.outputHandler;
+    }
+
+    /** Exposes vapor input only on the bottom-center face connected to a large cauldron. */
+    public static @Nullable IVaporConsumer vaporCapability(
+        Level level,
+        BlockPos pos,
+        BlockState state,
+        @Nullable BlockEntity ignored,
+        @Nullable Direction side
+    ) {
+        if (!(state.getBlock() instanceof CondenserTowerBlock)
+            || !state.hasProperty(CondenserTowerBlock.HALF)
+            || state.getValue(CondenserTowerBlock.HALF) != Cube3x3PartHalf.BOTTOM_CENTER
+            || side != null && side != Direction.DOWN) {
+            return null;
+        }
+        CondenserTowerBlockEntity main = getMain(level, pos, state);
+        return main == null ? null : main.vaporConsumer;
     }
 
     private static final class OutputOnlyHandler implements IFluidHandler {

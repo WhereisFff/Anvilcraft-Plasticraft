@@ -5,7 +5,7 @@ jei = "19.32.0.358"
 jade = "15.3.4+neoforge"
 anvillib = "2.0.0+snapshot.490"
 ageratum = "0.0.1+build.106"
-anvilcraft = "1.6.0+snapshot.2076"
+anvilcraft = "1.6.0+snapshot.2078"
 modDevGradle = "2.0.140"
 
 [libraries]

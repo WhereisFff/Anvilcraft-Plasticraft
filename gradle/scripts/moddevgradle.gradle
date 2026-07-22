@@ -16,6 +16,9 @@ neoForge {
         "${mod_id}" {
             sourceSet(sourceSets.main)
         }
+        yukkuri {
+            sourceSet(project(':yukkuri').sourceSets.main)
+        }
         "${mod_id}_tests" {
             sourceSet(sourceSets.gameTest)
         }
@@ -23,7 +26,7 @@ neoForge {
 
     runs {
         configureEach {
-            loadedMods = [mods."${mod_id}"]
+            loadedMods = [mods."${mod_id}", mods.yukkuri]
             systemProperty 'forge.logging.markers', 'REGISTRIES'
             systemProperty 'terminal.jline', 'true'
             logLevel = org.slf4j.event.Level.DEBUG
@@ -48,7 +51,7 @@ neoForge {
             type = 'gameTestServer'
             gameDirectory.value(project.layout.projectDirectory.dir('run/gameTestServer'))
             sourceSet = sourceSets.gameTest
-            loadedMods = [mods."${mod_id}", mods."${mod_id}_tests"]
+            loadedMods = [mods."${mod_id}", mods.yukkuri, mods."${mod_id}_tests"]
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
 

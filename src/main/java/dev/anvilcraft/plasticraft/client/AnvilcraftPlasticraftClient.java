@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.client;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.client.particle.OilVaporParticle;
+import dev.anvilcraft.plasticraft.client.particle.FluidVaporParticle;
 import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinCauldronRenderer;
 import dev.anvilcraft.plasticraft.init.ModParticles;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
@@ -28,6 +28,6 @@ public final class AnvilcraftPlasticraftClient {
     }
 
     private static void registerParticleProviders(RegisterParticleProvidersEvent event) {
-        event.registerSpriteSet(ModParticles.OIL_VAPOR.get(), OilVaporParticle.Provider::new);
+        event.registerSpriteSet(ModParticles.FLUID_VAPOR.get(), FluidVaporParticle.Provider::new);
     }
 }

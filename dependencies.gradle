@@ -1,6 +1,9 @@
 dependencies {
     gameTestImplementation("net.neoforged:testframework:${neo_version}") { transitive = false }
 
+    compileOnly(project(':yukkuri'))
+    jarJar(project(':yukkuri'))
+
     // AnvilLib 直接用于 Registrum 及其数据提供器。
     api(libs.anvillib)
     interfaceInjectionData(libs.anvillib.recipe)

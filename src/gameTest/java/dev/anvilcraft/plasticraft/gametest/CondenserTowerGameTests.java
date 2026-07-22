@@ -8,23 +8,37 @@ import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
 import dev.anvilcraft.plasticraft.recipe.CondenserGas;
+import dev.anvilcraft.yukkuri.api.vapor.IVaporConsumer;
+import dev.anvilcraft.yukkuri.api.vapor.VaporAction;
+import dev.anvilcraft.yukkuri.api.vapor.VaporizationContext;
+import dev.anvilcraft.yukkuri.api.vapor.VaporStack;
+import dev.anvilcraft.yukkuri.api.vapor.YukkuriCapabilities;
+import dev.dubhe.anvilcraft.api.event.AnvilEvent;
+import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
 import dev.dubhe.anvilcraft.block.fluid.PipeBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
+import dev.dubhe.anvilcraft.block.state.GiantAnvilCube;
 import dev.dubhe.anvilcraft.init.block.ModFluids;
+import dev.dubhe.anvilcraft.init.item.ModItemTags;
+import dev.dubhe.anvilcraft.recipe.anvil.outcome.RoyalPreferenceOutcome;
 import dev.dubhe.anvilcraft.recipe.multiblock.BlockPattern;
 import dev.dubhe.anvilcraft.recipe.multiblock.BlockPredicateWithState;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockConversionRecipe;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockRecipe;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.ExperienceOrb;
+import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -40,7 +54,10 @@ import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.minecraft.world.phys.AABB;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
@@ -49,8 +66,20 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** 冷凝塔、喷流气化和硬化树脂锅的服务器端回归测试。 */
+@EventBusSubscriber(modid = AnvilcraftPlasticraft.MOD_ID + "_tests")
 public final class CondenserTowerGameTests {
     private static final int TOWER_CAPACITY = 64 * FluidType.BUCKET_VOLUME;
+    private static final IVaporConsumer FULL_SEALED_CONSUMER = new IVaporConsumer() {
+        @Override
+        public int receiveVapor(VaporStack vapor, VaporAction action, VaporizationContext context) {
+            return 0;
+        }
+
+        @Override
+        public boolean sealsOutlet(VaporizationContext context) {
+            return true;
+        }
+    };
 
     private CondenserTowerGameTests() {
     }
@@ -65,6 +94,7 @@ public final class CondenserTowerGameTests {
         cauldron.getFluids().setFluids(List.of(oil, new FluidStack(Fluids.WATER, 1_000)));
 
         BlockPos main = helper.absolutePos(base).above();
+        CondenserTowerBlockEntity tower = placeTower(helper, helper.absolutePos(base).above(3));
         BlockPos jetCenter = main.below(2);
         setJet(helper.getLevel(), jetCenter);
         setJet(helper.getLevel(), jetCenter.west());
@@ -73,11 +103,155 @@ public final class CondenserTowerGameTests {
         CondenserTowerProcess.tickLargeCauldron((net.minecraft.server.level.ServerLevel) helper.getLevel(), cauldron);
         check(cauldron.getFluids().getFluidInTank(0).getAmount() == 1_000,
             "a non-oil top layer was incorrectly vaporized");
+        tower.dropContents();
 
         cauldron.getFluids().setFluids(List.of(oil));
         CondenserTowerProcess.tickLargeCauldron((net.minecraft.server.level.ServerLevel) helper.getLevel(), cauldron);
         check(cauldron.getTopFluid().getAmount() == 850,
             "three jets did not vaporize 150 mB from the top oil layer");
+        check(CondenserGas.GASEOUS_OIL.equals(tower.getGasId()) && tower.getGasAmount() == 150,
+            "the condenser tower did not receive 150 mB of gaseous oil through Yukkuri");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x12x11")
+    @TestHolder(description = "A missing vapor consumer vents to the atmosphere while consuming crude oil")
+    static void largeCauldronVaporizationVentsWithoutConsumer(ExtendedGameTestHelper helper) {
+        BlockPos base = new BlockPos(5, 2, 5);
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
+        cauldron.getFluids().setFluids(List.of(new FluidStack(ModFluids.OIL.get(), 1_000)));
+        setJet(helper.getLevel(), cauldron.getBlockPos().below(2));
+
+        CondenserTowerProcess.tickLargeCauldron(
+            (net.minecraft.server.level.ServerLevel) helper.getLevel(),
+            cauldron
+        );
+        check(cauldron.getTopFluid().getAmount() == 950,
+            "an open cauldron did not vaporize 50 mB of crude oil into the atmosphere");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x12x11")
+    @TestHolder(description = "An open condenser vents partial and full overflow without stopping vaporization")
+    static void fullOpenCondenserDoesNotApplyBackpressure(ExtendedGameTestHelper helper) {
+        BlockPos base = new BlockPos(5, 2, 5);
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
+        cauldron.getFluids().setFluids(List.of(new FluidStack(ModFluids.OIL.get(), 1_000)));
+        CondenserTowerBlockEntity tower = placeTower(helper, helper.absolutePos(base).above(3));
+        check(tower.collectGas(CondenserGas.GASEOUS_OIL, TOWER_CAPACITY - 25) == TOWER_CAPACITY - 25,
+            "failed to leave 25 mB free in the condenser's vapor buffer");
+        setJet(helper.getLevel(), cauldron.getBlockPos().below(2));
+
+        CondenserTowerProcess.tickLargeCauldron(
+            (net.minecraft.server.level.ServerLevel) helper.getLevel(),
+            cauldron
+        );
+        check(cauldron.getTopFluid().getAmount() == 950,
+            "a nearly full open condenser incorrectly limited crude-oil vaporization");
+        check(tower.getGasAmount() == TOWER_CAPACITY,
+            "an open condenser did not accept exactly its remaining 25 mB of capacity");
+
+        CondenserTowerProcess.tickLargeCauldron(
+            (net.minecraft.server.level.ServerLevel) helper.getLevel(),
+            cauldron
+        );
+        check(cauldron.getTopFluid().getAmount() == 900,
+            "a full open condenser incorrectly stopped crude-oil vaporization");
+        check(tower.getGasAmount() == TOWER_CAPACITY,
+            "a full open condenser accepted vapor beyond its capacity");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x12x11")
+    @TestHolder(description = "A full sealed consumer applies backpressure before liquid is consumed")
+    static void fullSealedConsumerAppliesBackpressure(ExtendedGameTestHelper helper) {
+        BlockPos base = new BlockPos(5, 2, 5);
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
+        cauldron.getFluids().setFluids(List.of(new FluidStack(ModFluids.OIL.get(), 1_000)));
+        helper.getLevel().setBlock(cauldron.getBlockPos().above(2), Blocks.BARRIER.defaultBlockState(), Block.UPDATE_ALL);
+        setJet(helper.getLevel(), cauldron.getBlockPos().below(2));
+
+        CondenserTowerProcess.tickLargeCauldron(
+            (net.minecraft.server.level.ServerLevel) helper.getLevel(),
+            cauldron
+        );
+        check(cauldron.getTopFluid().getAmount() == 1_000,
+            "a full sealed consumer allowed crude oil to be consumed");
+        helper.succeed();
+    }
+
+    @SubscribeEvent
+    static void registerTestCapabilities(RegisterCapabilitiesEvent event) {
+        event.registerBlock(
+            YukkuriCapabilities.VAPOR_CONSUMER,
+            (level, pos, state, blockEntity, side) -> side == null || side == Direction.DOWN
+                ? FULL_SEALED_CONSUMER
+                : null,
+            Blocks.BARRIER
+        );
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("13x12x13")
+    @TestHolder(description = "Large cauldrons apply the seed-selected royal preference")
+    static void largeCauldronAppliesRoyalPreference(ExtendedGameTestHelper helper) {
+        BlockPos base = new BlockPos(6, 2, 6);
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
+        Item preferredGemBlock = findRoyalPreferredGemBlock(helper.getLevel());
+
+        check(
+            cauldron.getInputHandler().insertItem(0, new ItemStack(Items.IRON_BLOCK, 2), false).isEmpty(),
+            "failed to insert iron blocks into the large cauldron"
+        );
+        check(
+            cauldron.getInputHandler().insertItem(1, new ItemStack(Items.DIAMOND_BLOCK), false).isEmpty(),
+            "failed to insert the diamond block into the large cauldron"
+        );
+        check(
+            cauldron.getInputHandler().insertItem(2, new ItemStack(preferredGemBlock), false).isEmpty(),
+            "failed to insert the preferred gem block into the large cauldron"
+        );
+        helper.setBlock(
+            base.offset(-1, -1, 0),
+            dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER.getDefaultState()
+                .setValue(dev.dubhe.anvilcraft.block.HeaterBlock.OVERLOAD, false)
+        );
+
+        BlockPos fallingSource = new BlockPos(1, 8, 1);
+        helper.setBlock(fallingSource, Blocks.SAND);
+        FallingBlockEntity fallingAnvil = FallingBlockEntity.fall(
+            helper.getLevel(),
+            helper.absolutePos(fallingSource),
+            Blocks.SAND.defaultBlockState()
+        );
+        BlockPos giantAnvilCenter = cauldron.getBlockPos().above(3);
+        helper.getLevel().setBlock(
+            giantAnvilCenter,
+            dev.dubhe.anvilcraft.init.block.ModBlocks.GIANT_ANVIL.getDefaultState()
+                .setValue(GiantAnvilBlock.HALF, Cube3x3PartHalf.MID_CENTER)
+                .setValue(GiantAnvilBlock.CUBE, GiantAnvilCube.CENTER),
+            Block.UPDATE_CLIENTS
+        );
+
+        AnvilEvent.OnLand event = new AnvilEvent.OnLand(
+            helper.getLevel(),
+            giantAnvilCenter,
+            fallingAnvil,
+            1.0F
+        );
+        check(cauldron.handleGiantAnvilImpact(event), "large cauldron did not handle the giant-anvil impact");
+        check(cauldron.getInputHandler().isEmpty(), "royal steel recipe did not consume the large-cauldron inputs");
+        check(
+            outputCount(
+                cauldron,
+                dev.dubhe.anvilcraft.init.block.ModBlocks.ROYAL_STEEL_BLOCK.get().asItem()
+            ) == 2,
+            "preferred gem block did not double the large-cauldron royal steel output"
+        );
+        fallingAnvil.discard();
         helper.succeed();
     }
 
@@ -87,7 +261,7 @@ public final class CondenserTowerGameTests {
         + "and stop at four productive layers")
     static void condenserTowerLayersAndOutputs(ExtendedGameTestHelper helper) {
         BlockPos cauldronBase = new BlockPos(5, 1, 5);
-        placeLargeCauldron(helper, cauldronBase);
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, cauldronBase);
         BlockPos cauldronMain = helper.absolutePos(cauldronBase).above();
 
         List<CondenserTowerBlockEntity> placed = new ArrayList<>();
@@ -114,6 +288,19 @@ public final class CondenserTowerGameTests {
             "a stacked tower was incorrectly marked as a cauldron seal");
 
         CondenserTowerBlockEntity first = placed.getFirst();
+        var vaporConsumer = helper.getLevel().getCapability(
+            YukkuriCapabilities.VAPOR_CONSUMER,
+            towerBase,
+            Direction.DOWN
+        );
+        check(vaporConsumer != null, "tower bottom center did not expose Yukkuri's vapor capability");
+        check(vaporConsumer.receiveVapor(
+                new VaporStack(ResourceLocation.fromNamespaceAndPath("test", "custom_vapor"), 250),
+                VaporAction.SIMULATE,
+                new VaporizationContext((net.minecraft.server.level.ServerLevel) helper.getLevel(), cauldron)
+            ) == 250,
+            "tower did not simulate accepting an addon-defined vapor");
+        check(first.getGasAmount() == 0, "simulating vapor input changed the tower gas buffer");
         check(first.getFluidHandler().getTankCapacity(0) == TOWER_CAPACITY,
             "tower tank capacity is not 64 buckets");
         check(first.collect(new FluidStack(Fluids.WATER, 1_000)) == 1_000,
@@ -429,6 +616,16 @@ public final class CondenserTowerGameTests {
             if (stack.is(item)) count += stack.getCount();
         }
         return count;
+    }
+
+    private static Item findRoyalPreferredGemBlock(ServerLevel level) {
+        for (var holder : BuiltInRegistries.ITEM.getTagOrEmpty(ModItemTags.GEM_BLOCKS)) {
+            Item item = holder.value();
+            if (RoyalPreferenceOutcome.RoyalPreference.isRoyalPreferred(level, new ItemStack(item))) {
+                return item;
+            }
+        }
+        throw new GameTestAssertException("royal preference selected no gem block");
     }
 
     private static void checkCondenserInputPattern(BlockPattern pattern) {

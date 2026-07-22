@@ -2,7 +2,6 @@ package dev.anvilcraft.plasticraft.integration.jade.provider;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
-import dev.anvilcraft.plasticraft.recipe.CondenserGas;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -44,7 +43,7 @@ public enum CondenserTowerProvider implements IServerExtensionProvider<CompoundT
 
         ResourceLocation gas = tower.getGasId();
         int gasAmount = tower.getGasAmount();
-        if (CondenserGas.isGas(gas) && gasAmount > 0) {
+        if (gas != null && gasAmount > 0) {
             CompoundTag gasView = new CompoundTag();
             gasView.putString(GAS_ID, gas.toString());
             gasView.putInt(GAS_AMOUNT, gasAmount);
@@ -80,7 +79,7 @@ public enum CondenserTowerProvider implements IServerExtensionProvider<CompoundT
 
         ResourceLocation gas = ResourceLocation.tryParse(tag.getString(GAS_ID));
         int amount = Math.max(0, tag.getInt(GAS_AMOUNT));
-        if (!CondenserGas.isGas(gas) || amount == 0) return null;
+        if (gas == null || amount == 0) return null;
 
         FluidView view = new FluidView(IElementHelper.get().fluid(JadeFluidObject.of(Fluids.EMPTY, 0)));
         view.fluidName = Component.translatable("jei.anvilcraftplasticraft.gas." + gas.getPath());

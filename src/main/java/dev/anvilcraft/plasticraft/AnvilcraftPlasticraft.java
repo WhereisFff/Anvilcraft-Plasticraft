@@ -13,8 +13,12 @@ import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import dev.anvilcraft.plasticraft.init.item.ModItemGroups;
 import dev.anvilcraft.plasticraft.init.item.ModItems;
 import dev.anvilcraft.plasticraft.init.ModMenuTypes;
+import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
+import dev.anvilcraft.plasticraft.recipe.PlasmaJetVaporizationSource;
 import dev.anvilcraft.lib.v2.registrum.Registrum;
 import dev.anvilcraft.lib.v2.network.register.NetworkRegistrar;
+import dev.anvilcraft.yukkuri.api.vapor.VaporizationSources;
+import dev.anvilcraft.yukkuri.api.vapor.YukkuriCapabilities;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.CreativeModeTab;
@@ -48,8 +52,10 @@ public final class AnvilcraftPlasticraft {
         ModParticles.register(modEventBus);
         ModRecipeTypes.register(modEventBus);
         PlasticraftDatagen.init();
+        VaporizationSources.register(PlasmaJetVaporizationSource.INSTANCE);
         NeoForge.EVENT_BUS.addListener(AnvilcraftPlasticraft::addItemTooltips);
         NeoForge.EVENT_BUS.addListener(HighViscosityResinEvents::useEntity);
+        NeoForge.EVENT_BUS.addListener(CondenserTowerProcess::onLargeCauldronProcess);
         modEventBus.addListener(HighViscosityResinEvents::registerCauldronFluidContent);
         modEventBus.addListener(ModBlocks::registerDispenserBehavior);
         modEventBus.addListener(AnvilcraftPlasticraft::registerCapabilities);
@@ -74,6 +80,11 @@ public final class AnvilcraftPlasticraft {
         event.registerBlock(
             Capabilities.FluidHandler.BLOCK,
             dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity::capability,
+            ModBlocks.CONDENSER_TOWER.get()
+        );
+        event.registerBlock(
+            YukkuriCapabilities.VAPOR_CONSUMER,
+            dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity::vaporCapability,
             ModBlocks.CONDENSER_TOWER.get()
         );
     }
