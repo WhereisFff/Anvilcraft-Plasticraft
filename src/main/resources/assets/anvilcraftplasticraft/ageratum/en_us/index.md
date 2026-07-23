@@ -1,16 +1,18 @@
 ---
 navigation:
   title: "Plasticraft"
-  icon: "anvilcraftplasticraft:resin_anvil"
+  icon: "anvilcraftplasticraft:plastic_anvil"
   position: -1
 ---
 
 # Anvilcraft: Plasticraft
 
-This addon expands plastic materials from AnvilCraft's resin. The first stage contains the elastic **Resin Anvil**, the stable **Hardened Resin Anvil**, the matching **Hardened Resin Pot**, and the lightweight **Resin Anvil Hammer**.
+This addon adds plastic materials to the AnvilCraft workflow. The first
+vertical slice is the **Plastic Anvil**, a solid movable entity shaped like a
+Royal Anvil.
 
 ## First steps
 
-Craft <ref item="anvilcraftplasticraft:resin_anvil"/> from resin blocks and resin in an anvil-shaped pattern. Replacing the center resin with a magnet ingot makes the magnetic variant. Fast cooking a resin anvil in a dry cauldron hardens it while preserving its magnetic state.
+The temporary recipe uses one <ref item="minecraft:snowball"/> and produces one <ref item="anvilcraftplasticraft:plastic_anvil"/>. The recipe is a normal shapeless crafting recipe while the production process is being designed.
 
-See [Resin and Hardened Resin Anvils](004_block/114_resin_anvil.md), [Hardened Resin Cauldron](004_block/115_hardend_resin_cauldron.md), [High-Viscosity Resin](004_block/116_high_viscosity_resin.md), and [Resin Anvil Hammer](005_tool/000_resin_anvil_hammer.md) for the complete workflow.
+See [Plastic Anvil](004_block/114_plastic_anvil.md) for its complete workflow.

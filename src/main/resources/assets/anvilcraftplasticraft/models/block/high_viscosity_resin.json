@@ -1,0 +1,39 @@
+{
+	"credit": "Made with Blockbench",
+	"parent": "minecraft:block/block",
+	"textures": {
+		"1": "anvilcraftplasticraft:block/high_viscosity_resin"
+	},
+	"elements": [
+		{
+			"from": [2, 2, 2],
+			"to": [14, 14, 14],
+			"faces": {
+				"north": {"uv": [2, 2, 14, 14], "texture": "#1"},
+				"east": {"uv": [2, 2, 14, 14], "texture": "#1"},
+				"south": {"uv": [2, 2, 14, 14], "texture": "#1"},
+				"west": {"uv": [2, 2, 14, 14], "texture": "#1"},
+				"up": {"uv": [2, 2, 14, 14], "texture": "#1"},
+				"down": {"uv": [2, 2, 14, 14], "texture": "#1"}
+			}
+		},
+		{
+			"from": [0, 0, 0],
+			"to": [16, 16, 16],
+			"faces": {
+				"north": {"uv": [0, 0, 16, 16], "texture": "#1"},
+				"east": {"uv": [0, 0, 16, 16], "texture": "#1"},
+				"south": {"uv": [0, 0, 16, 16], "texture": "#1"},
+				"west": {"uv": [0, 0, 16, 16], "texture": "#1"},
+				"up": {"uv": [0, 0, 16, 16], "texture": "#1"},
+				"down": {"uv": [0, 0, 16, 16], "texture": "#1"}
+			}
+		}
+	],
+	"display": {
+		"fixed": {
+			"rotation": [0, 90, 0],
+			"scale": [0.5, 0.5, 0.5]
+		}
+	}
+}
