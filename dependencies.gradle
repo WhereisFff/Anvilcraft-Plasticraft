@@ -6,20 +6,11 @@ dependencies {
     interfaceInjectionData(libs.anvillib.recipe)
     interfaceInjectionData(libs.anvillib.moveableEntityBlock)
 
-    // 当前附属开发阶段使用相邻目录刚构建的本体 JAR；合并本体改动后可关闭该开关恢复远程依赖。
+    // 显式 JAR 路径保留给独立联调；默认依赖坐标从远程 Maven 解析。
     File localAnvilCraftJar = null
     if (project.hasProperty('anvilcraft_jar')) {
         File configured = project.file(project.property('anvilcraft_jar'))
         if (configured.isFile()) localAnvilCraftJar = configured
-    } else if (project.findProperty('use_local_anvilcraft')?.toString()?.toBoolean()) {
-        File localBuildDir = project.file('../AnvilCraft/build/libs')
-        if (localBuildDir.isDirectory()) {
-            Set<File> candidates = project.fileTree(localBuildDir) {
-                include 'anvilcraft-neoforge-1.21.1-*.jar'
-                exclude '*-sources.jar'
-            }.files
-            if (!candidates.isEmpty()) localAnvilCraftJar = candidates.max { it.lastModified() }
-        }
     }
 
     if (localAnvilCraftJar != null) {

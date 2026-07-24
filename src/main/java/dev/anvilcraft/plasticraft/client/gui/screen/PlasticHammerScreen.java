@@ -6,6 +6,7 @@ import com.mojang.math.Axis;
 import dev.anvilcraft.lib.v2.wheel.client.gui.component.WheelWidget;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.network.BondedPlasticHammerRotatePacket;
 import dev.anvilcraft.plasticraft.network.PlasticEntityHammerRotatePacket;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderHelper;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
@@ -19,6 +20,7 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.network.chat.Component;
 import net.minecraft.core.Direction;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionHand;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.joml.Matrix4f;
@@ -39,6 +41,8 @@ public final class PlasticHammerScreen extends Screen {
     private static final float ICON_SCALE = 18.0F;
 
     private final AbstractPlasticEntity target;
+    @Nullable
+    private final BlockPos bondedBlockPos;
     private final InteractionHand hand;
     private final int quarterTurn;
     private Direction selectedDirection;
@@ -47,9 +51,14 @@ public final class PlasticHammerScreen extends Screen {
     private boolean finishing;
 
     public PlasticHammerScreen(AbstractPlasticEntity target, InteractionHand hand) {
+        this(target, hand, null);
+    }
+
+    public PlasticHammerScreen(AbstractPlasticEntity target, InteractionHand hand, BlockPos bondedBlockPos) {
         super(Component.empty());
         this.target = target;
         this.hand = hand;
+        this.bondedBlockPos = bondedBlockPos == null ? null : bondedBlockPos.immutable();
         PlasticEntityOrientation orientation = target.getOrientation();
         this.quarterTurn = orientation.quarterTurn();
         this.selectedDirection = orientation.attachmentFace();
@@ -186,17 +195,29 @@ public final class PlasticHammerScreen extends Screen {
     }
 
     public boolean targets(AbstractPlasticEntity entity) {
-        return this.target == entity;
+        return this.bondedBlockPos == null && this.target == entity;
+    }
+
+    public boolean targets(BlockPos pos) {
+        return this.bondedBlockPos != null && this.bondedBlockPos.equals(pos);
     }
 
     public void completeSelection() {
         if (this.finishing || this.wheel == null) return;
         this.syncSelection();
-        PacketDistributor.sendToServer(new PlasticEntityHammerRotatePacket(
-            this.target.getId(),
-            this.hand,
-            this.selectedDirection
-        ));
+        if (this.bondedBlockPos == null) {
+            PacketDistributor.sendToServer(new PlasticEntityHammerRotatePacket(
+                this.target.getId(),
+                this.hand,
+                this.selectedDirection
+            ));
+        } else {
+            PacketDistributor.sendToServer(new BondedPlasticHammerRotatePacket(
+                this.bondedBlockPos,
+                this.hand,
+                this.selectedDirection
+            ));
+        }
         this.finishing = true;
         this.wheel.onClosing();
     }
@@ -209,7 +230,17 @@ public final class PlasticHammerScreen extends Screen {
     @Nullable
     public static PlasticEntityOrientation getPreviewOrientation(AbstractPlasticEntity entity) {
         if (!(Minecraft.getInstance().screen instanceof PlasticHammerScreen screen)
-            || !screen.targets(entity)
+            || screen.target != entity
+            || screen.finishing) {
+            return null;
+        }
+        return new PlasticEntityOrientation(screen.selectedDirection, screen.quarterTurn);
+    }
+
+    @Nullable
+    public static PlasticEntityOrientation getPreviewOrientation(BlockPos pos) {
+        if (!(Minecraft.getInstance().screen instanceof PlasticHammerScreen screen)
+            || !screen.targets(pos)
             || screen.finishing) {
             return null;
         }

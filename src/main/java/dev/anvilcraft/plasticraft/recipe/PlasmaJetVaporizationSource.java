@@ -5,7 +5,8 @@ import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationContext;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationOffer;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationSource;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporStack;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.YukkuriVaporTypes;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporAction;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationManager;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
 import dev.dubhe.anvilcraft.recipe.component.HasCauldronSimple;
@@ -47,9 +48,15 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
         int maxVapor
     ) {
         if (maxVapor <= 0) return null;
-        int jets = CondenserTowerProcess.countJetsBelow(context.level(), context.cauldronPos());
-        if (jets <= 0) return null;
-        int inputRate = Math.multiplyExact(jets, CondenserTowerProcess.VAPORIZATION_PER_JET);
+        if (VaporizationManager.findConsumer(context) == null
+            && CondenserTowerProcess.isPhysicalOutletBlocked(context)) {
+            return null;
+        }
+        int inputRate = CondenserTowerProcess.getVaporizationRateBelow(
+            context.level(),
+            context.cauldronPos()
+        );
+        if (inputRate <= 0) return null;
 
         List<RecipeHolder<PlasmaJetBlastingRecipe>> recipes = new ArrayList<>(
             context.level().getRecipeManager().getAllRecipesFor(
@@ -66,15 +73,18 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
             if (!matchesInput(availableInput, definition) || definition.consume() <= 0 || definition.produce() <= 0) {
                 continue;
             }
-            int batches = Math.min(
-                Math.min(availableInput.getAmount(), inputRate) / definition.consume(),
-                maxVapor / definition.produce()
+            int divisor = greatestCommonDivisor(definition.consume(), definition.produce());
+            int inputUnit = definition.consume() / divisor;
+            int outputUnit = definition.produce() / divisor;
+            int units = Math.min(
+                Math.min(availableInput.getAmount(), inputRate) / inputUnit,
+                maxVapor / outputUnit
             );
-            if (batches <= 0) continue;
-            int inputAmount = batches * definition.consume();
-            int outputAmount = batches * definition.produce();
+            if (units <= 0) continue;
+            int inputAmount = units * inputUnit;
+            int outputAmount = units * outputUnit;
             ResourceLocation outputId = CondenserGas.canonicalize(definition.transform());
-            if (outputId == null || !YukkuriVaporTypes.isStandard(outputId)) continue;
+            if (outputId == null || !CondenserGas.isGas(outputId)) continue;
             return new VaporizationOffer(
                 availableInput.copyWithAmount(inputAmount),
                 new VaporStack(outputId, outputAmount)
@@ -83,15 +93,43 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
         return null;
     }
 
+    private static int greatestCommonDivisor(int first, int second) {
+        while (second != 0) {
+            int remainder = first % second;
+            first = second;
+            second = remainder;
+        }
+        return first;
+    }
+
     @Override
     public void commit(VaporizationContext context, VaporizationOffer offer) {
         if (!(context.cauldron() instanceof LargeCauldronBlockEntity cauldron)) return;
-        CondenserTowerProcess.emitLargeCauldronVaporParticles(
-            context.level(),
-            CondenserTowerProcess.largeCauldronSurface(cauldron),
-            CondenserTowerProcess.countJetsBelow(context.level(), context.cauldronPos()),
-            offer.input()
-        );
+        ResourceLocation vaporType = CondenserGas.canonicalize(offer.output().type());
+        if (CondenserGas.GASEOUS_EXPERIENCE.equals(vaporType)) {
+            CondenserTowerProcess.emitLargeCauldronExperienceVaporParticles(
+                context.level(),
+                CondenserTowerProcess.largeCauldronSurface(cauldron),
+                offer.input().getAmount()
+            );
+        } else {
+            CondenserTowerProcess.emitLargeCauldronVaporParticles(
+                context.level(),
+                CondenserTowerProcess.largeCauldronSurface(cauldron),
+                offer.input().getAmount(),
+                offer.input()
+            );
+        }
+        int accepted = VaporizationManager.findConsumer(context) == null
+            ? 0
+            : VaporizationManager.receiveVapor(context, offer.output(), VaporAction.SIMULATE);
+        if (accepted < offer.output().amount()) {
+            CondenserTowerProcess.releaseEscapingVapor(
+                context,
+                offer.output().withAmount(offer.output().amount() - accepted),
+                offer.input()
+            );
+        }
     }
 
     private static boolean matchesInput(FluidStack available, HasCauldronSimple definition) {

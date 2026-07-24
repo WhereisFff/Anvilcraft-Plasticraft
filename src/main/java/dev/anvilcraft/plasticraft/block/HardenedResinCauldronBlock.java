@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.block;
 
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
@@ -19,15 +20,33 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** 六向硬化树脂釜使用的兼容展示方块。 */
 public class HardenedResinCauldronBlock extends AbstractPlasticEntityBlock<HardenedResinCauldronEntity> {
+    /**
+     * The orientation is stored in the bonded block entity rather than the
+     * block state, so all state shapes must be evaluated against the live level.
+     * dynamicShape() disables BlockStateBase's empty-level shape cache.
+     */
+    private static final VoxelShape UPWARD_ANVIL_SUPPORT = Shapes.box(
+        0.0D, 15.0D / 16.0D, 0.0D, 1.0D, 1.0D, 1.0D
+    );
+    private static final Map<PlasticEntityOrientation, VoxelShape> BONDED_CAULDRON_SHAPES =
+        new ConcurrentHashMap<>();
+    private static final Map<PlasticEntityOrientation, VoxelShape> BONDED_SUPPORT_SHAPES =
+        new ConcurrentHashMap<>();
+
     public HardenedResinCauldronBlock(Properties properties) {
         super(properties);
         this.registerDefaultState(this.defaultBlockState()
             .setValue(FACING, Direction.NORTH)
-            .setValue(MAGNETIZED, false));
+            .setValue(MAGNETIZED, false)
+            .setValue(BONDED, false));
     }
 
     @Override
@@ -64,7 +83,52 @@ public class HardenedResinCauldronBlock extends AbstractPlasticEntityBlock<Harde
         BlockPos pos,
         CollisionContext context
     ) {
+        if (state.getValue(BONDED)) return this.bondedCauldronShape(level, pos);
         return Blocks.CAULDRON.defaultBlockState().getShape(level, pos, context);
+    }
+
+    @Override
+    public VoxelShape getCollisionShape(
+        BlockState state,
+        BlockGetter level,
+        BlockPos pos,
+        CollisionContext context
+    ) {
+        if (state.getValue(BONDED)) return this.bondedCauldronShape(level, pos);
+        return Blocks.CAULDRON.defaultBlockState().getCollisionShape(level, pos, context);
+    }
+
+    @Override
+    protected VoxelShape getBlockSupportShape(
+        BlockState state,
+        BlockGetter level,
+        BlockPos pos
+    ) {
+        if (state.getValue(BONDED)
+            && level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
+            && bonded.isInitialized()
+            && bonded.isPlastic()) {
+            // The opening is the landing face; keep the rest of the support
+            // shape empty so side-attached pots do not become solid blocks.
+            PlasticEntityOrientation orientation = bonded.getPlasticOrientation();
+            return BONDED_SUPPORT_SHAPES.computeIfAbsent(
+                orientation,
+                ignored -> AbstractPlasticEntityBlock.rotateShape(UPWARD_ANVIL_SUPPORT, orientation)
+            );
+        }
+        return super.getBlockSupportShape(state, level, pos);
+    }
+
+    private VoxelShape bondedCauldronShape(BlockGetter level, BlockPos pos) {
+        PlasticEntityOrientation orientation = level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
+            && bonded.isInitialized()
+            && bonded.isPlastic()
+            ? bonded.getPlasticOrientation()
+            : PlasticEntityOrientation.DEFAULT;
+        return BONDED_CAULDRON_SHAPES.computeIfAbsent(orientation, ignored -> AbstractPlasticEntityBlock.rotateShape(
+            Blocks.CAULDRON.defaultBlockState().getCollisionShape(level, pos, CollisionContext.empty()),
+            orientation
+        ));
     }
 
     @Override
@@ -76,6 +140,7 @@ public class HardenedResinCauldronBlock extends AbstractPlasticEntityBlock<Harde
         InteractionHand hand,
         BlockHitResult hit
     ) {
+        if (state.getValue(BONDED)) return super.use(state, level, pos, player, hand, hit);
         return InteractionResult.PASS;
     }
 }

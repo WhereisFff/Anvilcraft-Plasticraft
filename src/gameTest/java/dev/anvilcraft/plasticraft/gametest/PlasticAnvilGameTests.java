@@ -11,8 +11,13 @@ import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.block.fluid.PipeBlock;
+import dev.dubhe.anvilcraft.block.sliding.ActivatorSlidingRailBlock;
+import dev.dubhe.anvilcraft.block.sliding.DetectorSlidingRailBlock;
+import dev.dubhe.anvilcraft.block.sliding.PoweredSlidingRailBlock;
+import dev.dubhe.anvilcraft.block.sliding.SlidingRailBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.event.anvil.AnvilEventListener;
+import dev.dubhe.anvilcraft.event.giantanvil.shock.GiantAnvilShockEventListener;
 import dev.dubhe.anvilcraft.event.giantanvil.shock.ShockContext;
 import dev.dubhe.anvilcraft.init.block.ModBlockTags;
 import dev.dubhe.anvilcraft.init.item.ModItemTags;
@@ -28,6 +33,7 @@ import dev.anvilcraft.plasticraft.block.HardenedResinAnvilBlock;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.ResinShockDropBehavior;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
@@ -55,6 +61,7 @@ import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -94,6 +101,7 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.event.PlayLevelSoundEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
@@ -617,6 +625,7 @@ public final class PlasticAnvilGameTests {
             PlasticEntityOrientation.DEFAULT
         );
         pot.setNoGravity(true);
+
         pot.getFluidHandler().fill(
             new FluidStack(Fluids.WATER, HardenedResinCauldronEntity.CAPACITY),
             IFluidHandler.FluidAction.EXECUTE
@@ -1045,6 +1054,57 @@ public final class PlasticAnvilGameTests {
     }
 
     @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x6x11")
+    @TestHolder(description = "Bonded resin-anvil blocks form a resin shock base without being bounced loose")
+    static void bondedResinAnvilBlocksStayFixedDuringResinShock(ExtendedGameTestHelper helper) {
+        BlockPos center = new BlockPos(5, 1, 5);
+        helper.setBlock(center, dev.dubhe.anvilcraft.init.block.ModBlocks.HEAVY_IRON_BLOCK.get());
+        BlockState bondedState = ModBlocks.RESIN_ANVIL.get()
+            .defaultBlockState()
+            .setValue(dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock.BONDED, true);
+        for (int xOffset = -1; xOffset <= 1; xOffset++) {
+            for (int zOffset = -1; zOffset <= 1; zOffset++) {
+                if (xOffset == 0 && zOffset == 0) continue;
+                helper.setBlock(center.offset(xOffset, 0, zOffset), bondedState);
+            }
+        }
+        ShockContext context = new ShockContext(
+            helper.getLevel(),
+            helper.absolutePos(center),
+            null,
+            List.of(),
+            0.0F
+        );
+        check(
+            context.testCorner(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get())
+                && context.testBorder(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get()),
+            "bonded resin anvils did not qualify as a resin shock pedestal"
+        );
+
+        BlockPos bondedInRange = center.above().east(2);
+        BlockPos freeInRange = center.above().west(2);
+        helper.setBlock(bondedInRange.below(), Blocks.STONE);
+        helper.setBlock(freeInRange.below(), Blocks.STONE);
+        helper.setBlock(bondedInRange, bondedState);
+        helper.setBlock(freeInRange, ModBlocks.RESIN_ANVIL.get().defaultBlockState());
+        GiantAnvilShockEventListener.onLand(new AnvilEvent.GiantOnLand(
+            helper.getLevel(),
+            helper.absolutePos(center.above(2)),
+            null,
+            2.0F
+        ));
+
+        check(
+            helper.getBlockState(bondedInRange).is(ModBlocks.RESIN_ANVIL.get())
+                && helper.getBlockState(bondedInRange)
+                    .getValue(dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock.BONDED),
+            "resin shock bounced a bonded resin anvil loose"
+        );
+        check(helper.getBlockState(freeInRange).isAir(), "resin shock did not bounce a free resin anvil");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
     @EmptyTemplate("9x4x9")
     @TestHolder(description = "Resin shock drops use a 45-degree trajectory to clear the square range")
     static void resinShockDropTrajectory(ExtendedGameTestHelper helper) {
@@ -1235,7 +1295,7 @@ public final class PlasticAnvilGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "7x6x7", floor = true)
-    @TestHolder(description = "Resin hammer left clicks cause Knockback V without damaging entities")
+    @TestHolder(description = "Resin hammer entity clicks trigger a resin-sounded anvil impact without damage")
     static void resinAnvilHammerKnockbackIsNonDamaging(ExtendedGameTestHelper helper) {
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         player.setYRot(0.0F);
@@ -1248,19 +1308,55 @@ public final class PlasticAnvilGameTests {
         );
         target.setNoGravity(true);
         target.setDeltaMovement(Vec3.ZERO);
+        Zombie middle = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.5D, 1.0D, 3.5D));
+        Zombie last = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(5.5D, 1.0D, 3.5D));
+        middle.setNoGravity(true);
+        last.setNoGravity(true);
+        check(EntityBondManager.connect(
+            helper.getLevel(), target, Direction.EAST, middle, Direction.WEST, true
+        ), "hammer target bond failed");
+        check(EntityBondManager.connect(
+            helper.getLevel(), middle, Direction.EAST, last, Direction.WEST, true
+        ), "remaining hammer-test bond failed");
+        AtomicInteger landingEventCount = new AtomicInteger();
+        AtomicInteger resinSoundCount = new AtomicInteger();
+        AtomicInteger anvilSoundCount = new AtomicInteger();
+        ResourceLocation resinImpactSound = dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK
+            .getDefaultState().getSoundType().getHitSound().getLocation();
+        BlockPos impactPos = target.blockPosition();
+        helper.addTemporaryListener((AnvilEvent.OnLand event) -> {
+            if (event.getPos().equals(impactPos.above())
+                && event.getEntity().getBlockState().is(ModBlocks.RESIN_ANVIL.get())) {
+                landingEventCount.incrementAndGet();
+            }
+        });
+        helper.addTemporaryListener((PlayLevelSoundEvent.AtPosition event) -> {
+            if (event.getLevel() != helper.getLevel() || event.getSound() == null) return;
+            ResourceLocation sound = event.getSound().value().getLocation();
+            if (sound.equals(resinImpactSound)) resinSoundCount.incrementAndGet();
+            if (sound.equals(SoundEvents.ANVIL_LAND.getLocation())) anvilSoundCount.incrementAndGet();
+        });
 
         player.attack(target);
 
         check(target.isAlive(), "zero-damage resin hammer attack destroyed its target");
         check(target.getDeltaMovement().z > 2.4D, "entity did not receive Knockback V away from the player's view");
         check(hammer.getDamageValue() == 1, "entity knockback consumed the wrong amount of durability");
+        check(landingEventCount.get() == 1, "entity click did not post exactly one anvil landing event");
+        check(resinSoundCount.get() == 1, "entity click did not play exactly one resin impact sound");
+        check(anvilSoundCount.get() == 0, "entity click also played the vanilla anvil landing sound");
+        check(!EntityBondManager.hasBonds(target), "resin hammer left the struck entity bonded");
+        check(
+            EntityBondManager.hasBonds(middle) && EntityBondManager.hasBonds(last),
+            "resin hammer disconnected entities that were not struck"
+        );
         target.discard();
         helper.succeed();
     }
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate
-    @TestHolder(description = "Resin hammer block clicks recoil opposite the full view direction only on the initial click")
+    @TestHolder(description = "Resin hammer block clicks trigger a resin-sounded anvil impact and recoil")
     static void resinAnvilHammerBlockRecoil(ExtendedGameTestHelper helper) {
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         player.setYRot(0.0F);
@@ -1271,6 +1367,23 @@ public final class PlasticAnvilGameTests {
             dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack()
         );
         BlockPos target = helper.absolutePos(BlockPos.ZERO);
+        AtomicInteger landingEventCount = new AtomicInteger();
+        AtomicInteger resinSoundCount = new AtomicInteger();
+        AtomicInteger anvilSoundCount = new AtomicInteger();
+        ResourceLocation resinImpactSound = dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK
+            .getDefaultState().getSoundType().getHitSound().getLocation();
+        helper.addTemporaryListener((AnvilEvent.OnLand event) -> {
+            if (event.getPos().equals(target.above())
+                && event.getEntity().getBlockState().is(ModBlocks.RESIN_ANVIL.get())) {
+                landingEventCount.incrementAndGet();
+            }
+        });
+        helper.addTemporaryListener((PlayLevelSoundEvent.AtPosition event) -> {
+            if (event.getLevel() != helper.getLevel() || event.getSound() == null) return;
+            ResourceLocation sound = event.getSound().value().getLocation();
+            if (sound.equals(resinImpactSound)) resinSoundCount.incrementAndGet();
+            if (sound.equals(SoundEvents.ANVIL_LAND.getLocation())) anvilSoundCount.incrementAndGet();
+        });
 
         ResinAnvilHammerEvents.leftClickBlock(new PlayerInteractEvent.LeftClickBlock(
             player,
@@ -1280,6 +1393,10 @@ public final class PlasticAnvilGameTests {
         ));
         check(player.getDeltaMovement().z < -2.4D, "block click did not launch the player directly backward");
         check(player.isIgnoringFallDamageFromCurrentImpulse(), "block recoil did not suppress its resulting fall damage");
+        check(landingEventCount.get() == 1, "block click did not post exactly one anvil landing event");
+        check(resinSoundCount.get() == 1, "block click did not play exactly one resin impact sound");
+        check(anvilSoundCount.get() == 0, "block click also played the vanilla anvil landing sound");
+        check(player.getMainHandItem().getDamageValue() == 1, "block click consumed the wrong amount of durability");
 
         player.setDeltaMovement(Vec3.ZERO);
         player.setXRot(90.0F);
@@ -1589,11 +1706,352 @@ public final class PlasticAnvilGameTests {
         anvil.setNoGravity(true);
         Zombie target = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.35D, 2.0D, 3.5D));
         target.setNoGravity(true);
+        float healthBefore = target.getHealth();
         anvil.setDeltaMovement(0.32D, 0.0D, 0.0D);
         helper.runAfterDelay(2, () -> {
             check(anvil.getDeltaMovement().x < -0.04D, "entity impact did not bounce the resin anvil");
             check(target.getDeltaMovement().x > 0.0D, "entity impact did not push the target outward");
             check(target.getDeltaMovement().x <= 0.45D + EPSILON, "entity impulse exceeded its configured bound");
+            check(close(target.getHealth(), healthBefore), "resin anvil impact damaged its target");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("17x5x9")
+    @TestHolder(description = "Powered sliding rails accelerate, brake, and center all free resin products")
+    static void poweredSlidingRailsControlPlasticProducts(ExtendedGameTestHelper helper) {
+        List<AbstractPlasticEntity> accelerated = new ArrayList<>();
+        List<AbstractPlasticEntity> braking = new ArrayList<>();
+        int[] xPositions = {2, 7, 12};
+        for (int x : xPositions) {
+            BlockPos poweredPos = new BlockPos(x, 1, 2);
+            helper.setBlock(poweredPos.below(), Blocks.REDSTONE_BLOCK);
+            helper.setBlock(
+                poweredPos,
+                dev.dubhe.anvilcraft.init.block.ModBlocks.POWERED_SLIDING_RAIL.get()
+                    .defaultBlockState()
+                    .setValue(PoweredSlidingRailBlock.FACING, Direction.EAST)
+                    .setValue(PoweredSlidingRailBlock.POWERED, true)
+            );
+            BlockPos brakePos = new BlockPos(x, 1, 6);
+            helper.setBlock(
+                brakePos,
+                dev.dubhe.anvilcraft.init.block.ModBlocks.POWERED_SLIDING_RAIL.get()
+                    .defaultBlockState()
+                    .setValue(PoweredSlidingRailBlock.FACING, Direction.EAST)
+                    .setValue(PoweredSlidingRailBlock.POWERED, false)
+            );
+        }
+
+        accelerated.add(createAnvil(helper, new Vec3(2.5D, 2.0D, 2.78D)));
+        accelerated.add(createResinAnvil(helper, new Vec3(7.5D, 2.0D, 2.78D), ModBlocks.RESIN_ANVIL.asStack()));
+        accelerated.add(createPot(helper, new Vec3(12.5D, 2.0D, 2.78D), PlasticEntityOrientation.DEFAULT));
+        braking.add(createAnvil(helper, new Vec3(2.5D, 2.0D, 6.78D)));
+        braking.add(createResinAnvil(helper, new Vec3(7.5D, 2.0D, 6.78D), ModBlocks.RESIN_ANVIL.asStack()));
+        braking.add(createPot(helper, new Vec3(12.5D, 2.0D, 6.78D), PlasticEntityOrientation.DEFAULT));
+        for (AbstractPlasticEntity entity : accelerated) {
+            entity.setNoGravity(true);
+            entity.setDeltaMovement(Vec3.ZERO);
+        }
+        for (AbstractPlasticEntity entity : braking) {
+            entity.setNoGravity(true);
+            entity.setDeltaMovement(0.3D, 0.0D, 0.0D);
+        }
+
+        helper.runAfterDelay(1, () -> {
+            for (AbstractPlasticEntity entity : accelerated) {
+                double railCenterZ = Math.floor(entity.getZ()) + 0.5D;
+                check(entity.getDeltaMovement().x > 0.3D, "powered rail did not accelerate " + entity.getType());
+                check(
+                    Math.abs(entity.getZ() - railCenterZ) < 0.24D,
+                    "powered rail did not pull " + entity.getType() + " toward its centerline"
+                );
+            }
+            for (AbstractPlasticEntity entity : braking) {
+                double railCenterZ = Math.floor(entity.getZ()) + 0.5D;
+                check(
+                    entity.getDeltaMovement().horizontalDistance() < 0.27D,
+                    "unpowered rail did not slow " + entity.getType()
+                );
+                check(
+                    Math.abs(entity.getZ() - railCenterZ) < 0.28D,
+                    "unpowered rail did not pull " + entity.getType() + " toward its center"
+                );
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x5x11")
+    @TestHolder(description = "Powered sliding rails pull all free resin products from an adjacent rail stop or workstation")
+    static void poweredSlidingRailsPullPlasticProductsFromStopLikeBlocks(ExtendedGameTestHelper helper) {
+        int[] zPositions = {2, 5, 8};
+        BlockState[] supports = {
+            dev.dubhe.anvilcraft.init.block.ModBlocks.SLIDING_RAIL_STOP.get().defaultBlockState(),
+            dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER.get().defaultBlockState(),
+            dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER.get().defaultBlockState()
+        };
+        for (int index = 0; index < zPositions.length; index++) {
+            BlockPos supportPos = new BlockPos(3, 1, zPositions[index]);
+            BlockPos railPos = supportPos.east();
+            helper.setBlock(supportPos, supports[index]);
+            helper.setBlock(railPos.below(), Blocks.REDSTONE_BLOCK);
+            helper.setBlock(
+                railPos,
+                dev.dubhe.anvilcraft.init.block.ModBlocks.POWERED_SLIDING_RAIL.get()
+                    .defaultBlockState()
+                    .setValue(PoweredSlidingRailBlock.FACING, Direction.EAST)
+                    .setValue(PoweredSlidingRailBlock.POWERED, true)
+            );
+        }
+
+        List<AbstractPlasticEntity> products = List.of(
+            createAnvil(helper, new Vec3(3.5D, 2.0D, 2.78D)),
+            createResinAnvil(helper, new Vec3(3.5D, 2.0D, 5.78D), ModBlocks.RESIN_ANVIL.asStack()),
+            createPot(helper, new Vec3(3.5D, 2.0D, 8.78D), PlasticEntityOrientation.DEFAULT)
+        );
+        for (AbstractPlasticEntity product : products) {
+            product.setDeltaMovement(Vec3.ZERO);
+        }
+
+        helper.runAfterDelay(2, () -> {
+            for (int index = 0; index < products.size(); index++) {
+                AbstractPlasticEntity product = products.get(index);
+                double centerZ = zPositions[index] + 0.5D;
+                check(product.getX() > helper.absolutePos(new BlockPos(4, 2, 0)).getX(),
+                    "powered rail did not pull " + product.getType() + " off its stop-like support");
+                check(product.getDeltaMovement().x > 0.3D,
+                    "powered rail did not launch " + product.getType() + " forward");
+                check(Math.abs(product.getZ() - helper.absoluteVec(new Vec3(0.0D, 0.0D, centerZ)).z) < 0.2D,
+                    "powered rail did not center " + product.getType() + " while pulling it in");
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("17x5x11")
+    @TestHolder(description = "All free resin products coast at constant horizontal speed on ordinary sliding rails")
+    static void plasticProductsCoastWithoutDragOnSlidingRails(ExtendedGameTestHelper helper) {
+        int[] zPositions = {2, 5, 8};
+        for (int z : zPositions) {
+            for (int x = 1; x <= 15; x++) {
+                helper.setBlock(
+                    new BlockPos(x, 1, z),
+                    dev.dubhe.anvilcraft.init.block.ModBlocks.SLIDING_RAIL.get()
+                        .defaultBlockState()
+                        .setValue(SlidingRailBlock.AXIS, Direction.Axis.X)
+                );
+            }
+        }
+
+        List<AbstractPlasticEntity> products = List.of(
+            createAnvil(helper, new Vec3(3.5D, 2.0D, 2.5D)),
+            createResinAnvil(helper, new Vec3(3.5D, 2.0D, 5.5D), ModBlocks.RESIN_ANVIL.asStack()),
+            createPot(helper, new Vec3(3.5D, 2.0D, 8.5D), PlasticEntityOrientation.DEFAULT)
+        );
+        double speed = 0.22D;
+        for (AbstractPlasticEntity product : products) {
+            product.setDeltaMovement(speed, 0.0D, 0.0D);
+        }
+
+        helper.runAfterDelay(8, () -> {
+            for (AbstractPlasticEntity product : products) {
+                check(product.getDeltaMovement().x > 0.21D,
+                    product.getType() + " lost horizontal speed on sliding rails: " + product.getDeltaMovement());
+                check(Math.abs(product.getDeltaMovement().z) < EPSILON,
+                    product.getType() + " drifted sideways on straight sliding rails");
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("15x5x13")
+    @TestHolder(description = "Player pushes cannot replace the forward drive of a powered sliding rail")
+    static void poweredSlidingRailDriveSurvivesPlayerPushes(ExtendedGameTestHelper helper) {
+        List<BlockPos> railPositions = List.of(
+            new BlockPos(4, 1, 2),
+            new BlockPos(4, 1, 6),
+            new BlockPos(10, 1, 10)
+        );
+        for (BlockPos railPos : railPositions) {
+            helper.setBlock(railPos.below(), Blocks.REDSTONE_BLOCK);
+            helper.setBlock(
+                railPos,
+                dev.dubhe.anvilcraft.init.block.ModBlocks.POWERED_SLIDING_RAIL.get()
+                    .defaultBlockState()
+                    .setValue(PoweredSlidingRailBlock.FACING, Direction.EAST)
+                    .setValue(PoweredSlidingRailBlock.POWERED, true)
+            );
+        }
+
+        helper.runAfterDelay(1, () -> {
+            List<AbstractPlasticEntity> forwardProducts = List.of(
+                createAnvil(helper, new Vec3(4.5D, 2.0D, 2.5D)),
+                createResinAnvil(helper, new Vec3(4.5D, 2.0D, 6.5D), ModBlocks.RESIN_ANVIL.asStack())
+            );
+            for (int index = 0; index < forwardProducts.size(); index++) {
+                AbstractPlasticEntity product = forwardProducts.get(index);
+                double z = index == 0 ? 2.5D : 6.5D;
+                GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+                Vec3 playerPosition = helper.absoluteVec(new Vec3(3.71D, 2.0D, z));
+                player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+                double startX = product.getX();
+                player.move(MoverType.SELF, new Vec3(0.12D, 0.0D, 0.0D));
+                player.move(MoverType.SELF, new Vec3(0.12D, 0.0D, 0.0D));
+                check(product.getX() - startX > 0.2D,
+                    "player did not push " + product.getType() + " along the powered rail");
+                check(product.getDeltaMovement().x > 0.3D,
+                    "player push replaced the powered-rail drive of " + product.getType());
+            }
+
+            HardenedResinCauldronEntity pot = createPot(
+                helper,
+                new Vec3(10.5D, 2.0D, 10.5D),
+                PlasticEntityOrientation.DEFAULT
+            );
+            GameTestPlayer opposingPlayer = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+            Vec3 opposingPosition = helper.absoluteVec(new Vec3(11.29D, 2.0D, 10.5D));
+            opposingPlayer.moveTo(opposingPosition.x, opposingPosition.y, opposingPosition.z);
+            double potStartX = pot.getX();
+            opposingPlayer.move(MoverType.SELF, new Vec3(-0.12D, 0.0D, 0.0D));
+            opposingPlayer.move(MoverType.SELF, new Vec3(-0.12D, 0.0D, 0.0D));
+            check(pot.getX() - potStartX < -0.2D, "player did not push the pot against the powered rail");
+            check(pot.getDeltaMovement().x > 0.3D, "opposing player push replaced the pot's powered-rail drive");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 50)
+    @EmptyTemplate("9x5x7")
+    @TestHolder(description = "Detector sliding rails keep detecting a free resin product and reset after it leaves")
+    static void detectorSlidingRailTracksPlasticEntity(ExtendedGameTestHelper helper) {
+        BlockPos railPos = new BlockPos(3, 1, 3);
+        helper.setBlock(
+            railPos,
+            dev.dubhe.anvilcraft.init.block.ModBlocks.DETECTOR_SLIDING_RAIL.get()
+                .defaultBlockState()
+                .setValue(DetectorSlidingRailBlock.FACING, Direction.EAST)
+        );
+        ResinAnvilEntity anvil = createResinAnvil(
+            helper,
+            new Vec3(3.5D, 2.0D, 3.5D),
+            ModBlocks.RESIN_ANVIL.asStack()
+        );
+        anvil.setNoGravity(true);
+
+        helper.runAfterDelay(22, () -> {
+            BlockState state = helper.getBlockState(railPos);
+            check(state.getValue(DetectorSlidingRailBlock.POWERED), "detector rail dropped its occupied signal");
+            int power = helper.getLevel()
+                .getBlockEntity(helper.absolutePos(railPos), dev.dubhe.anvilcraft.init.block.ModBlockEntities.DETECTOR_SLIDING_RAIL.get())
+                .orElseThrow(() -> new GameTestAssertException("detector rail block entity was missing"))
+                .getPower();
+            check(power == 1, "one resin entity produced detector strength " + power);
+            Vec3 away = helper.absoluteVec(new Vec3(7.5D, 2.0D, 3.5D));
+            anvil.setPos(away);
+        });
+        helper.runAfterDelay(44, () -> {
+            BlockState state = helper.getBlockState(railPos);
+            check(!state.getValue(DetectorSlidingRailBlock.POWERED), "detector rail stayed powered after the entity left");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("9x5x7")
+    @TestHolder(description = "Activator sliding rails hold a free resin product for their full charge pulse")
+    static void activatorSlidingRailChargesPlasticEntity(ExtendedGameTestHelper helper) {
+        BlockPos railPos = new BlockPos(3, 1, 3);
+        helper.setBlock(railPos.below(), Blocks.REDSTONE_BLOCK);
+        helper.setBlock(
+            railPos,
+            dev.dubhe.anvilcraft.init.block.ModBlocks.ACTIVATOR_SLIDING_RAIL.get()
+                .defaultBlockState()
+                .setValue(ActivatorSlidingRailBlock.FACING, Direction.EAST)
+                .setValue(ActivatorSlidingRailBlock.POWERED, true)
+        );
+        HardenedResinCauldronEntity pot = createPot(
+            helper,
+            new Vec3(3.25D, 2.0D, 3.7D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        pot.setNoGravity(true);
+        pot.setDeltaMovement(0.3D, 0.0D, 0.0D);
+        Vec3 railCenter = helper.absolutePos(railPos).getCenter().add(0.0D, 0.5D, 0.0D);
+
+        helper.runAfterDelay(4, () -> {
+            check(pot.getDeltaMovement().horizontalDistanceSqr() < EPSILON, "activator rail released the pot too early");
+            check(
+                Math.abs(pot.getX() - railCenter.x) < EPSILON && Math.abs(pot.getZ() - railCenter.z) < EPSILON,
+                "activator rail did not hold the pot at its center"
+            );
+        });
+        helper.runAfterDelay(10, () -> {
+            check(pot.getX() > railCenter.x + 0.2D, "activator rail did not release the charged pot forward");
+            check(pot.getDeltaMovement().x > 0.2D, "charged pot did not resume in its incoming direction");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x6x7")
+    @TestHolder(description = "A resin hammer launches a hardened resin anvil for ten damage and Anvil Looting")
+    static void hardenedResinAnvilHammerImpactDealsTenDamage(ExtendedGameTestHelper helper) {
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(3.0D, 2.0D, 3.5D));
+        anvil.setNoGravity(true);
+        var target = helper.spawnWithNoFreeWill(EntityType.CREEPER, new Vec3(5.0D, 2.0D, 3.5D));
+        target.setNoGravity(true);
+        AtomicInteger eventCount = new AtomicInteger();
+        float[] eventDamage = {0.0F};
+        helper.addTemporaryListener((AnvilEvent.HurtEntity event) -> {
+            if (event.getEntity() == anvil && event.getHurtedEntity() == target) {
+                eventCount.incrementAndGet();
+                eventDamage[0] = event.getDamage();
+            }
+        });
+
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.setYRot(-90.0F);
+        player.setItemInHand(
+            InteractionHand.MAIN_HAND,
+            dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack()
+        );
+        player.attack(anvil);
+        check(anvil.getDeltaMovement().x > 2.4D, "resin hammer did not launch the hardened anvil");
+
+        helper.runAfterDelay(2, () -> {
+            check(close(target.getHealth(), 10.0D), "hammer-speed hardened anvil dealt " + (20.0F - target.getHealth()));
+            check(eventCount.get() == 1, "hardened anvil posted " + eventCount.get() + " looting events");
+            check(close(eventDamage[0], 10.0D), "looting event reported " + eventDamage[0] + " damage");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "7x11x7", floor = true)
+    @TestHolder(description = "A hardened resin anvil begins dealing one damage after a five-block fall")
+    static void hardenedResinAnvilFiveBlockFallStartsAtOneDamage(ExtendedGameTestHelper helper) {
+        var target = helper.spawnWithNoFreeWill(EntityType.CREEPER, new Vec3(3.5D, 1.0D, 3.5D));
+        target.setNoGravity(true);
+        double startY = 1.0D + target.getBbHeight() + 5.0D;
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(3.5D, startY, 3.5D));
+        AtomicInteger eventCount = new AtomicInteger();
+        float[] eventDamage = {0.0F};
+        helper.addTemporaryListener((AnvilEvent.HurtEntity event) -> {
+            if (event.getEntity() == anvil && event.getHurtedEntity() == target) {
+                eventCount.incrementAndGet();
+                eventDamage[0] = event.getDamage();
+            }
+        });
+
+        helper.runAfterDelay(24, () -> {
+            check(close(target.getHealth(), 19.0D), "five-block fall dealt " + (20.0F - target.getHealth()));
+            check(eventCount.get() == 1, "five-block fall posted " + eventCount.get() + " looting events");
+            check(close(eventDamage[0], 1.0D), "five-block fall reported " + eventDamage[0] + " damage");
             helper.succeed();
         });
     }
@@ -1620,6 +2078,25 @@ public final class PlasticAnvilGameTests {
             Math.abs(player.getBoundingBox().minY - anvil.getBoundingBox().maxY) < 0.03D,
             "falling player was not collision-clipped at the resin anvil surface"
         );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "A blockified resin anvil retains resin-block bounce behavior")
+    static void playerBouncesFromBlockifiedResinAnvil(ExtendedGameTestHelper helper) {
+        BlockPos pos = new BlockPos(3, 1, 3);
+        BlockState state = ModBlocks.RESIN_ANVIL.get()
+            .defaultBlockState()
+            .setValue(dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock.BONDED, true);
+        helper.setBlock(pos, state);
+        Zombie falling = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 2.0D, 3.5D));
+        falling.setDeltaMovement(0.0D, -0.75D, 0.0D);
+
+        state.getBlock().updateEntityAfterFallOn(helper.getLevel(), falling);
+
+        check(falling.getDeltaMovement().y > 0.70D, "blockified resin anvil did not bounce a falling entity");
+        check(state.getBlock().isSlimeBlock(state), "blockified resin anvil was not marked as a slime block");
         helper.succeed();
     }
 
@@ -1737,34 +2214,41 @@ public final class PlasticAnvilGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate("9x6x7")
-    @TestHolder(description = "Anvil hammer radial selections change all plastic products between six attachment faces")
+    @TestHolder(description = "Anvil hammer radial selections rotate all free plastic products in place")
     static void anvilHammerChangesPlasticAttachmentFaces(ExtendedGameTestHelper helper) {
         PlasticEntityOrientation initial = new PlasticEntityOrientation(Direction.EAST, 2);
         HardenedResinAnvilEntity hardened = createAnvil(
             helper,
-            new Vec3(2.5D, 2.0D, 3.5D),
+            new Vec3(2.5D, 2.5D, 3.5D),
             initial
         );
         ResinAnvilEntity resin = createResinAnvil(
             helper,
-            new Vec3(6.5D, 2.0D, 3.5D),
+            new Vec3(6.0D, 2.0D, 3.5D),
             ModBlocks.RESIN_ANVIL.asStack()
         );
         resin.setOrientation(initial);
         HardenedResinCauldronEntity pot = createPot(
             helper,
-            new Vec3(4.5D, 2.0D, 3.5D),
+            new Vec3(4.75D, 2.5D, 3.25D),
             initial
         );
         hardened.setNoGravity(true);
         resin.setNoGravity(true);
         pot.setNoGravity(true);
 
+        List<Vec3> originalPositions = List.of(
+            hardened.position(),
+            resin.position(),
+            pot.position()
+        );
+
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         player.setShiftKeyDown(false);
         ItemStack hammer = ModItems.ANVIL_HAMMER.asStack();
         player.setItemInHand(InteractionHand.MAIN_HAND, hammer);
 
+        int targetIndex = 0;
         for (AbstractPlasticEntity target : List.of(hardened, resin, pot)) {
             check(target.supportsAnvilHammerOrientationMenu(), "plastic product did not expose its orientation menu");
             for (Direction face : Direction.values()) {
@@ -1774,7 +2258,12 @@ public final class PlasticAnvilGameTests {
                 );
                 check(target.getOrientation().attachmentFace() == face, "anvil hammer selected the wrong attachment face");
                 check(target.getOrientation().quarterTurn() == 2, "changing attachment face changed the in-plane rotation");
+                check(
+                    close(target.position(), originalPositions.get(targetIndex)),
+                    "changing attachment face moved the free plastic entity"
+                );
             }
+            targetIndex++;
         }
         check(hammer.getDamageValue() == 0, "rotating resin anvils damaged the anvil hammer");
         check(hardened.isAlive() && resin.isAlive() && pot.isAlive(), "rotating a plastic product removed its entity");
@@ -1944,6 +2433,16 @@ public final class PlasticAnvilGameTests {
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         ItemStack hammer = dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack();
         player.setItemInHand(InteractionHand.MAIN_HAND, hammer);
+        AtomicInteger resinSoundCount = new AtomicInteger();
+        AtomicInteger anvilSoundCount = new AtomicInteger();
+        ResourceLocation resinImpactSound = dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK
+            .getDefaultState().getSoundType().getHitSound().getLocation();
+        helper.addTemporaryListener((PlayLevelSoundEvent.AtPosition event) -> {
+            if (event.getLevel() != helper.getLevel() || event.getSound() == null) return;
+            ResourceLocation sound = event.getSound().value().getLocation();
+            if (sound.equals(resinImpactSound)) resinSoundCount.incrementAndGet();
+            if (sound.equals(SoundEvents.ANVIL_LAND.getLocation())) anvilSoundCount.incrementAndGet();
+        });
         player.attack(pot);
 
         check(pot.isAlive(), "resin anvil hammer attack destroyed the hardened resin cauldron");
@@ -1955,6 +2454,8 @@ public final class PlasticAnvilGameTests {
             "resin anvil hammer attack did not transform the hardened resin cauldron fluid"
         );
         check(hammer.getDamageValue() == 1, "resin anvil hammer attack consumed the wrong amount of durability");
+        check(resinSoundCount.get() == 1, "cauldron click did not play exactly one resin impact sound");
+        check(anvilSoundCount.get() == 0, "cauldron click also played the vanilla anvil landing sound");
         check(
             helper.getLevel().getEntitiesOfClass(ItemEntity.class, pot.getBoundingBox().inflate(2.0D)).isEmpty(),
             "resin anvil hammer attack dropped the cauldron or its stored ingredients"
@@ -2130,7 +2631,7 @@ public final class PlasticAnvilGameTests {
 
     @GameTest(timeoutTicks = 30)
     @EmptyTemplate("13x6x7")
-    @TestHolder(description = "A non-magnetic plastic pot spills full fluid only through a side or bottom opening")
+    @TestHolder(description = "A non-magnetic plastic pot spills or loses any fluid through a side or bottom opening")
     static void plasticPotSpillsFluidByOrientation(ExtendedGameTestHelper helper) {
         HardenedResinCauldronEntity side = createPot(
             helper,
@@ -2149,9 +2650,18 @@ public final class PlasticAnvilGameTests {
         magnetic.setMagnetized(true);
         magnetic.getFluidHandler().fill(new FluidStack(Fluids.WATER, HardenedResinCauldronEntity.CAPACITY), IFluidHandler.FluidAction.EXECUTE);
 
+        HardenedResinCauldronEntity partial = createPot(
+            helper,
+            new Vec3(11.5D, 2.0D, 2.5D),
+            new PlasticEntityOrientation(Direction.DOWN, 0)
+        );
+        partial.setNoGravity(true);
+        partial.getFluidHandler().fill(new FluidStack(Fluids.WATER, 250), IFluidHandler.FluidAction.EXECUTE);
+
         helper.runAfterDelay(3, () -> {
             BlockPos sideTarget = BlockPos.containing(side.getBoundingBox().getCenter()).relative(Direction.EAST);
             BlockPos magneticTarget = BlockPos.containing(magnetic.getBoundingBox().getCenter()).relative(Direction.EAST);
+            BlockPos partialTarget = BlockPos.containing(partial.getBoundingBox().getCenter()).relative(Direction.DOWN);
             check(helper.getLevel().getFluidState(sideTarget).isSource(), "side-facing pot did not spill a source fluid");
             check(side.getFluidHandler().getFluid().isEmpty(), "side-facing pot retained spilled fluid");
             check(
@@ -2159,6 +2669,8 @@ public final class PlasticAnvilGameTests {
                 "magnetized pot spilled fluid despite being a sealed container"
             );
             check(helper.getLevel().getFluidState(magneticTarget).isEmpty(), "magnetized pot created an external fluid source");
+            check(partial.getFluidHandler().getFluid().isEmpty(), "partially filled inverted pot retained its fluid");
+            check(helper.getLevel().getFluidState(partialTarget).isEmpty(), "partial spill created a fluid block");
             helper.succeed();
         });
     }

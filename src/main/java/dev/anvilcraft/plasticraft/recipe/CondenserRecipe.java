@@ -29,12 +29,14 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
     private final int consume;
     private final ResourceLocation fluid;
     private final int produce;
+    private final int towerLevel;
 
-    public CondenserRecipe(ResourceLocation gas, int consume, ResourceLocation fluid, int produce) {
+    public CondenserRecipe(ResourceLocation gas, int consume, ResourceLocation fluid, int produce, int towerLevel) {
         this.gas = Objects.requireNonNull(CondenserGas.canonicalize(gas), "gas");
         this.consume = consume;
         this.fluid = fluid;
         this.produce = produce;
+        this.towerLevel = towerLevel;
     }
 
     public static Builder builder() {
@@ -55,6 +57,10 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
 
     public int produce() {
         return this.produce;
+    }
+
+    public int towerLevel() {
+        return this.towerLevel;
     }
 
     public boolean matches(ResourceLocation gasId, int amount) {
@@ -119,7 +125,9 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
             ResourceLocation.CODEC.fieldOf("gas").forGetter(CondenserRecipe::gas),
             com.mojang.serialization.Codec.INT.fieldOf("consume").forGetter(CondenserRecipe::consume),
             ResourceLocation.CODEC.fieldOf("fluid").forGetter(CondenserRecipe::fluid),
-            com.mojang.serialization.Codec.INT.fieldOf("produce").forGetter(CondenserRecipe::produce)
+            com.mojang.serialization.Codec.INT.fieldOf("produce").forGetter(CondenserRecipe::produce),
+            com.mojang.serialization.Codec.INT.optionalFieldOf("tower_level", 1)
+                .forGetter(CondenserRecipe::towerLevel)
         ).apply(instance, CondenserRecipe::new));
 
         private static final StreamCodec<RegistryFriendlyByteBuf, CondenserRecipe> STREAM_CODEC =
@@ -132,6 +140,8 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
                 CondenserRecipe::fluid,
                 ByteBufCodecs.INT,
                 CondenserRecipe::produce,
+                ByteBufCodecs.INT,
+                CondenserRecipe::towerLevel,
                 CondenserRecipe::new
             );
 
@@ -151,6 +161,7 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
         private ResourceLocation fluid;
         private int consume;
         private int produce;
+        private int towerLevel = 1;
 
         public Builder gas(ResourceLocation gas) {
             this.gas = gas;
@@ -172,9 +183,14 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
             return this;
         }
 
+        public Builder towerLevel(int towerLevel) {
+            this.towerLevel = towerLevel;
+            return this;
+        }
+
         @Override
         public CondenserRecipe buildRecipe() {
-            return new CondenserRecipe(this.gas, this.consume, this.fluid, this.produce);
+            return new CondenserRecipe(this.gas, this.consume, this.fluid, this.produce, this.towerLevel);
         }
 
         @Override
@@ -184,6 +200,9 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
             }
             if (this.consume <= 0 || this.produce <= 0) {
                 throw new IllegalArgumentException("Condenser amounts must be positive, RecipeId: " + id);
+            }
+            if (this.towerLevel <= 0) {
+                throw new IllegalArgumentException("Condenser tower level must be positive, RecipeId: " + id);
             }
             if (this.fluid == null) {
                 throw new IllegalArgumentException("Condenser output fluid must not be empty, RecipeId: " + id);

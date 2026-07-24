@@ -171,7 +171,10 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
                 : incidentSpeed * (hasEntityContact ? ENTITY_RESTITUTION : BLOCK_RESTITUTION);
 
             double currentNormal = result.dot(normal);
-            Vec3 tangential = result.subtract(normal.scale(currentNormal)).scale(TANGENTIAL_RETENTION);
+            double tangentialRetention = direction == gravityDirection && this.isOnSlidingRail()
+                ? 1.0D
+                : TANGENTIAL_RETENTION;
+            Vec3 tangential = result.subtract(normal.scale(currentNormal)).scale(tangentialRetention);
             result = tangential.add(normal.scale(-bounceSpeed));
             if (bounceSpeed > 0.0D) {
                 this.contactCooldownUntil[direction.get3DDataValue()] = this.tickCount + CONTACT_COOLDOWN_TICKS;

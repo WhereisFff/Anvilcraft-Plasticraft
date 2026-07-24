@@ -1,9 +1,11 @@
 package dev.anvilcraft.plasticraft.entity;
 
 import dev.anvilcraft.lib.v2.recipe.cache.IItemHandlerCache;
+import dev.anvilcraft.plasticraft.block.IgnitedFluidEffects;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
+import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.dubhe.anvilcraft.api.entity.IEntityCauldron;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidNetworkManager;
@@ -71,6 +73,9 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     implements IItemHandlerCache, IItemHandlerHolder, IEntityCauldron {
     public static final int CAPACITY = 1000;
     public static final float COLLISION_SIZE = 1.0F;
+    private static final double FLUID_INNER_INSET = 0.126D;
+    private static final double FLUID_BOTTOM = 0.251D;
+    private static final double FLUID_HEIGHT = 0.685D;
     private static final EntityDimensions EJECTED_ITEM_DIMENSIONS = EntityDimensions.scalable(0.25F, 0.25F);
     private static final double ITEM_EJECTION_GAP = 0.02D;
     private static final double ITEM_EJECTION_INSET = 0.15D;
@@ -170,6 +175,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     private boolean autoOutputting;
     private boolean restoringData;
     private boolean refreshingIgnited;
+    private boolean bondedDataDirty;
     private long lastRecipeProcessingGameTime = Long.MIN_VALUE;
 
     public static void configureDefaultDrop(Supplier<ItemStack> supplier) {
@@ -279,6 +285,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     private void contentsChanged() {
         this.hasImpulse = true;
         this.syncItemData();
+        if (!this.restoringData) this.bondedDataDirty = true;
     }
 
     @Override
@@ -349,19 +356,60 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         this.entityData.set(OUTLET_SIDE, directionId);
         this.hasImpulse = true;
         this.hurtMarked = true;
+        if (!this.restoringData) this.bondedDataDirty = true;
     }
 
     @Override
     public void tick() {
         super.tick();
         if (this.isRemoved() || this.level().isClientSide) return;
+        this.tickFunctionalState();
+    }
+
+    /** 方块化后只推进容器功能，不执行落方块实体的重力和碰撞物理。 */
+    public void plasticraft$tickBonded() {
+        if (this.isRemoved() || this.level().isClientSide) return;
+        if (this.time < Integer.MAX_VALUE) this.time++;
+        this.tickCount++;
+        this.tickFunctionalState();
+    }
+
+    public boolean plasticraft$consumeBondedDataDirty() {
+        boolean dirty = this.bondedDataDirty;
+        this.bondedDataDirty = false;
+        return dirty;
+    }
+
+    private void tickFunctionalState() {
         this.tryIgniteFromOpeningContacts();
         this.refreshIgnited();
+        this.hurtEntitiesInIgnitedFluid();
         this.refreshRecipeContact();
         this.updateFluidNetworkRegistration();
         if (!this.ejectItemsIfNeeded()) this.absorbTouchingItems();
         this.spillFluidIfNeeded();
         this.trySpawnPlasmaJets();
+    }
+
+    private void hurtEntitiesInIgnitedFluid() {
+        if (!this.anvilcraft$isIgnited() || this.fluidHandler.isEmpty()) return;
+        AABB box = this.getBoundingBox();
+        double fill = Math.clamp((double) this.fluidHandler.getFluidAmount() / CAPACITY, 0.0D, 1.0D);
+        AABB fluidArea = new AABB(
+            box.minX + FLUID_INNER_INSET,
+            box.minY + FLUID_BOTTOM,
+            box.minZ + FLUID_INNER_INSET,
+            box.maxX - FLUID_INNER_INSET,
+            box.minY + FLUID_BOTTOM + FLUID_HEIGHT * fill,
+            box.maxZ - FLUID_INNER_INSET
+        );
+        for (Entity entity : this.level().getEntitiesOfClass(
+            Entity.class,
+            fluidArea,
+            entity -> entity != this && entity.isAlive()
+        )) {
+            IgnitedFluidEffects.hurt(entity, this.level(), this.fluidHandler.getFluid());
+        }
     }
 
     /** 与鱼缸一致，开口接触到燃烧中的实体时点燃可燃流体。 */
@@ -387,6 +435,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         this.entityData.set(IGNITED, next);
         this.hasImpulse = true;
         this.hurtMarked = true;
+        if (!this.restoringData) this.bondedDataDirty = true;
     }
 
     private boolean canIgniteFluid() {
@@ -597,7 +646,11 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     private void spillFluidIfNeeded() {
         if (this.isMagnetized() || this.getOrientation().attachmentFace() == Direction.UP) return;
         FluidStack fluid = this.fluidHandler.getFluid();
-        if (fluid.getAmount() < CAPACITY) return;
+        if (fluid.isEmpty()) return;
+        if (fluid.getAmount() < CAPACITY) {
+            this.fluidHandler.drain(fluid.getAmount(), IFluidHandler.FluidAction.EXECUTE);
+            return;
+        }
         BlockPos target = this.openingTargetPosition();
         BlockState fluidState = fluid.getFluid().defaultFluidState().createLegacyBlock();
         if (this.isOpeningBlocked(target)) return;
@@ -984,14 +1037,18 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
 
     private void syncItemData() {
         if (this.level().isClientSide) return;
+        this.entityData.set(DISPLAY_ITEMS, this.createDisplayItemsTag(this.registryAccess()));
+    }
+
+    private CompoundTag createDisplayItemsTag(HolderLookup.Provider registries) {
         CompoundTag tag = new CompoundTag();
         ListTag stacks = new ListTag();
         for (int slot = 0; slot < this.itemHandler.getSlots(); slot++) {
             ItemStack stack = this.itemHandler.getStackInSlot(slot);
-            if (!stack.isEmpty()) stacks.add(stack.save(this.registryAccess()));
+            if (!stack.isEmpty()) stacks.add(stack.save(registries));
         }
         tag.put("Stacks", stacks);
-        this.entityData.set(DISPLAY_ITEMS, tag);
+        return tag;
     }
 
     private void readSyncedItems(CompoundTag tag) {
@@ -1014,6 +1071,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         this.entityData.set(FLUID_AMOUNT, fluid.getAmount());
         this.hasImpulse = true;
         this.hurtMarked = true;
+        if (!this.restoringData) this.bondedDataDirty = true;
     }
 
     @Override
@@ -1024,11 +1082,12 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
             if (!this.level().isClientSide) {
                 this.beginRecipeProcessing();
                 try {
-                    AnvilHammerItem.dropAnvil(
-                        player,
-                        this.level(),
-                        CauldronImpactRecipeProcessor.recipePotCell(this)
-                    );
+                    BlockPos impactPos = CauldronImpactRecipeProcessor.recipePotCell(this);
+                    if (player.getMainHandItem().getItem() instanceof ResinAnvilHammerItem) {
+                        ResinAnvilHammerItem.triggerAnvilImpact(player, this.level(), impactPos);
+                    } else {
+                        AnvilHammerItem.dropAnvil(player, this.level(), impactPos);
+                    }
                 } finally {
                     this.finishRecipeProcessing();
                 }
@@ -1082,7 +1141,13 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
             this.output.deserializeNBT(registries, tag.getCompound("Outputs"));
             this.anvilcraft$setIgnited(tag.getBoolean("Ignited") || tag.getBoolean("ignited"));
             this.syncFluidData();
-            this.syncItemData();
+            if (this.level().isClientSide) {
+                // Bonded block renderers recreate this entity from its saved NBT instead
+                // of receiving the normal spawn data update, so seed their display cache.
+                this.readSyncedItems(this.createDisplayItemsTag(registries));
+            } else {
+                this.syncItemData();
+            }
         } finally {
             this.restoringData = false;
         }

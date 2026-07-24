@@ -34,5 +34,11 @@ public final class HighViscosityResinEvents {
             1000,
             Layered4LevelCauldronBlock.LEVEL
         );
+        event.register(
+            ModBlocks.HIGH_HEAT_FUEL_CAULDRON.get(),
+            ModFluids.HIGH_HEAT_FUEL.get(),
+            1000,
+            Layered4LevelCauldronBlock.LEVEL
+        );
     }
 }

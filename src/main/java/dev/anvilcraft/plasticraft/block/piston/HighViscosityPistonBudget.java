@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.block.piston;
 
+import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -35,13 +36,14 @@ public final class HighViscosityPistonBudget {
         for (int index = 0; index < toPush.size(); index++) {
             BlockPos resinPos = toPush.get(index);
             BlockState resinState = level.getBlockState(resinPos);
-            if (!resinState.is(ModBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get())) continue;
             for (Direction direction : Direction.values()) {
                 BlockPos otherPos = resinPos.relative(direction);
                 Integer otherIndex = indices.get(otherPos);
                 if (otherIndex == null) continue;
                 BlockState otherState = level.getBlockState(otherPos);
-                if (!canStickTogether(resinPos, resinState, otherPos, otherState)) continue;
+                boolean resinBond = resinState.is(ModBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get())
+                    && canStickTogether(resinPos, resinState, otherPos, otherState);
+                if (!resinBond && !BondedFallingBlocks.hasBlockBond(level, resinPos, direction)) continue;
                 union(parent, index, otherIndex);
             }
         }

@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
 import dev.anvilcraft.plasticraft.api.entity.ElasticCollisionEntity;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContext;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContextHolder;
+import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.MoverType;
@@ -53,10 +54,11 @@ abstract class EntityCarrierCollisionMixin implements CarrierMoveContextHolder {
         Entity self = (Entity) (Object) this;
         CarrierMoveContext context = this.plasticraft$carrierMoveContext;
         if (context == null || context.isRetryingCollision()) return actualMovement;
+        Vec3 componentLimitedMovement = EntityBondManager.clampLeaderMovement(self, actualMovement);
         List<CarrierMovableEntity> targets = context.targets();
-        if (targets == null || targets.isEmpty()) return actualMovement;
+        if (targets == null || targets.isEmpty()) return componentLimitedMovement;
 
-        Vec3 limitedMovement = actualMovement;
+        Vec3 limitedMovement = componentLimitedMovement;
         List<CarrierMovableEntity> stepBlockedTargets = null;
         boolean steppedUp = actualMovement.y > requestedMovement.y + PlasticEntityPhysics.FACE_EPSILON;
         for (CarrierMovableEntity target : targets) {
@@ -85,6 +87,7 @@ abstract class EntityCarrierCollisionMixin implements CarrierMoveContextHolder {
         CarrierMoveContext context = this.plasticraft$carrierMoveContext;
         if (context == null) return;
         this.plasticraft$carrierMoveContext = context.parent();
+        if (EntityBondManager.isFollower(self)) return;
         Vec3 actualMovement = self.position().subtract(context.startPosition());
         AABB startBox = self.getBoundingBox().move(-actualMovement.x, -actualMovement.y, -actualMovement.z);
         Set<ElasticCollisionEntity> elasticTargets = new LinkedHashSet<>();
@@ -98,6 +101,7 @@ abstract class EntityCarrierCollisionMixin implements CarrierMoveContextHolder {
                 self,
                 sweptBox,
                 candidate -> candidate instanceof ElasticCollisionEntity
+                    && !EntityBondManager.areInSameComponent(self, candidate)
             )) {
                 elasticTargets.add((ElasticCollisionEntity) target);
             }

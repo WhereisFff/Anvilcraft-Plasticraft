@@ -6,6 +6,7 @@ import dev.anvilcraft.lib.v2.recipe.data.advancement.predicate.item.NotPredicate
 import dev.anvilcraft.lib.v2.recipe.init.LibItemSubPredicates;
 import dev.anvilcraft.lib.v2.util.predicate.ItemIngredientPredicate;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.init.block.ModBlockTags;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.item.ModItemGroups;
@@ -14,6 +15,7 @@ import dev.anvilcraft.plasticraft.recipe.FluidFastCookingRecipe;
 import dev.anvilcraft.plasticraft.recipe.CondenserGas;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
+import dev.dubhe.anvilcraft.init.block.ModFluidTags;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItemSubPredicates;
 import dev.dubhe.anvilcraft.init.item.ModItems;
@@ -24,6 +26,7 @@ import dev.dubhe.anvilcraft.block.fluid.PipeBlock;
 import dev.dubhe.anvilcraft.recipe.multiblock.BlockPredicateWithState;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockConversionRecipe;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockRecipe;
+import dev.dubhe.anvilcraft.recipe.FluidMixingRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.builder.ExtendInWorldRecipeBuilder;
 import dev.dubhe.anvilcraft.recipe.anvil.outcome.ResentmentAmberOutcome;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.FastCookingRecipe;
@@ -71,10 +74,18 @@ public final class PlasticraftDatagen {
             provider.add("item.anvilcraftplasticraft.hardend_resin_anvil", "Hardened Resin Anvil");
             provider.add("item.anvilcraftplasticraft.hardend_resin_cauldron", "Hardened Resin Cauldron");
             provider.add("item.anvilcraftplasticraft.resin_anvil", "Resin Anvil");
+            provider.add("message.anvilcraftplasticraft.adhesive.out_of_range", "Too far away");
+            provider.add(
+                "message.anvilcraftplasticraft.adhesive.too_far_disconnected",
+                "Too far away; selection disconnected"
+            );
             provider.add("tooltip.anvilcraftplasticraft.magnetized", "Magnetized");
             provider.add("tooltip.anvilcraftplasticraft.resin_anvil.captured", "Contains: %s");
             provider.add("tooltip.anvilcraftplasticraft.jade.color", "Material colour: %s");
             provider.add("tooltip.anvilcraftplasticraft.jade.pushable", "Can be pushed");
+            provider.add("tooltip.anvilcraftplasticraft.bonded", "Bonded in place");
+            provider.add("config.jade.plugin_anvilcraftplasticraft.bonded_entity", "Bonded entities");
+            provider.add("config.jade.plugin_anvilcraftplasticraft.bonded_block", "Bonded blocks");
             provider.add("tooltip.anvilcraftplasticraft.jade.item_count", "%1$s x %2$s");
             provider.add("config.jade.plugin_anvilcraftplasticraft.hardend_resin_anvil", "Hardened Resin Anvil");
             provider.add("config.jade.plugin_anvilcraftplasticraft.condenser_tower", "Condenser Tower");
@@ -83,7 +94,8 @@ public final class PlasticraftDatagen {
             provider.add("gui.anvilcraftplasticraft.category.condenser", "Condensation");
             provider.add("jei.anvilcraftplasticraft.gas.gaseous_oil", "Gaseous oil");
             provider.add("jei.anvilcraftplasticraft.gas.gaseous_water", "Gaseous water");
-            provider.add("jei.anvilcraftplasticraft.gas.experience_orbs", "Experience orbs");
+            provider.add("jei.anvilcraftplasticraft.gas.gaseous_experience", "Gaseous experience");
+            provider.add("jei.anvilcraftplasticraft.vaporization_rate", "Vaporization rate: %s mB/gt");
             provider.add("tooltip.anvilcraftplasticraft.jade.empty", "Empty");
             provider.add("tooltip.anvilcraftplasticraft.jade.gas", "%1$s %2$s / %3$s");
             provider.add("tooltip.anvilcraftplasticraft.jade.fluid", "%1$s %2$s / %3$s");
@@ -99,12 +111,18 @@ public final class PlasticraftDatagen {
         // 随已注册方块一同生成跨模组的树脂冲击标签，
         // 同时保留 AnvilCraft 自身的树脂块。
         REGISTRUM.addDataGenerator(ProviderType.BLOCK_TAGS, provider -> {
-            provider.addTag(dev.anvilcraft.plasticraft.init.block.ModBlockTags.RESIN_SHOCK_COMPATIBLE)
+            provider.addTag(ModBlockTags.RESIN_SHOCK_COMPATIBLE)
                 .add(ResourceKey.create(
                     Registries.BLOCK,
                     BuiltInRegistries.BLOCK.getKey(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get())
                 ));
         });
+        REGISTRUM.addDataGenerator(ProviderType.FLUID_TAGS, provider -> provider
+            .addTag(ModFluidTags.IGNITABLE)
+            .add(
+                ResourceKey.create(Registries.FLUID, ModFluids.HIGH_HEAT_FUEL.getId()),
+                ResourceKey.create(Registries.FLUID, ModFluids.FLOWING_HIGH_HEAT_FUEL.getId())
+            ));
     }
 
     private static void generateRecipes(RegistrumRecipeProvider provider) {
@@ -272,6 +290,7 @@ public final class PlasticraftDatagen {
 
         generatePlasmaJetBlastingRecipes(provider);
         generateCondenserRecipes(provider);
+        generateFluidMixingRecipes(provider);
 
         generateResinTimeWarpRecipes(provider);
     }
@@ -292,32 +311,11 @@ public final class PlasticraftDatagen {
             .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/water_to_gaseous_water"));
 
         PlasmaJetBlastingRecipe.builder()
-            .requires(dev.dubhe.anvilcraft.init.item.ModItems.RUBY)
-            .transform(dev.dubhe.anvilcraft.init.block.ModFluids.MELT_GEM.getId())
-            .produce(100)
-            .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/ruby_to_molten_gem"));
-        PlasmaJetBlastingRecipe.builder()
-            .requires(dev.dubhe.anvilcraft.init.item.ModItems.SAPPHIRE)
-            .transform(dev.dubhe.anvilcraft.init.block.ModFluids.MELT_GEM.getId())
-            .produce(100)
-            .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/sapphire_to_molten_gem"));
-        PlasmaJetBlastingRecipe.builder()
-            .requires(Items.EMERALD)
-            .transform(dev.dubhe.anvilcraft.init.block.ModFluids.MELT_GEM.getId())
-            .produce(100)
-            .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/emerald_to_molten_gem"));
-        PlasmaJetBlastingRecipe.builder()
-            .requires(dev.dubhe.anvilcraft.init.item.ModItems.TOPAZ)
-            .transform(dev.dubhe.anvilcraft.init.block.ModFluids.MELT_GEM.getId())
-            .produce(100)
-            .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/topaz_to_molten_gem"));
-
-        PlasmaJetBlastingRecipe.builder()
             .fluid(dev.dubhe.anvilcraft.init.block.ModFluids.EXP_FLUID.getId())
             .consume(50)
-            .transform(CondenserGas.EXPERIENCE_ORBS)
-            .produce(1)
-            .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/experience_fluid_to_orbs"));
+            .transform(CondenserGas.GASEOUS_EXPERIENCE)
+            .produce(50)
+            .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/experience_fluid_to_gaseous_experience"));
     }
 
     private static void generateCondenserRecipes(RegistrumRecipeProvider provider) {
@@ -327,6 +325,53 @@ public final class PlasticraftDatagen {
             .fluid(ResourceLocation.fromNamespaceAndPath("minecraft", "water"))
             .produce(250)
             .save(provider, AnvilcraftPlasticraft.of("condenser/gaseous_water_to_water"));
+
+        CondenserRecipe.builder()
+            .gas(CondenserGas.GASEOUS_EXPERIENCE)
+            .consume(250)
+            .fluid(dev.dubhe.anvilcraft.init.block.ModFluids.EXP_FLUID.getId())
+            .produce(250)
+            .save(provider, AnvilcraftPlasticraft.of("condenser/gaseous_experience_to_experience_fluid"));
+
+        CondenserRecipe.builder()
+            .gas(CondenserGas.GASEOUS_OIL)
+            .consume(5)
+            .fluid(ModFluids.HIGH_HEAT_FUEL.getId())
+            .produce(5)
+            .towerLevel(1)
+            .save(provider, AnvilcraftPlasticraft.of("condenser/gaseous_oil_to_high_heat_fuel"));
+
+        CondenserRecipe.builder()
+            .gas(CondenserGas.GASEOUS_OIL)
+            .consume(40)
+            .fluid(ModFluids.PLASTIC_OIL.getId())
+            .produce(40)
+            .towerLevel(2)
+            .save(provider, AnvilcraftPlasticraft.of("condenser/gaseous_oil_to_plastic_oil"));
+
+        CondenserRecipe.builder()
+            .gas(CondenserGas.GASEOUS_OIL)
+            .consume(5)
+            .fluid(ModFluids.CRUDE_OIL_ACID.getId())
+            .produce(5)
+            .towerLevel(3)
+            .save(provider, AnvilcraftPlasticraft.of("condenser/gaseous_oil_to_crude_oil_acid"));
+    }
+
+    private static void generateFluidMixingRecipes(RegistrumRecipeProvider provider) {
+        FluidMixingRecipe.builder()
+            .requires(ModFluids.HIGH_HEAT_FUEL.get(), 1)
+            .requires(ModFluids.CRUDE_OIL_ACID.get(), 1)
+            .result(ModFluids.HIGH_HEAT_FUEL.get(), 3)
+            .consumeMaximum()
+            .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/high_heat_fuel_enrichment"));
+
+        FluidMixingRecipe.builder()
+            .requires(ModFluids.PLASTIC_OIL.get(), 1)
+            .requires(ModFluids.CRUDE_OIL_ACID.get(), 1)
+            .result(ModFluids.PLASTIC_OIL.get(), 3)
+            .consumeMaximum()
+            .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/plastic_oil_enrichment"));
     }
 
     private static BlockPredicateWithState condenserPipe(Direction.Axis axis) {

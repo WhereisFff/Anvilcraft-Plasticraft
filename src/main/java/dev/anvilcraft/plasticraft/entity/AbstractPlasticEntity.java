@@ -4,10 +4,12 @@ import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
 import dev.anvilcraft.plasticraft.api.entity.PlasticGravityTypeProvider;
 import dev.anvilcraft.plasticraft.api.item.EntityFacePlaceableItem;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
+import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticPushChain;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFluidPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticMagnetism;
+import dev.anvilcraft.plasticraft.entity.physics.PlasticSlidingRailPhysics;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
@@ -111,6 +113,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     private long lastSidePushGameTime = Long.MIN_VALUE;
     private Vec3 sidePushVelocity = Vec3.ZERO;
     private Direction sidePushGravityDirection = Direction.DOWN;
+    private final PlasticSlidingRailPhysics.State slidingRailState = new PlasticSlidingRailPhysics.State();
     private boolean clientSnapshotPending;
     private double clientSnapshotX;
     private double clientSnapshotY;
@@ -462,6 +465,10 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         }
         Vec3 accelerationRequestedMovement = this.accelerationRequestedMovement;
         Vec3 accelerationActualMovement = this.accelerationActualMovement;
+        boolean onSlidingRail = this.slidingRailState.tick(this);
+        if (this.slidingRailState.isPoweredDriven()) {
+            this.clearTransferredSidePushVelocity();
+        }
         boolean controlledByRing = AccelerateManager.isControlledByRing(this);
         boolean accelerationChangedMovement = !this.getDeltaMovement().equals(velocityBeforeAcceleration)
             || accelerationActualMovement.lengthSqr()
@@ -612,7 +619,10 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         }
         this.handleNewCollisionContacts(requestedMovement, actualMovement);
         PlasticFluidPhysics.FluidContact postMoveFluid = PlasticFluidPhysics.sample(this);
-        double horizontalDrag = postMoveFluid.isPresent() ? FLUID_HORIZONTAL_DRAG : AIR_DRAG;
+        boolean onSlidingRailAfterMove = this.slidingRailState.isOnSlidingRail(this);
+        double horizontalDrag = postMoveFluid.isPresent()
+            ? FLUID_HORIZONTAL_DRAG
+            : onSlidingRail || onSlidingRailAfterMove ? 1.0D : AIR_DRAG;
         double verticalDrag = postMoveFluid.isPresent() ? FLUID_VERTICAL_DRAG : AIR_DRAG;
         this.setDeltaMovement(new Vec3(
             velocityAfterMove.x * horizontalDrag,
@@ -622,7 +632,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         if (deferSidePushVelocity) {
             this.setDeltaMovement(this.getDeltaMovement().add(deferredSidePush.scale(horizontalDrag)));
         }
-        this.applySurfaceFriction(gravityDirection);
+        if (!onSlidingRailAfterMove) {
+            this.applySurfaceFriction(gravityDirection);
+        }
 
         Direction postMoveGravityDirection = this.isNoGravity() || AccelerateManager.isControlledByRing(this)
             ? null
@@ -714,6 +726,10 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         this.setDeltaMovement(tangential.add(normal.scale(normalVelocity)));
     }
 
+    protected final boolean isOnSlidingRail() {
+        return this.slidingRailState.isOnSlidingRail(this);
+    }
+
     private void updateLandingState(
         Direction gravityDirection,
         Vec3 requestedMovement,
@@ -803,11 +819,22 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         for (Direction direction : Direction.values()) {
             if ((newContacts & PlasticEntityPhysics.directionMask(direction)) == 0) continue;
             this.playImpactSound(direction, Math.abs(requested.get(direction.getAxis())));
-            if (PlasticEntityPhysics.hasBlockSupport(this, direction)) continue;
+            if (PlasticEntityPhysics.hasBlockSupport(this, direction)) {
+                this.onBondedBlockImpact(direction);
+                continue;
+            }
             Entity contact = PlasticEntityPhysics.findSupport(this, direction);
             if (contact != null) {
-                this.onEntityImpact(contact, direction, (float) requested.length());
+                this.onEntityImpact(contact, direction, (float) Math.abs(requested.get(direction.getAxis())));
             }
+        }
+    }
+
+    private void onBondedBlockImpact(Direction impactDirection) {
+        BlockPos contactPos = PlasticEntityPhysics.landingPosition(this, impactDirection);
+        if (this.level().getBlockEntity(contactPos) instanceof BondedEntityBlockEntity bonded
+            && bonded.isInitialized()) {
+            bonded.processAnvilImpact(this, impactDirection);
         }
     }
 
@@ -941,6 +968,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         Vec3 normal = Vec3.atLowerCornerOf(gravityDirection.getNormal());
         double normalVelocity = this.getDeltaMovement().dot(normal);
         this.setDeltaMovement(this.sidePushVelocity.add(normal.scale(normalVelocity)));
+        this.restorePoweredSlidingRailDrive();
         this.hasImpulse = true;
         this.hurtMarked = true;
     }
@@ -1089,8 +1117,20 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         Vec3 normal = Vec3.atLowerCornerOf(gravityDirection.getNormal());
         double normalVelocity = this.getDeltaMovement().dot(normal);
         this.setDeltaMovement(this.sidePushVelocity.add(normal.scale(normalVelocity)));
+        this.restorePoweredSlidingRailDrive();
         this.hasImpulse = true;
         this.hurtMarked = true;
+    }
+
+    private void restorePoweredSlidingRailDrive() {
+        if (this.slidingRailState.reapplyPoweredDrive(this)) {
+            this.clearTransferredSidePushVelocity();
+        }
+    }
+
+    private void clearTransferredSidePushVelocity() {
+        this.lastSidePushGameTime = Long.MIN_VALUE;
+        this.sidePushVelocity = Vec3.ZERO;
     }
 
     /** 材料推动响应钩子，同时保留共用的防穿模移动。 */
@@ -1273,7 +1313,6 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         if (current.attachmentFace() == attachmentFace) return true;
         PlasticEntityOrientation changed = new PlasticEntityOrientation(attachmentFace, current.quarterTurn());
         this.setOrientation(changed);
-        this.setPos(changed.entityPosition(occupiedPos, this.getBbWidth(), this.getBbHeight()));
         this.hasImpulse = true;
         this.hurtMarked = true;
         this.level().playSound(
@@ -1403,6 +1442,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         if (this.effectiveGravityDirection != null) {
             tag.putString("EffectiveGravityDirection", this.effectiveGravityDirection.getName());
         }
+        this.slidingRailState.save(tag);
     }
 
     @Override
@@ -1434,6 +1474,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         this.blockContactMask = Math.max(0, tag.getInt("BlockContactMask"));
         this.impactTrackingArmed = tag.getBoolean("ImpactTrackingArmed");
         this.setMagnetized(tag.getBoolean("Magnetized"));
+        this.slidingRailState.load(tag);
         this.effectiveGravityDirection = Direction.byName(tag.getString("EffectiveGravityDirection"));
         if (this.effectiveGravityDirection == null) {
             this.directionalFallDistance = 0.0F;

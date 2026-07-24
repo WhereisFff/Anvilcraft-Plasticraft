@@ -1,13 +1,15 @@
 package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.api.entity.PlasmaExperienceOrbExtension;
+import dev.anvilcraft.plasticraft.api.blockentity.EnhancedPlasmaJetExtension;
+import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
 import dev.anvilcraft.plasticraft.recipe.CondenserGas;
+import dev.anvilcraft.plasticraft.recipe.EscapingVaporEffects;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.IVaporConsumer;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporAction;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationContext;
@@ -37,8 +39,12 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.item.FallingBlockEntity;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.npc.VillagerProfession;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -56,8 +62,12 @@ import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
@@ -86,7 +96,7 @@ public final class CondenserTowerGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate("11x12x11")
-    @TestHolder(description = "Large cauldrons vaporize only their top oil layer and scale with jet count")
+    @TestHolder(description = "Large cauldrons vaporize only their top oil layer at five millibuckets per jet")
     static void largeCauldronVaporizationUsesTopLayer(ExtendedGameTestHelper helper) {
         BlockPos base = new BlockPos(5, 2, 5);
         LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
@@ -97,21 +107,34 @@ public final class CondenserTowerGameTests {
         CondenserTowerBlockEntity tower = placeTower(helper, helper.absolutePos(base).above(3));
         BlockPos jetCenter = main.below(2);
         setJet(helper.getLevel(), jetCenter);
-        setJet(helper.getLevel(), jetCenter.west());
-        setJet(helper.getLevel(), jetCenter.east());
 
         CondenserTowerProcess.tickLargeCauldron((net.minecraft.server.level.ServerLevel) helper.getLevel(), cauldron);
         check(cauldron.getFluids().getFluidInTank(0).getAmount() == 1_000,
             "a non-oil top layer was incorrectly vaporized");
+        helper.getLevel().removeBlock(jetCenter, false);
         tower.dropContents();
 
         cauldron.getFluids().setFluids(List.of(oil));
-        CondenserTowerProcess.tickLargeCauldron((net.minecraft.server.level.ServerLevel) helper.getLevel(), cauldron);
-        check(cauldron.getTopFluid().getAmount() == 850,
-            "three jets did not vaporize 150 mB from the top oil layer");
-        check(CondenserGas.GASEOUS_OIL.equals(tower.getGasId()) && tower.getGasAmount() == 150,
-            "the condenser tower did not receive 150 mB of gaseous oil through Yukkuri");
-        helper.succeed();
+        helper.runAfterDelay(1, () -> {
+            setJet(helper.getLevel(), jetCenter);
+            CondenserTowerProcess.tickLargeCauldron(
+                (net.minecraft.server.level.ServerLevel) helper.getLevel(),
+                cauldron
+            );
+            check(cauldron.getTopFluid().getAmount() == 995,
+                "one jet did not vaporize 5 mB from the top oil layer");
+            FluidStack condensed = tower.getFluidHandler().getFluidInTank(0);
+            check(condensed.is(dev.anvilcraft.plasticraft.init.block.ModFluids.HIGH_HEAT_FUEL.get())
+                    && condensed.getAmount() == 5,
+                "the condenser tower did not condense 5 mB of high-heat fuel through Yukkuri; fluid="
+                    + BuiltInRegistries.FLUID.getKey(condensed.getFluid())
+                    + ", amount=" + condensed.getAmount()
+                    + ", gas=" + tower.getGasId()
+                    + ", gasAmount=" + tower.getGasAmount());
+            check(tower.getGasAmount() == 0,
+                "the condenser tower retained gas after completing a 5 mB condensation batch");
+            helper.succeed();
+        });
     }
 
     @GameTest(timeoutTicks = 20)
@@ -127,37 +150,39 @@ public final class CondenserTowerGameTests {
             (net.minecraft.server.level.ServerLevel) helper.getLevel(),
             cauldron
         );
-        check(cauldron.getTopFluid().getAmount() == 950,
-            "an open cauldron did not vaporize 50 mB of crude oil into the atmosphere");
+        check(cauldron.getTopFluid().getAmount() == 995,
+            "an open cauldron did not vaporize 5 mB of crude oil into the atmosphere");
         helper.succeed();
     }
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate("11x12x11")
-    @TestHolder(description = "An open condenser vents partial and full overflow without stopping vaporization")
+    @TestHolder(description = "An open full condenser vents overflow without stopping vaporization")
     static void fullOpenCondenserDoesNotApplyBackpressure(ExtendedGameTestHelper helper) {
         BlockPos base = new BlockPos(5, 2, 5);
         LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
         cauldron.getFluids().setFluids(List.of(new FluidStack(ModFluids.OIL.get(), 1_000)));
         CondenserTowerBlockEntity tower = placeTower(helper, helper.absolutePos(base).above(3));
-        check(tower.collectGas(CondenserGas.GASEOUS_OIL, TOWER_CAPACITY - 25) == TOWER_CAPACITY - 25,
-            "failed to leave 25 mB free in the condenser's vapor buffer");
+        check(tower.collectGas(CondenserGas.GASEOUS_OIL, TOWER_CAPACITY) == TOWER_CAPACITY,
+            "failed to fill the condenser's vapor buffer");
+        check(tower.collect(new FluidStack(Fluids.WATER, TOWER_CAPACITY)) == TOWER_CAPACITY,
+            "failed to block condensation with a full incompatible output tank");
         setJet(helper.getLevel(), cauldron.getBlockPos().below(2));
 
         CondenserTowerProcess.tickLargeCauldron(
             (net.minecraft.server.level.ServerLevel) helper.getLevel(),
             cauldron
         );
-        check(cauldron.getTopFluid().getAmount() == 950,
-            "a nearly full open condenser incorrectly limited crude-oil vaporization");
+        check(cauldron.getTopFluid().getAmount() == 995,
+            "a full open condenser incorrectly stopped crude-oil vaporization");
         check(tower.getGasAmount() == TOWER_CAPACITY,
-            "an open condenser did not accept exactly its remaining 25 mB of capacity");
+            "a full open condenser accepted vapor beyond its capacity");
 
         CondenserTowerProcess.tickLargeCauldron(
             (net.minecraft.server.level.ServerLevel) helper.getLevel(),
             cauldron
         );
-        check(cauldron.getTopFluid().getAmount() == 900,
+        check(cauldron.getTopFluid().getAmount() == 990,
             "a full open condenser incorrectly stopped crude-oil vaporization");
         check(tower.getGasAmount() == TOWER_CAPACITY,
             "a full open condenser accepted vapor beyond its capacity");
@@ -180,6 +205,136 @@ public final class CondenserTowerGameTests {
         );
         check(cauldron.getTopFluid().getAmount() == 1_000,
             "a full sealed consumer allowed crude oil to be consumed");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x12x11")
+    @TestHolder(description = "Nine full blocks above a large cauldron apply physical vapor backpressure")
+    static void fullyBlockedOutletAppliesBackpressure(ExtendedGameTestHelper helper) {
+        BlockPos base = new BlockPos(5, 2, 5);
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
+        cauldron.getFluids().setFluids(List.of(new FluidStack(ModFluids.OIL.get(), 1_000)));
+        BlockPos outlet = cauldron.getBlockPos().above(2);
+        for (int x = -1; x <= 1; x++) {
+            for (int z = -1; z <= 1; z++) {
+                helper.getLevel().setBlock(outlet.offset(x, 0, z), Blocks.STONE.defaultBlockState(), Block.UPDATE_ALL);
+            }
+        }
+        setJet(helper.getLevel(), cauldron.getBlockPos().below(2));
+
+        CondenserTowerProcess.tickLargeCauldron((ServerLevel) helper.getLevel(), cauldron);
+        check(cauldron.getTopFluid().getAmount() == 1_000,
+            "a physically sealed outlet consumed crude oil");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x16x11")
+    @TestHolder(description = "A capped condenser applies backpressure only when its gas and output storages are full")
+    static void cappedTowerRequiresBothStoragesForBackpressure(ExtendedGameTestHelper helper) {
+        BlockPos base = new BlockPos(5, 2, 5);
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
+        cauldron.getFluids().setFluids(List.of(new FluidStack(ModFluids.OIL.get(), 1_000)));
+        CondenserTowerBlockEntity tower = placeTower(helper, helper.absolutePos(base).above(3));
+        check(tower.collect(new FluidStack(Fluids.WATER, TOWER_CAPACITY)) == TOWER_CAPACITY,
+            "failed to fill the capped tower's output storage");
+        helper.getLevel().setBlock(tower.getBlockPos().above(2), Blocks.STONE.defaultBlockState(), Block.UPDATE_ALL);
+        BlockPos jetPos = cauldron.getBlockPos().below(2);
+        setJet(helper.getLevel(), jetPos);
+
+        CondenserTowerProcess.tickLargeCauldron((ServerLevel) helper.getLevel(), cauldron);
+        check(cauldron.getTopFluid().getAmount() == 995,
+            "a full output storage applied backpressure before the gas storage was full");
+        check(tower.getGasAmount() == 5,
+            "the capped tower did not buffer vapor after its output storage became full");
+        check(helper.getLevel().getBlockState(jetPos).is(dev.dubhe.anvilcraft.init.block.ModBlocks.PLASMA_JETS),
+            "a full output storage extinguished the jet before the gas storage was full");
+
+        check(tower.collectGas(CondenserGas.GASEOUS_OIL, TOWER_CAPACITY) == TOWER_CAPACITY - 5,
+            "failed to fill the capped tower's remaining gas storage");
+        CondenserTowerProcess.tickLargeCauldron((ServerLevel) helper.getLevel(), cauldron);
+        check(cauldron.getTopFluid().getAmount() == 995,
+            "a capped tower with both storages full allowed further vaporization");
+        check(helper.getLevel().getBlockState(jetPos).isAir(),
+            "backpressure did not extinguish the active plasma jet");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x20x11")
+    @TestHolder(description = "An enhanced jet distributes fifty millibuckets of gaseous oil across three towers")
+    static void enhancedJetDistributesOilAcrossThreeTowers(ExtendedGameTestHelper helper) {
+        BlockPos base = new BlockPos(5, 2, 5);
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
+        cauldron.getFluids().setFluids(List.of(new FluidStack(ModFluids.OIL.get(), 1_000)));
+        BlockPos firstBase = helper.absolutePos(base).above(3);
+        CondenserTowerBlockEntity first = placeTower(helper, firstBase);
+        CondenserTowerBlockEntity second = placeTower(helper, firstBase.above(3));
+        CondenserTowerBlockEntity third = placeTower(helper, firstBase.above(6));
+        BlockPos jetPos = cauldron.getBlockPos().below(2);
+        setJet(helper.getLevel(), jetPos);
+        check(helper.getLevel().getBlockEntity(jetPos) instanceof EnhancedPlasmaJetExtension extension,
+            "plasma jet block entity did not expose enhanced state");
+        PlasmaJetsBlockEntity jet = (PlasmaJetsBlockEntity) helper.getLevel().getBlockEntity(jetPos);
+        ((EnhancedPlasmaJetExtension) jet).plasticraft$setEnhanced(true);
+        check(jet.getUpdatePacket() != null,
+            "enhanced plasma jet did not create a client update packet");
+        check(jet.getUpdateTag(helper.getLevel().registryAccess()).getBoolean("plasticraft_enhanced"),
+            "enhanced plasma jet update tag did not synchronize its blue-particle state");
+
+        CondenserTowerProcess.tickLargeCauldron((ServerLevel) helper.getLevel(), cauldron);
+        check(cauldron.getTopFluid().getAmount() == 950,
+            "enhanced jet did not vaporize 50 mB of crude oil");
+        check(first.getStoredFluid().is(dev.anvilcraft.plasticraft.init.block.ModFluids.HIGH_HEAT_FUEL.get())
+                && first.getStoredFluid().getAmount() == 5,
+            "first tower did not condense 5 mB of high-heat fuel");
+        check(second.getStoredFluid().is(dev.anvilcraft.plasticraft.init.block.ModFluids.PLASTIC_OIL.get())
+                && second.getStoredFluid().getAmount() == 40,
+            "second tower did not condense 40 mB of plastic oil");
+        check(third.getStoredFluid().is(dev.anvilcraft.plasticraft.init.block.ModFluids.CRUDE_OIL_ACID.get())
+                && third.getStoredFluid().getAmount() == 5,
+            "third tower did not condense 5 mB of crude-oil essence");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x20x11")
+    @TestHolder(description = "A full middle layer in an open condenser lets vapor continue to higher layers")
+    static void openFullMiddleTowerPassesVaporUpward(ExtendedGameTestHelper helper) {
+        BlockPos base = new BlockPos(5, 2, 5);
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
+        cauldron.getFluids().setFluids(List.of(new FluidStack(ModFluids.OIL.get(), 1_000)));
+        BlockPos firstBase = helper.absolutePos(base).above(3);
+        CondenserTowerBlockEntity first = placeTower(helper, firstBase);
+        CondenserTowerBlockEntity second = placeTower(helper, firstBase.above(3));
+        CondenserTowerBlockEntity third = placeTower(helper, firstBase.above(6));
+        check(second.collectGas(CondenserGas.GASEOUS_OIL, TOWER_CAPACITY) == TOWER_CAPACITY,
+            "failed to fill the middle tower's gas storage");
+        check(second.collect(new FluidStack(
+                dev.anvilcraft.plasticraft.init.block.ModFluids.PLASTIC_OIL.get(),
+                TOWER_CAPACITY
+            )) == TOWER_CAPACITY,
+            "failed to fill the middle tower's output storage");
+
+        BlockPos jetPos = cauldron.getBlockPos().below(2);
+        setJet(helper.getLevel(), jetPos);
+        check(helper.getLevel().getBlockEntity(jetPos) instanceof EnhancedPlasmaJetExtension,
+            "plasma jet block entity did not expose enhanced state");
+        ((EnhancedPlasmaJetExtension) helper.getLevel().getBlockEntity(jetPos)).plasticraft$setEnhanced(true);
+
+        CondenserTowerProcess.tickLargeCauldron((ServerLevel) helper.getLevel(), cauldron);
+        check(cauldron.getTopFluid().getAmount() == 950,
+            "a full middle tower stopped open-stack vaporization");
+        check(first.getStoredFluid().is(dev.anvilcraft.plasticraft.init.block.ModFluids.HIGH_HEAT_FUEL.get())
+                && first.getStoredFluid().getAmount() == 5,
+            "the first tower did not condense its 5 mB share");
+        check(second.getGasAmount() == TOWER_CAPACITY
+                && second.getStoredFluid().getAmount() == TOWER_CAPACITY,
+            "the full middle tower changed while bypassing vapor");
+        check(third.getStoredFluid().is(dev.anvilcraft.plasticraft.init.block.ModFluids.CRUDE_OIL_ACID.get())
+                && third.getStoredFluid().getAmount() == 5,
+            "vapor did not bypass the full middle tower and reach the third layer");
         helper.succeed();
     }
 
@@ -308,6 +463,8 @@ public final class CondenserTowerGameTests {
 
         BlockPos topNorth = towerBase.offset(0, 2, -1);
         BlockState topNorthState = helper.getLevel().getBlockState(topNorth);
+        check(CondenserTowerBlockEntity.getMain(helper.getLevel(), topNorth, topNorthState) == first,
+            "a non-center tower part did not resolve the main storage block entity");
         IFluidHandler outward = CondenserTowerBlockEntity.capability(
             helper.getLevel(), topNorth, topNorthState, null, Direction.NORTH
         );
@@ -323,6 +480,16 @@ public final class CondenserTowerGameTests {
             "tower output interface accepted fluid input");
         check(outward.drain(250, IFluidHandler.FluidAction.EXECUTE).getAmount() == 250,
             "tower output interface could not drain stored fluid");
+        var updateTag = first.getUpdateTag(helper.getLevel().registryAccess());
+        CondenserTowerBlockEntity restored = new CondenserTowerBlockEntity(
+            dev.anvilcraft.plasticraft.init.block.ModBlockEntities.CONDENSER_TOWER.get(),
+            first.getBlockPos(),
+            first.getBlockState()
+        );
+        restored.loadAdditional(updateTag, helper.getLevel().registryAccess());
+        check(restored.getStoredFluid().is(Fluids.WATER)
+                && restored.getStoredFluid().getAmount() == 750,
+            "tower client update tag did not preserve the displayed storage amount");
 
         var multiblockHolder = helper.getLevel().getRecipeManager()
             .byKey(AnvilcraftPlasticraft.of("multiblock/condenser_tower"));
@@ -342,6 +509,9 @@ public final class CondenserTowerGameTests {
         check(helper.getLevel().getRecipeManager()
                 .byKey(AnvilcraftPlasticraft.of("condenser/gaseous_water_to_water")).isPresent(),
             "condenser collection recipe was not loaded");
+        check(helper.getLevel().getRecipeManager()
+                .byKey(AnvilcraftPlasticraft.of("condenser/gaseous_experience_to_experience_fluid")).isPresent(),
+            "gaseous-experience condensation recipe was not loaded");
 
         setJet(helper.getLevel(), cauldronMain.below(2));
         check(first.collectGas(CondenserGas.GASEOUS_WATER, 250) == 250,
@@ -405,24 +575,17 @@ public final class CondenserTowerGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate("11x12x11")
-    @TestHolder(description = "Plasma jets continuously process dedicated, super-heating, and vanilla recipes")
+    @TestHolder(description = "Plasma jets omit gem melting while retaining super-heating and vanilla recipes")
     static void plasmaRecipesIncludeSuperHeatingAndVanilla(ExtendedGameTestHelper helper) {
         BlockPos base = new BlockPos(5, 2, 5);
         LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
         setJet(helper.getLevel(), cauldron.getBlockPos().below(2));
 
-        cauldron.getInputHandler().insertItem(
-            0,
-            dev.dubhe.anvilcraft.init.item.ModItems.RUBY.asStack(),
-            false
-        );
-        CondenserTowerProcess.tickLargeCauldron(
-            (net.minecraft.server.level.ServerLevel) helper.getLevel(),
-            cauldron
-        );
-        check(cauldron.getTopFluid().is(ModFluids.MELT_GEM.get())
-                && cauldron.getTopFluid().getAmount() == 100,
-            "the ruby plasma recipe did not produce 100 mB of molten gem");
+        for (String gem : List.of("ruby", "sapphire", "topaz", "emerald")) {
+            check(helper.getLevel().getRecipeManager().byKey(
+                AnvilcraftPlasticraft.of("plasma_jet_blasting/" + gem + "_to_molten_gem")
+            ).isEmpty(), "removed " + gem + " plasma recipe is still loaded");
+        }
 
         cauldron.getInputHandler().insertItem(
             0,
@@ -449,37 +612,286 @@ public final class CondenserTowerGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate("11x12x11")
-    @TestHolder(description = "Experience-fluid plasma processing creates three-XP anti-gravity orbs")
-    static void plasmaExperienceOrbsRiseAndExpire(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "Open experience vapor gives players twice the liquid yield without spawning orbs")
+    static void openExperienceVaporFeedsPlayerWithoutOrbs(ExtendedGameTestHelper helper) {
         BlockPos base = new BlockPos(5, 2, 5);
         LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
         setJet(helper.getLevel(), cauldron.getBlockPos().below(2));
         cauldron.getFluids().fill(
-            new FluidStack(ModFluids.EXP_FLUID.get(), 50),
+            new FluidStack(ModFluids.EXP_FLUID.get(), 20),
+            IFluidHandler.FluidAction.EXECUTE
+        );
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        Player player = addMockPlayer(helper, context.outletPos());
+
+        for (int tick = 0; tick < 2; tick++) {
+            CondenserTowerProcess.tickLargeCauldron(
+                (ServerLevel) helper.getLevel(),
+                cauldron
+            );
+            check(cauldron.getTopFluid().getAmount() == 20 - (tick + 1) * 5,
+                "experience fluid was not vaporized at 5 mB per tick");
+        }
+        check(player.totalExperience == 1,
+            "10 mB of gaseous experience did not grant exactly one player XP");
+        check(helper.getLevel().getEntitiesOfClass(
+            ExperienceOrb.class,
+            new AABB(cauldron.getBlockPos()).inflate(4.0D)
+        ).isEmpty(), "gaseous-experience vaporization spawned a world experience orb");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x12x11")
+    @TestHolder(description = "Three entities each receive thirty-three millibuckets from a one-hundred-mB release")
+    static void experienceVaporRoundsEqualShares(ExtendedGameTestHelper helper) {
+        BlockPos base = new BlockPos(5, 2, 5);
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        Player first = addMockPlayer(helper, context.outletPos());
+        Player second = addMockPlayer(helper, context.outletPos());
+        Player third = addMockPlayer(helper, context.outletPos());
+
+        for (int release = 0; release < 3; release++) {
+            CondenserTowerProcess.absorbEscapingExperienceVapor(context, 100);
+        }
+        check(first.totalExperience == 9 && second.totalExperience == 9 && third.totalExperience == 9,
+            "three 100 mB releases were not rounded to 33 mB per entity and release");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x16x11")
+    @TestHolder(description = "A condenser prioritizes both buffers before exposing overflow near its top opening")
+    static void experienceCondenserPrioritizesBothBuffers(ExtendedGameTestHelper helper) {
+        BlockPos base = new BlockPos(5, 2, 5);
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
+        CondenserTowerBlockEntity tower = placeTower(helper, helper.absolutePos(base).above(3));
+
+        check(tower.collectGas(CondenserGas.GASEOUS_EXPERIENCE, 250) == 250,
+            "tower did not accept the first gaseous-experience condensation batch");
+        CondenserTowerProcess.tickLargeCauldron((ServerLevel) helper.getLevel(), cauldron);
+        check(tower.getStoredFluid().is(ModFluids.EXP_FLUID.get())
+                && tower.getStoredFluid().getAmount() == 250
+                && tower.getGasAmount() == 0,
+            "the tower did not condense 250 mB of gaseous experience at 1:1 efficiency");
+        check(tower.collect(new FluidStack(ModFluids.EXP_FLUID.get(), TOWER_CAPACITY - 250))
+                == TOWER_CAPACITY - 250,
+            "failed to fill the experience-fluid buffer");
+        check(tower.collectGas(CondenserGas.GASEOUS_EXPERIENCE, TOWER_CAPACITY - 5)
+                == TOWER_CAPACITY - 5,
+            "failed to prepare the gaseous-experience buffer");
+
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        Player lowerPlayer = addMockPlayer(helper, context.outletPos());
+        Player topPlayer = addMockPlayer(helper, tower.getBlockPos().above(5).east(3));
+        setJet(helper.getLevel(), cauldron.getBlockPos().below(2));
+        cauldron.getFluids().fill(
+            new FluidStack(ModFluids.EXP_FLUID.get(), 10),
             IFluidHandler.FluidAction.EXECUTE
         );
 
-        CondenserTowerProcess.tickLargeCauldron(
-            (net.minecraft.server.level.ServerLevel) helper.getLevel(),
-            cauldron
+        CondenserTowerProcess.tickLargeCauldron((ServerLevel) helper.getLevel(), cauldron);
+        check(tower.getGasAmount() == TOWER_CAPACITY && topPlayer.totalExperience == 0,
+            "vapor escaped before the condenser gas buffer became full");
+        CondenserTowerProcess.tickLargeCauldron((ServerLevel) helper.getLevel(), cauldron);
+        cauldron.getFluids().fill(
+            new FluidStack(ModFluids.EXP_FLUID.get(), 5),
+            IFluidHandler.FluidAction.EXECUTE
         );
-        List<ExperienceOrb> orbs = helper.getLevel().getEntitiesOfClass(
-            ExperienceOrb.class,
-            new AABB(cauldron.getBlockPos()).inflate(4.0D)
-        );
-        check(orbs.size() == 1, "expected one plasma-produced experience orb, got " + orbs.size());
-        ExperienceOrb orb = orbs.getFirst();
-        check(orb.getValue() == 3, "the plasma-produced experience orb was not worth three XP");
-        check(orb instanceof PlasmaExperienceOrbExtension extension
-                && extension.plasticraft$isPlasmaProduced(),
-            "the plasma-produced experience orb was missing its anti-gravity marker");
-        orb.tick();
-        check(orb.getDeltaMovement().y >= 0.055D,
-            "the plasma-produced experience orb did not accelerate upward");
-        orb.setPos(orb.getX(), helper.getLevel().getMaxBuildHeight(), orb.getZ());
-        orb.tick();
-        check(orb.isRemoved(), "the anti-gravity experience orb survived above build height");
+        CondenserTowerProcess.tickLargeCauldron((ServerLevel) helper.getLevel(), cauldron);
+
+        check(topPlayer.totalExperience == 1,
+            "10 mB of overflow was not absorbed three blocks horizontally and above the top opening");
+        check(lowerPlayer.totalExperience == 0,
+            "a player at the covered cauldron opening absorbed vapor through the condenser");
+        check(tower.getStoredFluid().getAmount() == TOWER_CAPACITY
+                && tower.getGasAmount() == TOWER_CAPACITY,
+            "overflow changed one of the condenser's full 64 B buffers");
         helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x12x11")
+    @TestHolder(description = "An employed villager reaches master after exactly sixty-four buckets of vapor")
+    static void villagerMastersAfterSixtyFourBucketsOfVapor(ExtendedGameTestHelper helper) {
+        BlockPos base = new BlockPos(5, 2, 5);
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        Villager villager = new Villager(EntityType.VILLAGER, helper.getLevel());
+        villager.setVillagerData(villager.getVillagerData().setProfession(VillagerProfession.FARMER));
+        villager.moveTo(context.outletPos().getCenter());
+        check(helper.getLevel().addFreshEntity(villager), "failed to add the experience-absorbing villager");
+
+        CondenserTowerProcess.absorbEscapingExperienceVapor(context, 63_999);
+        check(villager.getVillagerData().getLevel() == 4,
+            "the villager reached master before absorbing a full 64 B");
+        CondenserTowerProcess.absorbEscapingExperienceVapor(context, 1);
+        check(villager.getVillagerData().getLevel() == 5 && villager.getVillagerXp() == 250,
+            "the villager did not reach master at exactly 64 B of gaseous experience");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x12x11")
+    @TestHolder(description = "Escaping water vapor extinguishes fire throughout its outlet range")
+    static void escapingWaterVaporExtinguishesOutletRange(ExtendedGameTestHelper helper) {
+        BlockPos base = new BlockPos(5, 2, 5);
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        BlockPos outlet = context.outletPos();
+        for (int x = -1; x <= 1; x++) {
+            for (int z = -1; z <= 1; z++) {
+                if (x == 0 && z == 0) continue;
+                helper.getLevel().setBlock(outlet.offset(x, 0, z), Blocks.STONE.defaultBlockState(), Block.UPDATE_ALL);
+            }
+        }
+
+        BlockPos firePos = outlet.east(3).above(3);
+        helper.getLevel().setBlock(firePos.below(), Blocks.NETHERRACK.defaultBlockState(), Block.UPDATE_ALL);
+        helper.getLevel().setBlock(firePos, Blocks.FIRE.defaultBlockState(), Block.UPDATE_ALL);
+        BlockPos campfirePos = outlet.west(3);
+        helper.getLevel().setBlock(campfirePos, Blocks.CAMPFIRE.defaultBlockState(), Block.UPDATE_ALL);
+        Player burningPlayer = addMockPlayer(helper, outlet.above(2));
+        burningPlayer.setRemainingFireTicks(100);
+        CondenserTowerProcess.releaseEscapingVapor(
+            context,
+            new VaporStack(CondenserGas.GASEOUS_OIL, 10),
+            new FluidStack(ModFluids.OIL.get(), 1)
+        );
+        check(EscapingVaporEffects.igniteOilVapor((ServerLevel) helper.getLevel(), outlet.getCenter()),
+            "failed to prepare an ignited gaseous-oil cloud for water-vapor extinguishing");
+
+        CondenserTowerProcess.releaseEscapingVapor(
+            context,
+            new VaporStack(CondenserGas.GASEOUS_WATER, 10),
+            new FluidStack(Fluids.WATER, 1)
+        );
+
+        check(helper.getLevel().getBlockState(firePos).isAir(),
+            "water vapor did not extinguish fire at the horizontal and vertical range boundary");
+        check(!helper.getLevel().getBlockState(campfirePos).getValue(net.minecraft.world.level.block.CampfireBlock.LIT),
+            "water vapor did not extinguish a lit campfire in range");
+        check(!burningPlayer.isOnFire(), "water vapor did not extinguish a burning entity in range");
+        check(!EscapingVaporEffects.isOilVaporIgnited((ServerLevel) helper.getLevel(), cauldron.getBlockPos()),
+            "water vapor did not extinguish an ignited gaseous-oil cloud in range");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x12x11")
+    @TestHolder(description = "Flint and steel ignites an active gaseous-oil outlet")
+    static void flintAndSteelIgnitesGaseousOilOutlet(ExtendedGameTestHelper helper) {
+        BlockPos base = new BlockPos(5, 2, 5);
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        CondenserTowerProcess.releaseEscapingVapor(
+            context,
+            new VaporStack(CondenserGas.GASEOUS_OIL, 10),
+            new FluidStack(ModFluids.OIL.get(), 1)
+        );
+
+        Player player = addMockPlayer(helper, context.outletPos());
+        ItemStack flintAndSteel = new ItemStack(Items.FLINT_AND_STEEL);
+        player.setItemInHand(InteractionHand.MAIN_HAND, flintAndSteel);
+        BlockPos outlet = context.outletPos();
+        BlockHitResult hit = new BlockHitResult(outlet.getBottomCenter(), Direction.UP, outlet.below(), false);
+        PlayerInteractEvent.RightClickBlock event = new PlayerInteractEvent.RightClickBlock(
+            player,
+            InteractionHand.MAIN_HAND,
+            outlet.below(),
+            hit
+        );
+        NeoForge.EVENT_BUS.post(event);
+
+        check(event.isCanceled(), "gaseous-oil ignition did not consume the right-click interaction");
+        check(EscapingVaporEffects.isOilVaporIgnited((ServerLevel) helper.getLevel(), cauldron.getBlockPos()),
+            "flint and steel did not ignite the active gaseous-oil outlet");
+        check(flintAndSteel.getCount() == 1 && flintAndSteel.getDamageValue() == 1,
+            "gaseous-oil ignition damaged or consumed flint and steel incorrectly");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x12x11")
+    @TestHolder(description = "A fire charge ignites an active gaseous-oil outlet and is consumed")
+    static void fireChargeIgnitesGaseousOilOutlet(ExtendedGameTestHelper helper) {
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, new BlockPos(5, 2, 5));
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        CondenserTowerProcess.releaseEscapingVapor(
+            context,
+            new VaporStack(CondenserGas.GASEOUS_OIL, 10),
+            new FluidStack(ModFluids.OIL.get(), 1)
+        );
+
+        Player player = addMockPlayer(helper, context.outletPos());
+        ItemStack fireCharge = new ItemStack(Items.FIRE_CHARGE);
+        player.setItemInHand(InteractionHand.MAIN_HAND, fireCharge);
+        BlockPos outlet = context.outletPos();
+        PlayerInteractEvent.RightClickBlock event = new PlayerInteractEvent.RightClickBlock(
+            player,
+            InteractionHand.MAIN_HAND,
+            outlet.below(),
+            new BlockHitResult(outlet.getBottomCenter(), Direction.UP, outlet.below(), false)
+        );
+        NeoForge.EVENT_BUS.post(event);
+
+        check(event.isCanceled(), "gaseous-oil ignition did not consume the fire-charge interaction");
+        check(EscapingVaporEffects.isOilVaporIgnited((ServerLevel) helper.getLevel(), cauldron.getBlockPos()),
+            "a fire charge did not ignite the active gaseous-oil outlet");
+        check(fireCharge.isEmpty(), "gaseous-oil ignition did not consume one fire charge");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x12x11")
+    @TestHolder(description = "A thrown torch ignites gaseous oil and is consumed")
+    static void thrownTorchIgnitesGaseousOilOutlet(ExtendedGameTestHelper helper) {
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, new BlockPos(5, 2, 5));
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        CondenserTowerProcess.releaseEscapingVapor(
+            context,
+            new VaporStack(CondenserGas.GASEOUS_OIL, 10),
+            new FluidStack(ModFluids.OIL.get(), 1)
+        );
+        Vec3 outlet = context.outletPos().getCenter();
+        ItemEntity torch = new ItemEntity(helper.getLevel(), outlet.x, outlet.y, outlet.z, new ItemStack(Items.TORCH));
+        torch.setNoGravity(true);
+        check(helper.getLevel().addFreshEntity(torch), "failed to add the thrown torch");
+
+        helper.runAfterDelay(1, () -> {
+            check(EscapingVaporEffects.isOilVaporIgnited((ServerLevel) helper.getLevel(), cauldron.getBlockPos()),
+                "a thrown torch did not ignite the active gaseous-oil outlet");
+            check(!torch.isAlive() || torch.getItem().isEmpty(),
+                "the torch remained after igniting gaseous oil");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x12x11")
+    @TestHolder(description = "A thrown high-temperature block ignites gaseous oil without being consumed")
+    static void thrownHotBlockIgnitesGaseousOilOutlet(ExtendedGameTestHelper helper) {
+        LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, new BlockPos(5, 2, 5));
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        CondenserTowerProcess.releaseEscapingVapor(
+            context,
+            new VaporStack(CondenserGas.GASEOUS_OIL, 10),
+            new FluidStack(ModFluids.OIL.get(), 1)
+        );
+        Vec3 outlet = context.outletPos().getCenter();
+        ItemStack hotBlock = dev.dubhe.anvilcraft.init.block.ModBlocks.REDHOT_NETHERITE_BLOCK.asStack();
+        ItemEntity item = new ItemEntity(helper.getLevel(), outlet.x, outlet.y, outlet.z, hotBlock);
+        item.setNoGravity(true);
+        check(helper.getLevel().addFreshEntity(item), "failed to add the thrown high-temperature block");
+
+        helper.runAfterDelay(1, () -> {
+            check(EscapingVaporEffects.isOilVaporIgnited((ServerLevel) helper.getLevel(), cauldron.getBlockPos()),
+                "a thrown high-temperature block did not ignite the active gaseous-oil outlet");
+            check(item.isAlive() && item.getItem().getCount() == 1,
+                "the reusable high-temperature block was consumed by gaseous-oil ignition");
+            helper.succeed();
+        });
     }
 
     @GameTest(timeoutTicks = 20)
@@ -520,8 +932,113 @@ public final class CondenserTowerGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate("11x16x11")
-    @TestHolder(description = "A fire-started hardened resin cauldron creates and maintains a jet "
-        + "below a large cauldron")
+    @TestHolder(description = "A tank-fed enhanced jet consumes five millibuckets of high-heat fuel per tick")
+    static void enhancedJetConsumesContinuousFuel(ExtendedGameTestHelper helper) {
+        Level level = helper.getLevel();
+        BlockPos occupied = helper.absolutePos(new BlockPos(5, 3, 5));
+        BlockPos jetPos = occupied.above();
+        level.setBlock(
+            occupied.below(),
+            dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER.getDefaultState()
+                .setValue(dev.dubhe.anvilcraft.block.HeaterBlock.OVERLOAD, false),
+            Block.UPDATE_ALL
+        );
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            level.setBlock(jetPos.relative(direction), Blocks.STONE.defaultBlockState(), Block.UPDATE_ALL);
+        }
+        level.setBlock(
+            jetPos.above(),
+            dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON.getDefaultState()
+                .setValue(LargeCauldronBlock.HALF, Cube3x3PartHalf.BOTTOM_CENTER),
+            Block.UPDATE_ALL
+        );
+        HardenedResinCauldronEntity pot = new HardenedResinCauldronEntity(
+            dev.anvilcraft.plasticraft.init.entity.ModEntities.HARDEND_RESIN_CAULDRON.get(),
+            level,
+            helper.absoluteVec(new net.minecraft.world.phys.Vec3(5.5D, 3.0D, 5.5D)),
+            ModBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
+            ModBlocks.HARDEND_RESIN_CAULDRON.asStack(),
+            dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation.DEFAULT
+        );
+        pot.setNoGravity(true);
+        pot.getFluidHandler().fill(
+            new FluidStack(dev.anvilcraft.plasticraft.init.block.ModFluids.HIGH_HEAT_FUEL.get(), 1_000),
+            IFluidHandler.FluidAction.EXECUTE
+        );
+        pot.getInput().insertItem(0, Items.BLAZE_POWDER.getDefaultInstance(), false);
+        check(level.addFreshEntity(pot), "failed to add high-heat-fuel cauldron");
+        for (int i = 0; i < 10; i++) pot.tick();
+        check(level.getBlockEntity(jetPos) instanceof PlasmaJetsBlockEntity,
+            "high-heat fuel did not create a plasma jet");
+        PlasmaJetsBlockEntity jet = (PlasmaJetsBlockEntity) level.getBlockEntity(jetPos);
+        PlasmaJetsBlockEntity.tick(level, jetPos, level.getBlockState(jetPos), jet);
+        check(jet instanceof EnhancedPlasmaJetExtension extension && extension.plasticraft$isEnhanced(),
+            "high-heat fuel did not mark the plasma jet as enhanced");
+        check(pot.getFluidHandler().getFluidAmount() == 990,
+            "enhanced jet did not consume exactly 10 mB of tank fuel in one tick");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x16x11")
+    @TestHolder(description = "A layered high-heat cauldron consumes four 250 mB layers over two hundred ticks")
+    static void layeredHighHeatFuelRunsForTenSeconds(ExtendedGameTestHelper helper) {
+        Level level = helper.getLevel();
+        BlockPos cauldronPos = helper.absolutePos(new BlockPos(5, 3, 5));
+        BlockPos jetPos = cauldronPos.above();
+        level.setBlock(
+            cauldronPos.below(),
+            dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER.getDefaultState()
+                .setValue(dev.dubhe.anvilcraft.block.HeaterBlock.OVERLOAD, false),
+            Block.UPDATE_ALL
+        );
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            level.setBlock(jetPos.relative(direction), Blocks.STONE.defaultBlockState(), Block.UPDATE_ALL);
+        }
+        level.setBlock(
+            jetPos.above(),
+            dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON.getDefaultState()
+                .setValue(LargeCauldronBlock.HALF, Cube3x3PartHalf.BOTTOM_CENTER),
+            Block.UPDATE_ALL
+        );
+        level.setBlock(
+            cauldronPos,
+            ModBlocks.HIGH_HEAT_FUEL_CAULDRON.get().fullFilled()
+                .setValue(HighHeatFuelCauldronBlock.IGNITED, true),
+            Block.UPDATE_ALL
+        );
+        check(dev.dubhe.anvilcraft.block.PlasmaJetsBlock.trySpawn(jetPos, level),
+            "full layered high-heat fuel did not create a plasma jet");
+        PlasmaJetsBlockEntity jet = (PlasmaJetsBlockEntity) level.getBlockEntity(jetPos);
+        PlasmaJetsBlockEntity.tick(level, jetPos, level.getBlockState(jetPos), jet);
+        check(jet instanceof EnhancedPlasmaJetExtension extension
+                && extension.plasticraft$isEnhanced()
+                && extension.plasticraft$usesLayeredFuel(),
+            "layered high-heat fuel did not create the correct enhanced state");
+        check(level.getBlockState(cauldronPos).getValue(dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock.LEVEL) == 3,
+            "layered high-heat fuel did not consume exactly one 250 mB layer on activation");
+        for (int i = 0; i < 149; i++) {
+            PlasmaJetsBlockEntity.tick(level, jetPos, level.getBlockState(jetPos), jet);
+        }
+        PlasmaJetsBlockEntity.tick(level, jetPos, level.getBlockState(jetPos), jet);
+        check(HighHeatFuelCauldronBlock.isSpent(level, cauldronPos),
+            "layered high-heat fuel did not consume its final 250 mB layer");
+        for (int i = 0; i < 49; i++) {
+            PlasmaJetsBlockEntity.tick(level, jetPos, level.getBlockState(jetPos), jet);
+        }
+        check(level.getBlockState(jetPos).is(dev.dubhe.anvilcraft.init.block.ModBlocks.PLASMA_JETS),
+            "layered enhanced jet stopped before 200 ticks");
+        PlasmaJetsBlockEntity.tick(level, jetPos, level.getBlockState(jetPos), jet);
+        check(level.getBlockState(jetPos).isAir(), "layered enhanced jet survived beyond 200 ticks");
+        check(level.getBlockState(cauldronPos).is(Blocks.CAULDRON),
+            "spent layered high-heat cauldron did not return to an empty cauldron");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x16x11")
+    @TestHolder(description = "A hardened resin cauldron maintains a jet while consuming one millibucket "
+        + "of oil every twelve ticks")
     static void hardenedResinCauldronCreatesJetBelowLargeCauldron(ExtendedGameTestHelper helper) {
         Level level = helper.getLevel();
         BlockPos occupied = helper.absolutePos(new BlockPos(5, 3, 5));
@@ -568,8 +1085,16 @@ public final class CondenserTowerGameTests {
         PlasmaJetsBlockEntity.tick(level, jetPos, level.getBlockState(jetPos), jet);
         check(level.getBlockState(jetPos).is(dev.dubhe.anvilcraft.init.block.ModBlocks.PLASMA_JETS),
             "the initial jet directly below a large cauldron was removed by wall integrity checks");
-        check(pot.getFluidHandler().getFluidAmount() == 750,
-            "jet maintenance did not consume 250 mB of hardened-pot oil");
+        check(pot.getFluidHandler().getFluidAmount() == 999,
+            "jet activation did not consume exactly 1 mB of hardened-pot oil");
+        for (int i = 0; i < 11; i++) {
+            PlasmaJetsBlockEntity.tick(level, jetPos, level.getBlockState(jetPos), jet);
+        }
+        check(pot.getFluidHandler().getFluidAmount() == 999,
+            "hardened-pot oil was consumed before twelve game ticks elapsed");
+        PlasmaJetsBlockEntity.tick(level, jetPos, level.getBlockState(jetPos), jet);
+        check(pot.getFluidHandler().getFluidAmount() == 998,
+            "hardened-pot jet did not consume 1 mB after twelve game ticks");
         helper.succeed();
     }
 
@@ -607,6 +1132,13 @@ public final class CondenserTowerGameTests {
             dev.dubhe.anvilcraft.init.block.ModBlocks.PLASMA_JETS.getDefaultState(),
             Block.UPDATE_ALL
         );
+    }
+
+    private static Player addMockPlayer(ExtendedGameTestHelper helper, BlockPos feetPos) {
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.moveTo(feetPos.getCenter().subtract(0.0D, 0.5D, 0.0D));
+        check(helper.getLevel().addFreshEntity(player), "failed to add a vapor-absorbing mock player");
+        return player;
     }
 
     private static int outputCount(LargeCauldronBlockEntity cauldron, Item item) {

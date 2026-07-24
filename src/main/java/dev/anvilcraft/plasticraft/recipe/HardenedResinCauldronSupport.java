@@ -1,6 +1,8 @@
 package dev.anvilcraft.plasticraft.recipe;
 
+import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.dubhe.anvilcraft.init.block.ModFluidTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -21,21 +23,56 @@ public final class HardenedResinCauldronSupport {
             && cauldron.getFluidHandler().getFluid().is(ModFluidTags.OIL);
     }
 
+    public static Boolean isIgnitedHighHeatFuel(Level level, BlockPos pos) {
+        HardenedResinCauldronEntity cauldron = find(level, pos);
+        return cauldron == null ? null : cauldron.anvilcraft$isIgnited()
+            && cauldron.getFluidHandler().getFluid().is(ModFluids.HIGH_HEAT_FUEL.get());
+    }
+
+    public static Boolean hasHighHeatFuel(Level level, BlockPos pos) {
+        HardenedResinCauldronEntity cauldron = find(level, pos);
+        return cauldron == null ? null : cauldron.getFluidHandler().getFluid().is(ModFluids.HIGH_HEAT_FUEL.get());
+    }
+
     public static Boolean validBase(Level level, BlockPos pos) {
         HardenedResinCauldronEntity cauldron = find(level, pos);
         if (cauldron == null) return null;
         if (cauldron.getOrientation().attachmentFace() != Direction.UP) return false;
         FluidStack fluid = cauldron.getFluidHandler().getFluid();
-        return fluid.isEmpty() || fluid.is(ModFluidTags.OIL);
+        return fluid.isEmpty() || fluid.is(ModFluidTags.OIL) || fluid.is(ModFluids.HIGH_HEAT_FUEL.get());
     }
 
     public static Boolean consumeOnce(Level level, BlockPos pos) {
+        return consumeOil(level, pos, 250);
+    }
+
+    public static Boolean usesContinuousFuel(Level level, BlockPos pos) {
+        return find(level, pos) == null ? null : true;
+    }
+
+    public static Boolean consumeContinuousFuel(Level level, BlockPos pos, int amount) {
+        return consumeOil(level, pos, amount);
+    }
+
+    public static Boolean consumeHighHeatFuel(Level level, BlockPos pos, int amount) {
         HardenedResinCauldronEntity cauldron = find(level, pos);
         if (cauldron == null) return null;
         IFluidHandler handler = cauldron.getFluidHandler();
-        FluidStack simulated = handler.drain(250, IFluidHandler.FluidAction.SIMULATE);
-        if (!simulated.is(ModFluidTags.OIL) || simulated.getAmount() != 250) return false;
-        handler.drain(250, IFluidHandler.FluidAction.EXECUTE);
+        FluidStack request = new FluidStack(ModFluids.HIGH_HEAT_FUEL.get(), amount);
+        FluidStack simulated = handler.drain(request, IFluidHandler.FluidAction.SIMULATE);
+        if (!FluidStack.matches(simulated, request)) return false;
+        FluidStack drained = handler.drain(request, IFluidHandler.FluidAction.EXECUTE);
+        return FluidStack.matches(drained, request);
+    }
+
+    private static Boolean consumeOil(Level level, BlockPos pos, int amount) {
+        HardenedResinCauldronEntity cauldron = find(level, pos);
+        if (cauldron == null) return null;
+        if (amount <= 0) return false;
+        IFluidHandler handler = cauldron.getFluidHandler();
+        FluidStack simulated = handler.drain(amount, IFluidHandler.FluidAction.SIMULATE);
+        if (!simulated.is(ModFluidTags.OIL) || simulated.getAmount() != amount) return false;
+        handler.drain(amount, IFluidHandler.FluidAction.EXECUTE);
         return true;
     }
 
@@ -52,6 +89,13 @@ public final class HardenedResinCauldronSupport {
                 && BlockPos.containing(candidate.getBoundingBox().getCenter()).equals(pos))) {
             if (selected == null || entity.getId() < selected.getId()) selected = entity;
         }
-        return selected instanceof HardenedResinCauldronEntity cauldron ? cauldron : null;
+        if (selected instanceof HardenedResinCauldronEntity cauldron) return cauldron;
+        if (level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
+            && bonded.isInitialized()
+            && bonded.isPlastic()
+            && bonded.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron) {
+            return cauldron;
+        }
+        return null;
     }
 }

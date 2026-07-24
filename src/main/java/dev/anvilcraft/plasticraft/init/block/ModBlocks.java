@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
+import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HardenedResinAnvilBlock;
 import dev.anvilcraft.plasticraft.block.HardenedResinCauldronBlock;
 import dev.anvilcraft.plasticraft.block.ResinAnvilBlock;
@@ -24,10 +25,14 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DispenserBlock;
+import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.material.PushReaction;
 import net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent;
+
+import java.util.function.Supplier;
 
 import static dev.anvilcraft.plasticraft.AnvilcraftPlasticraft.REGISTRUM;
 
@@ -52,19 +57,21 @@ public final class ModBlocks {
 
     public static final BlockEntry<HighViscosityResinBlock> HIGH_VISCOSITY_RESIN_BLOCK = REGISTRUM
         .block("high_viscosity_resin_block", HighViscosityResinBlock::new)
-        .initialProperties(() -> dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get())
+        .initialProperties(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK::get)
         .properties(properties -> properties
             .mapColor(MapColor.COLOR_ORANGE)
             .noOcclusion()
             .sound(SoundType.HONEY_BLOCK))
         .lang("High-Viscosity Resin Block")
-        .blockstate((context, provider) -> {
-            provider.simpleBlock(context.get());
-            provider.models()
-                .cubeAll(context.getName(), provider.modLoc("block/" + context.getName()))
-                .renderType("translucent");
-        })
+        .blockstate((context, provider) -> provider.simpleBlock(
+            context.get(),
+            provider.models().getExistingFile(provider.modLoc("block/high_viscosity_resin"))
+        ))
         .item(HighViscosityResinBlockItem::new)
+        .model((context, provider) -> provider.withExistingParent(
+            context.getName(),
+            provider.modLoc("block/high_viscosity_resin")
+        ))
         .build()
         .tag(ModBlockTags.RESIN_SHOCK_COMPATIBLE)
         .register();
@@ -99,14 +106,43 @@ public final class ModBlocks {
             context.get(),
             provider.models()
                 .getBuilder(context.getName())
-                .texture("particle", provider.modLoc("block/liquid_high_viscosity_resin_still"))
+                .texture("particle", provider.modLoc("block/liquid_high_viscosity_resin"))
         ))
         .register();
+
+    public static final BlockEntry<LiquidBlock> HIGH_HEAT_FUEL = fluidBlock(
+        "high_heat_fuel",
+        ModFluids.HIGH_HEAT_FUEL,
+        "High-Heat Fuel"
+    );
+    public static final BlockEntry<HighHeatFuelCauldronBlock> HIGH_HEAT_FUEL_CAULDRON = REGISTRUM
+        .block("high_heat_fuel_cauldron", HighHeatFuelCauldronBlock::new)
+        .initialProperties(() -> Blocks.CAULDRON)
+        .lang("High-Heat Fuel Cauldron")
+        .blockstate((context, provider) -> {
+        })
+        .loot((tables, block) -> tables.dropOther(block, Items.CAULDRON))
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE, BlockTags.CAULDRONS)
+        .onRegister(block -> Item.BY_BLOCK.put(block, Items.CAULDRON))
+        .register();
+    public static final BlockEntry<LiquidBlock> PLASTIC_OIL = fluidBlock(
+        "plastic_oil",
+        ModFluids.PLASTIC_OIL,
+        "Plastic Oil"
+    );
+    public static final BlockEntry<LiquidBlock> CRUDE_OIL_ACID = fluidBlock(
+        "crude_oil_acid",
+        ModFluids.CRUDE_OIL_ACID,
+        "Crude Oil Essence"
+    );
 
     public static final BlockEntry<HardenedResinAnvilBlock> HARDEND_RESIN_ANVIL = REGISTRUM
         .block("hardend_resin_anvil", HardenedResinAnvilBlock::new)
         .initialProperties(() -> Blocks.ANVIL)
-        .properties(properties -> properties.noOcclusion().strength(5.0F, 1200.0F))
+        .properties(properties -> properties
+            .noOcclusion()
+            .strength(5.0F, 1200.0F)
+            .pushReaction(PushReaction.NORMAL))
         .lang("Hardened Resin Anvil")
         .tag(
             BlockTags.MINEABLE_WITH_PICKAXE,
@@ -130,9 +166,12 @@ public final class ModBlocks {
     public static final BlockEntry<HardenedResinCauldronBlock> HARDEND_RESIN_CAULDRON = REGISTRUM
         .block("hardend_resin_cauldron", HardenedResinCauldronBlock::new)
         .initialProperties(() -> Blocks.CAULDRON)
-        .properties(properties -> properties.noOcclusion().strength(2.0F, 20.0F))
+        .properties(properties -> properties
+            .noOcclusion()
+            .strength(2.0F, 20.0F)
+            .pushReaction(PushReaction.NORMAL))
         .lang("Hardened Resin Cauldron")
-        .tag(BlockTags.MINEABLE_WITH_PICKAXE)
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE, BlockTags.CAULDRONS)
         .blockstate((context, provider) -> {
         })
         .item((block, properties) -> new HardenedResinCauldronItem(
@@ -150,7 +189,10 @@ public final class ModBlocks {
     public static final BlockEntry<ResinAnvilBlock> RESIN_ANVIL = REGISTRUM
         .block("resin_anvil", ResinAnvilBlock::new)
         .initialProperties(() -> Blocks.ANVIL)
-        .properties(properties -> properties.noOcclusion().strength(4.0F, 80.0F))
+        .properties(properties -> properties
+            .noOcclusion()
+            .strength(4.0F, 80.0F)
+            .pushReaction(PushReaction.NORMAL))
         .lang("Resin Anvil")
         .tag(
             BlockTags.MINEABLE_WITH_PICKAXE,
@@ -178,6 +220,31 @@ public final class ModBlocks {
     private ModBlocks() {
     }
 
+    private static BlockEntry<LiquidBlock> fluidBlock(
+        String id,
+        Supplier<? extends FlowingFluid> source,
+        String name
+    ) {
+        return REGISTRUM.block(id, properties -> new LiquidBlock(source.get(), properties))
+            .initialProperties(() -> Blocks.WATER)
+            .properties(properties -> properties
+                .mapColor(MapColor.COLOR_PURPLE)
+                .replaceable()
+                .noCollission()
+                .pushReaction(PushReaction.DESTROY)
+                .noLootTable()
+                .liquid()
+                .sound(SoundType.EMPTY))
+            .lang(name)
+            .blockstate((context, provider) -> provider.simpleBlock(
+                context.get(),
+                provider.models()
+                    .getBuilder(context.getName())
+                    .texture("particle", provider.modLoc("block/fluid_placeholder"))
+            ))
+            .register();
+    }
+
     public static void register() {
         // 类加载时，静态条目会挂接到 Registrum 事件总线。
     }
@@ -187,6 +254,7 @@ public final class ModBlocks {
             DispenserBlock.registerBehavior(RESIN_ANVIL.asItem(), ResinAnvilItem::dispense);
             DispenserBlock.registerBehavior(HIGH_VISCOSITY_RESIN_BLOCK.asItem(), HighViscosityResinBlockItem::dispense);
             HighViscosityResinCauldronBlock.registerInteractions();
+            HighHeatFuelCauldronBlock.registerInteractions();
         });
     }
 }

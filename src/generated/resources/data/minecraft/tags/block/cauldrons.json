@@ -1,5 +1,7 @@
 {
   "values": [
-    "anvilcraftplasticraft:liquid_high_viscosity_resin_cauldron"
+    "anvilcraftplasticraft:liquid_high_viscosity_resin_cauldron",
+    "anvilcraftplasticraft:high_heat_fuel_cauldron",
+    "anvilcraftplasticraft:hardend_resin_cauldron"
   ]
 }

@@ -2,10 +2,15 @@ package dev.anvilcraft.plasticraft.block.entity;
 
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.recipe.CondenserGas;
+import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.IVaporConsumer;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporAction;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporStack;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationContext;
 import dev.dubhe.anvilcraft.api.fluid.IFluidHandlerHolder;
+import dev.dubhe.anvilcraft.api.injection.tooltip.ITooltipProviderExtension;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidNetworkManager;
+import dev.dubhe.anvilcraft.util.UnitUtil;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -14,6 +19,8 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.network.chat.Component;
+import net.minecraft.ChatFormatting;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -30,7 +37,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** 冷凝塔单模块的 64 B 流体缓存；顶层接口只允许向外排液。 */
-public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHandlerHolder {
+public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHandlerHolder, ITooltipProviderExtension {
     public static final int CAPACITY = 64 * FluidType.BUCKET_VOLUME;
     private static final String TAG_TANK = "Tank";
     private static final String TAG_GAS_ID = "GasId";
@@ -51,11 +58,27 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
         }
     };
     private final IFluidHandler outputHandler = new OutputOnlyHandler(this.tank);
-    private final IVaporConsumer vaporConsumer = (vapor, action, context) ->
-        this.acceptGas(vapor.type(), vapor.amount(), action);
+    private final IVaporConsumer vaporConsumer = new IVaporConsumer() {
+        @Override
+        public int receiveVapor(VaporStack vapor, VaporAction action, VaporizationContext context) {
+            return CondenserTowerProcess.receiveVapor(
+                CondenserTowerBlockEntity.this,
+                vapor,
+                action,
+                context
+            );
+        }
+
+        @Override
+        public boolean sealsOutlet(VaporizationContext context) {
+            return CondenserTowerProcess.isTowerStackSealed(context);
+        }
+    };
     private final List<BlockPos> registeredInterfaces = new ArrayList<>();
     private ResourceLocation gasId;
     private int gasAmount;
+    private long vaporRateTick = Long.MIN_VALUE;
+    private int vaporAcceptedThisTick;
 
     public CondenserTowerBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
@@ -118,6 +141,30 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
         return this.getMainPart().acceptGas(id, amount, VaporAction.EXECUTE);
     }
 
+    /** 按单层每刻吞吐上限接收蒸汽，模拟调用不会推进计数器。 */
+    public int receiveGas(
+        ResourceLocation id,
+        int amount,
+        int rateLimit,
+        long gameTime,
+        VaporAction action
+    ) {
+        CondenserTowerBlockEntity main = this.getMainPart();
+        int used = main.vaporRateTick == gameTime ? main.vaporAcceptedThisTick : 0;
+        int remainingRate = Math.max(0, rateLimit - used);
+        int accepted = Math.min(amount, remainingRate);
+        accepted = Math.min(accepted, CAPACITY - main.gasAmount);
+        id = CondenserGas.canonicalize(id);
+        if (id == null || accepted <= 0 || main.gasId != null && !main.gasId.equals(id)) return 0;
+        if (action == VaporAction.SIMULATE) return accepted;
+        if (main.vaporRateTick != gameTime) {
+            main.vaporRateTick = gameTime;
+            main.vaporAcceptedThisTick = 0;
+        }
+        main.vaporAcceptedThisTick += accepted;
+        return main.acceptGas(id, accepted, VaporAction.EXECUTE);
+    }
+
     private int acceptGas(ResourceLocation id, int amount, VaporAction action) {
         CondenserTowerBlockEntity main = this.getMainPart();
         id = CondenserGas.canonicalize(id);
@@ -156,6 +203,50 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
 
     public FluidStack getStoredFluid() {
         return this.getMainPart().tank.getFluid().copy();
+    }
+
+    public boolean isStorageFull() {
+        CondenserTowerBlockEntity main = this.getMainPart();
+        return main.gasAmount >= CAPACITY && main.tank.getFluidAmount() >= CAPACITY;
+    }
+
+    @Override
+    public List<Component> anvilcraft$getTooltip() {
+        CondenserTowerBlockEntity main = this.getMainPart();
+        List<Component> lines = new ArrayList<>();
+        FluidStack fluid = main.tank.getFluid();
+        boolean hasGas = main.gasId != null && main.gasAmount > 0;
+        if (!fluid.isEmpty() || hasGas) {
+            lines.add(Component.translatable("tooltip.anvilcraft.fluid_tank.fluid").withStyle(ChatFormatting.BLUE));
+            if (!fluid.isEmpty()) {
+                lines.add(Component.literal("  ")
+                    .append(fluid.getHoverName())
+                    .append(Component.literal(" " + UnitUtil.fluidUnit(fluid.getAmount(), false)))
+                    .withStyle(ChatFormatting.GRAY));
+            }
+            if (hasGas) {
+                lines.add(Component.literal("  ")
+                    .append(Component.translatable("jei.anvilcraftplasticraft.gas." + main.gasId.getPath()))
+                    .append(Component.literal(" " + UnitUtil.fluidUnit(main.gasAmount, false)))
+                    .withStyle(ChatFormatting.GRAY));
+            }
+        }
+        lines.add(Component.translatable("tooltip.anvilcraft.fluid_tank.capacity").withStyle(ChatFormatting.BLUE));
+        int displayedAmount = fluid.isEmpty() && hasGas ? main.gasAmount : fluid.getAmount();
+        lines.add(Component.translatable(
+            "tooltip.anvilcraft.fluid_tank.capacity.value",
+            UnitUtil.fluidUnit(displayedAmount, false),
+            UnitUtil.fluidUnit(CAPACITY, false)
+        ).withStyle(ChatFormatting.GRAY));
+        if (!fluid.isEmpty() && hasGas) {
+            lines.add(Component.translatable("jei.anvilcraftplasticraft.gas." + main.gasId.getPath())
+                .append(Component.literal(
+                    " " + UnitUtil.fluidUnit(main.gasAmount, false)
+                        + " / " + UnitUtil.fluidUnit(CAPACITY, false)
+                ))
+                .withStyle(ChatFormatting.GRAY));
+        }
+        return lines;
     }
 
     public void dropContents() {

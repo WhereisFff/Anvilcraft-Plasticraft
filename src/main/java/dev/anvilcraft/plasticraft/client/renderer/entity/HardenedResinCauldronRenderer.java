@@ -2,13 +2,17 @@ package dev.anvilcraft.plasticraft.client.renderer.entity;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
+import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
+import dev.anvilcraft.plasticraft.client.renderer.HighHeatFuelFlameRenderer;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.dubhe.anvilcraft.api.itemhandler.ItemHandlerUtil;
 import dev.dubhe.anvilcraft.client.init.ModRenderTypes;
 import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
@@ -26,6 +30,7 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.client.model.data.ModelData;
 
@@ -36,12 +41,13 @@ import org.joml.Quaternionf;
 /** 渲染带朝向的釜模型及其同步流体表面。 */
 public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinCauldronEntity> {
     public static final ModelResourceLocation OUTLET_MODEL = ModelResourceLocation.standalone(
-        ResourceLocation.fromNamespaceAndPath("anvilcraft", "block/fish_tank_outlet")
+        AnvilcraftPlasticraft.of("block/hardend_resin_cauldron_outlet")
     );
     private static final ModelResourceLocation FIRE_MODEL = ModelResourceLocation.standalone(
         ResourceLocation.fromNamespaceAndPath("anvilcraft", "block/fire_cauldron_fire4")
     );
     private static final float FIRE_MODEL_SURFACE_Y = 1.0F - (1.0F / 16.0F + 0.001F);
+    private static final float FLAME_SURFACE_HALF_WIDTH = 0.374F;
     private final BlockRenderDispatcher dispatcher;
     private final RandomSource random = RandomSource.create();
 
@@ -83,7 +89,7 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
         boolean itemsAtDownwardOpening = gravityAlignedItems
             && entity.getOrientation().attachmentFace() == Direction.DOWN;
         pose.pushPose();
-        PlasticEntityRenderTransforms.apply(pose, entity);
+        PlasticEntityRenderTransforms.apply(pose, entity, partialTick);
         PlasticEntityRenderHelper.renderBlock(entity, this.dispatcher, pose, buffers, packedLight);
         this.renderOutlet(entity, pose, buffers, packedLight, false);
         flush(buffers);
@@ -111,7 +117,18 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
             flush(buffers);
         }
         if (entity.anvilcraft$isIgnited()) {
-            this.renderFire(fluidTop, pose, buffers);
+            if (fluid.is(ModFluids.HIGH_HEAT_FUEL.get())) {
+                HighHeatFuelFlameRenderer.render(
+                    pose,
+                    buffers,
+                    fluidTop,
+                    FLAME_SURFACE_HALF_WIDTH,
+                    entity.level().getGameTime() + partialTick,
+                    entity.getId()
+                );
+            } else {
+                this.renderFire(fluidTop, pose, buffers);
+            }
             flush(buffers);
         }
         pose.popPose();
@@ -252,6 +269,19 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
     @Override
     public ResourceLocation getTextureLocation(HardenedResinCauldronEntity entity) {
         return InventoryMenu.BLOCK_ATLAS;
+    }
+
+    @Override
+    public boolean shouldRender(
+        HardenedResinCauldronEntity entity,
+        Frustum frustum,
+        double cameraX,
+        double cameraY,
+        double cameraZ
+    ) {
+        if (super.shouldRender(entity, frustum, cameraX, cameraY, cameraZ)) return true;
+        AABB flameBounds = entity.getBoundingBox().inflate(2.0D);
+        return frustum.isVisible(flameBounds);
     }
 
 }

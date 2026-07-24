@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.mixin;
 
 import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
 import dev.anvilcraft.plasticraft.recipe.HardenedResinCauldronSupport;
+import dev.anvilcraft.plasticraft.recipe.EnhancedPlasmaJetFuel;
 import dev.anvilcraft.lib.v2.recipe.cache.BlockCache;
 import dev.dubhe.anvilcraft.api.block.IIgnitableCauldron;
 import dev.dubhe.anvilcraft.block.PlasmaJetsBlock;
@@ -85,6 +86,8 @@ abstract class PlasmaJetsBlockMixin {
     ) {
         if (HardenedResinCauldronSupport.isIgnitedOil(level, pos)) {
             cir.setReturnValue(true);
+        } else if (EnhancedPlasmaJetFuel.isIgnitedHighHeatFuel(level, pos)) {
+            cir.setReturnValue(true);
         }
     }
 
@@ -95,7 +98,11 @@ abstract class PlasmaJetsBlockMixin {
         CallbackInfoReturnable<Boolean> cir
     ) {
         Boolean valid = HardenedResinCauldronSupport.validBase(level, pos);
-        if (valid != null) cir.setReturnValue(valid);
+        if (valid != null) {
+            cir.setReturnValue(valid);
+        } else if (EnhancedPlasmaJetFuel.isValidBase(level, pos)) {
+            cir.setReturnValue(true);
+        }
     }
 
     @Inject(method = "tryConsumeOnce", at = @At("HEAD"), cancellable = true)
@@ -105,6 +112,27 @@ abstract class PlasmaJetsBlockMixin {
         CallbackInfoReturnable<Boolean> cir
     ) {
         Boolean consumed = HardenedResinCauldronSupport.consumeOnce(level, pos);
+        if (consumed != null) cir.setReturnValue(consumed);
+    }
+
+    @Inject(method = "usesContinuousFuel", at = @At("HEAD"), cancellable = true)
+    private static void plasticraft$useEntityContinuousFuel(
+        Level level,
+        BlockPos pos,
+        CallbackInfoReturnable<Boolean> cir
+    ) {
+        Boolean continuous = HardenedResinCauldronSupport.usesContinuousFuel(level, pos);
+        if (continuous != null) cir.setReturnValue(continuous);
+    }
+
+    @Inject(method = "tryConsumeContinuousFuel", at = @At("HEAD"), cancellable = true)
+    private static void plasticraft$consumeEntityContinuousFuel(
+        Level level,
+        BlockPos pos,
+        int amount,
+        CallbackInfoReturnable<Boolean> cir
+    ) {
+        Boolean consumed = HardenedResinCauldronSupport.consumeContinuousFuel(level, pos, amount);
         if (consumed != null) cir.setReturnValue(consumed);
     }
 }

@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.init.block;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.client.renderer.HighViscosityResinFluidExtension;
 import dev.anvilcraft.plasticraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.util.ModClientFluidTypeExtensionImpl;
 import net.minecraft.core.registries.Registries;
@@ -18,6 +19,8 @@ import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
 /** Plasticraft 的可储存与可放置流体注册。 */
 public final class ModFluids {
+    private static final ResourceLocation PLACEHOLDER_TEXTURE = AnvilcraftPlasticraft.of("block/fluid_placeholder");
+
     public static final DeferredRegister<FluidType> FLUID_TYPES = DeferredRegister.create(
         NeoForgeRegistries.FLUID_TYPES,
         AnvilcraftPlasticraft.MOD_ID
@@ -51,23 +54,124 @@ public final class ModFluids {
         () -> new BaseFlowingFluid.Flowing(properties())
     );
 
+    public static final DeferredHolder<FluidType, FluidType> HIGH_HEAT_FUEL_TYPE = registerFluidType(
+        "high_heat_fuel",
+        900,
+        800
+    );
+    public static final DeferredHolder<Fluid, BaseFlowingFluid> HIGH_HEAT_FUEL = FLUIDS.register(
+        "high_heat_fuel",
+        () -> new BaseFlowingFluid.Source(highHeatFuelProperties())
+    );
+    public static final DeferredHolder<Fluid, BaseFlowingFluid> FLOWING_HIGH_HEAT_FUEL = FLUIDS.register(
+        "flowing_high_heat_fuel",
+        () -> new BaseFlowingFluid.Flowing(highHeatFuelProperties())
+    );
+
+    public static final DeferredHolder<FluidType, FluidType> PLASTIC_OIL_TYPE = registerFluidType(
+        "plastic_oil",
+        1100,
+        1600
+    );
+    public static final DeferredHolder<Fluid, BaseFlowingFluid> PLASTIC_OIL = FLUIDS.register(
+        "plastic_oil",
+        () -> new BaseFlowingFluid.Source(plasticOilProperties())
+    );
+    public static final DeferredHolder<Fluid, BaseFlowingFluid> FLOWING_PLASTIC_OIL = FLUIDS.register(
+        "flowing_plastic_oil",
+        () -> new BaseFlowingFluid.Flowing(plasticOilProperties())
+    );
+
+    public static final DeferredHolder<FluidType, FluidType> CRUDE_OIL_ACID_TYPE = registerFluidType(
+        "crude_oil_acid",
+        1200,
+        1200
+    );
+    public static final DeferredHolder<Fluid, BaseFlowingFluid> CRUDE_OIL_ACID = FLUIDS.register(
+        "crude_oil_acid",
+        () -> new BaseFlowingFluid.Source(crudeOilAcidProperties())
+    );
+    public static final DeferredHolder<Fluid, BaseFlowingFluid> FLOWING_CRUDE_OIL_ACID = FLUIDS.register(
+        "flowing_crude_oil_acid",
+        () -> new BaseFlowingFluid.Flowing(crudeOilAcidProperties())
+    );
+
     public static final BaseFlowingFluid.Properties HIGH_VISCOSITY_RESIN_PROPERTIES = new BaseFlowingFluid.Properties(
         LIQUID_HIGH_VISCOSITY_RESIN_TYPE,
         LIQUID_HIGH_VISCOSITY_RESIN,
         FLOWING_LIQUID_HIGH_VISCOSITY_RESIN
     )
-        .bucket(() -> ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())
-        .block(() -> ModBlocks.LIQUID_HIGH_VISCOSITY_RESIN.get())
+        .bucket(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET)
+        .block(ModBlocks.LIQUID_HIGH_VISCOSITY_RESIN)
         .tickRate(40)
         .slopeFindDistance(2)
         .levelDecreasePerBlock(3)
         .explosionResistance(100.0F);
 
+    public static final BaseFlowingFluid.Properties HIGH_HEAT_FUEL_PROPERTIES = new BaseFlowingFluid.Properties(
+        HIGH_HEAT_FUEL_TYPE,
+        HIGH_HEAT_FUEL,
+        FLOWING_HIGH_HEAT_FUEL
+    )
+        .bucket(ModItems.HIGH_HEAT_FUEL_BUCKET)
+        .block(ModBlocks.HIGH_HEAT_FUEL)
+        .tickRate(10)
+        .slopeFindDistance(3)
+        .explosionResistance(100.0F);
+
+    public static final BaseFlowingFluid.Properties PLASTIC_OIL_PROPERTIES = new BaseFlowingFluid.Properties(
+        PLASTIC_OIL_TYPE,
+        PLASTIC_OIL,
+        FLOWING_PLASTIC_OIL
+    )
+        .bucket(ModItems.PLASTIC_OIL_BUCKET)
+        .block(ModBlocks.PLASTIC_OIL)
+        .tickRate(12)
+        .slopeFindDistance(3)
+        .explosionResistance(100.0F);
+
+    public static final BaseFlowingFluid.Properties CRUDE_OIL_ACID_PROPERTIES = new BaseFlowingFluid.Properties(
+        CRUDE_OIL_ACID_TYPE,
+        CRUDE_OIL_ACID,
+        FLOWING_CRUDE_OIL_ACID
+    )
+        .bucket(ModItems.CRUDE_OIL_ACID_BUCKET)
+        .block(ModBlocks.CRUDE_OIL_ACID)
+        .tickRate(12)
+        .slopeFindDistance(3)
+        .explosionResistance(100.0F);
+
     private ModFluids() {
+    }
+
+    private static DeferredHolder<FluidType, FluidType> registerFluidType(
+        String name,
+        int density,
+        int viscosity
+    ) {
+        return FLUID_TYPES.register(name, () -> new FluidType(FluidType.Properties.create()
+            .descriptionId("block.anvilcraftplasticraft." + name)
+            .density(density)
+            .viscosity(viscosity)
+            .supportsBoating(true)
+            .sound(SoundActions.BUCKET_FILL, SoundEvents.BUCKET_FILL)
+            .sound(SoundActions.BUCKET_EMPTY, SoundEvents.BUCKET_EMPTY)));
     }
 
     private static BaseFlowingFluid.Properties properties() {
         return HIGH_VISCOSITY_RESIN_PROPERTIES;
+    }
+
+    private static BaseFlowingFluid.Properties highHeatFuelProperties() {
+        return HIGH_HEAT_FUEL_PROPERTIES;
+    }
+
+    private static BaseFlowingFluid.Properties plasticOilProperties() {
+        return PLASTIC_OIL_PROPERTIES;
+    }
+
+    private static BaseFlowingFluid.Properties crudeOilAcidProperties() {
+        return CRUDE_OIL_ACID_PROPERTIES;
     }
 
     public static void register(IEventBus modEventBus) {
@@ -77,16 +181,18 @@ public final class ModFluids {
 
     public static void registerClientExtensions(RegisterClientExtensionsEvent event) {
         event.registerFluidType(
-            new ModClientFluidTypeExtensionImpl(
-                AnvilcraftPlasticraft.of("block/liquid_high_viscosity_resin_still"),
-                AnvilcraftPlasticraft.of("block/liquid_high_viscosity_resin_flow"),
-                0x6B481D,
-                1.5F,
-                0xFFFFFFFF,
-                false
-            ),
+            new HighViscosityResinFluidExtension(),
             LIQUID_HIGH_VISCOSITY_RESIN_TYPE
         );
+        ModClientFluidTypeExtensionImpl placeholder = new ModClientFluidTypeExtensionImpl(
+            PLACEHOLDER_TEXTURE,
+            PLACEHOLDER_TEXTURE,
+            0xFFFFFFFF,
+            1.0F,
+            0xFFFFFFFF,
+            false
+        );
+        event.registerFluidType(placeholder, HIGH_HEAT_FUEL_TYPE, PLASTIC_OIL_TYPE, CRUDE_OIL_ACID_TYPE);
     }
 
     public static ResourceLocation liquidHighViscosityResinId() {

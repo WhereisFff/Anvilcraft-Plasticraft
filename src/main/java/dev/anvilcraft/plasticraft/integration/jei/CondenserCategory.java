@@ -1,10 +1,13 @@
 package dev.anvilcraft.plasticraft.integration.jei;
 
+import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
+import dev.anvilcraft.plasticraft.recipe.CondenserGas;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.client.support.RenderSupport;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiRenderHelper;
+import mezz.jei.api.gui.ITickTimer;
 import mezz.jei.api.gui.builder.IRecipeLayoutBuilder;
 import mezz.jei.api.gui.ingredient.IRecipeSlotsView;
 import mezz.jei.api.gui.widgets.IRecipeExtrasBuilder;
@@ -14,7 +17,6 @@ import mezz.jei.api.recipe.IFocusGroup;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.recipe.category.IRecipeCategory;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -31,8 +33,10 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
 
     private final IDrawable icon;
     private final IDrawable slot;
+    private final IDrawable steam;
     private final IDrawable arrowIn;
-    private final IDrawable arrowOutFromBelow;
+    private final IDrawable arrowOut;
+    private final ITickTimer timer;
     private final BlockState tower;
 
     public CondenserCategory(IGuiHelper helper) {
@@ -40,8 +44,16 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
             new ItemStack(dev.anvilcraft.plasticraft.init.block.ModBlocks.CONDENSER_TOWER)
         );
         this.slot = JeiRenderHelper.getSlotDefault(helper);
+        this.steam = helper.drawableBuilder(
+            AnvilcraftPlasticraft.of("textures/gui/jei/steam.png"),
+            0,
+            0,
+            16,
+            16
+        ).setTextureSize(16, 16).build();
         this.arrowIn = JeiRenderHelper.getArrowInput(helper);
-        this.arrowOutFromBelow = JeiRenderHelper.getArrowOutputFromBelow(helper);
+        this.arrowOut = JeiRenderHelper.getArrowOutput(helper);
+        this.timer = helper.createTickTimer(20, 20, false);
         this.tower = dev.anvilcraft.plasticraft.init.block.ModBlocks.CONDENSER_TOWER.getDefaultState()
             .setValue(CondenserTowerBlock.HALF, Cube3x3PartHalf.MID_CENTER);
     }
@@ -80,7 +92,7 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
         CondenserRecipe recipe = holder.value();
         Fluid fluid = BuiltInRegistries.FLUID.get(recipe.fluid());
         if (fluid == null || fluid == net.minecraft.world.level.material.Fluids.EMPTY) return;
-        builder.addSlot(RecipeIngredientRole.OUTPUT, 126, 24)
+        builder.addSlot(RecipeIngredientRole.OUTPUT, 120, 24)
             .addFluidStack(fluid, recipe.produce());
     }
 
@@ -101,36 +113,18 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
         double mouseY
     ) {
         CondenserRecipe recipe = holder.value();
-        this.slot.draw(graphics, 125, 23);
-        this.arrowIn.draw(graphics, 50, 36);
-        graphics.pose().pushPose();
-        graphics.pose().translate(98.0F, 40.0F, 0.0F);
-        graphics.pose().scale(1.0F, -1.0F, 1.0F);
-        this.arrowOutFromBelow.draw(graphics, 0, 0);
-        graphics.pose().popPose();
-        RenderSupport.renderBlock(graphics, this.tower, 81, 40, 10, 7.0F, RenderSupport.SINGLE_BLOCK);
+        this.slot.draw(graphics, 119, 23);
+        if (CondenserGas.GASEOUS_EXPERIENCE.equals(CondenserGas.canonicalize(recipe.gas()))) {
+            PlasmaJetBlastingCategory.drawExperienceOrb(graphics, 15, 23, this.timer.getValue());
+        } else {
+            this.steam.draw(graphics, 16, 24);
+        }
+        this.arrowIn.draw(graphics, 48, 30);
+        this.arrowOut.draw(graphics, 96, 29);
+        RenderSupport.renderBlock(graphics, this.tower, 81, 33, 10, 7.0F, RenderSupport.SINGLE_BLOCK);
 
-        Component gasName = Component.translatable(
-            "jei.anvilcraftplasticraft.gas." + recipe.gas().getPath()
-        );
-        Minecraft minecraft = Minecraft.getInstance();
-        drawFittedText(graphics, gasName, 24.0F, 5.0F, 46.0F);
-        drawFittedText(
-            graphics,
-            Component.literal(recipe.consume() + " mB"),
-            24.0F,
-            16.0F,
-            46.0F
-        );
         Component output = Component.literal(recipe.produce() + " mB");
-        graphics.drawString(
-            minecraft.font,
-            output,
-            WIDTH - minecraft.font.width(output),
-            45,
-            0xFF202020,
-            false
-        );
+        graphics.drawCenteredString(net.minecraft.client.Minecraft.getInstance().font, output, 128, 45, 0xFFFFFFFF);
     }
 
     @Override
@@ -141,24 +135,9 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
         double mouseX,
         double mouseY
     ) {
-        if (mouseX >= 0 && mouseX < 48 && mouseY >= 4 && mouseY < 22) {
+        if (mouseX >= 15 && mouseX < 33 && mouseY >= 23 && mouseY < 41) {
             tooltip.add(Component.translatable("jei.anvilcraftplasticraft.gas." + holder.value().gas().getPath()));
+            tooltip.add(Component.literal(holder.value().consume() + " mB"));
         }
-    }
-
-    private static void drawFittedText(
-        GuiGraphics graphics,
-        Component text,
-        float centerX,
-        float y,
-        float maxWidth
-    ) {
-        Minecraft minecraft = Minecraft.getInstance();
-        float scale = Math.min(0.75F, maxWidth / Math.max(1, minecraft.font.width(text)));
-        graphics.pose().pushPose();
-        graphics.pose().translate(centerX, y, 0.0F);
-        graphics.pose().scale(scale, scale, 1.0F);
-        graphics.drawCenteredString(minecraft.font, text, 0, 0, 0xFF202020);
-        graphics.pose().popPose();
     }
 }

@@ -1,16 +1,19 @@
 repositories {
+    def centralRepository = mavenCentral()
+    def anvilRepository = maven {
+        name = 'Cjsah Maven'
+        url = 'https://server.cjsah.net:1002/maven/'
+        content {
+            includeGroup 'dev.anvilcraft.lib'
+            includeGroup 'dev.dubhe'
+            includeGroup 'dev.anvilcraft.resource'
+        }
+    }
+
     exclusiveContent {
         forRepositories(
-            mavenCentral(),
-            maven {
-                name = 'Cjsah Maven'
-                url = 'https://server.cjsah.net:1002/maven/'
-                content {
-                    includeGroup 'dev.anvilcraft.lib'
-                    includeGroup 'dev.dubhe'
-                    includeGroup 'dev.anvilcraft.resource'
-                }
-            }
+            centralRepository,
+            anvilRepository
         )
         filter {
             includeGroup 'dev.anvilcraft.lib'
@@ -29,11 +32,4 @@ repositories {
         content { includeGroup 'mezz.jei' }
     }
 
-    // 本地 Maven 仅作为其他开发产物的备用来源；AnvilCraft 始终使用远程仓库。
-    mavenLocal {
-        content {
-            excludeGroupByRegex 'dev\\.dubhe(\\..*)?'
-            excludeGroupByRegex 'dev\\.anvilcraft(\\..*)?'
-        }
-    }
 }

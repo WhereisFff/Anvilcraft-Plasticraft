@@ -16,6 +16,7 @@ import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.client.resources.model.ModelResourceLocation;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.entity.item.FallingBlockEntity;
 
 /** 实体化塑料制品共用的方块模型渲染逻辑。 */
 public final class PlasticEntityRenderHelper {
@@ -64,6 +65,29 @@ public final class PlasticEntityRenderHelper {
         MultiBufferSource buffers
     ) {
         BlockState state = PlasticEntityRenderTransforms.canonicalize(entity.getDisplayState());
+        BakedModel model = dispatcher.getBlockModel(state);
+        VertexConsumer consumer = buffers.getBuffer(ModRenderTypes.TRANSLUCENT_COLORED_OVERLAY);
+        dispatcher.getModelRenderer().renderModel(
+            pose.last(),
+            consumer,
+            state,
+            model,
+            1.0F,
+            1.0F,
+            1.0F,
+            LightTexture.FULL_BLOCK,
+            OverlayTexture.NO_OVERLAY
+        );
+    }
+
+    /** 使用同一蓝色半透明材质渲染普通下落方块的终点虚影。 */
+    public static void renderFallingPreviewModel(
+        FallingBlockEntity entity,
+        BlockRenderDispatcher dispatcher,
+        PoseStack pose,
+        MultiBufferSource buffers
+    ) {
+        BlockState state = entity.getBlockState();
         BakedModel model = dispatcher.getBlockModel(state);
         VertexConsumer consumer = buffers.getBuffer(ModRenderTypes.TRANSLUCENT_COLORED_OVERLAY);
         dispatcher.getModelRenderer().renderModel(

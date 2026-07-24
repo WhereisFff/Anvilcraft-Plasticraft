@@ -2,8 +2,10 @@ package dev.anvilcraft.plasticraft.init;
 
 import com.mojang.serialization.MapCodec;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.particle.DynamicFluidVaporParticleOptions;
 import dev.anvilcraft.plasticraft.particle.FluidVaporParticleOptions;
 import net.minecraft.core.particles.ParticleType;
+import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -32,6 +34,38 @@ public final class ModParticles {
                     return FluidVaporParticleOptions.STREAM_CODEC;
                 }
             }
+    );
+    public static final DeferredHolder<ParticleType<?>, ParticleType<DynamicFluidVaporParticleOptions>>
+        DYNAMIC_FLUID_VAPOR = PARTICLES.register(
+            "dynamic_fluid_vapor",
+            () -> new ParticleType<>(false) {
+                @Override
+                public MapCodec<DynamicFluidVaporParticleOptions> codec() {
+                    return DynamicFluidVaporParticleOptions.CODEC;
+                }
+
+                @Override
+                public StreamCodec<? super RegistryFriendlyByteBuf, DynamicFluidVaporParticleOptions> streamCodec() {
+                    return DynamicFluidVaporParticleOptions.STREAM_CODEC;
+                }
+            }
+    );
+
+    public static final DeferredHolder<ParticleType<?>, SimpleParticleType> ENHANCED_PLASMA_JETS = PARTICLES.register(
+        "enhanced_plasma_jets",
+        () -> new SimpleParticleType(false)
+    );
+    public static final DeferredHolder<ParticleType<?>, SimpleParticleType> EXPERIENCE_VAPOR = PARTICLES.register(
+        "experience_vapor",
+        () -> new SimpleParticleType(false)
+    );
+    public static final DeferredHolder<ParticleType<?>, SimpleParticleType> EXPERIENCE_VAPOR_OUTLET = PARTICLES.register(
+        "experience_vapor_outlet",
+        () -> new SimpleParticleType(false)
+    );
+    public static final DeferredHolder<ParticleType<?>, SimpleParticleType> GASEOUS_OIL_FLAME = PARTICLES.register(
+        "gaseous_oil_flame",
+        () -> new SimpleParticleType(false)
     );
 
     private ModParticles() {

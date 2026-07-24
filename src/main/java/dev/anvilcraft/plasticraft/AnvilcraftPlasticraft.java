@@ -6,6 +6,7 @@ import dev.anvilcraft.plasticraft.data.PlasticraftDatagen;
 import dev.anvilcraft.plasticraft.event.HighViscosityResinEvents;
 import dev.anvilcraft.plasticraft.init.ModParticles;
 import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
+import dev.anvilcraft.plasticraft.init.ModAttachments;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.block.ModBlockEntities;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
@@ -14,6 +15,7 @@ import dev.anvilcraft.plasticraft.init.item.ModItemGroups;
 import dev.anvilcraft.plasticraft.init.item.ModItems;
 import dev.anvilcraft.plasticraft.init.ModMenuTypes;
 import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
+import dev.anvilcraft.plasticraft.recipe.EscapingVaporEffects;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetVaporizationSource;
 import dev.anvilcraft.lib.v2.registrum.Registrum;
 import dev.anvilcraft.lib.v2.network.register.NetworkRegistrar;
@@ -41,6 +43,7 @@ public final class AnvilcraftPlasticraft {
         .defaultCreativeTab((ResourceKey<CreativeModeTab>) null);
 
     public AnvilcraftPlasticraft(IEventBus modEventBus, ModContainer ignored) {
+        ModAttachments.register(modEventBus);
         ModItemGroups.register(modEventBus);
         ModFluids.register(modEventBus);
         ModBlocks.register();
@@ -56,6 +59,7 @@ public final class AnvilcraftPlasticraft {
         NeoForge.EVENT_BUS.addListener(AnvilcraftPlasticraft::addItemTooltips);
         NeoForge.EVENT_BUS.addListener(HighViscosityResinEvents::useEntity);
         NeoForge.EVENT_BUS.addListener(CondenserTowerProcess::onLargeCauldronProcess);
+        NeoForge.EVENT_BUS.addListener(EscapingVaporEffects::rightClickBlock);
         modEventBus.addListener(HighViscosityResinEvents::registerCauldronFluidContent);
         modEventBus.addListener(ModBlocks::registerDispenserBehavior);
         modEventBus.addListener(AnvilcraftPlasticraft::registerCapabilities);
@@ -76,6 +80,16 @@ public final class AnvilcraftPlasticraft {
             Capabilities.FluidHandler.ENTITY,
             ModEntities.HARDEND_RESIN_CAULDRON.get(),
             (cauldron, side) -> cauldron.getFluidHandler()
+        );
+        event.registerBlockEntity(
+            Capabilities.FluidHandler.BLOCK,
+            ModBlockEntities.BONDED_ENTITY.get(),
+            (bonded, side) -> bonded.getCapabilityFluidHandler()
+        );
+        event.registerBlockEntity(
+            Capabilities.ItemHandler.BLOCK,
+            ModBlockEntities.BONDED_ENTITY.get(),
+            (bonded, side) -> bonded.getItemHandler()
         );
         event.registerBlock(
             Capabilities.FluidHandler.BLOCK,

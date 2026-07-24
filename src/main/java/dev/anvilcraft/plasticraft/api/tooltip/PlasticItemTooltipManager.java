@@ -30,6 +30,27 @@ public final class PlasticItemTooltipManager {
             AnvilcraftPlasticraft.of("liquid_high_viscosity_resin_bucket"),
             "Highly adhesive and non-volatile; it appears to need thousands of years to solidify"
         );
+        register(
+            AnvilcraftPlasticraft.of("condenser_tower"),
+            "A stackable 3x3x3 module that condenses vapor above a large cauldron",
+            "Each module stores 64 buckets and exposes four output-only ports\n"
+                + "Oil is separated into high-heat fuel, plastic oil, and crude-oil essence across the first three layers\n"
+                + "Capping the top-center outlet makes a full module apply backpressure to the entire stack"
+        );
+        register(
+            AnvilcraftPlasticraft.of("high_heat_fuel_bucket"),
+            "Ignitable fuel for the blue enhanced plasma jet",
+            "An enhanced jet vaporizes 50 mB each tick while consuming 10 mB of high-heat fuel\n"
+                + "Each 250 mB layer of a full layered cauldron extends the enhanced jet by 50 game ticks"
+        );
+        NORMAL.put(
+            AnvilcraftPlasticraft.of("plastic_oil_bucket"),
+            "The second-layer condensate and primary feedstock for later plastic processing"
+        );
+        NORMAL.put(
+            AnvilcraftPlasticraft.of("crude_oil_acid_bucket"),
+            "The third-layer essence separated from gaseous crude oil"
+        );
     }
 
     public static void register(

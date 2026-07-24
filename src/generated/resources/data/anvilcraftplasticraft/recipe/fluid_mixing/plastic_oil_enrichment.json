@@ -1,0 +1,20 @@
+{
+  "type": "anvilcraft:fluid_mixing",
+  "consume_maximum": true,
+  "fluid_results": [
+    {
+      "amount": 3,
+      "id": "anvilcraftplasticraft:plastic_oil"
+    }
+  ],
+  "ingredients": [
+    {
+      "amount": 1,
+      "fluid": "anvilcraftplasticraft:plastic_oil"
+    },
+    {
+      "amount": 1,
+      "fluid": "anvilcraftplasticraft:crude_oil_acid"
+    }
+  ]
+}

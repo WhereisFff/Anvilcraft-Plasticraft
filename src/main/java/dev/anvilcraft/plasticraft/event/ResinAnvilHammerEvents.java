@@ -1,11 +1,16 @@
 package dev.anvilcraft.plasticraft.event;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
+import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
+import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
-import dev.dubhe.anvilcraft.util.TriggerUtil;
+import dev.dubhe.anvilcraft.api.event.HammerChangeBlockEvent;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.world.InteractionHand;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -28,6 +33,29 @@ public final class ResinAnvilHammerEvents {
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void breakAdhesiveOnRotate(HammerChangeBlockEvent event) {
+        if (!event.isVerified()
+            || !event.getOldState().hasProperty(AbstractPlasticEntityBlock.BONDED)
+            || !event.getOldState().getValue(AbstractPlasticEntityBlock.BONDED)
+            || !(event.getLevel().getBlockEntity(event.getPos()) instanceof BondedEntityBlockEntity bonded)
+            || !bonded.isPlastic()
+            || !bonded.release()) {
+            return;
+        }
+        event.setVerified(false);
+        if (event.getLevel() instanceof net.minecraft.world.level.Level level) {
+            level.playSound(
+                null,
+                event.getPos(),
+                SoundEvents.HONEY_BLOCK_BREAK,
+                SoundSource.BLOCKS,
+                1.0F,
+                1.0F
+            );
+        }
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void incomingDamage(LivingIncomingDamageEvent event) {
         if (!(event.getEntity() instanceof Player player)
             || !player.isFallFlying()
@@ -46,17 +74,17 @@ public final class ResinAnvilHammerEvents {
 
         knockbackFromView(event.getTarget(), player);
         player.resetAttackStrengthTicker();
+        if (player.level().isClientSide) return;
+
         if (event.getTarget() instanceof HardenedResinCauldronEntity) {
             event.getTarget().hurt(player.damageSources().playerAttack(player), 0.0F);
             return;
         }
-        if (player.level().isClientSide) return;
 
-        hammer.hurtAndBreak(1, player, LivingEntity.getSlotForHand(InteractionHand.MAIN_HAND));
-        TriggerUtil.anvilHammerHurtEntity(
+        ResinAnvilHammerItem.triggerAnvilImpact(
+            player,
             player.level(),
-            event.getTarget().blockPosition(),
-            0.0F
+            event.getTarget().blockPosition()
         );
     }
 
@@ -68,17 +96,10 @@ public final class ResinAnvilHammerEvents {
         }
         event.setCanceled(true);
         Player player = event.getEntity();
+        ResinAnvilHammerItem.triggerAnvilImpact(player, event.getLevel(), event.getPos());
         recoilBehindView(player);
         player.currentImpulseImpactPos = player.position();
         player.setIgnoreFallDamageFromCurrentImpulse(true);
-        player.level().playSound(
-            null,
-            player.blockPosition(),
-            dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.getDefaultState().getSoundType().getHitSound(),
-            SoundSource.PLAYERS,
-            0.8F,
-            0.9F + player.getRandom().nextFloat() * 0.2F
-        );
     }
 
     /** 反冲沿完整视线的反方向，俯仰角也会影响最终的上下速度。 */
@@ -93,6 +114,10 @@ public final class ResinAnvilHammerEvents {
 
     /** 使用原版击退附魔的方向与强度换算：击退 V 对应 5 * 0.5。 */
     private static void knockbackFromView(Entity target, Player attacker) {
+        AdhesiveBondingService.release(target);
+        if (target.level() instanceof ServerLevel level) {
+            EntityBondManager.disconnectEntity(level, target);
+        }
         float yaw = attacker.getYRot() * Mth.DEG_TO_RAD;
         double directionX = Mth.sin(yaw);
         double directionZ = -Mth.cos(yaw);

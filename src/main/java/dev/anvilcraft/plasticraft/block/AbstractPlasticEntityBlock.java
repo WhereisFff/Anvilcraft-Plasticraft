@@ -1,19 +1,34 @@
 package dev.anvilcraft.plasticraft.block;
 
+import dev.anvilcraft.lib.v2.piston.IMoveableEntityBlock;
+import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.init.block.ModBlockEntities;
 import dev.dubhe.anvilcraft.block.RoyalAnvilBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * 实体化塑料制品的兼容方块。
@@ -22,22 +37,47 @@ import net.minecraft.world.phys.Vec3;
  * 因此其计划刻总会把该临时状态转换为对应的塑料实体，
  * 而不是让 {@code FallingBlockMixin} 创建原版落方块实体。</p>
  */
-public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity> extends RoyalAnvilBlock {
+public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity> extends RoyalAnvilBlock
+    implements IMoveableEntityBlock {
     /** 磁化状态与材料相互独立，并在实体转换后保留。 */
     public static final BooleanProperty MAGNETIZED = BooleanProperty.create("magnetized");
+    public static final BooleanProperty BONDED = BooleanProperty.create("bonded");
+    private static final VoxelShape ROYAL_ANVIL_SHAPE = Shapes.or(
+        Block.box(2.0D, 0.0D, 2.0D, 14.0D, 4.0D, 14.0D),
+        Block.box(5.0D, 4.0D, 4.0D, 11.0D, 10.0D, 12.0D),
+        Block.box(3.0D, 10.0D, 0.0D, 13.0D, 16.0D, 16.0D)
+    );
+    private static final java.util.Map<PlasticEntityOrientation, VoxelShape> BONDED_ANVIL_SHAPES =
+        new java.util.concurrent.ConcurrentHashMap<>();
 
     protected AbstractPlasticEntityBlock(Properties properties) {
-        super(properties);
+        // Bonded six-axis orientations live in the block entity and must not be
+        // collapsed into BlockStateBase's empty-level shape cache.
+        super(properties.dynamicShape());
     }
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         super.createBlockStateDefinition(builder);
-        builder.add(MAGNETIZED);
+        builder.add(MAGNETIZED, BONDED);
     }
 
     @Override
     protected final void tick(BlockState state, ServerLevel level, BlockPos pos, RandomSource random) {
+        if (state.getValue(BONDED)) {
+            if (level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded) {
+                if (!bonded.isInitialized() || !bonded.hasSupport()) {
+                    bonded.release();
+                } else {
+                    bonded.tickFunctionalEntity();
+                    level.scheduleTick(pos, this, 1);
+                }
+            } else {
+                level.setBlock(pos, state.setValue(BONDED, false), UPDATE_ALL);
+                level.scheduleTick(pos, this, this.getDelayAfterPlace());
+            }
+            return;
+        }
         // 不调用 super：AnvilCraft 会向 FallingBlock#tick 注入原版实体转换逻辑。
         Direction longAxis = state.hasProperty(FACING) ? state.getValue(FACING) : Direction.SOUTH;
         PlasticEntityOrientation orientation = PlasticEntityOrientation.fromLongAxis(Direction.UP, longAxis);
@@ -68,6 +108,121 @@ public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity
         if (!level.addFreshEntity(entity)) {
             level.setBlock(pos, state, UPDATE_ALL);
         }
+    }
+
+    @Override
+    public void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean movedByPiston) {
+        if (state.getValue(BONDED)) {
+            level.scheduleTick(pos, this, 2);
+            return;
+        }
+        super.onPlace(state, level, pos, oldState, movedByPiston);
+    }
+
+    @Override
+    public void neighborChanged(
+        BlockState state,
+        Level level,
+        BlockPos pos,
+        Block neighborBlock,
+        BlockPos neighborPos,
+        boolean movedByPiston
+    ) {
+        if (state.getValue(BONDED)) {
+            level.scheduleTick(pos, this, 1);
+            return;
+        }
+        super.neighborChanged(state, level, pos, neighborBlock, neighborPos, movedByPiston);
+    }
+
+    @Override
+    public RenderShape getRenderShape(BlockState state) {
+        return state.getValue(BONDED) ? RenderShape.INVISIBLE : super.getRenderShape(state);
+    }
+
+    @Override
+    public InteractionResult use(
+        BlockState state,
+        Level level,
+        BlockPos pos,
+        Player player,
+        InteractionHand hand,
+        BlockHitResult hit
+    ) {
+        if (state.getValue(BONDED)
+            && level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
+            && bonded.isInitialized()) {
+            return bonded.interact(player, hand, hit);
+        }
+        return InteractionResult.PASS;
+    }
+
+    @Override
+    public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        if (!state.getValue(BONDED)) return super.getShape(state, level, pos, context);
+        PlasticEntityOrientation orientation = level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
+            && bonded.isInitialized()
+            && bonded.isPlastic()
+            ? bonded.getPlasticOrientation()
+            : PlasticEntityOrientation.fromLegacyState(state);
+        return BONDED_ANVIL_SHAPES.computeIfAbsent(
+            orientation,
+            ignored -> rotateShape(ROYAL_ANVIL_SHAPE, orientation)
+        );
+    }
+
+    protected static VoxelShape rotateShape(VoxelShape shape, PlasticEntityOrientation orientation) {
+        Direction xAxis = orientation.orthogonalAxis();
+        Direction yAxis = orientation.attachmentFace();
+        Direction zAxis = orientation.longAxis();
+        VoxelShape rotated = Shapes.empty();
+        for (net.minecraft.world.phys.AABB box : shape.toAabbs()) {
+            double minX = 1.0D;
+            double minY = 1.0D;
+            double minZ = 1.0D;
+            double maxX = 0.0D;
+            double maxY = 0.0D;
+            double maxZ = 0.0D;
+            for (int x = 0; x < 2; x++) {
+                for (int y = 0; y < 2; y++) {
+                    for (int z = 0; z < 2; z++) {
+                        double localX = (x == 0 ? box.minX : box.maxX) - 0.5D;
+                        double localY = (y == 0 ? box.minY : box.maxY) - 0.5D;
+                        double localZ = (z == 0 ? box.minZ : box.maxZ) - 0.5D;
+                        double worldX = 0.5D
+                            + localX * xAxis.getStepX()
+                            + localY * yAxis.getStepX()
+                            + localZ * zAxis.getStepX();
+                        double worldY = 0.5D
+                            + localX * xAxis.getStepY()
+                            + localY * yAxis.getStepY()
+                            + localZ * zAxis.getStepY();
+                        double worldZ = 0.5D
+                            + localX * xAxis.getStepZ()
+                            + localY * yAxis.getStepZ()
+                            + localZ * zAxis.getStepZ();
+                        minX = Math.min(minX, worldX);
+                        minY = Math.min(minY, worldY);
+                        minZ = Math.min(minZ, worldZ);
+                        maxX = Math.max(maxX, worldX);
+                        maxY = Math.max(maxY, worldY);
+                        maxZ = Math.max(maxZ, worldZ);
+                    }
+                }
+            }
+            rotated = Shapes.or(rotated, Shapes.box(minX, minY, minZ, maxX, maxY, maxZ));
+        }
+        return rotated.optimize();
+    }
+
+    @Override
+    public @Nullable BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
+        return ModBlockEntities.BONDED_ENTITY.create(pos, state);
+    }
+
+    @Override
+    public void notifyMoved(Level level, BlockPos pos, BlockState state, BlockEntity blockEntity) {
+        if (blockEntity instanceof BondedEntityBlockEntity bonded) bonded.moved();
     }
 
     protected abstract EntityType<? extends E> getPlasticEntityType();

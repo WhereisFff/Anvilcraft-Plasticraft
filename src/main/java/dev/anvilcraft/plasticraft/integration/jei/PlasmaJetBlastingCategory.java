@@ -1,8 +1,11 @@
 package dev.anvilcraft.plasticraft.integration.jei;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import dev.anvilcraft.lib.v2.util.predicate.ChanceItemStack;
 import dev.anvilcraft.lib.v2.util.predicate.ItemIngredientPredicate;
+import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.recipe.CondenserGas;
+import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
@@ -26,9 +29,15 @@ import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.util.FastColor;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.ExperienceOrb;
+import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
@@ -36,6 +45,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
+import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
+import net.neoforged.neoforge.fluids.FluidStack;
 import org.jetbrains.annotations.Nullable;
 
 /** 喷流灼烧配方的 JEI 页面。 */
@@ -44,11 +55,24 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
     public static final int HEIGHT = 64;
     private static final String INPUT_FLUID = "input_fluid";
     private static final String OUTPUT_FLUID = "output_fluid";
+    private static final int PLASMA_PARTICLE_COUNT = 32;
+    private static final int PLASMA_PARTICLE_CENTER_X = 78;
+    private static final ResourceLocation[] PLASMA_PARTICLE_TEXTURES = {
+        ResourceLocation.withDefaultNamespace("textures/particle/generic_0.png"),
+        ResourceLocation.withDefaultNamespace("textures/particle/generic_1.png"),
+        ResourceLocation.withDefaultNamespace("textures/particle/generic_2.png"),
+        ResourceLocation.withDefaultNamespace("textures/particle/generic_3.png"),
+        ResourceLocation.withDefaultNamespace("textures/particle/generic_4.png"),
+        ResourceLocation.withDefaultNamespace("textures/particle/generic_5.png"),
+        ResourceLocation.withDefaultNamespace("textures/particle/generic_6.png"),
+        ResourceLocation.withDefaultNamespace("textures/particle/generic_7.png")
+    };
 
     private final IDrawable icon;
     private final IDrawable slot;
     private final IDrawable arrowIn;
     private final IDrawable arrowOut;
+    private final IDrawable steam;
     private final ITickTimer timer;
     private final BlockState largeCauldron;
 
@@ -57,6 +81,13 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
         this.slot = JeiRenderHelper.getSlotDefault(helper);
         this.arrowIn = JeiRenderHelper.getArrowInput(helper);
         this.arrowOut = JeiRenderHelper.getArrowOutput(helper);
+        this.steam = helper.drawableBuilder(
+            AnvilcraftPlasticraft.of("textures/gui/jei/steam.png"),
+            0,
+            0,
+            16,
+            16
+        ).setTextureSize(16, 16).build();
         this.timer = helper.createTickTimer(20, 20, false);
         this.largeCauldron = dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON.getDefaultState()
             .setValue(LargeCauldronBlock.HALF, Cube3x3PartHalf.MID_CENTER);
@@ -203,12 +234,9 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
             this.slot.draw(graphics, position.x(), position.y());
         }
 
-        this.arrowIn.draw(graphics, 51, 30);
-        this.arrowOut.draw(graphics, 101, 29);
-        int pulse = this.timer.getValue() % 4;
-        graphics.fill(76, 45 - pulse, 79, 62, 0xFFE8F9FF);
-        graphics.fill(80, 42 + pulse, 83, 62, 0xFF7EDDF2);
-        graphics.fill(84, 46 - pulse, 87, 62, 0xFFFFB34D);
+        this.arrowIn.draw(graphics, 46, 30);
+        this.arrowOut.draw(graphics, 100, 29);
+        drawPlasmaParticles(graphics, PlasticraftJeiPlugin.isEnhancedRecipe(holder));
         RenderSupport.renderBlock(
             graphics,
             this.largeCauldron,
@@ -223,16 +251,30 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
             drawVirtualFluid(
                 graphics,
                 fluidPosition(true, 1, 0, splitInputColumns),
-                recipe.getHasCauldron().fluid(),
-                recipe.getHasCauldron().consume()
+                recipe.getHasCauldron().fluid()
+            );
+        } else if (recipe.hasFluidInput()) {
+            JeiFluidIngredientUtil.getDisplayedFluid(recipeSlotsView, INPUT_FLUID).ifPresent(fluid ->
+                drawFluidIcon(
+                    graphics,
+                    fluidPosition(true, 1, 0, splitInputColumns),
+                    new FluidStack(fluid, 1)
+                )
             );
         }
         if (recipe.hasFluidOutput() && isVirtualFluid(recipe.getHasCauldron().transform())) {
             drawVirtualFluid(
                 graphics,
                 fluidPosition(false, 1, 0, splitOutputColumns),
-                recipe.getHasCauldron().transform(),
-                recipe.getHasCauldron().produce()
+                recipe.getHasCauldron().transform()
+            );
+        } else if (recipe.hasFluidOutput()) {
+            JeiFluidIngredientUtil.getDisplayedFluid(recipeSlotsView, OUTPUT_FLUID).ifPresent(fluid ->
+                drawFluidIcon(
+                    graphics,
+                    fluidPosition(false, 1, 0, splitOutputColumns),
+                    new FluidStack(fluid, 1)
+                )
             );
         }
     }
@@ -253,11 +295,33 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
             if (inside(position, mouseX, mouseY)) {
                 addVirtualFluidTooltip(tooltip, recipe.getHasCauldron().fluid(), recipe.getHasCauldron().consume());
             }
+        } else if (recipe.hasFluidInput()) {
+            Position position = fluidPosition(true, 1, 0, splitInputColumns);
+            if (inside(position, mouseX, mouseY)) {
+                tooltip.add(Component.literal(recipe.getHasCauldron().consume() + " mB"));
+            }
         }
         if (recipe.hasFluidOutput() && isVirtualFluid(recipe.getHasCauldron().transform())) {
             Position position = fluidPosition(false, 1, 0, splitOutputColumns);
             if (inside(position, mouseX, mouseY)) {
-                addVirtualFluidTooltip(tooltip, recipe.getHasCauldron().transform(), recipe.getHasCauldron().produce());
+                ResourceLocation output = recipe.getHasCauldron().transform();
+                tooltip.add(virtualFluidName(output));
+                if (CondenserGas.isGas(output)) {
+                    int rate = PlasticraftJeiPlugin.isEnhancedRecipe(holder)
+                        ? CondenserTowerProcess.ENHANCED_VAPORIZATION_PER_JET
+                        : CondenserTowerProcess.VAPORIZATION_PER_JET;
+                    tooltip.add(Component.translatable(
+                        "jei.anvilcraftplasticraft.vaporization_rate",
+                        rate
+                    ));
+                } else {
+                    tooltip.add(virtualAmount(output, recipe.getHasCauldron().produce()));
+                }
+            }
+        } else if (recipe.hasFluidOutput()) {
+            Position position = fluidPosition(false, 1, 0, splitOutputColumns);
+            if (inside(position, mouseX, mouseY)) {
+                tooltip.add(Component.literal(recipe.getHasCauldron().produce() + " mB"));
             }
         }
     }
@@ -284,18 +348,16 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
         return Component.translatable("jei.anvilcraftplasticraft.gas." + id.getPath());
     }
 
-    private static void drawVirtualFluid(
+    private void drawVirtualFluid(
         GuiGraphics graphics,
         Position position,
-        ResourceLocation id,
-        int amount
+        ResourceLocation id
     ) {
-        graphics.pose().pushPose();
-        graphics.pose().translate(position.x() + 8.0D, position.y() - 8.0D, 0.0D);
-        graphics.pose().scale(0.62F, 0.62F, 1.0F);
-        graphics.drawCenteredString(Minecraft.getInstance().font, virtualFluidName(id), 0, 0, 0xFF202020);
-        graphics.drawCenteredString(Minecraft.getInstance().font, virtualAmount(id, amount), 0, 10, 0xFF202020);
-        graphics.pose().popPose();
+        if (CondenserGas.GASEOUS_EXPERIENCE.equals(CondenserGas.canonicalize(id))) {
+            this.drawExperienceOrb(graphics, position);
+        } else {
+            this.steam.draw(graphics, position.x() + 1, position.y() + 1);
+        }
     }
 
     private static void addVirtualFluidTooltip(ITooltipBuilder tooltip, ResourceLocation id, int amount) {
@@ -304,9 +366,87 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
     }
 
     private static Component virtualAmount(ResourceLocation id, int amount) {
-        return CondenserGas.EXPERIENCE_ORBS.equals(id)
-            ? Component.literal(amount * 3 + " XP")
-            : Component.literal(amount + " mB");
+        return Component.literal(amount + " mB");
+    }
+
+    private static void drawFluidIcon(GuiGraphics graphics, Position position, FluidStack fluid) {
+        IClientFluidTypeExtensions extension = IClientFluidTypeExtensions.of(fluid.getFluid());
+        TextureAtlasSprite sprite = Minecraft.getInstance()
+            .getTextureAtlas(InventoryMenu.BLOCK_ATLAS)
+            .apply(extension.getStillTexture(fluid));
+        int tint = extension.getTintColor(fluid);
+        graphics.blit(
+            position.x() + 1,
+            position.y() + 1,
+            0,
+            16,
+            16,
+            sprite,
+            FastColor.ARGB32.red(tint) / 255.0F,
+            FastColor.ARGB32.green(tint) / 255.0F,
+            FastColor.ARGB32.blue(tint) / 255.0F,
+            FastColor.ARGB32.alpha(tint) / 255.0F
+        );
+    }
+
+    private void drawPlasmaParticles(GuiGraphics graphics, boolean enhanced) {
+        int time = this.timer.getValue();
+        try {
+            for (int i = 0; i < PLASMA_PARTICLE_COUNT; i++) {
+                int phase = Math.floorMod(i * 17 + i * i * 3, 24);
+                int elapsed = enhanced ? time * 12 / 5 : time * 2;
+                int age = Math.floorMod(elapsed + phase, 24);
+                float progress = age / 24.0F;
+                float red = enhanced ? 0.24F + progress * 0.58F : 1.0F;
+                float green = enhanced ? 0.82F + progress * 0.12F : 1.0F;
+                float blue = 1.0F;
+                if (!enhanced && progress < 1.0F / 3.0F) {
+                    blue -= progress * 3.0F;
+                } else if (!enhanced && progress < 2.0F / 3.0F) {
+                    green -= (progress - 1.0F / 3.0F) * 3.0F;
+                    blue = 0.0F;
+                } else if (!enhanced) {
+                    red -= (progress - 2.0F / 3.0F) * 3.0F;
+                    green = 0.0F;
+                    blue = 0.0F;
+                }
+                ResourceLocation texture = PLASMA_PARTICLE_TEXTURES[Math.min(7, age / 3)];
+                int size = 3 + i % 3;
+                int halfWidth = progress >= 0.75F ? 5 : 4;
+                int offsetX = Math.floorMod(i * 11 + age / 4 * 3, halfWidth * 2 + 1) - halfWidth;
+                int x = PLASMA_PARTICLE_CENTER_X + offsetX - size / 2;
+                int y = 61 - age * 19 / 24;
+                RenderSystem.setShaderColor(red, green, blue, 0.95F);
+                graphics.blit(texture, x, y, 0, 0, size, size, 8, 8);
+            }
+        } finally {
+            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+        }
+    }
+
+    private void drawExperienceOrb(GuiGraphics graphics, Position position) {
+        drawExperienceOrb(graphics, position.x(), position.y(), this.timer.getValue());
+    }
+
+    static void drawExperienceOrb(GuiGraphics graphics, int x, int y, int tick) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null) return;
+        ExperienceOrb orb = new ExperienceOrb(minecraft.level, 0.0D, 0.0D, 0.0D, 3);
+        orb.tickCount = tick;
+        EntityRenderer<? super ExperienceOrb> renderer = minecraft.getEntityRenderDispatcher().getRenderer(orb);
+        graphics.pose().pushPose();
+        graphics.pose().translate(x + 9.0F, y + 15.0F, 120.0F);
+        graphics.pose().scale(30.0F, -30.0F, 30.0F);
+        renderer.render(
+            orb,
+            0.0F,
+            0.0F,
+            graphics.pose(),
+            minecraft.renderBuffers().bufferSource(),
+            LightTexture.FULL_BRIGHT
+        );
+        graphics.pose().popPose();
+        graphics.flush();
     }
 
     private static boolean inside(Position position, double mouseX, double mouseY) {

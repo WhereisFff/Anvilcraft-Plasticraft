@@ -44,7 +44,7 @@ public class ResinAnvilRenderer extends EntityRenderer<ResinAnvilEntity> {
             return;
         }
         pose.pushPose();
-        PlasticEntityRenderTransforms.apply(pose, entity);
+        PlasticEntityRenderTransforms.apply(pose, entity, partialTick);
         PlasticEntityRenderHelper.renderBlock(entity, this.dispatcher, pose, buffers, packedLight);
         pose.popPose();
         super.render(entity, yaw, partialTick, pose, buffers, packedLight);

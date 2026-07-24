@@ -1,0 +1,20 @@
+{
+  "type": "anvilcraft:fluid_mixing",
+  "consume_maximum": true,
+  "fluid_results": [
+    {
+      "amount": 3,
+      "id": "anvilcraftplasticraft:high_heat_fuel"
+    }
+  ],
+  "ingredients": [
+    {
+      "amount": 1,
+      "fluid": "anvilcraftplasticraft:high_heat_fuel"
+    },
+    {
+      "amount": 1,
+      "fluid": "anvilcraftplasticraft:crude_oil_acid"
+    }
+  ]
+}

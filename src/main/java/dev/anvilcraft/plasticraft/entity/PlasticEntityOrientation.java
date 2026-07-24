@@ -117,6 +117,28 @@ public record PlasticEntityOrientation(Direction attachmentFace, int quarterTurn
         return this.orthogonalAxis();
     }
 
+    /** 将模型局部六方向转换为当前朝向下的世界方向。 */
+    public Direction worldDirection(Direction localDirection) {
+        Objects.requireNonNull(localDirection, "localDirection");
+        return switch (localDirection) {
+            case EAST -> this.orthogonalAxis();
+            case WEST -> this.orthogonalAxis().getOpposite();
+            case UP -> this.attachmentFace;
+            case DOWN -> this.attachmentFace.getOpposite();
+            case SOUTH -> this.longAxis();
+            case NORTH -> this.longAxis().getOpposite();
+        };
+    }
+
+    /** 将世界六方向转换为当前朝向下对应的模型局部方向。 */
+    public Direction localDirection(Direction worldDirection) {
+        Objects.requireNonNull(worldDirection, "worldDirection");
+        for (Direction localDirection : Direction.values()) {
+            if (this.worldDirection(localDirection) == worldDirection) return localDirection;
+        }
+        throw new IllegalArgumentException("World direction does not map to a local face");
+    }
+
     /**
      * 将 24 种朝向打包到五个位中。低三位是原版三维方向 ID，
      * 随后的两位是四分之一圈旋转数。

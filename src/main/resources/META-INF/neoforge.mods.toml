@@ -29,21 +29,21 @@ side = "BOTH"
 [[dependencies."${mod_id}"]]
 modId = "anvilcraft"
 type = "required"
-versionRange = "[1.6.0+snapshot.2080,)"
+versionRange = "${anvilcraft_version_range}"
 ordering = "AFTER"
 side = "BOTH"
 
 [[dependencies."${mod_id}"]]
 modId = "anvillib"
 type = "required"
-versionRange = "[2.0.0+snapshot.496,)"
+versionRange = "${anvillib_version_range}"
 ordering = "AFTER"
 side = "BOTH"
 
 [[dependencies."${mod_id}"]]
 modId = "anvillib_yukkuri"
 type = "required"
-versionRange = "[2.0.0+snapshot.496,)"
+versionRange = "${anvillib_version_range}"
 ordering = "AFTER"
 side = "BOTH"
 

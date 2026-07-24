@@ -1,7 +1,0 @@
-{
-  "parent": "minecraft:block/cube_all",
-  "render_type": "minecraft:translucent",
-  "textures": {
-    "all": "anvilcraftplasticraft:block/high_viscosity_resin_block"
-  }
-}

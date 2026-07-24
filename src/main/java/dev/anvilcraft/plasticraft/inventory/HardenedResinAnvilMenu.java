@@ -1,7 +1,9 @@
 package dev.anvilcraft.plasticraft.inventory;
 
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
+import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -26,10 +28,14 @@ public class HardenedResinAnvilMenu extends AnvilMenu {
 
     private final MenuType<?> menuType;
     private final int entityId;
+    private final BlockPos bondedBlockPos;
     private String requestedItemName;
     private boolean calculatingVanillaResult;
     private boolean freeRename;
     private boolean freeResinHammerRepair;
+
+    private record Target(int entityId, BlockPos bondedBlockPos) {
+    }
 
     public static void configureMenuType(Supplier<? extends MenuType<?>> supplier) {
         menuTypeSupplier = Objects.requireNonNull(supplier, "supplier");
@@ -41,10 +47,29 @@ public class HardenedResinAnvilMenu extends AnvilMenu {
     }
 
     public HardenedResinAnvilMenu(MenuType<?> menuType, int containerId, Inventory playerInventory, int entityId) {
-        // 落方块实体没有永久方块位置。
+        this(menuType, containerId, playerInventory, new Target(entityId, null));
+    }
+
+    public HardenedResinAnvilMenu(
+        MenuType<?> menuType,
+        int containerId,
+        Inventory playerInventory,
+        BlockPos bondedBlockPos
+    ) {
+        this(menuType, containerId, playerInventory, new Target(-1, bondedBlockPos.immutable()));
+    }
+
+    private HardenedResinAnvilMenu(
+        MenuType<?> menuType,
+        int containerId,
+        Inventory playerInventory,
+        Target target
+    ) {
+        // 实体砧没有永久方块位置，固定砧则由方块实体负责有效性检查。
         super(containerId, playerInventory, ContainerLevelAccess.NULL);
         this.menuType = menuType == null ? menuType() : menuType;
-        this.entityId = entityId;
+        this.entityId = target.entityId();
+        this.bondedBlockPos = target.bondedBlockPos();
     }
 
     public HardenedResinAnvilMenu(
@@ -53,7 +78,13 @@ public class HardenedResinAnvilMenu extends AnvilMenu {
         Inventory playerInventory,
         RegistryFriendlyByteBuf extraData
     ) {
-        this(menuType, containerId, playerInventory, extraData.readVarInt());
+        this(menuType, containerId, playerInventory, readTarget(extraData));
+    }
+
+    private static Target readTarget(RegistryFriendlyByteBuf buffer) {
+        return buffer.readBoolean()
+            ? new Target(-1, buffer.readBlockPos())
+            : new Target(buffer.readVarInt(), null);
     }
 
     public HardenedResinAnvilMenu(int containerId, Inventory playerInventory, int entityId) {
@@ -67,7 +98,24 @@ public class HardenedResinAnvilMenu extends AnvilMenu {
                 new HardenedResinAnvilMenu(type, containerId, inventory, entity.getId()),
             TITLE
         );
-        player.openMenu(provider, buffer -> buffer.writeVarInt(entity.getId()));
+        player.openMenu(provider, buffer -> {
+            buffer.writeBoolean(false);
+            buffer.writeVarInt(entity.getId());
+        });
+    }
+
+    public static void open(ServerPlayer player, BondedEntityBlockEntity bonded) {
+        BlockPos pos = bonded.getBlockPos();
+        MenuType<?> type = menuType();
+        MenuProvider provider = new net.minecraft.world.SimpleMenuProvider(
+            (containerId, inventory, ignored) ->
+                new HardenedResinAnvilMenu(type, containerId, inventory, pos),
+            TITLE
+        );
+        player.openMenu(provider, buffer -> {
+            buffer.writeBoolean(true);
+            buffer.writeBlockPos(pos);
+        });
     }
 
     public int entityId() {
@@ -189,6 +237,13 @@ public class HardenedResinAnvilMenu extends AnvilMenu {
 
     @Override
     public boolean stillValid(Player player) {
+        if (this.bondedBlockPos != null) {
+            return player.level().getBlockEntity(this.bondedBlockPos) instanceof BondedEntityBlockEntity bonded
+                && bonded.isInitialized()
+                && bonded.isPlastic()
+                && bonded.isHardenedResinAnvil()
+                && player.distanceToSqr(this.bondedBlockPos.getCenter()) <= 64.0D;
+        }
         Entity entity = player.level().getEntity(this.entityId);
         return entity instanceof HardenedResinAnvilEntity anvil
             && anvil.isAlive()

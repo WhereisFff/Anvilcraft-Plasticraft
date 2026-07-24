@@ -11,7 +11,7 @@ import net.neoforged.neoforge.fluids.FluidStack;
 
 import java.util.Objects;
 
-/** A vapor particle carrying its source fluid so the client can use that fluid's registered tint. */
+/** 保持原网络格式的基础流体蒸气粒子参数。 */
 public record FluidVaporParticleOptions(FluidStack fluid) implements ParticleOptions {
     public static final MapCodec<FluidVaporParticleOptions> CODEC = RecordCodecBuilder.mapCodec(instance ->
         instance.group(

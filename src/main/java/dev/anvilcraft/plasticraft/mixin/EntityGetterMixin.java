@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
 import dev.anvilcraft.plasticraft.api.entity.ElasticCollisionEntity;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContext;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContextHolder;
+import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.EntityGetter;
 import org.spongepowered.asm.mixin.Mixin;
@@ -26,11 +27,13 @@ interface EntityGetterMixin {
         Predicate<Entity> original,
         Entity mover
     ) {
-        if (!(mover instanceof CarrierMoveContextHolder holder)) return original;
+        Predicate<Entity> withoutBondedMembers = target ->
+            !EntityBondManager.areInSameComponent(mover, target) && original.test(target);
+        if (!(mover instanceof CarrierMoveContextHolder holder)) return withoutBondedMembers;
         CarrierMoveContext context = holder.plasticraft$getCarrierMoveContext();
-        if (context == null) return original;
+        if (context == null) return withoutBondedMembers;
         return target -> {
-            boolean collides = original.test(target);
+            boolean collides = withoutBondedMembers.test(target);
             if (!collides) return false;
             if (!(target instanceof CarrierMovableEntity movable)) {
                 if (target instanceof ElasticCollisionEntity elastic) {

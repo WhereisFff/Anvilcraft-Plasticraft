@@ -1,12 +1,12 @@
 {
   "multipart": [
-    {"when": {"facing": "east", "magnetized": false}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_cauldron", "y": 270}},
-    {"when": {"facing": "north", "magnetized": false}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_cauldron", "y": 180}},
-    {"when": {"facing": "south", "magnetized": false}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_cauldron"}},
-    {"when": {"facing": "west", "magnetized": false}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_cauldron", "y": 90}},
-    {"when": {"facing": "east", "magnetized": true}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_cauldron_magnetic", "y": 270}},
-    {"when": {"facing": "north", "magnetized": true}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_cauldron_magnetic", "y": 180}},
-    {"when": {"facing": "south", "magnetized": true}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_cauldron_magnetic"}},
-    {"when": {"facing": "west", "magnetized": true}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_cauldron_magnetic", "y": 90}}
+    {"when": {"bonded": false, "facing": "east", "magnetized": false}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_cauldron", "y": 270}},
+    {"when": {"bonded": false, "facing": "north", "magnetized": false}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_cauldron", "y": 180}},
+    {"when": {"bonded": false, "facing": "south", "magnetized": false}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_cauldron"}},
+    {"when": {"bonded": false, "facing": "west", "magnetized": false}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_cauldron", "y": 90}},
+    {"when": {"bonded": false, "facing": "east", "magnetized": true}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_cauldron_magnetic", "y": 270}},
+    {"when": {"bonded": false, "facing": "north", "magnetized": true}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_cauldron_magnetic", "y": 180}},
+    {"when": {"bonded": false, "facing": "south", "magnetized": true}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_cauldron_magnetic"}},
+    {"when": {"bonded": false, "facing": "west", "magnetized": true}, "apply": {"model": "anvilcraftplasticraft:block/hardend_resin_cauldron_magnetic", "y": 90}}
   ]
 }

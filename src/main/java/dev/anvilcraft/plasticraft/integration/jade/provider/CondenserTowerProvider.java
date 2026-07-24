@@ -2,91 +2,108 @@ package dev.anvilcraft.plasticraft.integration.jade.provider;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
+import dev.dubhe.anvilcraft.util.UnitUtil;
+import net.minecraft.ChatFormatting;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidStack;
-import snownee.jade.api.Accessor;
+import snownee.jade.addon.universal.FluidStorageProvider;
 import snownee.jade.api.BlockAccessor;
+import snownee.jade.api.ITooltip;
+import snownee.jade.api.config.IPluginConfig;
 import snownee.jade.api.fluid.JadeFluidObject;
-import snownee.jade.api.ui.IDisplayHelper;
+import snownee.jade.api.ui.BoxStyle;
 import snownee.jade.api.ui.IElementHelper;
-import snownee.jade.api.view.ClientViewGroup;
-import snownee.jade.api.view.FluidView;
-import snownee.jade.api.view.IClientExtensionProvider;
-import snownee.jade.api.view.IServerExtensionProvider;
-import snownee.jade.api.view.ViewGroup;
 
-import java.util.ArrayList;
-import java.util.List;
-
-/** 将每个冷凝塔部件映射到核心储罐，并复用 Jade 的统一流体容器视图。 */
-public enum CondenserTowerProvider implements IServerExtensionProvider<CompoundTag>,
-    IClientExtensionProvider<CompoundTag, FluidView> {
-    INSTANCE;
-
+/** 把任意冷凝塔部件映射到主塔，并使用 Jade 的标准储罐进度条。 */
+public final class CondenserTowerProvider extends FluidStorageProvider.ForBlock {
+    public static final CondenserTowerProvider INSTANCE = new CondenserTowerProvider();
+    private static final String FLUID_ID = "plasticraft_fluid_id";
+    private static final String FLUID_AMOUNT = "plasticraft_fluid_amount";
     private static final String GAS_ID = "plasticraft_gas_id";
     private static final String GAS_AMOUNT = "plasticraft_gas_amount";
 
+    private CondenserTowerProvider() {
+    }
+
     @Override
-    public List<ViewGroup<CompoundTag>> getGroups(Accessor<?> accessor) {
+    public void appendServerData(CompoundTag tag, BlockAccessor accessor) {
         CondenserTowerBlockEntity tower = getTower(accessor);
-        if (tower == null) return List.of();
-
-        List<CompoundTag> views = new ArrayList<>();
+        if (tower == null) return;
         FluidStack fluid = tower.getStoredFluid();
-        JadeFluidObject fluidObject = fluid.isEmpty()
-            ? JadeFluidObject.of(Fluids.EMPTY, 0)
-            : JadeFluidObject.of(fluid.getFluid(), fluid.getAmount());
-        views.add(FluidView.writeDefault(fluidObject, CondenserTowerBlockEntity.CAPACITY));
-
-        ResourceLocation gas = tower.getGasId();
-        int gasAmount = tower.getGasAmount();
-        if (gas != null && gasAmount > 0) {
-            CompoundTag gasView = new CompoundTag();
-            gasView.putString(GAS_ID, gas.toString());
-            gasView.putInt(GAS_AMOUNT, gasAmount);
-            views.add(gasView);
+        if (!fluid.isEmpty()) {
+            tag.putString(FLUID_ID, BuiltInRegistries.FLUID.getKey(fluid.getFluid()).toString());
+            tag.putInt(FLUID_AMOUNT, fluid.getAmount());
         }
-        return List.of(new ViewGroup<>(views));
+        ResourceLocation gas = tower.getGasId();
+        if (gas != null && tower.getGasAmount() > 0) {
+            tag.putString(GAS_ID, gas.toString());
+            tag.putInt(GAS_AMOUNT, tower.getGasAmount());
+        }
     }
 
     @Override
-    public List<ClientViewGroup<FluidView>> getClientGroups(
-        Accessor<?> accessor,
-        List<ViewGroup<CompoundTag>> groups
-    ) {
-        return ClientViewGroup.map(groups, CondenserTowerProvider::readView, null);
+    public void appendTooltip(ITooltip tooltip, BlockAccessor accessor, IPluginConfig config) {
+        CompoundTag tag = accessor.getServerData();
+        IElementHelper helper = IElementHelper.get();
+        ResourceLocation gas = ResourceLocation.tryParse(tag.getString(GAS_ID));
+        int gasAmount = Math.clamp(tag.getInt(GAS_AMOUNT), 0, CondenserTowerBlockEntity.CAPACITY);
+        ResourceLocation fluidId = ResourceLocation.tryParse(tag.getString(FLUID_ID));
+        Fluid fluid = fluidId == null ? Fluids.EMPTY : BuiltInRegistries.FLUID.get(fluidId);
+        int amount = Math.clamp(tag.getInt(FLUID_AMOUNT), 0, CondenserTowerBlockEntity.CAPACITY);
+        FluidStack stack = fluid == null || fluid == Fluids.EMPTY ? FluidStack.EMPTY : new FluidStack(fluid, amount);
+        if (!stack.isEmpty() || gas == null || gasAmount <= 0) {
+            Component fluidName = stack.isEmpty()
+                ? Component.translatable("tooltip.anvilcraftplasticraft.jade.empty").withStyle(ChatFormatting.WHITE)
+                : stack.getHoverName().copy().withStyle(ChatFormatting.WHITE);
+            Component fluidText = fluidName.copy().append(Component.literal(
+                " " + UnitUtil.fluidUnit(amount, false)
+                    + " / " + UnitUtil.fluidUnit(CondenserTowerBlockEntity.CAPACITY, false)
+            ).withStyle(ChatFormatting.GRAY));
+            var fluidStyle = helper.progressStyle();
+            if (!stack.isEmpty()) {
+                fluidStyle.overlay(helper.fluid(JadeFluidObject.of(stack.getFluid(), stack.getAmount())));
+            }
+            tooltip.add(helper.progress(
+                (float) amount / CondenserTowerBlockEntity.CAPACITY,
+                fluidText,
+                fluidStyle,
+                BoxStyle.getNestedBox(),
+                true
+            ));
+        }
+
+        if (gas == null || gasAmount <= 0) return;
+        Component gasText = Component.translatable("jei.anvilcraftplasticraft.gas." + gas.getPath())
+            .withStyle(ChatFormatting.WHITE)
+            .append(Component.literal(
+                " " + UnitUtil.fluidUnit(gasAmount, false)
+                    + " / " + UnitUtil.fluidUnit(CondenserTowerBlockEntity.CAPACITY, false)
+            ).withStyle(ChatFormatting.GRAY));
+        tooltip.add(helper.progress(
+            (float) gasAmount / CondenserTowerBlockEntity.CAPACITY,
+            gasText,
+            helper.progressStyle(),
+            BoxStyle.getNestedBox(),
+            true
+        ));
     }
 
     @Override
-    public boolean shouldRequestData(Accessor<?> accessor) {
+    public boolean shouldRequestData(BlockAccessor accessor) {
         return getTower(accessor) != null;
     }
 
-    private static CondenserTowerBlockEntity getTower(Accessor<?> accessor) {
-        if (!(accessor instanceof BlockAccessor block)) return null;
+    private static CondenserTowerBlockEntity getTower(BlockAccessor accessor) {
         return CondenserTowerBlockEntity.getMain(
-            block.getLevel(),
-            block.getPosition(),
-            block.getBlockState()
+            accessor.getLevel(),
+            accessor.getPosition(),
+            accessor.getBlockState()
         );
-    }
-
-    private static FluidView readView(CompoundTag tag) {
-        if (!tag.contains(GAS_ID)) return FluidView.readDefault(tag);
-
-        ResourceLocation gas = ResourceLocation.tryParse(tag.getString(GAS_ID));
-        int amount = Math.max(0, tag.getInt(GAS_AMOUNT));
-        if (gas == null || amount == 0) return null;
-
-        FluidView view = new FluidView(IElementHelper.get().fluid(JadeFluidObject.of(Fluids.EMPTY, 0)));
-        view.fluidName = Component.translatable("jei.anvilcraftplasticraft.gas." + gas.getPath());
-        view.current = IDisplayHelper.get().humanReadableNumber(amount, "B", true);
-        view.max = IDisplayHelper.get().humanReadableNumber(CondenserTowerBlockEntity.CAPACITY, "B", true);
-        view.ratio = (float) amount / CondenserTowerBlockEntity.CAPACITY;
-        return view;
     }
 
     @Override

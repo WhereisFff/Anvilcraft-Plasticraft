@@ -1,0 +1,1115 @@
+package dev.anvilcraft.plasticraft.client.event;
+
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
+import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderHelper;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesivePathPlanner;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveSelectionManager;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveTransit;
+import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.network.AdhesiveBondEntityPacket;
+import dev.anvilcraft.plasticraft.network.AdhesiveBondEntitiesPacket;
+import dev.anvilcraft.plasticraft.network.AdhesiveClearSelectionPacket;
+import dev.anvilcraft.plasticraft.network.AdhesivePlacePatchPacket;
+import dev.anvilcraft.plasticraft.network.AdhesiveSelectEntityPacket;
+import net.minecraft.ChatFormatting;
+import net.minecraft.Util;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.item.FallingBlockEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.EventPriority;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.InputEvent;
+import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
+import org.lwjgl.glfw.GLFW;
+
+import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+/** 处理树脂桶的实体选择、服务端请求和带路径动画的世界内预览。 */
+@EventBusSubscriber(modid = AnvilcraftPlasticraft.MOD_ID, value = Dist.CLIENT)
+public final class AdhesiveSelectionClientHandler {
+    private static final long BOX_ENTER_MILLIS = 180L;
+    private static final long BOX_EXIT_MILLIS = 220L;
+    private static final long PATH_REFRESH_TICKS = 4L;
+    private static final double BOX_TUBE_WIDTH = 0.035D;
+    private static final double PATH_TUBE_WIDTH = 0.045D;
+    private static final double GRID_OUTWARD_OFFSET = 0.004D;
+    private static final double SELECTED_GRID_INSET = 0.004D;
+    private static final int WHITE = 0xFFFFFFFF;
+    private static final int GRID_WHITE = 0x70FFFFFF;
+    private static final int SAFE_GREEN = 0xFF40FF40;
+    private static final int WARNING_YELLOW = 0xFFFFFF40;
+    private static final int DANGER_RED = 0xFFFF4040;
+    private static final String OUT_OF_RANGE_MESSAGE =
+        "message.anvilcraftplasticraft.adhesive.out_of_range";
+    private static final String TOO_FAR_MESSAGE =
+        "message.anvilcraftplasticraft.adhesive.too_far_disconnected";
+    private static final long BLOCK_USE_HOLD_MILLIS = 500L;
+    private static final ClassValue<Boolean> INTERACTIVE_BLOCK_CLASSES = new ClassValue<>() {
+        @Override
+        protected Boolean computeValue(Class<?> type) {
+            return overridesBlockInteraction(type);
+        }
+    };
+
+    private static @Nullable UUID animatedUuid;
+    private static @Nullable Entity animatedEntity;
+    private static @Nullable AABB animatedBox;
+    private static long boxEnterStarted;
+    private static long boxExitStarted = -1L;
+    private static @Nullable PreviewKey cachedPreviewKey;
+    private static @Nullable AdhesivePathPlanner.Plan cachedPreview;
+    private static long cachedPreviewTick = Long.MIN_VALUE;
+    private static Vec3 cachedPreviewStart = Vec3.ZERO;
+    private static Vec3 cachedPreviewSupportStart = Vec3.ZERO;
+    private static @Nullable PendingBlockUse pendingBlockUse;
+
+    private AdhesiveSelectionClientHandler() {
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onUseKey(InputEvent.InteractionKeyMappingTriggered event) {
+        if (!event.isUseItem()) return;
+        Minecraft minecraft = Minecraft.getInstance();
+        LocalPlayer player = minecraft.player;
+        InteractionHand hand = event.getHand();
+        if (player == null
+            || minecraft.getConnection() == null
+            || !player.getItemInHand(hand).is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) {
+            return;
+        }
+
+        HitResult hitResult = minecraft.hitResult;
+        Entity selected = getSelectedEntity(minecraft);
+        if (pendingBlockUse != null) {
+            cancel(event);
+            return;
+        }
+        AdhesivePathPlanner.Plan interactionPreview = selected == null
+            ? null
+            : previewAtHit(minecraft, selected, player);
+        if (interactionPreview != null
+            && AdhesivePathPlanner.isOutOfRange(interactionPreview.directDistance())) {
+            clearSelection(minecraft, player);
+            if (AdhesivePathPlanner.exceedsBreakDistance(interactionPreview.directDistance())) {
+                displayRangeMessage(player, TOO_FAR_MESSAGE, "Too far away; selection disconnected");
+            } else {
+                displayRangeMessage(player, OUT_OF_RANGE_MESSAGE, "Too far away");
+            }
+            cancel(event);
+            return;
+        }
+        if (hitResult instanceof EntityHitResult entityHit) {
+            Entity target = entityHit.getEntity();
+            Direction hitFace = AdhesiveFaces.hitFace(target, entityHit.getLocation());
+            if (selected != null && selected != target) {
+                PacketDistributor.sendToServer(new AdhesiveBondEntitiesPacket(
+                    selected.getId(),
+                    target.getId(),
+                    hand,
+                    hitFace
+                ));
+                cancel(event);
+                return;
+            }
+            if (target != player
+                && !target.hasData(ModAttachments.ENTITY_ADHESION)
+                && !target.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
+                AdhesiveSelectionManager.select(player, target, hitFace);
+                beginSelectionAnimation(target);
+                PacketDistributor.sendToServer(new AdhesiveSelectEntityPacket(target.getId(), hand, hitFace));
+            }
+            cancel(event);
+            return;
+        }
+
+        if (selected != null
+            && hitResult instanceof BlockHitResult blockHit
+            && blockHit.getType() != HitResult.Type.MISS) {
+            PacketDistributor.sendToServer(new AdhesiveBondEntityPacket(
+                selected.getId(),
+                hand,
+                blockHit.getBlockPos(),
+                blockHit.getDirection()
+            ));
+            cancel(event);
+            return;
+        }
+
+        if (selected == null
+            && hitResult instanceof BlockHitResult blockHit
+            && blockHit.getType() != HitResult.Type.MISS) {
+            PendingBlockUse pending = new PendingBlockUse(
+                hand,
+                copy(blockHit),
+                Util.getMillis(),
+                !canInteractWithBlock(minecraft, player, blockHit)
+            );
+            pendingBlockUse = pending;
+            if (pending.patchPlaced()) placePatch(pending, player);
+            cancel(event);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onClientTick(ClientTickEvent.Post event) {
+        Minecraft minecraft = Minecraft.getInstance();
+        LocalPlayer player = minecraft.player;
+        if (player == null) {
+            pendingBlockUse = null;
+            resetAnimation();
+            return;
+        }
+        if (pendingBlockUse != null
+            && (minecraft.screen != null
+                || minecraft.getConnection() == null
+                || !player.getItemInHand(pendingBlockUse.hand())
+                    .is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()))) {
+            pendingBlockUse = null;
+        }
+        boolean holdingBucket = player.getMainHandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())
+            || player.getOffhandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get());
+        if (!holdingBucket) {
+            AdhesiveSelectionManager.clear(player);
+            startExitAnimation();
+            return;
+        }
+        Entity selected = getSelectedEntity(minecraft);
+        if (selected == null
+            || selected.hasData(ModAttachments.ENTITY_ADHESION)
+            || selected.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
+            AdhesiveSelectionManager.clear(player);
+            startExitAnimation();
+            return;
+        }
+        if (previewBreakDistanceExceeded(minecraft, selected, player)) {
+            clearSelection(minecraft, player);
+            displayRangeMessage(player, TOO_FAR_MESSAGE, "Too far away; selection disconnected");
+        }
+    }
+
+    @SubscribeEvent
+    public static void onKeyReleased(InputEvent.Key event) {
+        if (event.getAction() != GLFW.GLFW_RELEASE) return;
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.options.keyUse.matches(event.getKey(), event.getScanCode())) releasePendingBlockUse();
+    }
+
+    @SubscribeEvent
+    public static void onMouseReleased(InputEvent.MouseButton.Post event) {
+        if (event.getAction() != GLFW.GLFW_RELEASE) return;
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.options.keyUse.matchesMouse(event.getButton())) releasePendingBlockUse();
+    }
+
+    private static void releasePendingBlockUse() {
+        PendingBlockUse pending = pendingBlockUse;
+        pendingBlockUse = null;
+        if (pending == null) return;
+        Minecraft minecraft = Minecraft.getInstance();
+        LocalPlayer player = minecraft.player;
+        if (player == null
+            || minecraft.gameMode == null
+            || minecraft.getConnection() == null
+            || minecraft.screen != null
+            || !player.getItemInHand(pending.hand()).is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) {
+            return;
+        }
+
+        if (pending.patchPlaced()) return;
+        if (Util.getMillis() - pending.startedAtMillis() > BLOCK_USE_HOLD_MILLIS) {
+            placePatch(pending, player);
+            return;
+        }
+        net.minecraft.world.InteractionResult result = minecraft.gameMode.useItemOn(
+            player,
+            pending.hand(),
+            pending.hit()
+        );
+        if (result == net.minecraft.world.InteractionResult.PASS) {
+            placePatch(pending, player);
+        } else if (result.consumesAction()) {
+            player.swing(pending.hand());
+        }
+    }
+
+    private static void placePatch(PendingBlockUse pending, LocalPlayer player) {
+        PacketDistributor.sendToServer(new AdhesivePlacePatchPacket(
+            pending.hand(),
+            pending.hit().getBlockPos(),
+            pending.hit().getDirection()
+        ));
+        player.swing(pending.hand());
+    }
+
+    private static BlockHitResult copy(BlockHitResult hit) {
+        return new BlockHitResult(hit.getLocation(), hit.getDirection(), hit.getBlockPos(), hit.isInside());
+    }
+
+    private static boolean canInteractWithBlock(
+        Minecraft minecraft,
+        LocalPlayer player,
+        BlockHitResult hit
+    ) {
+        ClientLevel level = minecraft.level;
+        if (level == null) return false;
+        BlockPos pos = hit.getBlockPos();
+        boolean heldItemSuppressesBlock = player.isSecondaryUseActive()
+            && (!player.getMainHandItem().doesSneakBypassUse(level, pos, player)
+                || !player.getOffhandItem().doesSneakBypassUse(level, pos, player));
+        if (heldItemSuppressesBlock) return false;
+        return INTERACTIVE_BLOCK_CLASSES.get(level.getBlockState(pos).getBlock().getClass());
+    }
+
+    private static boolean overridesBlockInteraction(Class<?> blockClass) {
+        return declaresBeforeBlockBehaviour(
+            blockClass,
+            "useItemOn",
+            ItemStack.class,
+            BlockState.class,
+            Level.class,
+            BlockPos.class,
+            Player.class,
+            InteractionHand.class,
+            BlockHitResult.class
+        ) || declaresBeforeBlockBehaviour(
+            blockClass,
+            "useWithoutItem",
+            BlockState.class,
+            Level.class,
+            BlockPos.class,
+            Player.class,
+            BlockHitResult.class
+        );
+    }
+
+    private static boolean declaresBeforeBlockBehaviour(
+        Class<?> blockClass,
+        String methodName,
+        Class<?>... parameterTypes
+    ) {
+        for (Class<?> type = blockClass;
+             type != null && type != BlockBehaviour.class;
+             type = type.getSuperclass()) {
+            try {
+                type.getDeclaredMethod(methodName, parameterTypes);
+                return true;
+            } catch (NoSuchMethodException ignored) {
+                // 继续检查方块父类是否提供了实际交互。
+            }
+        }
+        return false;
+    }
+
+    @SubscribeEvent
+    public static void renderSelection(RenderLevelStageEvent event) {
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) return;
+        Minecraft minecraft = Minecraft.getInstance();
+        LocalPlayer player = minecraft.player;
+        ClientLevel level = minecraft.level;
+        if (player == null || level == null) return;
+
+        Entity selected = getSelectedEntity(minecraft);
+        if (selected != null) {
+            if (!selected.getUUID().equals(animatedUuid)) beginSelectionAnimation(selected);
+            animatedEntity = selected;
+            animatedBox = selected.getBoundingBox().inflate(0.006D);
+            boxExitStarted = -1L;
+        } else if (animatedEntity != null && animatedEntity.isAlive()) {
+            animatedBox = animatedEntity.getBoundingBox().inflate(0.006D);
+        }
+
+        long now = Util.getMillis();
+        float boxProgress = selectionBoxProgress(selected != null, now);
+        AdhesiveTransit transit = animatedEntity == null
+            ? null
+            : animatedEntity.getExistingDataOrNull(ModAttachments.ADHESIVE_TRANSIT.get());
+        Entity transitSupport = transit == null ? null : resolveTransitSupport(level, transit);
+        List<Vec3> path = List.of();
+        int pathColor = WHITE;
+        @Nullable AdhesivePathPlanner.Plan preview = null;
+        @Nullable Entity previewSupport = null;
+        @Nullable BlockPos previewSupportPos = null;
+        @Nullable Direction previewSupportFace = null;
+        if (selected != null
+            && minecraft.hitResult instanceof BlockHitResult blockHit
+            && blockHit.getType() != HitResult.Type.MISS) {
+            preview = previewPath(level, selected, player, blockHit);
+            previewSupportPos = blockHit.getBlockPos();
+            previewSupportFace = blockHit.getDirection();
+            path = previewRenderPath(
+                selected,
+                preview,
+                null,
+                blockHit.getBlockPos(),
+                blockHit.getDirection()
+            );
+            pathColor = previewPathColor(preview);
+        } else if (selected != null
+            && minecraft.hitResult instanceof EntityHitResult entityHit
+            && entityHit.getEntity() != selected) {
+            previewSupport = entityHit.getEntity();
+            previewSupportFace = AdhesiveFaces.hitFace(previewSupport, entityHit.getLocation());
+            preview = previewPath(level, selected, player, previewSupport, previewSupportFace);
+            path = previewRenderPath(selected, preview, previewSupport, null, previewSupportFace);
+            pathColor = previewPathColor(preview);
+        } else if (transit != null) {
+            path = transitRenderPath(animatedEntity, transit, transitSupport);
+        }
+
+        PoseStack pose = event.getPoseStack();
+        Vec3 camera = event.getCamera().getPosition();
+        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
+        pose.pushPose();
+        pose.translate(-camera.x, -camera.y, -camera.z);
+        if (animatedBox != null && boxProgress > 0.0F) {
+            renderAnimatedBox(pose, buffers, animatedBox, boxProgress);
+        }
+        if (selected != null) {
+            Direction selectedWorldFace = AdhesiveFaces.worldFace(
+                selected,
+                AdhesiveSelectionManager.getSelectedFace(player)
+            );
+            renderFaceGrid(pose, buffers, selected.getBoundingBox(), selectedWorldFace);
+            renderFaceGrid(
+                pose,
+                buffers,
+                selected.getBoundingBox(),
+                selectedWorldFace,
+                -SELECTED_GRID_INSET
+            );
+        }
+        if (!path.isEmpty()) {
+            renderPath(pose, buffers, path, pathColor);
+        }
+        if (preview != null && previewSupportFace != null) {
+            renderPreviewEndpoint(
+                pose,
+                buffers,
+                selected,
+                preview,
+                previewSupport,
+                previewSupportPos,
+                previewSupportFace
+            );
+        } else if (transit != null && animatedEntity != null) {
+            renderTransitEndpoint(pose, buffers, animatedEntity, transit, transitSupport);
+        }
+        pose.popPose();
+
+        if (selected == null && transit == null && boxProgress <= 0.0F) resetAnimation();
+    }
+
+    private static AdhesivePathPlanner.Plan previewPath(
+        ClientLevel level,
+        Entity selected,
+        LocalPlayer player,
+        BlockHitResult hit
+    ) {
+        Direction selectedFace = AdhesiveSelectionManager.getSelectedFace(player);
+        PreviewKey key = new PreviewKey(
+            selected.getUUID(),
+            null,
+            hit.getBlockPos(),
+            hit.getDirection(),
+            selectedFace
+        );
+        long gameTime = level.getGameTime();
+        if (!key.equals(cachedPreviewKey)
+            || cachedPreview == null
+            || gameTime - cachedPreviewTick >= PATH_REFRESH_TICKS
+            || selected.position().distanceToSqr(cachedPreviewStart) > 0.0625D) {
+            cachedPreview = AdhesivePathPlanner.plan(
+                level,
+                selected,
+                player,
+                hit.getBlockPos(),
+                hit.getDirection(),
+                selectedFace
+            );
+            cachedPreviewKey = key;
+            cachedPreviewTick = gameTime;
+            cachedPreviewStart = selected.position();
+        }
+        return cachedPreview;
+    }
+
+    private static @Nullable AdhesivePathPlanner.Plan previewAtHit(
+        Minecraft minecraft,
+        Entity selected,
+        LocalPlayer player
+    ) {
+        ClientLevel level = minecraft.level;
+        if (level == null) return null;
+        if (minecraft.hitResult instanceof BlockHitResult blockHit
+            && blockHit.getType() != HitResult.Type.MISS) {
+            return previewPath(level, selected, player, blockHit);
+        }
+        if (minecraft.hitResult instanceof EntityHitResult entityHit
+            && entityHit.getEntity() != selected) {
+            Entity support = entityHit.getEntity();
+            Direction supportFace = AdhesiveFaces.hitFace(support, entityHit.getLocation());
+            return previewPath(level, selected, player, support, supportFace);
+        }
+        return null;
+    }
+
+    private static boolean previewBreakDistanceExceeded(
+        Minecraft minecraft,
+        Entity selected,
+        LocalPlayer player
+    ) {
+        AdhesivePathPlanner.Plan preview = previewAtHit(minecraft, selected, player);
+        return preview != null && AdhesivePathPlanner.exceedsBreakDistance(preview.directDistance());
+    }
+
+    private static void clearSelection(Minecraft minecraft, LocalPlayer player) {
+        AdhesiveSelectionManager.clear(player);
+        if (minecraft.getConnection() != null) {
+            PacketDistributor.sendToServer(new AdhesiveClearSelectionPacket());
+        }
+        startExitAnimation();
+    }
+
+    private static void displayRangeMessage(LocalPlayer player, String translationKey, String fallback) {
+        player.displayClientMessage(
+            Component.translatableWithFallback(translationKey, fallback).withStyle(ChatFormatting.RED),
+            true
+        );
+    }
+
+    private static int previewPathColor(AdhesivePathPlanner.Plan preview) {
+        if (!preview.valid()) {
+            return DANGER_RED;
+        }
+        return preview.directDistance() <= AdhesivePathPlanner.SAFE_DISTANCE
+            ? SAFE_GREEN
+            : WARNING_YELLOW;
+    }
+
+    private static AdhesivePathPlanner.Plan previewPath(
+        ClientLevel level,
+        Entity selected,
+        LocalPlayer player,
+        Entity supportEntity,
+        Direction supportFace
+    ) {
+        Direction selectedFace = AdhesiveSelectionManager.getSelectedFace(player);
+        PreviewKey key = new PreviewKey(
+            selected.getUUID(),
+            supportEntity.getUUID(),
+            BlockPos.ZERO,
+            supportFace,
+            selectedFace
+        );
+        long gameTime = level.getGameTime();
+        if (!key.equals(cachedPreviewKey)
+            || cachedPreview == null
+            || gameTime - cachedPreviewTick >= PATH_REFRESH_TICKS
+            || selected.position().distanceToSqr(cachedPreviewStart) > 0.0625D
+            || supportEntity.position().distanceToSqr(cachedPreviewSupportStart) > 0.0625D) {
+            cachedPreview = AdhesivePathPlanner.planToEntity(
+                level,
+                selected,
+                player,
+                supportEntity,
+                supportFace,
+                selectedFace
+            );
+            cachedPreviewKey = key;
+            cachedPreviewTick = gameTime;
+            cachedPreviewStart = selected.position();
+            cachedPreviewSupportStart = supportEntity.position();
+        }
+        return cachedPreview;
+    }
+
+    private static List<Vec3> appendSurfaceEndpoint(List<Vec3> path, BlockPos supportPos, Direction face) {
+        if (path.isEmpty()) return path;
+        Vec3 surface = faceCenter(supportPos, face);
+        if (path.getLast().distanceToSqr(surface) <= 0.0025D) return path;
+        List<Vec3> result = new ArrayList<>(path.size() + 1);
+        result.addAll(path);
+        result.add(surface);
+        return result;
+    }
+
+    private static List<Vec3> previewRenderPath(
+        Entity entity,
+        AdhesivePathPlanner.Plan preview,
+        @Nullable Entity supportEntity,
+        @Nullable BlockPos supportPos,
+        Direction face
+    ) {
+        if (entity instanceof AbstractPlasticEntity plastic && preview.targetOrientation() != null) {
+            List<Vec3> path = plasticFacePath(
+                plastic,
+                preview.points(),
+                plastic.getOrientation(),
+                preview.targetOrientation(),
+                preview.sourceFace()
+            );
+            return appendEndpoint(path, supportEntity, supportPos, face);
+        }
+        return appendEndpoint(preview.points(), supportEntity, supportPos, face);
+    }
+
+    private static List<Vec3> transitRenderPath(
+        @Nullable Entity entity,
+        AdhesiveTransit transit,
+        @Nullable Entity supportEntity
+    ) {
+        List<Vec3> adjustedPath = offsetPath(transit.path(), transit.supportMovement(supportEntity));
+        if (entity instanceof AbstractPlasticEntity plastic && transit.plastic()) {
+            List<Vec3> path = plasticFacePath(
+                plastic,
+                adjustedPath,
+                PlasticEntityOrientation.unpack(transit.startOrientation()),
+                PlasticEntityOrientation.unpack(transit.targetOrientation()),
+                transit.sourceFace()
+            );
+            return appendEndpoint(
+                path,
+                supportEntity,
+                transit.hasEntityTarget() ? null : transit.supportPos(),
+                transit.attachmentFace()
+            );
+        }
+        return appendEndpoint(
+            adjustedPath,
+            supportEntity,
+            transit.hasEntityTarget() ? null : transit.supportPos(),
+            transit.attachmentFace()
+        );
+    }
+
+    private static List<Vec3> plasticFacePath(
+        AbstractPlasticEntity entity,
+        List<Vec3> entityPath,
+        PlasticEntityOrientation startOrientation,
+        PlasticEntityOrientation targetOrientation,
+        Direction selectedFace
+    ) {
+        if (entityPath.size() < 2) return entityPath;
+        double length = pathLength(entityPath);
+        int samples = Math.clamp((int) Math.ceil(length * 4.0D), 12, 96);
+        List<Vec3> result = new ArrayList<>(samples + 1);
+        for (int index = 0; index <= samples; index++) {
+            double rawProgress = (double) index / samples;
+            double movementProgress = smoothstep(rawProgress);
+            double rotationProgress = smoothstep(Math.clamp((rawProgress - 0.72D) / 0.28D, 0.0D, 1.0D));
+            Vec3 position = positionAt(entityPath, movementProgress);
+            Vec3 faceOffset = PlasticEntityRenderTransforms.faceCenterOffset(
+                entity,
+                selectedFace,
+                startOrientation,
+                targetOrientation,
+                (float) rotationProgress
+            );
+            result.add(position.add(faceOffset));
+        }
+        return result;
+    }
+
+    private static List<Vec3> appendEndpoint(
+        List<Vec3> path,
+        @Nullable Entity supportEntity,
+        @Nullable BlockPos supportPos,
+        Direction face
+    ) {
+        if (supportEntity != null) return appendSurfaceEndpoint(path, supportEntity.getBoundingBox(), face);
+        return supportPos == null ? path : appendSurfaceEndpoint(path, supportPos, face);
+    }
+
+    private static List<Vec3> appendSurfaceEndpoint(List<Vec3> path, AABB box, Direction face) {
+        if (path.isEmpty()) return path;
+        Vec3 surface = boxFaceCenter(box, face);
+        if (path.getLast().distanceToSqr(surface) <= 0.0025D) return path;
+        List<Vec3> result = new ArrayList<>(path.size() + 1);
+        result.addAll(path);
+        result.add(surface);
+        return result;
+    }
+
+    private static List<Vec3> offsetPath(List<Vec3> path, Vec3 offset) {
+        if (offset.equals(Vec3.ZERO)) return path;
+        List<Vec3> result = new ArrayList<>(path.size());
+        for (Vec3 point : path) result.add(point.add(offset));
+        return result;
+    }
+
+    private static double pathLength(List<Vec3> path) {
+        double length = 0.0D;
+        for (int index = 1; index < path.size(); index++) {
+            length += path.get(index - 1).distanceTo(path.get(index));
+        }
+        return length;
+    }
+
+    private static Vec3 positionAt(List<Vec3> path, double progress) {
+        if (progress <= 0.0D) return path.getFirst();
+        if (progress >= 1.0D) return path.getLast();
+        double length = pathLength(path);
+        if (length <= 1.0E-6D) return path.getLast();
+        double target = length * progress;
+        double traversed = 0.0D;
+        for (int index = 1; index < path.size(); index++) {
+            Vec3 from = path.get(index - 1);
+            Vec3 to = path.get(index);
+            double segment = from.distanceTo(to);
+            if (traversed + segment >= target) {
+                double local = segment <= 1.0E-6D ? 1.0D : (target - traversed) / segment;
+                return from.lerp(to, local);
+            }
+            traversed += segment;
+        }
+        return path.getLast();
+    }
+
+    private static double smoothstep(double progress) {
+        return progress * progress * (3.0D - 2.0D * progress);
+    }
+
+    private static void renderAnimatedBox(
+        PoseStack pose,
+        MultiBufferSource.BufferSource buffers,
+        AABB box,
+        float progress
+    ) {
+        Vec3[] corners = {
+            new Vec3(box.minX, box.minY, box.minZ),
+            new Vec3(box.maxX, box.minY, box.minZ),
+            new Vec3(box.maxX, box.minY, box.maxZ),
+            new Vec3(box.minX, box.minY, box.maxZ),
+            new Vec3(box.minX, box.maxY, box.minZ),
+            new Vec3(box.maxX, box.maxY, box.minZ),
+            new Vec3(box.maxX, box.maxY, box.maxZ),
+            new Vec3(box.minX, box.maxY, box.maxZ)
+        };
+        int[][] edges = {
+            {0, 1}, {1, 2}, {2, 3}, {3, 0},
+            {4, 5}, {5, 6}, {6, 7}, {7, 4},
+            {0, 4}, {1, 5}, {2, 6}, {3, 7}
+        };
+        float eased = progress * progress * (3.0F - 2.0F * progress);
+        for (int[] edge : edges) {
+            Vec3 from = corners[edge[0]];
+            Vec3 to = corners[edge[1]];
+            Vec3 center = from.lerp(to, 0.5D);
+            Vec3 animatedFrom = center.lerp(from, eased);
+            Vec3 animatedTo = center.lerp(to, eased);
+            renderTube(pose, buffers, List.of(animatedFrom, animatedTo), WHITE, BOX_TUBE_WIDTH);
+        }
+    }
+
+    private static void renderPath(
+        PoseStack pose,
+        MultiBufferSource.BufferSource buffers,
+        List<Vec3> points,
+        int color
+    ) {
+        if (points.size() < 2) return;
+        renderTube(pose, buffers, resamplePath(points), color, PATH_TUBE_WIDTH);
+    }
+
+    private static void renderTube(
+        PoseStack pose,
+        MultiBufferSource.BufferSource buffers,
+        List<Vec3> points,
+        int color,
+        double width
+    ) {
+        if (points.size() < 2) return;
+        RenderType renderType = RenderType.debugQuads();
+        VertexConsumer consumer = buffers.getBuffer(renderType);
+        Vec3[] previousRing = null;
+        Vec3 previousSide = null;
+        for (int index = 0; index < points.size(); index++) {
+            Vec3 tangent;
+            if (index == 0) {
+                tangent = points.get(1).subtract(points.getFirst()).normalize();
+            } else if (index == points.size() - 1) {
+                tangent = points.getLast().subtract(points.get(index - 1)).normalize();
+            } else {
+                tangent = points.get(index + 1).subtract(points.get(index - 1)).normalize();
+            }
+            if (tangent.lengthSqr() < 1.0E-8D) continue;
+            Vec3 side;
+            if (previousSide == null) {
+                Vec3 reference = Math.abs(tangent.y) < 0.9D
+                    ? new Vec3(0.0D, 1.0D, 0.0D)
+                    : new Vec3(1.0D, 0.0D, 0.0D);
+                side = tangent.cross(reference).normalize();
+            } else {
+                side = previousSide.subtract(tangent.scale(previousSide.dot(tangent)));
+                if (side.lengthSqr() < 1.0E-8D) {
+                    Vec3 reference = Math.abs(tangent.y) < 0.9D
+                        ? new Vec3(0.0D, 1.0D, 0.0D)
+                        : new Vec3(1.0D, 0.0D, 0.0D);
+                    side = tangent.cross(reference);
+                }
+                side = side.normalize();
+            }
+            previousSide = side;
+            side = side.scale(width * 0.5D);
+            Vec3 up = tangent.cross(side).normalize().scale(width * 0.5D);
+            Vec3 point = points.get(index);
+            Vec3[] ring = {
+                point.add(side).add(up),
+                point.add(side).subtract(up),
+                point.subtract(side).subtract(up),
+                point.subtract(side).add(up)
+            };
+            if (previousRing != null) {
+                for (int face = 0; face < 4; face++) {
+                    int next = (face + 1) & 3;
+                    addQuad(pose, consumer, previousRing[face], previousRing[next], ring[next], ring[face], color);
+                }
+            } else {
+                addQuad(pose, consumer, ring[3], ring[2], ring[1], ring[0], color);
+            }
+            previousRing = ring;
+        }
+        if (previousRing != null) {
+            addQuad(pose, consumer, previousRing[0], previousRing[1], previousRing[2], previousRing[3], color);
+        }
+        buffers.endBatch(renderType);
+    }
+
+    private static void addQuad(
+        PoseStack pose,
+        VertexConsumer consumer,
+        Vec3 first,
+        Vec3 second,
+        Vec3 third,
+        Vec3 fourth,
+        int color
+    ) {
+        consumer.addVertex(pose.last().pose(), (float) first.x, (float) first.y, (float) first.z).setColor(color);
+        consumer.addVertex(pose.last().pose(), (float) second.x, (float) second.y, (float) second.z).setColor(color);
+        consumer.addVertex(pose.last().pose(), (float) third.x, (float) third.y, (float) third.z).setColor(color);
+        consumer.addVertex(pose.last().pose(), (float) fourth.x, (float) fourth.y, (float) fourth.z).setColor(color);
+    }
+
+    private static List<Vec3> resamplePath(List<Vec3> path) {
+        if (path.size() < 2) return path;
+        double length = pathLength(path);
+        int samples = Math.clamp((int) Math.ceil(length * 12.0D), 12, 192);
+        List<Vec3> result = new ArrayList<>(samples + 1);
+        for (int index = 0; index <= samples; index++) {
+            result.add(positionAt(path, (double) index / samples));
+        }
+        return result;
+    }
+
+    private static void renderPreviewEndpoint(
+        PoseStack pose,
+        MultiBufferSource.BufferSource buffers,
+        Entity selected,
+        AdhesivePathPlanner.Plan preview,
+        @Nullable Entity supportEntity,
+        @Nullable BlockPos supportPos,
+        Direction supportFace
+    ) {
+        AABB endpointBox = supportEntity != null
+            ? supportEntity.getBoundingBox().inflate(0.006D)
+            : selected instanceof FallingBlockEntity
+                ? new AABB(preview.occupiedPos()).inflate(0.006D)
+                : selected.getBoundingBox().move(
+                    preview.targetPosition().subtract(selected.position())
+                ).inflate(0.006D);
+        renderAnimatedBox(pose, buffers, endpointBox, 1.0F);
+        if (supportEntity != null) {
+            renderFaceGrid(pose, buffers, supportEntity.getBoundingBox(), supportFace);
+        } else if (supportPos != null) {
+            renderFaceGrid(pose, buffers, new AABB(supportPos), supportFace);
+        }
+        if (preview.valid() && selected instanceof FallingBlockEntity fallingBlock) {
+            renderTargetGhost(
+                pose,
+                buffers,
+                fallingBlock,
+                preview.targetPosition(),
+                preview.targetOrientation()
+            );
+        }
+    }
+
+    private static void renderTransitEndpoint(
+        PoseStack pose,
+        MultiBufferSource.BufferSource buffers,
+        Entity movingEntity,
+        AdhesiveTransit transit,
+        @Nullable Entity supportEntity
+    ) {
+        AABB endpointBox = supportEntity != null
+            ? supportEntity.getBoundingBox().inflate(0.006D)
+            : movingEntity instanceof FallingBlockEntity
+                ? new AABB(transit.supportPos().relative(transit.attachmentFace())).inflate(0.006D)
+                : movingEntity.getBoundingBox().move(
+                    transit.targetPosition(supportEntity).subtract(movingEntity.position())
+                ).inflate(0.006D);
+        renderAnimatedBox(pose, buffers, endpointBox, 1.0F);
+        if (supportEntity != null) {
+            renderFaceGrid(pose, buffers, supportEntity.getBoundingBox(), transit.attachmentFace());
+        } else {
+            renderFaceGrid(pose, buffers, new AABB(transit.supportPos()), transit.attachmentFace());
+        }
+        if (movingEntity instanceof FallingBlockEntity fallingBlock) {
+            PlasticEntityOrientation orientation = transit.plastic()
+                ? PlasticEntityOrientation.unpack(transit.targetOrientation())
+                : null;
+            renderTargetGhost(
+                pose,
+                buffers,
+                fallingBlock,
+                transit.targetPosition(supportEntity),
+                orientation
+            );
+        }
+    }
+
+    private static void renderTargetGhost(
+        PoseStack pose,
+        MultiBufferSource.BufferSource buffers,
+        FallingBlockEntity entity,
+        Vec3 targetPosition,
+        @Nullable PlasticEntityOrientation orientation
+    ) {
+        pose.pushPose();
+        pose.translate(targetPosition.x, targetPosition.y, targetPosition.z);
+        if (entity instanceof AbstractPlasticEntity plastic && orientation != null) {
+            PlasticEntityRenderTransforms.applyPreview(pose, plastic, orientation);
+            PlasticEntityRenderHelper.renderHammerPreviewModel(
+                plastic,
+                Minecraft.getInstance().getBlockRenderer(),
+                pose,
+                buffers
+            );
+        } else {
+            pose.translate(-0.5D, 0.0D, -0.5D);
+            PlasticEntityRenderHelper.renderFallingPreviewModel(
+                entity,
+                Minecraft.getInstance().getBlockRenderer(),
+                pose,
+                buffers
+            );
+        }
+        pose.popPose();
+    }
+
+    private static void renderFaceGrid(
+        PoseStack pose,
+        MultiBufferSource.BufferSource buffers,
+        AABB box,
+        Direction face
+    ) {
+        renderFaceGrid(pose, buffers, box, face, GRID_OUTWARD_OFFSET);
+    }
+
+    private static void renderFaceGrid(
+        PoseStack pose,
+        MultiBufferSource.BufferSource buffers,
+        AABB box,
+        Direction face,
+        double normalOffset
+    ) {
+        RenderType renderType = RenderType.debugQuads();
+        VertexConsumer consumer = buffers.getBuffer(renderType);
+        for (int first = 0; first < 4; first++) {
+            for (int second = 0; second < 4; second++) {
+                if (((first + second) & 1) != 0) continue;
+                addGridCell(pose, consumer, box, face, normalOffset, first, second);
+            }
+        }
+        buffers.endBatch(renderType);
+    }
+
+    private static void addGridCell(
+        PoseStack pose,
+        VertexConsumer consumer,
+        AABB box,
+        Direction face,
+        double normalOffset,
+        int first,
+        int second
+    ) {
+        double firstMin;
+        double firstMax;
+        double secondMin;
+        double secondMax;
+        Vec3 a;
+        Vec3 b;
+        Vec3 c;
+        Vec3 d;
+        switch (face.getAxis()) {
+            case X -> {
+                firstMin = box.minY + box.getYsize() * first / 4.0D;
+                firstMax = box.minY + box.getYsize() * (first + 1) / 4.0D;
+                secondMin = box.minZ + box.getZsize() * second / 4.0D;
+                secondMax = box.minZ + box.getZsize() * (second + 1) / 4.0D;
+                double x = (face == Direction.EAST ? box.maxX : box.minX)
+                    + face.getStepX() * normalOffset;
+                a = new Vec3(x, firstMin, secondMin);
+                b = new Vec3(x, firstMax, secondMin);
+                c = new Vec3(x, firstMax, secondMax);
+                d = new Vec3(x, firstMin, secondMax);
+            }
+            case Y -> {
+                firstMin = box.minX + box.getXsize() * first / 4.0D;
+                firstMax = box.minX + box.getXsize() * (first + 1) / 4.0D;
+                secondMin = box.minZ + box.getZsize() * second / 4.0D;
+                secondMax = box.minZ + box.getZsize() * (second + 1) / 4.0D;
+                double y = (face == Direction.UP ? box.maxY : box.minY)
+                    + face.getStepY() * normalOffset;
+                a = new Vec3(firstMin, y, secondMin);
+                b = new Vec3(firstMax, y, secondMin);
+                c = new Vec3(firstMax, y, secondMax);
+                d = new Vec3(firstMin, y, secondMax);
+            }
+            case Z -> {
+                firstMin = box.minX + box.getXsize() * first / 4.0D;
+                firstMax = box.minX + box.getXsize() * (first + 1) / 4.0D;
+                secondMin = box.minY + box.getYsize() * second / 4.0D;
+                secondMax = box.minY + box.getYsize() * (second + 1) / 4.0D;
+                double z = (face == Direction.SOUTH ? box.maxZ : box.minZ)
+                    + face.getStepZ() * normalOffset;
+                a = new Vec3(firstMin, secondMin, z);
+                b = new Vec3(firstMax, secondMin, z);
+                c = new Vec3(firstMax, secondMax, z);
+                d = new Vec3(firstMin, secondMax, z);
+            }
+            default -> throw new IllegalStateException("Unexpected direction axis");
+        }
+        addQuad(pose, consumer, a, b, c, d, GRID_WHITE);
+    }
+
+    private static float selectionBoxProgress(boolean active, long now) {
+        if (animatedBox == null) return 0.0F;
+        if (active) {
+            return Math.clamp((now - boxEnterStarted) / (float) BOX_ENTER_MILLIS, 0.0F, 1.0F);
+        }
+        if (boxExitStarted < 0L) boxExitStarted = now;
+        return 1.0F - Math.clamp((now - boxExitStarted) / (float) BOX_EXIT_MILLIS, 0.0F, 1.0F);
+    }
+
+    private static void beginSelectionAnimation(Entity target) {
+        animatedUuid = target.getUUID();
+        animatedEntity = target;
+        animatedBox = target.getBoundingBox().inflate(0.006D);
+        boxEnterStarted = Util.getMillis();
+        boxExitStarted = -1L;
+        cachedPreviewKey = null;
+        cachedPreview = null;
+    }
+
+    private static void startExitAnimation() {
+        if (animatedBox != null && boxExitStarted < 0L) boxExitStarted = Util.getMillis();
+    }
+
+    private static void resetAnimation() {
+        animatedUuid = null;
+        animatedEntity = null;
+        animatedBox = null;
+        boxExitStarted = -1L;
+        cachedPreviewKey = null;
+        cachedPreview = null;
+        cachedPreviewTick = Long.MIN_VALUE;
+        cachedPreviewSupportStart = Vec3.ZERO;
+    }
+
+    private static void cancel(InputEvent.InteractionKeyMappingTriggered event) {
+        event.setSwingHand(false);
+        event.setCanceled(true);
+    }
+
+    private static @Nullable Entity getSelectedEntity(Minecraft minecraft) {
+        LocalPlayer player = minecraft.player;
+        ClientLevel level = minecraft.level;
+        if (player == null || level == null) return null;
+        UUID selectedUuid = AdhesiveSelectionManager.getSelectedUuid(player);
+        int selectedId = AdhesiveSelectionManager.getSelectedEntityId(player);
+        if (selectedUuid == null || selectedId < 0) return null;
+        Entity selected = level.getEntity(selectedId);
+        return selected != null && selectedUuid.equals(selected.getUUID()) && selected.isAlive()
+            ? selected
+            : null;
+    }
+
+    private static Vec3 faceCenter(BlockPos pos, Direction face) {
+        return Vec3.atCenterOf(pos).add(
+            face.getStepX() * 0.501D,
+            face.getStepY() * 0.501D,
+            face.getStepZ() * 0.501D
+        );
+    }
+
+    private static Vec3 boxFaceCenter(AABB box, Direction face) {
+        Vec3 center = box.getCenter();
+        return switch (face.getAxis()) {
+            case X -> new Vec3(face == Direction.EAST ? box.maxX : box.minX, center.y, center.z);
+            case Y -> new Vec3(center.x, face == Direction.UP ? box.maxY : box.minY, center.z);
+            case Z -> new Vec3(center.x, center.y, face == Direction.SOUTH ? box.maxZ : box.minZ);
+        };
+    }
+
+    private static @Nullable Entity resolveTransitSupport(ClientLevel level, AdhesiveTransit transit) {
+        if (!transit.hasEntityTarget()) return null;
+        Entity support = level.getEntity(transit.supportEntityId());
+        return support != null
+            && transit.supportEntityUuid().filter(support.getUUID()::equals).isPresent()
+            ? support
+            : null;
+    }
+
+    private record PreviewKey(
+        UUID entityUuid,
+        @Nullable UUID supportEntityUuid,
+        BlockPos supportPos,
+        Direction attachmentFace,
+        Direction selectedFace
+    ) {
+        private PreviewKey {
+            supportPos = supportPos.immutable();
+        }
+    }
+
+    private record PendingBlockUse(
+        InteractionHand hand,
+        BlockHitResult hit,
+        long startedAtMillis,
+        boolean patchPlaced
+    ) {
+    }
+}

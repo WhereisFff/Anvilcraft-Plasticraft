@@ -26,7 +26,8 @@ public class HardenedResinAnvilBlock extends AbstractPlasticEntityBlock<Hardened
         super(properties);
         this.registerDefaultState(this.defaultBlockState()
             .setValue(FACING, Direction.NORTH)
-            .setValue(MAGNETIZED, false));
+            .setValue(MAGNETIZED, false)
+            .setValue(BONDED, false));
     }
 
     @Override
@@ -65,6 +66,7 @@ public class HardenedResinAnvilBlock extends AbstractPlasticEntityBlock<Hardened
         InteractionHand hand,
         BlockHitResult hit
     ) {
+        if (state.getValue(BONDED)) return super.use(state, level, pos, player, hand, hit);
         // 通过命令放置的展示方块不应意外打开皇家铁砧菜单。
         return InteractionResult.PASS;
     }

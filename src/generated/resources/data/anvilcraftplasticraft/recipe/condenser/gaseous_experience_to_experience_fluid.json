@@ -1,0 +1,7 @@
+{
+  "type": "anvilcraftplasticraft:condenser",
+  "consume": 250,
+  "fluid": "anvilcraft:exp_fluid",
+  "gas": "anvilcraftplasticraft:gaseous_experience",
+  "produce": 250
+}

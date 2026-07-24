@@ -21,6 +21,7 @@ import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeType;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -32,6 +33,7 @@ import java.util.stream.Collectors;
 @JeiPlugin
 public final class PlasticraftJeiPlugin implements IModPlugin {
     private static final ResourceLocation UID = AnvilcraftPlasticraft.of("jei_plugin");
+    private static final String ENHANCED_RECIPE_PREFIX = "jei/enhanced/";
     public static final mezz.jei.api.recipe.RecipeType<RecipeHolder<PlasmaJetBlastingRecipe>> PLASMA_JET_BLASTING =
         mezz.jei.api.recipe.RecipeType.createRecipeHolderType(
             AnvilcraftPlasticraft.of("plasma_jet_blasting")
@@ -86,14 +88,31 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
 
     @Override
     public void registerRecipes(IRecipeRegistration registration) {
+        List<RecipeHolder<PlasmaJetBlastingRecipe>> plasmaRecipes =
+            JeiRecipeUtil.getRecipeHoldersFromType(ModRecipeTypes.PLASMA_JET_BLASTING_TYPE.get());
+        List<RecipeHolder<PlasmaJetBlastingRecipe>> displayRecipes = new ArrayList<>(plasmaRecipes.size() * 2);
+        for (RecipeHolder<PlasmaJetBlastingRecipe> holder : plasmaRecipes) {
+            displayRecipes.add(holder);
+            displayRecipes.add(new RecipeHolder<>(
+                ResourceLocation.fromNamespaceAndPath(
+                    holder.id().getNamespace(),
+                    ENHANCED_RECIPE_PREFIX + holder.id().getPath()
+                ),
+                holder.value()
+            ));
+        }
         registration.addRecipes(
             PLASMA_JET_BLASTING,
-            JeiRecipeUtil.getRecipeHoldersFromType(ModRecipeTypes.PLASMA_JET_BLASTING_TYPE.get())
+            displayRecipes
         );
         registration.addRecipes(
             CONDENSER,
             JeiRecipeUtil.getRecipeHoldersFromType(ModRecipeTypes.CONDENSER_TYPE.get())
         );
+    }
+
+    static boolean isEnhancedRecipe(RecipeHolder<PlasmaJetBlastingRecipe> holder) {
+        return holder.id().getPath().startsWith(ENHANCED_RECIPE_PREFIX);
     }
 
     @Override

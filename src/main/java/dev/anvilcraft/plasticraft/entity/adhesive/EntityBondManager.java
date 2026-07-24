@@ -1,0 +1,363 @@
+package dev.anvilcraft.plasticraft.entity.adhesive;
+
+import dev.anvilcraft.plasticraft.init.ModAttachments;
+import net.minecraft.core.Direction;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
+
+import javax.annotation.Nullable;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+/** 维护实体粘接组的面占用、组基准和逐刻刚性约束。 */
+public final class EntityBondManager {
+    private EntityBondManager() {
+    }
+
+    public static @Nullable EntityBondState get(Entity entity) {
+        return entity.getExistingDataOrNull(ModAttachments.ENTITY_BONDS.get());
+    }
+
+    public static boolean hasBonds(Entity entity) {
+        EntityBondState state = get(entity);
+        return state != null && !state.links().isEmpty();
+    }
+
+    public static boolean isFaceOccupied(Entity entity, Direction storedFace) {
+        EntityBondState state = get(entity);
+        return state != null && state.linkAt(storedFace) != null;
+    }
+
+    public static List<Entity> component(Level level, Entity start) {
+        List<Entity> result = new ArrayList<>();
+        Set<UUID> visited = new HashSet<>();
+        ArrayDeque<Entity> pending = new ArrayDeque<>();
+        pending.add(start);
+        while (!pending.isEmpty()) {
+            Entity current = pending.removeFirst();
+            if (!current.isAlive() || !visited.add(current.getUUID())) continue;
+            result.add(current);
+            EntityBondState state = get(current);
+            if (state == null) continue;
+            for (EntityBondLink link : state.links()) {
+                Entity other = resolve(level, link);
+                if (other != null && !visited.contains(other.getUUID())) pending.addLast(other);
+            }
+        }
+        return result;
+    }
+
+    public static void prepareLeader(ServerLevel level, Entity leader) {
+        List<Entity> component = component(level, leader);
+        for (Entity member : component) {
+            EntityBondState state = get(member);
+            if (state == null) continue;
+            member.setData(
+                ModAttachments.ENTITY_BONDS,
+                state.withLeader(leader, member.position().subtract(leader.position()))
+            );
+            if (member == leader) {
+                member.setNoGravity(state.originalNoGravity());
+            } else {
+                member.setNoGravity(true);
+                member.setDeltaMovement(Vec3.ZERO);
+            }
+        }
+    }
+
+    public static boolean connect(
+        ServerLevel level,
+        Entity source,
+        Direction sourceFace,
+        Entity target,
+        Direction targetFace,
+        boolean sourceOriginalNoGravity
+    ) {
+        if (source == target || isFaceOccupied(source, sourceFace) || isFaceOccupied(target, targetFace)) {
+            return false;
+        }
+        List<Entity> sourceComponent = component(level, source);
+        List<Entity> targetComponent = component(level, target);
+        Set<UUID> targetUuids = new HashSet<>();
+        for (Entity member : targetComponent) targetUuids.add(member.getUUID());
+        if (sourceComponent.stream().anyMatch(member -> targetUuids.contains(member.getUUID()))) return false;
+
+        Entity targetLeader = resolveLeader(level, target);
+        if (targetLeader == null) targetLeader = target;
+        EntityBondLink sourceLink = new EntityBondLink(
+            sourceFace,
+            target.getUUID(),
+            target.getId(),
+            targetFace
+        );
+        EntityBondLink targetLink = new EntityBondLink(
+            targetFace,
+            source.getUUID(),
+            source.getId(),
+            sourceFace
+        );
+        Map<UUID, EntityBondState> changed = new HashMap<>();
+        changed.put(source.getUUID(), stateWithLink(source, sourceLink, sourceOriginalNoGravity));
+        changed.put(target.getUUID(), stateWithLink(target, targetLink, target.isNoGravity()));
+
+        List<Entity> merged = new ArrayList<>(targetComponent.size() + sourceComponent.size());
+        merged.addAll(targetComponent);
+        merged.addAll(sourceComponent);
+        for (Entity member : merged) {
+            EntityBondState state = changed.getOrDefault(member.getUUID(), get(member));
+            if (state == null) continue;
+            EntityBondState rebased = state.withLeader(
+                targetLeader,
+                member.position().subtract(targetLeader.position())
+            );
+            member.setData(ModAttachments.ENTITY_BONDS, rebased);
+            if (member == targetLeader) {
+                member.setNoGravity(rebased.originalNoGravity());
+            } else {
+                member.setNoGravity(true);
+                member.setDeltaMovement(Vec3.ZERO);
+            }
+        }
+        return true;
+    }
+
+    public static void tick(Entity entity) {
+        EntityBondState state = get(entity);
+        if (state == null) return;
+        if (entity.level() instanceof ServerLevel serverLevel
+            && pruneMissingLoadedPartners(serverLevel, entity, state)) {
+            return;
+        }
+        Entity leader = resolveLeader(entity.level(), state);
+        if (leader == null || !leader.isAlive()) return;
+        if (leader == entity) {
+            for (Entity member : component(entity.level(), entity)) {
+                if (member != entity) enforceFollower(member, leader);
+            }
+            return;
+        }
+        enforceFollower(entity, leader);
+    }
+
+    public static void removeForBlockification(Entity entity) {
+        entity.removeData(ModAttachments.ENTITY_BONDS);
+    }
+
+    public static boolean isFollower(Entity entity) {
+        EntityBondState state = get(entity);
+        return state != null && !state.leaderUuid().equals(entity.getUUID());
+    }
+
+    public static boolean areInSameComponent(Entity first, Entity second) {
+        EntityBondState firstState = get(first);
+        EntityBondState secondState = get(second);
+        return firstState != null
+            && secondState != null
+            && firstState.leaderUuid().equals(secondState.leaderUuid());
+    }
+
+    /** 用每个成员的碰撞箱共同裁剪基准位移，避免跟随成员被直接搬进方块。 */
+    public static Vec3 clampLeaderMovement(Entity leader, Vec3 movement) {
+        EntityBondState state = get(leader);
+        if (movement.lengthSqr() <= 1.0E-12D
+            || state == null
+            || !state.leaderUuid().equals(leader.getUUID())) {
+            return movement;
+        }
+
+        Vec3 allowed = movement;
+        for (Entity member : component(leader.level(), leader)) {
+            if (member == leader || allowed.lengthSqr() <= 1.0E-12D) continue;
+            List<VoxelShape> entityCollisions = leader.level().getEntityCollisions(
+                member,
+                member.getBoundingBox().expandTowards(allowed)
+            );
+            allowed = Entity.collideBoundingBox(
+                member,
+                allowed,
+                member.getBoundingBox(),
+                leader.level(),
+                entityCollisions
+            );
+        }
+        return allowed;
+    }
+
+    /** 只移除指定实体的连接，并为删点后仍存在的每个连通分量重新选择基准。 */
+    public static boolean disconnectEntity(ServerLevel level, Entity entity) {
+        EntityBondState removedState = get(entity);
+        if (removedState == null) return false;
+
+        Map<UUID, Entity> neighbors = new HashMap<>();
+        for (EntityBondLink link : removedState.links()) {
+            Entity neighbor = resolve(level, link);
+            if (neighbor != null) neighbors.put(neighbor.getUUID(), neighbor);
+        }
+        disconnectKnownEntity(level, entity, removedState, neighbors.values());
+        return true;
+    }
+
+    private static boolean pruneMissingLoadedPartners(
+        ServerLevel level,
+        Entity entity,
+        EntityBondState state
+    ) {
+        List<UUID> missingPartners = new ArrayList<>();
+        for (EntityBondLink link : state.links()) {
+            Entity other = resolve(level, link);
+            if (other != null && other.isAlive()) continue;
+            Direction worldFace = AdhesiveFaces.worldFace(entity, link.face());
+            BlockPos expectedPos = BlockPos.containing(
+                entity.getBoundingBox().getCenter().add(
+                    worldFace.getStepX() * 2.0D,
+                    worldFace.getStepY() * 2.0D,
+                    worldFace.getStepZ() * 2.0D
+                )
+            );
+            if (!level.hasChunkAt(expectedPos)) continue;
+            if (other != null) {
+                EntityBondState otherState = get(other);
+                if (otherState != null) {
+                    List<Entity> otherNeighbors = new ArrayList<>();
+                    for (EntityBondLink otherLink : otherState.links()) {
+                        Entity neighbor = resolve(level, otherLink);
+                        if (neighbor != null && neighbor != other) otherNeighbors.add(neighbor);
+                    }
+                    disconnectKnownEntity(level, other, otherState, otherNeighbors);
+                    return true;
+                }
+            }
+            missingPartners.add(link.otherEntityUuid());
+        }
+        if (missingPartners.isEmpty()) return false;
+
+        EntityBondState changed = get(entity);
+        if (changed == null) return true;
+        for (UUID missingPartner : missingPartners) changed = changed.withoutLinksTo(missingPartner);
+        updateAfterLinkRemoval(entity, changed);
+        if (hasBonds(entity)) prepareLeader(level, entity);
+        return true;
+    }
+
+    private static void disconnectKnownEntity(
+        ServerLevel level,
+        Entity entity,
+        EntityBondState removedState,
+        Iterable<Entity> neighbors
+    ) {
+        Map<UUID, Entity> remainingNeighbors = new HashMap<>();
+        for (Entity neighbor : neighbors) {
+            if (neighbor != entity) remainingNeighbors.put(neighbor.getUUID(), neighbor);
+        }
+        restoreStandalone(entity, removedState);
+        for (Entity neighbor : remainingNeighbors.values()) {
+            EntityBondState neighborState = get(neighbor);
+            if (neighborState == null) continue;
+            updateAfterLinkRemoval(neighbor, neighborState.withoutLinksTo(entity.getUUID()));
+        }
+        rebaseRemainingComponents(level, remainingNeighbors.values());
+    }
+
+    private static void rebaseRemainingComponents(ServerLevel level, Iterable<Entity> candidates) {
+        Set<UUID> rebased = new HashSet<>();
+        for (Entity candidate : candidates) {
+            if (!candidate.isAlive() || !hasBonds(candidate) || rebased.contains(candidate.getUUID())) continue;
+            List<Entity> members = component(level, candidate);
+            Entity leader = resolveLeader(level, candidate);
+            boolean leaderRemains = false;
+            for (Entity member : members) {
+                if (member == leader) {
+                    leaderRemains = true;
+                    break;
+                }
+            }
+            if (!leaderRemains) leader = candidate;
+            prepareLeader(level, leader);
+            for (Entity member : members) rebased.add(member.getUUID());
+        }
+    }
+
+    private static void updateAfterLinkRemoval(Entity entity, EntityBondState state) {
+        if (state.links().isEmpty()) {
+            restoreStandalone(entity, state);
+        } else {
+            entity.setData(ModAttachments.ENTITY_BONDS, state);
+        }
+    }
+
+    private static void restoreStandalone(Entity entity, EntityBondState state) {
+        entity.removeData(ModAttachments.ENTITY_BONDS);
+        entity.setNoGravity(state.originalNoGravity());
+        entity.setDeltaMovement(Vec3.ZERO);
+        entity.fallDistance = 0.0F;
+        entity.hasImpulse = true;
+        entity.hurtMarked = true;
+    }
+
+    public static @Nullable Entity resolve(Level level, EntityBondLink link) {
+        Entity byId = level.getEntity(link.otherEntityId());
+        if (byId != null && byId.getUUID().equals(link.otherEntityUuid())) return byId;
+        return level instanceof ServerLevel serverLevel ? serverLevel.getEntity(link.otherEntityUuid()) : null;
+    }
+
+    public static @Nullable Entity resolveLeader(Level level, Entity entity) {
+        EntityBondState state = get(entity);
+        return state == null ? entity : resolveLeader(level, state);
+    }
+
+    private static @Nullable Entity resolveLeader(Level level, EntityBondState state) {
+        Entity byId = level.getEntity(state.leaderEntityId());
+        if (byId != null && byId.getUUID().equals(state.leaderUuid())) return byId;
+        return level instanceof ServerLevel serverLevel ? serverLevel.getEntity(state.leaderUuid()) : null;
+    }
+
+    private static EntityBondState stateWithLink(
+        Entity entity,
+        EntityBondLink link,
+        boolean originalNoGravity
+    ) {
+        EntityBondState state = get(entity);
+        return state == null
+            ? new EntityBondState(
+                entity.getUUID(),
+                entity.getId(),
+                Vec3.ZERO,
+                originalNoGravity,
+                List.of(link)
+            )
+            : state.withLink(link);
+    }
+
+    private static void enforceFollower(Entity follower, Entity leader) {
+        EntityBondState state = get(follower);
+        if (state == null) return;
+        Vec3 expected = leader.position().add(state.offsetFromLeader());
+        follower.setNoGravity(true);
+        follower.setDeltaMovement(Vec3.ZERO);
+        follower.fallDistance = 0.0F;
+        if (follower.level().isClientSide) alignClientInterpolation(follower, leader, state.offsetFromLeader());
+        if (follower.position().distanceToSqr(expected) > 1.0E-10D) follower.setPos(expected);
+        follower.hasImpulse = true;
+        follower.hurtMarked = true;
+    }
+
+    /** 让从属实体使用与基准相同的客户端插值区间，避免按逻辑刻跳动。 */
+    private static void alignClientInterpolation(Entity follower, Entity leader, Vec3 offset) {
+        follower.xo = leader.xo + offset.x;
+        follower.yo = leader.yo + offset.y;
+        follower.zo = leader.zo + offset.z;
+        follower.xOld = leader.xOld + offset.x;
+        follower.yOld = leader.yOld + offset.y;
+        follower.zOld = leader.zOld + offset.z;
+    }
+}

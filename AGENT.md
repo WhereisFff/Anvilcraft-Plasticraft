@@ -4,6 +4,15 @@ This repository currently maintains the Minecraft 1.21.1 implementation only.
 AnvilCraft is expected to move toward 26.1 later, so new code should keep the
 porting boundary explicit.
 
+## Hard prohibition: Minecraft client and UI automation
+
+- Never invoke the `computer-use` skill or any desktop/UI automation tool for
+  this repository.
+- Never launch, focus, reload, inspect, send input to, or terminate a Minecraft
+  client, including a client that the user already has running.
+- Rendering changes must be validated statically and with non-client build or
+  test tasks only. The user performs all in-game visual validation.
+
 ## 1.21-to-26.1 conventions
 
 - Keep game-facing logic in small common classes and isolate NeoForge/client

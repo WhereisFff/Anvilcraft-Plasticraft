@@ -2,6 +2,8 @@ package dev.anvilcraft.plasticraft.client.gui.screen;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
+import dev.dubhe.anvilcraft.constant.Constant;
+import dev.dubhe.anvilcraft.constant.SharedTextures;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
@@ -21,14 +23,6 @@ public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAn
     private static final ResourceLocation BACKGROUND = AnvilcraftPlasticraft.of(
         "textures/gui/crafting/background/hardend_resin_anvil.png"
     );
-    private static final ResourceLocation TEXT_FIELD = ResourceLocation.withDefaultNamespace(
-        "container/anvil/text_field"
-    );
-    private static final ResourceLocation TEXT_FIELD_DISABLED = ResourceLocation.withDefaultNamespace(
-        "container/anvil/text_field_disabled"
-    );
-    private static final ResourceLocation ERROR_SPRITE = ResourceLocation.withDefaultNamespace("container/anvil/error");
-
     private EditBox name;
     private final Player player;
 
@@ -41,7 +35,7 @@ public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAn
     protected void init() {
         super.init();
         this.titleLabelX = (this.imageWidth - this.font.width(this.title)) / 2;
-        this.titleLabelY = 6;
+        this.titleLabelY = Constant.SCREEN_TITLE_Y;
     }
 
     @Override
@@ -118,8 +112,10 @@ public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAn
     @Override
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
         super.renderBg(graphics, partialTick, mouseX, mouseY);
-        ResourceLocation texture = this.menu.getSlot(0).getItem().isEmpty() ? TEXT_FIELD_DISABLED : TEXT_FIELD;
-        graphics.blitSprite(texture, this.leftPos + 59, this.topPos + 20, 110, 16);
+        ResourceLocation texture = this.menu.getSlot(0).getItem().isEmpty()
+            ? SharedTextures.TEXT_FIELD_DISABLE
+            : SharedTextures.TEXT_FIELD;
+        graphics.blit(texture, this.leftPos + 59, this.topPos + 20, 0, 0, 110, 16, 110, 16);
     }
 
     @Override
@@ -131,7 +127,7 @@ public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAn
     protected void renderErrorIcon(GuiGraphics graphics, int x, int y) {
         if ((this.menu.getSlot(0).hasItem() || this.menu.getSlot(1).hasItem())
             && !this.menu.getSlot(this.menu.getResultSlot()).hasItem()) {
-            graphics.blitSprite(ERROR_SPRITE, x + 103, y + 47, 16, 16);
+            graphics.blit(SharedTextures.ERROR_SPRITE, x + 103, y + 47, 0, 0, 16, 16, 16, 16);
         }
     }
 

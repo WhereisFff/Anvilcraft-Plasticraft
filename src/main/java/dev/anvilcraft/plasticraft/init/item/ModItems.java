@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.init.item;
 
 import dev.anvilcraft.lib.v2.registrum.util.entry.ItemEntry;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
+import dev.anvilcraft.plasticraft.item.HighViscosityResinBucketItem;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.dubhe.anvilcraft.util.registrater.ModelProviderUtil;
 import net.minecraft.tags.ItemTags;
@@ -27,10 +28,10 @@ public final class ModItems {
         })
         .register();
 
-    public static final ItemEntry<BucketItem> LIQUID_HIGH_VISCOSITY_RESIN_BUCKET = REGISTRUM
+    public static final ItemEntry<HighViscosityResinBucketItem> LIQUID_HIGH_VISCOSITY_RESIN_BUCKET = REGISTRUM
         .item(
             "liquid_high_viscosity_resin_bucket",
-            properties -> new BucketItem(ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get(), properties)
+            properties -> new HighViscosityResinBucketItem(ModFluids.LIQUID_HIGH_VISCOSITY_RESIN, properties)
         )
         .lang("Liquid High-Viscosity Resin Bucket")
         .initialProperties(() -> new Item.Properties().stacksTo(1).craftRemainder(Items.BUCKET))
@@ -38,7 +39,36 @@ public final class ModItems {
         .model(ModelProviderUtil::bucket)
         .register();
 
+    public static final ItemEntry<BucketItem> HIGH_HEAT_FUEL_BUCKET = fluidBucket(
+        "high_heat_fuel_bucket",
+        ModFluids.HIGH_HEAT_FUEL,
+        "High-Heat Fuel Bucket"
+    );
+    public static final ItemEntry<BucketItem> PLASTIC_OIL_BUCKET = fluidBucket(
+        "plastic_oil_bucket",
+        ModFluids.PLASTIC_OIL,
+        "Plastic Oil Bucket"
+    );
+    public static final ItemEntry<BucketItem> CRUDE_OIL_ACID_BUCKET = fluidBucket(
+        "crude_oil_acid_bucket",
+        ModFluids.CRUDE_OIL_ACID,
+        "Crude Oil Essence Bucket"
+    );
+
     private ModItems() {
+    }
+
+    private static ItemEntry<BucketItem> fluidBucket(
+        String id,
+        java.util.function.Supplier<? extends net.minecraft.world.level.material.Fluid> fluid,
+        String name
+    ) {
+        return REGISTRUM.item(id, properties -> new BucketItem(fluid.get(), properties))
+            .lang(name)
+            .initialProperties(() -> new Item.Properties().stacksTo(1).craftRemainder(Items.BUCKET))
+            .tag(Tags.Items.BUCKETS)
+            .model(ModelProviderUtil::bucket)
+            .register();
     }
 
     public static void register() {
