@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.entity.collision;
 
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
@@ -10,9 +11,12 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.IdentityHashMap;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 /** 一列相接塑料实体的碰撞预检和有序移动。 */
 public final class PlasticPushChain {
@@ -59,81 +63,135 @@ public final class PlasticPushChain {
             <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
             return new Plan(List.of());
         }
-        Map<AbstractPlasticEntity, Vec3> movements = new IdentityHashMap<>();
-        List<AbstractPlasticEntity> visiting = new ArrayList<>();
-        movements.put(root, rootMovement);
-        if (!collect(root, pusher, rootMovement, movements, visiting)) return null;
+        MovementUnit rootUnit = MovementUnit.resolve(root);
+        Map<UUID, Entry> movements = new HashMap<>();
+        Set<UUID> visiting = new HashSet<>();
+        movements.put(rootUnit.key(), new Entry(rootUnit, rootMovement));
+        if (!collect(rootUnit, pusher, rootMovement, movements, visiting)) return null;
 
-        List<Entry> entries = movements.entrySet().stream()
-            .map(entry -> new Entry(entry.getKey(), entry.getValue()))
-            .sorted(Comparator.comparingDouble(entry -> -entry.entity().position().dot(rootMovement)))
+        List<Entry> entries = movements.values().stream()
+            .sorted(Comparator.comparingDouble(entry -> -entry.unit().projection(rootMovement)))
             .toList();
         return new Plan(entries);
     }
 
     private static boolean collect(
-        AbstractPlasticEntity entity,
+        MovementUnit unit,
         Entity pusher,
         Vec3 movement,
-        Map<AbstractPlasticEntity, Vec3> movements,
-        List<AbstractPlasticEntity> visiting
+        Map<UUID, Entry> movements,
+        Set<UUID> visiting
     ) {
-        if (visiting.contains(entity)) return false;
-        visiting.add(entity);
+        if (!visiting.add(unit.key())) return false;
         try {
-            List<VoxelShape> blockingShapes = new ArrayList<>();
-            List<Entity> candidates = entity.level().getEntities(
-                entity,
-                entity.getBoundingBox().expandTowards(movement).inflate(PlasticEntityPhysics.FACE_EPSILON),
-                other -> !other.isRemoved()
-                    && !other.isSpectator()
-                    && other != pusher
-                    && !other.isPassengerOfSameVehicle(pusher)
-                    && entity.canCollideWith(other)
-            );
-            for (Entity other : candidates) {
-                if (other instanceof AbstractPlasticEntity plastic) {
+            for (Entity member : unit.members()) {
+                List<Entity> blockingCandidates = new ArrayList<>();
+                List<Entity> candidates = member.level().getEntities(
+                    member,
+                    member.getBoundingBox().expandTowards(movement).inflate(PlasticEntityPhysics.FACE_EPSILON),
+                    other -> !other.isRemoved()
+                        && !other.isSpectator()
+                        && other != pusher
+                        && !other.isPassengerOfSameVehicle(pusher)
+                        && !unit.contains(other)
+                        && member.canCollideWith(other)
+                );
+                for (Entity other : candidates) {
+                    Entry planned = movementContaining(movements, other);
+                    if (planned != null) continue;
+                    if (!(other instanceof AbstractPlasticEntity plasticTarget)) {
+                        blockingCandidates.add(other);
+                        continue;
+                    }
+
+                    MovementUnit targetUnit = MovementUnit.resolve(plasticTarget);
+                    if (targetUnit.key().equals(unit.key())) continue;
+                    AbstractPlasticEntity plasticPusher = unit.representative();
                     Vec3 nextMovement = PlasticEntityPhysics.sidePushMovement(
-                        plastic,
-                        entity,
-                        entity.getBoundingBox(),
-                        entity.plasticraft$currentPushGravityDirection(),
+                        plasticTarget,
+                        plasticPusher,
+                        member.getBoundingBox(),
+                        plasticPusher.plasticraft$currentPushGravityDirection(),
                         movement
                     );
                     if (nextMovement == null || nextMovement.lengthSqr()
                         <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
-                        blockingShapes.add(Shapes.create(other.getBoundingBox()));
+                        blockingCandidates.add(other);
                         continue;
                     }
-                    Vec3 existing = movements.get(plastic);
-                    if (existing != null && existing.distanceToSqr(nextMovement)
+                    Entry existing = movements.get(targetUnit.key());
+                    if (existing != null && existing.movement().distanceToSqr(nextMovement)
                         > PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
                         return false;
                     }
                     if (existing == null) {
-                        movements.put(plastic, nextMovement);
-                        if (!collect(plastic, entity, nextMovement, movements, visiting)) return false;
+                        movements.put(targetUnit.key(), new Entry(targetUnit, nextMovement));
+                        if (!collect(targetUnit, plasticPusher, nextMovement, movements, visiting)) return false;
                     }
-                    continue;
                 }
-                blockingShapes.add(Shapes.create(other.getBoundingBox()));
-            }
 
-            Vec3 allowed = Entity.collideBoundingBox(
-                entity,
-                movement,
-                entity.getBoundingBox(),
-                entity.level(),
-                blockingShapes
-            );
-            return allowed.distanceToSqr(movement)
-                <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON;
+                List<VoxelShape> blockingShapes = blockingCandidates.stream()
+                    .filter(other -> movementContaining(movements, other) == null)
+                    .map(other -> Shapes.create(other.getBoundingBox()))
+                    .toList();
+                Vec3 allowed = Entity.collideBoundingBox(
+                    member,
+                    movement,
+                    member.getBoundingBox(),
+                    member.level(),
+                    blockingShapes
+                );
+                if (allowed.distanceToSqr(movement)
+                    > PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
+                    return false;
+                }
+            }
+            return true;
         } finally {
-            visiting.remove(entity);
+            visiting.remove(unit.key());
         }
     }
 
-    private record Entry(AbstractPlasticEntity entity, Vec3 movement) {
+    @Nullable
+    private static Entry movementContaining(Map<UUID, Entry> movements, Entity entity) {
+        for (Entry entry : movements.values()) {
+            if (entry.unit().contains(entity)) return entry;
+        }
+        return null;
+    }
+
+    private record MovementUnit(
+        UUID key,
+        Entity leader,
+        List<Entity> members,
+        AbstractPlasticEntity representative
+    ) {
+        private static MovementUnit resolve(AbstractPlasticEntity entity) {
+            Entity leader = EntityBondManager.resolveLeader(entity.level(), entity);
+            if (leader == null || !leader.isAlive()) leader = entity;
+            List<Entity> members = EntityBondManager.hasBonds(entity)
+                ? List.copyOf(EntityBondManager.component(entity.level(), leader))
+                : List.of(entity);
+            return new MovementUnit(leader.getUUID(), leader, members, entity);
+        }
+
+        private boolean contains(Entity entity) {
+            for (Entity member : this.members) {
+                if (member == entity) return true;
+            }
+            return false;
+        }
+
+        private double projection(Vec3 direction) {
+            double projection = Double.NEGATIVE_INFINITY;
+            for (Entity member : this.members) {
+                projection = Math.max(projection, member.getBoundingBox().getCenter().dot(direction));
+            }
+            return projection;
+        }
+    }
+
+    private record Entry(MovementUnit unit, Vec3 movement) {
     }
 
     public record ClippedPlan(Vec3 movement, Plan plan) {
@@ -147,9 +205,10 @@ public final class PlasticPushChain {
         }
 
         public void move(AbstractPlasticEntity root, Entity pusher) {
+            MovementUnit rootUnit = MovementUnit.resolve(root);
             for (Entry entry : this.entries) {
-                if (entry.entity() == root) continue;
-                entry.entity().plasticraft$applyTransferredPush(pusher, entry.movement());
+                if (entry.unit().key().equals(rootUnit.key())) continue;
+                entry.unit().representative().plasticraft$applyTransferredPush(pusher, entry.movement());
             }
         }
     }

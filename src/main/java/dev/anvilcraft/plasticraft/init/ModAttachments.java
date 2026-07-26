@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.init;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityAdhesion;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveElasticMotion;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveTransit;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
 import dev.anvilcraft.plasticraft.entity.adhesive.SlidingAdhesionData;
@@ -58,6 +59,14 @@ public final class ModAttachments {
             ))
             .serialize(AdhesiveTransit.CODEC)
             .sync(AdhesiveTransit.STREAM_CODEC)
+            .build()
+    );
+
+    public static final Supplier<AttachmentType<AdhesiveElasticMotion>> ADHESIVE_ELASTIC_MOTION = ATTACHMENTS.register(
+        "adhesive_elastic_motion",
+        () -> AttachmentType.builder(() -> new AdhesiveElasticMotion(Vec3.ZERO, 0L, 10, false))
+            .serialize(AdhesiveElasticMotion.CODEC)
+            .sync(AdhesiveElasticMotion.STREAM_CODEC)
             .build()
     );
 

@@ -80,7 +80,7 @@ public final class BondedFallingBlocks {
         BlockState blockState = level.getBlockState(pos);
         if (blockState.isAir()) return false;
         BlockAdhesionState state = currentAdhesion(level, pos, blockState);
-        if (state.hasPatch(face) || state.hasBlockBond(face) || state.hasEntityBond(face)) return false;
+        if (state.hasPatch(face) || state.hasBlockBond(face)) return false;
         putAdhesion(level, pos, state.withPatch(face));
         return true;
     }

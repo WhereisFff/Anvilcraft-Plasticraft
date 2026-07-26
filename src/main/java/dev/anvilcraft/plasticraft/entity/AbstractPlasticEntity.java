@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.api.entity.PlasticGravityTypeProvider;
 import dev.anvilcraft.plasticraft.api.item.EntityFacePlaceableItem;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticPushChain;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFluidPhysics;
@@ -93,6 +94,25 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         AbstractPlasticEntity.class,
         EntityDataSerializers.BOOLEAN
     );
+    private static final EntityDataAccessor<Byte> HAMMER_STABLE_ORIENTATION = SynchedEntityData.defineId(
+        AbstractPlasticEntity.class,
+        EntityDataSerializers.BYTE
+    );
+    private static final EntityDataAccessor<Byte> HAMMER_RETURN_FROM = SynchedEntityData.defineId(
+        AbstractPlasticEntity.class,
+        EntityDataSerializers.BYTE
+    );
+    private static final EntityDataAccessor<Long> HAMMER_RETURN_STARTED = SynchedEntityData.defineId(
+        AbstractPlasticEntity.class,
+        EntityDataSerializers.LONG
+    );
+    private static final String TAG_HAMMER_STABLE_ORIENTATION = "HammerStableOrientation";
+    private static final String TAG_HAMMER_RETURN_AT = "HammerReturnAt";
+    private static final String TAG_HAMMER_RETURN_FROM = "HammerReturnFrom";
+    private static final String TAG_HAMMER_RETURN_STARTED = "HammerReturnStarted";
+    private static final byte NO_HAMMER_ORIENTATION = -1;
+    private static final int HAMMER_DEFLECTION_HOLD_TICKS = 2;
+    public static final int HAMMER_RETURN_ANIMATION_TICKS = 5;
 
     private ItemStack dropStack = ItemStack.EMPTY;
     private PlasticEntityPhysics.SupportObservation supportObservation;
@@ -124,6 +144,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     private double clientCarrierMoveStartX;
     private double clientCarrierMoveStartY;
     private double clientCarrierMoveStartZ;
+    private long hammerReturnAt = -1L;
 
     protected AbstractPlasticEntity(
         EntityType<? extends AbstractPlasticEntity> entityType,
@@ -161,7 +182,10 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         super.defineSynchedData(builder);
         builder.define(ORIENTATION, (byte) PlasticEntityOrientation.DEFAULT.pack())
             .define(DISPLAY_STATE, Blocks.SAND.defaultBlockState())
-            .define(MAGNETIZED, false);
+            .define(MAGNETIZED, false)
+            .define(HAMMER_STABLE_ORIENTATION, NO_HAMMER_ORIENTATION)
+            .define(HAMMER_RETURN_FROM, (byte) PlasticEntityOrientation.DEFAULT.pack())
+            .define(HAMMER_RETURN_STARTED, -1L);
     }
 
     public final BlockState getDisplayState() {
@@ -251,6 +275,44 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     public final void setOrientation(PlasticEntityOrientation orientation) {
         this.entityData.set(ORIENTATION, (byte) Objects.requireNonNull(orientation, "orientation").pack());
+    }
+
+    public final boolean isHammerDeflected() {
+        return this.entityData.get(HAMMER_STABLE_ORIENTATION) != NO_HAMMER_ORIENTATION
+            || this.entityData.get(HAMMER_RETURN_STARTED) >= 0L;
+    }
+
+    public final HammerRotationAnimation getHammerRotationAnimation(float partialTick) {
+        long returnStarted = this.entityData.get(HAMMER_RETURN_STARTED);
+        if (returnStarted < 0L) return null;
+        float progress = Math.clamp(
+            (this.level().getGameTime() + partialTick - returnStarted) / HAMMER_RETURN_ANIMATION_TICKS,
+            0.0F,
+            1.0F
+        );
+        return new HammerRotationAnimation(
+            PlasticEntityOrientation.unpack(Byte.toUnsignedInt(this.entityData.get(HAMMER_RETURN_FROM))),
+            this.getOrientation(),
+            progress
+        );
+    }
+
+    public final boolean startHammerDeflection(PlasticEntityOrientation targetOrientation) {
+        byte pendingStable = this.entityData.get(HAMMER_STABLE_ORIENTATION);
+        byte stableOrientation = pendingStable == NO_HAMMER_ORIENTATION
+            ? this.entityData.get(ORIENTATION)
+            : pendingStable;
+        byte target = (byte) Objects.requireNonNull(targetOrientation, "targetOrientation").pack();
+        if (target == stableOrientation) return false;
+
+        this.entityData.set(HAMMER_STABLE_ORIENTATION, stableOrientation);
+        this.setOrientation(targetOrientation);
+        this.entityData.set(HAMMER_RETURN_FROM, target);
+        this.entityData.set(HAMMER_RETURN_STARTED, -1L);
+        this.hammerReturnAt = this.level().getGameTime() + HAMMER_DEFLECTION_HOLD_TICKS;
+        this.hasImpulse = true;
+        this.hurtMarked = true;
+        return true;
     }
 
     public final boolean isMagnetized() {
@@ -436,6 +498,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         this.yRotO = this.getYRot();
         this.previousImpactContactMask = this.impactContactMask;
         this.impactContactMask = 0;
+        this.tickHammerDeflection();
         // AnvilCraft 的传送门转换会直接写入 FallingBlockEntity#blockState。
         // 在服务端将这些外部变化同步回受追踪的展示状态。
         if (!this.level().isClientSide && !this.blockState.equals(this.getDisplayState())) {
@@ -687,7 +750,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     private void refreshClientSupportObservation() {
         Direction gravityDirection = null;
-        if (!this.isNoGravity() && !AccelerateManager.isControlledByRing(this)) {
+        if (EntityBondManager.isFollower(this)) {
+            gravityDirection = this.currentPushGravityDirection();
+        } else if (!this.isNoGravity() && !AccelerateManager.isControlledByRing(this)) {
             Vec3 gravity = GravityManager.getNetGravityVectorForFallingBlock(this);
             PlasticFluidPhysics.FluidContact fluidContact = PlasticFluidPhysics.sample(this);
             double buoyancy = this.isBuoyantInFluids()
@@ -924,8 +989,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             carrier.getBoundingBox(),
             requestedMovement
         );
+        Direction carrierSupportDirection = this.carrierSupportDirection(carrier);
         return transferredMovement != null
-            && (this.isCurrentSupport(carrier) || this.transfersSidePushWithCarrier(carrier));
+            && (carrierSupportDirection != null || this.transfersSidePushWithCarrier(carrier));
     }
 
     @Override
@@ -933,16 +999,36 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         if (actualMovement.lengthSqr() <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON
             || !PlasticEntityPhysics.isWithinCarryDistance(actualMovement)) return;
 
-        boolean supportedCarrier = this.isCurrentSupport(carrier);
+        AABB previousCarrierBox = carrier.getBoundingBox().move(actualMovement.scale(-1.0D));
+        Direction carrierSupportDirection = this.carrierSupportDirection(carrier, previousCarrierBox);
+        boolean supportedCarrier = carrierSupportDirection != null;
         Vec3 transferredMovement;
         if (supportedCarrier) {
-            Vec3 normal = Vec3.atLowerCornerOf(this.supportDirection.getNormal());
+            Vec3 normal = Vec3.atLowerCornerOf(carrierSupportDirection.getNormal());
             if (actualMovement.dot(normal) > PlasticEntityPhysics.FACE_EPSILON) return;
             transferredMovement = actualMovement;
         } else {
-            AABB previousCarrierBox = carrier.getBoundingBox().move(actualMovement.scale(-1.0D));
             transferredMovement = this.carrierMovement(carrier, previousCarrierBox, actualMovement);
             if (transferredMovement == null) return;
+        }
+
+        if (EntityBondManager.hasBonds(this)) {
+            PlasticPushChain.ClippedPlan clipped = PlasticPushChain.clip(this, carrier, transferredMovement);
+            transferredMovement = clipped.movement();
+            if (transferredMovement.lengthSqr()
+                <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) return;
+            clipped.plan().move(this, carrier);
+            Vec3 moved = this.moveBondedComponentWithCarrier(carrier, transferredMovement);
+            if (supportedCarrier) {
+                this.supportObservation = PlasticEntityPhysics.SupportObservation.capture(carrier);
+                this.supportDirection = carrierSupportDirection;
+            } else {
+                Entity leader = EntityBondManager.resolveLeader(this.level(), this);
+                if (leader instanceof AbstractPlasticEntity plasticLeader) {
+                    plasticLeader.recordTransferredSidePush(carrier, moved);
+                }
+            }
+            return;
         }
 
         if (!supportedCarrier) {
@@ -955,22 +1041,10 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         Vec3 moved = this.moveWithCarrierDisplacement(transferredMovement);
         if (supportedCarrier) {
             this.supportObservation = PlasticEntityPhysics.SupportObservation.capture(carrier);
+            this.supportDirection = carrierSupportDirection;
             return;
         }
-
-        Direction gravityDirection = this.currentPushGravityDirection();
-        this.lastSidePushGameTime = this.level().getGameTime();
-        this.sidePushGravityDirection = gravityDirection;
-        this.sidePushVelocity = this.adjustTransferredSidePushVelocity(
-            carrier,
-            PlasticEntityPhysics.tangentialMovement(moved, gravityDirection)
-        );
-        Vec3 normal = Vec3.atLowerCornerOf(gravityDirection.getNormal());
-        double normalVelocity = this.getDeltaMovement().dot(normal);
-        this.setDeltaMovement(this.sidePushVelocity.add(normal.scale(normalVelocity)));
-        this.restorePoweredSlidingRailDrive();
-        this.hasImpulse = true;
-        this.hurtMarked = true;
+        this.recordTransferredSidePush(carrier, moved);
     }
 
     @Override
@@ -979,7 +1053,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         Vec3 targetMovement = this.carrierMovement(carrier, carrier.getBoundingBox(), requestedMovement);
         if (this.carrierMoveInProgress || targetMovement == null) return requestedMovement;
         Vec3 allowedTargetMovement;
-        if (this.isCurrentSupport(carrier)) {
+        if (EntityBondManager.hasBonds(this)) {
+            allowedTargetMovement = PlasticPushChain.clip(this, carrier, targetMovement).movement();
+        } else if (this.isCurrentSupport(carrier)) {
             List<VoxelShape> entityCollisions = this.level().getEntities(
                 this,
                 this.getBoundingBox().expandTowards(targetMovement).inflate(PlasticEntityPhysics.FACE_EPSILON),
@@ -1006,10 +1082,49 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         );
     }
 
+    private Vec3 moveBondedComponentWithCarrier(Entity ignored, Vec3 movement) {
+        Entity leader = EntityBondManager.resolveLeader(this.level(), this);
+        if (leader == null || !leader.isAlive()) return Vec3.ZERO;
+        Vec3 start = leader.position();
+        EntityBondManager.runPreclippedComponentMovement(this, ignored, () -> {
+            if (leader instanceof AbstractPlasticEntity plasticLeader) {
+                plasticLeader.moveWithCarrierDisplacement(movement);
+            } else {
+                leader.move(MoverType.SELF, movement);
+            }
+        });
+        Vec3 moved = leader.position().subtract(start);
+        EntityBondManager.synchronizeComponent(leader);
+        return moved;
+    }
+
+    private void recordTransferredSidePush(Entity carrier, Vec3 moved) {
+        Direction gravityDirection = this.currentPushGravityDirection();
+        this.lastSidePushGameTime = this.level().getGameTime();
+        this.sidePushGravityDirection = gravityDirection;
+        this.sidePushVelocity = this.adjustTransferredSidePushVelocity(
+            carrier,
+            PlasticEntityPhysics.tangentialMovement(moved, gravityDirection)
+        );
+        Vec3 normal = Vec3.atLowerCornerOf(gravityDirection.getNormal());
+        double normalVelocity = this.getDeltaMovement().dot(normal);
+        this.setDeltaMovement(this.sidePushVelocity.add(normal.scale(normalVelocity)));
+        this.restorePoweredSlidingRailDrive();
+        this.hasImpulse = true;
+        this.hurtMarked = true;
+    }
+
     private Vec3 carrierMovement(Entity carrier, AABB carrierBox, Vec3 requestedMovement) {
         if (!PlasticEntityPhysics.isWithinCarryDistance(requestedMovement)) return null;
-        if (this.isCurrentSupport(carrier)
-            && PlasticEntityPhysics.canMoveWithCarrier(this, carrier, this.supportDirection, requestedMovement)) {
+        Direction carrierSupportDirection = this.carrierSupportDirection(carrier, carrierBox);
+        if (carrierSupportDirection != null
+            && PlasticEntityPhysics.canMoveWithCarrier(
+                this,
+                carrier,
+                carrierBox,
+                carrierSupportDirection,
+                requestedMovement
+            )) {
             return requestedMovement;
         }
         Direction gravityDirection = this.currentPushGravityDirection();
@@ -1026,6 +1141,25 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         return this.supportObservation != null
             && this.supportDirection != null
             && this.supportObservation.entityId().equals(carrier.getUUID());
+    }
+
+    private Direction carrierSupportDirection(Entity carrier) {
+        return this.carrierSupportDirection(carrier, carrier.getBoundingBox());
+    }
+
+    private Direction carrierSupportDirection(Entity carrier, AABB carrierBox) {
+        if (this.isCurrentSupport(carrier)) return this.supportDirection;
+        if (!EntityBondManager.isFollower(this)) return null;
+        Direction gravityDirection = this.currentPushGravityDirection();
+        return PlasticEntityPhysics.hasImmediateEntityContact(
+            this,
+            this.getBoundingBox(),
+            carrier,
+            carrierBox,
+            gravityDirection
+        )
+            ? gravityDirection
+            : null;
     }
 
     private Vec3 moveWithCarrierDisplacement(Vec3 movement) {
@@ -1106,20 +1240,15 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     }
 
     public final void plasticraft$applyTransferredPush(Entity pusher, Vec3 movement) {
-        Vec3 moved = this.moveWithCarrierDisplacement(movement);
-        Direction gravityDirection = this.currentPushGravityDirection();
-        this.lastSidePushGameTime = this.level().getGameTime();
-        this.sidePushGravityDirection = gravityDirection;
-        this.sidePushVelocity = this.adjustTransferredSidePushVelocity(
-            pusher,
-            PlasticEntityPhysics.tangentialMovement(moved, gravityDirection)
-        );
-        Vec3 normal = Vec3.atLowerCornerOf(gravityDirection.getNormal());
-        double normalVelocity = this.getDeltaMovement().dot(normal);
-        this.setDeltaMovement(this.sidePushVelocity.add(normal.scale(normalVelocity)));
-        this.restorePoweredSlidingRailDrive();
-        this.hasImpulse = true;
-        this.hurtMarked = true;
+        if (!EntityBondManager.hasBonds(this)) {
+            this.recordTransferredSidePush(pusher, this.moveWithCarrierDisplacement(movement));
+            return;
+        }
+        Vec3 moved = this.moveBondedComponentWithCarrier(pusher, movement);
+        Entity leader = EntityBondManager.resolveLeader(this.level(), this);
+        if (leader instanceof AbstractPlasticEntity plasticLeader) {
+            plasticLeader.recordTransferredSidePush(pusher, moved);
+        }
     }
 
     private void restorePoweredSlidingRailDrive() {
@@ -1312,7 +1441,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         PlasticEntityOrientation current = this.getOrientation();
         if (current.attachmentFace() == attachmentFace) return true;
         PlasticEntityOrientation changed = new PlasticEntityOrientation(attachmentFace, current.quarterTurn());
-        this.setOrientation(changed);
+        if (!EntityBondManager.hasBonds(this) || !this.startHammerDeflection(changed)) {
+            this.setOrientation(changed);
+        }
         this.hasImpulse = true;
         this.hurtMarked = true;
         this.level().playSound(
@@ -1439,6 +1570,16 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         tag.putInt("BlockContactMask", this.blockContactMask);
         tag.putBoolean("ImpactTrackingArmed", this.impactTrackingArmed);
         tag.putBoolean("Magnetized", this.isMagnetized());
+        byte stableOrientation = this.entityData.get(HAMMER_STABLE_ORIENTATION);
+        if (stableOrientation != NO_HAMMER_ORIENTATION) {
+            tag.putByte(TAG_HAMMER_STABLE_ORIENTATION, stableOrientation);
+            tag.putLong(TAG_HAMMER_RETURN_AT, this.hammerReturnAt);
+        }
+        long hammerReturnStarted = this.entityData.get(HAMMER_RETURN_STARTED);
+        if (hammerReturnStarted >= 0L) {
+            tag.putByte(TAG_HAMMER_RETURN_FROM, this.entityData.get(HAMMER_RETURN_FROM));
+            tag.putLong(TAG_HAMMER_RETURN_STARTED, hammerReturnStarted);
+        }
         if (this.effectiveGravityDirection != null) {
             tag.putString("EffectiveGravityDirection", this.effectiveGravityDirection.getName());
         }
@@ -1474,6 +1615,27 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         this.blockContactMask = Math.max(0, tag.getInt("BlockContactMask"));
         this.impactTrackingArmed = tag.getBoolean("ImpactTrackingArmed");
         this.setMagnetized(tag.getBoolean("Magnetized"));
+        this.entityData.set(
+            HAMMER_STABLE_ORIENTATION,
+            tag.contains(TAG_HAMMER_STABLE_ORIENTATION, Tag.TAG_ANY_NUMERIC)
+                ? tag.getByte(TAG_HAMMER_STABLE_ORIENTATION)
+                : NO_HAMMER_ORIENTATION
+        );
+        this.hammerReturnAt = tag.contains(TAG_HAMMER_RETURN_AT, Tag.TAG_ANY_NUMERIC)
+            ? tag.getLong(TAG_HAMMER_RETURN_AT)
+            : -1L;
+        this.entityData.set(
+            HAMMER_RETURN_FROM,
+            tag.contains(TAG_HAMMER_RETURN_FROM, Tag.TAG_ANY_NUMERIC)
+                ? tag.getByte(TAG_HAMMER_RETURN_FROM)
+                : this.entityData.get(ORIENTATION)
+        );
+        this.entityData.set(
+            HAMMER_RETURN_STARTED,
+            tag.contains(TAG_HAMMER_RETURN_STARTED, Tag.TAG_ANY_NUMERIC)
+                ? tag.getLong(TAG_HAMMER_RETURN_STARTED)
+                : -1L
+        );
         this.slidingRailState.load(tag);
         this.effectiveGravityDirection = Direction.byName(tag.getString("EffectiveGravityDirection"));
         if (this.effectiveGravityDirection == null) {
@@ -1481,5 +1643,31 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             this.blockContactMask = 0;
             this.impactTrackingArmed = false;
         }
+    }
+
+    private void tickHammerDeflection() {
+        long gameTime = this.level().getGameTime();
+        byte stableOrientation = this.entityData.get(HAMMER_STABLE_ORIENTATION);
+        if (stableOrientation != NO_HAMMER_ORIENTATION && gameTime >= this.hammerReturnAt) {
+            this.entityData.set(HAMMER_RETURN_FROM, this.entityData.get(ORIENTATION));
+            this.setOrientation(PlasticEntityOrientation.unpack(Byte.toUnsignedInt(stableOrientation)));
+            this.entityData.set(HAMMER_STABLE_ORIENTATION, NO_HAMMER_ORIENTATION);
+            this.entityData.set(HAMMER_RETURN_STARTED, gameTime);
+            this.hammerReturnAt = -1L;
+            this.hasImpulse = true;
+            this.hurtMarked = true;
+            return;
+        }
+        long returnStarted = this.entityData.get(HAMMER_RETURN_STARTED);
+        if (returnStarted >= 0L && gameTime - returnStarted >= HAMMER_RETURN_ANIMATION_TICKS) {
+            this.entityData.set(HAMMER_RETURN_STARTED, -1L);
+        }
+    }
+
+    public record HammerRotationAnimation(
+        PlasticEntityOrientation from,
+        PlasticEntityOrientation to,
+        float progress
+    ) {
     }
 }

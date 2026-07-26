@@ -7,6 +7,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 import javax.annotation.Nullable;
@@ -21,6 +22,8 @@ import java.util.UUID;
 
 /** 维护实体粘接组的面占用、组基准和逐刻刚性约束。 */
 public final class EntityBondManager {
+    private static final ThreadLocal<ComponentMovement> COMPONENT_MOVEMENT = new ThreadLocal<>();
+
     private EntityBondManager() {
     }
 
@@ -141,12 +144,19 @@ public final class EntityBondManager {
         Entity leader = resolveLeader(entity.level(), state);
         if (leader == null || !leader.isAlive()) return;
         if (leader == entity) {
-            for (Entity member : component(entity.level(), entity)) {
-                if (member != entity) enforceFollower(member, leader);
-            }
+            synchronizeComponent(entity);
             return;
         }
         enforceFollower(entity, leader);
+    }
+
+    /** 在同一次推动内对齐全部从实体，避免被直接推动的从实体延迟到下一 tick 才追上主实体。 */
+    public static void synchronizeComponent(Entity member) {
+        Entity leader = resolveLeader(member.level(), member);
+        if (leader == null || !leader.isAlive()) return;
+        for (Entity componentMember : component(member.level(), leader)) {
+            if (componentMember != leader) enforceFollower(componentMember, leader);
+        }
     }
 
     public static void removeForBlockification(Entity entity) {
@@ -168,6 +178,8 @@ public final class EntityBondManager {
 
     /** 用每个成员的碰撞箱共同裁剪基准位移，避免跟随成员被直接搬进方块。 */
     public static Vec3 clampLeaderMovement(Entity leader, Vec3 movement) {
+        ComponentMovement componentMovement = COMPONENT_MOVEMENT.get();
+        if (componentMovement != null && componentMovement.leader() == leader) return movement;
         EntityBondState state = get(leader);
         if (movement.lengthSqr() <= 1.0E-12D
             || state == null
@@ -193,6 +205,57 @@ public final class EntityBondManager {
         return allowed;
     }
 
+    /** 在外层已经完成全组裁剪后移动内部基准，避免再次被推动者或从实体截断。 */
+    public static void runPreclippedComponentMovement(Entity member, Entity ignored, Runnable movement) {
+        Entity leader = resolveLeader(member.level(), member);
+        if (leader == null || !leader.isAlive()) return;
+        ComponentMovement previous = COMPONENT_MOVEMENT.get();
+        COMPONENT_MOVEMENT.set(new ComponentMovement(leader, ignored));
+        try {
+            movement.run();
+        } finally {
+            if (previous == null) {
+                COMPONENT_MOVEMENT.remove();
+            } else {
+                COMPONENT_MOVEMENT.set(previous);
+            }
+        }
+    }
+
+    public static boolean ignoresPreclippedCollision(Entity mover, Entity target) {
+        ComponentMovement movement = COMPONENT_MOVEMENT.get();
+        return movement != null && movement.leader() == mover && movement.ignored() == target;
+    }
+
+    /** 从任一成员发起移动时，用整个连接组的碰撞箱共同裁剪位移。 */
+    public static Vec3 clampComponentMovement(Entity member, Entity ignored, Vec3 movement) {
+        Entity leader = resolveLeader(member.level(), member);
+        if (leader == null || !leader.isAlive()) return Vec3.ZERO;
+
+        Vec3 allowed = movement;
+        for (Entity componentMember : component(member.level(), leader)) {
+            if (allowed.lengthSqr() <= 1.0E-12D) break;
+            List<VoxelShape> entityCollisions = member.level().getEntities(
+                componentMember,
+                componentMember.getBoundingBox().expandTowards(allowed),
+                other -> !other.isRemoved()
+                    && !other.isSpectator()
+                    && other != ignored
+                    && !other.isPassengerOfSameVehicle(ignored)
+                    && !areInSameComponent(componentMember, other)
+                    && componentMember.canCollideWith(other)
+            ).stream().map(other -> Shapes.create(other.getBoundingBox())).toList();
+            allowed = Entity.collideBoundingBox(
+                componentMember,
+                allowed,
+                componentMember.getBoundingBox(),
+                member.level(),
+                entityCollisions
+            );
+        }
+        return allowed;
+    }
+
     /** 只移除指定实体的连接，并为删点后仍存在的每个连通分量重新选择基准。 */
     public static boolean disconnectEntity(ServerLevel level, Entity entity) {
         EntityBondState removedState = get(entity);
@@ -204,6 +267,31 @@ public final class EntityBondManager {
             if (neighbor != null) neighbors.put(neighbor.getUUID(), neighbor);
         }
         disconnectKnownEntity(level, entity, removedState, neighbors.values());
+        return true;
+    }
+
+    /** 只解除指定面的实体连接，并分别重建断开后仍存在的连接分量。 */
+    public static boolean disconnectFace(ServerLevel level, Entity entity, Direction storedFace) {
+        EntityBondState state = get(entity);
+        EntityBondLink link = state == null ? null : state.linkAt(storedFace);
+        if (link == null) return false;
+
+        Entity other = resolve(level, link);
+        updateAfterLinkRemoval(entity, state.withoutLinkAt(storedFace));
+        List<Entity> remaining = new ArrayList<>();
+        remaining.add(entity);
+        if (other != null) {
+            EntityBondState otherState = get(other);
+            if (otherState != null) {
+                EntityBondLink reverse = otherState.linkAt(link.otherFace());
+                EntityBondState changed = reverse != null && reverse.otherEntityUuid().equals(entity.getUUID())
+                    ? otherState.withoutLinkAt(link.otherFace())
+                    : otherState.withoutLinksTo(entity.getUUID());
+                updateAfterLinkRemoval(other, changed);
+            }
+            remaining.add(other);
+        }
+        rebaseRemainingComponents(level, remaining);
         return true;
     }
 
@@ -296,6 +384,7 @@ public final class EntityBondManager {
     }
 
     private static void restoreStandalone(Entity entity, EntityBondState state) {
+        entity.removeData(ModAttachments.ADHESIVE_ELASTIC_MOTION);
         entity.removeData(ModAttachments.ENTITY_BONDS);
         entity.setNoGravity(state.originalNoGravity());
         entity.setDeltaMovement(Vec3.ZERO);
@@ -339,6 +428,7 @@ public final class EntityBondManager {
     }
 
     private static void enforceFollower(Entity follower, Entity leader) {
+        if (AdhesiveBondingService.isElasticMotion(follower)) return;
         EntityBondState state = get(follower);
         if (state == null) return;
         Vec3 expected = leader.position().add(state.offsetFromLeader());
@@ -359,5 +449,8 @@ public final class EntityBondManager {
         follower.xOld = leader.xOld + offset.x;
         follower.yOld = leader.yOld + offset.y;
         follower.zOld = leader.zOld + offset.z;
+    }
+
+    private record ComponentMovement(Entity leader, Entity ignored) {
     }
 }

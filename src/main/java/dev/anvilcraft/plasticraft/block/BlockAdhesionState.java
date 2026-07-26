@@ -26,7 +26,7 @@ public record BlockAdhesionState(
         patchMask &= FACE_MASK;
         blockBondMask &= FACE_MASK;
         entityBondMask &= FACE_MASK;
-        patchMask &= ~(blockBondMask | entityBondMask);
+        patchMask &= ~blockBondMask;
         entityBondMask &= ~blockBondMask;
     }
 
@@ -60,7 +60,7 @@ public record BlockAdhesionState(
 
     public BlockAdhesionState withPatch(Direction face) {
         int bit = bit(face);
-        if ((this.blockBondMask & bit) != 0 || (this.entityBondMask & bit) != 0) return this;
+        if ((this.blockBondMask & bit) != 0) return this;
         return new BlockAdhesionState(this.blockId, this.patchMask | bit, this.blockBondMask, this.entityBondMask);
     }
 
@@ -96,7 +96,7 @@ public record BlockAdhesionState(
         int bit = bit(face);
         return new BlockAdhesionState(
             this.blockId,
-            this.patchMask & ~bit,
+            this.patchMask,
             this.blockBondMask & ~bit,
             this.entityBondMask | bit
         );

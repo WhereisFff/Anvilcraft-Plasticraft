@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.entity;
 
 import dev.anvilcraft.lib.v2.recipe.cache.IItemHandlerCache;
 import dev.anvilcraft.plasticraft.block.IgnitedFluidEffects;
+import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
@@ -14,6 +15,7 @@ import dev.dubhe.anvilcraft.api.itemhandler.ItemHandlerUtil;
 import dev.dubhe.anvilcraft.api.itemhandler.PollableItemHandler;
 import dev.dubhe.anvilcraft.block.HeaterBlock;
 import dev.dubhe.anvilcraft.block.PlasmaJetsBlock;
+import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.init.block.ModFluidTags;
 import dev.dubhe.anvilcraft.init.item.ModItemTags;
 import dev.dubhe.anvilcraft.item.AnvilHammerItem;
@@ -33,6 +35,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.stats.Stats;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
@@ -50,6 +54,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -167,6 +172,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         @Override
         protected void onContentsChanged() {
             HardenedResinCauldronEntity.this.syncFluidData();
+            HardenedResinCauldronEntity.this.burnIfFilledWithLava();
         }
     };
     private BlockPos fluidNetworkPos;
@@ -176,6 +182,8 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     private boolean restoringData;
     private boolean refreshingIgnited;
     private boolean bondedDataDirty;
+    private boolean burnedByLava;
+    private boolean leftLavaSource;
     private long lastRecipeProcessingGameTime = Long.MIN_VALUE;
 
     public static void configureDefaultDrop(Supplier<ItemStack> supplier) {
@@ -341,6 +349,10 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     public @Nullable Direction getOutletDirection() {
         Direction localDirection = this.getOutletLocalDirection();
         if (localDirection == null) return null;
+        return this.resolveOutletDirection(localDirection);
+    }
+
+    private Direction resolveOutletDirection(Direction localDirection) {
         PlasticEntityOrientation orientation = this.getOrientation();
         return switch (localDirection) {
             case NORTH -> orientation.longAxis().getOpposite();
@@ -361,17 +373,102 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
 
     @Override
     public void tick() {
+        if (!this.level().isClientSide && this.burnIfTouchingLava()) return;
+        AABB previousBox = this.getBoundingBox();
         super.tick();
         if (this.isRemoved() || this.level().isClientSide) return;
+        if (this.burnIfCrossingLava(previousBox)) return;
         this.tickFunctionalState();
     }
 
     /** 方块化后只推进容器功能，不执行落方块实体的重力和碰撞物理。 */
     public void plasticraft$tickBonded() {
         if (this.isRemoved() || this.level().isClientSide) return;
+        if (this.burnIfTouchingLava()) return;
         if (this.time < Integer.MAX_VALUE) this.time++;
         this.tickCount++;
         this.tickFunctionalState();
+    }
+
+    public boolean plasticraft$wasBurnedByLava() {
+        return this.burnedByLava;
+    }
+
+    public boolean plasticraft$leftLavaSource() {
+        return this.leftLavaSource;
+    }
+
+    private void burnIfFilledWithLava() {
+        if (this.restoringData || this.level().isClientSide || this.isRemoved()) return;
+        if (this.fluidHandler.getFluid().is(FluidTags.LAVA)) this.burnFromLava(true);
+    }
+
+    private boolean burnIfTouchingLava() {
+        boolean filledWithLava = this.fluidHandler.getFluid().is(FluidTags.LAVA);
+        if (!filledWithLava && !this.isTouchingWorldLava()) return false;
+        this.burnFromLava(filledWithLava);
+        return true;
+    }
+
+    private boolean isTouchingWorldLava() {
+        return this.isTouchingWorldLava(this.getBoundingBox());
+    }
+
+    private boolean burnIfCrossingLava(AABB previousBox) {
+        if (this.fluidHandler.getFluid().is(FluidTags.LAVA)) {
+            this.burnFromLava(true);
+            return true;
+        }
+        AABB currentBox = this.getBoundingBox();
+        Vec3 movement = currentBox.getCenter().subtract(previousBox.getCenter());
+        double distance = Math.max(Math.abs(movement.x), Math.max(Math.abs(movement.y), Math.abs(movement.z)));
+        int samples = Math.max(1, Mth.ceil(distance / 0.5D));
+        for (int sample = 1; sample <= samples; sample++) {
+            if (this.isTouchingWorldLava(previousBox.move(movement.scale(sample / (double) samples)))) {
+                this.burnFromLava(false);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isTouchingWorldLava(AABB box) {
+        int minX = Mth.floor(box.minX + 1.0E-6D);
+        int maxX = Mth.floor(box.maxX - 1.0E-6D);
+        int minY = Mth.floor(box.minY + 1.0E-6D);
+        int maxY = Mth.floor(box.maxY - 1.0E-6D);
+        int minZ = Mth.floor(box.minZ + 1.0E-6D);
+        int maxZ = Mth.floor(box.maxZ - 1.0E-6D);
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    cursor.set(x, y, z);
+                    FluidState fluid = this.level().getFluidState(cursor);
+                    if (fluid.is(FluidTags.LAVA)
+                        && y + fluid.getHeight(this.level(), cursor) > box.minY + 1.0E-6D) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private void burnFromLava(boolean leaveLavaSource) {
+        if (this.level().isClientSide || this.isRemoved()) return;
+        this.burnedByLava = true;
+        BlockPos effectPos = BlockPos.containing(this.getBoundingBox().getCenter());
+        this.level().levelEvent(2001, effectPos, Block.getId(this.getDisplayState()));
+        this.level().gameEvent(this, GameEvent.BLOCK_DESTROY, effectPos);
+        if (leaveLavaSource) {
+            this.leftLavaSource = this.level().setBlock(
+                effectPos,
+                Fluids.LAVA.defaultFluidState().createLegacyBlock(),
+                Block.UPDATE_ALL
+            );
+        }
+        this.discard();
     }
 
     public boolean plasticraft$consumeBondedDataDirty() {
@@ -510,18 +607,30 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     }
 
     private void absorbTouchingItems() {
+        AABB collisionArea = this.getBoundingBox().deflate(1.0E-4D);
+        for (ItemEntity item : this.level().getEntitiesOfClass(
+            ItemEntity.class,
+            collisionArea,
+            entity -> entity.isAlive() && collisionArea.contains(entity.getBoundingBox().getCenter())
+        )) {
+            this.absorbItem(item);
+        }
         for (ItemEntity item : this.level().getEntitiesOfClass(
             ItemEntity.class,
             this.openingContactArea(),
             Entity::isAlive
         )) {
             if (!item.anvilcraft$isAdsorbable()) continue;
-            ItemStack remaining = ItemHandlerUtil.insertItem(this.input, item.getItem().copy(), false);
-            if (remaining.isEmpty()) {
-                item.discard();
-            } else {
-                item.setItem(remaining);
-            }
+            this.absorbItem(item);
+        }
+    }
+
+    private void absorbItem(ItemEntity item) {
+        ItemStack remaining = ItemHandlerUtil.insertItem(this.input, item.getItem().copy(), false);
+        if (remaining.isEmpty()) {
+            item.discard();
+        } else {
+            item.setItem(remaining);
         }
     }
 
@@ -654,9 +763,8 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         BlockPos target = this.openingTargetPosition();
         BlockState fluidState = fluid.getFluid().defaultFluidState().createLegacyBlock();
         if (this.isOpeningBlocked(target)) return;
-        if (this.level().setBlock(target, fluidState, Block.UPDATE_ALL)) {
-            this.fluidHandler.drain(CAPACITY, IFluidHandler.FluidAction.EXECUTE);
-        }
+        if (!fluidState.isAir()) this.level().setBlock(target, fluidState, Block.UPDATE_ALL);
+        this.fluidHandler.drain(CAPACITY, IFluidHandler.FluidAction.EXECUTE);
     }
 
     private BlockPos openingTargetPosition() {
@@ -732,6 +840,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         if (!this.level().isClientSide) {
             Direction current = this.getOutletLocalDirection();
             Direction changed = current == localSide ? null : localSide;
+            if (changed != null) this.removeOpposingOutlet(this.resolveOutletDirection(changed));
             this.setOutletLocalDirection(changed);
             if (changed != null) this.tryAutoOutputResults();
             this.level().playSound(
@@ -793,6 +902,29 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         return closest;
     }
 
+    private void removeOpposingOutlet(Direction outletDirection) {
+        BlockPos occupiedPos = BlockPos.containing(this.getBoundingBox().getCenter());
+        BlockPos targetPos = occupiedPos.relative(outletDirection);
+        Direction opposingDirection = outletDirection.getOpposite();
+        for (HardenedResinCauldronEntity cauldron : this.level().getEntitiesOfClass(
+            HardenedResinCauldronEntity.class,
+            new AABB(targetPos),
+            entity -> entity != this
+                && BlockPos.containing(entity.getBoundingBox().getCenter()).equals(targetPos)
+        )) {
+            cauldron.clearOutletFacing(opposingDirection);
+        }
+        if (this.level().getBlockEntity(targetPos) instanceof BondedEntityBlockEntity bonded) {
+            bonded.clearCauldronOutletFacing(opposingDirection);
+        }
+    }
+
+    public boolean clearOutletFacing(Direction direction) {
+        if (this.getOutletDirection() != direction) return false;
+        this.setOutletLocalDirection(null);
+        return true;
+    }
+
     @Override
     protected InteractionResult interactNormally(Player player, InteractionHand hand) {
         ItemStack inHand = player.getItemInHand(hand);
@@ -848,11 +980,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         if (outletDirection == null || this.level().isClientSide || this.autoOutputting) return;
 
         BlockPos occupiedPos = BlockPos.containing(this.getBoundingBox().getCenter());
-        List<IItemHandler> targets = ItemHandlerUtil.getTargetItemHandlerList(
-            occupiedPos.relative(outletDirection),
-            null,
-            this.level()
-        );
+        List<IItemHandler> targets = this.getOutletTargets(occupiedPos.relative(outletDirection));
         this.autoOutputting = true;
         try {
             if (targets == null || targets.isEmpty()) {
@@ -882,6 +1010,18 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
             this.autoOutputting = false;
             this.contentsChanged();
         }
+    }
+
+    private List<IItemHandler> getOutletTargets(BlockPos targetPos) {
+        LargeCauldronBlockEntity cauldron = LargeCauldronBlockEntity.getMain(
+            this.level(),
+            targetPos,
+            this.level().getBlockState(targetPos)
+        );
+        if (cauldron != null) {
+            return List.of(cauldron.getInputHandler());
+        }
+        return ItemHandlerUtil.getTargetItemHandlerList(targetPos, null, this.level());
     }
 
     private boolean isOutletBlocked(Direction outletDirection) {

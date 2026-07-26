@@ -19,6 +19,7 @@ import java.util.Objects;
 public final class PlasticEntityRenderTransforms {
     private static final int TURNS_PER_FACE = 4;
     private static final Quaternionf[] ROTATIONS = createRotations();
+    private static final ThreadLocal<RenderOverride> RENDER_OVERRIDE = new ThreadLocal<>();
 
     private PlasticEntityRenderTransforms() {
     }
@@ -40,6 +41,23 @@ public final class PlasticEntityRenderTransforms {
     }
 
     public static void apply(PoseStack pose, AbstractPlasticEntity entity, float partialTick) {
+        RenderOverride override = RENDER_OVERRIDE.get();
+        if (override != null && override.entity() == entity) {
+            applyInterpolated(pose, entity, override.from(), override.to(), override.progress());
+            return;
+        }
+        AbstractPlasticEntity.HammerRotationAnimation hammerAnimation =
+            entity.getHammerRotationAnimation(partialTick);
+        if (hammerAnimation != null) {
+            applyInterpolated(
+                pose,
+                entity,
+                hammerAnimation.from(),
+                hammerAnimation.to(),
+                hammerAnimation.progress()
+            );
+            return;
+        }
         AdhesiveTransit transit = entity.getExistingDataOrNull(ModAttachments.ADHESIVE_TRANSIT.get());
         if (transit == null || !transit.plastic()) {
             apply(pose, entity, entity.getOrientation());
@@ -98,6 +116,17 @@ public final class PlasticEntityRenderTransforms {
         Objects.requireNonNull(pose, "pose");
         Objects.requireNonNull(orientation, "orientation");
         pose.mulPose(ROTATIONS[rotationIndex(orientation)]);
+    }
+
+    public static RenderOverrideScope overrideRotation(
+        AbstractPlasticEntity entity,
+        PlasticEntityOrientation from,
+        PlasticEntityOrientation to,
+        float progress
+    ) {
+        RenderOverride previous = RENDER_OVERRIDE.get();
+        RENDER_OVERRIDE.set(new RenderOverride(entity, from, to, Math.clamp(progress, 0.0F, 1.0F)));
+        return new RenderOverrideScope(previous);
     }
 
     /**
@@ -192,5 +221,33 @@ public final class PlasticEntityRenderTransforms {
 
     private static int rotationIndex(PlasticEntityOrientation orientation) {
         return orientation.attachmentFace().get3DDataValue() * TURNS_PER_FACE + orientation.quarterTurn();
+    }
+
+    private record RenderOverride(
+        AbstractPlasticEntity entity,
+        PlasticEntityOrientation from,
+        PlasticEntityOrientation to,
+        float progress
+    ) {
+    }
+
+    public static final class RenderOverrideScope implements AutoCloseable {
+        private final RenderOverride previous;
+        private boolean closed;
+
+        private RenderOverrideScope(RenderOverride previous) {
+            this.previous = previous;
+        }
+
+        @Override
+        public void close() {
+            if (this.closed) return;
+            this.closed = true;
+            if (this.previous == null) {
+                RENDER_OVERRIDE.remove();
+            } else {
+                RENDER_OVERRIDE.set(this.previous);
+            }
+        }
     }
 }

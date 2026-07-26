@@ -113,6 +113,20 @@ public record EntityBondState(
         );
     }
 
+    public EntityBondState withoutLinkAt(Direction face) {
+        List<EntityBondLink> changed = new ArrayList<>(this.links.size());
+        for (EntityBondLink current : this.links) {
+            if (current.face() != face) changed.add(current);
+        }
+        return new EntityBondState(
+            this.leaderUuid,
+            this.leaderEntityId,
+            this.offsetFromLeader,
+            this.originalNoGravity,
+            changed
+        );
+    }
+
     public EntityBondState withLeader(Entity leader, Vec3 offset) {
         return new EntityBondState(
             leader.getUUID(),

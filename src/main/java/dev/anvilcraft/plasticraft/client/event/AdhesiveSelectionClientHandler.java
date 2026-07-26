@@ -3,10 +3,12 @@ package dev.anvilcraft.plasticraft.client.event;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.client.renderer.ThickLineRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderHelper;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesivePathPlanner;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveSelectionManager;
@@ -62,7 +64,6 @@ public final class AdhesiveSelectionClientHandler {
     private static final long BOX_ENTER_MILLIS = 180L;
     private static final long BOX_EXIT_MILLIS = 220L;
     private static final long PATH_REFRESH_TICKS = 4L;
-    private static final double BOX_TUBE_WIDTH = 0.035D;
     private static final double PATH_TUBE_WIDTH = 0.045D;
     private static final double GRID_OUTWARD_OFFSET = 0.004D;
     private static final double SELECTED_GRID_INSET = 0.004D;
@@ -109,6 +110,10 @@ public final class AdhesiveSelectionClientHandler {
             || !player.getItemInHand(hand).is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) {
             return;
         }
+        if (player.isShiftKeyDown()) {
+            pendingBlockUse = null;
+            return;
+        }
 
         HitResult hitResult = minecraft.hitResult;
         Entity selected = getSelectedEntity(minecraft);
@@ -133,6 +138,13 @@ public final class AdhesiveSelectionClientHandler {
         if (hitResult instanceof EntityHitResult entityHit) {
             Entity target = entityHit.getEntity();
             Direction hitFace = AdhesiveFaces.hitFace(target, entityHit.getLocation());
+            if (AdhesiveBondingService.hasAdhesiveOnFace(target, hitFace)) {
+                AdhesiveSelectionManager.clear(player);
+                startExitAnimation();
+                PacketDistributor.sendToServer(new AdhesiveSelectEntityPacket(target.getId(), hand, hitFace));
+                cancel(event);
+                return;
+            }
             if (selected != null && selected != target) {
                 PacketDistributor.sendToServer(new AdhesiveBondEntitiesPacket(
                     selected.getId(),
@@ -144,7 +156,6 @@ public final class AdhesiveSelectionClientHandler {
                 return;
             }
             if (target != player
-                && !target.hasData(ModAttachments.ENTITY_ADHESION)
                 && !target.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
                 AdhesiveSelectionManager.select(player, target, hitFace);
                 beginSelectionAnimation(target);
@@ -194,6 +205,7 @@ public final class AdhesiveSelectionClientHandler {
         if (pendingBlockUse != null
             && (minecraft.screen != null
                 || minecraft.getConnection() == null
+                || player.isShiftKeyDown()
                 || !player.getItemInHand(pendingBlockUse.hand())
                     .is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()))) {
             pendingBlockUse = null;
@@ -206,9 +218,7 @@ public final class AdhesiveSelectionClientHandler {
             return;
         }
         Entity selected = getSelectedEntity(minecraft);
-        if (selected == null
-            || selected.hasData(ModAttachments.ENTITY_ADHESION)
-            || selected.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
+        if (selected == null || selected.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
             AdhesiveSelectionManager.clear(player);
             startExitAnimation();
             return;
@@ -243,6 +253,7 @@ public final class AdhesiveSelectionClientHandler {
             || minecraft.gameMode == null
             || minecraft.getConnection() == null
             || minecraft.screen != null
+            || player.isShiftKeyDown()
             || !player.getItemInHand(pending.hand()).is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) {
             return;
         }
@@ -360,9 +371,11 @@ public final class AdhesiveSelectionClientHandler {
         int pathColor = WHITE;
         @Nullable AdhesivePathPlanner.Plan preview = null;
         @Nullable Entity previewSupport = null;
+        @Nullable Entity previewMovingEntity = selected;
         @Nullable BlockPos previewSupportPos = null;
         @Nullable Direction previewSupportFace = null;
         if (selected != null
+            && !selected.hasData(ModAttachments.ENTITY_ADHESION)
             && minecraft.hitResult instanceof BlockHitResult blockHit
             && blockHit.getType() != HitResult.Type.MISS) {
             preview = previewPath(level, selected, player, blockHit);
@@ -382,7 +395,21 @@ public final class AdhesiveSelectionClientHandler {
             previewSupport = entityHit.getEntity();
             previewSupportFace = AdhesiveFaces.hitFace(previewSupport, entityHit.getLocation());
             preview = previewPath(level, selected, player, previewSupport, previewSupportFace);
-            path = previewRenderPath(selected, preview, previewSupport, null, previewSupportFace);
+            if (selected.hasData(ModAttachments.ENTITY_ADHESION)) {
+                previewMovingEntity = previewSupport;
+                previewSupport = selected;
+                previewSupportFace = AdhesiveFaces.worldFace(
+                    selected,
+                    AdhesiveSelectionManager.getSelectedFace(player)
+                );
+            }
+            path = previewRenderPath(
+                previewMovingEntity,
+                preview,
+                previewSupport,
+                null,
+                previewSupportFace
+            );
             pathColor = previewPathColor(preview);
         } else if (transit != null) {
             path = transitRenderPath(animatedEntity, transit, transitSupport);
@@ -417,7 +444,7 @@ public final class AdhesiveSelectionClientHandler {
             renderPreviewEndpoint(
                 pose,
                 buffers,
-                selected,
+                previewMovingEntity,
                 preview,
                 previewSupport,
                 previewSupportPos,
@@ -472,7 +499,8 @@ public final class AdhesiveSelectionClientHandler {
     ) {
         ClientLevel level = minecraft.level;
         if (level == null) return null;
-        if (minecraft.hitResult instanceof BlockHitResult blockHit
+        if (!selected.hasData(ModAttachments.ENTITY_ADHESION)
+            && minecraft.hitResult instanceof BlockHitResult blockHit
             && blockHit.getType() != HitResult.Type.MISS) {
             return previewPath(level, selected, player, blockHit);
         }
@@ -526,6 +554,11 @@ public final class AdhesiveSelectionClientHandler {
         Direction supportFace
     ) {
         Direction selectedFace = AdhesiveSelectionManager.getSelectedFace(player);
+        boolean reverse = selected.hasData(ModAttachments.ENTITY_ADHESION);
+        Entity movingEntity = reverse ? supportEntity : selected;
+        Entity anchorEntity = reverse ? selected : supportEntity;
+        Direction anchorFace = reverse ? AdhesiveFaces.worldFace(selected, selectedFace) : supportFace;
+        Direction movingFace = reverse ? AdhesiveFaces.storedFace(supportEntity, supportFace) : selectedFace;
         PreviewKey key = new PreviewKey(
             selected.getUUID(),
             supportEntity.getUUID(),
@@ -541,11 +574,11 @@ public final class AdhesiveSelectionClientHandler {
             || supportEntity.position().distanceToSqr(cachedPreviewSupportStart) > 0.0625D) {
             cachedPreview = AdhesivePathPlanner.planToEntity(
                 level,
-                selected,
+                movingEntity,
                 player,
-                supportEntity,
-                supportFace,
-                selectedFace
+                anchorEntity,
+                anchorFace,
+                movingFace
             );
             cachedPreviewKey = key;
             cachedPreviewTick = gameTime;
@@ -729,7 +762,13 @@ public final class AdhesiveSelectionClientHandler {
             Vec3 center = from.lerp(to, 0.5D);
             Vec3 animatedFrom = center.lerp(from, eased);
             Vec3 animatedTo = center.lerp(to, eased);
-            renderTube(pose, buffers, List.of(animatedFrom, animatedTo), WHITE, BOX_TUBE_WIDTH);
+            ThickLineRenderer.render(
+                pose,
+                buffers,
+                List.of(animatedFrom, animatedTo),
+                WHITE,
+                ThickLineRenderer.SELECTION_WIDTH
+            );
         }
     }
 
@@ -740,71 +779,7 @@ public final class AdhesiveSelectionClientHandler {
         int color
     ) {
         if (points.size() < 2) return;
-        renderTube(pose, buffers, resamplePath(points), color, PATH_TUBE_WIDTH);
-    }
-
-    private static void renderTube(
-        PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
-        List<Vec3> points,
-        int color,
-        double width
-    ) {
-        if (points.size() < 2) return;
-        RenderType renderType = RenderType.debugQuads();
-        VertexConsumer consumer = buffers.getBuffer(renderType);
-        Vec3[] previousRing = null;
-        Vec3 previousSide = null;
-        for (int index = 0; index < points.size(); index++) {
-            Vec3 tangent;
-            if (index == 0) {
-                tangent = points.get(1).subtract(points.getFirst()).normalize();
-            } else if (index == points.size() - 1) {
-                tangent = points.getLast().subtract(points.get(index - 1)).normalize();
-            } else {
-                tangent = points.get(index + 1).subtract(points.get(index - 1)).normalize();
-            }
-            if (tangent.lengthSqr() < 1.0E-8D) continue;
-            Vec3 side;
-            if (previousSide == null) {
-                Vec3 reference = Math.abs(tangent.y) < 0.9D
-                    ? new Vec3(0.0D, 1.0D, 0.0D)
-                    : new Vec3(1.0D, 0.0D, 0.0D);
-                side = tangent.cross(reference).normalize();
-            } else {
-                side = previousSide.subtract(tangent.scale(previousSide.dot(tangent)));
-                if (side.lengthSqr() < 1.0E-8D) {
-                    Vec3 reference = Math.abs(tangent.y) < 0.9D
-                        ? new Vec3(0.0D, 1.0D, 0.0D)
-                        : new Vec3(1.0D, 0.0D, 0.0D);
-                    side = tangent.cross(reference);
-                }
-                side = side.normalize();
-            }
-            previousSide = side;
-            side = side.scale(width * 0.5D);
-            Vec3 up = tangent.cross(side).normalize().scale(width * 0.5D);
-            Vec3 point = points.get(index);
-            Vec3[] ring = {
-                point.add(side).add(up),
-                point.add(side).subtract(up),
-                point.subtract(side).subtract(up),
-                point.subtract(side).add(up)
-            };
-            if (previousRing != null) {
-                for (int face = 0; face < 4; face++) {
-                    int next = (face + 1) & 3;
-                    addQuad(pose, consumer, previousRing[face], previousRing[next], ring[next], ring[face], color);
-                }
-            } else {
-                addQuad(pose, consumer, ring[3], ring[2], ring[1], ring[0], color);
-            }
-            previousRing = ring;
-        }
-        if (previousRing != null) {
-            addQuad(pose, consumer, previousRing[0], previousRing[1], previousRing[2], previousRing[3], color);
-        }
-        buffers.endBatch(renderType);
+        ThickLineRenderer.render(pose, buffers, resamplePath(points), color, PATH_TUBE_WIDTH);
     }
 
     private static void addQuad(

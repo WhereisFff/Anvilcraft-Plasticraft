@@ -4,19 +4,19 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
-import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.dubhe.anvilcraft.api.event.HammerChangeBlockEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.sounds.SoundEvents;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.EventPriority;
@@ -33,13 +33,13 @@ public final class ResinAnvilHammerEvents {
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
-    public static void breakAdhesiveOnRotate(HammerChangeBlockEvent event) {
+    public static void reboundAdhesiveOnRotate(HammerChangeBlockEvent event) {
         if (!event.isVerified()
             || !event.getOldState().hasProperty(AbstractPlasticEntityBlock.BONDED)
             || !event.getOldState().getValue(AbstractPlasticEntityBlock.BONDED)
             || !(event.getLevel().getBlockEntity(event.getPos()) instanceof BondedEntityBlockEntity bonded)
             || !bonded.isPlastic()
-            || !bonded.release()) {
+            || !bonded.startHammerDeflection(rotationTarget(bonded, event))) {
             return;
         }
         event.setVerified(false);
@@ -47,12 +47,26 @@ public final class ResinAnvilHammerEvents {
             level.playSound(
                 null,
                 event.getPos(),
-                SoundEvents.HONEY_BLOCK_BREAK,
+                SoundEvents.HONEY_BLOCK_SLIDE,
                 SoundSource.BLOCKS,
                 1.0F,
                 1.0F
             );
         }
+    }
+
+    private static PlasticEntityOrientation rotationTarget(
+        BondedEntityBlockEntity bonded,
+        HammerChangeBlockEvent event
+    ) {
+        PlasticEntityOrientation current = bonded.getPlasticOrientation();
+        if (event.getState().hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
+            net.minecraft.core.Direction longAxis = event.getState().getValue(BlockStateProperties.HORIZONTAL_FACING);
+            if (longAxis.getAxis() != current.attachmentFace().getAxis()) {
+                return PlasticEntityOrientation.fromLongAxis(current.attachmentFace(), longAxis);
+            }
+        }
+        return new PlasticEntityOrientation(current.attachmentFace(), current.quarterTurn() + 1);
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
@@ -114,10 +128,7 @@ public final class ResinAnvilHammerEvents {
 
     /** 使用原版击退附魔的方向与强度换算：击退 V 对应 5 * 0.5。 */
     private static void knockbackFromView(Entity target, Player attacker) {
-        AdhesiveBondingService.release(target);
-        if (target.level() instanceof ServerLevel level) {
-            EntityBondManager.disconnectEntity(level, target);
-        }
+        AdhesiveBondingService.beginElasticMotion(target, ResinAnvilHammerItem.KNOCKBACK_STRENGTH);
         float yaw = attacker.getYRot() * Mth.DEG_TO_RAD;
         double directionX = Mth.sin(yaw);
         double directionZ = -Mth.cos(yaw);

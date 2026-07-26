@@ -4,21 +4,24 @@ import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CampfireBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.pathfinder.PathType;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.PriorityQueue;
-import java.util.Set;
 
 /** 在十六格范围内为树脂牵引计算可供实体碰撞箱通过的平滑路径。 */
 public final class AdhesivePathPlanner {
@@ -28,8 +31,16 @@ public final class AdhesivePathPlanner {
     private static final double DISTANCE_EPSILON = 1.0E-6D;
     private static final double COLLISION_EPSILON = 1.0E-4D;
     private static final double SEGMENT_SAMPLE_STEP = 0.2D;
-    private static final int SEARCH_MARGIN = 4;
-    private static final int MAX_EXPANDED_NODES = 8000;
+    private static final double GOAL_CONNECTION_DISTANCE_SQR = 3.25D;
+    private static final int GOAL_CONNECTION_MANHATTAN_ALLOWANCE = 4;
+    private static final int DETOUR_COST_BUDGET = 24;
+    private static final int DANGEROUS_TERRAIN_PENALTY = 1_000_000;
+    private static final int MAX_EXPANDED_NODES = 65_536;
+    // 目标附近最多四个曼哈顿步长可以直接连接，据此从路线预算反推紧凑数组所需的轴向边界。
+    private static final int SEARCH_BOUND_MARGIN = Math.ceilDiv(
+        DETOUR_COST_BUDGET + GOAL_CONNECTION_MANHATTAN_ALLOWANCE,
+        2
+    );
     private static final Direction[] SEARCH_DIRECTIONS = {
         Direction.UP,
         Direction.NORTH,
@@ -165,7 +176,7 @@ public final class AdhesivePathPlanner {
                 directDistance
             );
         }
-        List<Vec3> simplified = simplify(level, entity, originalBox, start, rawPath);
+        List<Vec3> simplified = simplify(level, entity, originalBox, start, collapseCollinear(rawPath));
         List<Vec3> rounded = roundCorners(level, entity, originalBox, start, simplified);
         return new Plan(
             Status.VALID,
@@ -284,7 +295,7 @@ public final class AdhesivePathPlanner {
                 directDistance
             );
         }
-        List<Vec3> simplified = simplify(level, entity, originalBox, start, rawPath);
+        List<Vec3> simplified = simplify(level, entity, originalBox, start, collapseCollinear(rawPath));
         List<Vec3> rounded = roundCorners(level, entity, originalBox, start, simplified);
         return new Plan(
             Status.VALID,
@@ -368,68 +379,153 @@ public final class AdhesivePathPlanner {
         Vec3 start,
         Vec3 target
     ) {
-        GridNode startNode = new GridNode(0, 0, 0);
-        int goalX = (int) Math.round(target.x - start.x);
+        Vec3 gridOrigin = new Vec3(target.x, start.y, target.z);
+        double startOffsetX = start.x - target.x;
+        double startOffsetY = start.y - target.y;
+        double startOffsetZ = start.z - target.z;
+        int startX = (int) Math.round(startOffsetX);
+        int startY = 0;
+        int startZ = (int) Math.round(startOffsetZ);
+        int goalX = 0;
         int goalY = (int) Math.round(target.y - start.y);
-        int goalZ = (int) Math.round(target.z - start.z);
-        int minX = Math.min(0, goalX) - SEARCH_MARGIN;
-        int minY = Math.min(0, goalY) - SEARCH_MARGIN;
-        int minZ = Math.min(0, goalZ) - SEARCH_MARGIN;
-        int maxX = Math.max(0, goalX) + SEARCH_MARGIN;
-        int maxY = Math.max(0, goalY) + SEARCH_MARGIN;
-        int maxZ = Math.max(0, goalZ) + SEARCH_MARGIN;
+        int goalZ = 0;
+        int directManhattan = (int) Math.ceil(
+            Math.abs(startOffsetX) + Math.abs(startOffsetY) + Math.abs(startOffsetZ) - DISTANCE_EPSILON
+        );
+        int maxRouteCost = directManhattan + DETOUR_COST_BUDGET;
+        SearchGrid grid = new SearchGrid(startX, startY, startZ, goalX, goalY, goalZ);
+        int[] costs = new int[grid.nodeCount()];
+        byte[] parents = new byte[grid.nodeCount()];
+        boolean[] closed = new boolean[grid.nodeCount()];
+        Arrays.fill(costs, Integer.MAX_VALUE);
+        Arrays.fill(parents, (byte) -1);
+        NodeHeap open = new NodeHeap(grid.nodeCount());
 
-        PriorityQueue<SearchEntry> open = new PriorityQueue<>();
-        Map<GridNode, Double> costs = new HashMap<>();
-        Map<GridNode, GridNode> parents = new HashMap<>();
-        Set<GridNode> closed = new HashSet<>();
-        costs.put(startNode, 0.0D);
-        open.add(new SearchEntry(startNode, start.distanceTo(target)));
+        // 水平轴锚定目标相位以穿过单格门洞，垂直轴保留起点高度，进入后再抬升到侧贴目标。
+        for (int x = startX - 1; x <= startX + 1; x++) {
+            for (int y = startY - 1; y <= startY + 1; y++) {
+                for (int z = startZ - 1; z <= startZ + 1; z++) {
+                    if (!grid.contains(x, y, z)) continue;
+                    Vec3 seedPosition = gridOrigin.add(x, y, z);
+                    double connectionDistanceSqr = start.distanceToSqr(seedPosition);
+                    if (connectionDistanceSqr > GOAL_CONNECTION_DISTANCE_SQR
+                        || !isSegmentClear(level, entity, originalBox, start, start, seedPosition)) {
+                        continue;
+                    }
+                    int seed = grid.index(x, y, z);
+                    int seedCost = (int) Math.ceil(Math.sqrt(connectionDistanceSqr) - DISTANCE_EPSILON);
+                    if (seedCost >= costs[seed]) continue;
+                    costs[seed] = seedCost;
+                    open.addOrDecrease(seed, seedCost + seedPosition.distanceTo(target));
+                }
+            }
+        }
 
-        GridNode reached = null;
+        int reached = -1;
         int expanded = 0;
-        while (!open.isEmpty() && expanded++ < MAX_EXPANDED_NODES) {
-            GridNode current = open.poll().node();
-            if (!closed.add(current)) continue;
-            Vec3 currentPosition = current.position(start);
-            if (currentPosition.distanceToSqr(target) <= 3.25D
+        while (!open.isEmpty() && expanded < MAX_EXPANDED_NODES) {
+            int current = open.removeFirst();
+            if (closed[current]) continue;
+            closed[current] = true;
+            expanded++;
+            int currentX = grid.x(current);
+            int currentY = grid.y(current);
+            int currentZ = grid.z(current);
+            Vec3 currentPosition = gridOrigin.add(currentX, currentY, currentZ);
+            if (currentPosition.distanceToSqr(target) <= GOAL_CONNECTION_DISTANCE_SQR
                 && isSegmentClear(level, entity, originalBox, start, currentPosition, target)) {
                 reached = current;
                 break;
             }
 
             for (Direction direction : SEARCH_DIRECTIONS) {
-                GridNode next = current.relative(direction);
-                if (next.x < minX || next.x > maxX
-                    || next.y < minY || next.y > maxY
-                    || next.z < minZ || next.z > maxZ
-                    || closed.contains(next)) {
-                    continue;
-                }
-                Vec3 nextPosition = next.position(start);
-                if (nextPosition.distanceToSqr(start) > (MAX_DISTANCE + SEARCH_MARGIN) * (MAX_DISTANCE + SEARCH_MARGIN)
-                    || !isSegmentClear(level, entity, originalBox, start, currentPosition, nextPosition)) {
-                    continue;
-                }
-                double nextCost = costs.get(current) + 1.0D;
-                if (nextCost >= costs.getOrDefault(next, Double.POSITIVE_INFINITY)) continue;
-                costs.put(next, nextCost);
-                parents.put(next, current);
-                open.add(new SearchEntry(next, nextCost + nextPosition.distanceTo(target)));
+                int nextX = currentX + direction.getStepX();
+                int nextY = currentY + direction.getStepY();
+                int nextZ = currentZ + direction.getStepZ();
+                if (!grid.contains(nextX, nextY, nextZ)) continue;
+                int next = grid.index(nextX, nextY, nextZ);
+                if (closed[next]) continue;
+
+                Vec3 nextPosition = gridOrigin.add(nextX, nextY, nextZ);
+                int stepCost = gridStepCost(level, entity, originalBox, start, currentPosition, nextPosition);
+                if (stepCost == Integer.MAX_VALUE) continue;
+                int nextCost = costs[current] + stepCost;
+                int remainingLowerBound = Math.max(
+                    0,
+                    Math.abs(goalX - nextX)
+                        + Math.abs(goalY - nextY)
+                        + Math.abs(goalZ - nextZ)
+                        - GOAL_CONNECTION_MANHATTAN_ALLOWANCE
+                );
+                if (nextCost + remainingLowerBound > maxRouteCost || nextCost >= costs[next]) continue;
+
+                costs[next] = nextCost;
+                parents[next] = (byte) direction.getOpposite().get3DDataValue();
+                open.addOrDecrease(next, nextCost + nextPosition.distanceTo(target));
             }
         }
-        if (reached == null) return List.of();
+        if (reached < 0) return List.of();
 
         List<Vec3> reversed = new ArrayList<>();
-        GridNode cursor = reached;
-        while (cursor != null) {
-            reversed.add(cursor.position(start));
-            cursor = parents.get(cursor);
+        int cursor = reached;
+        while (true) {
+            reversed.add(gridOrigin.add(grid.x(cursor), grid.y(cursor), grid.z(cursor)));
+            if (parents[cursor] < 0) break;
+            Direction parentDirection = Direction.from3DDataValue(Byte.toUnsignedInt(parents[cursor]));
+            cursor = grid.index(
+                grid.x(cursor) + parentDirection.getStepX(),
+                grid.y(cursor) + parentDirection.getStepY(),
+                grid.z(cursor) + parentDirection.getStepZ()
+            );
         }
         Collections.reverse(reversed);
-        if (!reversed.getFirst().equals(start)) reversed.addFirst(start);
+        if (reversed.getFirst().distanceToSqr(start) > DISTANCE_EPSILON) reversed.addFirst(start);
         if (!reversed.getLast().equals(target)) reversed.add(target);
         return reversed;
+    }
+
+    private static int gridStepCost(
+        Level level,
+        Entity entity,
+        AABB originalBox,
+        Vec3 originalPosition,
+        Vec3 from,
+        Vec3 to
+    ) {
+        AABB fromBox = movedBox(originalBox, originalPosition, from);
+        Vec3 movement = to.subtract(from);
+        AABB sweptBox = fromBox.expandTowards(movement);
+        if (!level.getWorldBorder().isWithinBounds(sweptBox)) return Integer.MAX_VALUE;
+
+        // 网格边始终是轴向一格，一次精确扫掠即可覆盖整个移动区间。
+        Vec3 allowed = Entity.collideBoundingBox(entity, movement, fromBox, level, List.of());
+        if (!sameMovement(allowed, movement)) return Integer.MAX_VALUE;
+        return isDangerousPosition(level, fromBox.move(movement))
+            ? 1 + DANGEROUS_TERRAIN_PENALTY
+            : 1;
+    }
+
+    private static boolean sameMovement(Vec3 first, Vec3 second) {
+        return Math.abs(first.x - second.x) <= COLLISION_EPSILON
+            && Math.abs(first.y - second.y) <= COLLISION_EPSILON
+            && Math.abs(first.z - second.z) <= COLLISION_EPSILON;
+    }
+
+    private static List<Vec3> collapseCollinear(List<Vec3> path) {
+        if (path.size() < 3) return path;
+        List<Vec3> result = new ArrayList<>();
+        result.add(path.getFirst());
+        Vec3 previousDirection = path.get(1).subtract(path.getFirst());
+        for (int index = 1; index < path.size() - 1; index++) {
+            Vec3 nextDirection = path.get(index + 1).subtract(path.get(index));
+            if (previousDirection.cross(nextDirection).lengthSqr() > 1.0E-8D
+                || previousDirection.dot(nextDirection) <= 0.0D) {
+                result.add(path.get(index));
+            }
+            previousDirection = nextDirection;
+        }
+        result.add(path.getLast());
+        return result;
     }
 
     private static List<Vec3> simplify(
@@ -493,7 +589,7 @@ public final class AdhesivePathPlanner {
         }
         Vec3 end = path.getLast();
         if (!result.getLast().equals(end)) result.add(end);
-        return result.size() > 256 ? result.subList(0, 256) : result;
+        return result.size() > 256 ? path : result;
     }
 
     private static List<Vec3> quadraticCurve(Vec3 start, Vec3 control, Vec3 end) {
@@ -546,33 +642,198 @@ public final class AdhesivePathPlanner {
         Vec3 position,
         Vec3 target
     ) {
-        AABB moved = originalBox.move(position.subtract(originalPosition))
-            .deflate(COLLISION_EPSILON)
-            .move(0.0D, 0.001D, 0.0D);
+        AABB moved = movedBox(originalBox, originalPosition, position);
         if (!level.getWorldBorder().isWithinBounds(moved)) return false;
-        if (level.noBlockCollision(entity, moved)) return true;
-        return position.distanceToSqr(target) < 1.0E-8D
+        boolean collisionFree = level.noBlockCollision(entity, moved)
+            || position.distanceToSqr(target) < 1.0E-8D
             && level.noBlockCollision(entity, moved.deflate(0.002D));
+        return collisionFree && !isDangerousPosition(level, moved);
     }
 
-    private record GridNode(int x, int y, int z) {
-        private GridNode relative(Direction direction) {
-            return new GridNode(
-                this.x + direction.getStepX(),
-                this.y + direction.getStepY(),
-                this.z + direction.getStepZ()
-            );
+    private static AABB movedBox(AABB originalBox, Vec3 originalPosition, Vec3 position) {
+        return originalBox.move(position.subtract(originalPosition))
+            .deflate(COLLISION_EPSILON);
+    }
+
+    private static boolean isDangerousPosition(Level level, AABB box) {
+        int minX = Mth.floor(box.minX + COLLISION_EPSILON);
+        int minY = Mth.floor(box.minY + COLLISION_EPSILON);
+        int minZ = Mth.floor(box.minZ + COLLISION_EPSILON);
+        int maxX = Mth.floor(box.maxX - COLLISION_EPSILON);
+        int maxY = Mth.floor(box.maxY - COLLISION_EPSILON);
+        int maxZ = Mth.floor(box.maxZ - COLLISION_EPSILON);
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    cursor.set(x, y, z);
+                    if (isDangerousState(level, cursor, level.getBlockState(cursor))) return true;
+                }
+            }
         }
 
-        private Vec3 position(Vec3 origin) {
-            return origin.add(this.x, this.y, this.z);
+        int floorY = Mth.floor(box.minY - 0.002D);
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                cursor.set(x, floorY, z);
+                BlockState state = level.getBlockState(cursor);
+                if (state.is(Blocks.MAGMA_BLOCK) || CampfireBlock.isLitCampfire(state)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isDangerousState(Level level, BlockPos pos, BlockState state) {
+        PathType blockPathType = state.getBlockPathType(level, pos, null);
+        PathType fluidPathType = state.getFluidState().getBlockPathType(level, pos, null, false);
+        return isDangerousPathType(blockPathType)
+            || isDangerousPathType(fluidPathType)
+            || state.getFluidState().is(FluidTags.LAVA)
+            || state.is(BlockTags.FIRE)
+            || state.is(Blocks.CACTUS)
+            || state.is(Blocks.SWEET_BERRY_BUSH)
+            || state.is(Blocks.WITHER_ROSE)
+            || state.is(Blocks.POINTED_DRIPSTONE)
+            || state.is(Blocks.POWDER_SNOW)
+            || state.is(Blocks.MAGMA_BLOCK)
+            || CampfireBlock.isLitCampfire(state);
+    }
+
+    private static boolean isDangerousPathType(@Nullable PathType pathType) {
+        return pathType == PathType.LAVA
+            || pathType == PathType.DAMAGE_FIRE
+            || pathType == PathType.DANGER_FIRE
+            || pathType == PathType.DAMAGE_OTHER
+            || pathType == PathType.DANGER_OTHER
+            || pathType == PathType.DAMAGE_CAUTIOUS
+            || pathType == PathType.POWDER_SNOW
+            || pathType == PathType.DANGER_POWDER_SNOW;
+    }
+
+    private static final class SearchGrid {
+        private final int minX;
+        private final int minY;
+        private final int minZ;
+        private final int sizeX;
+        private final int sizeY;
+        private final int sizeZ;
+        private final int nodeCount;
+
+        private SearchGrid(int startX, int startY, int startZ, int goalX, int goalY, int goalZ) {
+            this.minX = Math.min(startX, goalX) - SEARCH_BOUND_MARGIN;
+            this.minY = Math.min(startY, goalY) - SEARCH_BOUND_MARGIN;
+            this.minZ = Math.min(startZ, goalZ) - SEARCH_BOUND_MARGIN;
+            this.sizeX = Math.max(startX, goalX) + SEARCH_BOUND_MARGIN - this.minX + 1;
+            this.sizeY = Math.max(startY, goalY) + SEARCH_BOUND_MARGIN - this.minY + 1;
+            this.sizeZ = Math.max(startZ, goalZ) + SEARCH_BOUND_MARGIN - this.minZ + 1;
+            this.nodeCount = this.sizeX * this.sizeY * this.sizeZ;
+        }
+
+        private int nodeCount() {
+            return this.nodeCount;
+        }
+
+        private boolean contains(int x, int y, int z) {
+            return x >= this.minX
+                && y >= this.minY
+                && z >= this.minZ
+                && x < this.minX + this.sizeX
+                && y < this.minY + this.sizeY
+                && z < this.minZ + this.sizeZ;
+        }
+
+        private int index(int x, int y, int z) {
+            return ((x - this.minX) * this.sizeY + y - this.minY) * this.sizeZ + z - this.minZ;
+        }
+
+        private int x(int index) {
+            return index / (this.sizeY * this.sizeZ) + this.minX;
+        }
+
+        private int y(int index) {
+            return index / this.sizeZ % this.sizeY + this.minY;
+        }
+
+        private int z(int index) {
+            return index % this.sizeZ + this.minZ;
         }
     }
 
-    private record SearchEntry(GridNode node, double score) implements Comparable<SearchEntry> {
-        @Override
-        public int compareTo(SearchEntry other) {
-            return Double.compare(this.score, other.score);
+    private static final class NodeHeap {
+        private final int[] nodes;
+        private final double[] scores;
+        private final int[] positions;
+        private int size;
+
+        private NodeHeap(int capacity) {
+            this.nodes = new int[capacity];
+            this.scores = new double[capacity];
+            this.positions = new int[capacity];
+            Arrays.fill(this.positions, -1);
+        }
+
+        private boolean isEmpty() {
+            return this.size == 0;
+        }
+
+        private void addOrDecrease(int node, double score) {
+            int position = this.positions[node];
+            if (position < 0) {
+                position = this.size++;
+                this.nodes[position] = node;
+                this.scores[position] = score;
+                this.positions[node] = position;
+            } else if (score >= this.scores[position]) {
+                return;
+            } else {
+                this.scores[position] = score;
+            }
+            this.siftUp(position);
+        }
+
+        private int removeFirst() {
+            int result = this.nodes[0];
+            this.positions[result] = -1;
+            int last = --this.size;
+            if (last > 0) {
+                this.nodes[0] = this.nodes[last];
+                this.scores[0] = this.scores[last];
+                this.positions[this.nodes[0]] = 0;
+                this.siftDown(0);
+            }
+            return result;
+        }
+
+        private void siftUp(int position) {
+            while (position > 0) {
+                int parent = (position - 1) >>> 1;
+                if (this.scores[parent] <= this.scores[position]) return;
+                this.swap(parent, position);
+                position = parent;
+            }
+        }
+
+        private void siftDown(int position) {
+            while (true) {
+                int left = position * 2 + 1;
+                if (left >= this.size) return;
+                int right = left + 1;
+                int best = right < this.size && this.scores[right] < this.scores[left] ? right : left;
+                if (this.scores[position] <= this.scores[best]) return;
+                this.swap(position, best);
+                position = best;
+            }
+        }
+
+        private void swap(int first, int second) {
+            int node = this.nodes[first];
+            this.nodes[first] = this.nodes[second];
+            this.nodes[second] = node;
+            double score = this.scores[first];
+            this.scores[first] = this.scores[second];
+            this.scores[second] = score;
+            this.positions[this.nodes[first]] = first;
+            this.positions[this.nodes[second]] = second;
         }
     }
 }

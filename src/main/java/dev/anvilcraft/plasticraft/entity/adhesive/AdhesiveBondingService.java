@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.entity.adhesive;
 
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
+import dev.anvilcraft.plasticraft.block.BlockAdhesionState;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlockInfo;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
@@ -52,6 +53,10 @@ public final class AdhesiveBondingService {
     private static final int MIN_TRANSIT_TICKS = 8;
     private static final int MAX_TRANSIT_TICKS = 32;
     private static final double MIN_TRANSIT_DISTANCE = 2.0D;
+    private static final double ELASTIC_SPRING = 0.42D;
+    private static final double ELASTIC_DAMPING = 0.76D;
+    private static final double ELASTIC_MAX_SPEED = 2.5D;
+    public static final double MIN_ELASTIC_KNOCKBACK = 0.5D;
 
     private AdhesiveBondingService() {
     }
@@ -74,10 +79,10 @@ public final class AdhesiveBondingService {
     }
 
     private static boolean canSelect(Player player, InteractionHand hand, Entity target) {
-        if (!player.getItemInHand(hand).is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
+        if (player.isShiftKeyDown()
+            || !player.getItemInHand(hand).is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
         if (!target.isAlive()
             || target == player
-            || target.hasData(ModAttachments.ENTITY_ADHESION)
             || target.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
             return false;
         }
@@ -91,11 +96,15 @@ public final class AdhesiveBondingService {
         Direction attachmentFace
     ) {
         ItemStack bucket = player.getItemInHand(hand);
-        if (!bucket.is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
-        if (!(player.level() instanceof ServerLevel level)
-            || !canUseSupport(player, level, supportPos, attachmentFace)) {
+        if (player.isShiftKeyDown() || !bucket.is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
+        if (!(player.level() instanceof ServerLevel level)) {
             return false;
         }
+        if (reclaimClickedPatch(player, level, supportPos, attachmentFace)) {
+            AdhesiveSelectionManager.clear(player);
+            return true;
+        }
+        if (!canUseSupport(player, level, supportPos, attachmentFace)) return false;
 
         Entity target = AdhesiveSelectionManager.resolveServerSelection(player);
         if (target == null) return false;
@@ -163,12 +172,13 @@ public final class AdhesiveBondingService {
         Direction face
     ) {
         ItemStack bucket = player.getItemInHand(hand);
-        if (!bucket.is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
+        if (player.isShiftKeyDown() || !bucket.is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
         if (!(player.level() instanceof ServerLevel level)
-            || AdhesiveSelectionManager.hasSelection(player)
-            || !canUseSupport(player, level, supportPos, face)) {
+            || AdhesiveSelectionManager.hasSelection(player)) {
             return false;
         }
+        if (reclaimClickedPatch(player, level, supportPos, face)) return true;
+        if (!canUseSupport(player, level, supportPos, face)) return false;
         BlockPos patchSpace = supportPos.relative(face);
         if (!level.getBlockState(patchSpace).canBeReplaced()
             || !BondedFallingBlocks.putPatch(level, supportPos, face)) {
@@ -186,6 +196,112 @@ public final class AdhesiveBondingService {
         return true;
     }
 
+    public static boolean hasAdhesiveOnFace(Entity target, Direction clickedWorldFace) {
+        EntityAdhesion adhesion = target.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+        if (adhesion != null && adhesion.attachmentFace().getOpposite() == clickedWorldFace) return true;
+        return EntityBondManager.isFaceOccupied(target, AdhesiveFaces.storedFace(target, clickedWorldFace));
+    }
+
+    public static boolean reclaimEntity(
+        Player player,
+        InteractionHand hand,
+        Entity target,
+        Direction clickedWorldFace
+    ) {
+        if (player.isShiftKeyDown()
+            || !player.getItemInHand(hand).is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())
+            || !target.isAlive()
+            || target == player
+            || !player.canInteractWithEntity(target, 0.0D)
+            || !hasAdhesiveOnFace(target, clickedWorldFace)) {
+            return false;
+        }
+        if (!(player.level() instanceof ServerLevel level)) return true;
+
+        EntityAdhesion adhesion = target.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+        if (adhesion != null && adhesion.attachmentFace().getOpposite() == clickedWorldFace) {
+            release(target);
+            Entity leader = EntityBondManager.resolveLeader(level, target);
+            if (leader != null && EntityBondManager.hasBonds(target)) EntityBondManager.prepareLeader(level, leader);
+        } else {
+            EntityBondManager.disconnectFace(
+                level,
+                target,
+                AdhesiveFaces.storedFace(target, clickedWorldFace)
+            );
+            if (target.hasData(ModAttachments.ENTITY_ADHESION)) target.setNoGravity(true);
+        }
+        AdhesiveSelectionManager.clear(player);
+        level.playSound(
+            null,
+            target.blockPosition(),
+            SoundEvents.HONEY_BLOCK_BREAK,
+            SoundSource.PLAYERS,
+            1.0F,
+            0.9F + level.random.nextFloat() * 0.2F
+        );
+        return true;
+    }
+
+    private static boolean reclaimClickedPatch(
+        Player player,
+        ServerLevel level,
+        BlockPos clickedPos,
+        Direction clickedFace
+    ) {
+        BlockAdhesionState state = BondedFallingBlocks.getAdhesion(level, clickedPos);
+        if (state == null
+            || !state.hasPatch(clickedFace)
+                && !state.hasBlockBond(clickedFace)
+                && !state.hasEntityBond(clickedFace)
+            || !canUseSupport(player, level, clickedPos, clickedFace)) {
+            return false;
+        }
+        reclaimFace(level, clickedPos, clickedFace);
+        level.playSound(
+            null,
+            clickedPos,
+            SoundEvents.HONEY_BLOCK_BREAK,
+            SoundSource.PLAYERS,
+            1.0F,
+            0.9F + level.random.nextFloat() * 0.2F
+        );
+        return true;
+    }
+
+    private static void reclaimFace(ServerLevel level, BlockPos supportPos, Direction face) {
+        BlockAdhesionState state = BondedFallingBlocks.getAdhesion(level, supportPos);
+        if (state == null) return;
+        if (state.hasEntityBond(face)) {
+            List<Entity> attached = new ArrayList<>();
+            for (Entity entity : level.getAllEntities()) {
+                EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+                if (adhesion != null
+                    && adhesion.supportPos().equals(supportPos)
+                    && adhesion.attachmentFace() == face) {
+                    attached.add(entity);
+                }
+            }
+            for (Entity entity : attached) release(entity);
+            BondedFallingBlocks.setEntityBond(level, supportPos, face, false);
+        }
+        if (state.hasBlockBond(face)) {
+            BlockPos otherPos = supportPos.relative(face);
+            BondedFallingBlocks.disconnect(level, supportPos, face);
+            releaseBondedBlockAt(level, supportPos, otherPos);
+            releaseBondedBlockAt(level, otherPos, supportPos);
+        }
+        BondedFallingBlocks.removePatch(level, supportPos, face);
+    }
+
+    private static void releaseBondedBlockAt(ServerLevel level, BlockPos pos, BlockPos supportPos) {
+        if (level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
+            && bonded.isInitialized()
+            && bonded.getSupportPos().equals(supportPos)) {
+            bonded.release();
+        }
+    }
+
     public static boolean bondSelectedToEntity(
         Player player,
         InteractionHand hand,
@@ -193,27 +309,37 @@ public final class AdhesiveBondingService {
         Direction supportWorldFace
     ) {
         ItemStack bucket = player.getItemInHand(hand);
-        if (!bucket.is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
+        if (player.isShiftKeyDown() || !bucket.is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
         if (!(player.level() instanceof ServerLevel level)
             || !supportEntity.isAlive()
             || supportEntity.hasData(ModAttachments.ADHESIVE_TRANSIT)
             || !player.canInteractWithEntity(supportEntity, 0.0D)) {
             return false;
         }
-        Entity target = AdhesiveSelectionManager.resolveServerSelection(player);
-        if (target == null || target == supportEntity) return false;
-        if (target.hasData(ModAttachments.ENTITY_ADHESION)
-            || target.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
+        Entity selected = AdhesiveSelectionManager.resolveServerSelection(player);
+        if (selected == null || selected == supportEntity || selected.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
             return false;
         }
         Direction selectedFace = AdhesiveSelectionManager.getSelectedFace(player);
+        Entity movingEntity = selected;
+        Entity anchorEntity = supportEntity;
+        Direction anchorWorldFace = supportWorldFace;
+        Direction movingStoredFace = selectedFace;
+        if (selected.hasData(ModAttachments.ENTITY_ADHESION)) {
+            if (supportEntity.hasData(ModAttachments.ENTITY_ADHESION)) return false;
+            movingEntity = supportEntity;
+            anchorEntity = selected;
+            anchorWorldFace = AdhesiveFaces.worldFace(selected, selectedFace);
+            movingStoredFace = AdhesiveFaces.storedFace(supportEntity, supportWorldFace);
+            if (hasAdhesiveOnFace(selected, anchorWorldFace)) return false;
+        }
         AdhesivePathPlanner.Plan plan = AdhesivePathPlanner.planToEntity(
             level,
-            target,
+            movingEntity,
             player,
-            supportEntity,
-            supportWorldFace,
-            selectedFace
+            anchorEntity,
+            anchorWorldFace,
+            movingStoredFace
         );
         if (!plan.valid()) {
             if (AdhesivePathPlanner.isOutOfRange(plan.directDistance())) {
@@ -222,36 +348,36 @@ public final class AdhesiveBondingService {
             return false;
         }
 
-        EntityBondManager.prepareLeader(level, target);
-        boolean plastic = target instanceof AbstractPlasticEntity;
+        EntityBondManager.prepareLeader(level, movingEntity);
+        boolean plastic = movingEntity instanceof AbstractPlasticEntity;
         byte startOrientation = plastic
-            ? ((AbstractPlasticEntity) target).getOrientation().pack()
+            ? ((AbstractPlasticEntity) movingEntity).getOrientation().pack()
             : PlasticEntityOrientation.DEFAULT.pack();
         byte targetOrientation = plan.targetOrientation() == null
             ? PlasticEntityOrientation.DEFAULT.pack()
             : plan.targetOrientation().pack();
         AdhesiveTransit transit = new AdhesiveTransit(
-            supportEntity.blockPosition(),
-            supportWorldFace,
+            anchorEntity.blockPosition(),
+            anchorWorldFace,
             BuiltInRegistries.BLOCK.getKey(net.minecraft.world.level.block.Blocks.AIR),
             plan.sourceFace(),
-            Optional.of(supportEntity.getUUID()),
-            supportEntity.getId(),
-            supportEntity.position(),
+            Optional.of(anchorEntity.getUUID()),
+            anchorEntity.getId(),
+            anchorEntity.position(),
             plan.points(),
             level.getGameTime(),
             transitDuration(plan),
-            target.isNoGravity(),
+            movingEntity.isNoGravity(),
             plastic,
             startOrientation,
             targetOrientation
         );
-        target.setData(ModAttachments.ADHESIVE_TRANSIT, transit);
-        target.setNoGravity(true);
-        target.setDeltaMovement(Vec3.ZERO);
-        target.fallDistance = 0.0F;
-        target.hasImpulse = true;
-        target.hurtMarked = true;
+        movingEntity.setData(ModAttachments.ADHESIVE_TRANSIT, transit);
+        movingEntity.setNoGravity(true);
+        movingEntity.setDeltaMovement(Vec3.ZERO);
+        movingEntity.fallDistance = 0.0F;
+        movingEntity.hasImpulse = true;
+        movingEntity.hurtMarked = true;
 
         AdhesiveSelectionManager.clear(player);
         consumeBucket(player, hand);
@@ -509,7 +635,13 @@ public final class AdhesiveBondingService {
 
     public static void tickBondedEntity(Entity entity, boolean validateSupport) {
         EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
-        if (adhesion == null) return;
+        AdhesiveElasticMotion elastic = entity.getExistingDataOrNull(ModAttachments.ADHESIVE_ELASTIC_MOTION.get());
+        if (adhesion == null) {
+            if (elastic != null && validateSupport && !entity.level().isClientSide) {
+                tickElasticMotion(entity, elastic);
+            }
+            return;
+        }
 
         PistonAdhesionController.MotionTarget pistonTarget = PistonAdhesionController.entityTarget(entity, adhesion);
         if (pistonTarget != null) {
@@ -519,7 +651,8 @@ public final class AdhesiveBondingService {
 
         if (validateSupport
             && !entity.level().isClientSide) {
-            boolean movedAway = entity.position().distanceToSqr(adhesion.fixedPosition()) > 0.25D;
+            boolean movedAway = elastic == null
+                && entity.position().distanceToSqr(adhesion.fixedPosition()) > 0.25D;
             boolean supportChanged = entity.level().hasChunkAt(adhesion.supportPos())
                 && !adhesion.supportBlockId().equals(BuiltInRegistries.BLOCK.getKey(
                     entity.level().getBlockState(adhesion.supportPos()).getBlock()
@@ -529,7 +662,95 @@ public final class AdhesiveBondingService {
                 return;
             }
         }
+        if (elastic != null) {
+            if (validateSupport && !entity.level().isClientSide) tickElasticMotion(entity, elastic);
+            return;
+        }
         enforce(entity, adhesion);
+    }
+
+    public static boolean beginElasticMotion(Entity entity) {
+        return beginElasticMotion(entity, MIN_ELASTIC_KNOCKBACK);
+    }
+
+    public static boolean beginElasticMotion(Entity entity, double knockbackStrength) {
+        EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+        EntityBondState bonds = EntityBondManager.get(entity);
+        if (knockbackStrength < MIN_ELASTIC_KNOCKBACK
+            || adhesion == null && (bonds == null || bonds.links().isEmpty())) {
+            return false;
+        }
+
+        AdhesiveElasticMotion current = entity.getExistingDataOrNull(ModAttachments.ADHESIVE_ELASTIC_MOTION.get());
+        long gameTime = entity.level().getGameTime();
+        int duration = elasticDuration(knockbackStrength);
+        AdhesiveElasticMotion motion = current == null
+            ? new AdhesiveElasticMotion(
+                adhesion == null ? entity.position() : adhesion.fixedPosition(),
+                gameTime,
+                duration,
+                entity.isNoGravity()
+            )
+            : current.restarted(gameTime, duration);
+        entity.setData(ModAttachments.ADHESIVE_ELASTIC_MOTION, motion);
+        entity.setNoGravity(true);
+        entity.hasImpulse = true;
+        entity.hurtMarked = true;
+        return true;
+    }
+
+    public static boolean isElasticMotion(Entity entity) {
+        return entity.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION);
+    }
+
+    private static void tickElasticMotion(Entity entity, AdhesiveElasticMotion motion) {
+        Vec3 anchor = elasticAnchor(entity, motion);
+        long elapsed = entity.level().getGameTime() - motion.startedGameTime();
+        Vec3 displacement = entity.position().subtract(anchor);
+        if (elapsed >= motion.durationTicks()
+            || elapsed >= 4
+                && displacement.lengthSqr() < 2.5E-3D
+                && entity.getDeltaMovement().lengthSqr() < 2.5E-3D) {
+            finishElasticMotion(entity, motion, anchor);
+            return;
+        }
+
+        Vec3 velocity = entity.getDeltaMovement()
+            .scale(ELASTIC_DAMPING)
+            .add(displacement.scale(-ELASTIC_SPRING));
+        double speed = velocity.length();
+        if (speed > ELASTIC_MAX_SPEED) velocity = velocity.scale(ELASTIC_MAX_SPEED / speed);
+        entity.setDeltaMovement(velocity);
+        entity.setNoGravity(true);
+        entity.fallDistance = 0.0F;
+        entity.hasImpulse = true;
+        entity.hurtMarked = true;
+    }
+
+    private static int elasticDuration(double knockbackStrength) {
+        double ratio = Math.max(1.0D, knockbackStrength / MIN_ELASTIC_KNOCKBACK);
+        return Math.min(20, 9 + (int) Math.ceil(Math.log(ratio) * 4.0D));
+    }
+
+    private static void finishElasticMotion(Entity entity, AdhesiveElasticMotion motion, Vec3 anchor) {
+        entity.setPos(anchor);
+        entity.setDeltaMovement(Vec3.ZERO);
+        entity.removeData(ModAttachments.ADHESIVE_ELASTIC_MOTION);
+        entity.setNoGravity(motion.originalNoGravity());
+        entity.fallDistance = 0.0F;
+        entity.hasImpulse = true;
+        entity.hurtMarked = true;
+    }
+
+    private static Vec3 elasticAnchor(Entity entity, AdhesiveElasticMotion motion) {
+        EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+        if (adhesion != null) return adhesion.fixedPosition();
+        EntityBondState bonds = EntityBondManager.get(entity);
+        if (bonds != null && !bonds.leaderUuid().equals(entity.getUUID())) {
+            Entity leader = EntityBondManager.resolveLeader(entity.level(), entity);
+            if (leader != null) return leader.position().add(bonds.offsetFromLeader());
+        }
+        return motion.anchor();
     }
 
     public static void release(Entity entity) {
@@ -648,7 +869,8 @@ public final class AdhesiveBondingService {
             || target.hasData(ModAttachments.ENTITY_ADHESION)
             || target.hasData(ModAttachments.ADHESIVE_TRANSIT)
             || EntityBondManager.hasBonds(target)
-            || !BondedFallingBlocks.hasPatch(level, supportPos, attachmentFace)) {
+            || !BondedFallingBlocks.hasPatch(level, supportPos, attachmentFace)
+            || !SurfaceAdhesiveService.hasUncoveredContact(level, target, supportPos, attachmentFace)) {
             return false;
         }
 
@@ -844,19 +1066,34 @@ public final class AdhesiveBondingService {
     }
 
     private static void release(Entity entity, EntityAdhesion adhesion) {
+        entity.removeData(ModAttachments.ADHESIVE_ELASTIC_MOTION);
+        entity.removeData(ModAttachments.ENTITY_ADHESION);
         if (entity.level() instanceof ServerLevel level) {
-            BondedFallingBlocks.setEntityBond(level, adhesion.supportPos(), adhesion.attachmentFace(), false);
+            if (!hasAttachedEntity(level, adhesion.supportPos(), adhesion.attachmentFace())) {
+                BondedFallingBlocks.setEntityBond(level, adhesion.supportPos(), adhesion.attachmentFace(), false);
+            }
             BlockState supportState = level.getBlockState(adhesion.supportPos());
             if (supportState.getBlock() instanceof net.minecraft.world.level.block.FallingBlock) {
                 level.scheduleTick(adhesion.supportPos(), supportState.getBlock(), 1);
             }
         }
-        entity.removeData(ModAttachments.ENTITY_ADHESION);
         entity.setNoGravity(adhesion.originalNoGravity());
         entity.setDeltaMovement(Vec3.ZERO);
         entity.fallDistance = 0.0F;
         entity.hasImpulse = true;
         entity.hurtMarked = true;
+    }
+
+    private static boolean hasAttachedEntity(ServerLevel level, BlockPos supportPos, Direction attachmentFace) {
+        for (Entity candidate : level.getAllEntities()) {
+            EntityAdhesion adhesion = candidate.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+            if (adhesion != null
+                && adhesion.supportPos().equals(supportPos)
+                && adhesion.attachmentFace() == attachmentFace) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void cancelTransit(Entity entity, AdhesiveTransit transit) {
@@ -882,4 +1119,5 @@ public final class AdhesiveBondingService {
             player.drop(emptyBucket, false);
         }
     }
+
 }

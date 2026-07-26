@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.mixin;
 
+import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
@@ -15,7 +16,10 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 @Mixin(LivingEntity.class)
 abstract class LivingEntityResinHeadMixin {
@@ -119,11 +123,15 @@ abstract class LivingEntityResinHeadMixin {
         if (targets.isEmpty()) return;
 
         double impulse = Math.min(MAX_ENTITY_IMPULSE, preVelocity.y * HEADBUTT_ENTITY_MULTIPLIER);
+        Set<UUID> launchedComponents = new HashSet<>();
         for (Entity target : targets) {
-            Vec3 targetVelocity = target.getDeltaMovement();
-            target.setDeltaMovement(targetVelocity.x, targetVelocity.y + impulse, targetVelocity.z);
-            target.hasImpulse = true;
-            target.hurtMarked = true;
+            Entity impulseTarget = EntityBondManager.resolveLeader(player.level(), target);
+            if (impulseTarget == null || !impulseTarget.isAlive()) impulseTarget = target;
+            if (!launchedComponents.add(impulseTarget.getUUID())) continue;
+            Vec3 targetVelocity = impulseTarget.getDeltaMovement();
+            impulseTarget.setDeltaMovement(targetVelocity.x, targetVelocity.y + impulse, targetVelocity.z);
+            impulseTarget.hasImpulse = true;
+            impulseTarget.hurtMarked = true;
         }
         if (!player.level().isClientSide) {
             player.getItemBySlot(EquipmentSlot.HEAD)

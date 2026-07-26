@@ -6,6 +6,10 @@ import dev.anvilcraft.plasticraft.block.BondedFallingBlockInfo;
 import dev.anvilcraft.plasticraft.block.BondedFallingChunkData;
 import dev.anvilcraft.plasticraft.block.BlockAdhesionState;
 import dev.anvilcraft.plasticraft.block.piston.PistonAdhesionController;
+import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityAdhesion;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondLink;
@@ -13,12 +17,15 @@ import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
 import dev.anvilcraft.plasticraft.entity.adhesive.SlidingAdhesionData;
 import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.dubhe.anvilcraft.entity.SlidingBlockEntity;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.Sheets;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.resources.model.BakedModel;
@@ -28,20 +35,24 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.piston.PistonMovingBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.AABB;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import org.joml.Matrix3f;
 import org.joml.Quaternionf;
+import org.joml.Vector3f;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -57,6 +68,12 @@ public final class AdhesivePatchRenderer {
     private static long cachedGameTime = Long.MIN_VALUE;
     private static ChunkPos cachedCameraChunk;
     private static List<Patch> cachedBlockPatches = List.of();
+    private static List<BondedFace> cachedBondedFaces = List.of();
+    private static final double STRETCH_EPSILON = 0.035D;
+    private static final double OUTLINE_OFFSET = 0.004D;
+    private static final int OUTLINE_ORANGE = 0xFFFF8018;
+    private static final int WRAP_SEGMENTS = 6;
+    private static final RenderType STRETCHED_ADHESIVE_RENDER_TYPE = Sheets.translucentCullBlockSheet();
 
     private AdhesivePatchRenderer() {
     }
@@ -76,6 +93,7 @@ public final class AdhesivePatchRenderer {
         renderContents(level, pose, buffers, camera, partialTick);
         pose.popPose();
         buffers.endBatch(RenderType.translucent());
+        buffers.endBatch(STRETCHED_ADHESIVE_RENDER_TYPE);
     }
 
     public static void renderContents(
@@ -93,12 +111,13 @@ public final class AdhesivePatchRenderer {
             }
             EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
             if (adhesion != null) {
-                renderPatch(
+                renderEntityAdhesive(
                     level,
                     pose,
                     buffers,
-                    adhesion.supportPos(),
-                    adhesion.attachmentFace(),
+                    entity,
+                    adhesion,
+                    partialTick,
                     PistonAdhesionController.movementOffset(level, entity, adhesion, partialTick)
                 );
             }
@@ -107,7 +126,7 @@ public final class AdhesivePatchRenderer {
             for (EntityBondLink link : bonds.links()) {
                 Entity other = EntityBondManager.resolve(level, link);
                 if (other == null || entity.getUUID().compareTo(other.getUUID()) >= 0) continue;
-                renderEntityPatch(level, pose, buffers, entity, link.face(), partialTick);
+                renderEntityBond(level, pose, buffers, entity, link, other, partialTick);
             }
         }
 
@@ -122,6 +141,7 @@ public final class AdhesivePatchRenderer {
                 patch.movementOffset(partialTick)
             );
         }
+        renderBondedFaceOutlines(level, pose, buffers, partialTick);
     }
 
     private static void renderSlidingPatches(
@@ -168,6 +188,7 @@ public final class AdhesivePatchRenderer {
         }
 
         Set<Patch> patches = new HashSet<>();
+        Set<BondedFace> bondedFaces = new HashSet<>();
         for (int chunkX = cameraChunk.x - CHUNK_RADIUS; chunkX <= cameraChunk.x + CHUNK_RADIUS; chunkX++) {
             for (int chunkZ = cameraChunk.z - CHUNK_RADIUS; chunkZ <= cameraChunk.z + CHUNK_RADIUS; chunkZ++) {
                 LevelChunk chunk = level.getChunkSource().getChunk(chunkX, chunkZ, false);
@@ -180,6 +201,9 @@ public final class AdhesivePatchRenderer {
                     BlockPos ownerPos = entry.getKey();
                     BlockAdhesionState state = entry.getValue();
                     for (Direction face : Direction.values()) {
+                        if (state.hasBlockBond(face) || state.hasEntityBond(face)) {
+                            bondedFaces.add(new BondedFace(ownerPos, face));
+                        }
                         if (state.hasPatch(face)) {
                             patches.add(new Patch(
                                 ownerPos,
@@ -222,6 +246,7 @@ public final class AdhesivePatchRenderer {
         cachedGameTime = gameTime;
         cachedCameraChunk = cameraChunk;
         cachedBlockPatches = List.copyOf(patches);
+        cachedBondedFaces = List.copyOf(bondedFaces);
         return cachedBlockPatches;
     }
 
@@ -265,6 +290,148 @@ public final class AdhesivePatchRenderer {
             LevelRenderer.getLightColor(level, entity.blockPosition())
         );
         pose.popPose();
+    }
+
+    private static void renderEntityAdhesive(
+        ClientLevel level,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        Entity entity,
+        EntityAdhesion adhesion,
+        float partialTick,
+        Vec3 movementOffset
+    ) {
+        Vec3 anchor = adhesionAnchor(entity, adhesion).add(movementOffset);
+        Vec3 currentPosition = entity.getPosition(partialTick);
+        Vec3 attachedPoint = anchor.add(currentPosition.subtract(adhesion.fixedPosition()));
+        if (anchor.distanceToSqr(attachedPoint) <= STRETCH_EPSILON * STRETCH_EPSILON) {
+            renderPatch(level, pose, buffers, adhesion.supportPos(), adhesion.attachmentFace(), movementOffset);
+            return;
+        }
+        renderStretchSegment(level, pose, buffers, anchor, attachedPoint, Vec3.ZERO);
+    }
+
+    private static Vec3 adhesionAnchor(Entity entity, EntityAdhesion adhesion) {
+        AABB restBox = entity.getBoundingBox().move(adhesion.fixedPosition().subtract(entity.position()));
+        BlockPos supportPos = adhesion.supportPos();
+        Direction face = adhesion.attachmentFace();
+        double x = overlapCenter(restBox.minX, restBox.maxX, supportPos.getX() + 0.25D, supportPos.getX() + 0.75D);
+        double y = overlapCenter(restBox.minY, restBox.maxY, supportPos.getY() + 0.25D, supportPos.getY() + 0.75D);
+        double z = overlapCenter(restBox.minZ, restBox.maxZ, supportPos.getZ() + 0.25D, supportPos.getZ() + 0.75D);
+        return switch (face) {
+            case EAST -> new Vec3(supportPos.getX() + 1.0D, y, z);
+            case WEST -> new Vec3(supportPos.getX(), y, z);
+            case UP -> new Vec3(x, supportPos.getY() + 1.0D, z);
+            case DOWN -> new Vec3(x, supportPos.getY(), z);
+            case SOUTH -> new Vec3(x, y, supportPos.getZ() + 1.0D);
+            case NORTH -> new Vec3(x, y, supportPos.getZ());
+        };
+    }
+
+    private static double overlapCenter(double firstMin, double firstMax, double secondMin, double secondMax) {
+        double min = Math.max(firstMin, secondMin);
+        double max = Math.min(firstMax, secondMax);
+        if (max > min) return (min + max) * 0.5D;
+        return Math.clamp((firstMin + firstMax) * 0.5D, secondMin, secondMax);
+    }
+
+    private static void renderEntityBond(
+        ClientLevel level,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        Entity entity,
+        EntityBondLink link,
+        Entity other,
+        float partialTick
+    ) {
+        Vec3 firstPoint = entityBondSurfacePoint(entity, link.face(), partialTick);
+        Vec3 secondPoint = entityBondSurfacePoint(other, link.otherFace(), partialTick);
+        if (firstPoint.distanceToSqr(secondPoint) <= STRETCH_EPSILON * STRETCH_EPSILON) {
+            renderEntityPatch(level, pose, buffers, entity, link.face(), partialTick);
+            return;
+        }
+        renderStretchSegment(level, pose, buffers, firstPoint, secondPoint, Vec3.ZERO);
+    }
+
+    private static Vec3 entityBondSurfacePoint(Entity entity, Direction storedFace, float partialTick) {
+        if (!(entity instanceof AbstractPlasticEntity plasticEntity)) {
+            return entitySurfacePoint(entity, storedFace, partialTick);
+        }
+        AbstractPlasticEntity.HammerRotationAnimation animation =
+            plasticEntity.getHammerRotationAnimation(partialTick);
+        PlasticEntityOrientation from = animation == null ? plasticEntity.getOrientation() : animation.from();
+        PlasticEntityOrientation to = animation == null ? from : animation.to();
+        float progress = animation == null ? 0.0F : animation.progress();
+        return entity.getPosition(partialTick).add(PlasticEntityRenderTransforms.faceCenterOffset(
+            plasticEntity,
+            storedFace,
+            from,
+            to,
+            progress
+        ));
+    }
+
+    private static Vec3 entitySurfacePoint(Entity entity, Direction face, float partialTick) {
+        AABB box = entity.getBoundingBox().move(entity.getPosition(partialTick).subtract(entity.position()));
+        Vec3 center = box.getCenter();
+        return switch (face) {
+            case EAST -> new Vec3(box.maxX, center.y, center.z);
+            case WEST -> new Vec3(box.minX, center.y, center.z);
+            case UP -> new Vec3(center.x, box.maxY, center.z);
+            case DOWN -> new Vec3(center.x, box.minY, center.z);
+            case SOUTH -> new Vec3(center.x, center.y, box.maxZ);
+            case NORTH -> new Vec3(center.x, center.y, box.minZ);
+        };
+    }
+
+    private static void renderStretchSegment(
+        ClientLevel level,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        Vec3 from,
+        Vec3 to,
+        Vec3 worldOffset
+    ) {
+        Vec3 difference = to.subtract(from);
+        double distance = difference.length();
+        if (distance <= 1.0E-5D) return;
+        Vec3 middle = from.add(to).scale(0.5D);
+        Quaternionf rotation = new Quaternionf().rotationTo(
+            new Vector3f(0.0F, 1.0F, 0.0F),
+            new Vector3f((float) difference.x, (float) difference.y, (float) difference.z).normalize()
+        );
+        pose.pushPose();
+        pose.translate(middle.x, middle.y, middle.z);
+        pose.mulPose(rotation);
+        pose.scale(0.58F, (float) ((distance + 0.12D) / 0.375D), 0.58F);
+        pose.translate(-0.5D, 0.0D, -0.5D);
+        renderPatchModel(
+            pose,
+            buffers,
+            null,
+            STRETCHED_ADHESIVE_RENDER_TYPE,
+            stretchedAdhesiveLight(level, middle.add(worldOffset))
+        );
+        pose.popPose();
+    }
+
+    private static int stretchedAdhesiveLight(ClientLevel level, Vec3 worldPosition) {
+        BlockPos center = BlockPos.containing(worldPosition);
+        int packedLight = LevelRenderer.getLightColor(level, center);
+        for (Direction direction : Direction.values()) {
+            packedLight = maxPackedLight(
+                packedLight,
+                LevelRenderer.getLightColor(level, center.relative(direction))
+            );
+        }
+        return packedLight;
+    }
+
+    private static int maxPackedLight(int first, int second) {
+        return LightTexture.pack(
+            Math.max(LightTexture.block(first), LightTexture.block(second)),
+            Math.max(LightTexture.sky(first), LightTexture.sky(second))
+        );
     }
 
     private static void renderPatch(
@@ -312,6 +479,180 @@ public final class AdhesivePatchRenderer {
         pose.popPose();
     }
 
+    public static void renderAttachedBlockAdhesive(
+        ClientLevel level,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        BondedEntityBlockEntity blockEntity,
+        int packedLight,
+        float partialTick
+    ) {
+        BlockPos blockPos = blockEntity.getBlockPos();
+        if (!(blockEntity.getOrCreateRenderEntity() instanceof AbstractPlasticEntity entity)
+            || !blockEntity.isHammerDeflected()) {
+            renderAttachedPatch(
+                level,
+                pose,
+                buffers,
+                blockPos,
+                blockEntity.getSupportPos(),
+                blockEntity.getAttachmentFace(),
+                packedLight
+            );
+            return;
+        }
+
+        BondedEntityBlockEntity.HammerRotationAnimation animation =
+            blockEntity.getHammerRotationAnimation(partialTick);
+        PlasticEntityOrientation from = animation == null
+            ? blockEntity.getPlasticOrientation()
+            : animation.from();
+        PlasticEntityOrientation to = animation == null
+            ? from
+            : animation.to();
+        float progress = animation == null ? 0.0F : animation.progress();
+        Vec3 fromPosition = from.entityPosition(blockPos, entity.getBbWidth(), entity.getBbHeight());
+        Vec3 toPosition = to.entityPosition(blockPos, entity.getBbWidth(), entity.getBbHeight());
+        Vec3 entityPosition = fromPosition.lerp(toPosition, progress);
+        Vec3 attachedPoint = entityPosition.add(PlasticEntityRenderTransforms.faceCenterOffset(
+            entity,
+            blockEntity.getAdhesiveLocalFace(),
+            from,
+            to,
+            progress
+        ));
+        Vec3 anchor = Vec3.atCenterOf(blockEntity.getSupportPos()).add(
+            Vec3.atLowerCornerOf(blockEntity.getAttachmentFace().getNormal()).scale(0.5D)
+        );
+        Vec3 origin = Vec3.atLowerCornerOf(blockPos);
+        renderWrappedAdhesive(
+            level,
+            pose,
+            buffers,
+            blockPos,
+            anchor.subtract(origin),
+            attachedPoint.subtract(origin),
+            Vec3.atCenterOf(blockPos).subtract(origin)
+        );
+    }
+
+    private static void renderWrappedAdhesive(
+        ClientLevel level,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        BlockPos renderOrigin,
+        Vec3 from,
+        Vec3 to,
+        Vec3 blockCenter
+    ) {
+        Vec3 firstNormal = from.subtract(blockCenter).normalize();
+        Vec3 secondNormal = to.subtract(blockCenter).normalize();
+        Vec3 middleNormal = firstNormal.add(secondNormal);
+        if (middleNormal.lengthSqr() < 1.0E-6D) {
+            middleNormal = firstNormal.cross(new Vec3(0.0D, 1.0D, 0.0D));
+            if (middleNormal.lengthSqr() < 1.0E-6D) middleNormal = firstNormal.cross(new Vec3(1.0D, 0.0D, 0.0D));
+        }
+        Vec3 control = blockCenter.add(middleNormal.normalize().scale(0.88D));
+        Vec3 previous = from;
+        for (int segment = 1; segment <= WRAP_SEGMENTS; segment++) {
+            double progress = segment / (double) WRAP_SEGMENTS;
+            double inverse = 1.0D - progress;
+            Vec3 current = from.scale(inverse * inverse)
+                .add(control.scale(2.0D * inverse * progress))
+                .add(to.scale(progress * progress));
+            renderStretchSegment(
+                level,
+                pose,
+                buffers,
+                previous,
+                current,
+                Vec3.atLowerCornerOf(renderOrigin)
+            );
+            previous = current;
+        }
+    }
+
+    private static void renderBondedFaceOutlines(
+        ClientLevel level,
+        PoseStack pose,
+        MultiBufferSource.BufferSource buffers,
+        float partialTick
+    ) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null
+            || !(minecraft.player.getItemBySlot(EquipmentSlot.HEAD).getItem() instanceof ResinAnvilHammerItem)) {
+            return;
+        }
+
+        List<ThickLineRenderer.Segment> outlineSegments = new ArrayList<>();
+        for (Entity entity : level.entitiesForRendering()) {
+            if (!entity.isAlive()) continue;
+            Set<Direction> faces = new HashSet<>();
+            EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+            if (adhesion != null) faces.add(adhesion.attachmentFace().getOpposite());
+            EntityBondState bonds = EntityBondManager.get(entity);
+            if (bonds != null) {
+                for (EntityBondLink link : bonds.links()) {
+                    faces.add(AdhesiveFaces.worldFace(entity, link.face()));
+                }
+            }
+            if (faces.isEmpty()) continue;
+            AABB box = entity.getBoundingBox().move(entity.getPosition(partialTick).subtract(entity.position()));
+            for (Direction face : faces) addFaceOutline(outlineSegments, box, face);
+        }
+        for (BondedFace bondedFace : cachedBondedFaces) {
+            addFaceOutline(outlineSegments, new AABB(bondedFace.pos()), bondedFace.face());
+        }
+        ThickLineRenderer.renderSegments(
+            pose,
+            buffers,
+            outlineSegments,
+            OUTLINE_ORANGE,
+            ThickLineRenderer.SELECTION_WIDTH
+        );
+    }
+
+    private static void addFaceOutline(
+        List<ThickLineRenderer.Segment> outlineSegments,
+        AABB box,
+        Direction face
+    ) {
+        double plane = switch (face.getAxis()) {
+            case X -> (face == Direction.EAST ? box.maxX : box.minX) + face.getStepX() * OUTLINE_OFFSET;
+            case Y -> (face == Direction.UP ? box.maxY : box.minY) + face.getStepY() * OUTLINE_OFFSET;
+            case Z -> (face == Direction.SOUTH ? box.maxZ : box.minZ) + face.getStepZ() * OUTLINE_OFFSET;
+        };
+        Vec3 first;
+        Vec3 second;
+        Vec3 third;
+        Vec3 fourth;
+        switch (face.getAxis()) {
+            case X -> {
+                first = new Vec3(plane, box.minY, box.minZ);
+                second = new Vec3(plane, box.maxY, box.minZ);
+                third = new Vec3(plane, box.maxY, box.maxZ);
+                fourth = new Vec3(plane, box.minY, box.maxZ);
+            }
+            case Y -> {
+                first = new Vec3(box.minX, plane, box.minZ);
+                second = new Vec3(box.maxX, plane, box.minZ);
+                third = new Vec3(box.maxX, plane, box.maxZ);
+                fourth = new Vec3(box.minX, plane, box.maxZ);
+            }
+            case Z -> {
+                first = new Vec3(box.minX, box.minY, plane);
+                second = new Vec3(box.maxX, box.minY, plane);
+                third = new Vec3(box.maxX, box.maxY, plane);
+                fourth = new Vec3(box.minX, box.maxY, plane);
+            }
+            default -> throw new MatchException(null, null);
+        }
+        outlineSegments.add(new ThickLineRenderer.Segment(first, second));
+        outlineSegments.add(new ThickLineRenderer.Segment(second, third));
+        outlineSegments.add(new ThickLineRenderer.Segment(third, fourth));
+        outlineSegments.add(new ThickLineRenderer.Segment(fourth, first));
+    }
+
     private static void renderPatchModel(
         ClientLevel level,
         PoseStack pose,
@@ -334,13 +675,29 @@ public final class AdhesivePatchRenderer {
         BlockPos statePos,
         int packedLight
     ) {
+        renderPatchModel(
+            pose,
+            buffers,
+            level.getBlockState(statePos),
+            RenderType.translucent(),
+            packedLight
+        );
+    }
+
+    private static void renderPatchModel(
+        PoseStack pose,
+        MultiBufferSource buffers,
+        @Nullable BlockState state,
+        RenderType renderType,
+        int packedLight
+    ) {
         Minecraft minecraft = Minecraft.getInstance();
         BlockRenderDispatcher dispatcher = minecraft.getBlockRenderer();
         BakedModel model = minecraft.getModelManager().getModel(MODEL);
         dispatcher.getModelRenderer().renderModel(
             pose.last(),
-            buffers.getBuffer(RenderType.translucent()),
-            level.getBlockState(statePos),
+            buffers.getBuffer(renderType),
+            state,
             model,
             1.0F,
             1.0F,
@@ -470,6 +827,12 @@ public final class AdhesivePatchRenderer {
     private record PatchKey(BlockPos supportPos, Direction face) {
         private PatchKey {
             supportPos = supportPos.immutable();
+        }
+    }
+
+    private record BondedFace(BlockPos pos, Direction face) {
+        private BondedFace {
+            pos = pos.immutable();
         }
     }
 }

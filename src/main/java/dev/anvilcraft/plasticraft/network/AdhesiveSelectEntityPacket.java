@@ -40,6 +40,8 @@ public record AdhesiveSelectEntityPacket(
     @Override
     public void handleOnServer(Player player) {
         Entity target = player.level().getEntity(this.entityId);
-        if (target != null) AdhesiveBondingService.select(player, this.hand, target, this.hitFace);
+        if (target != null && !AdhesiveBondingService.reclaimEntity(player, this.hand, target, this.hitFace)) {
+            AdhesiveBondingService.select(player, this.hand, target, this.hitFace);
+        }
     }
 }

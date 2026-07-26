@@ -132,16 +132,27 @@ public final class PlasticEntityPhysics {
         Entity candidate,
         Direction gravityDirection
     ) {
+        return isSupportCandidate(entity, entityBox, candidate, candidate.getBoundingBox(), gravityDirection);
+    }
+
+    /** 使用明确记录的候选碰撞箱判断其是否支撑实体。 */
+    public static boolean isSupportCandidate(
+        FallingBlockEntity entity,
+        AABB entityBox,
+        Entity candidate,
+        AABB candidateBox,
+        Direction gravityDirection
+    ) {
         if (candidate.isRemoved()
             || candidate.isSpectator()
             || entity.isPassengerOfSameVehicle(candidate)
             || !entity.canCollideWith(candidate)) {
             return false;
         }
-        double gap = supportGap(entityBox, candidate.getBoundingBox(), gravityDirection);
+        double gap = supportGap(entityBox, candidateBox, gravityDirection);
         return gap >= -SUPPORT_PROBE_DEPTH - FACE_EPSILON
             && gap <= SUPPORT_PROBE_DEPTH + FACE_EPSILON
-            && tangentialOverlap(entityBox, candidate.getBoundingBox(), gravityDirection) > FACE_EPSILON;
+            && tangentialOverlap(entityBox, candidateBox, gravityDirection) > FACE_EPSILON;
     }
 
     /** 仅当两个支撑面实际接触时返回 true，而非仅位于捕获探针内。 */
@@ -160,8 +171,25 @@ public final class PlasticEntityPhysics {
         Entity support,
         Direction gravityDirection
     ) {
-        return isSupportCandidate(entity, entityBox, support, gravityDirection)
-            && Math.abs(supportGap(entityBox, support.getBoundingBox(), gravityDirection))
+        return hasImmediateEntityContact(
+            entity,
+            entityBox,
+            support,
+            support.getBoundingBox(),
+            gravityDirection
+        );
+    }
+
+    /** 使用明确记录的支撑碰撞箱检查两个支撑面是否直接接触。 */
+    public static boolean hasImmediateEntityContact(
+        FallingBlockEntity entity,
+        AABB entityBox,
+        Entity support,
+        AABB supportBox,
+        Direction gravityDirection
+    ) {
+        return isSupportCandidate(entity, entityBox, support, supportBox, gravityDirection)
+            && Math.abs(supportGap(entityBox, supportBox, gravityDirection))
                 <= FACE_EPSILON * 4.0D;
     }
 
@@ -240,7 +268,24 @@ public final class PlasticEntityPhysics {
         Direction gravityDirection,
         Vec3 requestedMovement
     ) {
-        if (!isSupportCandidate(carried, carrier, gravityDirection)) {
+        return canMoveWithCarrier(
+            carried,
+            carrier,
+            carrier.getBoundingBox(),
+            gravityDirection,
+            requestedMovement
+        );
+    }
+
+    /** 使用承载者移动前的碰撞箱检查本次承载位移。 */
+    public static boolean canMoveWithCarrier(
+        FallingBlockEntity carried,
+        Entity carrier,
+        AABB carrierBox,
+        Direction gravityDirection,
+        Vec3 requestedMovement
+    ) {
+        if (!isSupportCandidate(carried, carried.getBoundingBox(), carrier, carrierBox, gravityDirection)) {
             return false;
         }
         if (!isWithinCarryDistance(requestedMovement)) {

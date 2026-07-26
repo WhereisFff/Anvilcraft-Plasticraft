@@ -64,6 +64,13 @@ public class BondedEntityBlockEntity extends BlockEntity
     private static final String TAG_ORIENTATION = "Orientation";
     private static final String TAG_PISTON_MOVABLE = "PistonMovable";
     private static final String TAG_ORIGINAL_NO_GRAVITY = "OriginalNoGravity";
+    private static final String TAG_ADHESIVE_LOCAL_FACE = "AdhesiveLocalFace";
+    private static final String TAG_PENDING_RETURN_ORIENTATION = "PendingReturnOrientation";
+    private static final String TAG_HAMMER_RETURN_AT = "HammerReturnAt";
+    private static final String TAG_HAMMER_RETURN_FROM = "HammerReturnFrom";
+    private static final String TAG_HAMMER_RETURN_STARTED = "HammerReturnStarted";
+    private static final int HAMMER_DEFLECTION_HOLD_TICKS = 2;
+    public static final int HAMMER_RETURN_ANIMATION_TICKS = 5;
     private static final String ADHESIVE_TRANSIT_ATTACHMENT =
         AnvilcraftPlasticraft.of("adhesive_transit").toString();
     private static final String ENTITY_BONDS_ATTACHMENT =
@@ -78,6 +85,11 @@ public class BondedEntityBlockEntity extends BlockEntity
     private byte orientation = PlasticEntityOrientation.DEFAULT.pack();
     private boolean pistonMovable = true;
     private boolean originalNoGravity;
+    private Direction adhesiveLocalFace = Direction.DOWN;
+    private @Nullable Byte pendingReturnOrientation;
+    private long hammerReturnAt = -1L;
+    private byte hammerReturnFrom = PlasticEntityOrientation.DEFAULT.pack();
+    private long hammerReturnStarted = -1L;
     private @Nullable Entity renderEntity;
     private static final IItemHandler EMPTY_ITEM_HANDLER = new net.neoforged.neoforge.items.ItemStackHandler(0);
     private static final IFluidHandler EMPTY_FLUID_HANDLER =
@@ -112,6 +124,7 @@ public class BondedEntityBlockEntity extends BlockEntity
         this.plastic = plasticOrientation != null;
         if (plasticOrientation != null) {
             this.orientation = plasticOrientation.pack();
+            this.adhesiveLocalFace = plasticOrientation.localDirection(attachmentFace.getOpposite());
             this.entityTag.putString("AttachmentFace", plasticOrientation.attachmentFace().getName());
             this.entityTag.putInt("InPlaneRotation", plasticOrientation.quarterTurn());
         }
@@ -165,6 +178,45 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     public PlasticEntityOrientation getPlasticOrientation() {
         return PlasticEntityOrientation.unpack(this.orientation);
+    }
+
+    public Direction getAdhesiveLocalFace() {
+        return this.adhesiveLocalFace;
+    }
+
+    public @Nullable HammerRotationAnimation getHammerRotationAnimation(float partialTick) {
+        if (this.hammerReturnStarted < 0L || this.level == null) return null;
+        float progress = Math.clamp(
+            (this.level.getGameTime() + partialTick - this.hammerReturnStarted) / HAMMER_RETURN_ANIMATION_TICKS,
+            0.0F,
+            1.0F
+        );
+        return new HammerRotationAnimation(
+            PlasticEntityOrientation.unpack(this.hammerReturnFrom),
+            this.getPlasticOrientation(),
+            progress
+        );
+    }
+
+    public boolean isHammerDeflected() {
+        return this.pendingReturnOrientation != null || this.hammerReturnStarted >= 0L;
+    }
+
+    public boolean startHammerDeflection(PlasticEntityOrientation targetOrientation) {
+        if (!this.initialized || !this.plastic || this.level == null) return false;
+        byte stableOrientation = this.pendingReturnOrientation == null
+            ? this.orientation
+            : this.pendingReturnOrientation;
+        if (targetOrientation.pack() == stableOrientation) return false;
+
+        this.pendingReturnOrientation = stableOrientation;
+        this.orientation = targetOrientation.pack();
+        this.hammerReturnFrom = this.orientation;
+        this.hammerReturnAt = this.level.getGameTime() + HAMMER_DEFLECTION_HOLD_TICKS;
+        this.hammerReturnStarted = -1L;
+        this.renderEntity = null;
+        this.setChangedAndSync();
+        return true;
     }
 
     public BlockPos getSupportPos() {
@@ -240,11 +292,18 @@ public class BondedEntityBlockEntity extends BlockEntity
     }
 
     public void tickFunctionalEntity() {
-        if (!(this.level instanceof ServerLevel)
-            || !(this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron)) {
+        if (!(this.level instanceof ServerLevel serverLevel)) return;
+        this.tickHammerDeflection(serverLevel);
+        if (!(this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron)) {
             return;
         }
         cauldron.plasticraft$tickBonded();
+        if (cauldron.plasticraft$wasBurnedByLava()) {
+            if (!cauldron.plasticraft$leftLavaSource()) {
+                serverLevel.removeBlock(this.worldPosition, false);
+            }
+            return;
+        }
         if (cauldron.plasticraft$consumeBondedDataDirty()) this.captureCachedEntity(true);
     }
 
@@ -274,6 +333,16 @@ public class BondedEntityBlockEntity extends BlockEntity
         return this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron
             ? cauldron.getItemHandler()
             : null;
+    }
+
+    public boolean clearCauldronOutletFacing(Direction direction) {
+        if (!(this.level instanceof ServerLevel)
+            || !(this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron)
+            || !cauldron.clearOutletFacing(direction)) {
+            return false;
+        }
+        this.captureCachedEntity(true);
+        return true;
     }
 
     @Override
@@ -385,6 +454,22 @@ public class BondedEntityBlockEntity extends BlockEntity
             : PlasticEntityOrientation.DEFAULT.pack();
         this.pistonMovable = !tag.contains(TAG_PISTON_MOVABLE) || tag.getBoolean(TAG_PISTON_MOVABLE);
         this.originalNoGravity = tag.getBoolean(TAG_ORIGINAL_NO_GRAVITY);
+        Direction loadedAdhesiveFace = Direction.byName(tag.getString(TAG_ADHESIVE_LOCAL_FACE));
+        this.adhesiveLocalFace = loadedAdhesiveFace == null
+            ? this.getPlasticOrientation().localDirection(this.attachmentFace.getOpposite())
+            : loadedAdhesiveFace;
+        this.pendingReturnOrientation = tag.contains(TAG_PENDING_RETURN_ORIENTATION, Tag.TAG_ANY_NUMERIC)
+            ? tag.getByte(TAG_PENDING_RETURN_ORIENTATION)
+            : null;
+        this.hammerReturnAt = tag.contains(TAG_HAMMER_RETURN_AT, Tag.TAG_ANY_NUMERIC)
+            ? tag.getLong(TAG_HAMMER_RETURN_AT)
+            : -1L;
+        this.hammerReturnFrom = tag.contains(TAG_HAMMER_RETURN_FROM, Tag.TAG_ANY_NUMERIC)
+            ? tag.getByte(TAG_HAMMER_RETURN_FROM)
+            : this.orientation;
+        this.hammerReturnStarted = tag.contains(TAG_HAMMER_RETURN_STARTED, Tag.TAG_ANY_NUMERIC)
+            ? tag.getLong(TAG_HAMMER_RETURN_STARTED)
+            : -1L;
         this.renderEntity = null;
     }
 
@@ -419,6 +504,34 @@ public class BondedEntityBlockEntity extends BlockEntity
         tag.putByte(TAG_ORIENTATION, this.orientation);
         tag.putBoolean(TAG_PISTON_MOVABLE, this.pistonMovable);
         tag.putBoolean(TAG_ORIGINAL_NO_GRAVITY, this.originalNoGravity);
+        tag.putString(TAG_ADHESIVE_LOCAL_FACE, this.adhesiveLocalFace.getName());
+        if (this.pendingReturnOrientation != null) {
+            tag.putByte(TAG_PENDING_RETURN_ORIENTATION, this.pendingReturnOrientation);
+            tag.putLong(TAG_HAMMER_RETURN_AT, this.hammerReturnAt);
+        }
+        if (this.hammerReturnStarted >= 0L) {
+            tag.putByte(TAG_HAMMER_RETURN_FROM, this.hammerReturnFrom);
+            tag.putLong(TAG_HAMMER_RETURN_STARTED, this.hammerReturnStarted);
+        }
+    }
+
+    private void tickHammerDeflection(ServerLevel level) {
+        long gameTime = level.getGameTime();
+        if (this.pendingReturnOrientation != null && gameTime >= this.hammerReturnAt) {
+            this.hammerReturnFrom = this.orientation;
+            this.orientation = this.pendingReturnOrientation;
+            this.pendingReturnOrientation = null;
+            this.hammerReturnAt = -1L;
+            this.hammerReturnStarted = gameTime;
+            this.renderEntity = null;
+            this.setChangedAndSync();
+            return;
+        }
+        if (this.hammerReturnStarted >= 0L
+            && gameTime - this.hammerReturnStarted >= HAMMER_RETURN_ANIMATION_TICKS) {
+            this.hammerReturnStarted = -1L;
+            this.setChangedAndSync();
+        }
     }
 
     private void setChangedAndSync() {
@@ -465,5 +578,12 @@ public class BondedEntityBlockEntity extends BlockEntity
             }
         }
         if (sync) this.setChangedAndSync();
+    }
+
+    public record HammerRotationAnimation(
+        PlasticEntityOrientation from,
+        PlasticEntityOrientation to,
+        float progress
+    ) {
     }
 }

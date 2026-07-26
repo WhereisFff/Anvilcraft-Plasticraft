@@ -77,6 +77,11 @@ public final class AnvilcraftPlasticraft {
 
     private static void registerCapabilities(RegisterCapabilitiesEvent event) {
         event.registerEntity(
+            Capabilities.ItemHandler.ENTITY,
+            ModEntities.HARDEND_RESIN_CAULDRON.get(),
+            (cauldron, side) -> cauldron.getItemHandler()
+        );
+        event.registerEntity(
             Capabilities.FluidHandler.ENTITY,
             ModEntities.HARDEND_RESIN_CAULDRON.get(),
             (cauldron, side) -> cauldron.getFluidHandler()

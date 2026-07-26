@@ -5,6 +5,7 @@ import dev.anvilcraft.lib.v2.network.packet.IPacket;
 import dev.anvilcraft.lib.v2.network.packet.IServerboundPacket;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.dubhe.anvilcraft.item.AnvilHammerItem;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.core.BlockPos;
@@ -13,7 +14,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.gameevent.GameEvent;
 
@@ -55,12 +55,15 @@ public record BondedPlasticHammerRotatePacket(
             return;
         }
 
-        Entity restored = bonded.releaseEntity(this.attachmentFace);
-        if (restored == null) return;
+        PlasticEntityOrientation current = bonded.getPlasticOrientation();
+        if (!bonded.startHammerDeflection(new PlasticEntityOrientation(
+            this.attachmentFace,
+            current.quarterTurn()
+        ))) return;
         player.level().playSound(
             null,
             this.pos,
-            SoundEvents.HONEY_BLOCK_BREAK,
+            SoundEvents.HONEY_BLOCK_SLIDE,
             SoundSource.BLOCKS,
             1.0F,
             1.0F

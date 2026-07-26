@@ -39,6 +39,7 @@ import dev.anvilcraft.plasticraft.entity.physics.ResinShockDropBehavior;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.anvilcraft.plasticraft.event.ResinAnvilHammerEvents;
+import dev.anvilcraft.plasticraft.init.ModAttachments;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import dev.anvilcraft.plasticraft.init.ModMenuTypes;
@@ -1345,7 +1346,11 @@ public final class PlasticAnvilGameTests {
         check(landingEventCount.get() == 1, "entity click did not post exactly one anvil landing event");
         check(resinSoundCount.get() == 1, "entity click did not play exactly one resin impact sound");
         check(anvilSoundCount.get() == 0, "entity click also played the vanilla anvil landing sound");
-        check(!EntityBondManager.hasBonds(target), "resin hammer left the struck entity bonded");
+        check(EntityBondManager.hasBonds(target), "resin hammer disconnected the struck entity");
+        check(
+            target.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+            "resin hammer did not start elastic motion on the struck entity"
+        );
         check(
             EntityBondManager.hasBonds(middle) && EntityBondManager.hasBonds(last),
             "resin hammer disconnected entities that were not struck"
@@ -1469,6 +1474,44 @@ public final class PlasticAnvilGameTests {
 
         check(target.getDeltaMovement().y > 0.29D, "headbutted entity did not receive the upward impulse");
         check(hammer.getDamageValue() == 1, "entity headbutt consumed the wrong amount of helmet durability");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x9x7", floor = true)
+    @TestHolder(description = "A resin hammer helmet routes a follower headbutt impulse through its bonded leader")
+    static void resinAnvilHammerHelmetLaunchesBondedGroupThroughFollower(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = makeResinHammerHelmetPlayer(helper, new Vec3(3.5D, 1.0D, 3.5D));
+        Zombie follower = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 2.85D, 3.5D));
+        Zombie leader = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 4.65D, 3.5D));
+        follower.setNoGravity(true);
+        leader.setNoGravity(true);
+        follower.setDeltaMovement(Vec3.ZERO);
+        leader.setDeltaMovement(Vec3.ZERO);
+        check(EntityBondManager.connect(
+            helper.getLevel(), follower, Direction.UP, leader, Direction.DOWN, true
+        ), "headbutt test entities could not be bonded");
+        check(EntityBondManager.isFollower(follower), "headbutted entity was not the bonded follower");
+        ItemStack hammer = player.getItemBySlot(EquipmentSlot.HEAD);
+        double followerStart = follower.getY();
+        double leaderStart = leader.getY();
+        player.setOnGround(true);
+        player.setDeltaMovement(0.0D, 0.2D, 0.0D);
+
+        player.travel(Vec3.ZERO);
+
+        check(leader.getDeltaMovement().y > 0.29D, "follower headbutt did not route its impulse to the bonded leader");
+        check(hammer.getDamageValue() == 1, "bonded follower headbutt consumed the wrong hammer durability");
+        leader.move(MoverType.SELF, leader.getDeltaMovement());
+        EntityBondManager.synchronizeComponent(leader);
+        double followerMovement = follower.getY() - followerStart;
+        double leaderMovement = leader.getY() - leaderStart;
+        check(followerMovement > 0.29D, "bonded follower did not rise with its launched leader");
+        check(leaderMovement > 0.29D, "bonded leader did not apply the headbutt impulse");
+        check(
+            Math.abs(followerMovement - leaderMovement) < 0.01D,
+            "headbutted bonded group did not preserve its member spacing"
+        );
         helper.succeed();
     }
 

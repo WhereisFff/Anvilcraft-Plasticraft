@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.client.renderer.blockentity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.client.renderer.AdhesivePatchRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import net.minecraft.client.Minecraft;
@@ -58,11 +59,25 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
                 Vec3 renderOffset = renderer.getRenderOffset(plasticEntity, partialTick);
                 pose.pushPose();
                 pose.translate(relative.x + renderOffset.x, relative.y + renderOffset.y, relative.z + renderOffset.z);
-                renderer.render(plasticEntity, plasticEntity.getYRot(), partialTick, pose, buffers, packedLight);
+                BondedEntityBlockEntity.HammerRotationAnimation animation =
+                    blockEntity.getHammerRotationAnimation(partialTick);
+                if (animation == null) {
+                    renderer.render(plasticEntity, plasticEntity.getYRot(), partialTick, pose, buffers, packedLight);
+                } else {
+                    try (PlasticEntityRenderTransforms.RenderOverrideScope ignored =
+                             PlasticEntityRenderTransforms.overrideRotation(
+                                 plasticEntity,
+                                 animation.from(),
+                                 animation.to(),
+                                 animation.progress()
+                             )) {
+                        renderer.render(plasticEntity, plasticEntity.getYRot(), partialTick, pose, buffers, packedLight);
+                    }
+                }
                 pose.popPose();
             }
         }
-        renderAdhesivePatch(blockEntity, pose, buffers, packedLight);
+        renderAdhesivePatch(blockEntity, pose, buffers, packedLight, partialTick);
     }
 
     private static void renderAdhesivePatch(
@@ -71,15 +86,24 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
         MultiBufferSource buffers,
         int packedLight
     ) {
+        renderAdhesivePatch(blockEntity, pose, buffers, packedLight, 1.0F);
+    }
+
+    private static void renderAdhesivePatch(
+        BondedEntityBlockEntity blockEntity,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        int packedLight,
+        float partialTick
+    ) {
         if (!(blockEntity.getLevel() instanceof ClientLevel level)) return;
-        AdhesivePatchRenderer.renderAttachedPatch(
+        AdhesivePatchRenderer.renderAttachedBlockAdhesive(
             level,
             pose,
             buffers,
-            blockEntity.getBlockPos(),
-            blockEntity.getSupportPos(),
-            blockEntity.getAttachmentFace(),
-            packedLight
+            blockEntity,
+            packedLight,
+            partialTick
         );
     }
 }

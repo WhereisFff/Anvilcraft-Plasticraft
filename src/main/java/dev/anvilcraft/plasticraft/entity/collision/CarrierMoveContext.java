@@ -2,6 +2,8 @@ package dev.anvilcraft.plasticraft.entity.collision;
 
 import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
 import dev.anvilcraft.plasticraft.api.entity.ElasticCollisionEntity;
+import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
@@ -54,9 +56,15 @@ public final class CarrierMoveContext {
         if (this.targets == null) {
             this.targets = new ArrayList<>(1);
         }
-        if (!this.targets.contains(target)) {
-            this.targets.add(target);
+        for (CarrierMovableEntity existing : this.targets) {
+            if (existing == target) return;
+            if (existing instanceof Entity existingEntity
+                && target instanceof Entity targetEntity
+                && EntityBondManager.areInSameComponent(existingEntity, targetEntity)) {
+                return;
+            }
         }
+        this.targets.add(target);
     }
 
     public boolean isRetryingCollision() {

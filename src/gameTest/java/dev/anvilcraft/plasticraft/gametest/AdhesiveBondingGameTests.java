@@ -4,6 +4,7 @@ import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlockInfo;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
@@ -14,6 +15,8 @@ import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveSelectionManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityAdhesion;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
+import dev.anvilcraft.plasticraft.entity.adhesive.SurfaceAdhesiveService;
+import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.event.BondedFallingBlockEvents;
 import dev.anvilcraft.plasticraft.init.ModAttachments;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
@@ -21,6 +24,7 @@ import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import dev.anvilcraft.plasticraft.init.item.ModItems;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.anvilcraft.plasticraft.network.BondedPlasticHammerRotatePacket;
+import dev.anvilcraft.plasticraft.network.PlasticEntityHammerRotatePacket;
 import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.block.sliding.ISlidingRail;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
@@ -230,8 +234,312 @@ public final class AdhesiveBondingGameTests {
                 "bare patch was not converted into an entity bond"
             );
             check(
-                !BondedFallingBlocks.hasPatch(helper.getLevel(), helper.absolutePos(support), Direction.UP),
-                "consumed bare patch remained available"
+                BondedFallingBlocks.hasPatch(helper.getLevel(), helper.absolutePos(support), Direction.UP),
+                "uncovered bare patch was consumed by the first entity"
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 15)
+    @EmptyTemplate(value = "7x7x7", floor = true)
+    @TestHolder(description = "Sneaking with the resin bucket bypasses all adhesive interactions")
+    static void sneakingResinBucketBypassesAdhesiveMode(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(3, 2, 3);
+        helper.setBlock(support, Blocks.STONE);
+        Zombie zombie = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.5D, 2.0D, 3.5D));
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(2.5D, 2.0D, 3.5D));
+        player.setShiftKeyDown(true);
+
+        check(
+            !AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, zombie, Direction.WEST),
+            "sneaking bucket still selected an entity"
+        );
+        check(
+            !AdhesiveBondingService.placePatch(
+                player,
+                InteractionHand.MAIN_HAND,
+                helper.absolutePos(support),
+                Direction.UP
+            ),
+            "sneaking bucket still placed an adhesive patch"
+        );
+        check(
+            !BondedFallingBlocks.hasPatch(helper.getLevel(), helper.absolutePos(support), Direction.UP),
+            "sneaking bucket left adhesive data"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 15)
+    @EmptyTemplate(value = "11x7x8", floor = true)
+    @TestHolder(description = "A bare adhesive face bonds every entity touching an uncovered part of the patch")
+    static void bareAdhesivePatchBondsMultipleUncoveredEntities(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(4, 2, 3);
+        BlockPos coveredSupport = new BlockPos(8, 2, 3);
+        helper.setBlock(support, Blocks.STONE);
+        helper.setBlock(coveredSupport, Blocks.STONE);
+        check(
+            BondedFallingBlocks.putPatch(helper.getLevel(), helper.absolutePos(support), Direction.UP),
+            "multi-entity adhesive patch could not be placed"
+        );
+        check(
+            BondedFallingBlocks.putPatch(helper.getLevel(), helper.absolutePos(coveredSupport), Direction.UP),
+            "covered adhesive patch could not be placed"
+        );
+
+        Zombie first = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.15D, 3.0D, 3.15D));
+        Zombie second = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.85D, 3.0D, 3.85D));
+        SurfaceAdhesiveService.tickEntity(first);
+        SurfaceAdhesiveService.tickEntity(second);
+        check(first.hasData(ModAttachments.ENTITY_ADHESION), "first patch corner did not bond its entity");
+        check(second.hasData(ModAttachments.ENTITY_ADHESION), "uncovered patch corner did not bond the second entity");
+        Zombie occludedCorner = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.85D, 3.0D, 3.85D));
+        SurfaceAdhesiveService.tickEntity(occludedCorner);
+        check(
+            !occludedCorner.hasData(ModAttachments.ENTITY_ADHESION),
+            "a covered corner bonded because another attached entity occupied a disjoint corner"
+        );
+        check(
+            BondedFallingBlocks.hasPatch(helper.getLevel(), helper.absolutePos(support), Direction.UP),
+            "multi-entity patch was consumed"
+        );
+
+        AdhesiveBondingService.release(first);
+        check(
+            BondedFallingBlocks.hasEntityBond(helper.getLevel(), helper.absolutePos(support), Direction.UP),
+            "releasing one entity cleared another entity's support bond"
+        );
+        AdhesiveBondingService.release(second);
+        check(
+            !BondedFallingBlocks.hasEntityBond(helper.getLevel(), helper.absolutePos(support), Direction.UP)
+                && BondedFallingBlocks.hasPatch(helper.getLevel(), helper.absolutePos(support), Direction.UP),
+            "releasing the last entity did not restore a bare adhesive face"
+        );
+
+        Zombie covering = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(8.5D, 3.0D, 3.5D));
+        Zombie occluded = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(8.5D, 3.0D, 3.5D));
+        SurfaceAdhesiveService.tickEntity(covering);
+        SurfaceAdhesiveService.tickEntity(occluded);
+        check(covering.hasData(ModAttachments.ENTITY_ADHESION), "covering entity did not bond to the patch");
+        check(!occluded.hasData(ModAttachments.ENTITY_ADHESION), "fully covered patch bonded an overlapping entity");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "8x6x8", floor = true)
+    @TestHolder(description = "A resin bucket reclaims adhesive only from the directly clicked block face")
+    static void resinBucketReclaimsOnlyClickedBlockFace(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(3, 1, 3);
+        BlockPos adjacentGround = support.east();
+        helper.setBlock(support, Blocks.STONE);
+        helper.setBlock(adjacentGround, Blocks.STONE);
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(3.5D, 2.0D, 1.5D));
+
+        check(
+            BondedFallingBlocks.putPatch(helper.getLevel(), helper.absolutePos(support), Direction.UP),
+            "exact-face reclaim patch could not be placed"
+        );
+        check(
+            BondedFallingBlocks.putPatch(helper.getLevel(), helper.absolutePos(support), Direction.NORTH),
+            "secondary patch for face-specific reclaim could not be placed"
+        );
+        check(
+            AdhesiveBondingService.placePatch(
+                player,
+                InteractionHand.MAIN_HAND,
+                helper.absolutePos(adjacentGround),
+                Direction.UP
+            ),
+            "neighboring face could not receive its own adhesive patch"
+        );
+        check(
+            BondedFallingBlocks.hasPatch(helper.getLevel(), helper.absolutePos(support), Direction.UP),
+            "clicking a neighboring face reclaimed the original adhesive"
+        );
+        check(
+            BondedFallingBlocks.hasPatch(helper.getLevel(), helper.absolutePos(adjacentGround), Direction.UP),
+            "clicking a neighboring face did not place adhesive on that face"
+        );
+        check(
+            BondedFallingBlocks.hasPatch(helper.getLevel(), helper.absolutePos(support), Direction.NORTH),
+            "clicking a neighboring face reclaimed another face of the original block"
+        );
+        check(
+            player.getMainHandItem().is(Items.BUCKET),
+            "placing adhesive on the neighboring face did not consume the resin bucket"
+        );
+
+        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack());
+        check(
+            AdhesiveBondingService.placePatch(
+                player,
+                InteractionHand.MAIN_HAND,
+                helper.absolutePos(support),
+                Direction.UP
+            ),
+            "clicking the exact adhesive face did not reclaim it"
+        );
+        check(
+            !BondedFallingBlocks.hasPatch(helper.getLevel(), helper.absolutePos(support), Direction.UP),
+            "exact-face reclaim left the adhesive patch behind"
+        );
+        check(
+            BondedFallingBlocks.hasPatch(helper.getLevel(), helper.absolutePos(adjacentGround), Direction.UP),
+            "exact-face reclaim removed adhesive from the neighboring block"
+        );
+        check(
+            player.getMainHandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()),
+            "exact-face reclaim consumed the held resin bucket"
+        );
+
+        check(
+            BondedFallingBlocks.connect(
+                helper.getLevel(),
+                helper.absolutePos(support),
+                helper.absolutePos(adjacentGround)
+            ),
+            "block bond for direct reclaim could not be created"
+        );
+        check(
+            AdhesiveBondingService.placePatch(
+                player,
+                InteractionHand.MAIN_HAND,
+                helper.absolutePos(support),
+                Direction.EAST
+            ),
+            "clicking a block adhesive face did not reclaim it"
+        );
+        check(
+            !BondedFallingBlocks.hasBlockBond(helper.getLevel(), helper.absolutePos(support), Direction.EAST),
+            "direct reclaim left the block bond behind"
+        );
+        check(
+            BondedFallingBlocks.hasPatch(helper.getLevel(), helper.absolutePos(support), Direction.NORTH),
+            "direct reclaim removed adhesive from another block face"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "8x6x8", floor = true)
+    @TestHolder(description = "A resin bucket reclaims only the clicked adhesive face of an entity")
+    static void resinBucketReclaimsClickedEntityFace(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(3, 1, 3);
+        helper.setBlock(support, Blocks.STONE);
+        check(
+            BondedFallingBlocks.putPatch(helper.getLevel(), helper.absolutePos(support), Direction.UP),
+            "entity reclaim patch could not be placed"
+        );
+        Zombie target = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 2.0D, 3.5D));
+        Zombie linked = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.5D, 2.0D, 3.5D));
+        Zombie northLinked = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 2.0D, 2.5D));
+        SurfaceAdhesiveService.tickEntity(target);
+        check(target.hasData(ModAttachments.ENTITY_ADHESION), "entity reclaim target did not bond to its patch");
+        check(
+            EntityBondManager.connect(helper.getLevel(), target, Direction.EAST, linked, Direction.WEST, true),
+            "entity reclaim target could not receive a second adhesive link"
+        );
+        check(
+            EntityBondManager.connect(
+                helper.getLevel(), target, Direction.NORTH, northLinked, Direction.SOUTH, true
+            ),
+            "entity reclaim target could not receive a third adhesive link"
+        );
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(3.5D, 2.0D, 0.5D));
+
+        check(
+            !AdhesiveBondingService.reclaimEntity(
+                player, InteractionHand.MAIN_HAND, target, Direction.WEST
+            ),
+            "resin bucket reclaimed an entity through an unglued face"
+        );
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, target, Direction.WEST),
+            "an unglued entity face could not be selected"
+        );
+        check(AdhesiveSelectionManager.hasSelection(player), "unglued face selection was not retained");
+        AdhesiveSelectionManager.clear(player);
+
+        check(
+            AdhesiveBondingService.reclaimEntity(
+                player, InteractionHand.MAIN_HAND, target, Direction.EAST
+            ),
+            "resin bucket did not reclaim the clicked entity-to-entity face"
+        );
+        EntityBondState remaining = EntityBondManager.get(target);
+        check(
+            remaining != null
+                && remaining.linkAt(Direction.EAST) == null
+                && remaining.linkAt(Direction.NORTH) != null,
+            "reclaiming one entity face changed another entity face"
+        );
+        check(!EntityBondManager.hasBonds(linked), "reclaimed face remained linked from its partner");
+        check(EntityBondManager.hasBonds(northLinked), "reclaiming one face disconnected another partner");
+        check(target.hasData(ModAttachments.ENTITY_ADHESION), "reclaiming an entity face removed the block anchor");
+
+        check(
+            AdhesiveBondingService.reclaimEntity(
+                player, InteractionHand.MAIN_HAND, target, Direction.DOWN
+            ),
+            "resin bucket did not reclaim the clicked block-anchor face"
+        );
+        check(!target.hasData(ModAttachments.ENTITY_ADHESION), "clicked block-anchor face was not reclaimed");
+        check(EntityBondManager.hasBonds(target), "reclaiming the block anchor removed another entity face");
+        check(EntityBondManager.hasBonds(northLinked), "block-anchor reclaim disconnected another partner");
+        check(
+            BondedFallingBlocks.hasPatch(helper.getLevel(), helper.absolutePos(support), Direction.UP),
+            "reclaiming an entity anchor removed the reusable bare patch"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 25)
+    @EmptyTemplate(value = "8x6x8", floor = true)
+    @TestHolder(description = "Selecting a free face on an anchored entity pulls the second entity to that face")
+    static void anchoredEntityFreeFacePullsSecondEntity(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(4, 1, 3);
+        helper.setBlock(support, Blocks.STONE);
+        check(
+            BondedFallingBlocks.putPatch(helper.getLevel(), helper.absolutePos(support), Direction.UP),
+            "anchored selection patch could not be placed"
+        );
+        Zombie anchor = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.5D, 2.0D, 3.5D));
+        Zombie moving = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(1.5D, 2.0D, 3.5D));
+        SurfaceAdhesiveService.tickEntity(anchor);
+        check(anchor.hasData(ModAttachments.ENTITY_ADHESION), "free-face anchor did not bond to its patch");
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(3.5D, 2.0D, 1.5D));
+
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, anchor, Direction.WEST),
+            "free face on anchored entity could not be selected"
+        );
+        check(
+            AdhesiveBondingService.bondSelectedToEntity(
+                player,
+                InteractionHand.MAIN_HAND,
+                moving,
+                Direction.EAST
+            ),
+            "anchored free face did not start pulling the second entity"
+        );
+        check(
+            !anchor.hasData(ModAttachments.ADHESIVE_TRANSIT)
+                && moving.hasData(ModAttachments.ADHESIVE_TRANSIT),
+            "anchored entity moved instead of the second entity"
+        );
+
+        helper.runAfterDelay(12, () -> {
+            check(anchor.hasData(ModAttachments.ENTITY_ADHESION), "pulling another entity released the anchor");
+            EntityBondState anchorBonds = EntityBondManager.get(anchor);
+            EntityBondState movingBonds = EntityBondManager.get(moving);
+            check(
+                anchorBonds != null && anchorBonds.linkAt(Direction.WEST) != null,
+                "anchored entity did not receive a bond on its selected face"
+            );
+            check(
+                movingBonds != null && movingBonds.linkAt(Direction.EAST) != null,
+                "pulled entity did not receive a bond on its clicked face"
             );
             helper.succeed();
         });
@@ -470,8 +778,8 @@ public final class AdhesiveBondingGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "8x6x8", floor = true)
-    @TestHolder(description = "Strong knockback disconnects only the struck entity from its component")
-    static void strongKnockbackDisconnectsOnlyTargetEntity(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "Strong knockback preserves entity bonds and starts elastic motion")
+    static void strongKnockbackPreservesEntityComponent(ExtendedGameTestHelper helper) {
         Zombie first = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 2.0D, 3.5D));
         Zombie middle = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 2.0D, 3.5D));
         Zombie last = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.5D, 2.0D, 3.5D));
@@ -486,14 +794,18 @@ public final class AdhesiveBondingGameTests {
         ), "second entity bond failed");
 
         CommonHooks.onLivingKnockBack(first, 2.5F, 0.0D, 1.0D);
-        check(!EntityBondManager.hasBonds(first), "struck entity retained its bond");
+        check(EntityBondManager.hasBonds(first), "strong knockback disconnected the struck entity");
+        check(
+            first.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+            "strong knockback did not start elastic motion"
+        );
         EntityBondState middleBonds = EntityBondManager.get(middle);
         EntityBondState lastBonds = EntityBondManager.get(last);
         check(
             middleBonds != null
-                && middleBonds.linkAt(Direction.WEST) == null
+                && middleBonds.linkAt(Direction.WEST) != null
                 && middleBonds.linkAt(Direction.EAST) != null,
-            "strong knockback removed the remaining component bond"
+            "strong knockback changed the middle entity's bonds"
         );
         check(
             lastBonds != null && lastBonds.linkAt(Direction.WEST) != null,
@@ -600,6 +912,243 @@ public final class AdhesiveBondingGameTests {
         check(close(anvil.position(), anvilStart), "bonded resin anvil drifted under internal pushing");
         check(close(zombie.position(), zombieStart), "bonded living entity drifted under internal pushing");
         helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "13x6x8", floor = true)
+    @TestHolder(description = "A player smoothly pushes a bonded plastic component through its newest follower")
+    static void playerSmoothlyPushesBondedPlasticFollower(ExtendedGameTestHelper helper) {
+        for (int x = 2; x <= 10; x++) {
+            for (int z = 2; z <= 6; z++) helper.setBlock(x, 1, z, Blocks.STONE);
+        }
+        HardenedResinCauldronEntity newestFollower = createCauldron(helper, new Vec3(4.5D, 2.0D, 3.5D));
+        ResinAnvilEntity middleFollower = createResinAnvil(helper, new Vec3(5.49D, 2.0D, 3.5D));
+        HardenedResinAnvilEntity leader = createAnvil(helper, new Vec3(6.48D, 2.0D, 3.5D));
+        check(EntityBondManager.connect(
+            helper.getLevel(), middleFollower, Direction.EAST, leader, Direction.WEST, false
+        ), "resin anvil could not be bonded as a follower");
+        check(EntityBondManager.connect(
+            helper.getLevel(), newestFollower, Direction.EAST, middleFollower, Direction.WEST, false
+        ), "resin cauldron could not be bonded as the newest follower");
+        check(EntityBondManager.isFollower(newestFollower), "newest bonded plastic entity was not a follower");
+
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.5D, 2.0D, 2.71D));
+        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        helper.runAfterDelay(3, () -> {
+            double playerStart = player.getZ();
+            double newestStart = newestFollower.getZ();
+            double middleStart = middleFollower.getZ();
+            double leaderStart = leader.getZ();
+            player.move(MoverType.SELF, new Vec3(0.0D, 0.0D, 0.18D));
+            player.move(MoverType.SELF, new Vec3(0.0D, 0.0D, 0.18D));
+
+            double playerMovement = player.getZ() - playerStart;
+            double newestMovement = newestFollower.getZ() - newestStart;
+            double middleMovement = middleFollower.getZ() - middleStart;
+            double leaderMovement = leader.getZ() - leaderStart;
+            check(playerMovement > 0.30D, "bonded follower blocked the player's continuous movement");
+            check(newestMovement > 0.30D, "newest follower did not receive both player movements");
+            check(middleMovement > 0.30D, "middle follower did not move synchronously");
+            check(leaderMovement > 0.30D, "bonded leader did not receive both player movements");
+            check(
+                Math.abs(newestMovement - middleMovement) < 0.03D
+                    && Math.abs(newestMovement - leaderMovement) < 0.03D,
+                "bonded plastic component did not preserve spacing while its follower was pushed: newest="
+                    + newestMovement + ", middle=" + middleMovement + ", leader=" + leaderMovement
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "16x6x9", floor = true)
+    @TestHolder(description = "A bonded plastic component pushes an independent plastic entity through its follower")
+    static void bondedPlasticFollowerPushesIndependentPlasticEntity(ExtendedGameTestHelper helper) {
+        for (int x = 2; x <= 13; x++) {
+            for (int z = 2; z <= 6; z++) helper.setBlock(x, 1, z, Blocks.STONE);
+        }
+        HardenedResinCauldronEntity follower = createCauldron(helper, new Vec3(5.5D, 2.0D, 4.5D));
+        HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(6.49D, 2.0D, 4.5D));
+        HardenedResinCauldronEntity independent = createCauldron(helper, new Vec3(7.48D, 2.0D, 4.5D));
+        check(EntityBondManager.connect(
+            helper.getLevel(), follower, Direction.EAST, leader, Direction.WEST, false
+        ), "plastic follower could not bond to its leader");
+        check(EntityBondManager.isFollower(follower), "pushed plastic entity was not the follower");
+
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.71D, 2.0D, 4.5D));
+        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        helper.runAfterDelay(3, () -> {
+            double playerStart = player.getX();
+            double followerStart = follower.getX();
+            double leaderStart = leader.getX();
+            double independentStart = independent.getX();
+            player.move(MoverType.SELF, new Vec3(0.18D, 0.0D, 0.0D));
+            player.move(MoverType.SELF, new Vec3(0.18D, 0.0D, 0.0D));
+
+            double followerMovement = follower.getX() - followerStart;
+            double leaderMovement = leader.getX() - leaderStart;
+            double independentMovement = independent.getX() - independentStart;
+            check(player.getX() - playerStart > 0.30D, "independent plastic entity blocked the player through the bonded group");
+            check(followerMovement > 0.30D, "bonded follower did not receive both player movements");
+            check(leaderMovement > 0.30D, "bonded leader did not follow its pushed follower");
+            check(independentMovement > 0.30D, "bonded component did not push the independent plastic entity");
+            check(
+                Math.abs(followerMovement - leaderMovement) < 0.03D,
+                "bonded component changed spacing while pushing another plastic entity"
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "13x6x11", floor = true)
+    @TestHolder(description = "A diagonal push at a bonded seam moves the component once along the contacted face")
+    static void diagonalPlayerPushAtBondedSeamMovesComponentOnce(ExtendedGameTestHelper helper) {
+        for (int x = 2; x <= 10; x++) {
+            for (int z = 2; z <= 8; z++) helper.setBlock(x, 1, z, Blocks.STONE);
+        }
+        HardenedResinCauldronEntity follower = createCauldron(helper, new Vec3(5.5D, 2.0D, 5.5D));
+        HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(6.49D, 2.0D, 5.5D));
+        check(EntityBondManager.connect(
+            helper.getLevel(), follower, Direction.EAST, leader, Direction.WEST, false
+        ), "seam test entities could not be bonded");
+
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        Vec3 playerPosition = helper.absoluteVec(new Vec3(5.995D, 2.0D, 4.71D));
+        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        helper.runAfterDelay(3, () -> {
+            Vec3 playerStart = player.position();
+            Vec3 followerStart = follower.position();
+            Vec3 leaderStart = leader.position();
+            Vec3 requestedMovement = new Vec3(0.16D, 0.0D, 0.18D);
+            player.move(MoverType.SELF, requestedMovement);
+            player.move(MoverType.SELF, requestedMovement);
+
+            Vec3 playerMovement = player.position().subtract(playerStart);
+            Vec3 followerMovement = follower.position().subtract(followerStart);
+            Vec3 leaderMovement = leader.position().subtract(leaderStart);
+            check(followerMovement.z > 0.30D, "seam push did not move the bonded component forward");
+            check(followerMovement.z < 0.40D, "seam push moved the bonded component more than once");
+            check(Math.abs(followerMovement.x) < 0.03D, "bonded component followed tangential player movement at its seam");
+            check(playerMovement.x > 0.25D, "bonded seam blocked the player's tangential movement");
+            check(
+                followerMovement.distanceTo(leaderMovement) < 0.03D,
+                "bonded members received different movement at their seam"
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "10x8x8", floor = true)
+    @TestHolder(description = "A bonded plastic follower on a player's head carries its whole component")
+    static void playerCarriesBondedPlasticFollowerOnHead(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.5D, 2.0D, 3.5D));
+        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        double productY = 2.0D + player.getBbHeight();
+        HardenedResinCauldronEntity follower = createCauldron(helper, new Vec3(4.5D, productY, 3.5D));
+        HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(5.49D, productY, 3.5D));
+        follower.setNoGravity(true);
+        leader.setNoGravity(true);
+        check(EntityBondManager.connect(
+            helper.getLevel(), follower, Direction.EAST, leader, Direction.WEST, true
+        ), "head-carried plastic follower could not bond to its leader");
+        check(EntityBondManager.isFollower(follower), "head-carried plastic entity was not the follower");
+
+        helper.runAfterDelay(3, () -> {
+            check(
+                Math.abs(follower.getBoundingBox().minY - player.getBoundingBox().maxY) < 0.03D,
+                "bonded follower did not settle on the player's head"
+            );
+            double playerStart = player.getZ();
+            double followerStart = follower.getZ();
+            double leaderStart = leader.getZ();
+            Vec3 requestedMovement = new Vec3(0.0D, 0.0D, 0.18D);
+            check(EntityBondManager.isFollower(follower), "head-carried plastic entity stopped being the follower");
+            check(
+                PlasticEntityPhysics.hasImmediateEntityContact(follower, player, Direction.DOWN),
+                "bonded follower did not recognize direct contact with its head carrier"
+            );
+            check(
+                follower.plasticraft$canMoveWithCarrier(player, requestedMovement),
+                "bonded follower rejected its directly contacting head carrier"
+            );
+            player.move(MoverType.SELF, requestedMovement);
+            player.move(MoverType.SELF, requestedMovement);
+
+            double playerMovement = player.getZ() - playerStart;
+            double followerMovement = follower.getZ() - followerStart;
+            double leaderMovement = leader.getZ() - leaderStart;
+            check(
+                playerMovement > 0.30D,
+                "bonded follower blocked its head carrier: player=" + playerMovement
+                    + ", follower=" + followerMovement + ", leader=" + leaderMovement
+            );
+            check(followerMovement > 0.30D, "head-carried follower did not move with the player");
+            check(leaderMovement > 0.30D, "head-carried follower did not move its leader");
+            check(
+                Math.abs(followerMovement - leaderMovement) < 0.03D,
+                "head-carried bonded component did not preserve spacing"
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "10x9x8", floor = true)
+    @TestHolder(description = "A jumping player lifts a bonded plastic follower resting on their head")
+    static void playerJumpLiftsBondedPlasticFollowerOnHead(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.5D, 2.0D, 3.5D));
+        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        double productY = 2.0D + player.getBbHeight();
+        HardenedResinCauldronEntity follower = createCauldron(helper, new Vec3(4.5D, productY, 3.5D));
+        HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(5.49D, productY, 3.5D));
+        follower.setNoGravity(true);
+        leader.setNoGravity(true);
+        check(EntityBondManager.connect(
+            helper.getLevel(), follower, Direction.EAST, leader, Direction.WEST, true
+        ), "head-carried plastic follower could not bond to its leader");
+
+        helper.runAfterDelay(3, () -> {
+            double playerStart = player.getY();
+            double followerStart = follower.getY();
+            double leaderStart = leader.getY();
+            player.setOnGround(true);
+            player.jumpFromGround();
+            player.travel(Vec3.ZERO);
+
+            double playerMovement = player.getY() - playerStart;
+            double followerMovement = follower.getY() - followerStart;
+            double leaderMovement = leader.getY() - leaderStart;
+            check(
+                playerMovement > 0.35D,
+                "player could not jump under the bonded follower: player=" + playerMovement
+                    + ", follower=" + followerMovement + ", leader=" + leaderMovement
+            );
+            check(
+                followerMovement > 0.35D,
+                "jump did not lift the bonded follower: player=" + playerMovement
+                    + ", follower=" + followerMovement + ", leader=" + leaderMovement
+            );
+            check(
+                leaderMovement > 0.35D,
+                "jumped follower did not lift its bonded leader: player=" + playerMovement
+                    + ", follower=" + followerMovement + ", leader=" + leaderMovement
+            );
+            check(
+                Math.abs(followerMovement - leaderMovement) < 0.03D,
+                "bonded component changed spacing during the player's jump"
+            );
+            check(
+                !player.getBoundingBox().intersects(follower.getBoundingBox()),
+                "jumping player overlapped the bonded follower and was crushed"
+            );
+            helper.succeed();
+        });
     }
 
     @GameTest(timeoutTicks = 20)
@@ -909,8 +1458,8 @@ public final class AdhesiveBondingGameTests {
 
     @GameTest(timeoutTicks = 30)
     @EmptyTemplate(value = "7x5x7", floor = true)
-    @TestHolder(description = "Knockback V releases an ordinary bonded living entity")
-    static void strongKnockbackReleasesBondedEntity(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "Knockback I starts a short rebound without releasing a bonded living entity")
+    static void knockbackThresholdStartsShortBondedEntityRebound(ExtendedGameTestHelper helper) {
         BlockPos support = new BlockPos(3, 1, 3);
         helper.setBlock(support, Blocks.STONE);
         Zombie zombie = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 2.0D, 2.5D));
@@ -925,10 +1474,34 @@ public final class AdhesiveBondingGameTests {
         ), "ordinary entity bonding failed");
         helper.runAfterDelay(10, () -> {
             check(zombie.hasData(ModAttachments.ENTITY_ADHESION), "ordinary entity has no adhesion attachment");
-            CommonHooks.onLivingKnockBack(zombie, 2.5F, 0.0D, 1.0D);
-            check(!zombie.hasData(ModAttachments.ENTITY_ADHESION), "Knockback V did not release the entity");
-            check(!zombie.isNoGravity(), "Knockback V did not restore the entity's gravity flag");
-            helper.succeed();
+            Vec3 fixedPosition = zombie.position();
+            CommonHooks.onLivingKnockBack(zombie, 0.49F, 0.0D, 1.0D);
+            check(
+                !zombie.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+                "sub-threshold knockback started elastic motion"
+            );
+            CommonHooks.onLivingKnockBack(zombie, 0.5F, 0.0D, 1.0D);
+            check(zombie.hasData(ModAttachments.ENTITY_ADHESION), "Knockback I released the entity");
+            check(
+                zombie.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+                "Knockback I did not start elastic motion"
+            );
+            zombie.setDeltaMovement(0.5D, 0.0D, 0.0D);
+            helper.runAfterDelay(2, () -> {
+                check(
+                    zombie.position().distanceToSqr(fixedPosition) > 0.01D,
+                    "elastic entity did not move away from its adhesive point"
+                );
+                helper.runAfterDelay(9, () -> {
+                    check(zombie.hasData(ModAttachments.ENTITY_ADHESION), "elastic rebound released the entity");
+                    check(
+                        !zombie.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+                        "Knockback I rebound did not settle quickly"
+                    );
+                    check(close(zombie.position(), fixedPosition), "elastic entity did not return to its adhesive point");
+                    helper.succeed();
+                });
+            });
         });
     }
 
@@ -1569,6 +2142,271 @@ public final class AdhesiveBondingGameTests {
     }
 
     @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "18x11x15", floor = true)
+    @TestHolder(description = "Adhesive path planning can spend its detour budget beyond the old four-block margin")
+    static void adhesivePathRoutesBeyondOldSearchMargin(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(14, 1, 7);
+        helper.setBlock(support, Blocks.STONE);
+        for (int y = 1; y <= 8; y++) {
+            for (int z = 2; z <= 12; z++) {
+                helper.setBlock(new BlockPos(8, y, z), Blocks.STONE);
+            }
+        }
+        Zombie zombie = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 2.0D, 7.5D));
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        AdhesivePathPlanner.Plan plan = AdhesivePathPlanner.plan(
+            helper.getLevel(),
+            zombie,
+            player,
+            helper.absolutePos(support),
+            Direction.UP
+        );
+
+        check(plan.valid(), "wide-wall route was not found: " + plan.status());
+        Vec3 start = zombie.position();
+        check(
+            plan.points().stream().anyMatch(point ->
+                Math.abs(point.y - start.y) > 4.25D || Math.abs(point.z - start.z) > 4.25D),
+            "wide-wall route never left the old four-block search margin"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "13x7x11", floor = true)
+    @TestHolder(description = "Adhesive paths avoid lava and fire even when the direct route is collision-free")
+    static void adhesivePathAvoidsDamagingTerrain(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(10, 1, 5);
+        BlockPos lava = new BlockPos(5, 2, 5);
+        BlockPos fire = new BlockPos(6, 2, 5);
+        helper.setBlock(support, Blocks.STONE);
+        helper.setBlock(lava, Blocks.LAVA);
+        helper.setBlock(fire.below(), Blocks.NETHERRACK);
+        helper.setBlock(fire, Blocks.FIRE);
+        Zombie zombie = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 2.0D, 5.5D));
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        AdhesivePathPlanner.Plan plan = AdhesivePathPlanner.plan(
+            helper.getLevel(),
+            zombie,
+            player,
+            helper.absolutePos(support),
+            Direction.UP
+        );
+
+        check(plan.valid(), "safe route around damaging terrain was not found: " + plan.status());
+        check(plan.points().size() > 2, "damaging terrain did not force a detour");
+        AABB lavaBox = new AABB(helper.absolutePos(lava));
+        AABB fireBox = new AABB(helper.absolutePos(fire));
+        AABB originalBox = zombie.getBoundingBox().deflate(EPSILON);
+        for (int index = 1; index < plan.points().size(); index++) {
+            Vec3 from = plan.points().get(index - 1);
+            Vec3 to = plan.points().get(index);
+            int samples = Math.max(1, (int) Math.ceil(from.distanceTo(to) / 0.05D));
+            for (int sample = 1; sample <= samples; sample++) {
+                Vec3 position = from.lerp(to, sample / (double) samples);
+                AABB moved = originalBox.move(position.subtract(zombie.position()));
+                check(!moved.intersects(lavaBox), "smoothed adhesive path crossed lava");
+                check(!moved.intersects(fireBox), "smoothed adhesive path crossed fire");
+            }
+        }
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "12x7x30", floor = true)
+    @TestHolder(description = "Axis-swept adhesive path checks allow a full-size falling block through a one-block gap")
+    static void adhesivePathUsesOneBlockGap(ExtendedGameTestHelper helper) {
+        BlockPos source = new BlockPos(2, 2, 14);
+        BlockPos support = new BlockPos(9, 1, 14);
+        helper.setBlock(source, Blocks.SAND);
+        helper.setBlock(support, Blocks.STONE);
+        for (int y = 1; y <= 5; y++) {
+            for (int z = 1; z <= 27; z++) {
+                if (y == 2 && z == 15) continue;
+                helper.setBlock(new BlockPos(5, y, z), Blocks.STONE);
+            }
+        }
+        FallingBlockEntity sand = FallingBlockEntity.fall(
+            helper.getLevel(),
+            helper.absolutePos(source),
+            Blocks.SAND.defaultBlockState()
+        );
+        sand.setNoGravity(true);
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        AdhesivePathPlanner.Plan plan = AdhesivePathPlanner.plan(
+            helper.getLevel(),
+            sand,
+            player,
+            helper.absolutePos(support),
+            Direction.UP
+        );
+
+        check(plan.valid(), "one-block-gap route was not found: " + plan.status());
+        check(
+            plan.points().stream().anyMatch(point -> point.z - sand.position().z > 0.75D),
+            "one-block-gap route did not enter the narrow channel"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "12x6x9", floor = true)
+    @TestHolder(description = "Exact one-block plastic entities fit into a one-block slot in every orientation")
+    static void adhesivePathFitsExactBlockEntityInOneBlockSlot(ExtendedGameTestHelper helper) {
+        BlockPos targetCell = new BlockPos(8, 2, 4);
+        BlockPos floorSupport = targetCell.below();
+        BlockPos wallSupport = targetCell.east();
+        helper.setBlock(floorSupport, Blocks.STONE);
+        helper.setBlock(wallSupport, Blocks.STONE);
+        helper.setBlock(targetCell.above(), Blocks.STONE);
+        HardenedResinCauldronEntity cauldron = createCauldron(helper, new Vec3(2.5D, 2.0D, 4.5D));
+        check(
+            Math.abs(cauldron.getBbWidth() - 1.0D) < EPSILON
+                && Math.abs(cauldron.getBbHeight() - 1.0D) < EPSILON,
+            "exact-block path test entity no longer has a one-block collision box"
+        );
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+
+        AdhesivePathPlanner.Plan floorPlan = AdhesivePathPlanner.plan(
+            helper.getLevel(),
+            cauldron,
+            player,
+            helper.absolutePos(floorSupport),
+            Direction.UP
+        );
+        check(floorPlan.valid(), "exact-block floor-slot route was not found: " + floorPlan.status());
+
+        AdhesivePathPlanner.Plan wallPlan = AdhesivePathPlanner.plan(
+            helper.getLevel(),
+            cauldron,
+            player,
+            helper.absolutePos(wallSupport),
+            Direction.WEST
+        );
+        check(wallPlan.valid(), "exact-block wall-slot route was not found: " + wallPlan.status());
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "14x8x12", floor = true)
+    @TestHolder(description = "Adhesive paths can leave one wall face and reach the opposite face by going around")
+    static void adhesivePathRoutesFromWallToOppositeFace(ExtendedGameTestHelper helper) {
+        BlockPos targetWall = new BlockPos(6, 3, 5);
+        for (int x = 2; x <= 10; x++) {
+            for (int y = 1; y <= 4; y++) {
+                helper.setBlock(new BlockPos(x, y, 5), Blocks.SANDSTONE);
+            }
+        }
+        Zombie zombie = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(6.2D, 2.525D, 4.7D));
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        AdhesivePathPlanner.Plan plan = AdhesivePathPlanner.plan(
+            helper.getLevel(),
+            zombie,
+            player,
+            helper.absolutePos(targetWall),
+            Direction.SOUTH
+        );
+
+        check(plan.valid(), "wall-to-opposite-face route was not found: " + plan.status());
+        check(plan.points().size() > 2, "wall-to-opposite-face route did not go around the wall");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "13x7x13", floor = true)
+    @TestHolder(description = "Villager adhesive paths enter a two-block-high doorway from every source grid phase")
+    static void adhesivePathEntersDoorwayFromEveryGridPhase(ExtendedGameTestHelper helper) {
+        BlockPos doorwayFloor = new BlockPos(6, 1, 6);
+        BlockPos insideFloor = new BlockPos(6, 1, 7);
+        for (int x = 1; x <= 11; x++) {
+            helper.setBlock(new BlockPos(x, 1, 6), Blocks.SANDSTONE);
+            if (x != 6) {
+                helper.setBlock(new BlockPos(x, 2, 6), Blocks.SANDSTONE);
+                helper.setBlock(new BlockPos(x, 3, 6), Blocks.SANDSTONE);
+            }
+            helper.setBlock(new BlockPos(x, 4, 6), Blocks.SANDSTONE);
+        }
+        for (int z = 7; z <= 10; z++) {
+            helper.setBlock(new BlockPos(6, 1, z), Blocks.SANDSTONE);
+            helper.setBlock(new BlockPos(6, 4, z), Blocks.SANDSTONE);
+        }
+
+        var villager = helper.spawnWithNoFreeWill(EntityType.VILLAGER, new Vec3(9.5D, 2.0D, 4.5D));
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        double[] phases = {0.0D, 0.2D, 0.5D, 0.8D};
+        for (double phase : phases) {
+            villager.setPos(helper.absoluteVec(new Vec3(9.0D + phase, 2.0D, 4.5D)));
+            AdhesivePathPlanner.Plan doorwayPlan = AdhesivePathPlanner.plan(
+                helper.getLevel(),
+                villager,
+                player,
+                helper.absolutePos(doorwayFloor),
+                Direction.UP
+            );
+            check(
+                doorwayPlan.valid(),
+                "doorway route failed at source x phase " + phase + ": " + doorwayPlan.status()
+            );
+            AdhesivePathPlanner.Plan insidePlan = AdhesivePathPlanner.plan(
+                helper.getLevel(),
+                villager,
+                player,
+                helper.absolutePos(insideFloor),
+                Direction.UP
+            );
+            check(
+                insidePlan.valid(),
+                "one-block-inside route failed at source x phase " + phase + ": " + insidePlan.status()
+            );
+        }
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "14x8x14", floor = true)
+    @TestHolder(description = "Villager paths keep walking height through a doorway before attaching to an inside wall")
+    static void adhesivePathEntersDoorwayBeforeAttachingInsideWall(ExtendedGameTestHelper helper) {
+        for (int x = 1; x <= 12; x++) {
+            if (x != 6) {
+                helper.setBlock(new BlockPos(x, 2, 6), Blocks.SANDSTONE);
+                helper.setBlock(new BlockPos(x, 3, 6), Blocks.SANDSTONE);
+            }
+            helper.setBlock(new BlockPos(x, 4, 6), Blocks.SANDSTONE);
+            for (int z = 7; z <= 12; z++) {
+                helper.setBlock(new BlockPos(x, 5, z), Blocks.SANDSTONE);
+            }
+        }
+        for (int z = 7; z <= 12; z++) {
+            for (int y = 2; y <= 4; y++) {
+                helper.setBlock(new BlockPos(1, y, z), Blocks.SANDSTONE);
+                helper.setBlock(new BlockPos(12, y, z), Blocks.SANDSTONE);
+            }
+        }
+        for (int x = 2; x <= 11; x++) {
+            for (int y = 2; y <= 4; y++) {
+                helper.setBlock(new BlockPos(x, y, 12), Blocks.SANDSTONE);
+            }
+        }
+        BlockPos targetWall = new BlockPos(9, 3, 9);
+        for (int y = 1; y <= 4; y++) {
+            helper.setBlock(new BlockPos(targetWall.getX(), y, targetWall.getZ()), Blocks.SANDSTONE);
+        }
+
+        var villager = helper.spawnWithNoFreeWill(EntityType.VILLAGER, new Vec3(8.5D, 2.0D, 4.5D));
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        AdhesivePathPlanner.Plan plan = AdhesivePathPlanner.plan(
+            helper.getLevel(),
+            villager,
+            player,
+            helper.absolutePos(targetWall),
+            Direction.WEST
+        );
+
+        check(plan.valid(), "inside-wall route was not found: " + plan.status());
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "26x6x7", floor = true)
     @TestHolder(description = "Adhesive bonding stops at sixteen blocks and breaks selection past that range")
     static void adhesiveRangeLimitPreservesBucket(ExtendedGameTestHelper helper) {
@@ -2022,8 +2860,8 @@ public final class AdhesiveBondingGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "7x6x7", floor = true)
-    @TestHolder(description = "Rotating a bonded plastic block with an anvil hammer releases its entity")
-    static void hammerRotationReleasesPlasticEntity(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "Rotating a bonded plastic block deflects and returns without releasing it")
+    static void hammerRotationReturnsBondedPlasticBlock(ExtendedGameTestHelper helper) {
         BlockPos support = new BlockPos(3, 1, 3);
         BlockPos occupied = support.above();
         helper.setBlock(support, Blocks.STONE);
@@ -2045,16 +2883,103 @@ public final class AdhesiveBondingGameTests {
                 Direction.EAST
             ).handleOnServer(player);
 
-            check(helper.getBlockState(occupied).isAir(), "hammer release left the bonded block behind");
-            HardenedResinAnvilEntity restored = helper.getLevel().getEntitiesOfClass(
-                HardenedResinAnvilEntity.class,
-                new AABB(helper.absolutePos(occupied)).inflate(1.0D)
-            ).stream().findFirst().orElseThrow(() -> new GameTestAssertException("hammer release did not restore entity"));
             check(
-                restored.getOrientation().attachmentFace() == Direction.EAST,
-                "six-face hammer selection was not applied to the restored entity"
+                helper.getBlockState(occupied).is(ModBlocks.HARDEND_RESIN_ANVIL.get()),
+                "hammer rotation released the bonded block"
             );
-            helper.succeed();
+            BondedEntityBlockEntity deflected = bondedBlockEntity(helper, occupied);
+            check(
+                deflected.getPlasticOrientation().attachmentFace() == Direction.EAST
+                    && deflected.isHammerDeflected(),
+                "six-face hammer selection did not temporarily deflect the bonded block"
+            );
+            helper.runAfterDelay(3, () -> {
+                BondedEntityBlockEntity returned = bondedBlockEntity(helper, occupied);
+                check(
+                    returned.getPlasticOrientation().attachmentFace() == Direction.UP,
+                    "bonded block did not return to its original direction after two ticks"
+                );
+                check(
+                    BondedFallingBlocks.hasBlockBond(
+                        helper.getLevel(),
+                        helper.absolutePos(support),
+                        Direction.UP
+                    ),
+                    "hammer deflection removed the block adhesive"
+                );
+                helper.runAfterDelay(BondedEntityBlockEntity.HAMMER_RETURN_ANIMATION_TICKS + 1, () -> {
+                    check(
+                        !bondedBlockEntity(helper, occupied).isHammerDeflected(),
+                        "hammer return animation state did not finish"
+                    );
+                    helper.succeed();
+                });
+            });
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x6x7", floor = true)
+    @TestHolder(description = "Rotating a plastic entity bonded to plastic and ordinary entities returns it without releasing bonds")
+    static void hammerRotationReturnsEntityBondedPlasticEntities(ExtendedGameTestHelper helper) {
+        HardenedResinCauldronEntity cauldron = createCauldron(helper, new Vec3(3.5D, 2.0D, 3.5D));
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(4.5D, 2.0D, 3.5D));
+        Zombie zombie = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(5.5D, 2.0D, 3.5D));
+        check(
+            EntityBondManager.connect(
+                helper.getLevel(), cauldron, Direction.EAST, anvil, Direction.WEST, cauldron.isNoGravity()
+            ),
+            "plastic pot could not bond to the plastic anvil"
+        );
+        check(
+            EntityBondManager.connect(
+                helper.getLevel(), anvil, Direction.EAST, zombie, Direction.WEST, anvil.isNoGravity()
+            ),
+            "plastic anvil could not bond to the ordinary entity"
+        );
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(4.5D, 2.0D, 1.5D));
+        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.RESIN_ANVIL_HAMMER.asStack());
+
+        new PlasticEntityHammerRotatePacket(
+            cauldron.getId(), InteractionHand.MAIN_HAND, Direction.EAST
+        ).handleOnServer(player);
+        new PlasticEntityHammerRotatePacket(
+            anvil.getId(), InteractionHand.MAIN_HAND, Direction.NORTH
+        ).handleOnServer(player);
+        check(
+            cauldron.getOrientation().attachmentFace() == Direction.EAST && cauldron.isHammerDeflected(),
+            "entity bond did not temporarily deflect the plastic pot"
+        );
+        check(
+            anvil.getOrientation().attachmentFace() == Direction.NORTH && anvil.isHammerDeflected(),
+            "ordinary-entity bond did not temporarily deflect the plastic anvil"
+        );
+        check(
+            EntityBondManager.hasBonds(cauldron)
+                && EntityBondManager.hasBonds(anvil)
+                && EntityBondManager.hasBonds(zombie),
+            "hammer deflection removed an entity bond"
+        );
+
+        helper.runAfterDelay(3, () -> {
+            check(
+                cauldron.getOrientation().attachmentFace() == Direction.UP
+                    && anvil.getOrientation().attachmentFace() == Direction.UP,
+                "entity-bonded plastic entities did not return after two ticks"
+            );
+            check(
+                EntityBondManager.hasBonds(cauldron)
+                    && EntityBondManager.hasBonds(anvil)
+                    && EntityBondManager.hasBonds(zombie),
+                "returning entity-bonded plastic entities released a bond"
+            );
+            helper.runAfterDelay(AbstractPlasticEntity.HAMMER_RETURN_ANIMATION_TICKS + 1, () -> {
+                check(
+                    !cauldron.isHammerDeflected() && !anvil.isHammerDeflected(),
+                    "entity hammer return animation state did not finish"
+                );
+                helper.succeed();
+            });
         });
     }
 

@@ -28,7 +28,9 @@ interface EntityGetterMixin {
         Entity mover
     ) {
         Predicate<Entity> withoutBondedMembers = target ->
-            !EntityBondManager.areInSameComponent(mover, target) && original.test(target);
+            !EntityBondManager.areInSameComponent(mover, target)
+                && !EntityBondManager.ignoresPreclippedCollision(mover, target)
+                && original.test(target);
         if (!(mover instanceof CarrierMoveContextHolder holder)) return withoutBondedMembers;
         CarrierMoveContext context = holder.plasticraft$getCarrierMoveContext();
         if (context == null) return withoutBondedMembers;

@@ -20,7 +20,7 @@ public class HighViscosityResinBucketItem extends BucketItem {
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
-        if (AdhesiveSelectionManager.hasSelection(player)) {
+        if (!player.isShiftKeyDown() && AdhesiveSelectionManager.hasSelection(player)) {
             return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
         }
         return super.use(level, player, hand);
