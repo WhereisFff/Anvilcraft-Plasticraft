@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
@@ -294,9 +295,13 @@ public class BondedEntityBlockEntity extends BlockEntity
     public void tickFunctionalEntity() {
         if (!(this.level instanceof ServerLevel serverLevel)) return;
         this.tickHammerDeflection(serverLevel);
-        if (!(this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron)) {
+        Entity functionalEntity = this.getOrCreateRenderEntity();
+        if (functionalEntity instanceof CatalyticPressLidEntity lid) {
+            lid.plasticraft$tickBonded();
+            if (lid.plasticraft$consumeBondedDataDirty()) this.captureCachedEntity(true);
             return;
         }
+        if (!(functionalEntity instanceof HardenedResinCauldronEntity cauldron)) return;
         cauldron.plasticraft$tickBonded();
         if (cauldron.plasticraft$wasBurnedByLava()) {
             if (!cauldron.plasticraft$leftLavaSource()) {

@@ -66,5 +66,19 @@
   "screen.anvilcraftplasticraft.hammer_direction.north": "北",
   "screen.anvilcraftplasticraft.hammer_direction.east": "东",
   "screen.anvilcraftplasticraft.hammer_direction.south": "南",
-  "screen.anvilcraftplasticraft.hammer_direction.west": "西"
+  "screen.anvilcraftplasticraft.hammer_direction.west": "西",
+  "block.anvilcraftplasticraft.catalytic_press_lid": "催化压盖",
+  "item.anvilcraftplasticraft.catalytic_press_lid": "催化压盖",
+  "entity.anvilcraftplasticraft.catalytic_press_lid": "催化压盖",
+  "tooltip.anvilcraftplasticraft.item.catalytic_press_lid": "密封炼药锅或鱼缸，以进行塑料催化加工",
+  "tooltip.anvilcraftplasticraft.item.catalytic_press_lid.shift": "使用高粘性树脂胶将其粘在兼容容器上方，并从容器下方加热",
+  "block.anvilcraftplasticraft.plastic_oil_cauldron": "装有塑料油的炼药锅",
+  "block.anvilcraftplasticraft.universal_plastic_melt": "通用塑料熔体",
+  "block.anvilcraftplasticraft.universal_plastic_melt_cauldron": "装有通用塑料熔体的炼药锅",
+  "item.anvilcraftplasticraft.universal_plastic_melt_bucket": "通用塑料熔体桶",
+  "item.anvilcraftplasticraft.universal_plastic_granule": "通用塑料粒",
+  "tooltip.anvilcraftplasticraft.color": "颜色：%s",
+  "gui.anvilcraftplasticraft.category.catalytic_pressing": "催化压制",
+  "jei.anvilcraftplasticraft.heat_power": "热功率：%s kW",
+  "jei.anvilcraftplasticraft.reaction_time": "反应时间：%s gt"
 }

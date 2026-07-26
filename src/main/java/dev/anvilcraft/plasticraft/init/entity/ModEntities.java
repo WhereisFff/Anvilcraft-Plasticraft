@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.init.entity;
 
 import dev.anvilcraft.lib.v2.registrum.util.entry.EntityEntry;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
+import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
@@ -10,6 +11,16 @@ import net.minecraft.world.entity.MobCategory;
 import static dev.anvilcraft.plasticraft.AnvilcraftPlasticraft.REGISTRUM;
 
 public final class ModEntities {
+    public static final EntityEntry<CatalyticPressLidEntity> CATALYTIC_PRESS_LID = REGISTRUM
+        .<CatalyticPressLidEntity>entity("catalytic_press_lid", CatalyticPressLidEntity::new, MobCategory.MISC)
+        .properties(builder -> builder
+            .sized(CatalyticPressLidEntity.WIDTH, CatalyticPressLidEntity.HEIGHT)
+            .clientTrackingRange(10)
+            .updateInterval(1))
+        .lang("Catalytic Press Lid")
+        .renderer(() -> dev.anvilcraft.plasticraft.client.renderer.entity.CatalyticPressLidRenderer::new)
+        .register();
+
     public static final EntityEntry<HardenedResinAnvilEntity> HARDEND_RESIN_ANVIL = REGISTRUM
         .<HardenedResinAnvilEntity>entity("hardend_resin_anvil", HardenedResinAnvilEntity::new, MobCategory.MISC)
         .properties(builder -> builder
@@ -44,6 +55,7 @@ public final class ModEntities {
     }
 
     public static void register() {
+        CatalyticPressLidEntity.configureDefaultDrop(ModBlocks.CATALYTIC_PRESS_LID::asStack);
         HardenedResinAnvilEntity.configureDefaultDrop(ModBlocks.HARDEND_RESIN_ANVIL::asStack);
         HardenedResinCauldronEntity.configureDefaultDrop(ModBlocks.HARDEND_RESIN_CAULDRON::asStack);
         ResinAnvilEntity.configureDefaultDrop(ModBlocks.RESIN_ANVIL::asStack);

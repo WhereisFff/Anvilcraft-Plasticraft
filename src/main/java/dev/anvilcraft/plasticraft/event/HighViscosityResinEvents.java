@@ -40,5 +40,17 @@ public final class HighViscosityResinEvents {
             1000,
             Layered4LevelCauldronBlock.LEVEL
         );
+        event.register(
+            ModBlocks.PLASTIC_OIL_CAULDRON.get(),
+            ModFluids.PLASTIC_OIL.get(),
+            1000,
+            Layered4LevelCauldronBlock.LEVEL
+        );
+        event.register(
+            ModBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get(),
+            ModFluids.UNIVERSAL_PLASTIC_MELT.get(),
+            1000,
+            Layered4LevelCauldronBlock.LEVEL
+        );
     }
 }

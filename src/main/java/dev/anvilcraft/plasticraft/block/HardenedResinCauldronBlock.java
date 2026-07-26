@@ -11,6 +11,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.BlockGetter;
@@ -96,6 +97,14 @@ public class HardenedResinCauldronBlock extends AbstractPlasticEntityBlock<Harde
     ) {
         if (state.getValue(BONDED)) return this.bondedCauldronShape(level, pos);
         return Blocks.CAULDRON.defaultBlockState().getCollisionShape(level, pos, context);
+    }
+
+    @Override
+    public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
+        if (!state.getValue(BONDED)
+            || !(level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded)
+            || !(bonded.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron)) return;
+        cauldron.plasticraft$stickEntityInUniversalMelt(entity);
     }
 
     @Override

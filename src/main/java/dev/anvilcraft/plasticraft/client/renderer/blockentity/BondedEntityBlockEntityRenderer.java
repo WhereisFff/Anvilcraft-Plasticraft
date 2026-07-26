@@ -5,7 +5,9 @@ import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.client.renderer.AdhesivePatchRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -14,6 +16,7 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 /** 渲染方块化后的塑料实体或原始下落方块模型。 */
@@ -78,6 +81,15 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
             }
         }
         renderAdhesivePatch(blockEntity, pose, buffers, packedLight, partialTick);
+    }
+
+    @Override
+    public AABB getRenderBoundingBox(BondedEntityBlockEntity blockEntity) {
+        AABB bounds = new AABB(blockEntity.getBlockPos());
+        if (blockEntity.getDisplayState().is(ModBlocks.CATALYTIC_PRESS_LID.get())) {
+            return bounds.inflate(CatalyticPressLidEntity.RENDER_BOUNDS_EXPANSION);
+        }
+        return bounds;
     }
 
     private static void renderAdhesivePatch(

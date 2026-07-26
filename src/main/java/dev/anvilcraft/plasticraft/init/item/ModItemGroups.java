@@ -25,10 +25,13 @@ public final class ModItemGroups {
                 output.accept(ModBlocks.RESIN_ANVIL.asItem());
                 output.accept(ModBlocks.HARDEND_RESIN_ANVIL.asItem());
                 output.accept(ModBlocks.HARDEND_RESIN_CAULDRON.asItem());
+                output.accept(ModBlocks.CATALYTIC_PRESS_LID.asItem());
                 output.accept(dev.anvilcraft.plasticraft.init.item.ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get());
                 output.accept(ModItems.HIGH_HEAT_FUEL_BUCKET.get());
                 output.accept(ModItems.PLASTIC_OIL_BUCKET.get());
                 output.accept(ModItems.CRUDE_OIL_ACID_BUCKET.get());
+                output.accept(ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET.get());
+                output.accept(ModItems.UNIVERSAL_PLASTIC_GRANULE.get());
                 output.accept(ModBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem());
                 output.accept(ModBlocks.CONDENSER_TOWER.asItem());
             })

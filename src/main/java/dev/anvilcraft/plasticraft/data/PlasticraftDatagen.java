@@ -10,11 +10,13 @@ import dev.anvilcraft.plasticraft.init.block.ModBlockTags;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.item.ModItemGroups;
+import dev.anvilcraft.plasticraft.init.item.ModItemTags;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.recipe.FluidFastCookingRecipe;
 import dev.anvilcraft.plasticraft.recipe.CondenserGas;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
+import dev.anvilcraft.plasticraft.recipe.CatalyticPressingRecipe;
 import dev.dubhe.anvilcraft.init.block.ModFluidTags;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItemSubPredicates;
@@ -27,6 +29,7 @@ import dev.dubhe.anvilcraft.recipe.multiblock.BlockPredicateWithState;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockConversionRecipe;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockRecipe;
 import dev.dubhe.anvilcraft.recipe.FluidMixingRecipe;
+import dev.dubhe.anvilcraft.recipe.anvil.wrap.SolidLiquidRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.builder.ExtendInWorldRecipeBuilder;
 import dev.dubhe.anvilcraft.recipe.anvil.outcome.ResentmentAmberOutcome;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.FastCookingRecipe;
@@ -42,6 +45,9 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponentPredicate;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.DyeItem;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomModelData;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
@@ -56,6 +62,8 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.state.properties.Half;
+import net.minecraft.world.level.ItemLike;
+import net.minecraft.world.level.material.Fluids;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -92,6 +100,10 @@ public final class PlasticraftDatagen {
             provider.add("config.jade.plugin_anvilcraft.fluid_tank", "Fluid Tank");
             provider.add("gui.anvilcraftplasticraft.category.plasma_jet_blasting", "Plasma Jet Blasting");
             provider.add("gui.anvilcraftplasticraft.category.condenser", "Condensation");
+            provider.add("gui.anvilcraftplasticraft.category.catalytic_pressing", "Catalytic Pressing");
+            provider.add("jei.anvilcraftplasticraft.heat_power", "Heat output: %s kW");
+            provider.add("jei.anvilcraftplasticraft.reaction_time", "Reaction time: %s gt");
+            provider.add("tooltip.anvilcraftplasticraft.color", "Color: %s");
             provider.add("jei.anvilcraftplasticraft.gas.gaseous_oil", "Gaseous oil");
             provider.add("jei.anvilcraftplasticraft.gas.gaseous_water", "Gaseous water");
             provider.add("jei.anvilcraftplasticraft.gas.gaseous_experience", "Gaseous experience");
@@ -116,7 +128,53 @@ public final class PlasticraftDatagen {
                     Registries.BLOCK,
                     BuiltInRegistries.BLOCK.getKey(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get())
                 ));
+            provider.addTag(ModBlockTags.PLASTIC_MELT_COOLANTS).add(
+                blockKey(Blocks.WATER),
+                blockKey(Blocks.ICE),
+                blockKey(Blocks.PACKED_ICE),
+                blockKey(Blocks.BLUE_ICE),
+                blockKey(Blocks.SNOW_BLOCK),
+                blockKey(Blocks.POWDER_SNOW),
+                blockKey(Blocks.SNOW)
+            );
         });
+        REGISTRUM.addDataGenerator(ProviderType.ITEM_TAGS, provider -> provider
+            .addTag(ModItemTags.COLD_ITEMS)
+            .add(
+                itemKey(Blocks.ICE),
+                itemKey(Blocks.PACKED_ICE),
+                itemKey(Blocks.BLUE_ICE),
+                itemKey(Blocks.SNOW_BLOCK),
+                itemKey(Items.SNOWBALL),
+                itemKey(Blocks.SNOW),
+                itemKey(Items.POWDER_SNOW_BUCKET),
+                itemKey(dev.dubhe.anvilcraft.init.block.ModBlocks.SLIDING_RAIL),
+                itemKey(dev.dubhe.anvilcraft.init.block.ModBlocks.POWERED_SLIDING_RAIL),
+                itemKey(dev.dubhe.anvilcraft.init.block.ModBlocks.ACTIVATOR_SLIDING_RAIL),
+                itemKey(dev.dubhe.anvilcraft.init.block.ModBlocks.DETECTOR_SLIDING_RAIL),
+                itemKey(dev.dubhe.anvilcraft.init.block.ModBlocks.SLIDING_RAIL_STOP),
+                itemKey(dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_ANVIL),
+                itemKey(dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_GRINDSTONE),
+                itemKey(dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_SMITHING_TABLE),
+                itemKey(dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_METAL_BLOCK),
+                itemKey(dev.dubhe.anvilcraft.init.block.ModBlocks.CUT_FROST_METAL_BLOCK),
+                itemKey(dev.dubhe.anvilcraft.init.block.ModBlocks.CUT_FROST_METAL_PILLAR),
+                itemKey(dev.dubhe.anvilcraft.init.block.ModBlocks.CUT_FROST_METAL_SLAB),
+                itemKey(dev.dubhe.anvilcraft.init.block.ModBlocks.CUT_FROST_METAL_STAIRS),
+                itemKey(dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_DECO_BLOCK),
+                itemKey(dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_DECO_OUTLINE),
+                itemKey(dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_GLASS),
+                itemKey(ModItems.FROST_METAL_INGOT),
+                itemKey(ModItems.FROST_METAL_NUGGET),
+                itemKey(ModItems.FROST_METAL_PICKAXE),
+                itemKey(ModItems.FROST_METAL_AXE),
+                itemKey(ModItems.FROST_METAL_SHOVEL),
+                itemKey(ModItems.FROST_METAL_HOE),
+                itemKey(ModItems.FROST_METAL_SWORD),
+                itemKey(ModItems.FROST_METAL_HEAVY_HALBERD),
+                itemKey(ModItems.FROST_METAL_RESONATOR),
+                itemKey(ModItems.FROST_METAL_UPGRADE_SMITHING_TEMPLATE)
+            ));
         REGISTRUM.addDataGenerator(ProviderType.FLUID_TAGS, provider -> provider
             .addTag(ModFluidTags.IGNITABLE)
             .add(
@@ -217,6 +275,12 @@ public final class PlasticraftDatagen {
             .unlockedBy("has_hardend_resin", provider.has(ModItems.HARDEND_RESIN))
             .save(provider, AnvilcraftPlasticraft.of("hardend_resin_cauldron"));
 
+        ShapedRecipeBuilder.shaped(RecipeCategory.DECORATIONS, ModBlocks.CATALYTIC_PRESS_LID.asItem())
+            .pattern("HHH")
+            .define('H', Ingredient.of(ModItems.HARDEND_RESIN.get()))
+            .unlockedBy("has_hardend_resin", provider.has(ModItems.HARDEND_RESIN))
+            .save(provider, AnvilcraftPlasticraft.of("catalytic_press_lid"));
+
         ItemStack magneticCauldron = ModBlocks.HARDEND_RESIN_CAULDRON.asStack();
         PlasticItemData.setMaterial(magneticCauldron, "hardened_resin");
         PlasticItemData.setMagnetized(magneticCauldron, true);
@@ -291,6 +355,8 @@ public final class PlasticraftDatagen {
         generatePlasmaJetBlastingRecipes(provider);
         generateCondenserRecipes(provider);
         generateFluidMixingRecipes(provider);
+        generateCatalyticPressingRecipes(provider);
+        generatePlasticMeltSolidLiquidRecipes(provider);
 
         generateResinTimeWarpRecipes(provider);
     }
@@ -372,6 +438,55 @@ public final class PlasticraftDatagen {
             .result(ModFluids.PLASTIC_OIL.get(), 3)
             .consumeMaximum()
             .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/plastic_oil_enrichment"));
+
+        FluidMixingRecipe.builder()
+            .requires(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), 1000)
+            .requires(Fluids.WATER, 1000)
+            .result(dev.anvilcraft.plasticraft.init.item.ModItems.UNIVERSAL_PLASTIC_GRANULE, 16)
+            .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/universal_plastic_melt_with_water"));
+
+        FluidMixingRecipe.builder()
+            .requires(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), 1000)
+            .requires(dev.dubhe.anvilcraft.init.block.ModFluids.POWDER_SNOW.get(), 1000)
+            .result(dev.anvilcraft.plasticraft.init.item.ModItems.UNIVERSAL_PLASTIC_GRANULE, 16)
+            .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/universal_plastic_melt_with_powder_snow"));
+    }
+
+    private static void generateCatalyticPressingRecipes(RegistrumRecipeProvider provider) {
+        CatalyticPressingRecipe.builder()
+            .requires(ModFluids.PLASTIC_OIL.get(), 1)
+            .result(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), 1)
+            .processingTime(800)
+            .consumeMaximum()
+            .save(provider, AnvilcraftPlasticraft.of("catalytic_pressing/plastic_oil"));
+    }
+
+    private static void generatePlasticMeltSolidLiquidRecipes(RegistrumRecipeProvider provider) {
+        SolidLiquidRecipe.builder()
+            .cauldron(ModFluids.UNIVERSAL_PLASTIC_MELT.getId())
+            .consume(1000)
+            .requires(ModItemTags.COLD_ITEMS)
+            .result(dev.anvilcraft.plasticraft.init.item.ModItems.UNIVERSAL_PLASTIC_GRANULE, 16)
+            .save(provider, AnvilcraftPlasticraft.of("solid_liquid/cool_universal_plastic_melt"));
+
+        for (DyeColor color : DyeColor.values()) {
+            DyeItem dye = DyeItem.byColor(color);
+            SolidLiquidRecipe.builder()
+                .cauldron(ModFluids.UNIVERSAL_PLASTIC_MELT.getId())
+                .transform(ModFluids.UNIVERSAL_PLASTIC_MELT.getId())
+                .requires(dye)
+                .save(provider, AnvilcraftPlasticraft.of("solid_liquid/dye_universal_plastic_melt_" + color.getName()));
+        }
+    }
+
+    private static ResourceKey<net.minecraft.world.level.block.Block> blockKey(
+        net.minecraft.world.level.block.Block block
+    ) {
+        return ResourceKey.create(Registries.BLOCK, BuiltInRegistries.BLOCK.getKey(block));
+    }
+
+    private static ResourceKey<Item> itemKey(ItemLike item) {
+        return ResourceKey.create(Registries.ITEM, BuiltInRegistries.ITEM.getKey(item.asItem()));
     }
 
     private static BlockPredicateWithState condenserPipe(Direction.Axis axis) {

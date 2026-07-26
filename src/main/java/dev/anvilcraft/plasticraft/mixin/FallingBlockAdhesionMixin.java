@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.mixin;
 
 import dev.anvilcraft.plasticraft.block.BondedFallingBlockInfo;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
+import dev.anvilcraft.plasticraft.entity.physics.PlasticFallingBlockSupport;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
@@ -39,8 +40,10 @@ abstract class FallingBlockAdhesionMixin {
             BondedFallingBlocks.remove(level, pos);
         }
         BondedFallingBlocks.validate(level, pos);
-        if (!BondedFallingBlocks.isBonded(level, pos)) return;
-        level.scheduleTick(pos, state.getBlock(), SUPPORT_CHECK_INTERVAL);
-        callback.cancel();
+        if (BondedFallingBlocks.isBonded(level, pos)
+            || PlasticFallingBlockSupport.hasSupport(level, pos, null)) {
+            level.scheduleTick(pos, state.getBlock(), SUPPORT_CHECK_INTERVAL);
+            callback.cancel();
+        }
     }
 }

@@ -10,7 +10,7 @@ import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.client.support.RenderSupport;
-import dev.dubhe.anvilcraft.integration.jei.util.JeiFluidIngredientUtil;
+import dev.dubhe.anvilcraft.integration.jei.util.JeiFluidUtil;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiRecipeUtil;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiRenderHelper;
 import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
@@ -30,14 +30,11 @@ import mezz.jei.api.recipe.category.IRecipeCategory;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.util.FastColor;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.ExperienceOrb;
-import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
@@ -45,8 +42,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
-import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
-import net.neoforged.neoforge.fluids.FluidStack;
 import org.jetbrains.annotations.Nullable;
 
 /** 喷流灼烧配方的 JEI 页面。 */
@@ -140,7 +135,7 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
         if (recipe.hasFluidInput()) {
             Position position = fluidPosition(true, 1, 0, splitInputColumns);
             if (hasRenderableInput(recipe.getHasCauldron())) {
-                JeiFluidIngredientUtil.addInputSlot(
+                JeiFluidUtil.addInputSlot(
                     builder,
                     INPUT_FLUID,
                     position.x() + 1,
@@ -173,7 +168,7 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
         if (recipe.hasFluidOutput()) {
             Position position = fluidPosition(false, 1, 0, splitOutputColumns);
             if (hasRegisteredFluid(recipe.getHasCauldron().transform())) {
-                JeiFluidIngredientUtil.addOutputSlot(
+                JeiFluidUtil.addOutputSlot(
                     builder,
                     OUTPUT_FLUID,
                     position.x() + 1,
@@ -192,7 +187,7 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
         RecipeHolder<PlasmaJetBlastingRecipe> holder,
         IFocusGroup focuses
     ) {
-        JeiFluidIngredientUtil.suppressHoverOverlays(builder);
+        JeiFluidUtil.suppressHoverOverlays(builder);
     }
 
     @Override
@@ -253,28 +248,12 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
                 fluidPosition(true, 1, 0, splitInputColumns),
                 recipe.getHasCauldron().fluid()
             );
-        } else if (recipe.hasFluidInput()) {
-            JeiFluidIngredientUtil.getDisplayedFluid(recipeSlotsView, INPUT_FLUID).ifPresent(fluid ->
-                drawFluidIcon(
-                    graphics,
-                    fluidPosition(true, 1, 0, splitInputColumns),
-                    new FluidStack(fluid, 1)
-                )
-            );
         }
         if (recipe.hasFluidOutput() && isVirtualFluid(recipe.getHasCauldron().transform())) {
             drawVirtualFluid(
                 graphics,
                 fluidPosition(false, 1, 0, splitOutputColumns),
                 recipe.getHasCauldron().transform()
-            );
-        } else if (recipe.hasFluidOutput()) {
-            JeiFluidIngredientUtil.getDisplayedFluid(recipeSlotsView, OUTPUT_FLUID).ifPresent(fluid ->
-                drawFluidIcon(
-                    graphics,
-                    fluidPosition(false, 1, 0, splitOutputColumns),
-                    new FluidStack(fluid, 1)
-                )
             );
         }
     }
@@ -367,26 +346,6 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
 
     private static Component virtualAmount(ResourceLocation id, int amount) {
         return Component.literal(amount + " mB");
-    }
-
-    private static void drawFluidIcon(GuiGraphics graphics, Position position, FluidStack fluid) {
-        IClientFluidTypeExtensions extension = IClientFluidTypeExtensions.of(fluid.getFluid());
-        TextureAtlasSprite sprite = Minecraft.getInstance()
-            .getTextureAtlas(InventoryMenu.BLOCK_ATLAS)
-            .apply(extension.getStillTexture(fluid));
-        int tint = extension.getTintColor(fluid);
-        graphics.blit(
-            position.x() + 1,
-            position.y() + 1,
-            0,
-            16,
-            16,
-            sprite,
-            FastColor.ARGB32.red(tint) / 255.0F,
-            FastColor.ARGB32.green(tint) / 255.0F,
-            FastColor.ARGB32.blue(tint) / 255.0F,
-            FastColor.ARGB32.alpha(tint) / 255.0F
-        );
     }
 
     private void drawPlasmaParticles(GuiGraphics graphics, boolean enhanced) {

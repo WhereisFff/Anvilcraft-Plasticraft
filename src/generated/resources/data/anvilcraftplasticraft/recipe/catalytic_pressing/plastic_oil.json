@@ -1,0 +1,13 @@
+{
+  "type": "anvilcraftplasticraft:catalytic_pressing",
+  "consume_maximum": true,
+  "fluid": {
+    "amount": 1,
+    "fluid": "anvilcraftplasticraft:plastic_oil"
+  },
+  "processing_time": 800,
+  "result": {
+    "amount": 1,
+    "id": "anvilcraftplasticraft:universal_plastic_melt"
+  }
+}

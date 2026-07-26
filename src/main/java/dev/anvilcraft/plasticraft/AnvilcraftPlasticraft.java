@@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils;
 import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
 import dev.anvilcraft.plasticraft.data.PlasticraftDatagen;
 import dev.anvilcraft.plasticraft.event.HighViscosityResinEvents;
+import dev.anvilcraft.plasticraft.fluid.UniversalPlasticMeltBucketWrapper;
 import dev.anvilcraft.plasticraft.init.ModParticles;
 import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
 import dev.anvilcraft.plasticraft.init.ModAttachments;
@@ -105,6 +106,11 @@ public final class AnvilcraftPlasticraft {
             YukkuriCapabilities.VAPOR_CONSUMER,
             dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity::vaporCapability,
             ModBlocks.CONDENSER_TOWER.get()
+        );
+        event.registerItem(
+            Capabilities.FluidHandler.ITEM,
+            (stack, ignored) -> new UniversalPlasticMeltBucketWrapper(stack),
+            ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET.get()
         );
     }
 

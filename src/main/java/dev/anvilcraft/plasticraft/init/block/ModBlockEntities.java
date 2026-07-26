@@ -4,6 +4,7 @@ import dev.anvilcraft.lib.v2.registrum.util.entry.BlockEntityEntry;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.HighHeatFuelCauldronBlockEntity;
+import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
 
 import static dev.anvilcraft.plasticraft.AnvilcraftPlasticraft.REGISTRUM;
 
@@ -13,6 +14,7 @@ public final class ModBlockEntities {
         .blockEntity("bonded_entity", BondedEntityBlockEntity::new)
         .validBlocks(
             ModBlocks.HARDEND_RESIN_CAULDRON,
+            ModBlocks.CATALYTIC_PRESS_LID,
             ModBlocks.RESIN_ANVIL,
             ModBlocks.HARDEND_RESIN_ANVIL
         )
@@ -32,6 +34,14 @@ public final class ModBlockEntities {
         .validBlock(ModBlocks.HIGH_HEAT_FUEL_CAULDRON)
         .renderer(() ->
             dev.anvilcraft.plasticraft.client.renderer.blockentity.HighHeatFuelCauldronBlockEntityRenderer::new)
+        .register();
+
+    public static final BlockEntityEntry<UniversalPlasticMeltBlockEntity> UNIVERSAL_PLASTIC_MELT = REGISTRUM
+        .<UniversalPlasticMeltBlockEntity>blockEntity(
+            "universal_plastic_melt",
+            UniversalPlasticMeltBlockEntity::new
+        )
+        .validBlock(ModBlocks.UNIVERSAL_PLASTIC_MELT)
         .register();
 
     private ModBlockEntities() {

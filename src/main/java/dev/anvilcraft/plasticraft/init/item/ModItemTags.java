@@ -19,6 +19,10 @@ public final class ModItemTags {
         Registries.ITEM,
         ResourceLocation.fromNamespaceAndPath(AnvilcraftPlasticraft.MOD_ID, "plastic_cauldrons")
     );
+    public static final TagKey<Item> COLD_ITEMS = TagKey.create(
+        Registries.ITEM,
+        AnvilcraftPlasticraft.of("cold_items")
+    );
 
     private ModItemTags() {
     }

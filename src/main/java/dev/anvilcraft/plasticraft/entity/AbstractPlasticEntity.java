@@ -8,9 +8,11 @@ import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticPushChain;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
+import dev.anvilcraft.plasticraft.entity.physics.PlasticFallingBlockSupport;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFluidPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticMagnetism;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticSlidingRailPhysics;
+import dev.anvilcraft.plasticraft.event.CatalyticPressAnvilEvents;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
@@ -66,7 +68,9 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.common.NeoForge;
 
 import java.util.List;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 可移动塑料制品共用的持久化落方块实现。
@@ -134,6 +138,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     private Vec3 sidePushVelocity = Vec3.ZERO;
     private Direction sidePushGravityDirection = Direction.DOWN;
     private final PlasticSlidingRailPhysics.State slidingRailState = new PlasticSlidingRailPhysics.State();
+    private Set<BlockPos> supportedFallingBlocks = Set.of();
     private boolean clientSnapshotPending;
     private double clientSnapshotX;
     private double clientSnapshotY;
@@ -489,8 +494,13 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             return;
         }
 
+        this.supportedFallingBlocks = PlasticFallingBlockSupport.updateSupportChecks(
+            this,
+            this.supportedFallingBlocks
+        );
         // FallingBlockEntity.tick 有意跳过 Entity#baseTick。
         // 此处保留通常由 baseTick 推进的插值和边沿触发状态。
+        CatalyticPressAnvilEvents.beforeFallingAnvilTick(this);
         this.xo = this.getX();
         this.yo = this.getY();
         this.zo = this.getZ();
@@ -1237,6 +1247,12 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     public final Direction plasticraft$currentPushGravityDirection() {
         return this.currentPushGravityDirection();
+    }
+
+    public final void plasticraft$recordSupportedFallingBlock(BlockPos pos) {
+        Set<BlockPos> positions = new HashSet<>(this.supportedFallingBlocks);
+        positions.add(pos.immutable());
+        this.supportedFallingBlocks = positions;
     }
 
     public final void plasticraft$applyTransferredPush(Entity pusher, Vec3 movement) {

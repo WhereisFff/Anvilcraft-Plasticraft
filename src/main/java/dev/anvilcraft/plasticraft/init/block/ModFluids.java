@@ -2,7 +2,10 @@ package dev.anvilcraft.plasticraft.init.block;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.client.renderer.HighViscosityResinFluidExtension;
+import dev.anvilcraft.plasticraft.client.renderer.UniversalPlasticMeltFluidExtension;
+import dev.anvilcraft.plasticraft.fluid.UniversalPlasticMeltFluidType;
 import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.fluid.StationaryPlasticMeltFluid;
 import dev.dubhe.anvilcraft.util.ModClientFluidTypeExtensionImpl;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
@@ -96,6 +99,29 @@ public final class ModFluids {
         () -> new BaseFlowingFluid.Flowing(crudeOilAcidProperties())
     );
 
+    public static final DeferredHolder<FluidType, FluidType> UNIVERSAL_PLASTIC_MELT_TYPE = FLUID_TYPES.register(
+        "universal_plastic_melt",
+        () -> new UniversalPlasticMeltFluidType(FluidType.Properties.create()
+            .descriptionId("block.anvilcraftplasticraft.universal_plastic_melt")
+            .density(1900)
+            .viscosity(20000)
+            .fallDistanceModifier(0.0F)
+            .motionScale(0.01D)
+            .canSwim(false)
+            .canDrown(false)
+            .supportsBoating(false)
+            .sound(SoundActions.BUCKET_FILL, SoundEvents.BUCKET_FILL)
+            .sound(SoundActions.BUCKET_EMPTY, SoundEvents.BUCKET_EMPTY))
+    );
+    public static final DeferredHolder<Fluid, BaseFlowingFluid> UNIVERSAL_PLASTIC_MELT = FLUIDS.register(
+        "universal_plastic_melt",
+        () -> new StationaryPlasticMeltFluid.Source(universalPlasticMeltProperties())
+    );
+    public static final DeferredHolder<Fluid, BaseFlowingFluid> FLOWING_UNIVERSAL_PLASTIC_MELT = FLUIDS.register(
+        "flowing_universal_plastic_melt",
+        () -> new StationaryPlasticMeltFluid.Flowing(universalPlasticMeltProperties())
+    );
+
     public static final BaseFlowingFluid.Properties HIGH_VISCOSITY_RESIN_PROPERTIES = new BaseFlowingFluid.Properties(
         LIQUID_HIGH_VISCOSITY_RESIN_TYPE,
         LIQUID_HIGH_VISCOSITY_RESIN,
@@ -141,6 +167,19 @@ public final class ModFluids {
         .slopeFindDistance(3)
         .explosionResistance(100.0F);
 
+    public static final BaseFlowingFluid.Properties UNIVERSAL_PLASTIC_MELT_PROPERTIES =
+        new BaseFlowingFluid.Properties(
+            UNIVERSAL_PLASTIC_MELT_TYPE,
+            UNIVERSAL_PLASTIC_MELT,
+            FLOWING_UNIVERSAL_PLASTIC_MELT
+        )
+            .bucket(ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET)
+            .block(ModBlocks.UNIVERSAL_PLASTIC_MELT)
+            .tickRate(40)
+            .slopeFindDistance(1)
+            .levelDecreasePerBlock(8)
+            .explosionResistance(100.0F);
+
     private ModFluids() {
     }
 
@@ -174,6 +213,10 @@ public final class ModFluids {
         return CRUDE_OIL_ACID_PROPERTIES;
     }
 
+    private static BaseFlowingFluid.Properties universalPlasticMeltProperties() {
+        return UNIVERSAL_PLASTIC_MELT_PROPERTIES;
+    }
+
     public static void register(IEventBus modEventBus) {
         FLUID_TYPES.register(modEventBus);
         FLUIDS.register(modEventBus);
@@ -192,7 +235,13 @@ public final class ModFluids {
             0xFFFFFFFF,
             false
         );
-        event.registerFluidType(placeholder, HIGH_HEAT_FUEL_TYPE, PLASTIC_OIL_TYPE, CRUDE_OIL_ACID_TYPE);
+        event.registerFluidType(
+            placeholder,
+            HIGH_HEAT_FUEL_TYPE,
+            PLASTIC_OIL_TYPE,
+            CRUDE_OIL_ACID_TYPE
+        );
+        event.registerFluidType(new UniversalPlasticMeltFluidExtension(), UNIVERSAL_PLASTIC_MELT_TYPE);
     }
 
     public static ResourceLocation liquidHighViscosityResinId() {

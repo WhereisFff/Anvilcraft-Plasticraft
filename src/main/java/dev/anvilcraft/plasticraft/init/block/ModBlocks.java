@@ -2,17 +2,22 @@ package dev.anvilcraft.plasticraft.init.block;
 
 import dev.anvilcraft.lib.v2.registrum.util.entry.BlockEntry;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
+import dev.anvilcraft.plasticraft.block.CatalyticPressLidBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
 import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HardenedResinAnvilBlock;
 import dev.anvilcraft.plasticraft.block.HardenedResinCauldronBlock;
+import dev.anvilcraft.plasticraft.block.PlasticOilCauldronBlock;
 import dev.anvilcraft.plasticraft.block.ResinAnvilBlock;
+import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
+import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltFluidBlock;
 import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import dev.anvilcraft.plasticraft.init.item.ModItemTags;
 import dev.anvilcraft.plasticraft.item.HardenedResinAnvilItem;
 import dev.anvilcraft.plasticraft.item.HardenedResinCauldronItem;
+import dev.anvilcraft.plasticraft.item.CatalyticPressLidItem;
 import dev.anvilcraft.plasticraft.item.HighViscosityResinBlockItem;
 import dev.anvilcraft.plasticraft.item.ResinAnvilItem;
 import dev.dubhe.anvilcraft.block.item.SimpleMultiPartBlockItem;
@@ -31,6 +36,9 @@ import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.material.PushReaction;
 import net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent;
+import net.neoforged.neoforge.client.model.generators.ConfiguredModel;
+import net.neoforged.neoforge.client.model.generators.ModelFile;
+import net.neoforged.neoforge.client.model.generators.ModelProvider;
 
 import java.util.function.Supplier;
 
@@ -130,6 +138,66 @@ public final class ModBlocks {
         ModFluids.PLASTIC_OIL,
         "Plastic Oil"
     );
+    public static final BlockEntry<PlasticOilCauldronBlock> PLASTIC_OIL_CAULDRON = REGISTRUM
+        .block("plastic_oil_cauldron", PlasticOilCauldronBlock::new)
+        .initialProperties(() -> Blocks.CAULDRON)
+        .lang("Plastic Oil Cauldron")
+        .blockstate((context, provider) -> {
+            ModelFile[] models = layeredCauldronModels(provider, context.getName(), "block/fluid_placeholder");
+            provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
+                .modelFile(models[state.getValue(dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock.LEVEL) - 1])
+                .build());
+        })
+        .loot((tables, block) -> tables.dropOther(block, Items.CAULDRON))
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE, BlockTags.CAULDRONS)
+        .onRegister(block -> Item.BY_BLOCK.put(block, Items.CAULDRON))
+        .register();
+    public static final BlockEntry<UniversalPlasticMeltFluidBlock> UNIVERSAL_PLASTIC_MELT = REGISTRUM
+        .block(
+            "universal_plastic_melt",
+            properties -> new UniversalPlasticMeltFluidBlock(ModFluids.UNIVERSAL_PLASTIC_MELT, properties)
+        )
+        .properties(properties -> properties
+            .mapColor(MapColor.SNOW)
+            .replaceable()
+            .noCollission()
+            .pushReaction(PushReaction.DESTROY)
+            .noLootTable()
+            .liquid()
+            .sound(SoundType.EMPTY)
+            .strength(100.0F))
+        .lang("Universal Plastic Melt")
+        .blockstate((context, provider) -> {
+            provider.models().existingFileHelper.trackGenerated(
+                provider.modLoc("block/universal_plastic_melt"),
+                ModelProvider.TEXTURE
+            );
+            provider.simpleBlock(
+                context.get(),
+                provider.models()
+                    .getBuilder(context.getName())
+                    .texture("particle", provider.modLoc("block/universal_plastic_melt"))
+            );
+        })
+        .register();
+    public static final BlockEntry<UniversalPlasticMeltCauldronBlock> UNIVERSAL_PLASTIC_MELT_CAULDRON = REGISTRUM
+        .block("universal_plastic_melt_cauldron", UniversalPlasticMeltCauldronBlock::new)
+        .initialProperties(() -> Blocks.CAULDRON)
+        .lang("Universal Plastic Melt Cauldron")
+        .blockstate((context, provider) -> {
+            ModelFile[] models = layeredCauldronModels(
+                provider,
+                context.getName(),
+                "block/universal_plastic_melt"
+            );
+            provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
+                .modelFile(models[state.getValue(dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock.LEVEL) - 1])
+                .build());
+        })
+        .loot((tables, block) -> tables.dropOther(block, Items.CAULDRON))
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE, BlockTags.CAULDRONS)
+        .onRegister(block -> Item.BY_BLOCK.put(block, Items.CAULDRON))
+        .register();
     public static final BlockEntry<LiquidBlock> CRUDE_OIL_ACID = fluidBlock(
         "crude_oil_acid",
         ModFluids.CRUDE_OIL_ACID,
@@ -183,6 +251,33 @@ public final class ModBlocks {
         .tag(ModItemTags.PLASTIC_CAULDRONS, ModItemTags.BUOYANT_PLASTIC_ITEMS)
         .model((context, provider) -> {
         })
+        .build()
+        .register();
+
+    public static final BlockEntry<CatalyticPressLidBlock> CATALYTIC_PRESS_LID = REGISTRUM
+        .block("catalytic_press_lid", CatalyticPressLidBlock::new)
+        .initialProperties(() -> Blocks.ANVIL)
+        .properties(properties -> properties
+            .noOcclusion()
+            .strength(2.0F, 20.0F)
+            .pushReaction(PushReaction.NORMAL))
+        .lang("Catalytic Press Lid")
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE)
+        .blockstate((context, provider) -> provider.simpleBlock(
+            context.get(),
+            provider.models().getExistingFile(provider.modLoc("block/catalytic_press_lid"))
+        ))
+        .item((block, properties) -> new CatalyticPressLidItem(
+            block,
+            properties,
+            ModEntities.CATALYTIC_PRESS_LID,
+            block::defaultBlockState
+        ))
+        .tag(ModItemTags.BUOYANT_PLASTIC_ITEMS)
+        .model((context, provider) -> provider.withExistingParent(
+            context.getName(),
+            provider.modLoc("block/catalytic_press_lid")
+        ))
         .build()
         .register();
 
@@ -245,6 +340,36 @@ public final class ModBlocks {
             .register();
     }
 
+    private static ModelFile[] layeredCauldronModels(
+        dev.anvilcraft.lib.v2.registrum.providers.RegistrumBlockstateProvider provider,
+        String name,
+        String contentTexture
+    ) {
+        if (contentTexture.equals("block/universal_plastic_melt")) {
+            provider.models().existingFileHelper.trackGenerated(
+                provider.modLoc(contentTexture),
+                ModelProvider.TEXTURE
+            );
+        }
+        ModelFile[] models = new ModelFile[4];
+        for (int level = 1; level <= 4; level++) {
+            String parent = level == 4
+                ? "minecraft:block/template_cauldron_full"
+                : "anvilcraft:block/template_cauldron_level" + level + "of4";
+            models[level - 1] = provider.models()
+                .getBuilder(name + "_level" + level)
+                .parent(new ModelFile.UncheckedModelFile(parent))
+                .texture("bottom", "minecraft:block/cauldron_bottom")
+                .texture("content", "anvilcraftplasticraft:" + contentTexture)
+                .texture("inside", "minecraft:block/cauldron_inner")
+                .texture("particle", "minecraft:block/cauldron_side")
+                .texture("side", "minecraft:block/cauldron_side")
+                .texture("top", "minecraft:block/cauldron_top")
+                .renderType("minecraft:cutout");
+        }
+        return models;
+    }
+
     public static void register() {
         // 类加载时，静态条目会挂接到 Registrum 事件总线。
     }
@@ -255,6 +380,8 @@ public final class ModBlocks {
             DispenserBlock.registerBehavior(HIGH_VISCOSITY_RESIN_BLOCK.asItem(), HighViscosityResinBlockItem::dispense);
             HighViscosityResinCauldronBlock.registerInteractions();
             HighHeatFuelCauldronBlock.registerInteractions();
+            PlasticOilCauldronBlock.registerInteractions();
+            UniversalPlasticMeltCauldronBlock.registerInteractions();
         });
     }
 }

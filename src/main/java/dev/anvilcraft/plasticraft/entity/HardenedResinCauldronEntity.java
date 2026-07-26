@@ -3,9 +3,12 @@ package dev.anvilcraft.plasticraft.entity;
 import dev.anvilcraft.lib.v2.recipe.cache.IItemHandlerCache;
 import dev.anvilcraft.plasticraft.block.IgnitedFluidEffects;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
+import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.dubhe.anvilcraft.api.entity.IEntityCauldron;
@@ -48,6 +51,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -81,6 +85,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     private static final double FLUID_INNER_INSET = 0.126D;
     private static final double FLUID_BOTTOM = 0.251D;
     private static final double FLUID_HEIGHT = 0.685D;
+    private static final Vec3 UNIVERSAL_MELT_STICK_SPEED = new Vec3(0.25D, 0.05D, 0.25D);
     private static final EntityDimensions EJECTED_ITEM_DIMENSIONS = EntityDimensions.scalable(0.25F, 0.25F);
     private static final double ITEM_EJECTION_GAP = 0.02D;
     private static final double ITEM_EJECTION_INSET = 0.15D;
@@ -91,6 +96,10 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         EntityDataSerializers.INT
     );
     private static final EntityDataAccessor<Integer> FLUID_AMOUNT = SynchedEntityData.defineId(
+        HardenedResinCauldronEntity.class,
+        EntityDataSerializers.INT
+    );
+    private static final EntityDataAccessor<Integer> FLUID_COLOR = SynchedEntityData.defineId(
         HardenedResinCauldronEntity.class,
         EntityDataSerializers.INT
     );
@@ -301,6 +310,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         super.defineSynchedData(builder);
         builder.define(FLUID_ID, -1)
             .define(FLUID_AMOUNT, 0)
+            .define(FLUID_COLOR, DyeColor.WHITE.getId())
             .define(DISPLAY_ITEMS, new CompoundTag())
             .define(OUTLET_SIDE, -1)
             .define(IGNITED, false);
@@ -376,7 +386,9 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         if (!this.level().isClientSide && this.burnIfTouchingLava()) return;
         AABB previousBox = this.getBoundingBox();
         super.tick();
-        if (this.isRemoved() || this.level().isClientSide) return;
+        if (this.isRemoved()) return;
+        this.stickEntitiesInUniversalMelt();
+        if (this.level().isClientSide) return;
         if (this.burnIfCrossingLava(previousBox)) return;
         this.tickFunctionalState();
     }
@@ -388,6 +400,53 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         if (this.time < Integer.MAX_VALUE) this.time++;
         this.tickCount++;
         this.tickFunctionalState();
+    }
+
+    /** 让实体形态硬化树脂锅中的通用塑料熔体也施加蜘蛛网式减速。 */
+    private void stickEntitiesInUniversalMelt() {
+        FluidStack fluid = this.fluidHandler.getFluid();
+        if (!fluid.is(ModFluids.UNIVERSAL_PLASTIC_MELT.get())) return;
+        if (this.getOrientation().attachmentFace() != Direction.UP) return;
+        AABB box = this.getBoundingBox();
+        double fill = Math.clamp((double) fluid.getAmount() / CAPACITY, 0.0D, 1.0D);
+        AABB fluidArea = new AABB(
+            box.minX + FLUID_INNER_INSET,
+            box.minY + FLUID_BOTTOM,
+            box.minZ + FLUID_INNER_INSET,
+            box.maxX - FLUID_INNER_INSET,
+            box.minY + FLUID_BOTTOM + FLUID_HEIGHT * fill,
+            box.maxZ - FLUID_INNER_INSET
+        );
+        for (Entity entity : this.level().getEntitiesOfClass(
+            Entity.class,
+            fluidArea,
+            candidate -> candidate != this && candidate.isAlive()
+        )) {
+            this.plasticraft$stickEntityInUniversalMelt(entity);
+        }
+    }
+
+    public boolean plasticraft$isEntityInsideUniversalMelt(Entity entity) {
+        FluidStack fluid = this.fluidHandler.getFluid();
+        if (!fluid.is(ModFluids.UNIVERSAL_PLASTIC_MELT.get())
+            || this.getOrientation().attachmentFace() != Direction.UP) return false;
+        AABB box = this.getBoundingBox();
+        double fill = Math.clamp((double) fluid.getAmount() / CAPACITY, 0.0D, 1.0D);
+        AABB fluidArea = new AABB(
+            box.minX + FLUID_INNER_INSET,
+            box.minY + FLUID_BOTTOM,
+            box.minZ + FLUID_INNER_INSET,
+            box.maxX - FLUID_INNER_INSET,
+            box.minY + FLUID_BOTTOM + FLUID_HEIGHT * fill,
+            box.maxZ - FLUID_INNER_INSET
+        );
+        return fluidArea.intersects(entity.getBoundingBox());
+    }
+
+    public void plasticraft$stickEntityInUniversalMelt(Entity entity) {
+        if (this.plasticraft$isEntityInsideUniversalMelt(entity)) {
+            entity.makeStuckInBlock(this.getDisplayState(), UNIVERSAL_MELT_STICK_SPEED);
+        }
     }
 
     public boolean plasticraft$wasBurnedByLava() {
@@ -763,7 +822,12 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         BlockPos target = this.openingTargetPosition();
         BlockState fluidState = fluid.getFluid().defaultFluidState().createLegacyBlock();
         if (this.isOpeningBlocked(target)) return;
-        if (!fluidState.isAir()) this.level().setBlock(target, fluidState, Block.UPDATE_ALL);
+        if (!fluidState.isAir()) {
+            this.level().setBlock(target, fluidState, Block.UPDATE_ALL);
+            if (this.level().getBlockEntity(target) instanceof UniversalPlasticMeltBlockEntity melt) {
+                melt.setColor(PlasticMeltColor.get(fluid));
+            }
+        }
         this.fluidHandler.drain(CAPACITY, IFluidHandler.FluidAction.EXECUTE);
     }
 
@@ -1156,9 +1220,10 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         int id = this.entityData.get(FLUID_ID);
         int amount = this.entityData.get(FLUID_AMOUNT);
         Fluid fluid = id < 0 ? Fluids.EMPTY : BuiltInRegistries.FLUID.byId(id);
-        return fluid == null || fluid == Fluids.EMPTY || amount <= 0
-            ? FluidStack.EMPTY
-            : new FluidStack(fluid, amount);
+        if (fluid == null || fluid == Fluids.EMPTY || amount <= 0) return FluidStack.EMPTY;
+        FluidStack stack = new FluidStack(fluid, amount);
+        PlasticMeltColor.set(stack, DyeColor.byId(this.entityData.get(FLUID_COLOR)));
+        return stack;
     }
 
     public ItemStackHandler getSyncedItemHandler() {
@@ -1209,6 +1274,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         FluidStack fluid = this.fluidHandler.getFluid();
         this.entityData.set(FLUID_ID, fluid.isEmpty() ? -1 : BuiltInRegistries.FLUID.getId(fluid.getFluid()));
         this.entityData.set(FLUID_AMOUNT, fluid.getAmount());
+        this.entityData.set(FLUID_COLOR, PlasticMeltColor.get(fluid).getId());
         this.hasImpulse = true;
         this.hurtMarked = true;
         if (!this.restoringData) this.bondedDataDirty = true;

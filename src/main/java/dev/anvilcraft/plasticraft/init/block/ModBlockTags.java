@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.init.block;
 
+import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
@@ -10,6 +11,10 @@ public final class ModBlockTags {
     public static final TagKey<Block> RESIN_SHOCK_COMPATIBLE = TagKey.create(
         Registries.BLOCK,
         ResourceLocation.fromNamespaceAndPath("anvilcraft", "resin_shock_compatible")
+    );
+    public static final TagKey<Block> PLASTIC_MELT_COOLANTS = TagKey.create(
+        Registries.BLOCK,
+        AnvilcraftPlasticraft.of("plastic_melt_coolants")
     );
 
     private ModBlockTags() {

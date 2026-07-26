@@ -4,11 +4,14 @@ import dev.anvilcraft.lib.v2.registrum.util.entry.ItemEntry;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.anvilcraft.plasticraft.item.HighViscosityResinBucketItem;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
+import dev.anvilcraft.plasticraft.item.UniversalPlasticGranuleItem;
+import dev.anvilcraft.plasticraft.item.UniversalPlasticMeltBucketItem;
 import dev.dubhe.anvilcraft.util.registrater.ModelProviderUtil;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.BucketItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
+import net.neoforged.neoforge.client.model.generators.ModelProvider;
 import net.neoforged.neoforge.common.Tags;
 
 import static dev.anvilcraft.plasticraft.AnvilcraftPlasticraft.REGISTRUM;
@@ -54,6 +57,27 @@ public final class ModItems {
         ModFluids.CRUDE_OIL_ACID,
         "Crude Oil Essence Bucket"
     );
+    public static final ItemEntry<UniversalPlasticMeltBucketItem> UNIVERSAL_PLASTIC_MELT_BUCKET = REGISTRUM
+        .item(
+            "universal_plastic_melt_bucket",
+            properties -> new UniversalPlasticMeltBucketItem(ModFluids.UNIVERSAL_PLASTIC_MELT, properties)
+        )
+        .lang("Universal Plastic Melt Bucket")
+        .initialProperties(() -> new Item.Properties().stacksTo(1).craftRemainder(Items.BUCKET))
+        .tag(Tags.Items.BUCKETS)
+        .model(ModelProviderUtil::bucket)
+        .register();
+    public static final ItemEntry<UniversalPlasticGranuleItem> UNIVERSAL_PLASTIC_GRANULE = REGISTRUM
+        .item("universal_plastic_granule", UniversalPlasticGranuleItem::new)
+        .lang("Universal Plastic Granule")
+        .model((context, provider) -> {
+            provider.existingFileHelper.trackGenerated(
+                provider.modLoc("item/universal_plastic_granule"),
+                ModelProvider.TEXTURE
+            );
+            provider.generated(context, provider.modLoc("item/universal_plastic_granule"));
+        })
+        .register();
 
     private ModItems() {
     }

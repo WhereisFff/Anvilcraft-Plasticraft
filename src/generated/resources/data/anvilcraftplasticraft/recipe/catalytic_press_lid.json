@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "H": {
+      "item": "anvilcraft:hardend_resin"
+    }
+  },
+  "pattern": [
+    "HHH"
+  ],
+  "result": {
+    "count": 1,
+    "id": "anvilcraftplasticraft:catalytic_press_lid"
+  }
+}
