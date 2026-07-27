@@ -1511,8 +1511,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         if (!this.level().getBlockState(targetPos).canBeReplaced()) return InteractionResult.FAIL;
         Vec3 faceLocation = this.faceLocation(face);
         BlockHitResult hit = new BlockHitResult(faceLocation, face, targetPos, false);
-        if (this.level().isClientSide) return InteractionResult.SUCCESS;
         if (stack.getItem() instanceof EntityFacePlaceableItem entityItem) {
+            if (this.level().isClientSide) return InteractionResult.SUCCESS;
             return entityItem.plasticraft$placeOnEntityFace(this.level(), player, hand, stack, hit);
         }
         if (stack.getItem() instanceof BlockItem || stack.getItem() instanceof PipeBlockItem) {

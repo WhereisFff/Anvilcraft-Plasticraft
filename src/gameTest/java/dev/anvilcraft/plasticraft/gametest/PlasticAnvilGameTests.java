@@ -3689,6 +3689,50 @@ public final class PlasticAnvilGameTests {
     }
 
     @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x7x7", floor = true)
+    @TestHolder(description = "A sneak-placed falling block sounds and stays above an incomplete plastic entity")
+    static void shiftPlacedAnvilStaysOnPlasticEntity(ExtendedGameTestHelper helper) {
+        HardenedResinAnvilEntity support = createAnvil(helper, new Vec3(3.5D, 1.0D, 3.5D));
+        support.setNoGravity(true);
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.setShiftKeyDown(true);
+        player.setItemInHand(InteractionHand.MAIN_HAND, Items.ANVIL.getDefaultInstance());
+        AtomicInteger placementSounds = new AtomicInteger();
+        ResourceLocation placementSound = Blocks.ANVIL.defaultBlockState()
+            .getSoundType()
+            .getPlaceSound()
+            .getLocation();
+        helper.addTemporaryListener((PlayLevelSoundEvent.AtPosition event) -> {
+            if (event.getLevel() == helper.getLevel()
+                && event.getSound() != null
+                && event.getSound().value().getLocation().equals(placementSound)) {
+                placementSounds.incrementAndGet();
+            }
+        });
+
+        InteractionResult result = support.interactAt(
+            player,
+            new Vec3(0.0D, support.getBbHeight(), 0.0D),
+            InteractionHand.MAIN_HAND
+        );
+        BlockPos placedPos = new BlockPos(3, 2, 3);
+        check(result.consumesAction(), "sneak-use did not place the falling anvil");
+        check(helper.getBlockState(placedPos).is(Blocks.ANVIL), "falling anvil was not placed above the plastic entity");
+        check(placementSounds.get() == 1, "entity-face placement played " + placementSounds.get() + " placement sounds");
+
+        helper.runAfterDelay(8, () -> {
+            check(helper.getBlockState(placedPos).is(Blocks.ANVIL), "directly placed anvil started falling");
+            boolean falling = !helper.getLevel().getEntitiesOfClass(
+                FallingBlockEntity.class,
+                new AABB(helper.absolutePos(placedPos)).inflate(2.0D),
+                entity -> entity.getBlockState().is(Blocks.ANVIL)
+            ).isEmpty();
+            check(!falling, "directly placed anvil converted into a falling entity");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "15x8x7", floor = true)
     @TestHolder(description = "High-speed acceleration recentering uses collision and contributes to landing distance")
     static void acceleratedRecenteringCannotBypassFloor(ExtendedGameTestHelper helper) {

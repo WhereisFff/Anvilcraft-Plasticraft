@@ -175,14 +175,14 @@ public class CondenserTowerBlock extends SimpleMultiPartBlock<Cube3x3PartHalf>
             && state.getValue(LargeCauldronBlock.HALF) == Cube3x3PartHalf.TOP_CENTER;
     }
 
-    /** 返回某个部件是否为顶层四向流体接口。 */
+    /** 返回某个部件是否为底层四向流体接口。 */
     public static @Nullable Direction outputDirection(BlockState state) {
         if (!(state.getBlock() instanceof CondenserTowerBlock) || !state.hasProperty(HALF)) return null;
         return switch (state.getValue(HALF)) {
-            case TOP_N -> Direction.NORTH;
-            case TOP_S -> Direction.SOUTH;
-            case TOP_W -> Direction.WEST;
-            case TOP_E -> Direction.EAST;
+            case BOTTOM_N -> Direction.NORTH;
+            case BOTTOM_S -> Direction.SOUTH;
+            case BOTTOM_W -> Direction.WEST;
+            case BOTTOM_E -> Direction.EAST;
             default -> null;
         };
     }

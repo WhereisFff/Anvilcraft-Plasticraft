@@ -461,18 +461,24 @@ public final class CondenserTowerGameTests {
         check(first.collect(new FluidStack(Fluids.WATER, 1_000)) == 1_000,
             "tower tank did not accept its internal collection API");
 
-        BlockPos topNorth = towerBase.offset(0, 2, -1);
-        BlockState topNorthState = helper.getLevel().getBlockState(topNorth);
-        check(CondenserTowerBlockEntity.getMain(helper.getLevel(), topNorth, topNorthState) == first,
+        BlockPos bottomNorth = towerBase.offset(0, 0, -1);
+        BlockState bottomNorthState = helper.getLevel().getBlockState(bottomNorth);
+        check(CondenserTowerBlockEntity.getMain(helper.getLevel(), bottomNorth, bottomNorthState) == first,
             "a non-center tower part did not resolve the main storage block entity");
         IFluidHandler outward = CondenserTowerBlockEntity.capability(
-            helper.getLevel(), topNorth, topNorthState, null, Direction.NORTH
+            helper.getLevel(), bottomNorth, bottomNorthState, null, Direction.NORTH
         );
         IFluidHandler inward = CondenserTowerBlockEntity.capability(
-            helper.getLevel(), topNorth, topNorthState, null, Direction.SOUTH
+            helper.getLevel(), bottomNorth, bottomNorthState, null, Direction.SOUTH
         );
-        check(outward != null, "top north interface did not expose an outward fluid handler");
-        check(inward == null, "top north interface exposed an inward fluid handler");
+        BlockPos oldTopNorth = towerBase.offset(0, 2, -1);
+        BlockState oldTopNorthState = helper.getLevel().getBlockState(oldTopNorth);
+        IFluidHandler oldTop = CondenserTowerBlockEntity.capability(
+            helper.getLevel(), oldTopNorth, oldTopNorthState, null, Direction.NORTH
+        );
+        check(outward != null, "bottom north interface did not expose an outward fluid handler");
+        check(inward == null, "bottom north interface exposed an inward fluid handler");
+        check(oldTop == null, "old top north interface still exposed a fluid handler");
         check(outward.fill(
                 new FluidStack(Fluids.WATER, 1),
                 IFluidHandler.FluidAction.EXECUTE

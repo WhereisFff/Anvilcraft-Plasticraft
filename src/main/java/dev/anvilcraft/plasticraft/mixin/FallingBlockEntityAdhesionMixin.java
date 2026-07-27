@@ -1,5 +1,7 @@
 package dev.anvilcraft.plasticraft.mixin;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFallingBlockBehavior;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFallingBlockSupport;
@@ -7,10 +9,12 @@ import dev.anvilcraft.plasticraft.event.CatalyticPressAnvilEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.FallingBlockEntity;
+import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -19,8 +23,11 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import java.util.List;
 
 /** 粘附期间由树脂系统接管普通下落方块的位置和生命周期。 */
-@Mixin(FallingBlockEntity.class)
+@Mixin(value = FallingBlockEntity.class, priority = 1100)
 abstract class FallingBlockEntityAdhesionMixin {
+    @Shadow
+    public boolean dropItem;
+
     @Inject(method = "tick", at = @At("HEAD"))
     private void plasticraft$notifyCatalyticPress(CallbackInfo callback) {
         FallingBlockEntity entity = (FallingBlockEntity) (Object) this;
@@ -44,11 +51,28 @@ abstract class FallingBlockEntityAdhesionMixin {
     private void plasticraft$detectBondedLanding(CallbackInfo callback) {
         FallingBlockEntity entity = (FallingBlockEntity) (Object) this;
         AdhesiveFallingBlockBehavior.afterMovement(entity);
-        boolean plasticSupport = entity.getDeltaMovement().y < 0.0D
-            && PlasticFallingBlockSupport.hasSupport(entity.level(), entity.blockPosition(), entity);
-        if (plasticSupport) {
-            entity.setOnGround(true);
+    }
+
+    @WrapOperation(
+        method = "tick",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/world/entity/item/FallingBlockEntity;onGround()Z"
+        )
+    )
+    private boolean plasticraft$acceptPlasticEntityLanding(
+        FallingBlockEntity entity,
+        Operation<Boolean> original
+    ) {
+        if (PlasticFallingBlockSupport.touchesIncompletePlasticAnvil(entity)) {
+            if (this.dropItem && entity.level().getGameRules().getBoolean(GameRules.RULE_DOENTITYDROPS)) {
+                entity.spawnAtLocation(entity.getBlockState().getBlock());
+            }
+            entity.discard();
+            return false;
         }
+        if (PlasticFallingBlockSupport.landOnSupport(entity)) return true;
+        return original.call(entity);
     }
 
     @Inject(method = "tick", at = @At("RETURN"))

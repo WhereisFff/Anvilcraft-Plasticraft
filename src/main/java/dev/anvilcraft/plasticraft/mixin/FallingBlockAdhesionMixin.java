@@ -41,7 +41,8 @@ abstract class FallingBlockAdhesionMixin {
         }
         BondedFallingBlocks.validate(level, pos);
         if (BondedFallingBlocks.isBonded(level, pos)
-            || PlasticFallingBlockSupport.hasSupport(level, pos, null)) {
+            || PlasticFallingBlockSupport.hasSupport(level, pos, null)
+            || PlasticFallingBlockSupport.occupiesCellBelow(level, pos)) {
             level.scheduleTick(pos, state.getBlock(), SUPPORT_CHECK_INTERVAL);
             callback.cancel();
         }

@@ -2,6 +2,9 @@ package dev.anvilcraft.plasticraft.entity.physics;
 
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
+import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
+import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
@@ -11,6 +14,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 import javax.annotation.Nullable;
 
@@ -49,6 +53,101 @@ public final class PlasticFallingBlockSupport {
             probe,
             candidate -> candidate != fallingEntity && isAlignedFullBlockSupport(candidate, fallingBlockPos)
         );
+    }
+
+    /** 方块态下落方块只检查下方逻辑格是否被塑料实体占用，不要求其碰撞箱具有完整顶面。 */
+    public static boolean occupiesCellBelow(Level level, BlockPos fallingBlockPos) {
+        BlockPos supportPos = fallingBlockPos.below();
+        return !level.getEntitiesOfClass(
+            AbstractPlasticEntity.class,
+            new AABB(supportPos),
+            candidate -> candidate.isAlive()
+                && BlockPos.containing(candidate.getBoundingBox().getCenter()).equals(supportPos)
+        ).isEmpty();
+    }
+
+    /** 仅在本刻扫过顶面，或已进入本体的实体碰撞余量时完成着陆。 */
+    public static boolean landOnSupport(FallingBlockEntity fallingEntity) {
+        double velocityY = fallingEntity.getDeltaMovement().y;
+        if (velocityY > 0.0D) return false;
+
+        AABB fallingBox = fallingEntity.getBoundingBox();
+        double currentBottom = fallingBox.minY;
+        double previousBottom = currentBottom - velocityY;
+        AABB probe = new AABB(
+            fallingBox.minX,
+            currentBottom - PROBE_DEPTH,
+            fallingBox.minZ,
+            fallingBox.maxX,
+            previousBottom + ALIGNMENT_EPSILON,
+            fallingBox.maxZ
+        );
+        AbstractPlasticEntity landingSupport = null;
+        double landingY = Double.NEGATIVE_INFINITY;
+        for (AbstractPlasticEntity candidate : fallingEntity.level().getEntitiesOfClass(
+            AbstractPlasticEntity.class,
+            probe,
+            candidate -> candidate != fallingEntity && candidate.isAlive() && isFullBlockSize(candidate)
+        )) {
+            AABB supportBox = candidate.getBoundingBox();
+            double supportTop = supportBox.maxY;
+            double alignedTop = Math.rint(supportTop);
+            boolean crossedSurface = supportTop >= currentBottom - ALIGNMENT_EPSILON;
+            boolean reachedCollisionMargin = supportTop >= currentBottom - PROBE_DEPTH;
+            if (Math.abs(supportTop - alignedTop) > ALIGNMENT_EPSILON
+                || (!crossedSurface && !reachedCollisionMargin)
+                || supportTop > previousBottom + ALIGNMENT_EPSILON
+                || !hasHorizontalOverlap(fallingBox, supportBox)
+                || supportTop <= landingY) {
+                continue;
+            }
+            landingSupport = candidate;
+            landingY = alignedTop;
+        }
+        if (landingSupport == null) return false;
+
+        fallingEntity.setPos(fallingEntity.getX(), landingY, fallingEntity.getZ());
+        fallingEntity.setOnGround(true);
+        return true;
+    }
+
+    /** 树脂铁砧使用不完整方块碰撞，普通下落方块接触后应碎裂而不是与其重叠。 */
+    public static boolean touchesIncompletePlasticAnvil(FallingBlockEntity fallingEntity) {
+        AABB fallingBox = fallingEntity.getBoundingBox();
+        double currentBottom = fallingBox.minY;
+        AABB probe = new AABB(
+            fallingBox.minX,
+            currentBottom - PROBE_DEPTH,
+            fallingBox.minZ,
+            fallingBox.maxX,
+            currentBottom + ALIGNMENT_EPSILON,
+            fallingBox.maxZ
+        );
+        boolean entityContact = !fallingEntity.level().getEntitiesOfClass(
+            AbstractPlasticEntity.class,
+            probe,
+            candidate -> candidate != fallingEntity
+                && candidate.isAlive()
+                && (candidate instanceof ResinAnvilEntity || candidate instanceof HardenedResinAnvilEntity)
+                && hasHorizontalOverlap(fallingBox, candidate.getBoundingBox())
+        ).isEmpty();
+        if (entityContact) return true;
+
+        int minX = Mth.floor(probe.minX + ALIGNMENT_EPSILON);
+        int maxX = Mth.floor(probe.maxX - ALIGNMENT_EPSILON);
+        int minY = Mth.floor(probe.minY);
+        int maxY = Mth.floor(probe.maxY);
+        int minZ = Mth.floor(probe.minZ + ALIGNMENT_EPSILON);
+        int maxZ = Mth.floor(probe.maxZ - ALIGNMENT_EPSILON);
+        for (BlockPos pos : BlockPos.betweenClosed(minX, minY, minZ, maxX, maxY, maxZ)) {
+            BlockState state = fallingEntity.level().getBlockState(pos);
+            if (!state.is(ModBlocks.RESIN_ANVIL.get()) && !state.is(ModBlocks.HARDEND_RESIN_ANVIL.get())) {
+                continue;
+            }
+            VoxelShape shape = state.getCollisionShape(fallingEntity.level(), pos);
+            if (shape.toAabbs().stream().map(box -> box.move(pos)).anyMatch(probe::intersects)) return true;
+        }
+        return false;
     }
 
     public static Set<BlockPos> updateSupportChecks(
@@ -103,10 +202,22 @@ public final class PlasticFallingBlockSupport {
         }
         AABB box = candidate.getBoundingBox();
         if (Math.abs(box.maxY - fallingBlockPos.getY()) > ALIGNMENT_EPSILON) return false;
-        double overlapX = Math.min(box.maxX, fallingBlockPos.getX() + 1.0D)
-            - Math.max(box.minX, fallingBlockPos.getX());
-        double overlapZ = Math.min(box.maxZ, fallingBlockPos.getZ() + 1.0D)
-            - Math.max(box.minZ, fallingBlockPos.getZ());
+        return hasHorizontalOverlap(
+            box,
+            new AABB(
+                fallingBlockPos.getX(),
+                box.minY,
+                fallingBlockPos.getZ(),
+                fallingBlockPos.getX() + 1.0D,
+                box.maxY,
+                fallingBlockPos.getZ() + 1.0D
+            )
+        );
+    }
+
+    private static boolean hasHorizontalOverlap(AABB first, AABB second) {
+        double overlapX = Math.min(first.maxX, second.maxX) - Math.max(first.minX, second.minX);
+        double overlapZ = Math.min(first.maxZ, second.maxZ) - Math.max(first.minZ, second.minZ);
         return overlapX > ALIGNMENT_EPSILON && overlapZ > ALIGNMENT_EPSILON;
     }
 

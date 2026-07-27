@@ -3,9 +3,11 @@ package dev.anvilcraft.plasticraft.gametest;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
+import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
+import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFallingBlockSupport;
 import dev.anvilcraft.plasticraft.event.CatalyticPressAnvilEvents;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
@@ -15,6 +17,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.world.entity.item.FallingBlockEntity;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -121,6 +124,131 @@ public final class CatalyticPressLidGameTests {
         helper.succeed();
     }
 
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "5x7x5", floor = true)
+    @TestHolder(description = "A falling anvil waits until its bottom reaches a plastic entity surface")
+    static void fallingAnvilWaitsForPlasticSurfaceContact(ExtendedGameTestHelper helper) {
+        HardenedResinCauldronEntity cauldron = spawnCauldron(helper, new BlockPos(2, 2, 2));
+        FallingBlockEntity anvil = spawnFallingAnvil(helper, new BlockPos(2, 4, 2), -0.1D);
+        BlockPos landedPos = new BlockPos(2, 3, 2);
+
+        helper.runAfterDelay(1, () -> {
+            check(helper.getBlockState(landedPos).isAir(), "anvil blockified before touching the resin cauldron");
+            check(anvil.isAlive(), "falling anvil disappeared before touching the resin cauldron");
+            check(
+                anvil.getBoundingBox().minY > cauldron.getBoundingBox().maxY + EPSILON,
+                "falling anvil reached the resin cauldron earlier than expected"
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 45)
+    @EmptyTemplate(value = "5x9x5", floor = true)
+    @TestHolder(description = "Ordinary falling blocks land on a hardened resin cauldron entity")
+    static void fallingSandLandsOnHardenedResinCauldron(ExtendedGameTestHelper helper) {
+        HardenedResinCauldronEntity cauldron = spawnCauldron(helper, new BlockPos(2, 1, 2));
+        cauldron.setNoGravity(false);
+        helper.runAfterDelay(5, () ->
+            spawnFallingBlock(helper, new BlockPos(2, 7, 2), Blocks.SAND.defaultBlockState(), -0.1D));
+
+        helper.runAfterDelay(35, () -> {
+            check(helper.getBlockState(new BlockPos(2, 2, 2)).is(Blocks.SAND),
+                "falling sand broke instead of landing on the resin cauldron");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 45)
+    @EmptyTemplate(value = "5x9x5", floor = true)
+    @TestHolder(description = "A falling anvil lands on a catalytic press lid bonded to a resin cauldron")
+    static void fallingAnvilLandsOnBondedCatalyticPressLid(ExtendedGameTestHelper helper) {
+        HardenedResinCauldronEntity cauldron = spawnCauldron(helper, new BlockPos(2, 1, 2));
+        cauldron.setNoGravity(false);
+        CatalyticPressLidEntity lid = spawnReadyLid(helper, new BlockPos(2, 2, 2));
+        check(EntityBondManager.connect(
+            helper.getLevel(),
+            lid,
+            Direction.DOWN,
+            cauldron,
+            Direction.UP,
+            lid.isNoGravity()
+        ), "failed to bond the catalytic press lid to the resin cauldron");
+        helper.runAfterDelay(5, () -> spawnFallingAnvil(helper, new BlockPos(2, 8, 2), -0.1D));
+
+        helper.runAfterDelay(35, () -> {
+            check(
+                helper.getBlockState(new BlockPos(2, 3, 2)).is(Blocks.ANVIL),
+                "falling anvil broke instead of landing on the bonded catalytic press lid: lidBox="
+                    + lid.getBoundingBox() + ", cauldronBox=" + cauldron.getBoundingBox()
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 45)
+    @EmptyTemplate(value = "7x9x7", floor = true)
+    @TestHolder(description = "Falling anvils break into items on both plastic anvil entities")
+    static void fallingAnvilsBreakOnPlasticAnvilEntities(ExtendedGameTestHelper helper) {
+        ResinAnvilEntity resinAnvil = spawnResinAnvil(
+            helper,
+            new BlockPos(2, 1, 3),
+            PlasticEntityOrientation.DEFAULT
+        );
+        resinAnvil.setNoGravity(true);
+        resinAnvil.setDeltaMovement(Vec3.ZERO);
+        HardenedResinAnvilEntity hardenedAnvil = spawnHardenedResinAnvil(
+            helper,
+            new BlockPos(4, 1, 3)
+        );
+        hardenedAnvil.setNoGravity(true);
+        hardenedAnvil.setDeltaMovement(Vec3.ZERO);
+        spawnFallingAnvil(helper, new BlockPos(2, 7, 3), -0.1D);
+        spawnFallingAnvil(helper, new BlockPos(4, 7, 3), -0.1D);
+
+        helper.runAfterDelay(35, () -> {
+            check(resinAnvil.isAlive(), "falling anvil destroyed the resin anvil entity");
+            check(hardenedAnvil.isAlive(), "falling anvil destroyed the hardened resin anvil entity");
+            assertFallingAnvilDidNotBlockify(helper, new BlockPos(2, 1, 3));
+            assertFallingAnvilDidNotBlockify(helper, new BlockPos(4, 1, 3));
+            int droppedAnvils = helper.getLevel().getEntitiesOfClass(
+                ItemEntity.class,
+                new AABB(
+                    Vec3.atLowerCornerOf(helper.absolutePos(BlockPos.ZERO)),
+                    Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(7, 9, 7)))
+                ),
+                item -> item.getItem().is(Blocks.ANVIL.asItem())
+            ).stream().mapToInt(item -> item.getItem().getCount()).sum();
+            check(droppedAnvils == 2, "plastic anvil entities produced " + droppedAnvils + " anvil drops");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 10)
+    @EmptyTemplate(value = "7x5x7", floor = true)
+    @TestHolder(description = "Falling anvils break into items on both plastic anvil blocks")
+    static void fallingAnvilsBreakOnPlasticAnvilBlocks(ExtendedGameTestHelper helper) {
+        helper.setBlock(new BlockPos(2, 1, 3), ModBlocks.RESIN_ANVIL.get());
+        helper.setBlock(new BlockPos(4, 1, 3), ModBlocks.HARDEND_RESIN_ANVIL.get());
+        spawnFallingAnvil(helper, new BlockPos(2, 2, 3), -0.1D);
+        spawnFallingAnvil(helper, new BlockPos(4, 2, 3), -0.1D);
+
+        helper.runAfterDelay(3, () -> {
+            assertFallingAnvilDidNotBlockify(helper, new BlockPos(2, 1, 3));
+            assertFallingAnvilDidNotBlockify(helper, new BlockPos(4, 1, 3));
+            int droppedAnvils = helper.getLevel().getEntitiesOfClass(
+                ItemEntity.class,
+                new AABB(
+                    Vec3.atLowerCornerOf(helper.absolutePos(BlockPos.ZERO)),
+                    Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(7, 5, 7)))
+                ),
+                item -> item.getItem().is(Blocks.ANVIL.asItem())
+            ).stream().mapToInt(item -> item.getItem().getCount()).sum();
+            check(droppedAnvils == 2, "plastic anvil blocks produced " + droppedAnvils + " anvil drops");
+            helper.succeed();
+        });
+    }
+
     @GameTest(timeoutTicks = 55)
     @EmptyTemplate(value = "5x8x5", floor = true)
     @TestHolder(description = "A falling anvil blockifies on a full-height plastic entity and falls when it moves")
@@ -186,14 +314,23 @@ public final class CatalyticPressLidGameTests {
         BlockPos relativePos,
         double velocityY
     ) {
-        helper.setBlock(relativePos, Blocks.ANVIL);
-        FallingBlockEntity anvil = FallingBlockEntity.fall(
+        return spawnFallingBlock(helper, relativePos, Blocks.ANVIL.defaultBlockState(), velocityY);
+    }
+
+    private static FallingBlockEntity spawnFallingBlock(
+        ExtendedGameTestHelper helper,
+        BlockPos relativePos,
+        BlockState state,
+        double velocityY
+    ) {
+        helper.setBlock(relativePos, state);
+        FallingBlockEntity fallingBlock = FallingBlockEntity.fall(
             helper.getLevel(),
             helper.absolutePos(relativePos),
-            Blocks.ANVIL.defaultBlockState()
+            state
         );
-        anvil.setDeltaMovement(0.0D, velocityY, 0.0D);
-        return anvil;
+        fallingBlock.setDeltaMovement(0.0D, velocityY, 0.0D);
+        return fallingBlock;
     }
 
     private static ResinAnvilEntity spawnResinAnvil(
@@ -217,6 +354,28 @@ public final class CatalyticPressLidGameTests {
         );
         anvil.setDeltaMovement(0.0D, -0.5D, 0.0D);
         check(helper.getLevel().addFreshEntity(anvil), "failed to add resin anvil");
+        return anvil;
+    }
+
+    private static HardenedResinAnvilEntity spawnHardenedResinAnvil(
+        ExtendedGameTestHelper helper,
+        BlockPos relativePos
+    ) {
+        BlockPos pos = helper.absolutePos(relativePos);
+        Vec3 position = PlasticEntityOrientation.DEFAULT.entityPosition(
+            pos,
+            ModEntities.HARDEND_RESIN_ANVIL.get().getWidth(),
+            ModEntities.HARDEND_RESIN_ANVIL.get().getHeight()
+        );
+        HardenedResinAnvilEntity anvil = new HardenedResinAnvilEntity(
+            ModEntities.HARDEND_RESIN_ANVIL.get(),
+            helper.getLevel(),
+            position,
+            ModBlocks.HARDEND_RESIN_ANVIL.get().defaultBlockState(),
+            ModBlocks.HARDEND_RESIN_ANVIL.asStack(),
+            PlasticEntityOrientation.DEFAULT
+        );
+        check(helper.getLevel().addFreshEntity(anvil), "failed to add hardened resin anvil");
         return anvil;
     }
 
@@ -262,6 +421,17 @@ public final class CatalyticPressLidGameTests {
 
     private static boolean close(double first, double second) {
         return Math.abs(first - second) <= EPSILON;
+    }
+
+    private static void assertFallingAnvilDidNotBlockify(
+        ExtendedGameTestHelper helper,
+        BlockPos supportPos
+    ) {
+        check(!helper.getBlockState(supportPos).is(Blocks.ANVIL), "falling anvil overlapped its plastic support");
+        check(
+            !helper.getBlockState(supportPos.above()).is(Blocks.ANVIL),
+            "falling anvil blockified above its incomplete plastic support"
+        );
     }
 
     private static void check(boolean condition, String message) {
