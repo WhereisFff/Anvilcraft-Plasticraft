@@ -4,6 +4,7 @@ import dev.anvilcraft.lib.v2.piston.IMoveableEntityBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
 import dev.anvilcraft.plasticraft.init.block.ModBlockEntities;
 import dev.dubhe.anvilcraft.block.RoyalAnvilBlock;
 import net.minecraft.core.BlockPos;
@@ -42,7 +43,8 @@ public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity
     /** 磁化状态与材料相互独立，并在实体转换后保留。 */
     public static final BooleanProperty MAGNETIZED = BooleanProperty.create("magnetized");
     public static final BooleanProperty BONDED = BooleanProperty.create("bonded");
-    private static final VoxelShape ROYAL_ANVIL_SHAPE = Shapes.or(
+    /** 皇家铁砧在方块局部坐标中的组合碰撞形状，供方块态与实体态共同使用。 */
+    public static final VoxelShape ROYAL_ANVIL_COLLISION_SHAPE = Shapes.or(
         Block.box(2.0D, 0.0D, 2.0D, 14.0D, 4.0D, 14.0D),
         Block.box(5.0D, 4.0D, 4.0D, 11.0D, 10.0D, 12.0D),
         Block.box(3.0D, 10.0D, 0.0D, 13.0D, 16.0D, 16.0D)
@@ -167,52 +169,12 @@ public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity
             : PlasticEntityOrientation.fromLegacyState(state);
         return BONDED_ANVIL_SHAPES.computeIfAbsent(
             orientation,
-            ignored -> rotateShape(ROYAL_ANVIL_SHAPE, orientation)
+            ignored -> rotateShape(ROYAL_ANVIL_COLLISION_SHAPE, orientation)
         );
     }
 
     protected static VoxelShape rotateShape(VoxelShape shape, PlasticEntityOrientation orientation) {
-        Direction xAxis = orientation.orthogonalAxis();
-        Direction yAxis = orientation.attachmentFace();
-        Direction zAxis = orientation.longAxis();
-        VoxelShape rotated = Shapes.empty();
-        for (net.minecraft.world.phys.AABB box : shape.toAabbs()) {
-            double minX = 1.0D;
-            double minY = 1.0D;
-            double minZ = 1.0D;
-            double maxX = 0.0D;
-            double maxY = 0.0D;
-            double maxZ = 0.0D;
-            for (int x = 0; x < 2; x++) {
-                for (int y = 0; y < 2; y++) {
-                    for (int z = 0; z < 2; z++) {
-                        double localX = (x == 0 ? box.minX : box.maxX) - 0.5D;
-                        double localY = (y == 0 ? box.minY : box.maxY) - 0.5D;
-                        double localZ = (z == 0 ? box.minZ : box.maxZ) - 0.5D;
-                        double worldX = 0.5D
-                            + localX * xAxis.getStepX()
-                            + localY * yAxis.getStepX()
-                            + localZ * zAxis.getStepX();
-                        double worldY = 0.5D
-                            + localX * xAxis.getStepY()
-                            + localY * yAxis.getStepY()
-                            + localZ * zAxis.getStepY();
-                        double worldZ = 0.5D
-                            + localX * xAxis.getStepZ()
-                            + localY * yAxis.getStepZ()
-                            + localZ * zAxis.getStepZ();
-                        minX = Math.min(minX, worldX);
-                        minY = Math.min(minY, worldY);
-                        minZ = Math.min(minZ, worldZ);
-                        maxX = Math.max(maxX, worldX);
-                        maxY = Math.max(maxY, worldY);
-                        maxZ = Math.max(maxZ, worldZ);
-                    }
-                }
-            }
-            rotated = Shapes.or(rotated, Shapes.box(minX, minY, minZ, maxX, maxY, maxZ));
-        }
-        return rotated.optimize();
+        return PlasticEntityCollisionShapes.rotate(shape, orientation);
     }
 
     @Override

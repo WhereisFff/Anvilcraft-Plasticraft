@@ -8,6 +8,7 @@ import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.SurfaceAdhesiveService;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFluidPhysics;
+import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.anvilcraft.plasticraft.recipe.EscapingVaporEffects;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -45,6 +46,7 @@ public final class PlasticraftEntityEvents {
     public static void captureCauldronRecipeOutput(ItemCacheEvent.SpawnItemEntity event) {
         ItemEntity item = event.getEntity();
         if (item.isRemoved()) return;
+        if (CauldronImpactRecipeProcessor.captureActiveRecipeOutput(item)) return;
         BlockPos cell = item.blockPosition();
         HardenedResinCauldronEntity selected = null;
         for (HardenedResinCauldronEntity cauldron : item.level().getEntitiesOfClass(

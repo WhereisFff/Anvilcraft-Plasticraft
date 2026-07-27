@@ -2,10 +2,13 @@ package dev.anvilcraft.plasticraft.entity;
 
 import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
 import dev.anvilcraft.plasticraft.api.entity.PlasticGravityTypeProvider;
+import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.api.item.EntityFacePlaceableItem;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionBox;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticPushChain;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFallingBlockSupport;
@@ -80,8 +83,8 @@ import java.util.Set;
  * 同时明确管理这一不同的生命周期。</p>
  */
 public abstract class AbstractPlasticEntity extends FallingBlockEntity
-    implements PlasticGravityTypeProvider, CarrierMovableEntity {
-    public static final float COLLISION_SIZE = 0.98F;
+    implements PlasticGravityTypeProvider, CarrierMovableEntity, ShapedCollisionEntity {
+    public static final float COLLISION_SIZE = 1.0F;
 
     private static final double AIR_DRAG = 0.98D;
     private static final double FLUID_VERTICAL_DRAG = 0.82D;
@@ -145,11 +148,21 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     private double clientSnapshotZ;
     private float clientSnapshotYRot;
     private float clientSnapshotXRot;
+    private boolean clientServerPositionInitialized;
+    private double clientServerX;
+    private double clientServerY;
+    private double clientServerZ;
+    private Vec3 clientPredictedCarrierMovement = Vec3.ZERO;
     private long clientCarrierMoveGameTime = Long.MIN_VALUE;
     private double clientCarrierMoveStartX;
     private double clientCarrierMoveStartY;
     private double clientCarrierMoveStartZ;
     private long hammerReturnAt = -1L;
+    private VoxelShape cachedCollisionShapeSource;
+    private PlasticEntityOrientation cachedCollisionShapeOrientation;
+    private VoxelShape cachedRelativeCollisionShape = Shapes.empty();
+    private Vec3 cachedCollisionBoxPosition;
+    private PlasticEntityCollisionBox cachedCollisionBox;
 
     protected AbstractPlasticEntity(
         EntityType<? extends AbstractPlasticEntity> entityType,
@@ -233,6 +246,11 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         this.clientSnapshotYRot = this.getYRot();
         this.clientSnapshotXRot = this.getXRot();
         this.clientSnapshotPending = false;
+        this.clientServerPositionInitialized = true;
+        this.clientServerX = this.getX();
+        this.clientServerY = this.getY();
+        this.clientServerZ = this.getZ();
+        this.clientPredictedCarrierMovement = Vec3.ZERO;
     }
 
     @Override
@@ -241,9 +259,24 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             super.lerpTo(x, y, z, yRot, xRot, steps);
             return;
         }
-        this.clientSnapshotX = x;
-        this.clientSnapshotY = y;
-        this.clientSnapshotZ = z;
+        Vec3 serverMovement = this.clientServerPositionInitialized
+            ? new Vec3(x - this.clientServerX, y - this.clientServerY, z - this.clientServerZ)
+            : Vec3.ZERO;
+        if (!PlasticEntityPhysics.isWithinCarryDistance(serverMovement)) {
+            this.clientPredictedCarrierMovement = Vec3.ZERO;
+        } else {
+            this.clientPredictedCarrierMovement = reconcileClientPrediction(
+                this.clientPredictedCarrierMovement,
+                serverMovement
+            );
+        }
+        this.clientServerPositionInitialized = true;
+        this.clientServerX = x;
+        this.clientServerY = y;
+        this.clientServerZ = z;
+        this.clientSnapshotX = x + this.clientPredictedCarrierMovement.x;
+        this.clientSnapshotY = y + this.clientPredictedCarrierMovement.y;
+        this.clientSnapshotZ = z + this.clientPredictedCarrierMovement.z;
         this.clientSnapshotYRot = yRot;
         this.clientSnapshotXRot = xRot;
         this.clientSnapshotPending = true;
@@ -272,6 +305,25 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     @Override
     public float lerpTargetXRot() {
         return this.clientSnapshotPending ? this.clientSnapshotXRot : this.getXRot();
+    }
+
+    /** 用服务端已前进的距离逐轴确认本地推动，迟到快照只消费已经确认的部分。 */
+    private static Vec3 reconcileClientPrediction(Vec3 predicted, Vec3 serverMovement) {
+        return new Vec3(
+            reconcileClientPrediction(predicted.x, serverMovement.x),
+            reconcileClientPrediction(predicted.y, serverMovement.y),
+            reconcileClientPrediction(predicted.z, serverMovement.z)
+        );
+    }
+
+    private static double reconcileClientPrediction(double predicted, double serverMovement) {
+        if (Math.abs(predicted) <= PlasticEntityPhysics.FACE_EPSILON) return 0.0D;
+        if (Math.abs(serverMovement) <= PlasticEntityPhysics.FACE_EPSILON) return predicted;
+        if (Math.signum(predicted) != Math.signum(serverMovement)) return 0.0D;
+        double remaining = Math.abs(predicted) - Math.abs(serverMovement);
+        return remaining <= PlasticEntityPhysics.FACE_EPSILON
+            ? 0.0D
+            : Math.copySign(remaining, predicted);
     }
 
     public final PlasticEntityOrientation getOrientation() {
@@ -527,6 +579,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         }
 
         Vec3 velocityBeforeAcceleration = this.getDeltaMovement();
+        Vec3 positionBeforeAcceleration = this.position();
         AABB boxBeforeAcceleration = this.getBoundingBox();
         this.accelerationRequestedMovement = Vec3.ZERO;
         this.accelerationActualMovement = Vec3.ZERO;
@@ -617,6 +670,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         } else {
             this.initializeExistingBlockContact(gravityDirection);
         }
+        this.handleSweptCauldronImpact(positionBeforeAcceleration);
+        if (this.isRemoved()) return;
         Entity support = gravityDirection == null
             ? null
             : PlasticEntityPhysics.findSupport(this, gravityDirection);
@@ -631,7 +686,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
                 preMoveObservation,
                 gravityDirection
         );
-        this.moveWithCarrierDisplacement(observedCarrierMovement);
+        this.moveWithCarrierDisplacement(support, observedCarrierMovement);
         if (this.isRemoved()) return;
 
         support = gravityDirection == null
@@ -691,6 +746,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             );
         }
         this.handleNewCollisionContacts(requestedMovement, actualMovement);
+        this.handleSweptCauldronImpact(positionBeforeMove);
+        if (this.isRemoved()) return;
         PlasticFluidPhysics.FluidContact postMoveFluid = PlasticFluidPhysics.sample(this);
         boolean onSlidingRailAfterMove = this.slidingRailState.isOnSlidingRail(this);
         double horizontalDrag = postMoveFluid.isPresent()
@@ -905,6 +962,45 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         }
     }
 
+    /** 真实凹形碰撞允许砧底进入锅口，因此配方碰撞单独按两个功能平面的穿越判断。 */
+    private void handleSweptCauldronImpact(Vec3 startPosition) {
+        if (this.level().isClientSide || startPosition.equals(this.position())) return;
+        Vec3 movement = this.position().subtract(startPosition);
+        AABB sweptBounds = this.getBoundingBox()
+            .move(-movement.x, -movement.y, -movement.z)
+            .expandTowards(movement)
+            .inflate(PlasticEntityPhysics.FACE_EPSILON);
+        if (this instanceof HardenedResinCauldronEntity pot) {
+            for (AbstractPlasticEntity anvil : this.level().getEntitiesOfClass(
+                AbstractPlasticEntity.class,
+                sweptBounds,
+                candidate -> candidate != this && candidate.isAlive()
+            )) {
+                pot.processSweptAnvilImpact(
+                    anvil,
+                    anvil.position(),
+                    anvil.position(),
+                    startPosition,
+                    this.position()
+                );
+            }
+            return;
+        }
+        for (HardenedResinCauldronEntity pot : this.level().getEntitiesOfClass(
+            HardenedResinCauldronEntity.class,
+            sweptBounds,
+            Entity::isAlive
+        )) {
+            pot.processSweptAnvilImpact(
+                this,
+                startPosition,
+                this.position(),
+                pot.position(),
+                pot.position()
+            );
+        }
+    }
+
     private void onBondedBlockImpact(Direction impactDirection) {
         BlockPos contactPos = PlasticEntityPhysics.landingPosition(this, impactDirection);
         if (this.level().getBlockEntity(contactPos) instanceof BondedEntityBlockEntity bonded
@@ -991,9 +1087,15 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     @Override
     public boolean plasticraft$canMoveWithCarrier(Entity carrier, Vec3 requestedMovement) {
-        // 塑料实体之间的位移传递由 PlasticPushChain 以原子方式规划。
-        // 若同时使用通用承载钩子，不但会重复链式移动，还会将真正的砧和釜冲击变成穿透推动。
-        if (carrier instanceof AbstractPlasticEntity || this.carrierMoveInProgress) return false;
+        // 塑料实体的侧推由 PlasticPushChain 规划；实际支撑关系的切向移动由承载钩子处理。
+        // 法向移动不在这里放行，使砧和釜仍能产生真实冲击。
+        if (this.carrierMoveInProgress) return false;
+        if (carrier instanceof AbstractPlasticEntity) {
+            Direction gravityDirection = this.currentPushGravityDirection();
+            Vec3 gravityNormal = Vec3.atLowerCornerOf(gravityDirection.getNormal());
+            return Math.abs(requestedMovement.dot(gravityNormal)) <= PlasticEntityPhysics.FACE_EPSILON
+                && PlasticEntityPhysics.hasImmediateEntityContact(this, carrier, gravityDirection);
+        }
         Vec3 transferredMovement = this.carrierMovement(
             carrier,
             carrier.getBoundingBox(),
@@ -1048,7 +1150,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
                 <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) return;
             clipped.plan().move(this, carrier);
         }
-        Vec3 moved = this.moveWithCarrierDisplacement(transferredMovement);
+        Vec3 moved = this.moveWithCarrierDisplacement(carrier, transferredMovement);
         if (supportedCarrier) {
             this.supportObservation = PlasticEntityPhysics.SupportObservation.capture(carrier);
             this.supportDirection = carrierSupportDirection;
@@ -1066,19 +1168,19 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         if (EntityBondManager.hasBonds(this)) {
             allowedTargetMovement = PlasticPushChain.clip(this, carrier, targetMovement).movement();
         } else if (this.isCurrentSupport(carrier)) {
+            PlasticEntityCollisionBox collisionBox = this.plasticraft$getCollisionBox();
             List<VoxelShape> entityCollisions = this.level().getEntities(
                 this,
-                this.getBoundingBox().expandTowards(targetMovement).inflate(PlasticEntityPhysics.FACE_EPSILON),
+                collisionBox.bounds().expandTowards(targetMovement).inflate(PlasticEntityPhysics.FACE_EPSILON),
                 other -> !other.isRemoved()
                     && !other.isSpectator()
                     && other != carrier
                     && !other.isPassengerOfSameVehicle(carrier)
                     && this.canCollideWith(other)
-            ).stream().map(other -> Shapes.create(other.getBoundingBox())).toList();
-            allowedTargetMovement = Entity.collideBoundingBox(
+            ).stream().map(ShapedCollisionEntity::collisionShape).toList();
+            allowedTargetMovement = collisionBox.collide(
                 this,
                 targetMovement,
-                this.getBoundingBox(),
                 this.level(),
                 entityCollisions
             );
@@ -1098,7 +1200,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         Vec3 start = leader.position();
         EntityBondManager.runPreclippedComponentMovement(this, ignored, () -> {
             if (leader instanceof AbstractPlasticEntity plasticLeader) {
-                plasticLeader.moveWithCarrierDisplacement(movement);
+                plasticLeader.moveWithCarrierDisplacement(null, movement);
             } else {
                 leader.move(MoverType.SELF, movement);
             }
@@ -1159,6 +1261,16 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     private Direction carrierSupportDirection(Entity carrier, AABB carrierBox) {
         if (this.isCurrentSupport(carrier)) return this.supportDirection;
+        if (carrier instanceof AbstractPlasticEntity) {
+            Direction gravityDirection = this.currentPushGravityDirection();
+            return PlasticEntityPhysics.hasImmediateEntityContact(
+                this,
+                this.getBoundingBox(),
+                carrier,
+                carrierBox,
+                gravityDirection
+            ) ? gravityDirection : null;
+        }
         if (!EntityBondManager.isFollower(this)) return null;
         Direction gravityDirection = this.currentPushGravityDirection();
         return PlasticEntityPhysics.hasImmediateEntityContact(
@@ -1172,7 +1284,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             : null;
     }
 
-    private Vec3 moveWithCarrierDisplacement(Vec3 movement) {
+    private Vec3 moveWithCarrierDisplacement(Entity ignoredCollision, Vec3 movement) {
         if (movement.lengthSqr() <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
             return Vec3.ZERO;
         }
@@ -1183,7 +1295,15 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             // AnvilCraft 的碰撞事件会在 Entity.move 内读取增量位移。
             // 临时公开此位移，使其速度和命中位置保持为有限值。
             this.setDeltaMovement(movement);
-            this.move(MoverType.SELF, movement);
+            if (ignoredCollision == null) {
+                this.move(MoverType.SELF, movement);
+            } else {
+                EntityBondManager.runPreclippedComponentMovement(
+                    this,
+                    ignoredCollision,
+                    () -> this.move(MoverType.SELF, movement)
+                );
+            }
         } finally {
             this.setDeltaMovement(velocity);
             this.carrierMoveInProgress = false;
@@ -1199,6 +1319,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
                 this.clientCarrierMoveStartY = start.y;
                 this.clientCarrierMoveStartZ = start.z;
             }
+            this.clientPredictedCarrierMovement = this.clientPredictedCarrierMovement.add(actualMovement);
             // 数据包目标确认的是较早的服务端刻。将本地经过碰撞裁剪的玩家位移带到新位置，
             // 避免消费该快照时把实体拉回玩家体内；下一份服务端数据包仍为权威状态。
             if (this.clientSnapshotPending) {
@@ -1257,7 +1378,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     public final void plasticraft$applyTransferredPush(Entity pusher, Vec3 movement) {
         if (!EntityBondManager.hasBonds(this)) {
-            this.recordTransferredSidePush(pusher, this.moveWithCarrierDisplacement(movement));
+            this.recordTransferredSidePush(pusher, this.moveWithCarrierDisplacement(pusher, movement));
             return;
         }
         Vec3 moved = this.moveBondedComponentWithCarrier(pusher, movement);
@@ -1321,6 +1442,34 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     @Override
     public EntityDimensions getDimensions(Pose pose) {
         return EntityDimensions.scalable(COLLISION_SIZE, COLLISION_SIZE);
+    }
+
+    /** 子类在一格方块局部坐标中组合任意数量的碰撞盒；形状会随实体朝向旋转。 */
+    protected VoxelShape getLocalCollisionShape() {
+        return Shapes.block();
+    }
+
+    @Override
+    public final PlasticEntityCollisionBox plasticraft$getCollisionBox() {
+        VoxelShape source = Objects.requireNonNull(this.getLocalCollisionShape(), "local collision shape");
+        PlasticEntityOrientation orientation = this.getOrientation();
+        if (source != this.cachedCollisionShapeSource
+            || !orientation.equals(this.cachedCollisionShapeOrientation)) {
+            this.cachedCollisionShapeSource = source;
+            this.cachedCollisionShapeOrientation = orientation;
+            this.cachedRelativeCollisionShape = PlasticEntityCollisionShapes.rotate(source, orientation);
+            this.cachedCollisionBoxPosition = null;
+            this.cachedCollisionBox = null;
+        }
+        Vec3 position = this.position();
+        if (!position.equals(this.cachedCollisionBoxPosition)) {
+            this.cachedCollisionBoxPosition = position;
+            this.cachedCollisionBox = PlasticEntityCollisionBox.atEntityPosition(
+                this.cachedRelativeCollisionShape,
+                position
+            );
+        }
+        return Objects.requireNonNull(this.cachedCollisionBox, "collision box");
     }
 
     @Override

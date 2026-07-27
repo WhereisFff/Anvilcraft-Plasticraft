@@ -1048,7 +1048,7 @@ public final class AdhesiveBondingGameTests {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 playerPosition = helper.absoluteVec(new Vec3(4.5D, 2.0D, 3.5D));
         player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
-        double productY = 2.0D + player.getBbHeight();
+        double productY = 2.0D + player.getBbHeight() - 3.0D / 16.0D;
         HardenedResinCauldronEntity follower = createCauldron(helper, new Vec3(4.5D, productY, 3.5D));
         HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(5.49D, productY, 3.5D));
         follower.setNoGravity(true);
@@ -1060,7 +1060,7 @@ public final class AdhesiveBondingGameTests {
 
         helper.runAfterDelay(3, () -> {
             check(
-                Math.abs(follower.getBoundingBox().minY - player.getBoundingBox().maxY) < 0.03D,
+                PlasticEntityPhysics.hasImmediateEntityContact(follower, player, Direction.DOWN),
                 "bonded follower did not settle on the player's head"
             );
             double playerStart = player.getZ();
@@ -1104,7 +1104,7 @@ public final class AdhesiveBondingGameTests {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 playerPosition = helper.absoluteVec(new Vec3(4.5D, 2.0D, 3.5D));
         player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
-        double productY = 2.0D + player.getBbHeight();
+        double productY = 2.0D + player.getBbHeight() - 3.0D / 16.0D;
         HardenedResinCauldronEntity follower = createCauldron(helper, new Vec3(4.5D, productY, 3.5D));
         HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(5.49D, productY, 3.5D));
         follower.setNoGravity(true);
@@ -1144,7 +1144,11 @@ public final class AdhesiveBondingGameTests {
                 "bonded component changed spacing during the player's jump"
             );
             check(
-                !player.getBoundingBox().intersects(follower.getBoundingBox()),
+                !Shapes.joinIsNotEmpty(
+                    Shapes.create(player.getBoundingBox()),
+                    follower.plasticraft$getCollisionShape(),
+                    BooleanOp.AND
+                ),
                 "jumping player overlapped the bonded follower and was crushed"
             );
             helper.succeed();

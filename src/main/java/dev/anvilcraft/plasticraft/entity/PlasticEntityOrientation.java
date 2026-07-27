@@ -20,9 +20,9 @@ import java.util.Objects;
 public record PlasticEntityOrientation(Direction attachmentFace, int quarterTurn) {
     public static final PlasticEntityOrientation DEFAULT = new PlasticEntityOrientation(Direction.UP, 0);
 
-    public static final double COLLISION_SIZE = 0.98D;
-    public static final double COLLISION_HALF_SIZE = 0.49D;
-    public static final double ATTACHMENT_INSET = 0.01D;
+    public static final double COLLISION_SIZE = 1.0D;
+    public static final double COLLISION_HALF_SIZE = 0.5D;
+    public static final double ATTACHMENT_INSET = 0.0D;
 
     private static final int FACE_MASK = 0b111;
     private static final int TURN_SHIFT = 3;
@@ -166,11 +166,7 @@ public record PlasticEntityOrientation(Direction attachmentFace, int quarterTurn
         );
     }
 
-    /**
-     * 返回所占方块单元中 0.98 碰撞立方体的中心。
-     * 其局部底面与支撑面齐平，四个侧面各留有 0.01 的间隙，
-     * 局部顶面与方块单元远端边界留有 0.02 的间隙。
-     */
+    /** 返回所占方块单元的中心；完整一格模型与支撑面和单元边界精确对齐。 */
     public Vec3 collisionCenter(BlockPos occupiedPos) {
         Objects.requireNonNull(occupiedPos, "occupiedPos");
         return Vec3.atCenterOf(occupiedPos).add(
@@ -188,9 +184,7 @@ public record PlasticEntityOrientation(Direction attachmentFace, int quarterTurn
         return this.collisionCenter(occupiedPos).subtract(0.0D, COLLISION_HALF_SIZE, 0.0D);
     }
 
-    /**
-     * 为碰撞箱可能不同于原版落方块 0.98 立方体的实体返回底面中心位置。
-     */
+    /** 为尺寸可能不同于标准一格的实体返回底面中心位置。 */
     public Vec3 entityPosition(BlockPos occupiedPos, double width, double height) {
         Objects.requireNonNull(occupiedPos, "occupiedPos");
         if (!Double.isFinite(width) || !Double.isFinite(height) || width <= 0.0D || height <= 0.0D) {

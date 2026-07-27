@@ -29,7 +29,9 @@ import dev.dubhe.anvilcraft.recipe.anvil.wrap.SuperHeatingRecipe;
 import dev.dubhe.anvilcraft.util.AccelerateManager;
 import dev.dubhe.anvilcraft.util.GravityManager;
 import dev.dubhe.anvilcraft.util.GravityType;
+import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.HardenedResinAnvilBlock;
+import dev.anvilcraft.plasticraft.block.HardenedResinCauldronBlock;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
@@ -38,6 +40,7 @@ import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.ResinShockDropBehavior;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
 import dev.anvilcraft.plasticraft.event.ResinAnvilHammerEvents;
 import dev.anvilcraft.plasticraft.init.ModAttachments;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
@@ -72,6 +75,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.EquipmentSlotGroup;
 import net.minecraft.world.entity.MoverType;
+import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.item.FallingBlockEntity;
@@ -99,6 +103,9 @@ import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.BooleanOp;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.items.IItemHandler;
@@ -168,7 +175,7 @@ public final class PlasticAnvilGameTests {
 
     @GameTest(timeoutTicks = 30)
     @EmptyTemplate("7x7x7")
-    @TestHolder(description = "The actual item path attaches a 0.98 entity to each clicked face")
+    @TestHolder(description = "The actual item path aligns a full-block entity to each clicked face")
     static void itemPlacesOnAllSixFaces(ExtendedGameTestHelper helper) {
         BlockPos clicked = new BlockPos(3, 3, 3);
         helper.setBlock(clicked, Blocks.STONE);
@@ -202,8 +209,8 @@ public final class PlasticAnvilGameTests {
                 .findFirst()
                 .orElseThrow(() -> new GameTestAssertException("item did not create an entity on " + face));
             check(close(placed.getBoundingBox().getCenter(), expectedCenter), "collision box was offset on " + face);
-            check(Math.abs(placed.getBbWidth() - 0.98F) <= EPSILON, "entity width changed on " + face);
-            check(Math.abs(placed.getBbHeight() - 0.98F) <= EPSILON, "entity height changed on " + face);
+            check(Math.abs(placed.getBbWidth() - 1.0F) <= EPSILON, "entity width changed on " + face);
+            check(Math.abs(placed.getBbHeight() - 1.0F) <= EPSILON, "entity height changed on " + face);
             placed.discard();
         }
         helper.succeed();
@@ -1737,6 +1744,43 @@ public final class PlasticAnvilGameTests {
         });
     }
 
+    @GameTest(timeoutTicks = 80)
+    @EmptyTemplate(value = "11x8x11", floor = true)
+    @TestHolder(description = "A resin anvil enters a plastic cauldron before bouncing from its real collision shape")
+    static void resinAnvilDoesNotBounceFromPlasticCauldronBounds(ExtendedGameTestHelper helper) {
+        HardenedResinCauldronEntity pot = createPot(
+            helper,
+            new Vec3(5.5D, 2.0D, 5.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        pot.setNoGravity(true);
+        ResinAnvilEntity anvil = createResinAnvil(
+            helper,
+            new Vec3(5.5D, 5.5D, 5.5D),
+            ModBlocks.RESIN_ANVIL.asStack()
+        );
+        boolean[] enteredOpening = {false};
+        boolean[] bounced = {false};
+
+        helper.startSequence()
+            .thenExecuteFor(60, () -> {
+                if (anvil.getY() < pot.getBoundingBox().maxY - 0.2D) {
+                    enteredOpening[0] = true;
+                }
+                if (anvil.getDeltaMovement().y > 0.02D) {
+                    check(
+                        enteredOpening[0],
+                        "resin anvil bounced from the cauldron bounds before entering its opening: y="
+                            + anvil.getY() + ", velocity=" + anvil.getDeltaMovement()
+                            + ", potTop=" + pot.getBoundingBox().maxY
+                    );
+                    bounced[0] = true;
+                }
+            })
+            .thenExecute(() -> check(bounced[0], "resin anvil never bounced from the cauldron's real collision shape"))
+            .thenSucceed();
+    }
+
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "9x5x7", floor = true)
     @TestHolder(description = "A resin anvil bounces from an entity and applies a bounded outward impulse")
@@ -1938,10 +1982,13 @@ public final class PlasticAnvilGameTests {
             );
             for (int index = 0; index < forwardProducts.size(); index++) {
                 AbstractPlasticEntity product = forwardProducts.get(index);
-                double z = index == 0 ? 2.5D : 6.5D;
                 GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-                Vec3 playerPosition = helper.absoluteVec(new Vec3(3.71D, 2.0D, z));
-                player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+                AABB bounds = product.plasticraft$getCollisionBox().bounds();
+                player.moveTo(
+                    bounds.minX - player.getBbWidth() * 0.5D,
+                    bounds.minY,
+                    bounds.getCenter().z
+                );
                 double startX = product.getX();
                 player.move(MoverType.SELF, new Vec3(0.12D, 0.0D, 0.0D));
                 player.move(MoverType.SELF, new Vec3(0.12D, 0.0D, 0.0D));
@@ -1957,8 +2004,12 @@ public final class PlasticAnvilGameTests {
                 PlasticEntityOrientation.DEFAULT
             );
             GameTestPlayer opposingPlayer = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-            Vec3 opposingPosition = helper.absoluteVec(new Vec3(11.29D, 2.0D, 10.5D));
-            opposingPlayer.moveTo(opposingPosition.x, opposingPosition.y, opposingPosition.z);
+            AABB potBounds = pot.plasticraft$getCollisionBox().bounds();
+            opposingPlayer.moveTo(
+                potBounds.maxX + opposingPlayer.getBbWidth() * 0.5D,
+                potBounds.minY,
+                potBounds.getCenter().z
+            );
             double potStartX = pot.getX();
             opposingPlayer.move(MoverType.SELF, new Vec3(-0.12D, 0.0D, 0.0D));
             opposingPlayer.move(MoverType.SELF, new Vec3(-0.12D, 0.0D, 0.0D));
@@ -2156,8 +2207,12 @@ public final class PlasticAnvilGameTests {
             ModBlocks.RESIN_ANVIL.asStack()
         );
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.71D, 2.0D, 3.5D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        AABB bounds = anvil.plasticraft$getCollisionBox().bounds();
+        player.moveTo(
+            bounds.minX - player.getBbWidth() * 0.5D,
+            bounds.minY,
+            bounds.getCenter().z
+        );
         helper.runAfterDelay(3, () -> {
             double startX = anvil.getX();
             double playerStartX = player.getX();
@@ -3051,7 +3106,13 @@ public final class PlasticAnvilGameTests {
         );
 
         helper.runAfterDelay(40, () -> {
-            check(pot.getInput().getStackInSlot(0).isEmpty(), "rising pot did not process its input against the anvil");
+            check(
+                pot.getInput().getStackInSlot(0).isEmpty(),
+                "rising pot did not process its input against the anvil: pot=" + pot.position()
+                    + ", potDelta=" + pot.getDeltaMovement()
+                    + ", anvil=" + anvil.position()
+                    + ", gravity=" + GravityManager.getNetGravityVectorForFallingBlock(pot)
+            );
             int diamonds = countItem(pot.getOutput(), Items.DIAMOND);
             int emeralds = countItem(pot.getOutput(), Items.EMERALD);
             int looseDiamonds = helper.getLevel().getEntitiesOfClass(
@@ -3153,6 +3214,107 @@ public final class PlasticAnvilGameTests {
     }
 
     @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("5x5x5")
+    @TestHolder(description = "A plastic pot entity uses the same hollow collision shape as its block state")
+    static void plasticPotUsesHollowCompositeCollision(ExtendedGameTestHelper helper) {
+        HardenedResinCauldronEntity pot = createPot(
+            helper,
+            new Vec3(2.5D, 1.0D, 2.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        pot.setNoGravity(true);
+        AABB bounds = pot.getBoundingBox();
+        VoxelShape expected = HardenedResinCauldronBlock.COLLISION_SHAPE.move(
+            bounds.minX,
+            bounds.minY,
+            bounds.minZ
+        );
+        check(
+            !Shapes.joinIsNotEmpty(pot.plasticraft$getCollisionShape(), expected, BooleanOp.NOT_SAME),
+            "pot entity collision did not exactly match its block collision"
+        );
+
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        Vec3 center = bounds.getCenter();
+        double standingY = bounds.minY + 0.25D;
+        player.moveTo(center.x, bounds.maxY + 0.1D, center.z);
+        player.move(MoverType.SELF, new Vec3(0.0D, -1.0D, 0.0D));
+        check(Math.abs(player.getY() - standingY) < EPSILON, "player did not enter the pot and land on its floor");
+        check(helper.getLevel().noCollision(player), "player could not stand inside the pot entity");
+
+        player.moveTo(bounds.minX, standingY, center.z);
+        check(!helper.getLevel().noCollision(player), "pot entity wall no longer had collision");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("7x5x5")
+    @TestHolder(description = "Resin and hardened resin anvil entities use the royal anvil collision shape")
+    static void plasticAnvilsUseRoyalAnvilCompositeCollision(ExtendedGameTestHelper helper) {
+        ResinAnvilEntity resinAnvil = createResinAnvil(
+            helper,
+            new Vec3(2.5D, 1.0D, 2.5D),
+            ModBlocks.RESIN_ANVIL.asStack()
+        );
+        HardenedResinAnvilEntity hardenedAnvil = createAnvil(helper, new Vec3(4.5D, 1.0D, 2.5D));
+        resinAnvil.setNoGravity(true);
+        hardenedAnvil.setNoGravity(true);
+
+        assertRoyalAnvilCollisionShape(resinAnvil, "resin anvil");
+        assertRoyalAnvilCollisionShape(hardenedAnvil, "hardened resin anvil");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("5x6x5")
+    @TestHolder(description = "A plastic pot moves around an obstacle extending into its hollow opening")
+    static void plasticPotOwnMovementUsesCompositeCollision(ExtendedGameTestHelper helper) {
+        helper.setBlock(2, 2, 2, Blocks.END_ROD);
+        HardenedResinCauldronEntity pot = createPot(
+            helper,
+            new Vec3(2.5D, 1.0D, 2.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        pot.setNoGravity(true);
+        double startY = pot.getY();
+
+        pot.move(MoverType.SELF, new Vec3(0.0D, 0.5D, 0.0D));
+
+        check(Math.abs(pot.getY() - startY - 0.5D) < EPSILON, "pot outer AABB blocked movement through its opening");
+        check(
+            !helper.getLevel().noBlockCollision(pot, pot.getBoundingBox()),
+            "test obstacle did not intersect the legacy outer AABB"
+        );
+        for (AABB component : pot.plasticraft$getCollisionBox().components()) {
+            check(helper.getLevel().noBlockCollision(pot, component), "pot component overlapped the opening obstacle");
+        }
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 60)
+    @EmptyTemplate("5x8x5")
+    @TestHolder(description = "A falling plastic anvil lands with its composite collision bottom flush to the block")
+    static void plasticAnvilLandsWithoutCollisionGap(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(2, 1, 2);
+        helper.setBlock(support, Blocks.STONE);
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 6.0D, 2.5D));
+        double supportTop = helper.absolutePos(support).getY() + 1.0D;
+
+        helper.runAfterDelay(40, () -> {
+            double collisionBottom = anvil.plasticraft$getCollisionBox().bounds().minY;
+            check(
+                Math.abs(collisionBottom - supportTop) <= PlasticEntityPhysics.FACE_EPSILON,
+                "anvil collision bottom did not meet its support: bottom=" + collisionBottom + ", top=" + supportTop
+            );
+            check(
+                Math.abs(anvil.getY() - supportTop) <= PlasticEntityPhysics.FACE_EPSILON,
+                "anvil model origin retained a landing gap"
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
     @EmptyTemplate("7x7x7")
     @TestHolder(description = "A DamageAnvil recipe outcome consumes the plastic anvil after pot processing")
     static void plasticPotAppliesDamageAnvilOutcome(ExtendedGameTestHelper helper) {
@@ -3206,7 +3368,11 @@ public final class PlasticAnvilGameTests {
         Zombie support = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 3.0D, 3.5D));
         support.setNoGravity(true);
         Vec3 supportPosition = support.position();
-        Vec3 anvilPosition = new Vec3(supportPosition.x, supportPosition.y - 0.98D, supportPosition.z);
+        Vec3 anvilPosition = new Vec3(
+            supportPosition.x,
+            supportPosition.y - AbstractPlasticEntity.COLLISION_SIZE,
+            supportPosition.z
+        );
         HardenedResinAnvilEntity anvil = createAnvilAbsolute(helper, anvilPosition);
 
         helper.runAfterDelay(2, () -> support.setPos(support.getX() + 0.3D, support.getY(), support.getZ()));
@@ -3349,7 +3515,7 @@ public final class PlasticAnvilGameTests {
 
     @GameTest(timeoutTicks = 30)
     @EmptyTemplate(value = "7x7x7", floor = true)
-    @TestHolder(description = "Carrier step-up cannot move through an anvil blocked by a low ceiling")
+    @TestHolder(description = "Carrier step-up cannot overlap a ceiling-blocked anvil collision shape")
     static void blockedStepUpDoesNotOverlapAnvil(ExtendedGameTestHelper helper) {
         helper.setBlock(3, 1, 3, Blocks.STONE_SLAB);
         helper.setBlock(3, 1, 5, Blocks.STONE_SLAB);
@@ -3378,13 +3544,17 @@ public final class PlasticAnvilGameTests {
             support.move(MoverType.SELF, new Vec3(0.7D, 0.0D, 0.0D));
             check(
                 support.getY() < supportStart.y + 0.1D,
-                "ceiling-blocked carrier was allowed to step through its anvil: start=" + supportStart
+                "ceiling-blocked carrier was allowed to step through its anvil shape: start=" + supportStart
                     + ", end=" + support.position() + ", supportBox=" + support.getBoundingBox()
                     + ", anvilBox=" + anvil.getBoundingBox()
             );
             check(
-                !support.getBoundingBox().intersects(anvil.getBoundingBox()),
-                "step-up carrier overlapped its ceiling-blocked anvil: carrier=" + support.getBoundingBox()
+                !Shapes.joinIsNotEmpty(
+                    Shapes.create(support.getBoundingBox()),
+                    anvil.plasticraft$getCollisionShape(),
+                    BooleanOp.AND
+                ),
+                "step-up carrier overlapped the ceiling-blocked anvil shape: carrier=" + support.getBoundingBox()
                     + ", anvil=" + anvil.getBoundingBox()
             );
             helper.succeed();
@@ -3524,8 +3694,12 @@ public final class PlasticAnvilGameTests {
         }
         HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(5.5D, 2.0D, 5.5D));
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.71D, 2.0D, 5.5D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        AABB bounds = anvil.plasticraft$getCollisionBox().bounds();
+        player.moveTo(
+            bounds.minX - player.getBbWidth() * 0.5D,
+            bounds.minY,
+            bounds.getCenter().z
+        );
 
         helper.runAfterDelay(3, () -> {
             double anvilStart = anvil.getX();
@@ -3548,6 +3722,244 @@ public final class PlasticAnvilGameTests {
                 Math.abs((anvil.getX() - anvilStart) - (player.getX() - playerStart)) < 0.03D,
                 "plastic body did not stay against the moving player"
             );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate("15x6x15")
+    @TestHolder(description = "Composite plastic bodies remain level during continuous pushes from every horizontal axis")
+    static void compositePlasticBodiesPushSmoothly(ExtendedGameTestHelper helper) {
+        for (int x = 2; x <= 12; x++) {
+            for (int z = 2; z <= 12; z++) {
+                helper.setBlock(x, 1, z, Blocks.STONE);
+            }
+        }
+        HardenedResinAnvilEntity xAnvil = createAnvil(helper, new Vec3(4.5D, 2.0D, 4.5D));
+        HardenedResinAnvilEntity zAnvil = createAnvil(helper, new Vec3(10.5D, 2.0D, 4.5D));
+        HardenedResinCauldronEntity pot = createPot(
+            helper,
+            new Vec3(4.5D, 2.0D, 10.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        GameTestPlayer xPlayer = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        GameTestPlayer zPlayer = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        GameTestPlayer potPlayer = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        double[] standingY = new double[3];
+        double[] starts = new double[3];
+
+        helper.startSequence()
+            .thenIdle(3)
+            .thenExecute(() -> {
+                AABB xBounds = xAnvil.plasticraft$getCollisionBox().bounds();
+                AABB zBounds = zAnvil.plasticraft$getCollisionBox().bounds();
+                AABB potBounds = pot.plasticraft$getCollisionBox().bounds();
+                xPlayer.moveTo(
+                    xBounds.minX - xPlayer.getBbWidth() * 0.5D,
+                    xBounds.minY,
+                    xBounds.getCenter().z
+                );
+                zPlayer.moveTo(
+                    zBounds.getCenter().x,
+                    zBounds.minY,
+                    zBounds.minZ - zPlayer.getBbWidth() * 0.5D
+                );
+                potPlayer.moveTo(
+                    potBounds.minX - potPlayer.getBbWidth() * 0.5D,
+                    potBounds.minY,
+                    potBounds.getCenter().z
+                );
+                standingY[0] = xPlayer.getY();
+                standingY[1] = zPlayer.getY();
+                standingY[2] = potPlayer.getY();
+                starts[0] = xAnvil.getX();
+                starts[1] = zAnvil.getZ();
+                starts[2] = pot.getX();
+            })
+            .thenExecuteFor(8, () -> {
+                assertLevelPush(xPlayer, xAnvil, new Vec3(0.12D, -0.08D, 0.0D), standingY[0], Direction.Axis.X);
+                assertLevelPush(zPlayer, zAnvil, new Vec3(0.0D, -0.08D, 0.12D), standingY[1], Direction.Axis.Z);
+                assertLevelPush(potPlayer, pot, new Vec3(0.12D, -0.08D, 0.0D), standingY[2], Direction.Axis.X);
+            })
+            .thenExecute(() -> {
+                check(xAnvil.getX() - starts[0] > 0.6D, "x-axis anvil push did not remain continuous");
+                check(zAnvil.getZ() - starts[1] > 0.6D, "z-axis anvil push did not remain continuous");
+                check(pot.getX() - starts[2] > 0.6D, "cauldron push did not remain continuous");
+            })
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "9x6x9", floor = true)
+    @TestHolder(description = "A player standing in a plastic pot cannot push it from the inner wall")
+    static void playerInsidePlasticPotCannotPushIt(ExtendedGameTestHelper helper) {
+        HardenedResinCauldronEntity pot = createPot(
+            helper,
+            new Vec3(4.5D, 1.0D, 4.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+
+        helper.runAfterDelay(3, () -> {
+            AABB bounds = pot.plasticraft$getCollisionBox().bounds();
+            Vec3 center = bounds.getCenter();
+            player.moveTo(center.x, bounds.minY + 0.25D, center.z);
+            player.setOnGround(true);
+            Vec3 potStart = pot.position();
+            double playerStartY = player.getY();
+            for (int i = 0; i < 4; i++) {
+                player.move(MoverType.SELF, new Vec3(0.12D, -0.08D, 0.0D));
+            }
+            check(
+                pot.position().distanceToSqr(potStart) < EPSILON * EPSILON,
+                "pushing the inner cauldron wall moved the cauldron: " + pot.position().subtract(potStart)
+            );
+            check(Math.abs(player.getY() - playerStartY) < EPSILON, "the inner cauldron wall stepped the player upward");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate("9x6x9")
+    @TestHolder(description = "A player walking from a plastic pot rim onto its top does not push the pot")
+    static void playerWalksAcrossPlasticPotRimWithoutPushingIt(ExtendedGameTestHelper helper) {
+        for (int x = 2; x <= 6; x++) {
+            for (int z = 2; z <= 6; z++) {
+                helper.setBlock(x, 1, z, Blocks.STONE);
+            }
+        }
+        HardenedResinCauldronEntity pot = createPot(
+            helper,
+            new Vec3(4.5D, 2.0D, 4.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+
+        helper.runAfterDelay(3, () -> {
+            AABB bounds = pot.plasticraft$getCollisionBox().bounds();
+            double rimOverlap = 0.08D;
+            player.moveTo(
+                bounds.maxX + player.getBbWidth() * 0.5D - rimOverlap,
+                bounds.maxY,
+                bounds.getCenter().z
+            );
+            player.setOnGround(true);
+            check(
+                PlasticEntityPhysics.hasSurfaceSupport(
+                    player,
+                    player.getBoundingBox(),
+                    pot,
+                    Direction.DOWN
+                ),
+                "the test player was not standing on the cauldron rim"
+            );
+            Vec3 potStart = pot.position();
+            Vec3 playerStart = player.position();
+
+            player.move(MoverType.SELF, new Vec3(-0.18D, -0.08D, 0.0D));
+
+            check(
+                pot.position().distanceToSqr(potStart) < EPSILON * EPSILON,
+                "walking across the cauldron rim pushed the cauldron: " + pot.position().subtract(potStart)
+            );
+            check(player.getX() < playerStart.x - 0.12D, "the cauldron rim blocked movement across its top surface");
+            check(Math.abs(player.getY() - playerStart.y) < EPSILON, "the cauldron rim changed the player's height");
+            check(player.getPose() == Pose.STANDING, "the cauldron rim changed the player pose to " + player.getPose());
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 70)
+    @EmptyTemplate("11x8x11")
+    @TestHolder(description = "A pushed plastic pot carries the plastic anvil resting in its opening")
+    static void pushedPlasticPotCarriesContainedAnvil(ExtendedGameTestHelper helper) {
+        for (int x = 2; x <= 8; x++) {
+            for (int z = 3; z <= 7; z++) {
+                helper.setBlock(x, 1, z, Blocks.STONE);
+            }
+        }
+        HardenedResinCauldronEntity pot = createPot(
+            helper,
+            new Vec3(5.5D, 2.0D, 5.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(5.5D, 5.5D, 5.5D));
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+
+        helper.runAfterDelay(35, () -> {
+            check(
+                PlasticEntityPhysics.hasImmediateEntityContact(anvil, pot, Direction.DOWN),
+                "the fallen anvil was not resting on the cauldron collision shape"
+            );
+            AABB potBounds = pot.plasticraft$getCollisionBox().bounds();
+            player.moveTo(
+                potBounds.minX - player.getBbWidth() * 0.5D,
+                potBounds.minY,
+                potBounds.getCenter().z
+            );
+            player.setOnGround(true);
+            Vec3 potStart = pot.position();
+            Vec3 anvilStart = anvil.position();
+            for (int i = 0; i < 4; i++) {
+                player.move(MoverType.SELF, new Vec3(0.12D, -0.08D, 0.0D));
+            }
+            double potMovement = pot.getX() - potStart.x;
+            double anvilMovement = anvil.getX() - anvilStart.x;
+            check(potMovement > 0.4D, "the contained anvil blocked the cauldron push: " + potMovement);
+            check(anvilMovement > 0.4D, "the contained anvil did not move with the cauldron: " + anvilMovement);
+            check(
+                Math.abs(potMovement - anvilMovement) < 0.02D,
+                "the cauldron and contained anvil separated while pushed: pot=" + potMovement
+                    + ", anvil=" + anvilMovement
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 70)
+    @EmptyTemplate("11x8x11")
+    @TestHolder(description = "A plastic pot carries its contained anvil when pushed toward the anvil's short face")
+    static void pushedPlasticPotCarriesContainedAnvilAlongShortAxis(ExtendedGameTestHelper helper) {
+        for (int x = 3; x <= 7; x++) {
+            for (int z = 2; z <= 8; z++) {
+                helper.setBlock(x, 1, z, Blocks.STONE);
+            }
+        }
+        HardenedResinCauldronEntity pot = createPot(
+            helper,
+            new Vec3(5.5D, 2.0D, 5.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(5.5D, 5.5D, 5.5D));
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+
+        helper.runAfterDelay(35, () -> {
+            check(
+                PlasticEntityPhysics.hasImmediateEntityContact(anvil, pot, Direction.DOWN),
+                "the fallen anvil was not resting on the cauldron collision shape"
+            );
+            AABB potBounds = pot.plasticraft$getCollisionBox().bounds();
+            player.moveTo(
+                potBounds.getCenter().x,
+                potBounds.minY,
+                potBounds.minZ - player.getBbWidth() * 0.5D
+            );
+            player.setOnGround(true);
+            Vec3 potStart = pot.position();
+            Vec3 anvilStart = anvil.position();
+            for (int i = 0; i < 4; i++) {
+                player.move(MoverType.SELF, new Vec3(0.0D, -0.08D, 0.12D));
+            }
+            double potMovement = pot.getZ() - potStart.z;
+            double anvilMovement = anvil.getZ() - anvilStart.z;
+            check(potMovement > 0.4D, "the short-axis anvil contact blocked the cauldron push: " + potMovement);
+            check(anvilMovement > 0.4D, "the contained anvil did not follow the short-axis push: " + anvilMovement);
+            check(
+                Math.abs(potMovement - anvilMovement) < 0.02D,
+                "the cauldron and contained anvil separated on the short axis: pot=" + potMovement
+                    + ", anvil=" + anvilMovement
+            );
+            check(player.getPose() == Pose.STANDING, "short-axis pot push changed the player pose to " + player.getPose());
             helper.succeed();
         });
     }
@@ -3599,8 +4011,12 @@ public final class PlasticAnvilGameTests {
         }
         HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(5.5D, 2.0D, 5.5D));
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.71D, 2.0D, 5.5D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        AABB bounds = anvil.plasticraft$getCollisionBox().bounds();
+        player.moveTo(
+            bounds.minX - player.getBbWidth() * 0.5D,
+            bounds.minY,
+            bounds.getCenter().z
+        );
 
         helper.runAfterDelay(3, () -> {
             Vec3 anvilStart = anvil.position();
@@ -3626,10 +4042,24 @@ public final class PlasticAnvilGameTests {
             }
         }
         HardenedResinAnvilEntity rear = createAnvil(helper, new Vec3(5.5D, 2.0D, 5.5D));
-        HardenedResinCauldronEntity front = createPot(helper, new Vec3(6.49D, 2.0D, 5.5D), PlasticEntityOrientation.DEFAULT);
+        HardenedResinCauldronEntity front = createPot(
+            helper,
+            new Vec3(6.5D, 2.0D, 5.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        AABB rearBounds = rear.plasticraft$getCollisionBox().bounds();
+        AABB frontBounds = front.plasticraft$getCollisionBox().bounds();
+        front.setPos(
+            rearBounds.maxX + frontBounds.getXsize() * 0.5D,
+            front.getY(),
+            rear.getZ()
+        );
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.71D, 2.0D, 5.5D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        player.moveTo(
+            rearBounds.minX - player.getBbWidth() * 0.5D,
+            rearBounds.minY,
+            rearBounds.getCenter().z
+        );
 
         helper.runAfterDelay(3, () -> {
             double playerStart = player.getX();
@@ -3880,7 +4310,11 @@ public final class PlasticAnvilGameTests {
 
         Zombie support = helper.spawnWithNoFreeWill(
             EntityType.ZOMBIE,
-            new Vec3(3.5D - 0.49D - EntityType.ZOMBIE.getWidth() * 0.5D, 1.0D, 3.5D)
+            new Vec3(
+                3.5D - AbstractPlasticEntity.COLLISION_SIZE * 0.5D - EntityType.ZOMBIE.getWidth() * 0.5D,
+                1.0D,
+                3.5D
+            )
         );
         support.setNoGravity(true);
         HardenedResinAnvilEntity anvil = createAnvilAbsolute(helper, anvilPosition);
@@ -4097,6 +4531,48 @@ public final class PlasticAnvilGameTests {
         return pot;
     }
 
+    private static void assertRoyalAnvilCollisionShape(AbstractPlasticEntity anvil, String name) {
+        AABB bounds = anvil.getBoundingBox();
+        VoxelShape actual = anvil.plasticraft$getCollisionShape();
+        VoxelShape expected = PlasticEntityCollisionShapes.rotate(
+            AbstractPlasticEntityBlock.ROYAL_ANVIL_COLLISION_SHAPE,
+            anvil.getOrientation()
+        ).move(anvil.getX() - 0.5D, anvil.getY(), anvil.getZ() - 0.5D);
+        check(
+            !Shapes.joinIsNotEmpty(actual, expected, BooleanOp.NOT_SAME),
+            name + " collision did not exactly match the royal anvil"
+        );
+        check(anvil.plasticraft$getCollisionBox().components().size() >= 3, name + " collision lost its component boxes");
+        check(Math.abs(actual.bounds().getZsize() - 1.0D) <= EPSILON, name + " collision was scaled below one block");
+
+        VoxelShape recessedCorner = Shapes.create(new AABB(
+            bounds.minX,
+            bounds.minY,
+            bounds.minZ,
+            bounds.minX + bounds.getXsize() * 0.1D,
+            bounds.minY + bounds.getYsize() * 0.2D,
+            bounds.minZ + bounds.getZsize() * 0.1D
+        ));
+        check(
+            !Shapes.joinIsNotEmpty(actual, recessedCorner, BooleanOp.AND),
+            name + " filled a recessed royal-anvil corner"
+        );
+
+        Vec3 center = bounds.getCenter();
+        VoxelShape baseCenter = Shapes.create(new AABB(
+            center.x - bounds.getXsize() * 0.05D,
+            bounds.minY,
+            center.z - bounds.getZsize() * 0.05D,
+            center.x + bounds.getXsize() * 0.05D,
+            bounds.minY + bounds.getYsize() * 0.2D,
+            center.z + bounds.getZsize() * 0.05D
+        ));
+        check(
+            Shapes.joinIsNotEmpty(actual, baseCenter, BooleanOp.AND),
+            name + " lost the solid royal-anvil base"
+        );
+    }
+
     private static Item findRoyalPreferredItem(ServerLevel level, TagKey<Item> candidates) {
         for (var holder : BuiltInRegistries.ITEM.getTagOrEmpty(candidates)) {
             Item item = holder.value();
@@ -4123,7 +4599,7 @@ public final class PlasticAnvilGameTests {
             Vec3 playerStart = player.position();
             Vec3 productStart = product.position();
             check(
-                Math.abs(product.getBoundingBox().minY - player.getBoundingBox().maxY) < 0.03D,
+                PlasticEntityPhysics.hasImmediateEntityContact(product, player, Direction.DOWN),
                 productName + " did not settle on the player's head"
             );
 
@@ -4291,6 +4767,30 @@ public final class PlasticAnvilGameTests {
             if (!handler.getStackInSlot(slot).isEmpty()) return false;
         }
         return true;
+    }
+
+    private static void assertLevelPush(
+        GameTestPlayer player,
+        AbstractPlasticEntity target,
+        Vec3 requestedMovement,
+        double standingY,
+        Direction.Axis movementAxis
+    ) {
+        double playerStart = player.position().get(movementAxis);
+        double targetStart = target.position().get(movementAxis);
+        player.setOnGround(true);
+        player.move(MoverType.SELF, requestedMovement);
+        double playerMovement = player.position().get(movementAxis) - playerStart;
+        double targetMovement = target.position().get(movementAxis) - targetStart;
+        check(playerMovement > 0.1D, movementAxis + " push stalled the player: " + playerMovement);
+        check(targetMovement > 0.1D, movementAxis + " push stalled the plastic body: " + targetMovement);
+        check(
+            Math.abs(playerMovement - targetMovement) < 0.02D,
+            movementAxis + " push separated the player and plastic body: player=" + playerMovement
+                + ", target=" + targetMovement
+        );
+        check(Math.abs(player.getY() - standingY) < 1.0E-4D, movementAxis + " push stepped the player upward");
+        check(player.getPose() == Pose.STANDING, movementAxis + " push changed the player pose to " + player.getPose());
     }
 
     private static void check(boolean condition, String message) {

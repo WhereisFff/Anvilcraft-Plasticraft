@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.entity;
 
+import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
@@ -18,6 +19,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.common.NeoForge;
 
 import java.util.Objects;
@@ -53,6 +55,11 @@ public class HardenedResinAnvilEntity extends AbstractPlasticEntity implements I
         PlasticEntityOrientation orientation
     ) {
         super(entityType, level, position, displayState, dropStack, orientation);
+    }
+
+    @Override
+    protected VoxelShape getLocalCollisionShape() {
+        return AbstractPlasticEntityBlock.ROYAL_ANVIL_COLLISION_SHAPE;
     }
 
     @Override

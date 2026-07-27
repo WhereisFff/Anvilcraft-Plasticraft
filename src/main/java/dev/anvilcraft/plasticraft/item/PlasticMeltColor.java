@@ -31,7 +31,11 @@ public final class PlasticMeltColor {
             ? stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag()
             : new CompoundTag();
         write(tag, color);
-        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+        if (tag.isEmpty()) {
+            stack.remove(DataComponents.CUSTOM_DATA);
+        } else {
+            stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+        }
     }
 
     public static int tint(ItemStack stack) {

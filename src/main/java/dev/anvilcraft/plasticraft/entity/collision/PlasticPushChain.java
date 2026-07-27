@@ -1,11 +1,12 @@
 package dev.anvilcraft.plasticraft.entity.collision;
 
+import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
+import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 import javax.annotation.Nullable;
@@ -88,7 +89,9 @@ public final class PlasticPushChain {
                 List<Entity> blockingCandidates = new ArrayList<>();
                 List<Entity> candidates = member.level().getEntities(
                     member,
-                    member.getBoundingBox().expandTowards(movement).inflate(PlasticEntityPhysics.FACE_EPSILON),
+                    ShapedCollisionEntity.collisionBounds(member)
+                        .expandTowards(movement)
+                        .inflate(PlasticEntityPhysics.FACE_EPSILON),
                     other -> !other.isRemoved()
                         && !other.isSpectator()
                         && other != pusher
@@ -107,6 +110,11 @@ public final class PlasticPushChain {
                     MovementUnit targetUnit = MovementUnit.resolve(plasticTarget);
                     if (targetUnit.key().equals(unit.key())) continue;
                     AbstractPlasticEntity plasticPusher = unit.representative();
+                    if (unit.members().size() == 1
+                        && member == plasticPusher
+                        && isTangentialSupportMovement(plasticTarget, plasticPusher, movement)) {
+                        continue;
+                    }
                     Vec3 nextMovement = PlasticEntityPhysics.sidePushMovement(
                         plasticTarget,
                         plasticPusher,
@@ -132,9 +140,9 @@ public final class PlasticPushChain {
 
                 List<VoxelShape> blockingShapes = blockingCandidates.stream()
                     .filter(other -> movementContaining(movements, other) == null)
-                    .map(other -> Shapes.create(other.getBoundingBox()))
+                    .map(ShapedCollisionEntity::collisionShape)
                     .toList();
-                Vec3 allowed = Entity.collideBoundingBox(
+                Vec3 allowed = ShapedCollisionEntity.collideBoundingBox(
                     member,
                     movement,
                     member.getBoundingBox(),
@@ -150,6 +158,17 @@ public final class PlasticPushChain {
         } finally {
             visiting.remove(unit.key());
         }
+    }
+
+    private static boolean isTangentialSupportMovement(
+        AbstractPlasticEntity carried,
+        AbstractPlasticEntity carrier,
+        Vec3 movement
+    ) {
+        Direction gravityDirection = carried.plasticraft$currentPushGravityDirection();
+        Vec3 gravityNormal = Vec3.atLowerCornerOf(gravityDirection.getNormal());
+        return Math.abs(movement.dot(gravityNormal)) <= PlasticEntityPhysics.FACE_EPSILON
+            && PlasticEntityPhysics.hasImmediateEntityContact(carried, carrier, gravityDirection);
     }
 
     @Nullable

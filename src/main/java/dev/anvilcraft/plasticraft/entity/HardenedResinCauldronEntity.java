@@ -1,10 +1,12 @@
 package dev.anvilcraft.plasticraft.entity;
 
 import dev.anvilcraft.lib.v2.recipe.cache.IItemHandlerCache;
+import dev.anvilcraft.plasticraft.block.HardenedResinCauldronBlock;
 import dev.anvilcraft.plasticraft.block.IgnitedFluidEffects;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
@@ -62,6 +64,9 @@ import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
+import net.minecraft.world.phys.shapes.BooleanOp;
+import net.minecraft.world.phys.shapes.Shapes;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidUtil;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
@@ -71,8 +76,10 @@ import net.neoforged.neoforge.items.ItemStackHandler;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 import javax.annotation.Nullable;
@@ -85,11 +92,24 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     private static final double FLUID_INNER_INSET = 0.126D;
     private static final double FLUID_BOTTOM = 0.251D;
     private static final double FLUID_HEIGHT = 0.685D;
+    private static final double SWEPT_RECIPE_CONTACT_RELEASE_DISTANCE = 1.0D;
     private static final Vec3 UNIVERSAL_MELT_STICK_SPEED = new Vec3(0.25D, 0.05D, 0.25D);
     private static final EntityDimensions EJECTED_ITEM_DIMENSIONS = EntityDimensions.scalable(0.25F, 0.25F);
     private static final double ITEM_EJECTION_GAP = 0.02D;
     private static final double ITEM_EJECTION_INSET = 0.15D;
     private static final int ITEM_EJECTION_SEARCH_STEPS = 4;
+    private static final VoxelShape RESIN_ENTRY_OPENING = Block.box(
+        2.0D, 0.0D, 2.0D, 14.0D, 16.0D, 14.0D
+    );
+    private static final VoxelShape RESIN_ENTRY_COLLISION = Shapes.join(
+        HardenedResinCauldronBlock.COLLISION_SHAPE,
+        Block.box(0.0D, 0.0D, 0.0D, 16.0D, 4.0D, 16.0D),
+        BooleanOp.AND
+    ).optimize();
+    private static final Map<PlasticEntityOrientation, VoxelShape> RESIN_ENTRY_OPENINGS =
+        new ConcurrentHashMap<>();
+    private static final Map<PlasticEntityOrientation, VoxelShape> RESIN_ENTRY_COLLISIONS =
+        new ConcurrentHashMap<>();
 
     private static final EntityDataAccessor<Integer> FLUID_ID = SynchedEntityData.defineId(
         HardenedResinCauldronEntity.class,
@@ -186,6 +206,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     };
     private BlockPos fluidNetworkPos;
     private AbstractPlasticEntity activeRecipeContact;
+    private boolean activeRecipeContactFromSweep;
     private boolean processingOutput;
     private boolean autoOutputting;
     private boolean restoringData;
@@ -325,6 +346,81 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     @Override
     public EntityDimensions getDimensions(Pose pose) {
         return EntityDimensions.scalable(COLLISION_SIZE, COLLISION_SIZE);
+    }
+
+    @Override
+    protected VoxelShape getLocalCollisionShape() {
+        return HardenedResinCauldronBlock.COLLISION_SHAPE;
+    }
+
+    @Override
+    public VoxelShape plasticraft$getCollisionShape(Entity mover, Vec3 requestedMovement) {
+        if (!(mover instanceof ResinAnvilEntity anvil)
+            || !this.allowsResinAnvilToCrossOpening(anvil, requestedMovement)) {
+            return this.plasticraft$getCollisionShape();
+        }
+        VoxelShape relative = RESIN_ENTRY_COLLISIONS.computeIfAbsent(
+            this.getOrientation(),
+            orientation -> PlasticEntityCollisionShapes.rotate(RESIN_ENTRY_COLLISION, orientation)
+        );
+        return relative.move(this.getX() - 0.5D, this.getY(), this.getZ() - 0.5D);
+    }
+
+    /** 仅在树脂砧底座从开口外跨入时移除锅壁；锅底始终保留。 */
+    private boolean allowsResinAnvilToCrossOpening(ResinAnvilEntity anvil, Vec3 requestedMovement) {
+        Direction anvilBottom = anvil.getOrientation().attachmentFace().getOpposite();
+        Direction openingDirection = this.getOrientation().attachmentFace();
+        if (anvilBottom != openingDirection.getOpposite()) return false;
+        Vec3 bottomNormal = Vec3.atLowerCornerOf(anvilBottom.getNormal());
+        if (requestedMovement.dot(bottomNormal) <= PlasticEntityPhysics.FACE_EPSILON) return false;
+
+        AABB anvilBounds = anvil.plasticraft$getCollisionBox().bounds();
+        AABB potBounds = this.plasticraft$getCollisionBox().bounds();
+        double openingGap = (
+            faceCoordinate(potBounds, openingDirection) - faceCoordinate(anvilBounds, anvilBottom)
+        ) * anvilBottom.getAxisDirection().getStep();
+        if (openingGap < -PlasticEntityPhysics.FACE_EPSILON) return false;
+
+        VoxelShape relativeOpening = RESIN_ENTRY_OPENINGS.computeIfAbsent(
+            this.getOrientation(),
+            orientation -> PlasticEntityCollisionShapes.rotate(RESIN_ENTRY_OPENING, orientation)
+        );
+        AABB opening = relativeOpening
+            .move(this.getX() - 0.5D, this.getY(), this.getZ() - 0.5D)
+            .bounds();
+        boolean foundLeadingComponent = false;
+        for (AABB component : anvil.plasticraft$getCollisionBox().components()) {
+            if (Math.abs(faceCoordinate(component, anvilBottom) - faceCoordinate(anvilBounds, anvilBottom))
+                > PlasticEntityPhysics.FACE_EPSILON) {
+                continue;
+            }
+            foundLeadingComponent = true;
+            if (!containsTangentially(opening, component, anvilBottom.getAxis())) return false;
+        }
+        return foundLeadingComponent;
+    }
+
+    private static boolean containsTangentially(AABB outer, AABB inner, Direction.Axis normalAxis) {
+        double epsilon = PlasticEntityPhysics.FACE_EPSILON;
+        return switch (normalAxis) {
+            case X -> inner.minY >= outer.minY - epsilon && inner.maxY <= outer.maxY + epsilon
+                && inner.minZ >= outer.minZ - epsilon && inner.maxZ <= outer.maxZ + epsilon;
+            case Y -> inner.minX >= outer.minX - epsilon && inner.maxX <= outer.maxX + epsilon
+                && inner.minZ >= outer.minZ - epsilon && inner.maxZ <= outer.maxZ + epsilon;
+            case Z -> inner.minX >= outer.minX - epsilon && inner.maxX <= outer.maxX + epsilon
+                && inner.minY >= outer.minY - epsilon && inner.maxY <= outer.maxY + epsilon;
+        };
+    }
+
+    private static double faceCoordinate(AABB box, Direction direction) {
+        return switch (direction) {
+            case DOWN -> box.minY;
+            case UP -> box.maxY;
+            case WEST -> box.minX;
+            case EAST -> box.maxX;
+            case NORTH -> box.minZ;
+            case SOUTH -> box.maxZ;
+        };
     }
 
     @Override
@@ -855,25 +951,137 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         CauldronImpactRecipeProcessor.process(level, anvil, this);
     }
 
+    /** 检测真实凹形碰撞不会裁剪的砧底穿越锅口事件。 */
+    void processSweptAnvilImpact(
+        AbstractPlasticEntity anvil,
+        Vec3 anvilStartPosition,
+        Vec3 anvilEndPosition,
+        Vec3 potStartPosition,
+        Vec3 potEndPosition
+    ) {
+        Direction anvilBottom = anvil.getOrientation().attachmentFace().getOpposite();
+        Direction potTop = this.getOrientation().attachmentFace();
+        if (anvilBottom != potTop.getOpposite()) return;
+
+        double startGap = recipeSurfaceGap(
+            anvil,
+            anvilStartPosition,
+            this,
+            potStartPosition,
+            anvilBottom
+        );
+        double endGap = recipeSurfaceGap(
+            anvil,
+            anvilEndPosition,
+            this,
+            potEndPosition,
+            anvilBottom
+        );
+        double closingDistance = startGap - endGap;
+        if (closingDistance <= 0.04D
+            || startGap < -PlasticEntityPhysics.FACE_EPSILON
+            || endGap > PlasticEntityPhysics.FACE_EPSILON) {
+            return;
+        }
+
+        AABB anvilSweep = sweptEntityBox(anvil, anvilStartPosition, anvilEndPosition);
+        AABB potSweep = sweptEntityBox(this, potStartPosition, potEndPosition);
+        if (tangentialOverlap(anvilSweep, potSweep, anvilBottom) <= PlasticEntityPhysics.FACE_EPSILON) return;
+
+        Vec3 anvilMovement = anvilEndPosition.subtract(anvilStartPosition);
+        Vec3 potMovement = potEndPosition.subtract(potStartPosition);
+        Vec3 normal = Vec3.atLowerCornerOf(anvilBottom.getNormal());
+        Direction impactDirection = anvilMovement.dot(normal) >= -potMovement.dot(normal)
+            ? anvilBottom
+            : potTop;
+        boolean began = this.tryBeginAnvilImpact(anvil, impactDirection, true);
+        if (!(this.level() instanceof ServerLevel level) || !began) {
+            return;
+        }
+        double contactFraction = Mth.clamp(startGap / closingDistance, 0.0D, 1.0D);
+        Vec3 contactPotPosition = potStartPosition.lerp(potEndPosition, contactFraction);
+        CauldronImpactRecipeProcessor.processAtPotPosition(level, anvil, this, contactPotPosition);
+    }
+
+    private static double recipeSurfaceGap(
+        AbstractPlasticEntity anvil,
+        Vec3 anvilPosition,
+        HardenedResinCauldronEntity pot,
+        Vec3 potPosition,
+        Direction anvilBottom
+    ) {
+        Vec3 normal = Vec3.atLowerCornerOf(anvilBottom.getNormal());
+        Vec3 anvilCenter = anvilPosition.add(0.0D, anvil.getBbHeight() * 0.5D, 0.0D);
+        Vec3 potCenter = potPosition.add(0.0D, pot.getBbHeight() * 0.5D, 0.0D);
+        Vec3 anvilSurface = anvilCenter.add(normal.scale(0.5D));
+        Vec3 potSurface = potCenter.subtract(normal.scale(0.5D));
+        return potSurface.subtract(anvilSurface).dot(normal);
+    }
+
+    private static AABB sweptEntityBox(Entity entity, Vec3 startPosition, Vec3 endPosition) {
+        Vec3 currentPosition = entity.position();
+        AABB start = entity.getBoundingBox().move(startPosition.subtract(currentPosition));
+        AABB end = entity.getBoundingBox().move(endPosition.subtract(currentPosition));
+        return start.minmax(end);
+    }
+
+    private static double tangentialOverlap(AABB first, AABB second, Direction direction) {
+        double x = Math.max(0.0D, Math.min(first.maxX, second.maxX) - Math.max(first.minX, second.minX));
+        double y = Math.max(0.0D, Math.min(first.maxY, second.maxY) - Math.max(first.minY, second.minY));
+        double z = Math.max(0.0D, Math.min(first.maxZ, second.maxZ) - Math.max(first.minZ, second.minZ));
+        return switch (direction.getAxis()) {
+            case X -> y * z;
+            case Y -> x * z;
+            case Z -> x * y;
+        };
+    }
+
     private boolean tryBeginAnvilImpact(AbstractPlasticEntity anvil, Direction impactDirection) {
+        return this.tryBeginAnvilImpact(anvil, impactDirection, false);
+    }
+
+    private boolean tryBeginAnvilImpact(
+        AbstractPlasticEntity anvil,
+        Direction impactDirection,
+        boolean sweptImpact
+    ) {
         if (!canProcessAnvilImpact(anvil, this, impactDirection)) return false;
-        if (!this.hasRecipeSurfaceContact(anvil)) return true;
+        if (!sweptImpact && !this.hasRecipeSurfaceContact(anvil)) return true;
         if (this.activeRecipeContact == anvil) return false;
         this.activeRecipeContact = anvil;
+        this.activeRecipeContactFromSweep = sweptImpact;
         return true;
     }
 
     private void refreshRecipeContact() {
-        if (this.activeRecipeContact != null && !this.hasRecipeSurfaceContact(this.activeRecipeContact)) {
-            this.activeRecipeContact = null;
+        if (this.activeRecipeContact == null) return;
+        if (this.hasRecipeSurfaceContact(this.activeRecipeContact)) return;
+        if (this.activeRecipeContactFromSweep && this.isInsideSweptRecipeContactEnvelope(this.activeRecipeContact)) {
+            return;
         }
+        this.activeRecipeContact = null;
+        this.activeRecipeContactFromSweep = false;
     }
 
     private boolean hasRecipeSurfaceContact(AbstractPlasticEntity anvil) {
         Direction potTop = this.getOrientation().attachmentFace();
         Direction anvilBottom = anvil.getOrientation().attachmentFace().getOpposite();
         return anvilBottom == potTop.getOpposite()
-            && PlasticEntityPhysics.isSupportCandidate(this, anvil, potTop);
+            && (PlasticEntityPhysics.isSupportCandidate(this, anvil, potTop)
+                || this.getBoundingBox()
+                    .inflate(PlasticEntityPhysics.SUPPORT_PROBE_DEPTH)
+                    .intersects(anvil.getBoundingBox()));
+    }
+
+    /** 扫掠穿越后保留一格迟滞，避免磁力振荡在同一次相遇中重复加工输出。 */
+    private boolean isInsideSweptRecipeContactEnvelope(AbstractPlasticEntity anvil) {
+        Direction potTop = this.getOrientation().attachmentFace();
+        Direction anvilBottom = anvil.getOrientation().attachmentFace().getOpposite();
+        return anvil.isAlive()
+            && anvilBottom == potTop.getOpposite()
+            && this.getBoundingBox()
+                .inflate(SWEPT_RECIPE_CONTACT_RELEASE_DISTANCE)
+                .intersects(anvil.getBoundingBox());
     }
 
     /** 配方接触面为砧的底面与釜局部向上的开口面。 */

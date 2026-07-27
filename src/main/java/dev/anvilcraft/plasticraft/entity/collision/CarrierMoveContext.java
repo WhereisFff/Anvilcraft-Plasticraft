@@ -56,12 +56,18 @@ public final class CarrierMoveContext {
         if (this.targets == null) {
             this.targets = new ArrayList<>(1);
         }
-        for (CarrierMovableEntity existing : this.targets) {
+        for (int index = 0; index < this.targets.size(); index++) {
+            CarrierMovableEntity existing = this.targets.get(index);
             if (existing == target) return;
             if (existing instanceof Entity existingEntity
-                && target instanceof Entity targetEntity
-                && EntityBondManager.areInSameComponent(existingEntity, targetEntity)) {
-                return;
+                && target instanceof Entity targetEntity) {
+                if (EntityBondManager.areInSameComponent(existingEntity, targetEntity)) return;
+                // 玩家可能同时扫到锅和露出锅口的铁砧。只保留下层承载者，
+                // 否则铁砧会先随锅移动、随后又被当作独立目标推动一次。
+                if (target.plasticraft$canMoveWithCarrier(existingEntity, Vec3.ZERO)) return;
+                if (existing.plasticraft$canMoveWithCarrier(targetEntity, Vec3.ZERO)) {
+                    this.targets.remove(index--);
+                }
             }
         }
         this.targets.add(target);

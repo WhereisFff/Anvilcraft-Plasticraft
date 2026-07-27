@@ -3,19 +3,23 @@ package dev.anvilcraft.plasticraft.mixin;
 import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
 import dev.anvilcraft.plasticraft.api.entity.ElasticCollisionEntity;
+import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContext;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContextHolder;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.MoverType;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.gen.Invoker;
 
@@ -47,6 +51,35 @@ abstract class EntityCarrierCollisionMixin implements CarrierMoveContextHolder {
     @Override
     public CarrierMoveContext plasticraft$getCarrierMoveContext() {
         return this.plasticraft$carrierMoveContext;
+    }
+
+    /** 仅替换原版首次 AABB 裁剪；后续承载限制仍由 RETURN 注入统一处理。 */
+    @Redirect(
+        method = "collide",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/world/entity/Entity;collideBoundingBox("
+                + "Lnet/minecraft/world/entity/Entity;"
+                + "Lnet/minecraft/world/phys/Vec3;"
+                + "Lnet/minecraft/world/phys/AABB;"
+                + "Lnet/minecraft/world/level/Level;"
+                + "Ljava/util/List;)Lnet/minecraft/world/phys/Vec3;"
+        )
+    )
+    private Vec3 plasticraft$collideWithPlasticShape(
+        Entity entity,
+        Vec3 movement,
+        AABB collisionBox,
+        Level level,
+        List<VoxelShape> entityCollisions
+    ) {
+        return ShapedCollisionEntity.collideBoundingBox(
+            entity,
+            movement,
+            collisionBox,
+            level,
+            entityCollisions
+        );
     }
 
     @ModifyReturnValue(method = "collide", at = @At("RETURN"))

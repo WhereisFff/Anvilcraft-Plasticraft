@@ -1,6 +1,8 @@
 package dev.anvilcraft.plasticraft.entity;
 
 import dev.anvilcraft.plasticraft.api.entity.ElasticCollisionEntity;
+import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
+import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.ResinShockDropBehavior;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
@@ -26,6 +28,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.List;
 import java.util.Objects;
@@ -43,6 +46,7 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
     private static final double MIN_BOUNCE_SPEED = 0.06D;
     private static final double MAX_ENTITY_IMPULSE = 0.45D;
     private static final int CONTACT_COOLDOWN_TICKS = 3;
+    private static final double CONTACT_EPSILON = PlasticEntityPhysics.FACE_EPSILON * 8.0D;
     private static final ShockAnvilBehavior SHOCK_ANVIL_BEHAVIOR = new ShockAnvilBehavior(
         BlockMiningEffect.NORMAL,
         ResinShockDropBehavior.INSTANCE
@@ -74,6 +78,11 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
     @Override
     protected String materialKey() {
         return "resin";
+    }
+
+    @Override
+    protected VoxelShape getLocalCollisionShape() {
+        return AbstractPlasticEntityBlock.ROYAL_ANVIL_COLLISION_SHAPE;
     }
 
     @Override
@@ -121,14 +130,18 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
         Vec3 velocityAfterMove,
         Direction gravityDirection
     ) {
-        int blockOrEntityContacts = PlasticEntityPhysics.clippedDirectionMask(
+        int clippedContacts = PlasticEntityPhysics.clippedDirectionMask(
             requestedMovement,
             actualMovement,
             PlasticEntityPhysics.FACE_EPSILON
         );
-        AABB currentBox = this.getBoundingBox();
-        AABB startBox = currentBox.move(actualMovement.scale(-1.0D));
-        AABB sweptBox = startBox.expandTowards(requestedMovement).inflate(0.08D);
+        if (clippedContacts == 0) return velocityAfterMove;
+        AABB startBounds = this.plasticraft$getCollisionBox().bounds().move(actualMovement.scale(-1.0D));
+        AABB sweptBox = startBounds.expandTowards(requestedMovement).inflate(CONTACT_EPSILON);
+        List<AABB> startComponents = ShapedCollisionEntity.collisionComponents(
+            this,
+            this.getBoundingBox().move(actualMovement.scale(-1.0D))
+        );
         List<Entity> collisionEntities = this.level().getEntities(
             this,
             sweptBox,
@@ -145,21 +158,20 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
 
         int entityContacts = 0;
         for (Direction direction : Direction.values()) {
+            int directionMask = PlasticEntityPhysics.directionMask(direction);
+            if ((clippedContacts & directionMask) == 0) continue;
             for (Entity other : collisionEntities) {
-                if (contactsFace(startBox, other.getBoundingBox(), requestedMovement, direction)) {
-                    entityContacts |= PlasticEntityPhysics.directionMask(direction);
+                if (contactsFace(startComponents, other, actualMovement, direction)) {
+                    entityContacts |= directionMask;
                     break;
                 }
             }
         }
 
-        int contacts = blockOrEntityContacts | entityContacts;
-        if (contacts == 0) return velocityAfterMove;
-
         Vec3 result = velocityAfterMove;
         for (Direction direction : Direction.values()) {
             int directionMask = PlasticEntityPhysics.directionMask(direction);
-            if ((contacts & directionMask) == 0) continue;
+            if ((clippedContacts & directionMask) == 0) continue;
             Vec3 normal = Vec3.atLowerCornerOf(direction.getNormal());
             double incidentSpeed = requestedMovement.dot(normal);
             if (incidentSpeed <= PlasticEntityPhysics.FACE_EPSILON) continue;
@@ -179,7 +191,13 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
             if (bounceSpeed > 0.0D) {
                 this.contactCooldownUntil[direction.get3DDataValue()] = this.tickCount + CONTACT_COOLDOWN_TICKS;
                 if (hasEntityContact) {
-                    this.applyBoundedEntityImpulse(collisionEntities, startBox, requestedMovement, direction, incidentSpeed);
+                    this.applyBoundedEntityImpulse(
+                        collisionEntities,
+                        startComponents,
+                        actualMovement,
+                        direction,
+                        incidentSpeed
+                    );
                 }
             }
         }
@@ -213,12 +231,13 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
         if (clippedContacts == 0) return;
 
         Vec3 colliderVelocity = collider.getDeltaMovement();
+        List<AABB> colliderStartComponents = ShapedCollisionEntity.collisionComponents(collider, colliderStartBox);
         boolean bouncedCollider = false;
         Direction gravityDirection = this.plasticraft$currentPushGravityDirection();
         double restitution = collider instanceof LivingEntity ? 1.0D : BLOCK_RESTITUTION;
         for (Direction direction : Direction.values()) {
             if ((clippedContacts & PlasticEntityPhysics.directionMask(direction)) == 0
-                || !contactsFace(colliderStartBox, this.getBoundingBox(), requestedMovement, direction)) {
+                || !contactsFace(colliderStartComponents, this, actualMovement, direction)) {
                 continue;
             }
             Vec3 normal = Vec3.atLowerCornerOf(direction.getNormal());
@@ -245,14 +264,14 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
 
     private void applyBoundedEntityImpulse(
         List<Entity> candidates,
-        AABB startBox,
-        Vec3 requestedMovement,
+        List<AABB> startComponents,
+        Vec3 actualMovement,
         Direction direction,
         double incidentSpeed
     ) {
         Vec3 normal = Vec3.atLowerCornerOf(direction.getNormal());
         for (Entity other : candidates) {
-            if (!contactsFace(startBox, other.getBoundingBox(), requestedMovement, direction)) continue;
+            if (!contactsFace(startComponents, other, actualMovement, direction)) continue;
             double relativeSpeed = incidentSpeed - other.getDeltaMovement().dot(normal);
             if (relativeSpeed <= PlasticEntityPhysics.FACE_EPSILON) continue;
             double impulse = Math.min(MAX_ENTITY_IMPULSE, relativeSpeed * 0.45D);
@@ -263,15 +282,22 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
     }
 
     private static boolean contactsFace(
-        AABB movingBox,
-        AABB otherBox,
-        Vec3 requestedMovement,
+        List<AABB> movingComponents,
+        Entity other,
+        Vec3 actualMovement,
         Direction direction
     ) {
-        double directedMovement = requestedMovement.get(direction.getAxis())
-            * direction.getAxisDirection().getStep();
-        if (directedMovement <= PlasticEntityPhysics.FACE_EPSILON) return false;
+        List<AABB> otherComponents = ShapedCollisionEntity.collisionComponents(other, other.getBoundingBox());
+        for (AABB movingComponent : movingComponents) {
+            AABB movedComponent = movingComponent.move(actualMovement);
+            for (AABB otherComponent : otherComponents) {
+                if (contactsFace(movedComponent, otherComponent, direction)) return true;
+            }
+        }
+        return false;
+    }
 
+    private static boolean contactsFace(AABB movingBox, AABB otherBox, Direction direction) {
         double gap = switch (direction) {
             case DOWN -> movingBox.minY - otherBox.maxY;
             case UP -> otherBox.minY - movingBox.maxY;
@@ -280,12 +306,11 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
             case NORTH -> movingBox.minZ - otherBox.maxZ;
             case SOUTH -> otherBox.minZ - movingBox.maxZ;
         };
-        if (gap < -0.08D || gap > directedMovement + 0.08D) return false;
+        if (Math.abs(gap) > CONTACT_EPSILON) return false;
 
-        AABB swept = movingBox.expandTowards(requestedMovement).inflate(PlasticEntityPhysics.FACE_EPSILON);
-        double xOverlap = overlap(swept.minX, swept.maxX, otherBox.minX, otherBox.maxX);
-        double yOverlap = overlap(swept.minY, swept.maxY, otherBox.minY, otherBox.maxY);
-        double zOverlap = overlap(swept.minZ, swept.maxZ, otherBox.minZ, otherBox.maxZ);
+        double xOverlap = overlap(movingBox.minX, movingBox.maxX, otherBox.minX, otherBox.maxX);
+        double yOverlap = overlap(movingBox.minY, movingBox.maxY, otherBox.minY, otherBox.maxY);
+        double zOverlap = overlap(movingBox.minZ, movingBox.maxZ, otherBox.minZ, otherBox.maxZ);
         return switch (direction.getAxis()) {
             case X -> yOverlap * zOverlap > PlasticEntityPhysics.FACE_EPSILON;
             case Y -> xOverlap * zOverlap > PlasticEntityPhysics.FACE_EPSILON;

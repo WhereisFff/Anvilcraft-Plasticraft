@@ -1,8 +1,8 @@
 {
+	"format_version": "1.21.11",
 	"credit": "Made with Blockbench",
 	"textures": {
 		"0": "anvilcraft:block/resin_block",
-		"1": "anvilcraftplasticraft:block/resin_magnetic_cude",
 		"particle": "anvilcraft:block/resin_block"
 	},
 	"elements": [
@@ -60,19 +60,6 @@
 				"west": {"uv": [2, 12, 14, 16], "rotation": 180, "texture": "#0"},
 				"up": {"uv": [2, 2, 14, 14], "rotation": 180, "texture": "#0", "cullface": "down"},
 				"down": {"uv": [2, 2, 14, 14], "rotation": 180, "texture": "#0"}
-			}
-		},
-		{
-			"from": [5.5, 4.5, 5.5],
-			"to": [10.5, 9.5, 10.5],
-			"rotation": {"angle": 0, "axis": "y", "origin": [8, 7, 8]},
-			"faces": {
-				"north": {"uv": [4, 4, 12, 12], "texture": "#1"},
-				"east": {"uv": [4, 4, 12, 12], "texture": "#1"},
-				"south": {"uv": [4, 4, 12, 12], "texture": "#1"},
-				"west": {"uv": [4, 4, 12, 12], "texture": "#1"},
-				"up": {"uv": [4, 4, 12, 12], "texture": "#1"},
-				"down": {"uv": [4, 4, 12, 12], "texture": "#1"}
 			}
 		},
 		{
@@ -140,7 +127,7 @@
 			"scale": [0.4, 0.4, 0.4]
 		},
 		"firstperson_lefthand": {
-			"rotation": [0, 225, 0],
+			"rotation": [0, -135, 0],
 			"scale": [0.4, 0.4, 0.4]
 		},
 		"ground": {
@@ -148,7 +135,7 @@
 			"scale": [0.25, 0.25, 0.25]
 		},
 		"gui": {
-			"rotation": [30, 225, 0],
+			"rotation": [30, -135, 0],
 			"scale": [0.625, 0.625, 0.625]
 		},
 		"fixed": {

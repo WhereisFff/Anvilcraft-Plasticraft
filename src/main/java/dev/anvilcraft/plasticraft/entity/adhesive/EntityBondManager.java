@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.entity.adhesive;
 
+import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.init.ModAttachments;
 import net.minecraft.core.Direction;
 import net.minecraft.core.BlockPos;
@@ -7,7 +8,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 import javax.annotation.Nullable;
@@ -192,9 +192,9 @@ public final class EntityBondManager {
             if (member == leader || allowed.lengthSqr() <= 1.0E-12D) continue;
             List<VoxelShape> entityCollisions = leader.level().getEntityCollisions(
                 member,
-                member.getBoundingBox().expandTowards(allowed)
+                ShapedCollisionEntity.collisionBounds(member).expandTowards(allowed)
             );
-            allowed = Entity.collideBoundingBox(
+            allowed = ShapedCollisionEntity.collideBoundingBox(
                 member,
                 allowed,
                 member.getBoundingBox(),
@@ -237,15 +237,15 @@ public final class EntityBondManager {
             if (allowed.lengthSqr() <= 1.0E-12D) break;
             List<VoxelShape> entityCollisions = member.level().getEntities(
                 componentMember,
-                componentMember.getBoundingBox().expandTowards(allowed),
+                ShapedCollisionEntity.collisionBounds(componentMember).expandTowards(allowed),
                 other -> !other.isRemoved()
                     && !other.isSpectator()
                     && other != ignored
                     && !other.isPassengerOfSameVehicle(ignored)
                     && !areInSameComponent(componentMember, other)
                     && componentMember.canCollideWith(other)
-            ).stream().map(other -> Shapes.create(other.getBoundingBox())).toList();
-            allowed = Entity.collideBoundingBox(
+            ).stream().map(ShapedCollisionEntity::collisionShape).toList();
+            allowed = ShapedCollisionEntity.collideBoundingBox(
                 componentMember,
                 allowed,
                 componentMember.getBoundingBox(),

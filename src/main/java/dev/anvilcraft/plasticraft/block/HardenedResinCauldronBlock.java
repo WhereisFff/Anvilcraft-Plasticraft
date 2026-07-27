@@ -15,6 +15,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -29,6 +30,11 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /** 六向硬化树脂釜使用的兼容展示方块。 */
 public class HardenedResinCauldronBlock extends AbstractPlasticEntityBlock<HardenedResinCauldronEntity> {
+    public static final VoxelShape COLLISION_SHAPE = Blocks.CAULDRON.defaultBlockState().getCollisionShape(
+        EmptyBlockGetter.INSTANCE,
+        BlockPos.ZERO,
+        CollisionContext.empty()
+    );
     /**
      * The orientation is stored in the bonded block entity rather than the
      * block state, so all state shapes must be evaluated against the live level.
@@ -85,7 +91,7 @@ public class HardenedResinCauldronBlock extends AbstractPlasticEntityBlock<Harde
         CollisionContext context
     ) {
         if (state.getValue(BONDED)) return this.bondedCauldronShape(level, pos);
-        return Blocks.CAULDRON.defaultBlockState().getShape(level, pos, context);
+        return COLLISION_SHAPE;
     }
 
     @Override
@@ -96,7 +102,7 @@ public class HardenedResinCauldronBlock extends AbstractPlasticEntityBlock<Harde
         CollisionContext context
     ) {
         if (state.getValue(BONDED)) return this.bondedCauldronShape(level, pos);
-        return Blocks.CAULDRON.defaultBlockState().getCollisionShape(level, pos, context);
+        return COLLISION_SHAPE;
     }
 
     @Override
@@ -135,7 +141,7 @@ public class HardenedResinCauldronBlock extends AbstractPlasticEntityBlock<Harde
             ? bonded.getPlasticOrientation()
             : PlasticEntityOrientation.DEFAULT;
         return BONDED_CAULDRON_SHAPES.computeIfAbsent(orientation, ignored -> AbstractPlasticEntityBlock.rotateShape(
-            Blocks.CAULDRON.defaultBlockState().getCollisionShape(level, pos, CollisionContext.empty()),
+            COLLISION_SHAPE,
             orientation
         ));
     }

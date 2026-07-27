@@ -4,6 +4,11 @@ This repository currently maintains the Minecraft 1.21.1 implementation only.
 AnvilCraft is expected to move toward 26.1 later, so new code should keep the
 porting boundary explicit.
 
+## Save-data compatibility
+
+- Do not consider compatibility with existing saves or add migration code
+  unless the user explicitly requests old-save migration.
+
 ## Hard prohibition: Minecraft client and UI automation
 
 - Never invoke the `computer-use` skill or any desktop/UI automation tool for
@@ -27,9 +32,9 @@ porting boundary explicit.
 - Prefer vanilla and AnvilCraft public APIs (`Entity`, `AnvilMenu`,
   `ItemCombinerScreen`, `ResourceLocation`, `Holder`, and data builders) over
   mappings-specific helpers or reflection.
-- Keep registry names, resource paths, serialized NBT keys, recipe IDs, and
-  network payload order stable. Add compatibility readers before changing a
-  saved-data format.
+- Keep registry names, resource paths, recipe IDs, and network payload order
+  stable. Only preserve serialized NBT keys or add compatibility readers when
+  the user explicitly requests old-save migration.
 - Use `ResourceLocation.fromNamespaceAndPath` and registry holders instead of
   constructing registry objects from strings at runtime.
 - Keep entity behavior independent from renderer code. The plastic anvil entity

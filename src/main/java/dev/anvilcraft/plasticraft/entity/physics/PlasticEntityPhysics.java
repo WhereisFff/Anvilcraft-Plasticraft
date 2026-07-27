@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.entity.physics;
 
 import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
+import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.dubhe.anvilcraft.util.GravityManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -12,6 +13,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,6 +26,7 @@ public final class PlasticEntityPhysics {
     public static final double MAX_CARRY_DISTANCE = 0.75D;
 
     private static final double MIN_EFFECTIVE_GRAVITY_SQR = 1.0E-10D;
+    private static final double CORNER_CONTACT_PROGRESS_EPSILON = 0.025D;
 
     private PlasticEntityPhysics() {
     }
@@ -89,9 +92,13 @@ public final class PlasticEntityPhysics {
     /** 在局部加速位移改变碰撞箱之前，使用记录的碰撞箱查找支撑。 */
     @Nullable
     public static Entity findSupport(FallingBlockEntity entity, AABB entityBox, Direction gravityDirection) {
+        List<AABB> entityComponents = collisionComponents(entity, entityBox);
+        AABB queryBox = entity instanceof ShapedCollisionEntity
+            ? enclosingBounds(entityComponents).inflate(SUPPORT_PROBE_DEPTH + FACE_EPSILON)
+            : supportProbe(entityBox, gravityDirection);
         List<Entity> candidates = entity.level().getEntities(
             entity,
-            supportProbe(entityBox, gravityDirection),
+            queryBox,
             other -> isSupportCandidate(entity, entityBox, other, gravityDirection)
         );
         Entity best = null;
@@ -99,8 +106,14 @@ public final class PlasticEntityPhysics {
         double bestOverlap = Double.NEGATIVE_INFINITY;
         int bestId = Integer.MAX_VALUE;
         for (Entity candidate : candidates) {
-            double distance = Math.abs(supportGap(entityBox, candidate.getBoundingBox(), gravityDirection));
-            double overlap = tangentialOverlap(entityBox, candidate.getBoundingBox(), gravityDirection);
+            SupportContact contact = supportContact(
+                entityComponents,
+                collisionComponents(candidate, candidate.getBoundingBox()),
+                gravityDirection
+            );
+            if (contact == null) continue;
+            double distance = Math.abs(contact.gap());
+            double overlap = contact.overlap();
             int id = candidate.getId();
             if (distance < bestDistance - FACE_EPSILON
                 || Math.abs(distance - bestDistance) <= FACE_EPSILON && overlap > bestOverlap + FACE_EPSILON
@@ -149,10 +162,11 @@ public final class PlasticEntityPhysics {
             || !entity.canCollideWith(candidate)) {
             return false;
         }
-        double gap = supportGap(entityBox, candidateBox, gravityDirection);
-        return gap >= -SUPPORT_PROBE_DEPTH - FACE_EPSILON
-            && gap <= SUPPORT_PROBE_DEPTH + FACE_EPSILON
-            && tangentialOverlap(entityBox, candidateBox, gravityDirection) > FACE_EPSILON;
+        return supportContact(
+            collisionComponents(entity, entityBox),
+            collisionComponents(candidate, candidateBox),
+            gravityDirection
+        ) != null;
     }
 
     /** 仅当两个支撑面实际接触时返回 true，而非仅位于捕获探针内。 */
@@ -188,9 +202,18 @@ public final class PlasticEntityPhysics {
         AABB supportBox,
         Direction gravityDirection
     ) {
-        return isSupportCandidate(entity, entityBox, support, supportBox, gravityDirection)
-            && Math.abs(supportGap(entityBox, supportBox, gravityDirection))
-                <= FACE_EPSILON * 4.0D;
+        if (support.isRemoved()
+            || support.isSpectator()
+            || entity.isPassengerOfSameVehicle(support)
+            || !entity.canCollideWith(support)) {
+            return false;
+        }
+        SupportContact contact = supportContact(
+            collisionComponents(entity, entityBox),
+            collisionComponents(support, supportBox),
+            gravityDirection
+        );
+        return contact != null && Math.abs(contact.gap()) <= FACE_EPSILON * 4.0D;
     }
 
     /** 返回支撑碰撞箱上指回被承载实体一面的中心。 */
@@ -347,10 +370,16 @@ public final class PlasticEntityPhysics {
             return null;
         }
 
-        AABB targetBox = target.getBoundingBox();
+        // 玩家脚底仍由同一塑料实体承托时，切向输入属于表面行走，不是从侧面推动该实体。
+        if (pusher instanceof Player
+            && hasSurfaceSupport(pusher, pusherBox, target, Direction.DOWN)) {
+            return null;
+        }
+
+        List<AABB> targetComponents = collisionComponents(target, target.getBoundingBox());
+        AABB targetBounds = enclosingBounds(targetComponents);
         AABB sweptPusherBox = pusherBox.expandTowards(requestedMovement).inflate(FACE_EPSILON);
-        double bestProgress = Double.POSITIVE_INFINITY;
-        Vec3 transferred = Vec3.ZERO;
+        List<SidePushContact> contacts = new ArrayList<>(2);
         for (Direction direction : Direction.values()) {
             if (direction.getAxis() == gravityDirection.getAxis()) continue;
             int sign = direction.getAxisDirection().getStep();
@@ -358,22 +387,71 @@ public final class PlasticEntityPhysics {
             if (movement <= FACE_EPSILON) continue;
 
             double pusherFace = faceCoordinate(pusherBox, direction);
-            double targetFace = faceCoordinate(targetBox, direction.getOpposite());
-            double gap = (targetFace - pusherFace) * sign;
-            if (gap < -SIDE_PUSH_QUERY_DISTANCE - FACE_EPSILON || gap > movement + FACE_EPSILON) continue;
-            if (tangentialOverlap(sweptPusherBox, targetBox, direction) <= FACE_EPSILON) continue;
+            double pusherCenter = pusherBox.getCenter().get(direction.getAxis());
+            double exteriorFace = faceCoordinate(targetBounds, direction.getOpposite());
+            if ((exteriorFace - pusherCenter) * sign <= FACE_EPSILON) continue;
 
-            double contactDistance = Math.max(0.0D, gap);
-            double progress = contactDistance / movement;
-            double transfer = Math.max(0.0D, movement - contactDistance) * sign;
-            if (progress < bestProgress - FACE_EPSILON) {
-                bestProgress = progress;
-                transferred = axisVector(direction.getAxis(), transfer);
-            } else if (Math.abs(progress - bestProgress) <= FACE_EPSILON) {
-                transferred = transferred.add(axisVector(direction.getAxis(), transfer));
+            double directionProgress = Double.POSITIVE_INFINITY;
+            double directionTransfer = 0.0D;
+            for (AABB targetComponent : targetComponents) {
+                double targetFace = faceCoordinate(targetComponent, direction.getOpposite());
+                double gap = (targetFace - pusherFace) * sign;
+                if (gap < -SIDE_PUSH_QUERY_DISTANCE - FACE_EPSILON || gap > movement + FACE_EPSILON) continue;
+                if (tangentialOverlap(sweptPusherBox, targetComponent, direction) <= FACE_EPSILON) continue;
+
+                double contactDistance = Math.max(0.0D, gap);
+                double progress = contactDistance / movement;
+                if (progress < directionProgress - FACE_EPSILON) {
+                    directionProgress = progress;
+                    directionTransfer = Math.max(0.0D, movement - contactDistance) * sign;
+                }
+            }
+            if (directionProgress != Double.POSITIVE_INFINITY) {
+                contacts.add(new SidePushContact(
+                    directionProgress,
+                    axisVector(direction.getAxis(), directionTransfer)
+                ));
             }
         }
-        return bestProgress == Double.POSITIVE_INFINITY ? null : transferred;
+        if (contacts.isEmpty()) return null;
+
+        double bestProgress = contacts.stream()
+            .mapToDouble(SidePushContact::progress)
+            .min()
+            .orElseThrow();
+        Vec3 transferred = Vec3.ZERO;
+        for (SidePushContact contact : contacts) {
+            // 两个面在同一刻附近接触时视作稳定的斜角推动，避免每刻在 X/Z 之间来回切换。
+            if (contact.progress() <= bestProgress + CORNER_CONTACT_PROGRESS_EPSILON) {
+                transferred = transferred.add(contact.movement());
+            }
+        }
+        return transferred;
+    }
+
+    /**
+     * 返回实体的重力面是否仍落在指定支撑实体的任一真实碰撞子盒上。
+     * 支撑探针允许边缘处的微小嵌入或分离，避免脚底只剩少量接触时退化成侧推。
+     */
+    public static boolean hasSurfaceSupport(
+        Entity supported,
+        AABB supportedBox,
+        Entity support,
+        Direction gravityDirection
+    ) {
+        if (supported.isRemoved()
+            || support.isRemoved()
+            || supported.isSpectator()
+            || support.isSpectator()
+            || supported.isPassengerOfSameVehicle(support)
+            || !supported.canCollideWith(support)) {
+            return false;
+        }
+        return supportContact(
+            collisionComponents(supported, supportedBox),
+            collisionComponents(support, support.getBoundingBox()),
+            gravityDirection
+        ) != null;
     }
 
     /** 移除当前重力支撑面的法向分量。 */
@@ -444,19 +522,25 @@ public final class PlasticEntityPhysics {
         AABB box,
         Direction gravityDirection
     ) {
-        return entity.level()
-            .getBlockCollisions(entity, supportProbe(box, gravityDirection))
-            .iterator()
-            .hasNext();
+        for (AABB component : collisionComponents(entity, box)) {
+            if (entity.level().getBlockCollisions(entity, supportProbe(component, gravityDirection))
+                .iterator()
+                .hasNext()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 仅当本刻移动前重力面已接触方块时返回 true。 */
     public static boolean hasImmediateBlockContact(FallingBlockEntity entity, Direction gravityDirection) {
-        AABB entityBox = entity.getBoundingBox();
-        for (net.minecraft.world.phys.shapes.VoxelShape shape : entity.level()
-            .getBlockCollisions(entity, supportProbe(entityBox, gravityDirection))) {
-            if (Math.abs(supportGap(entityBox, shape.bounds(), gravityDirection)) <= FACE_EPSILON * 4.0D) {
-                return true;
+        for (AABB component : collisionComponents(entity, entity.getBoundingBox())) {
+            for (net.minecraft.world.phys.shapes.VoxelShape shape : entity.level()
+                .getBlockCollisions(entity, supportProbe(component, gravityDirection))) {
+                if (Math.abs(supportGap(component, shape.bounds(), gravityDirection)) <= FACE_EPSILON * 4.0D
+                    && tangentialOverlap(component, shape.bounds(), gravityDirection) > FACE_EPSILON) {
+                    return true;
+                }
             }
         }
         return false;
@@ -617,6 +701,51 @@ public final class PlasticEntityPhysics {
             case Y -> x * z;
             case Z -> x * y;
         };
+    }
+
+    private static List<AABB> collisionComponents(Entity entity, AABB referenceBox) {
+        return ShapedCollisionEntity.collisionComponents(entity, referenceBox);
+    }
+
+    private static AABB enclosingBounds(List<AABB> components) {
+        AABB bounds = components.getFirst();
+        for (int index = 1; index < components.size(); index++) {
+            bounds = bounds.minmax(components.get(index));
+        }
+        return bounds;
+    }
+
+    @Nullable
+    private static SupportContact supportContact(
+        List<AABB> entityComponents,
+        List<AABB> supportComponents,
+        Direction gravityDirection
+    ) {
+        SupportContact best = null;
+        for (AABB entityComponent : entityComponents) {
+            for (AABB supportComponent : supportComponents) {
+                double gap = supportGap(entityComponent, supportComponent, gravityDirection);
+                if (gap < -SUPPORT_PROBE_DEPTH - FACE_EPSILON
+                    || gap > SUPPORT_PROBE_DEPTH + FACE_EPSILON) {
+                    continue;
+                }
+                double overlap = tangentialOverlap(entityComponent, supportComponent, gravityDirection);
+                if (overlap <= FACE_EPSILON) continue;
+                if (best == null
+                    || Math.abs(gap) < Math.abs(best.gap()) - FACE_EPSILON
+                    || Math.abs(Math.abs(gap) - Math.abs(best.gap())) <= FACE_EPSILON
+                        && overlap > best.overlap() + FACE_EPSILON) {
+                    best = new SupportContact(gap, overlap);
+                }
+            }
+        }
+        return best;
+    }
+
+    private record SupportContact(double gap, double overlap) {
+    }
+
+    private record SidePushContact(double progress, Vec3 movement) {
     }
 
     private static double overlap(double firstMin, double firstMax, double secondMin, double secondMax) {

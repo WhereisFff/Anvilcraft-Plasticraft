@@ -1,7 +1,9 @@
 package dev.anvilcraft.plasticraft.entity.adhesive;
 
+import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionBox;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.tags.BlockTags;
@@ -255,7 +257,12 @@ public final class AdhesivePathPlanner {
                 directDistance
             );
         }
-        AABB movedBox = entity.getBoundingBox().move(targetPosition.subtract(entity.position()));
+        AABB movedBox = movedCollisionBounds(
+            entity,
+            entity.getBoundingBox(),
+            entity.position(),
+            targetPosition
+        );
         if (!supportEntity.isAlive()
             || supportEntity == entity
             || !level.getWorldBorder().isWithinBounds(movedBox)) {
@@ -493,14 +500,21 @@ public final class AdhesivePathPlanner {
         Vec3 to
     ) {
         AABB fromBox = movedBox(originalBox, originalPosition, from);
+        PlasticEntityCollisionBox fromCollisionBox = movedPlasticCollisionBox(entity, originalPosition, from);
         Vec3 movement = to.subtract(from);
-        AABB sweptBox = fromBox.expandTowards(movement);
+        AABB sweptBox = (fromCollisionBox == null ? fromBox : fromCollisionBox.bounds())
+            .expandTowards(movement);
         if (!level.getWorldBorder().isWithinBounds(sweptBox)) return Integer.MAX_VALUE;
 
         // 网格边始终是轴向一格，一次精确扫掠即可覆盖整个移动区间。
-        Vec3 allowed = Entity.collideBoundingBox(entity, movement, fromBox, level, List.of());
+        Vec3 allowed = fromCollisionBox == null
+            ? Entity.collideBoundingBox(entity, movement, fromBox, level, List.of())
+            : fromCollisionBox.collide(entity, movement, level, List.of());
         if (!sameMovement(allowed, movement)) return Integer.MAX_VALUE;
-        return isDangerousPosition(level, fromBox.move(movement))
+        AABB destinationBounds = fromCollisionBox == null
+            ? fromBox.move(movement)
+            : fromCollisionBox.move(movement).bounds();
+        return isDangerousPosition(level, destinationBounds)
             ? 1 + DANGEROUS_TERRAIN_PENALTY
             : 1;
     }
@@ -643,16 +657,60 @@ public final class AdhesivePathPlanner {
         Vec3 target
     ) {
         AABB moved = movedBox(originalBox, originalPosition, position);
-        if (!level.getWorldBorder().isWithinBounds(moved)) return false;
-        boolean collisionFree = level.noBlockCollision(entity, moved)
-            || position.distanceToSqr(target) < 1.0E-8D
-            && level.noBlockCollision(entity, moved.deflate(0.002D));
-        return collisionFree && !isDangerousPosition(level, moved);
+        PlasticEntityCollisionBox movedCollisionBox = movedPlasticCollisionBox(
+            entity,
+            originalPosition,
+            position
+        );
+        AABB collisionBounds = movedCollisionBox == null ? moved : movedCollisionBox.bounds();
+        if (!level.getWorldBorder().isWithinBounds(collisionBounds)) return false;
+        boolean collisionFree = movedCollisionBox == null
+            ? level.noBlockCollision(entity, moved)
+                || position.distanceToSqr(target) < 1.0E-8D
+                && level.noBlockCollision(entity, moved.deflate(0.002D))
+            : noBlockCollision(level, entity, movedCollisionBox, 0.0D)
+                || position.distanceToSqr(target) < 1.0E-8D
+                && noBlockCollision(level, entity, movedCollisionBox, 0.002D);
+        return collisionFree && !isDangerousPosition(level, collisionBounds);
     }
 
     private static AABB movedBox(AABB originalBox, Vec3 originalPosition, Vec3 position) {
         return originalBox.move(position.subtract(originalPosition))
             .deflate(COLLISION_EPSILON);
+    }
+
+    private static AABB movedCollisionBounds(
+        Entity entity,
+        AABB originalBox,
+        Vec3 originalPosition,
+        Vec3 position
+    ) {
+        PlasticEntityCollisionBox collisionBox = movedPlasticCollisionBox(entity, originalPosition, position);
+        return collisionBox == null ? movedBox(originalBox, originalPosition, position) : collisionBox.bounds();
+    }
+
+    @Nullable
+    private static PlasticEntityCollisionBox movedPlasticCollisionBox(
+        Entity entity,
+        Vec3 originalPosition,
+        Vec3 position
+    ) {
+        return entity instanceof ShapedCollisionEntity shaped
+            ? shaped.plasticraft$getCollisionBox().move(position.subtract(originalPosition))
+            : null;
+    }
+
+    private static boolean noBlockCollision(
+        Level level,
+        Entity entity,
+        PlasticEntityCollisionBox collisionBox,
+        double deflation
+    ) {
+        for (AABB component : collisionBox.components()) {
+            AABB query = deflation == 0.0D ? component : component.deflate(deflation);
+            if (!level.noBlockCollision(entity, query)) return false;
+        }
+        return true;
     }
 
     private static boolean isDangerousPosition(Level level, AABB box) {

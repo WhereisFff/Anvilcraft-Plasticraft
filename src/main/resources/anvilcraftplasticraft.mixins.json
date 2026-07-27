@@ -17,6 +17,7 @@
     "HasCauldronMixin",
     "HasItemIngredientMixin",
     "InWorldRecipeContextMixin",
+    "ItemHandlerUtilMixin",
     "GiantAnvilShockEventListenerMixin",
     "GiantAnvilBlockAdhesionMixin",
     "LargeCauldronBlockEntityMixin",
@@ -34,6 +35,7 @@
   ],
   "client": [
     "AbstractLiquidCategoryMixin",
+    "EntityRenderDispatcherMixin",
     "FishTankBlockEntityRendererMixin",
     "LargeCauldronBlockEntityRendererMixin",
     "PlasmaJetsBlockEntityClientMixin",
