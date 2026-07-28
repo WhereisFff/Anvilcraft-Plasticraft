@@ -11,6 +11,7 @@ import dev.dubhe.anvilcraft.api.tooltip.HudTooltipManager;
 import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinCauldronRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.CatalyticPressLidRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.AdhesivePatchRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.anvilcraft.plasticraft.init.ModParticles;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
@@ -60,10 +61,10 @@ public final class AnvilcraftPlasticraftClient {
             ItemBlockRenderTypes.setRenderLayer(ModFluids.FLOWING_PLASTIC_OIL.get(), RenderType.translucent());
             ItemBlockRenderTypes.setRenderLayer(ModFluids.CRUDE_OIL_ACID.get(), RenderType.translucent());
             ItemBlockRenderTypes.setRenderLayer(ModFluids.FLOWING_CRUDE_OIL_ACID.get(), RenderType.translucent());
-            ItemBlockRenderTypes.setRenderLayer(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), RenderType.translucent());
+            ItemBlockRenderTypes.setRenderLayer(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), RenderType.cutout());
             ItemBlockRenderTypes.setRenderLayer(
                 ModFluids.FLOWING_UNIVERSAL_PLASTIC_MELT.get(),
-                RenderType.translucent()
+                RenderType.cutout()
             );
         });
     }
@@ -92,6 +93,7 @@ public final class AnvilcraftPlasticraftClient {
         event.register(HardenedResinCauldronRenderer.OUTLET_MODEL);
         event.register(CatalyticPressLidRenderer.ARM_MODEL);
         event.register(AdhesivePatchRenderer.MODEL);
+        event.register(IgnitedFluidFlameRenderer.SOUL_FLAME_MODEL);
     }
 
     private static void registerParticleProviders(RegisterParticleProvidersEvent event) {
@@ -100,7 +102,7 @@ public final class AnvilcraftPlasticraftClient {
         event.registerSpriteSet(ModParticles.ENHANCED_PLASMA_JETS.get(), EnhancedPlasmaJetsParticle.Provider::new);
         event.registerSpecial(ModParticles.EXPERIENCE_VAPOR.get(), new ExperienceVaporParticle.Provider(false));
         event.registerSpecial(ModParticles.EXPERIENCE_VAPOR_OUTLET.get(), new ExperienceVaporParticle.Provider(true));
-        event.registerSpecial(ModParticles.GASEOUS_OIL_FLAME.get(), new GaseousOilFlameParticle.Provider());
+        event.registerSpriteSet(ModParticles.GASEOUS_OIL_FLAME.get(), GaseousOilFlameParticle.Provider::new);
     }
 
     private static void registerGuiLayers(RegisterGuiLayersEvent event) {

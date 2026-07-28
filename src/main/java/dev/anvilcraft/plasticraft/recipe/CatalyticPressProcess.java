@@ -1,13 +1,13 @@
 package dev.anvilcraft.plasticraft.recipe;
 
-import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.api.FluidPipeNetworkExtension;
+import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
+import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
-import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
@@ -15,70 +15,73 @@ import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidNetworkScanner;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidPipeNetwork;
 import dev.dubhe.anvilcraft.block.FishTankBlock;
-import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.entity.CauldronOutletEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.DyeColor;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.Ingredient;
-import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import net.neoforged.neoforge.items.IItemHandler;
 import org.jetbrains.annotations.Nullable;
-
-import java.util.ArrayList;
-import java.util.IdentityHashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 
 /** 催化压盖与各种锅、输出口和管网之间的服务端加工桥。 */
 public final class CatalyticPressProcess {
+    private static final String PLASTIC_OIL_PROCESS = "plastic_oil_catalysis";
+
     private CatalyticPressProcess() {
     }
 
     public static void tick(CatalyticPressLidEntity lid) {
         if (!(lid.level() instanceof ServerLevel level) || lid.isReady()) return;
         SealedContainer container = findSealedContainer(lid);
-        if (container == null) return;
+        if (container == null) {
+            if (lid.catalyticProgress() > 0) {
+                PlasticOilCatalysisVisualSync.clear(level, occupiedPos(lid).below());
+                lid.resetCatalysis();
+            }
+            return;
+        }
 
         FluidStack stored = firstFluid(container.handler());
-        if (stored.isEmpty()) return;
-        List<ItemStack> items = collectItems(level, container);
-        RecipeHolder<CatalyticPressingRecipe> holder = findRecipe(level, items, stored);
-        if (holder == null) return;
+        if (!stored.is(ModFluids.PLASTIC_OIL.get())) {
+            if (lid.catalyticProgress() > 0) {
+                PlasticOilCatalysisVisualSync.clear(level, container.pos());
+                lid.resetCatalysis();
+            }
+            return;
+        }
 
-        String recipeId = holder.id().toString();
-        CatalyticPressingRecipe recipe = holder.value();
-        int progress = recipeId.equals(lid.activeRecipe()) ? lid.catalyticProgress() : 0;
+        int progress = PLASTIC_OIL_PROCESS.equals(lid.activeRecipe()) ? lid.catalyticProgress() : 0;
         int heat = CatalyticPressHeat.power(level.getBlockState(container.pos().below()));
-        lid.setCatalyticProgress(recipeId, progress, recipe.processingTime());
-        if (heat <= 0) return;
+        lid.setCatalyticProgress(PLASTIC_OIL_PROCESS, progress, PlasticOilCatalysis.BASE_WORK);
+        if (heat <= 0) {
+            PlasticOilCatalysisVisualSync.update(level, container.pos(), progress, 0.0D);
+            return;
+        }
 
-        progress = Math.min(recipe.processingTime(), progress + heat);
-        lid.setCatalyticProgress(recipeId, progress, recipe.processingTime());
-        if (progress < recipe.processingTime()) return;
-        ItemConsumptionPlan itemPlan = planItems(level, container, recipe.itemIngredients());
-        FluidTransformation fluidChange = planTransformation(container.handler(), recipe, stored);
-        if (itemPlan == null || fluidChange == null) {
+        progress = Math.min(PlasticOilCatalysis.BASE_WORK, progress + heat);
+        lid.setCatalyticProgress(PLASTIC_OIL_PROCESS, progress, PlasticOilCatalysis.BASE_WORK);
+        PlasticOilCatalysisVisualSync.update(level, container.pos(), progress, heat);
+        if (progress < PlasticOilCatalysis.BASE_WORK) return;
+        FluidTransformation fluidChange = planTransformation(container.handler(), stored);
+        if (fluidChange == null) {
+            PlasticOilCatalysisVisualSync.clear(level, container.pos());
             lid.resetCatalysis();
             return;
         }
-        if (fluidChange.commit(container.handler()) && itemPlan.commit()) {
+        if (fluidChange.commit(container.handler())) {
             setContainerColor(level, container, DyeColor.WHITE);
+            PlasticOilCatalysisVisualSync.complete(level, container.pos());
             lid.completeCatalysis();
         } else {
             fluidChange.rollback(container.handler());
+            PlasticOilCatalysisVisualSync.clear(level, container.pos());
             lid.resetCatalysis();
         }
     }
@@ -134,31 +137,18 @@ public final class CatalyticPressProcess {
         return BlockPos.containing(entity.getBoundingBox().getCenter());
     }
 
-    private static @Nullable RecipeHolder<CatalyticPressingRecipe> findRecipe(
-        ServerLevel level,
-        List<ItemStack> items,
-        FluidStack fluid
-    ) {
-        CatalyticPressingRecipe.Input input = new CatalyticPressingRecipe.Input(items, fluid);
-        for (RecipeHolder<CatalyticPressingRecipe> holder :
-            level.getRecipeManager().getAllRecipesFor(ModRecipeTypes.CATALYTIC_PRESSING_TYPE.get())) {
-            if (holder.value().matches(input, level)) return holder;
-        }
-        return null;
-    }
-
     private static @Nullable FluidTransformation planTransformation(
         IFluidHandler handler,
-        CatalyticPressingRecipe recipe,
         FluidStack stored
     ) {
-        int batches = recipe.batches(stored);
-        FluidStack output = recipe.resultFor(stored);
-        if (batches <= 0 || output.isEmpty()) return null;
-        int consume = Math.multiplyExact(recipe.fluidIngredient().amount(), batches);
-        FluidStack simulated = handler.drain(consume, IFluidHandler.FluidAction.SIMULATE);
-        if (simulated.getAmount() != consume || !recipe.fluidIngredient().test(simulated)) return null;
-        return new FluidTransformation(simulated.copy(), output.copy());
+        if (!stored.is(ModFluids.PLASTIC_OIL.get()) || stored.getAmount() <= 0) return null;
+        FluidStack simulated = handler.drain(stored, IFluidHandler.FluidAction.SIMULATE);
+        if (simulated.getAmount() != stored.getAmount()
+            || !FluidStack.isSameFluidSameComponents(simulated, stored)) return null;
+        return new FluidTransformation(
+            simulated.copy(),
+            new FluidStack(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), simulated.getAmount())
+        );
     }
 
     private static FluidStack firstFluid(IFluidHandler handler) {
@@ -167,72 +157,6 @@ public final class CatalyticPressProcess {
             if (!stack.isEmpty()) return stack.copy();
         }
         return FluidStack.EMPTY;
-    }
-
-    private static List<ItemStack> collectItems(ServerLevel level, SealedContainer container) {
-        List<ItemStack> result = new ArrayList<>();
-        IItemHandler handler = itemHandler(level, container);
-        if (handler != null) {
-            for (int slot = 0; slot < handler.getSlots(); slot++) {
-                ItemStack stack = handler.getStackInSlot(slot);
-                if (!stack.isEmpty()) result.add(stack.copy());
-            }
-        }
-        for (ItemEntity item : level.getEntitiesOfClass(ItemEntity.class, new AABB(container.pos()).inflate(0.1D))) {
-            if (!item.getItem().isEmpty()) result.add(item.getItem().copy());
-        }
-        return result;
-    }
-
-    private static @Nullable ItemConsumptionPlan planItems(
-        ServerLevel level,
-        SealedContainer container,
-        List<Ingredient> ingredients
-    ) {
-        IItemHandler handler = itemHandler(level, container);
-        List<ItemEntity> looseItems = level.getEntitiesOfClass(
-            ItemEntity.class,
-            new AABB(container.pos()).inflate(0.1D)
-        );
-        Map<Integer, Integer> handlerCounts = new LinkedHashMap<>();
-        Map<ItemEntity, Integer> entityCounts = new IdentityHashMap<>();
-        for (Ingredient ingredient : ingredients) {
-            boolean reserved = false;
-            if (handler != null) {
-                for (int slot = 0; slot < handler.getSlots(); slot++) {
-                    ItemStack stack = handler.getStackInSlot(slot);
-                    int count = handlerCounts.getOrDefault(slot, 0);
-                    if (stack.getCount() <= count || !ingredient.test(stack)) continue;
-                    if (handler.extractItem(slot, count + 1, true).getCount() < count + 1) continue;
-                    handlerCounts.put(slot, count + 1);
-                    reserved = true;
-                    break;
-                }
-            }
-            if (!reserved) {
-                for (ItemEntity entity : looseItems) {
-                    ItemStack stack = entity.getItem();
-                    int count = entityCounts.getOrDefault(entity, 0);
-                    if (stack.getCount() <= count || !ingredient.test(stack)) continue;
-                    entityCounts.put(entity, count + 1);
-                    reserved = true;
-                    break;
-                }
-            }
-            if (!reserved) return null;
-        }
-        return new ItemConsumptionPlan(handler, handlerCounts, entityCounts);
-    }
-
-    private static @Nullable IItemHandler itemHandler(ServerLevel level, SealedContainer container) {
-        if (container.plasticCauldron() != null) return container.plasticCauldron().getItemHandler();
-        if (level.getBlockEntity(container.pos()) instanceof BondedEntityBlockEntity bonded) {
-            return bonded.getItemHandler();
-        }
-        if (level.getBlockEntity(container.pos()) instanceof FishTankBlockEntity fishTank) {
-            return fishTank.getItemHandler();
-        }
-        return null;
     }
 
     private static void setContainerColor(ServerLevel level, SealedContainer container, DyeColor color) {
@@ -348,6 +272,8 @@ public final class CatalyticPressProcess {
 
     private static void burstContainer(ServerLevel level, SealedContainer container, FluidStack melt) {
         DyeColor color = PlasticMeltColor.get(melt);
+        // 方块化容器的胶接关系保存在方块附加数据中，替换锅之前必须同步清掉双方的胶面。
+        BondedFallingBlocks.removeAll(level, container.pos());
         if (container.plasticCauldron() != null && !container.plasticCauldron().isRemoved()) {
             EntityBondManager.disconnectEntity(level, container.plasticCauldron());
             container.plasticCauldron().discard();
@@ -437,46 +363,6 @@ public final class CatalyticPressProcess {
             }
             this.committed = false;
         }
-    }
-
-    private record ItemConsumptionPlan(
-        @Nullable IItemHandler handler,
-        Map<Integer, Integer> handlerCounts,
-        Map<ItemEntity, Integer> entityCounts
-    ) {
-        private boolean commit() {
-            for (Map.Entry<ItemEntity, Integer> entry : this.entityCounts.entrySet()) {
-                if (entry.getKey().isRemoved() || entry.getKey().getItem().getCount() < entry.getValue()) return false;
-            }
-            if (this.handler != null) {
-                for (Map.Entry<Integer, Integer> entry : this.handlerCounts.entrySet()) {
-                    if (this.handler.extractItem(entry.getKey(), entry.getValue(), true).getCount()
-                        != entry.getValue()) return false;
-                }
-                List<SlotExtraction> extracted = new ArrayList<>();
-                for (Map.Entry<Integer, Integer> entry : this.handlerCounts.entrySet()) {
-                    ItemStack stack = this.handler.extractItem(entry.getKey(), entry.getValue(), false);
-                    if (stack.getCount() != entry.getValue()) {
-                        if (!stack.isEmpty()) extracted.add(new SlotExtraction(entry.getKey(), stack));
-                        for (int i = extracted.size() - 1; i >= 0; i--) {
-                            SlotExtraction restore = extracted.get(i);
-                            this.handler.insertItem(restore.slot(), restore.stack(), false);
-                        }
-                        return false;
-                    }
-                    extracted.add(new SlotExtraction(entry.getKey(), stack));
-                }
-            }
-            for (Map.Entry<ItemEntity, Integer> entry : this.entityCounts.entrySet()) {
-                ItemStack stack = entry.getKey().getItem();
-                stack.shrink(entry.getValue());
-                if (stack.isEmpty()) entry.getKey().discard();
-            }
-            return true;
-        }
-    }
-
-    private record SlotExtraction(int slot, ItemStack stack) {
     }
 
     public record SealedContainer(

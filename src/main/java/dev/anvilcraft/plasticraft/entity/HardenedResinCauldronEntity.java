@@ -13,6 +13,7 @@ import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
+import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
 import dev.dubhe.anvilcraft.api.entity.IEntityCauldron;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidNetworkManager;
 import dev.dubhe.anvilcraft.api.itemhandler.IItemHandlerHolder;
@@ -206,6 +207,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     };
     private BlockPos fluidNetworkPos;
     private AbstractPlasticEntity activeRecipeContact;
+    private Entity lastRecipeImpactSource;
     private boolean activeRecipeContactFromSweep;
     private boolean processingOutput;
     private boolean autoOutputting;
@@ -214,6 +216,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     private boolean bondedDataDirty;
     private boolean burnedByLava;
     private boolean leftLavaSource;
+    private long lastRecipeImpactGameTime = Long.MIN_VALUE;
     private long lastRecipeProcessingGameTime = Long.MIN_VALUE;
 
     public static void configureDefaultDrop(Supplier<ItemStack> supplier) {
@@ -639,6 +642,9 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         this.refreshRecipeContact();
         this.updateFluidNetworkRegistration();
         if (!this.ejectItemsIfNeeded()) this.absorbTouchingItems();
+        if (this.level() instanceof ServerLevel serverLevel) {
+            PlasticOilCatalysis.tickResinCauldron(serverLevel, this);
+        }
         this.spillFluidIfNeeded();
         this.trySpawnPlasmaJets();
     }
@@ -1369,12 +1375,16 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
 
     @Override
     public ItemStackHandler getInput() {
-        return this.recipeInput;
+        return CauldronImpactRecipeProcessor.canAccessRecipeInventory(this)
+            ? this.recipeInput
+            : this.emptyRecipeHandler;
     }
 
     @Override
     public ItemStackHandler getOutput() {
-        return this.recipeOutput;
+        return CauldronImpactRecipeProcessor.canAccessRecipeInventory(this)
+            ? this.recipeOutput
+            : this.emptyRecipeHandler;
     }
 
     public void beginRecipeProcessing() {
@@ -1384,6 +1394,15 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
             && !isEmpty(this.output)
             && gameTime != this.lastRecipeProcessingGameTime;
         if (hasInput || this.processingOutput) this.lastRecipeProcessingGameTime = gameTime;
+    }
+
+    /** 保证巨型铁砧同一刻发布的多个落点不会重复加工同一个锅。 */
+    public boolean tryClaimRecipeImpact(Entity source) {
+        long gameTime = this.level().getGameTime();
+        if (this.lastRecipeImpactSource == source && this.lastRecipeImpactGameTime == gameTime) return false;
+        this.lastRecipeImpactSource = source;
+        this.lastRecipeImpactGameTime = gameTime;
+        return true;
     }
 
     public void finishRecipeProcessing() {
@@ -1494,16 +1513,11 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
             && source.getDirectEntity() == player
             && player.getMainHandItem().getItem() instanceof AnvilHammerItem) {
             if (!this.level().isClientSide) {
-                this.beginRecipeProcessing();
-                try {
-                    BlockPos impactPos = CauldronImpactRecipeProcessor.recipePotCell(this);
-                    if (player.getMainHandItem().getItem() instanceof ResinAnvilHammerItem) {
-                        ResinAnvilHammerItem.triggerAnvilImpact(player, this.level(), impactPos);
-                    } else {
-                        AnvilHammerItem.dropAnvil(player, this.level(), impactPos);
-                    }
-                } finally {
-                    this.finishRecipeProcessing();
+                BlockPos impactPos = CauldronImpactRecipeProcessor.recipePotCell(this);
+                if (player.getMainHandItem().getItem() instanceof ResinAnvilHammerItem) {
+                    ResinAnvilHammerItem.triggerAnvilImpact(player, this.level(), impactPos);
+                } else {
+                    AnvilHammerItem.dropAnvil(player, this.level(), impactPos);
                 }
             }
             // 不把锤击视作有效伤害，避免锅和库存掉落，也避免锤子的攻击逻辑再次消耗耐久。

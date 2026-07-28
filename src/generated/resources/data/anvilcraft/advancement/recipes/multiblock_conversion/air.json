@@ -3,7 +3,7 @@
   "criteria": {
     "has_the_recipe": {
       "conditions": {
-        "recipe": "anvilcraftplasticraft:multiblock/condenser_tower"
+        "recipe": "anvilcraft:multiblock_conversion/air"
       },
       "trigger": "minecraft:recipe_unlocked"
     }
@@ -15,7 +15,7 @@
   ],
   "rewards": {
     "recipes": [
-      "anvilcraftplasticraft:multiblock/condenser_tower"
+      "anvilcraft:multiblock_conversion/air"
     ]
   }
 }

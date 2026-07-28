@@ -8,6 +8,7 @@ import net.minecraft.client.renderer.block.LiquidBlockRenderer;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.BlockGetter;
@@ -18,19 +19,39 @@ import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.client.textures.FluidSpriteCache;
 
-/** 使用单张 16x16 动画帧完整渲染高粘性树脂的静止面与流动面。 */
-public final class HighViscosityResinFluidExtension extends ModClientFluidTypeExtensionImpl {
+/** 使用单张 16x16 动画帧完整渲染流体的静止面与流动面。 */
+public class HighViscosityResinFluidExtension extends ModClientFluidTypeExtensionImpl {
     private static final float MAX_FLUID_HEIGHT = 8.0F / 9.0F;
     private static final float FACE_OFFSET = 0.001F;
 
     public HighViscosityResinFluidExtension() {
-        super(
-            AnvilcraftPlasticraft.of("block/liquid_high_viscosity_resin"),
+        this(
             AnvilcraftPlasticraft.of("block/liquid_high_viscosity_resin"),
             0x6B481D,
             1.5F,
             0xFFFFFFFF,
             false
+        );
+    }
+
+    public HighViscosityResinFluidExtension(ResourceLocation texture) {
+        super(texture, texture);
+    }
+
+    public HighViscosityResinFluidExtension(
+        ResourceLocation texture,
+        int fogColor,
+        float fogDistance,
+        int tintColor,
+        boolean opaque
+    ) {
+        super(
+            texture,
+            texture,
+            fogColor,
+            fogDistance,
+            tintColor,
+            opaque
         );
     }
 

@@ -4,22 +4,40 @@ import dev.anvilcraft.plasticraft.block.IgnitedFluidEffects;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.anvilcraft.plasticraft.init.item.ModItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** 将大型炼药锅内高热燃料的燃烧伤害提高到普通燃料的两倍。 */
+/** 扩展大型炼药锅内的高热燃料伤害、熔体颜色与塑料油催化。 */
 @Mixin(LargeCauldronBlockEntity.class)
 abstract class LargeCauldronBlockEntityMixin {
     @Unique
     private DyeColor plasticraft$mixingColor = DyeColor.WHITE;
+
+    @Inject(method = "serverTick", at = @At("TAIL"))
+    private static void plasticraft$tickPlasticOilCatalysis(
+        Level level,
+        BlockPos pos,
+        BlockState state,
+        LargeCauldronBlockEntity cauldron,
+        CallbackInfo ci
+    ) {
+        if (level instanceof ServerLevel serverLevel) {
+            PlasticOilCatalysis.tickLargeCauldron(serverLevel, cauldron);
+        }
+    }
 
     @ModifyArg(
         method = "applyFluidEffects",

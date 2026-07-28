@@ -24,6 +24,8 @@ public final class ModBlockEntities {
     public static final BlockEntityEntry<CondenserTowerBlockEntity> CONDENSER_TOWER = REGISTRUM
         .blockEntity("condenser_tower", CondenserTowerBlockEntity::new)
         .validBlock(ModBlocks.CONDENSER_TOWER)
+        .renderer(() ->
+            dev.anvilcraft.plasticraft.client.renderer.blockentity.CondenserTowerBlockEntityRenderer::new)
         .register();
 
     public static final BlockEntityEntry<HighHeatFuelCauldronBlockEntity> HIGH_HEAT_FUEL_CAULDRON = REGISTRUM

@@ -106,11 +106,12 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.BooleanOp;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.PlayLevelSoundEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.items.IItemHandler;
-import net.neoforged.neoforge.event.PlayLevelSoundEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
@@ -3007,6 +3008,40 @@ public final class PlasticAnvilGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate("9x7x9")
+    @TestHolder(description = "An anvil hammer reprocesses a plastic pot's previous output on its next impact")
+    static void anvilHammerReprocessesHardenedResinCauldronOutput(ExtendedGameTestHelper helper) {
+        HardenedResinCauldronEntity cauldron = createPot(
+            helper,
+            new Vec3(3.5D, 2.0D, 3.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        cauldron.setNoGravity(true);
+        cauldron.getInput().insertItem(0, new ItemStack(Items.STICK), false);
+
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        ItemStack hammer = ModItems.ANVIL_HAMMER.asStack();
+        player.setItemInHand(InteractionHand.MAIN_HAND, hammer);
+        player.attack(cauldron);
+        check(countItem(cauldron.getOutput(), Items.DIAMOND) == 1, "hammer did not create the first output");
+
+        helper.runAfterDelay(6, () -> {
+            player.getCooldowns().removeCooldown(hammer.getItem());
+            player.attack(cauldron);
+            check(
+                countItem(cauldron.getOutput(), Items.DIAMOND) == 0,
+                "hammer created the second result without consuming its first output"
+            );
+            check(
+                countItem(cauldron.getOutput(), Items.EMERALD) == 1,
+                "hammer did not reprocess the cauldron output"
+            );
+            cauldron.discard();
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("9x7x9")
     @TestHolder(description = "A plastic pot reuses AnvilCraft recipes from either valid impact direction")
     static void plasticPotProcessesRecipesFromBothImpactDirections(ExtendedGameTestHelper helper) {
         HardenedResinCauldronEntity pot = createPot(helper, new Vec3(3.5D, 2.0D, 3.5D), PlasticEntityOrientation.DEFAULT);
@@ -3038,6 +3073,59 @@ public final class PlasticAnvilGameTests {
             anvil.discard();
             helper.succeed();
         });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x7x9")
+    @TestHolder(description = "One centered anvil impact processes four plastic pots without merging their outputs")
+    static void adjacentPlasticPotsKeepBatchOutputsSeparate(ExtendedGameTestHelper helper) {
+        FourPotBatch batch = createFourPotBatch(helper);
+        for (HardenedResinCauldronEntity pot : batch.pots()) {
+            pot.getInput().insertItem(0, new ItemStack(Items.NAUTILUS_SHELL, 2), false);
+        }
+
+        postStandardAnvilImpact(helper, new BlockPos(4, 2, 4));
+
+        for (int index = 0; index < batch.pots().size(); index++) {
+            HardenedResinCauldronEntity pot = batch.pots().get(index);
+            check(isEmpty(pot.getInput()), "centered impact skipped pot " + index);
+            check(
+                helper.getBlockEntity(batch.outputPositions().get(index)) instanceof Container chest
+                    && countItem(chest, Items.HEART_OF_THE_SEA) == 1,
+                "pot " + index + " did not send exactly one result through its own outlet"
+            );
+            pot.discard();
+        }
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x7x9")
+    @TestHolder(description = "One centered anvil impact independently selects recipes for four plastic pots")
+    static void adjacentPlasticPotsSelectRecipesIndependently(ExtendedGameTestHelper helper) {
+        FourPotBatch batch = createFourPotBatch(helper);
+        List<Item> inputs = List.of(Items.DIAMOND, Items.STICK, Items.DIAMOND, Items.STICK);
+        List<Item> results = List.of(Items.EMERALD, Items.DIAMOND, Items.EMERALD, Items.DIAMOND);
+        for (int index = 0; index < batch.pots().size(); index++) {
+            batch.pots().get(index).getInput().insertItem(0, new ItemStack(inputs.get(index)), false);
+        }
+
+        postStandardAnvilImpact(helper, new BlockPos(4, 2, 4));
+
+        for (int index = 0; index < batch.pots().size(); index++) {
+            HardenedResinCauldronEntity pot = batch.pots().get(index);
+            Item expected = results.get(index);
+            Item unexpected = expected == Items.DIAMOND ? Items.EMERALD : Items.DIAMOND;
+            check(isEmpty(pot.getInput()), "centered impact skipped recipe for pot " + index);
+            check(
+                helper.getBlockEntity(batch.outputPositions().get(index)) instanceof Container chest
+                    && countItem(chest, expected) == 1
+                    && countItem(chest, unexpected) == 0,
+                "pot " + index + " used another pot's recipe or output"
+            );
+            pot.discard();
+        }
+        helper.succeed();
     }
 
     @GameTest(timeoutTicks = 20)
@@ -4398,6 +4486,56 @@ public final class PlasticAnvilGameTests {
         } finally {
             cauldron.finishRecipeProcessing();
         }
+    }
+
+    private static FourPotBatch createFourPotBatch(ExtendedGameTestHelper helper) {
+        List<HardenedResinCauldronEntity> pots = List.of(
+            createPot(helper, new Vec3(3.99D, 2.0D, 3.99D), PlasticEntityOrientation.DEFAULT),
+            createPot(helper, new Vec3(4.99D, 2.0D, 3.99D), PlasticEntityOrientation.DEFAULT),
+            createPot(helper, new Vec3(3.99D, 2.0D, 4.99D), PlasticEntityOrientation.DEFAULT),
+            createPot(helper, new Vec3(4.99D, 2.0D, 4.99D), PlasticEntityOrientation.DEFAULT)
+        );
+        List<Direction> outletDirections = List.of(
+            Direction.WEST,
+            Direction.NORTH,
+            Direction.SOUTH,
+            Direction.EAST
+        );
+        List<BlockPos> outputPositions = List.of(
+            new BlockPos(2, 2, 3),
+            new BlockPos(4, 2, 2),
+            new BlockPos(3, 2, 5),
+            new BlockPos(5, 2, 4)
+        );
+        Player player = helper.makeMockPlayer(GameType.CREATIVE);
+        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.ANVIL_HAMMER.asStack());
+        for (int index = 0; index < pots.size(); index++) {
+            HardenedResinCauldronEntity pot = pots.get(index);
+            pot.setNoGravity(true);
+            helper.setBlock(outputPositions.get(index), Blocks.CHEST);
+            check(
+                pot.plasticraft$useAnvilHammer(
+                    player,
+                    InteractionHand.MAIN_HAND,
+                    outletDirections.get(index)
+                ).consumesAction(),
+                "failed to open outlet for pot " + index
+            );
+        }
+        return new FourPotBatch(pots, outputPositions);
+    }
+
+    private static void postStandardAnvilImpact(ExtendedGameTestHelper helper, BlockPos potCell) {
+        ServerLevel level = helper.getLevel();
+        FallingBlockEntity anvil = new FallingBlockEntity(EntityType.FALLING_BLOCK, level);
+        anvil.blockState = Blocks.ANVIL.defaultBlockState();
+        NeoForge.EVENT_BUS.post(new AnvilEvent.OnLand(level, helper.absolutePos(potCell).above(), anvil, 1.0F));
+    }
+
+    private record FourPotBatch(
+        List<HardenedResinCauldronEntity> pots,
+        List<BlockPos> outputPositions
+    ) {
     }
 
     private static ItemStack findCapturedResinAnvil(Player player) {

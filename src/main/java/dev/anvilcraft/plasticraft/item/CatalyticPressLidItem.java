@@ -24,8 +24,11 @@ public final class CatalyticPressLidItem extends AbstractPlasticEntityItem<Catal
         super(block, properties, entityType, displayState);
         PlasticItemTooltipManager.register(
             AnvilcraftPlasticraft.of("catalytic_press_lid"),
-            "Seals a cauldron or fish tank for catalytic plastic processing",
-            "Bond it above a compatible vessel with high-viscosity resin, then heat the vessel from below"
+            "A sealed full-speed royal-steel catalyst for converting plastic oil",
+            """
+                Plastic oil reacts with royal-steel items while heated from directly below
+                An open vessel starts at 25% speed; eight distinct catalysts reach 50%
+                Bond this lid above a vessel for full speed, then press it with a falling anvil"""
         );
     }
 

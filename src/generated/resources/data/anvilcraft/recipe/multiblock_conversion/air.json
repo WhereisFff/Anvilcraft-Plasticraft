@@ -3,58 +3,64 @@
   "inputPattern": {
     "layers": [
       [
-        "DCD",
-        "CFC",
-        "DCD"
-      ],
-      [
-        " C ",
-        "C C",
-        " C "
-      ],
-      [
-        " E ",
         "ABA",
-        " E "
+        "CDC",
+        "ABA"
+      ],
+      [
+        "EFE",
+        "F F",
+        "EFE"
+      ],
+      [
+        "EFE",
+        "FGF",
+        "EFE"
       ]
     ],
     "symbols": {
       "A": {
-        "block": "anvilcraft:pipe_straight",
-        "properties": {
-          "axis": "x",
-          "has_check_valve": "true",
-          "has_end_end": "true",
-          "has_end_start": "true",
-          "waterlogged": "false"
-        }
-      },
-      "B": {
-        "block": "minecraft:copper_trapdoor",
-        "properties": {
-          "half": "top"
-        }
-      },
-      "C": {
-        "block": "anvilcraft:cut_brass_pillar"
-      },
-      "D": {
         "block": "anvilcraftplasticraft:high_viscosity_resin_block"
       },
-      "E": {
+      "B": {
         "block": "anvilcraft:pipe_straight",
         "properties": {
           "axis": "z",
-          "has_check_valve": "true",
-          "has_end_end": "true",
-          "has_end_start": "true",
           "waterlogged": "false"
         }
       },
-      "F": {
+      "C": {
+        "block": "anvilcraft:pipe_straight",
+        "properties": {
+          "axis": "x",
+          "waterlogged": "false"
+        }
+      },
+      "D": {
         "block": "minecraft:copper_trapdoor",
         "properties": {
-          "half": "bottom"
+          "facing": "north",
+          "half": "bottom",
+          "open": "false",
+          "waterlogged": "false"
+        }
+      },
+      "E": {
+        "block": "anvilcraft:cut_brass_pillar",
+        "properties": {
+          "axis": "y"
+        }
+      },
+      "F": {
+        "block": "minecraft:glass"
+      },
+      "G": {
+        "block": "minecraft:copper_trapdoor",
+        "properties": {
+          "facing": "north",
+          "half": "top",
+          "open": "false",
+          "waterlogged": "false"
         }
       }
     }

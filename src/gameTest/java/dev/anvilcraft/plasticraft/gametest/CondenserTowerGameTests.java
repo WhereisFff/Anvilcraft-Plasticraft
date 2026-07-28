@@ -421,7 +421,7 @@ public final class CondenserTowerGameTests {
 
         List<CondenserTowerBlockEntity> placed = new ArrayList<>();
         BlockPos towerBase = helper.absolutePos(cauldronBase).above(3);
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 6; i++) {
             placed.add(placeTower(helper, towerBase.above(i * 3)));
         }
 
@@ -429,7 +429,7 @@ public final class CondenserTowerGameTests {
             helper.getLevel(),
             cauldronMain
         );
-        check(productive.size() == 4, "expected four productive tower layers, got " + productive.size());
+        check(productive.size() == 5, "expected five productive tower layers, got " + productive.size());
         BlockState firstTowerState = placed.getFirst().getBlockState();
         BlockState firstTowerWorldState = helper.getLevel().getBlockState(placed.getFirst().getBlockPos());
         BlockState cauldronTopState = helper.getLevel().getBlockState(towerBase.below());

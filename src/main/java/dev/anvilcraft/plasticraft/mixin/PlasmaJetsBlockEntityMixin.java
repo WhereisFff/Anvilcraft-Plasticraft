@@ -1,11 +1,13 @@
 package dev.anvilcraft.plasticraft.mixin;
 
 import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
+import dev.anvilcraft.plasticraft.recipe.EnhancedPlasmaJetHeat;
 import dev.anvilcraft.plasticraft.recipe.EnhancedPlasmaJetFuel;
 import dev.anvilcraft.plasticraft.api.blockentity.EnhancedPlasmaJetExtension;
 import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
 import dev.dubhe.anvilcraft.block.HeaterBlock;
 import dev.dubhe.anvilcraft.block.PlasmaJetsBlock;
+import dev.dubhe.anvilcraft.api.heat.HeaterInfo;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity.TubeWallLayer;
@@ -54,6 +56,9 @@ abstract class PlasmaJetsBlockEntityMixin implements EnhancedPlasmaJetExtension 
     public void plasticraft$setEnhanced(boolean enhanced) {
         if (this.plasticraft$enhanced == enhanced) return;
         this.plasticraft$enhanced = enhanced;
+        PlasmaJetsBlockEntity self = (PlasmaJetsBlockEntity) (Object) this;
+        Level level = self.getLevel();
+        if (level != null && enhanced) EnhancedPlasmaJetHeat.promoteProducer(level, self.getBlockPos());
         this.plasticraft$syncEnhancedState();
     }
 
@@ -96,7 +101,22 @@ abstract class PlasmaJetsBlockEntityMixin implements EnhancedPlasmaJetExtension 
         this.plasticraft$enhanced = true;
         this.plasticraft$layeredFuel = mode == EnhancedPlasmaJetFuel.FuelMode.LAYERED;
         if (this.plasticraft$layeredFuel) this.duration = EnhancedPlasmaJetFuel.LAYERED_DURATION;
+        EnhancedPlasmaJetHeat.promoteProducer(level, ((PlasmaJetsBlockEntity) (Object) this).getBlockPos());
         this.plasticraft$syncEnhancedState();
+    }
+
+    @ModifyArg(
+        method = "serverTick",
+        at = @At(
+            value = "INVOKE",
+            target = "Ldev/dubhe/anvilcraft/api/heat/HeaterManager;addProducer("
+                + "Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/Level;"
+                + "Ldev/dubhe/anvilcraft/api/heat/HeaterInfo;)V"
+        ),
+        index = 2
+    )
+    private HeaterInfo<?> plasticraft$useEnhancedHeatSource(HeaterInfo<?> ordinary) {
+        return this.plasticraft$enhanced ? EnhancedPlasmaJetHeat.replaceOrdinary(ordinary) : ordinary;
     }
 
     @Inject(method = "tryRaise", at = @At("HEAD"), cancellable = true)
@@ -180,10 +200,11 @@ abstract class PlasmaJetsBlockEntityMixin implements EnhancedPlasmaJetExtension 
 
     @Inject(method = "setRemoved", at = @At("TAIL"))
     private void plasticraft$clearSpentLayeredCauldron(CallbackInfo ci) {
-        if (!this.plasticraft$enhanced || !this.plasticraft$layeredFuel) return;
         PlasmaJetsBlockEntity self = (PlasmaJetsBlockEntity) (Object) this;
         Level level = self.getLevel();
-        if (level == null || level.isClientSide()) return;
+        if (level == null) return;
+        EnhancedPlasmaJetHeat.removeProducer(level, self.getBlockPos());
+        if (!this.plasticraft$enhanced || !this.plasticraft$layeredFuel || level.isClientSide()) return;
         boolean raising = this.tubeWalls.stream().anyMatch(
             layer -> layer.first().getFirst().south().equals(self.getBlockPos())
         );

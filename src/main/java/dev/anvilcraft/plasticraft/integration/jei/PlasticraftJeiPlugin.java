@@ -5,7 +5,6 @@ import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
-import dev.anvilcraft.plasticraft.recipe.CatalyticPressingRecipe;
 import dev.dubhe.anvilcraft.integration.jei.AnvilCraftJeiPlugin;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiRecipeUtil;
 import mezz.jei.api.IModPlugin;
@@ -42,10 +41,6 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
     public static final mezz.jei.api.recipe.RecipeType<RecipeHolder<CondenserRecipe>> CONDENSER =
         mezz.jei.api.recipe.RecipeType.createRecipeHolderType(
             AnvilcraftPlasticraft.of("condenser")
-        );
-    public static final mezz.jei.api.recipe.RecipeType<RecipeHolder<CatalyticPressingRecipe>> CATALYTIC_PRESSING =
-        mezz.jei.api.recipe.RecipeType.createRecipeHolderType(
-            AnvilcraftPlasticraft.of("catalytic_pressing")
         );
     private static final List<mezz.jei.api.recipe.RecipeType<?>> ANVIL_PROCESSING_TYPES = List.of(
         AnvilCraftJeiPlugin.MESH,
@@ -89,9 +84,6 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
         registration.addRecipeCategories(new CondenserCategory(
             registration.getJeiHelpers().getGuiHelper()
         ));
-        registration.addRecipeCategories(new CatalyticPressingCategory(
-            registration.getJeiHelpers().getGuiHelper()
-        ));
     }
 
     @Override
@@ -117,10 +109,6 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
             CONDENSER,
             JeiRecipeUtil.getRecipeHoldersFromType(ModRecipeTypes.CONDENSER_TYPE.get())
         );
-        registration.addRecipes(
-            CATALYTIC_PRESSING,
-            JeiRecipeUtil.getRecipeHoldersFromType(ModRecipeTypes.CATALYTIC_PRESSING_TYPE.get())
-        );
     }
 
     static boolean isEnhancedRecipe(RecipeHolder<PlasmaJetBlastingRecipe> holder) {
@@ -135,7 +123,6 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
         );
         registration.addRecipeCatalyst(ModBlocks.CONDENSER_TOWER.asStack(), PLASMA_JET_BLASTING);
         registration.addRecipeCatalyst(ModBlocks.CONDENSER_TOWER.asStack(), CONDENSER);
-        registration.addRecipeCatalyst(ModBlocks.CATALYTIC_PRESS_LID.asStack(), CATALYTIC_PRESSING);
         for (mezz.jei.api.recipe.RecipeType<?> recipeType : ANVIL_PROCESSING_TYPES) {
             registration.addRecipeCatalyst(ModBlocks.RESIN_ANVIL.asStack(), recipeType);
             registration.addRecipeCatalyst(ModBlocks.HARDEND_RESIN_ANVIL.asStack(), recipeType);

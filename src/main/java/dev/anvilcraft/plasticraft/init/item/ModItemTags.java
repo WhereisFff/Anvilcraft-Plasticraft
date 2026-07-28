@@ -23,6 +23,10 @@ public final class ModItemTags {
         Registries.ITEM,
         AnvilcraftPlasticraft.of("cold_items")
     );
+    public static final TagKey<Item> ROYAL_STEEL_ITEMS = TagKey.create(
+        Registries.ITEM,
+        AnvilcraftPlasticraft.of("royal_steel_items")
+    );
 
     private ModItemTags() {
     }

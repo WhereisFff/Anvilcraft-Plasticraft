@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
+import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
@@ -11,7 +12,9 @@ import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFallingBlockSupport;
 import dev.anvilcraft.plasticraft.event.CatalyticPressAnvilEvents;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.anvilcraft.plasticraft.init.entity.ModEntities;
+import dev.anvilcraft.plasticraft.recipe.CatalyticPressProcess;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
@@ -23,6 +26,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
@@ -184,6 +189,84 @@ public final class CatalyticPressLidGameTests {
             );
             helper.succeed();
         });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "5x5x5", floor = true)
+    @TestHolder(description = "A failed bonded catalytic press clears the adhesive between its lid and cauldron")
+    static void failedBondedPressClearsCauldronAdhesive(ExtendedGameTestHelper helper) {
+        BlockPos cauldronPos = new BlockPos(2, 1, 2);
+        BlockPos lidPos = cauldronPos.above();
+        HardenedResinCauldronEntity cauldron = spawnCauldron(helper, cauldronPos);
+        CatalyticPressLidEntity lid = spawnReadyLid(helper, lidPos);
+        check(
+            cauldron.getFluidHandler().fill(
+                new FluidStack(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), 1_000),
+                IFluidHandler.FluidAction.EXECUTE
+            ) == 1_000,
+            "resin cauldron rejected the plastic melt"
+        );
+
+        helper.setBlock(
+            cauldronPos,
+            ModBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState()
+                .setValue(AbstractPlasticEntityBlock.BONDED, true)
+        );
+        helper.setBlock(
+            lidPos,
+            ModBlocks.CATALYTIC_PRESS_LID.get().defaultBlockState()
+                .setValue(AbstractPlasticEntityBlock.BONDED, true)
+        );
+        BondedEntityBlockEntity bondedCauldron = bondedBlockEntity(helper, cauldronPos);
+        BondedEntityBlockEntity bondedLid = bondedBlockEntity(helper, lidPos);
+        check(
+            bondedCauldron.initialize(
+                cauldron,
+                cauldron.getDisplayState(),
+                Direction.DOWN,
+                cauldron.getOrientation(),
+                cauldron.isNoGravity()
+            ),
+            "failed to initialize the bonded resin cauldron"
+        );
+        check(
+            bondedLid.initialize(
+                lid,
+                lid.getDisplayState(),
+                Direction.UP,
+                lid.getOrientation(),
+                lid.isNoGravity()
+            ),
+            "failed to initialize the bonded catalytic press lid"
+        );
+        check(
+            BondedFallingBlocks.connect(
+                helper.getLevel(),
+                helper.absolutePos(cauldronPos),
+                helper.absolutePos(lidPos)
+            ),
+            "failed to connect the blockified cauldron and lid"
+        );
+        cauldron.discard();
+        lid.discard();
+
+        CatalyticPressLidEntity fixedLid = (CatalyticPressLidEntity) bondedLid.getOrCreateRenderEntity();
+        CatalyticPressProcess.press(fixedLid);
+
+        check(
+            helper.getBlockState(cauldronPos).is(ModBlocks.UNIVERSAL_PLASTIC_MELT.get()),
+            "failed extrusion did not burst the resin cauldron"
+        );
+        check(helper.getBlockState(lidPos).isAir(), "failed extrusion did not launch the catalytic press lid");
+        check(
+            !BondedFallingBlocks.hasAnyAdhesive(helper.getLevel(), helper.absolutePos(cauldronPos)),
+            "burst cauldron kept its adhesive data"
+        );
+        check(
+            !BondedFallingBlocks.hasAnyAdhesive(helper.getLevel(), helper.absolutePos(lidPos)),
+            "launched catalytic press lid kept the cauldron adhesive"
+        );
+        helper.succeed();
     }
 
     @GameTest(timeoutTicks = 45)
@@ -400,6 +483,16 @@ public final class CatalyticPressLidGameTests {
         cauldron.setNoGravity(true);
         check(helper.getLevel().addFreshEntity(cauldron), "failed to add resin cauldron");
         return cauldron;
+    }
+
+    private static BondedEntityBlockEntity bondedBlockEntity(
+        ExtendedGameTestHelper helper,
+        BlockPos relativePos
+    ) {
+        if (helper.getBlockEntity(relativePos) instanceof BondedEntityBlockEntity bonded) {
+            return bonded;
+        }
+        throw new GameTestAssertException("bonded block entity was missing at " + relativePos);
     }
 
     private static boolean hasBox(

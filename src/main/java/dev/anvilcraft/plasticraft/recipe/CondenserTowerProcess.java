@@ -73,7 +73,7 @@ import java.util.Set;
 public final class CondenserTowerProcess {
     public static final int VAPORIZATION_PER_JET = 5;
     public static final int ENHANCED_VAPORIZATION_PER_JET = 50;
-    public static final int MAX_PRODUCTIVE_TOWERS = 4;
+    public static final int MAX_PRODUCTIVE_TOWERS = 5;
     private static final int GASEOUS_EXPERIENCE_PER_PLAYER_XP = 10;
     private static final int GASEOUS_EXPERIENCE_PER_VILLAGER_XP = 256;
     private static final String PLAYER_EXPERIENCE_REMAINDER =

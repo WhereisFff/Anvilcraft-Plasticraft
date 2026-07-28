@@ -8,10 +8,13 @@ import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
+import dev.dubhe.anvilcraft.api.heat.HeaterManager;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
+import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity.TubeWallLayer;
+import dev.dubhe.anvilcraft.block.entity.heatable.HeatableBlockEntity;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -38,6 +41,7 @@ import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 
 import java.util.List;
+import java.util.Set;
 
 /** 高热燃料容器、点火交互和强化喷流的服务器端回归测试。 */
 public final class IgnitedFuelGameTests {
@@ -249,6 +253,91 @@ public final class IgnitedFuelGameTests {
             checkHealth(player.getHealth(), 68.0F, "enhanced plasma jet");
             helper.succeed();
         });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("11x8x11")
+    @TestHolder(description = "Enhanced plasma jets heat blocks to incandescent while ordinary jets stop at glowing")
+    static void enhancedPlasmaJetReachesIncandescentTemperature(ExtendedGameTestHelper helper) {
+        Level level = helper.getLevel();
+        HeatingJet ordinary = placeHeatingJet(
+            helper,
+            new BlockPos(3, 2, 5),
+            dev.dubhe.anvilcraft.init.block.ModBlocks.FIRE_CAULDRON.get().fullFilled()
+        );
+        HeatingJet enhanced = placeHeatingJet(
+            helper,
+            new BlockPos(7, 2, 5),
+            ModBlocks.HIGH_HEAT_FUEL_CAULDRON.get().fullFilled()
+                .setValue(HighHeatFuelCauldronBlock.IGNITED, true)
+        );
+
+        PlasmaJetsBlockEntity.tick(
+            level,
+            ordinary.entity().getBlockPos(),
+            ordinary.entity().getBlockState(),
+            ordinary.entity()
+        );
+        PlasmaJetsBlockEntity.tick(
+            level,
+            enhanced.entity().getBlockPos(),
+            enhanced.entity().getBlockState(),
+            enhanced.entity()
+        );
+        HeaterManager.getInstance(level).tick();
+
+        check(
+            level.getBlockState(ordinary.heatablePos())
+                .is(dev.dubhe.anvilcraft.init.block.ModBlocks.GLOWING_NETHERITE_BLOCK.get()),
+            "ordinary plasma jet heated a heatable block beyond glowing"
+        );
+        check(
+            level.getBlockState(enhanced.heatablePos())
+                .is(dev.dubhe.anvilcraft.init.block.ModBlocks.INCANDESCENT_NETHERITE_BLOCK.get()),
+            "enhanced plasma jet did not heat a heatable block to incandescent"
+        );
+        check(
+            level.getBlockEntity(enhanced.heatablePos()) instanceof HeatableBlockEntity heatable
+                && heatable.getDuration() == 2,
+            "enhanced plasma jet stacked its ordinary and enhanced heating rates"
+        );
+        helper.succeed();
+    }
+
+    private static HeatingJet placeHeatingJet(
+        ExtendedGameTestHelper helper,
+        BlockPos relativeCauldronPos,
+        BlockState cauldronState
+    ) {
+        Level level = helper.getLevel();
+        BlockPos cauldronPos = helper.absolutePos(relativeCauldronPos);
+        BlockPos tubeCenter = cauldronPos.above();
+        BlockPos jetPos = tubeCenter.above();
+        level.setBlock(
+            cauldronPos.below(),
+            dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER.getDefaultState()
+                .setValue(dev.dubhe.anvilcraft.block.HeaterBlock.OVERLOAD, false),
+            Block.UPDATE_ALL
+        );
+        level.setBlock(cauldronPos, cauldronState, Block.UPDATE_ALL);
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            level.setBlock(tubeCenter.relative(direction), Blocks.STONE.defaultBlockState(), Block.UPDATE_ALL);
+        }
+        BlockPos heatablePos = tubeCenter.north();
+        level.setBlock(heatablePos, Blocks.NETHERITE_BLOCK.defaultBlockState(), Block.UPDATE_ALL);
+        BlockState jetState = dev.dubhe.anvilcraft.init.block.ModBlocks.PLASMA_JETS.getDefaultState();
+        level.setBlock(jetPos, jetState, Block.UPDATE_ALL);
+        PlasmaJetsBlockEntity jet = new PlasmaJetsBlockEntity(
+            jetPos,
+            jetState,
+            100,
+            Set.of(TubeWallLayer.of(tubeCenter))
+        );
+        level.setBlockEntity(jet);
+        return new HeatingJet(jet, heatablePos);
+    }
+
+    private record HeatingJet(PlasmaJetsBlockEntity entity, BlockPos heatablePos) {
     }
 
     private static LargeCauldronBlockEntity placeLargeCauldron(

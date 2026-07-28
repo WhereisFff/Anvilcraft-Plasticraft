@@ -3,7 +3,7 @@
   "criteria": {
     "has_the_recipe": {
       "conditions": {
-        "recipe": "anvilcraftplasticraft:catalytic_pressing/plastic_oil"
+        "recipe": "anvilcraft:multiblock/condenser_tower"
       },
       "trigger": "minecraft:recipe_unlocked"
     }
@@ -15,7 +15,7 @@
   ],
   "rewards": {
     "recipes": [
-      "anvilcraftplasticraft:catalytic_pressing/plastic_oil"
+      "anvilcraft:multiblock/condenser_tower"
     ]
   }
 }

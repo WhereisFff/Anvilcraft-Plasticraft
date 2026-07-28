@@ -1,20 +1,36 @@
 {
   "multipart": [
     {
-      "when": {"facing": "east"},
+      "when": {"facing": "east", "magnetized": false},
       "apply": {"model": "anvilcraftplasticraft:block/resin_anvil", "y": 270}
     },
     {
-      "when": {"facing": "north"},
+      "when": {"facing": "north", "magnetized": false},
       "apply": {"model": "anvilcraftplasticraft:block/resin_anvil", "y": 180}
     },
     {
-      "when": {"facing": "south"},
+      "when": {"facing": "south", "magnetized": false},
       "apply": {"model": "anvilcraftplasticraft:block/resin_anvil"}
     },
     {
-      "when": {"facing": "west"},
+      "when": {"facing": "west", "magnetized": false},
       "apply": {"model": "anvilcraftplasticraft:block/resin_anvil", "y": 90}
+    },
+    {
+      "when": {"facing": "east", "magnetized": true},
+      "apply": {"model": "anvilcraftplasticraft:block/resin_anvil_magnetic", "y": 270}
+    },
+    {
+      "when": {"facing": "north", "magnetized": true},
+      "apply": {"model": "anvilcraftplasticraft:block/resin_anvil_magnetic", "y": 180}
+    },
+    {
+      "when": {"facing": "south", "magnetized": true},
+      "apply": {"model": "anvilcraftplasticraft:block/resin_anvil_magnetic"}
+    },
+    {
+      "when": {"facing": "west", "magnetized": true},
+      "apply": {"model": "anvilcraftplasticraft:block/resin_anvil_magnetic", "y": 90}
     }
   ]
 }

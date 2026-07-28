@@ -6,7 +6,6 @@ import dev.anvilcraft.plasticraft.client.renderer.UniversalPlasticMeltFluidExten
 import dev.anvilcraft.plasticraft.fluid.UniversalPlasticMeltFluidType;
 import dev.anvilcraft.plasticraft.init.item.ModItems;
 import dev.anvilcraft.plasticraft.fluid.StationaryPlasticMeltFluid;
-import dev.dubhe.anvilcraft.util.ModClientFluidTypeExtensionImpl;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvents;
@@ -22,8 +21,6 @@ import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
 /** Plasticraft 的可储存与可放置流体注册。 */
 public final class ModFluids {
-    private static final ResourceLocation PLACEHOLDER_TEXTURE = AnvilcraftPlasticraft.of("block/fluid_placeholder");
-
     public static final DeferredRegister<FluidType> FLUID_TYPES = DeferredRegister.create(
         NeoForgeRegistries.FLUID_TYPES,
         AnvilcraftPlasticraft.MOD_ID
@@ -227,21 +224,21 @@ public final class ModFluids {
             new HighViscosityResinFluidExtension(),
             LIQUID_HIGH_VISCOSITY_RESIN_TYPE
         );
-        ModClientFluidTypeExtensionImpl placeholder = new ModClientFluidTypeExtensionImpl(
-            PLACEHOLDER_TEXTURE,
-            PLACEHOLDER_TEXTURE,
+        event.registerFluidType(fluidExtension("high_heat_fuel"), HIGH_HEAT_FUEL_TYPE);
+        event.registerFluidType(fluidExtension("plastic_oil"), PLASTIC_OIL_TYPE);
+        event.registerFluidType(fluidExtension("oil_essence"), CRUDE_OIL_ACID_TYPE);
+        event.registerFluidType(new UniversalPlasticMeltFluidExtension(), UNIVERSAL_PLASTIC_MELT_TYPE);
+    }
+
+    private static HighViscosityResinFluidExtension fluidExtension(String textureName) {
+        ResourceLocation texture = AnvilcraftPlasticraft.of("block/" + textureName);
+        return new HighViscosityResinFluidExtension(
+            texture,
             0xFFFFFFFF,
             1.0F,
             0xFFFFFFFF,
             false
         );
-        event.registerFluidType(
-            placeholder,
-            HIGH_HEAT_FUEL_TYPE,
-            PLASTIC_OIL_TYPE,
-            CRUDE_OIL_ACID_TYPE
-        );
-        event.registerFluidType(new UniversalPlasticMeltFluidExtension(), UNIVERSAL_PLASTIC_MELT_TYPE);
     }
 
     public static ResourceLocation liquidHighViscosityResinId() {

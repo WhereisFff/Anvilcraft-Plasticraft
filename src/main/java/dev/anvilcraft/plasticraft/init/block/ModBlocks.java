@@ -121,6 +121,8 @@ public final class ModBlocks {
     public static final BlockEntry<LiquidBlock> HIGH_HEAT_FUEL = fluidBlock(
         "high_heat_fuel",
         ModFluids.HIGH_HEAT_FUEL,
+        "high_heat_fuel",
+        MapColor.COLOR_YELLOW,
         "High-Heat Fuel"
     );
     public static final BlockEntry<HighHeatFuelCauldronBlock> HIGH_HEAT_FUEL_CAULDRON = REGISTRUM
@@ -136,6 +138,8 @@ public final class ModBlocks {
     public static final BlockEntry<LiquidBlock> PLASTIC_OIL = fluidBlock(
         "plastic_oil",
         ModFluids.PLASTIC_OIL,
+        "plastic_oil",
+        MapColor.COLOR_LIGHT_BLUE,
         "Plastic Oil"
     );
     public static final BlockEntry<PlasticOilCauldronBlock> PLASTIC_OIL_CAULDRON = REGISTRUM
@@ -143,7 +147,7 @@ public final class ModBlocks {
         .initialProperties(() -> Blocks.CAULDRON)
         .lang("Plastic Oil Cauldron")
         .blockstate((context, provider) -> {
-            ModelFile[] models = layeredCauldronModels(provider, context.getName(), "block/fluid_placeholder");
+            ModelFile[] models = layeredCauldronModels(provider, context.getName(), "block/plastic_oil");
             provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
                 .modelFile(models[state.getValue(dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock.LEVEL) - 1])
                 .build());
@@ -201,6 +205,8 @@ public final class ModBlocks {
     public static final BlockEntry<LiquidBlock> CRUDE_OIL_ACID = fluidBlock(
         "crude_oil_acid",
         ModFluids.CRUDE_OIL_ACID,
+        "oil_essence",
+        MapColor.COLOR_BLACK,
         "Crude Oil Essence"
     );
 
@@ -318,12 +324,14 @@ public final class ModBlocks {
     private static BlockEntry<LiquidBlock> fluidBlock(
         String id,
         Supplier<? extends FlowingFluid> source,
+        String textureName,
+        MapColor mapColor,
         String name
     ) {
         return REGISTRUM.block(id, properties -> new LiquidBlock(source.get(), properties))
             .initialProperties(() -> Blocks.WATER)
             .properties(properties -> properties
-                .mapColor(MapColor.COLOR_PURPLE)
+                .mapColor(mapColor)
                 .replaceable()
                 .noCollission()
                 .pushReaction(PushReaction.DESTROY)
@@ -335,7 +343,7 @@ public final class ModBlocks {
                 context.get(),
                 provider.models()
                     .getBuilder(context.getName())
-                    .texture("particle", provider.modLoc("block/fluid_placeholder"))
+                    .texture("particle", provider.modLoc("block/" + textureName))
             ))
             .register();
     }
@@ -351,6 +359,9 @@ public final class ModBlocks {
                 ModelProvider.TEXTURE
             );
         }
+        String renderType = contentTexture.equals("block/universal_plastic_melt")
+            ? "minecraft:cutout"
+            : "minecraft:translucent";
         ModelFile[] models = new ModelFile[4];
         for (int level = 1; level <= 4; level++) {
             String parent = level == 4
@@ -365,7 +376,7 @@ public final class ModBlocks {
                 .texture("particle", "minecraft:block/cauldron_side")
                 .texture("side", "minecraft:block/cauldron_side")
                 .texture("top", "minecraft:block/cauldron_top")
-                .renderType("minecraft:cutout");
+                .renderType(renderType);
         }
         return models;
     }

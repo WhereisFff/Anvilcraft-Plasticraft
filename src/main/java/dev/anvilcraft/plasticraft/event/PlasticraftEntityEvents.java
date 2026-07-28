@@ -10,6 +10,7 @@ import dev.anvilcraft.plasticraft.entity.adhesive.SurfaceAdhesiveService;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFluidPhysics;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.anvilcraft.plasticraft.recipe.EscapingVaporEffects;
+import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
@@ -37,6 +38,7 @@ public final class PlasticraftEntityEvents {
         AdhesiveBondingService.tickBondedEntity(event.getEntity(), false);
         EntityBondManager.tick(event.getEntity());
         if (event.getEntity() instanceof ItemEntity item) {
+            PlasticOilCatalysis.tickLooseCatalyst(item);
             PlasticFluidPhysics.floatPlasticItem(item);
         }
         EscapingVaporEffects.tryIgniteOilVapor(event.getEntity());

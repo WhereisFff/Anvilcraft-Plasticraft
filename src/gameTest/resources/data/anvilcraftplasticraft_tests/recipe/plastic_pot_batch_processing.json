@@ -1,0 +1,35 @@
+{
+  "type": "anvillib_recipe:in_world_recipe",
+  "icon": {
+    "count": 1,
+    "id": "minecraft:heart_of_the_sea"
+  },
+  "trigger": "anvilcraft:on_anvil_fall_on",
+  "conflicting": [
+    {
+      "type": "anvillib_recipe:has_item_ingredient",
+      "item": {
+        "count": 2,
+        "items": "minecraft:nautilus_shell"
+      },
+      "offset": [0.0, -0.375, 0.0],
+      "range": [0.75, 0.75, 0.75]
+    }
+  ],
+  "non_conflicting": [
+    {
+      "type": "anvilcraft:has_cauldron",
+      "offset": [0.0, -1.0, 0.0]
+    }
+  ],
+  "outcomes": [
+    {
+      "type": "anvillib_recipe:spawn_item",
+      "item": "minecraft:heart_of_the_sea",
+      "offset": [0.0, -0.75, 0.0]
+    }
+  ],
+  "priority": 2000,
+  "compatible": true,
+  "max_efficiency": 16
+}

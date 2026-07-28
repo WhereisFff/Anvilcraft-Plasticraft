@@ -1,8 +1,8 @@
 {
   "type": "anvilcraftplasticraft:condenser",
-  "consume": 5,
+  "consume": 10,
   "fluid": "anvilcraftplasticraft:crude_oil_acid",
   "gas": "yukkuri:gaseous_oil",
-  "produce": 5,
+  "produce": 10,
   "tower_level": 3
 }

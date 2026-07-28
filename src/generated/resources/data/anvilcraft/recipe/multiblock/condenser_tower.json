@@ -1,0 +1,72 @@
+{
+  "type": "anvilcraft:multiblock",
+  "pattern": {
+    "layers": [
+      [
+        "ABA",
+        "CDC",
+        "ABA"
+      ],
+      [
+        "EFE",
+        "F F",
+        "EFE"
+      ],
+      [
+        "EFE",
+        "FGF",
+        "EFE"
+      ]
+    ],
+    "symbols": {
+      "A": {
+        "block": "anvilcraftplasticraft:high_viscosity_resin_block"
+      },
+      "B": {
+        "block": "anvilcraft:pipe_straight",
+        "properties": {
+          "axis": "z",
+          "waterlogged": "false"
+        }
+      },
+      "C": {
+        "block": "anvilcraft:pipe_straight",
+        "properties": {
+          "axis": "x",
+          "waterlogged": "false"
+        }
+      },
+      "D": {
+        "block": "minecraft:copper_trapdoor",
+        "properties": {
+          "facing": "north",
+          "half": "bottom",
+          "open": "false",
+          "waterlogged": "false"
+        }
+      },
+      "E": {
+        "block": "anvilcraft:cut_brass_pillar",
+        "properties": {
+          "axis": "y"
+        }
+      },
+      "F": {
+        "block": "minecraft:glass"
+      },
+      "G": {
+        "block": "minecraft:copper_trapdoor",
+        "properties": {
+          "facing": "north",
+          "half": "top",
+          "open": "false",
+          "waterlogged": "false"
+        }
+      }
+    }
+  },
+  "result": {
+    "count": 1,
+    "id": "anvilcraftplasticraft:condenser_tower"
+  }
+}

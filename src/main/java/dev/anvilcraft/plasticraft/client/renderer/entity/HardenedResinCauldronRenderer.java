@@ -4,7 +4,8 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
-import dev.anvilcraft.plasticraft.client.renderer.HighHeatFuelFlameRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticOilCatalysisRenderer;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
@@ -13,9 +14,7 @@ import dev.dubhe.anvilcraft.client.init.ModRenderTypes;
 import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.culling.Frustum;
-import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.Sheets;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.entity.EntityRenderer;
@@ -23,6 +22,7 @@ import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.client.resources.model.ModelResourceLocation;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
@@ -32,7 +32,6 @@ import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.fluids.FluidStack;
-import net.neoforged.neoforge.client.model.data.ModelData;
 
 import java.util.List;
 
@@ -43,11 +42,6 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
     public static final ModelResourceLocation OUTLET_MODEL = ModelResourceLocation.standalone(
         AnvilcraftPlasticraft.of("block/hardend_resin_cauldron_outlet")
     );
-    private static final ModelResourceLocation FIRE_MODEL = ModelResourceLocation.standalone(
-        ResourceLocation.fromNamespaceAndPath("anvilcraft", "block/fire_cauldron_fire4")
-    );
-    private static final float FIRE_MODEL_SURFACE_Y = 1.0F - (1.0F / 16.0F + 0.001F);
-    private static final float FLAME_SURFACE_HALF_WIDTH = 0.374F;
     private final BlockRenderDispatcher dispatcher;
     private final RandomSource random = RandomSource.create();
 
@@ -114,20 +108,41 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
                 true,
                 false
             );
+            PlasticOilCatalysisRenderer.renderContainerOverlay(
+                entity.level(),
+                BlockPos.containing(entity.getBoundingBox().getCenter()),
+                partialTick,
+                fluid,
+                innerMin,
+                fluidBottom,
+                innerMin,
+                innerMax,
+                fluidTop,
+                innerMax,
+                buffers,
+                pose,
+                packedLight,
+                true
+            );
             flush(buffers);
         }
         if (entity.anvilcraft$isIgnited()) {
             if (fluid.is(ModFluids.HIGH_HEAT_FUEL.get())) {
-                HighHeatFuelFlameRenderer.render(
+                IgnitedFluidFlameRenderer.renderSoul(
                     pose,
                     buffers,
                     fluidTop,
-                    FLAME_SURFACE_HALF_WIDTH,
-                    entity.level().getGameTime() + partialTick,
-                    entity.getId()
+                    1.0F,
+                    OverlayTexture.NO_OVERLAY
                 );
             } else {
-                this.renderFire(fluidTop, pose, buffers);
+                IgnitedFluidFlameRenderer.renderOrdinary(
+                    pose,
+                    buffers,
+                    fluidTop,
+                    1.0F,
+                    OverlayTexture.NO_OVERLAY
+                );
             }
             flush(buffers);
         }
@@ -174,25 +189,6 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
             1.0F,
             packedLight,
             OverlayTexture.NO_OVERLAY
-        );
-        pose.popPose();
-    }
-
-    private void renderFire(float surfaceY, PoseStack pose, MultiBufferSource buffers) {
-        pose.pushPose();
-        pose.translate(0.0F, surfaceY - FIRE_MODEL_SURFACE_Y, 0.0F);
-        this.dispatcher.getModelRenderer().renderModel(
-            pose.last(),
-            buffers.getBuffer(RenderType.CUTOUT),
-            null,
-            this.dispatcher.getBlockModelShaper().getModelManager().getModel(FIRE_MODEL),
-            1.0F,
-            1.0F,
-            1.0F,
-            LightTexture.FULL_BRIGHT,
-            OverlayTexture.NO_OVERLAY,
-            ModelData.EMPTY,
-            RenderType.cutout()
         );
         pose.popPose();
     }

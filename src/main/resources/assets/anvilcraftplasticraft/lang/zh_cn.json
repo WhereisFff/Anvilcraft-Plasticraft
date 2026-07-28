@@ -38,6 +38,7 @@
   "tooltip.anvilcraftplasticraft.item.high_heat_fuel_bucket": "可点燃蓝色强化喷流的燃料。",
   "tooltip.anvilcraftplasticraft.item.high_heat_fuel_bucket.shift": "每条强化喷流每 gt 气化 50 mB，同时每 gt 消耗 10 mB 高热燃料\n原版分层炼药锅每消耗 250 mB 高热燃料，就延长强化喷流 50 gt。",
   "tooltip.anvilcraftplasticraft.item.plastic_oil_bucket": "原油蒸汽的第二层冷凝产物，也是后续塑料加工的主要原料。",
+  "tooltip.anvilcraftplasticraft.item.plastic_oil_bucket.shift": "与皇家钢物品接触并从正下方受热时，会转化为通用塑料熔体\n开放反应从 25% 速度开始按物品种类对数增长；催化压盖密封时为完整速度\n大型炼药锅会取正下方九格实际热功率的平均值",
   "tooltip.anvilcraftplasticraft.item.crude_oil_acid_bucket": "从气态原油第三层分离出的精华馏分。",
   "tooltip.anvilcraftplasticraft.item.high_viscosity_resin_block": "能牢牢粘紧两块金属，且密封性很好。",
   "tooltip.anvilcraftplasticraft.item.high_viscosity_resin_block.shift": "富有弹性，且会牢牢粘住相邻方块\n可捕获任意体型的生物，敌对生物需要先获得虚弱效果\n高粘性树脂连接的整组方块只占一个活塞推动预算",
@@ -70,15 +71,12 @@
   "block.anvilcraftplasticraft.catalytic_press_lid": "催化压盖",
   "item.anvilcraftplasticraft.catalytic_press_lid": "催化压盖",
   "entity.anvilcraftplasticraft.catalytic_press_lid": "催化压盖",
-  "tooltip.anvilcraftplasticraft.item.catalytic_press_lid": "密封炼药锅或鱼缸，以进行塑料催化加工",
-  "tooltip.anvilcraftplasticraft.item.catalytic_press_lid.shift": "使用高粘性树脂胶将其粘在兼容容器上方，并从容器下方加热",
+  "tooltip.anvilcraftplasticraft.item.catalytic_press_lid": "用于转化塑料油的满速密封皇家钢催化装置",
+  "tooltip.anvilcraftplasticraft.item.catalytic_press_lid.shift": "塑料油与皇家钢物品接触并从正下方受热时即可反应\n开放容器以 25% 速度起步，八种不同催化物可达到 50%\n将压盖用树脂胶粘在容器上方可满速反应，完成后再用下落铁砧压制",
   "block.anvilcraftplasticraft.plastic_oil_cauldron": "装有塑料油的炼药锅",
   "block.anvilcraftplasticraft.universal_plastic_melt": "通用塑料熔体",
   "block.anvilcraftplasticraft.universal_plastic_melt_cauldron": "装有通用塑料熔体的炼药锅",
   "item.anvilcraftplasticraft.universal_plastic_melt_bucket": "通用塑料熔体桶",
   "item.anvilcraftplasticraft.universal_plastic_granule": "通用塑料粒",
-  "tooltip.anvilcraftplasticraft.color": "颜色：%s",
-  "gui.anvilcraftplasticraft.category.catalytic_pressing": "催化压制",
-  "jei.anvilcraftplasticraft.heat_power": "热功率：%s kW",
-  "jei.anvilcraftplasticraft.reaction_time": "反应时间：%s gt"
+  "tooltip.anvilcraftplasticraft.color": "颜色：%s"
 }

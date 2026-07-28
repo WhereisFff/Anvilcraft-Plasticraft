@@ -1,7 +1,8 @@
 package dev.anvilcraft.plasticraft.mixin;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import dev.anvilcraft.plasticraft.client.renderer.HighHeatFuelFlameRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticOilCatalysisRenderer;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.client.renderer.blockentity.FishTankBlockEntityRenderer;
@@ -14,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** 将鱼缸内的高热燃料火焰替换为蓝白色强化喷流。 */
+/** 渲染鱼缸内的高热燃料火焰与塑料油催化渐变。 */
 @Mixin(FishTankBlockEntityRenderer.class)
 abstract class FishTankBlockEntityRendererMixin {
     private static final float TANK_WALL = 1.0F / 16.0F + 0.001F;
@@ -38,7 +39,7 @@ abstract class FishTankBlockEntityRendererMixin {
             + "Lnet/minecraft/client/renderer/MultiBufferSource;II)V",
         at = @At("TAIL")
     )
-    private void plasticraft$renderHighHeatFuelFlame(
+    private void plasticraft$renderFluidEffects(
         FishTankBlockEntity tank,
         float partialTick,
         PoseStack poseStack,
@@ -48,17 +49,35 @@ abstract class FishTankBlockEntityRendererMixin {
         CallbackInfo ci
     ) {
         FluidStack fluid = tank.getFluidHandler().getFluid();
+        if (tank.getLevel() != null && fluid.is(ModFluids.PLASTIC_OIL.get())) {
+            float fill = Math.min((float) fluid.getAmount() / tank.getFluidHandler().getCapacity(), 1.0F);
+            float surfaceY = TANK_WALL + (1.0F - 2.0F * TANK_WALL) * fill;
+            PlasticOilCatalysisRenderer.renderContainerOverlay(
+                tank.getLevel(),
+                tank.getBlockPos(),
+                partialTick,
+                fluid,
+                TANK_WALL,
+                TANK_WALL,
+                TANK_WALL,
+                1.0F - TANK_WALL,
+                surfaceY,
+                1.0F - TANK_WALL,
+                buffers,
+                poseStack,
+                packedLight,
+                true
+            );
+        }
         if (!tank.isIgnited() || !fluid.is(ModFluids.HIGH_HEAT_FUEL.get())) return;
         float fill = Math.min((float) fluid.getAmount() / tank.getFluidHandler().getCapacity(), 1.0F);
         float surfaceY = TANK_WALL + (1.0F - 2.0F * TANK_WALL) * fill;
-        long gameTime = tank.getLevel() == null ? 0L : tank.getLevel().getGameTime();
-        HighHeatFuelFlameRenderer.render(
+        IgnitedFluidFlameRenderer.renderSoul(
             poseStack,
             buffers,
             surfaceY,
-            0.5F - TANK_WALL,
-            gameTime + partialTick,
-            tank.getBlockPos().asLong()
+            1.0F,
+            packedOverlay
         );
     }
 

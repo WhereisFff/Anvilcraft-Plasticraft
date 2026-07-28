@@ -8,8 +8,13 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 /** 给本体喷流静态 API 提供实体炼药锅的兼容查询。 */
 public final class HardenedResinCauldronSupport {
@@ -79,6 +84,24 @@ public final class HardenedResinCauldronSupport {
     public static Integer fluidAmount(Level level, BlockPos pos) {
         HardenedResinCauldronEntity cauldron = find(level, pos);
         return cauldron == null ? null : cauldron.getFluidHandler().getFluidAmount();
+    }
+
+    /** 返回与落砧配方锅格相交的全部实体锅，包括从四个角跨入同一格的锅。 */
+    public static List<HardenedResinCauldronEntity> findRecipeTargets(Level level, BlockPos pos) {
+        List<HardenedResinCauldronEntity> targets = new ArrayList<>(level.getEntitiesOfClass(
+            HardenedResinCauldronEntity.class,
+            new AABB(pos).inflate(0.0625D),
+            Entity::isAlive
+        ));
+        if (level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
+            && bonded.isInitialized()
+            && bonded.isPlastic()
+            && bonded.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron
+            && !targets.contains(cauldron)) {
+            targets.add(cauldron);
+        }
+        targets.sort(Comparator.comparingInt(Entity::getId));
+        return List.copyOf(targets);
     }
 
     private static HardenedResinCauldronEntity find(Level level, BlockPos pos) {

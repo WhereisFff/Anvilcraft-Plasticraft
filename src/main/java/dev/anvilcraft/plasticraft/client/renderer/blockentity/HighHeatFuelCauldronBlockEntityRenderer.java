@@ -3,7 +3,7 @@ package dev.anvilcraft.plasticraft.client.renderer.blockentity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
 import dev.anvilcraft.plasticraft.block.entity.HighHeatFuelCauldronBlockEntity;
-import dev.anvilcraft.plasticraft.client.renderer.HighHeatFuelFlameRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
@@ -14,8 +14,6 @@ import net.minecraft.world.phys.AABB;
 /** 在高热燃料液面上渲染动态蓝白色火焰。 */
 public final class HighHeatFuelCauldronBlockEntityRenderer
     implements BlockEntityRenderer<HighHeatFuelCauldronBlockEntity> {
-    private static final float FLAME_SURFACE_HALF_WIDTH = 0.375F;
-
     public HighHeatFuelCauldronBlockEntityRenderer(BlockEntityRendererProvider.Context context) {
     }
 
@@ -32,14 +30,12 @@ public final class HighHeatFuelCauldronBlockEntityRenderer
         if (!state.getValue(HighHeatFuelCauldronBlock.IGNITED) || blockEntity.isSpent()) return;
         int level = state.getValue(Layered4LevelCauldronBlock.LEVEL);
         float surfaceY = (6.0F + level * 2.0F) / 16.0F + 0.01F;
-        long gameTime = blockEntity.getLevel() == null ? 0L : blockEntity.getLevel().getGameTime();
-        HighHeatFuelFlameRenderer.render(
+        IgnitedFluidFlameRenderer.renderSoul(
             pose,
             buffers,
             surfaceY,
-            FLAME_SURFACE_HALF_WIDTH,
-            gameTime + partialTick,
-            blockEntity.getBlockPos().asLong()
+            1.0F,
+            packedOverlay
         );
     }
 

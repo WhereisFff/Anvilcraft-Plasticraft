@@ -1,0 +1,54 @@
+{
+  "parent": "anvilcraft:block/template_large_block",
+  "render_type": "minecraft:translucent",
+  "textures": {
+    "resin": "anvilcraftplasticraft:block/high_viscosity_resin",
+    "particle": "anvilcraftplasticraft:block/high_viscosity_resin"
+  },
+  "elements": [
+    {
+      "from": [-16, -16, -14],
+      "to": [-14, -14, 32],
+      "rotation": {"angle": 0, "axis": "y", "origin": [-15, -16, 29]},
+      "faces": {
+        "south": {"uv": [0, 0, 2, 2], "texture": "#resin"},
+        "west": {"uv": [0, 0, 16, 2], "texture": "#resin"},
+        "up": {"uv": [0, 0, 2, 16], "texture": "#resin"},
+        "down": {"uv": [0, 0, 2, 16], "texture": "#resin"}
+      }
+    },
+    {
+      "from": [-14, -16, 30],
+      "to": [32, -14, 32],
+      "rotation": {"angle": 0, "axis": "y", "origin": [-15, -16, 29]},
+      "faces": {
+        "east": {"uv": [0, 0, 2, 2], "texture": "#resin"},
+        "south": {"uv": [0, 0, 16, 2], "texture": "#resin"},
+        "up": {"uv": [0, 14, 16, 16], "texture": "#resin"},
+        "down": {"uv": [0, 0, 16, 2], "texture": "#resin"}
+      }
+    },
+    {
+      "from": [30, -16, -16],
+      "to": [32, -14, 30],
+      "rotation": {"angle": 0, "axis": "y", "origin": [-15, -16, 29]},
+      "faces": {
+        "north": {"uv": [0, 0, 2, 2], "texture": "#resin"},
+        "east": {"uv": [0, 0, 16, 2], "texture": "#resin"},
+        "up": {"uv": [14, 0, 16, 16], "texture": "#resin"},
+        "down": {"uv": [14, 0, 16, 16], "texture": "#resin"}
+      }
+    },
+    {
+      "from": [-16, -16, -16],
+      "to": [30, -14, -14],
+      "rotation": {"angle": 0, "axis": "y", "origin": [-15, -16, 29]},
+      "faces": {
+        "north": {"uv": [0, 0, 16, 2], "texture": "#resin"},
+        "west": {"uv": [0, 0, 2, 2], "texture": "#resin"},
+        "up": {"uv": [0, 0, 16, 2], "texture": "#resin"},
+        "down": {"uv": [0, 14, 16, 16], "texture": "#resin"}
+      }
+    }
+  ]
+}

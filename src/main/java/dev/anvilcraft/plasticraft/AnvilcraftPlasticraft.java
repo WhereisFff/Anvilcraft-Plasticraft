@@ -17,6 +17,7 @@ import dev.anvilcraft.plasticraft.init.item.ModItems;
 import dev.anvilcraft.plasticraft.init.ModMenuTypes;
 import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
 import dev.anvilcraft.plasticraft.recipe.EscapingVaporEffects;
+import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetVaporizationSource;
 import dev.anvilcraft.lib.v2.registrum.Registrum;
 import dev.anvilcraft.lib.v2.network.register.NetworkRegistrar;
@@ -61,6 +62,7 @@ public final class AnvilcraftPlasticraft {
         NeoForge.EVENT_BUS.addListener(HighViscosityResinEvents::useEntity);
         NeoForge.EVENT_BUS.addListener(CondenserTowerProcess::onLargeCauldronProcess);
         NeoForge.EVENT_BUS.addListener(EscapingVaporEffects::rightClickBlock);
+        NeoForge.EVENT_BUS.addListener(PlasticOilCatalysis::onChunkSent);
         modEventBus.addListener(HighViscosityResinEvents::registerCauldronFluidContent);
         modEventBus.addListener(ModBlocks::registerDispenserBehavior);
         modEventBus.addListener(AnvilcraftPlasticraft::registerCapabilities);
