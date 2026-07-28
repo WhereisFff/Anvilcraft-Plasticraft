@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.mixin;
 
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -145,7 +146,7 @@ abstract class LivingEntityResinHeadMixin {
         player.level().playSound(
             null,
             player.blockPosition(),
-            dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.getDefaultState().getSoundType().getHitSound(),
+            ModBlocks.RESIN_BLOCK.getDefaultState().getSoundType().getHitSound(),
             SoundSource.PLAYERS,
             0.8F,
             0.9F + player.getRandom().nextFloat() * 0.2F

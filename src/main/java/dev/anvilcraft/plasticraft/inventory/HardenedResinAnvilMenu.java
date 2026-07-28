@@ -1,14 +1,17 @@
 package dev.anvilcraft.plasticraft.inventory;
 
-import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
+import dev.dubhe.anvilcraft.init.item.ModItems;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.StringUtil;
 import net.minecraft.world.MenuProvider;
+import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -16,7 +19,6 @@ import net.minecraft.world.inventory.AnvilMenu;
 import net.minecraft.world.inventory.ContainerLevelAccess;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.server.level.ServerPlayer;
 
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -93,7 +95,7 @@ public class HardenedResinAnvilMenu extends AnvilMenu {
 
     public static void open(ServerPlayer player, HardenedResinAnvilEntity entity) {
         MenuType<?> type = menuType();
-        MenuProvider provider = new net.minecraft.world.SimpleMenuProvider(
+        MenuProvider provider = new SimpleMenuProvider(
             (containerId, inventory, ignored) ->
                 new HardenedResinAnvilMenu(type, containerId, inventory, entity.getId()),
             TITLE
@@ -107,7 +109,7 @@ public class HardenedResinAnvilMenu extends AnvilMenu {
     public static void open(ServerPlayer player, BondedEntityBlockEntity bonded) {
         BlockPos pos = bonded.getBlockPos();
         MenuType<?> type = menuType();
-        MenuProvider provider = new net.minecraft.world.SimpleMenuProvider(
+        MenuProvider provider = new SimpleMenuProvider(
             (containerId, inventory, ignored) ->
                 new HardenedResinAnvilMenu(type, containerId, inventory, pos),
             TITLE
@@ -150,7 +152,7 @@ public class HardenedResinAnvilMenu extends AnvilMenu {
         ItemStack inputRight = this.getSlot(1).getItem();
         boolean freeResinHammerRepair = inputLeft.getItem() instanceof ResinAnvilHammerItem
             && inputLeft.isDamaged()
-            && inputRight.is(dev.dubhe.anvilcraft.init.item.ModItems.RESIN.get());
+            && inputRight.is(ModItems.RESIN.get());
         Integer previousRepairCost = inputLeft.get(DataComponents.REPAIR_COST);
 
         // 计算时临时忽略既有惩罚，避免高 RepairCost 让免费树脂修复显示“过于昂贵”。

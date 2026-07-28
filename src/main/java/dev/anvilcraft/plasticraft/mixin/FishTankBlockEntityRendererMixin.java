@@ -21,9 +21,10 @@ abstract class FishTankBlockEntityRendererMixin {
     private static final float TANK_WALL = 1.0F / 16.0F + 0.001F;
 
     @Redirect(
-        method = "render(Ldev/dubhe/anvilcraft/block/entity/FishTankBlockEntity;F"
-            + "Lcom/mojang/blaze3d/vertex/PoseStack;"
-            + "Lnet/minecraft/client/renderer/MultiBufferSource;II)V",
+        method = """
+            render(Ldev/dubhe/anvilcraft/block/entity/FishTankBlockEntity;F\
+            Lcom/mojang/blaze3d/vertex/PoseStack;\
+            Lnet/minecraft/client/renderer/MultiBufferSource;II)V""",
         at = @At(
             value = "INVOKE",
             target = "Ldev/dubhe/anvilcraft/block/entity/FishTankBlockEntity;isIgnited()Z"
@@ -34,9 +35,10 @@ abstract class FishTankBlockEntityRendererMixin {
     }
 
     @Inject(
-        method = "render(Ldev/dubhe/anvilcraft/block/entity/FishTankBlockEntity;F"
-            + "Lcom/mojang/blaze3d/vertex/PoseStack;"
-            + "Lnet/minecraft/client/renderer/MultiBufferSource;II)V",
+        method = """
+            render(Ldev/dubhe/anvilcraft/block/entity/FishTankBlockEntity;F\
+            Lcom/mojang/blaze3d/vertex/PoseStack;\
+            Lnet/minecraft/client/renderer/MultiBufferSource;II)V""",
         at = @At("TAIL")
     )
     private void plasticraft$renderFluidEffects(

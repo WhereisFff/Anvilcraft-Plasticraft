@@ -7,23 +7,24 @@ import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveSelectionManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.init.ModAttachments;
 import dev.anvilcraft.plasticraft.init.item.ModItems;
-import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.InteractionResult;
 import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.event.entity.player.PlayerEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
-import net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent;
-import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.common.util.TriState;
 import net.neoforged.neoforge.event.entity.EntityTeleportEvent;
 import net.neoforged.neoforge.event.entity.EntityTravelToDimensionEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
-import net.neoforged.neoforge.common.util.TriState;
 
 /** 为非标准输入路径提供服务端树脂桶交互兜底。 */
 @EventBusSubscriber(modid = AnvilcraftPlasticraft.MOD_ID)
@@ -34,7 +35,7 @@ public final class HighViscosityResinAdhesionEvents {
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void knockbackStartsAdhesiveRebound(LivingKnockBackEvent event) {
         double resistance = event.getEntity().getAttributeValue(
-            net.minecraft.world.entity.ai.attributes.Attributes.KNOCKBACK_RESISTANCE
+            Attributes.KNOCKBACK_RESISTANCE
         );
         double effectiveStrength = event.getStrength() * Math.max(0.0D, 1.0D - resistance);
         if (hasAdhesive(event.getEntity())) {

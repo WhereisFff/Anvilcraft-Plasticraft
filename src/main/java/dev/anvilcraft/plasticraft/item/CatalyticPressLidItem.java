@@ -1,7 +1,5 @@
 package dev.anvilcraft.plasticraft.item;
 
-import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import net.minecraft.world.entity.EntityType;
@@ -22,14 +20,6 @@ public final class CatalyticPressLidItem extends AbstractPlasticEntityItem<Catal
         Supplier<BlockState> displayState
     ) {
         super(block, properties, entityType, displayState);
-        PlasticItemTooltipManager.register(
-            AnvilcraftPlasticraft.of("catalytic_press_lid"),
-            "A sealed full-speed royal-steel catalyst for converting plastic oil",
-            """
-                Plastic oil reacts with royal-steel items while heated from directly below
-                An open vessel starts at 25% speed; eight distinct catalysts reach 50%
-                Bond this lid above a vessel for full speed, then press it with a falling anvil"""
-        );
     }
 
     @Override

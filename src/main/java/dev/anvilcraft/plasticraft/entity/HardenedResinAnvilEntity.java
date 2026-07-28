@@ -1,14 +1,15 @@
 package dev.anvilcraft.plasticraft.entity;
 
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
+import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
-import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.api.giantanvil.IShockEntity;
 import dev.dubhe.anvilcraft.api.giantanvil.ShockAnvilBehavior;
+import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.damagesource.DamageSource;
@@ -84,7 +85,7 @@ public class HardenedResinAnvilEntity extends AbstractPlasticEntity implements I
     }
 
     @Override
-    protected void onEntityImpact(Entity support, net.minecraft.core.Direction impactDirection, float impactSpeed) {
+    protected void onEntityImpact(Entity support, Direction impactDirection, float impactSpeed) {
         super.onEntityImpact(support, impactDirection, impactSpeed);
         if (this.level().isClientSide
             || !EntitySelector.NO_CREATIVE_OR_SPECTATOR.test(support)

@@ -4,13 +4,14 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import dev.anvilcraft.lib.v2.wheel.client.gui.component.WheelWidget;
+import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderHelper;
+import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.network.BondedPlasticHammerRotatePacket;
 import dev.anvilcraft.plasticraft.network.PlasticEntityHammerRotatePacket;
-import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderHelper;
-import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.dubhe.anvilcraft.client.support.RenderSupport;
+import javax.annotation.Nullable;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -18,14 +19,14 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
-import net.minecraft.network.chat.Component;
-import net.minecraft.core.Direction;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.joml.Matrix4f;
 
-import javax.annotation.Nullable;
+import java.util.List;
 
 /** 铁砧锤长按时使用的六向附着面轮盘。 */
 public final class PlasticHammerScreen extends Screen {
@@ -95,7 +96,7 @@ public final class PlasticHammerScreen extends Screen {
             0xFDFDFD,
             1.0F,
             0.0F,
-            java.util.List.of(sections),
+            List.of(sections),
             DEAD_ZONE
         );
         this.wheel.setCurrentIndex(indexOf(this.selectedDirection));
@@ -285,7 +286,7 @@ public final class PlasticHammerScreen extends Screen {
             int textColor,
             float textScale,
             float degreeOffsetAngle,
-            java.util.List<RawSection> sections,
+            List<RawSection> sections,
             int deadZone
         ) {
             super(

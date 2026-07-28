@@ -8,6 +8,7 @@ import dev.dubhe.anvilcraft.api.fluid.network.FluidPipeNetwork;
 import dev.dubhe.anvilcraft.api.fluid.network.ValveState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
@@ -89,7 +90,7 @@ abstract class FluidPipeNetworkMixin implements FluidPipeNetworkExtension {
         }
         int filled = target.handler().fill(drained, IFluidHandler.FluidAction.EXECUTE);
         if (filled == drained.getAmount()) {
-            if (this.level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            if (this.level instanceof ServerLevel serverLevel) {
                 CatalyticPressProcess.syncMeltContainerColor(serverLevel, target.containerPos(), drained);
             }
             return true;

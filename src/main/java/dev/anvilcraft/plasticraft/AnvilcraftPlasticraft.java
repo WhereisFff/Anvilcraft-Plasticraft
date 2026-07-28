@@ -1,39 +1,40 @@
 package dev.anvilcraft.plasticraft;
 
 import com.mojang.logging.LogUtils;
+import dev.anvilcraft.lib.v2.network.register.NetworkRegistrar;
+import dev.anvilcraft.lib.v2.registrum.Registrum;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationSources;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.YukkuriCapabilities;
 import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
+import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
 import dev.anvilcraft.plasticraft.data.PlasticraftDatagen;
 import dev.anvilcraft.plasticraft.event.HighViscosityResinEvents;
 import dev.anvilcraft.plasticraft.fluid.UniversalPlasticMeltBucketWrapper;
+import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.init.ModMenuTypes;
 import dev.anvilcraft.plasticraft.init.ModParticles;
 import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.block.ModBlockEntities;
+import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import dev.anvilcraft.plasticraft.init.item.ModItemGroups;
 import dev.anvilcraft.plasticraft.init.item.ModItems;
-import dev.anvilcraft.plasticraft.init.ModMenuTypes;
 import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
 import dev.anvilcraft.plasticraft.recipe.EscapingVaporEffects;
-import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetVaporizationSource;
-import dev.anvilcraft.lib.v2.registrum.Registrum;
-import dev.anvilcraft.lib.v2.network.register.NetworkRegistrar;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationSources;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.YukkuriCapabilities;
+import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.CreativeModeTab;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
-import net.neoforged.fml.ModContainer;
-import net.neoforged.fml.common.Mod;
 import org.slf4j.Logger;
 
 @Mod(AnvilcraftPlasticraft.MOD_ID)
@@ -75,7 +76,7 @@ public final class AnvilcraftPlasticraft {
     }
 
     private static void addItemTooltips(ItemTooltipEvent event) {
-        PlasticItemTooltipManager.addTooltip(event.getItemStack(), event.getToolTip());
+        PlasticItemTooltipManager.addTooltip(event.getItemStack(), event.getContext(), event.getToolTip());
     }
 
     private static void registerCapabilities(RegisterCapabilitiesEvent event) {
@@ -106,12 +107,12 @@ public final class AnvilcraftPlasticraft {
         );
         event.registerBlock(
             Capabilities.FluidHandler.BLOCK,
-            dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity::capability,
+            CondenserTowerBlockEntity::capability,
             ModBlocks.CONDENSER_TOWER.get()
         );
         event.registerBlock(
             YukkuriCapabilities.VAPOR_CONSUMER,
-            dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity::vaporCapability,
+            CondenserTowerBlockEntity::vaporCapability,
             ModBlocks.CONDENSER_TOWER.get()
         );
         event.registerItem(

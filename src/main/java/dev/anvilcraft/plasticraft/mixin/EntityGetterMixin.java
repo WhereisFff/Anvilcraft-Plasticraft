@@ -33,8 +33,9 @@ interface EntityGetterMixin {
         method = "getEntityCollisions",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/world/phys/shapes/Shapes;create(Lnet/minecraft/world/phys/AABB;)"
-                + "Lnet/minecraft/world/phys/shapes/VoxelShape;"
+            target = """
+                Lnet/minecraft/world/phys/shapes/Shapes;create(Lnet/minecraft/world/phys/AABB;)\
+                Lnet/minecraft/world/phys/shapes/VoxelShape;"""
         )
     )
     private VoxelShape plasticraft$useShapedCollisionInCollisionQuery(
@@ -67,8 +68,9 @@ interface EntityGetterMixin {
         method = "isUnobstructed",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/world/phys/shapes/Shapes;create(Lnet/minecraft/world/phys/AABB;)"
-                + "Lnet/minecraft/world/phys/shapes/VoxelShape;"
+            target = """
+                Lnet/minecraft/world/phys/shapes/Shapes;create(Lnet/minecraft/world/phys/AABB;)\
+                Lnet/minecraft/world/phys/shapes/VoxelShape;"""
         )
     )
     private VoxelShape plasticraft$useShapedCollisionInObstructionQuery(

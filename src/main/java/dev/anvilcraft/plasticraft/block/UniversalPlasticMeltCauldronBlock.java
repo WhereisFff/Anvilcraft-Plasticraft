@@ -4,20 +4,22 @@ import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.item.ModItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.cauldron.CauldronInteraction;
 import net.minecraft.sounds.SoundEvents;
-import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.EnumProperty;
-import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.phys.Vec3;
 
 public class UniversalPlasticMeltCauldronBlock extends Layered4LevelCauldronBlock {
-    private static final net.minecraft.world.phys.Vec3 STICK_SPEED = new net.minecraft.world.phys.Vec3(
+    private static final Vec3 STICK_SPEED = new Vec3(
         0.25D,
         0.05D,
         0.25D
@@ -74,8 +76,8 @@ public class UniversalPlasticMeltCauldronBlock extends Layered4LevelCauldronBloc
             ));
     }
 
-    private static net.minecraft.world.item.ItemStack coloredBucket(DyeColor color) {
-        net.minecraft.world.item.ItemStack bucket = ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET.asStack();
+    private static ItemStack coloredBucket(DyeColor color) {
+        ItemStack bucket = ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET.asStack();
         PlasticMeltColor.set(bucket, color);
         return bucket;
     }

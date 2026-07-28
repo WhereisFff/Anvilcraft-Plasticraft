@@ -1,9 +1,7 @@
 package dev.anvilcraft.plasticraft.item;
 
-import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
-import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -22,16 +20,6 @@ public class HardenedResinCauldronItem extends AbstractPlasticEntityItem<Hardene
         Supplier<BlockState> displayState
     ) {
         super(block, properties, entityType, displayState);
-        PlasticItemTooltipManager.register(
-            AnvilcraftPlasticraft.of("hardend_resin_cauldron"),
-            "A light, portable cauldron assembled from hardened resin plates",
-            """
-                Pushable cauldron for items and up to 1000 mB of fluid
-                Shift-use with any Anvil Hammer to retrieve it and its stored items
-                Connects to pipe heads, pumps, and control valves from any side
-                Creative players can Shift-use a magnet to magnetize it
-                Can be placed in any direction; when it does not face up, it looks like the fluid will spill"""
-        );
     }
 
     @Override

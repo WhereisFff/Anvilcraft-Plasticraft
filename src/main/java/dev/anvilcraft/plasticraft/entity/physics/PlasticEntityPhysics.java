@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.entity.physics;
 import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.dubhe.anvilcraft.util.GravityManager;
+import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
@@ -11,8 +12,8 @@ import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -535,7 +536,7 @@ public final class PlasticEntityPhysics {
     /** 仅当本刻移动前重力面已接触方块时返回 true。 */
     public static boolean hasImmediateBlockContact(FallingBlockEntity entity, Direction gravityDirection) {
         for (AABB component : collisionComponents(entity, entity.getBoundingBox())) {
-            for (net.minecraft.world.phys.shapes.VoxelShape shape : entity.level()
+            for (VoxelShape shape : entity.level()
                 .getBlockCollisions(entity, supportProbe(component, gravityDirection))) {
                 if (Math.abs(supportGap(component, shape.bounds(), gravityDirection)) <= FACE_EPSILON * 4.0D
                     && tangentialOverlap(component, shape.bounds(), gravityDirection) > FACE_EPSILON) {

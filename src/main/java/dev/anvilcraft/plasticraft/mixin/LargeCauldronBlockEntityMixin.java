@@ -12,13 +12,14 @@ import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
-import org.spongepowered.asm.mixin.Unique;
+import net.neoforged.neoforge.fluids.FluidStack;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /** 扩展大型炼药锅内的高热燃料伤害、熔体颜色与塑料油催化。 */
 @Mixin(LargeCauldronBlockEntity.class)
@@ -56,7 +57,7 @@ abstract class LargeCauldronBlockEntityMixin {
     private void plasticraft$captureMixingColor(ServerLevel level, CallbackInfoReturnable<Boolean> cir) {
         this.plasticraft$mixingColor = DyeColor.WHITE;
         LargeCauldronBlockEntity cauldron = (LargeCauldronBlockEntity) (Object) this;
-        for (net.neoforged.neoforge.fluids.FluidStack fluid : cauldron.getFluids().copyFluids()) {
+        for (FluidStack fluid : cauldron.getFluids().copyFluids()) {
             if (!fluid.is(ModFluids.UNIVERSAL_PLASTIC_MELT.get())) continue;
             this.plasticraft$mixingColor = PlasticMeltColor.get(fluid);
             break;
@@ -67,9 +68,10 @@ abstract class LargeCauldronBlockEntityMixin {
         method = "tryProcessFluidMixingRecipe",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/neoforged/neoforge/items/ItemHandlerHelper;insertItem("
-                + "Lnet/neoforged/neoforge/items/IItemHandler;"
-                + "Lnet/minecraft/world/item/ItemStack;Z)Lnet/minecraft/world/item/ItemStack;"
+            target = """
+                Lnet/neoforged/neoforge/items/ItemHandlerHelper;insertItem(\
+                Lnet/neoforged/neoforge/items/IItemHandler;\
+                Lnet/minecraft/world/item/ItemStack;Z)Lnet/minecraft/world/item/ItemStack;"""
         ),
         index = 1
     )

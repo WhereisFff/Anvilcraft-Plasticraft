@@ -106,7 +106,7 @@ public final class HardenedResinCauldronSupport {
 
     private static HardenedResinCauldronEntity find(Level level, BlockPos pos) {
         Entity selected = null;
-        for (Entity entity : level.getEntitiesOfClass(Entity.class, new net.minecraft.world.phys.AABB(pos),
+        for (Entity entity : level.getEntitiesOfClass(Entity.class, new AABB(pos),
             candidate -> candidate instanceof HardenedResinCauldronEntity
                 && !candidate.isRemoved()
                 && BlockPos.containing(candidate.getBoundingBox().getCenter()).equals(pos))) {

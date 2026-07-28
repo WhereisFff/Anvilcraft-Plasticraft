@@ -4,6 +4,8 @@ import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
+import dev.dubhe.anvilcraft.block.ResinBlock;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -76,9 +78,9 @@ public class ResinAnvilBlock extends AbstractPlasticEntityBlock<ResinAnvilEntity
         return true;
     }
 
-    private static dev.dubhe.anvilcraft.block.ResinBlock resinBlock() {
-        return (dev.dubhe.anvilcraft.block.ResinBlock)
-            dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get();
+    private static ResinBlock resinBlock() {
+        return (ResinBlock)
+            ModBlocks.RESIN_BLOCK.get();
     }
 
     @Override

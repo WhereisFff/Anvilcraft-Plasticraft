@@ -1,18 +1,19 @@
 package dev.anvilcraft.plasticraft.block.entity;
 
+import dev.anvilcraft.lib.v2.recipe.cache.IItemHandlerCache;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
-import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
-import dev.anvilcraft.lib.v2.recipe.cache.IItemHandlerCache;
 import dev.dubhe.anvilcraft.api.fluid.IFluidHandlerHolder;
 import dev.dubhe.anvilcraft.api.injection.tooltip.ITooltipProviderExtension;
 import dev.dubhe.anvilcraft.item.AnvilHammerItem;
+import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -46,11 +47,12 @@ import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.level.material.PushReaction;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.attachment.AttachmentHolder;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.ItemStackHandler;
 
-import javax.annotation.Nullable;
 import java.util.List;
 
 /** 保存被方块化实体完整数据并负责在解胶时恢复实体。 */
@@ -92,9 +94,9 @@ public class BondedEntityBlockEntity extends BlockEntity
     private byte hammerReturnFrom = PlasticEntityOrientation.DEFAULT.pack();
     private long hammerReturnStarted = -1L;
     private @Nullable Entity renderEntity;
-    private static final IItemHandler EMPTY_ITEM_HANDLER = new net.neoforged.neoforge.items.ItemStackHandler(0);
+    private static final IItemHandler EMPTY_ITEM_HANDLER = new ItemStackHandler(0);
     private static final IFluidHandler EMPTY_FLUID_HANDLER =
-        new net.neoforged.neoforge.fluids.capability.templates.FluidTank(0);
+        new FluidTank(0);
 
     public BondedEntityBlockEntity(
         BlockEntityType<? extends BondedEntityBlockEntity> type,

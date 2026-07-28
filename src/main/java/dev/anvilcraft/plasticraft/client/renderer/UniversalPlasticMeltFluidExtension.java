@@ -9,9 +9,10 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.material.FluidState;
-import net.minecraft.world.item.component.CustomData;
 import net.neoforged.neoforge.fluids.FluidStack;
 
 /** 使用同一张灰度纹理渲染流体，并从存储位置读取调色数据。 */
@@ -44,7 +45,7 @@ public final class UniversalPlasticMeltFluidExtension extends HighViscosityResin
         if (getter.getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity melt) {
             return PlasticMeltColor.tint(melt.getColor());
         }
-        return PlasticMeltColor.tint(net.minecraft.world.item.DyeColor.WHITE);
+        return PlasticMeltColor.tint(DyeColor.WHITE);
     }
 
     /** 只在客户端临时渲染栈上记录催化覆层透明度。 */

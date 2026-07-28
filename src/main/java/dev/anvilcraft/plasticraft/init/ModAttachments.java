@@ -1,12 +1,12 @@
 package dev.anvilcraft.plasticraft.init;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.entity.adhesive.EntityAdhesion;
+import dev.anvilcraft.plasticraft.block.BondedFallingChunkData;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveElasticMotion;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveTransit;
+import dev.anvilcraft.plasticraft.entity.adhesive.EntityAdhesion;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
 import dev.anvilcraft.plasticraft.entity.adhesive.SlidingAdhesionData;
-import dev.anvilcraft.plasticraft.block.BondedFallingChunkData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
@@ -16,6 +16,9 @@ import net.neoforged.neoforge.attachment.AttachmentType;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Supplier;
 
 /** Plasticraft 的 NeoForge 数据附件注册入口。 */
@@ -46,10 +49,10 @@ public final class ModAttachments {
                 Direction.UP,
                 ResourceLocation.fromNamespaceAndPath("minecraft", "air"),
                 Direction.DOWN,
-                java.util.Optional.empty(),
+                Optional.empty(),
                 -1,
                 Vec3.ZERO,
-                java.util.List.of(Vec3.ZERO, Vec3.ZERO),
+                List.of(Vec3.ZERO, Vec3.ZERO),
                 0L,
                 1,
                 false,
@@ -73,11 +76,11 @@ public final class ModAttachments {
     public static final Supplier<AttachmentType<EntityBondState>> ENTITY_BONDS = ATTACHMENTS.register(
         "entity_bonds",
         () -> AttachmentType.builder(() -> new EntityBondState(
-                new java.util.UUID(0L, 0L),
+                new UUID(0L, 0L),
                 -1,
                 Vec3.ZERO,
                 false,
-                java.util.List.of()
+                List.of()
             ))
             .serialize(EntityBondState.CODEC)
             .sync(EntityBondState.STREAM_CODEC)

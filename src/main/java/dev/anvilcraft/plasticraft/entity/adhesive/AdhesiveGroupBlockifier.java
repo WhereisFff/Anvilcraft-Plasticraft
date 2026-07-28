@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.block.BondedFallingBlockInfo;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -15,10 +16,10 @@ import net.minecraft.world.level.block.AnvilBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.PushReaction;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-import javax.annotation.Nullable;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -299,8 +300,8 @@ public final class AdhesiveGroupBlockifier {
     ) {
         VoxelShape collision = state.getCollisionShape(level, pos);
         if (collision.isEmpty()) return true;
-        for (net.minecraft.world.phys.AABB localBounds : collision.toAabbs()) {
-            net.minecraft.world.phys.AABB bounds = localBounds.move(pos.getX(), pos.getY(), pos.getZ());
+        for (AABB localBounds : collision.toAabbs()) {
+            AABB bounds = localBounds.move(pos.getX(), pos.getY(), pos.getZ());
             if (!level.getEntities(
                 (Entity) null,
                 bounds,

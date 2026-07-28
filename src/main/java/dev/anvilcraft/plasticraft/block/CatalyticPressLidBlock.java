@@ -1,9 +1,11 @@
 package dev.anvilcraft.plasticraft.block;
 
+import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.ItemStack;
@@ -29,7 +31,7 @@ public final class CatalyticPressLidBlock extends AbstractPlasticEntityBlock<Cat
     public CatalyticPressLidBlock(Properties properties) {
         super(properties);
         this.registerDefaultState(this.defaultBlockState()
-            .setValue(FACING, net.minecraft.core.Direction.NORTH)
+            .setValue(FACING, Direction.NORTH)
             .setValue(MAGNETIZED, false)
             .setValue(BONDED, false));
     }
@@ -54,7 +56,7 @@ public final class CatalyticPressLidBlock extends AbstractPlasticEntityBlock<Cat
     @Override
     public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
         PlasticEntityOrientation orientation = state.getValue(BONDED)
-            && level.getBlockEntity(pos) instanceof dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity bonded
+            && level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
             && bonded.isInitialized()
             ? bonded.getPlasticOrientation()
             : PlasticEntityOrientation.fromLegacyState(state);

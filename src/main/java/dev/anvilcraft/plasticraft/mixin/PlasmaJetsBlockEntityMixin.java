@@ -1,37 +1,37 @@
 package dev.anvilcraft.plasticraft.mixin;
 
-import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
-import dev.anvilcraft.plasticraft.recipe.EnhancedPlasmaJetHeat;
-import dev.anvilcraft.plasticraft.recipe.EnhancedPlasmaJetFuel;
 import dev.anvilcraft.plasticraft.api.blockentity.EnhancedPlasmaJetExtension;
 import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
+import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
+import dev.anvilcraft.plasticraft.recipe.EnhancedPlasmaJetFuel;
+import dev.anvilcraft.plasticraft.recipe.EnhancedPlasmaJetHeat;
+import dev.dubhe.anvilcraft.api.heat.HeaterInfo;
 import dev.dubhe.anvilcraft.block.HeaterBlock;
 import dev.dubhe.anvilcraft.block.PlasmaJetsBlock;
-import dev.dubhe.anvilcraft.api.heat.HeaterInfo;
-import dev.dubhe.anvilcraft.init.block.ModBlocks;
-import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity.TubeWallLayer;
-import net.minecraft.core.Direction;
+import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import net.minecraft.core.BlockPos;
-import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
-import net.minecraft.world.level.block.Block;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
-import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.Set;
 
@@ -109,9 +109,10 @@ abstract class PlasmaJetsBlockEntityMixin implements EnhancedPlasmaJetExtension 
         method = "serverTick",
         at = @At(
             value = "INVOKE",
-            target = "Ldev/dubhe/anvilcraft/api/heat/HeaterManager;addProducer("
-                + "Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/Level;"
-                + "Ldev/dubhe/anvilcraft/api/heat/HeaterInfo;)V"
+            target = """
+                Ldev/dubhe/anvilcraft/api/heat/HeaterManager;addProducer(\
+                Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/Level;\
+                Ldev/dubhe/anvilcraft/api/heat/HeaterInfo;)V"""
         ),
         index = 2
     )

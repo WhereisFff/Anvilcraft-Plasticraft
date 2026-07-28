@@ -1,12 +1,12 @@
 package dev.anvilcraft.plasticraft.mixin;
 
+import dev.anvilcraft.plasticraft.api.blockentity.EnhancedPlasmaJetExtension;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
 import dev.dubhe.anvilcraft.init.ModParticles;
-import dev.anvilcraft.plasticraft.api.blockentity.EnhancedPlasmaJetExtension;
-import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -15,6 +15,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import static dev.anvilcraft.plasticraft.init.ModParticles.ENHANCED_PLASMA_JETS;
 
 /**
  * 仅补齐大型炼药锅底部占位导致缺失的最后一格喷流粒子。
@@ -35,7 +37,7 @@ abstract class PlasmaJetsBlockEntityClientMixin {
     )
     private ParticleOptions plasticraft$useEnhancedParticle(ParticleOptions original) {
         return (Object) this instanceof EnhancedPlasmaJetExtension extension && extension.plasticraft$isEnhanced()
-            ? dev.anvilcraft.plasticraft.init.ModParticles.ENHANCED_PLASMA_JETS.get()
+            ? ENHANCED_PLASMA_JETS.get()
             : original;
     }
 
@@ -54,7 +56,7 @@ abstract class PlasmaJetsBlockEntityClientMixin {
         RandomSource random = level.getRandom();
         ParticleOptions particle = self instanceof EnhancedPlasmaJetExtension extension
             && extension.plasticraft$isEnhanced()
-            ? dev.anvilcraft.plasticraft.init.ModParticles.ENHANCED_PLASMA_JETS.get()
+            ? ENHANCED_PLASMA_JETS.get()
             : ModParticles.PLASMA_JETS.get();
         for (int i = 0; i < TOP_CELL_PARTICLES_PER_TICK; i++) {
             level.addParticle(

@@ -1,7 +1,5 @@
 package dev.anvilcraft.plasticraft.item;
 
-import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
 import dev.dubhe.anvilcraft.block.item.HasMobBlockItem;
 import dev.dubhe.anvilcraft.block.item.ResinBlockItem;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
@@ -27,14 +25,6 @@ public class HighViscosityResinBlockItem extends ResinBlockItem {
 
     public HighViscosityResinBlockItem(Block block, Properties properties) {
         super(block, properties);
-        PlasticItemTooltipManager.register(
-            AnvilcraftPlasticraft.of("high_viscosity_resin_block"),
-            "Bonds two pieces of metal firmly and provides an excellent seal",
-            """
-                Elastic and strongly sticks to adjacent blocks
-                Captures creatures of any size; hostile creatures must be weakened
-                Each resin-connected group counts as one block against a piston's push limit"""
-        );
     }
 
     public static InteractionResult useEntity(Player player, Entity target, ItemStack stack) {

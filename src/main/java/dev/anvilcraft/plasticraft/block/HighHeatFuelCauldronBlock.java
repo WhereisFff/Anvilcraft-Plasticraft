@@ -24,6 +24,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
@@ -37,6 +38,8 @@ import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.phys.BlockHitResult;
+
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER;
 
 /** 以每层高热燃料分段维持强化喷流的四级炼药锅。 */
 public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implements IIgnitableCauldron, EntityBlock {
@@ -98,7 +101,7 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
         registerIgniter(Items.FIRE_CHARGE, false);
     }
 
-    private static void registerIgniter(net.minecraft.world.item.Item item, boolean damages) {
+    private static void registerIgniter(Item item, boolean damages) {
         INTERACTIONS.map().put(item, (state, level, pos, player, hand, stack) -> {
             if (!canIgnite(state)) return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
             ignite(level, pos, state);
@@ -126,7 +129,7 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
     private static void ignite(LevelAccessor level, BlockPos pos, BlockState state) {
         if (!canIgnite(state)) return;
         level.setBlock(pos, state.setValue(IGNITED, true), Block.UPDATE_ALL);
-        if (level instanceof Level world && world.getBlockState(pos.below()).is(dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER)) {
+        if (level instanceof Level world && world.getBlockState(pos.below()).is(HEATER)) {
             world.scheduleTick(pos, state.getBlock(), 2);
         }
     }
@@ -199,7 +202,7 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
 
     @Override
     public void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean movedByPiston) {
-        if (state.getValue(IGNITED) && level.getBlockState(pos.below()).is(dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER)) {
+        if (state.getValue(IGNITED) && level.getBlockState(pos.below()).is(HEATER)) {
             level.scheduleTick(pos, this, 2);
         }
     }
@@ -213,7 +216,7 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
         BlockPos neighborPos,
         boolean movedByPiston
     ) {
-        if (state.getValue(IGNITED) && level.getBlockState(pos.below()).is(dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER)) {
+        if (state.getValue(IGNITED) && level.getBlockState(pos.below()).is(HEATER)) {
             level.scheduleTick(pos, this, 2);
         }
     }
@@ -223,7 +226,7 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
         BlockState heater = level.getBlockState(pos.below());
         if (state.getValue(IGNITED)
             && state.getValue(LEVEL) == MAX_LEVEL
-            && heater.is(dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER)
+            && heater.is(HEATER)
             && !heater.getValue(HeaterBlock.OVERLOAD)
             && !PlasmaJetsBlock.trySpawn(pos.above(), level)) {
             level.scheduleTick(pos, this, 10);

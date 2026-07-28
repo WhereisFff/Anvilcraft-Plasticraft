@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.recipe;
 
 import dev.anvilcraft.lib.v2.recipe.cache.BlockCache;
 import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
+import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.dubhe.anvilcraft.api.block.IIgnitableCauldron;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
@@ -36,7 +37,7 @@ public final class EnhancedPlasmaJetFuel {
     }
 
     public static boolean isValidBase(Level level, BlockPos pos) {
-        if (level.getBlockState(pos).is(dev.anvilcraft.plasticraft.init.block.ModBlocks.HIGH_HEAT_FUEL_CAULDRON.get())) {
+        if (level.getBlockState(pos).is(ModBlocks.HIGH_HEAT_FUEL_CAULDRON.get())) {
             return true;
         }
         Boolean entityResult = HardenedResinCauldronSupport.hasHighHeatFuel(level, pos);

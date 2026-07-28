@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.block;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -39,7 +40,7 @@ public record BondedFallingBlockInfo(
             && this.supportBlockId.equals(BuiltInRegistries.BLOCK.getKey(supportState.getBlock()));
     }
 
-    public BondedFallingBlockInfo moved(net.minecraft.core.Direction direction) {
+    public BondedFallingBlockInfo moved(Direction direction) {
         return this.translated(new BlockPos(
             direction.getStepX(),
             direction.getStepY(),

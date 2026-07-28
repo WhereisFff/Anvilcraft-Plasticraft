@@ -9,6 +9,9 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
+import static dev.dubhe.anvilcraft.init.item.ModItemGroups.ANVILCRAFT_BUILD_BLOCK;
+import static dev.dubhe.anvilcraft.init.item.ModItemGroups.ANVILCRAFT_FUNCTION_BLOCK;
+
 public final class ModItemGroups {
     public static final String TITLE_KEY = "itemGroup.anvilcraftplasticraft.main";
     private static final DeferredRegister<CreativeModeTab> TABS = DeferredRegister.create(
@@ -26,7 +29,7 @@ public final class ModItemGroups {
                 output.accept(ModBlocks.HARDEND_RESIN_ANVIL.asItem());
                 output.accept(ModBlocks.HARDEND_RESIN_CAULDRON.asItem());
                 output.accept(ModBlocks.CATALYTIC_PRESS_LID.asItem());
-                output.accept(dev.anvilcraft.plasticraft.init.item.ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get());
+                output.accept(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get());
                 output.accept(ModItems.HIGH_HEAT_FUEL_BUCKET.get());
                 output.accept(ModItems.PLASTIC_OIL_BUCKET.get());
                 output.accept(ModItems.CRUDE_OIL_ACID_BUCKET.get());
@@ -38,8 +41,8 @@ public final class ModItemGroups {
             .title(Component.translatable(TITLE_KEY))
             // NeoForge 的排序图将 withTabsBefore(X) 记录为 X -> this，
             // 将 withTabsAfter(X) 记录为 this -> X。
-            .withTabsBefore(dev.dubhe.anvilcraft.init.item.ModItemGroups.ANVILCRAFT_FUNCTION_BLOCK.getId())
-            .withTabsAfter(dev.dubhe.anvilcraft.init.item.ModItemGroups.ANVILCRAFT_BUILD_BLOCK.getId())
+            .withTabsBefore(ANVILCRAFT_FUNCTION_BLOCK.getId())
+            .withTabsAfter(ANVILCRAFT_BUILD_BLOCK.getId())
             .build()
     );
 

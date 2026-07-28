@@ -5,6 +5,9 @@ import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.HighHeatFuelCauldronBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
+import dev.anvilcraft.plasticraft.client.renderer.blockentity.BondedEntityBlockEntityRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.blockentity.CondenserTowerBlockEntityRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.blockentity.HighHeatFuelCauldronBlockEntityRenderer;
 
 import static dev.anvilcraft.plasticraft.AnvilcraftPlasticraft.REGISTRUM;
 
@@ -18,14 +21,14 @@ public final class ModBlockEntities {
             ModBlocks.RESIN_ANVIL,
             ModBlocks.HARDEND_RESIN_ANVIL
         )
-        .renderer(() -> dev.anvilcraft.plasticraft.client.renderer.blockentity.BondedEntityBlockEntityRenderer::new)
+        .renderer(() -> BondedEntityBlockEntityRenderer::new)
         .register();
 
     public static final BlockEntityEntry<CondenserTowerBlockEntity> CONDENSER_TOWER = REGISTRUM
         .blockEntity("condenser_tower", CondenserTowerBlockEntity::new)
         .validBlock(ModBlocks.CONDENSER_TOWER)
         .renderer(() ->
-            dev.anvilcraft.plasticraft.client.renderer.blockentity.CondenserTowerBlockEntityRenderer::new)
+            CondenserTowerBlockEntityRenderer::new)
         .register();
 
     public static final BlockEntityEntry<HighHeatFuelCauldronBlockEntity> HIGH_HEAT_FUEL_CAULDRON = REGISTRUM
@@ -35,7 +38,7 @@ public final class ModBlockEntities {
         )
         .validBlock(ModBlocks.HIGH_HEAT_FUEL_CAULDRON)
         .renderer(() ->
-            dev.anvilcraft.plasticraft.client.renderer.blockentity.HighHeatFuelCauldronBlockEntityRenderer::new)
+            HighHeatFuelCauldronBlockEntityRenderer::new)
         .register();
 
     public static final BlockEntityEntry<UniversalPlasticMeltBlockEntity> UNIVERSAL_PLASTIC_MELT = REGISTRUM

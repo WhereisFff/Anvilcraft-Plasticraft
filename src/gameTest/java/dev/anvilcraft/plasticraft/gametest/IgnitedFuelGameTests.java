@@ -9,11 +9,12 @@ import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import dev.dubhe.anvilcraft.api.heat.HeaterManager;
+import dev.dubhe.anvilcraft.block.HeaterBlock;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
-import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity.TubeWallLayer;
+import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.heatable.HeatableBlockEntity;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import net.minecraft.core.BlockPos;
@@ -42,6 +43,14 @@ import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 
 import java.util.List;
 import java.util.Set;
+
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.FIRE_CAULDRON;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.FISH_TANK;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.GLOWING_NETHERITE_BLOCK;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.INCANDESCENT_NETHERITE_BLOCK;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.PLASMA_JETS;
 
 /** 高热燃料容器、点火交互和强化喷流的服务器端回归测试。 */
 public final class IgnitedFuelGameTests {
@@ -75,7 +84,7 @@ public final class IgnitedFuelGameTests {
     static void fishTankHighHeatFuelDealsDoubleDamage(ExtendedGameTestHelper helper) {
         Level level = helper.getLevel();
         BlockPos pos = helper.absolutePos(new BlockPos(3, 2, 3));
-        level.setBlock(pos, dev.dubhe.anvilcraft.init.block.ModBlocks.FISH_TANK.getDefaultState(), Block.UPDATE_ALL);
+        level.setBlock(pos, FISH_TANK.getDefaultState(), Block.UPDATE_ALL);
         check(level.getBlockEntity(pos) instanceof FishTankBlockEntity, "fish tank block entity was not created");
         FishTankBlockEntity tank = (FishTankBlockEntity) level.getBlockEntity(pos);
         tank.getFluidHandler().fill(
@@ -204,8 +213,8 @@ public final class IgnitedFuelGameTests {
         BlockPos jetPos = cauldronPos.above();
         level.setBlock(
             cauldronPos.below(),
-            dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER.getDefaultState()
-                .setValue(dev.dubhe.anvilcraft.block.HeaterBlock.OVERLOAD, false),
+            HEATER.getDefaultState()
+                .setValue(HeaterBlock.OVERLOAD, false),
             Block.UPDATE_ALL
         );
         for (Direction direction : Direction.Plane.HORIZONTAL) {
@@ -213,7 +222,7 @@ public final class IgnitedFuelGameTests {
         }
         level.setBlock(
             jetPos.above(),
-            dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON.getDefaultState()
+            LARGE_CAULDRON.getDefaultState()
                 .setValue(LargeCauldronBlock.HALF, Cube3x3PartHalf.BOTTOM_CENTER),
             Block.UPDATE_ALL
         );
@@ -236,7 +245,7 @@ public final class IgnitedFuelGameTests {
             check(Math.floorMod(level.getGameTime(), 10L) == 0L, "damage check did not run on a plasma-jet damage tick");
             level.setBlock(
                 jetPos,
-                dev.dubhe.anvilcraft.init.block.ModBlocks.PLASMA_JETS.getDefaultState(),
+                PLASMA_JETS.getDefaultState(),
                 Block.UPDATE_ALL
             );
             check(level.getBlockEntity(jetPos) instanceof PlasmaJetsBlockEntity,
@@ -263,7 +272,7 @@ public final class IgnitedFuelGameTests {
         HeatingJet ordinary = placeHeatingJet(
             helper,
             new BlockPos(3, 2, 5),
-            dev.dubhe.anvilcraft.init.block.ModBlocks.FIRE_CAULDRON.get().fullFilled()
+            FIRE_CAULDRON.get().fullFilled()
         );
         HeatingJet enhanced = placeHeatingJet(
             helper,
@@ -288,12 +297,12 @@ public final class IgnitedFuelGameTests {
 
         check(
             level.getBlockState(ordinary.heatablePos())
-                .is(dev.dubhe.anvilcraft.init.block.ModBlocks.GLOWING_NETHERITE_BLOCK.get()),
+                .is(GLOWING_NETHERITE_BLOCK.get()),
             "ordinary plasma jet heated a heatable block beyond glowing"
         );
         check(
             level.getBlockState(enhanced.heatablePos())
-                .is(dev.dubhe.anvilcraft.init.block.ModBlocks.INCANDESCENT_NETHERITE_BLOCK.get()),
+                .is(INCANDESCENT_NETHERITE_BLOCK.get()),
             "enhanced plasma jet did not heat a heatable block to incandescent"
         );
         check(
@@ -315,8 +324,8 @@ public final class IgnitedFuelGameTests {
         BlockPos jetPos = tubeCenter.above();
         level.setBlock(
             cauldronPos.below(),
-            dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER.getDefaultState()
-                .setValue(dev.dubhe.anvilcraft.block.HeaterBlock.OVERLOAD, false),
+            HEATER.getDefaultState()
+                .setValue(HeaterBlock.OVERLOAD, false),
             Block.UPDATE_ALL
         );
         level.setBlock(cauldronPos, cauldronState, Block.UPDATE_ALL);
@@ -325,7 +334,7 @@ public final class IgnitedFuelGameTests {
         }
         BlockPos heatablePos = tubeCenter.north();
         level.setBlock(heatablePos, Blocks.NETHERITE_BLOCK.defaultBlockState(), Block.UPDATE_ALL);
-        BlockState jetState = dev.dubhe.anvilcraft.init.block.ModBlocks.PLASMA_JETS.getDefaultState();
+        BlockState jetState = PLASMA_JETS.getDefaultState();
         level.setBlock(jetPos, jetState, Block.UPDATE_ALL);
         PlasmaJetsBlockEntity jet = new PlasmaJetsBlockEntity(
             jetPos,
@@ -345,7 +354,7 @@ public final class IgnitedFuelGameTests {
         BlockPos relativeBase
     ) {
         Level level = helper.getLevel();
-        LargeCauldronBlock block = dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON.get();
+        LargeCauldronBlock block = LARGE_CAULDRON.get();
         BlockPos base = helper.absolutePos(relativeBase);
         BlockState state = block.defaultBlockState();
         level.setBlock(base, state, Block.UPDATE_ALL);

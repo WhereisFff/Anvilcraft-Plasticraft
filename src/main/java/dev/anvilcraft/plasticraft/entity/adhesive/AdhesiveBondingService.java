@@ -13,6 +13,7 @@ import dev.anvilcraft.plasticraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.entity.FallingGiantAnvilEntity;
+import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -29,17 +30,19 @@ import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.AnvilBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.PushReaction;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -359,7 +362,7 @@ public final class AdhesiveBondingService {
         AdhesiveTransit transit = new AdhesiveTransit(
             anchorEntity.blockPosition(),
             anchorWorldFace,
-            BuiltInRegistries.BLOCK.getKey(net.minecraft.world.level.block.Blocks.AIR),
+            BuiltInRegistries.BLOCK.getKey(Blocks.AIR),
             plan.sourceFace(),
             Optional.of(anchorEntity.getUUID()),
             anchorEntity.getId(),
@@ -571,7 +574,7 @@ public final class AdhesiveBondingService {
 
     private static boolean tickBlockificationHandoff(
         Entity entity,
-        @javax.annotation.Nullable AdhesiveTransit transit,
+        @Nullable AdhesiveTransit transit,
         boolean validateAndComplete
     ) {
         if (entity.level().isClientSide) return false;
@@ -994,7 +997,7 @@ public final class AdhesiveBondingService {
     ) {
         for (BlockPos pos : placed) {
             BondedFallingBlocks.removeAll(level, pos);
-            level.setBlock(pos, replacedStates.getOrDefault(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState()), Block.UPDATE_ALL);
+            level.setBlock(pos, replacedStates.getOrDefault(pos, Blocks.AIR.defaultBlockState()), Block.UPDATE_ALL);
         }
     }
 
@@ -1073,7 +1076,7 @@ public final class AdhesiveBondingService {
                 BondedFallingBlocks.setEntityBond(level, adhesion.supportPos(), adhesion.attachmentFace(), false);
             }
             BlockState supportState = level.getBlockState(adhesion.supportPos());
-            if (supportState.getBlock() instanceof net.minecraft.world.level.block.FallingBlock) {
+            if (supportState.getBlock() instanceof FallingBlock) {
                 level.scheduleTick(adhesion.supportPos(), supportState.getBlock(), 1);
             }
         }

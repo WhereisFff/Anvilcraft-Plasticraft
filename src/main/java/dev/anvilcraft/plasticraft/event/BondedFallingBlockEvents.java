@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.event;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
+import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -57,7 +58,7 @@ public final class BondedFallingBlockEvents {
             level.scheduleTick(pos, state.getBlock(), 1);
             return;
         }
-        if (state.getBlock() instanceof dev.dubhe.anvilcraft.block.GiantAnvilBlock giantAnvil) {
+        if (state.getBlock() instanceof GiantAnvilBlock giantAnvil) {
             BlockPos middleCenter = giantAnvil.getMainPartPos(pos, state);
             level.scheduleTick(middleCenter.below(), giantAnvil, 1);
         }

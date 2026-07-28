@@ -4,8 +4,8 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.client.renderer.ThickLineRenderer;
-import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderHelper;
+import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
@@ -15,11 +15,12 @@ import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveSelectionManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveTransit;
 import dev.anvilcraft.plasticraft.init.ModAttachments;
 import dev.anvilcraft.plasticraft.init.item.ModItems;
-import dev.anvilcraft.plasticraft.network.AdhesiveBondEntityPacket;
 import dev.anvilcraft.plasticraft.network.AdhesiveBondEntitiesPacket;
+import dev.anvilcraft.plasticraft.network.AdhesiveBondEntityPacket;
 import dev.anvilcraft.plasticraft.network.AdhesiveClearSelectionPacket;
 import dev.anvilcraft.plasticraft.network.AdhesivePlacePatchPacket;
 import dev.anvilcraft.plasticraft.network.AdhesiveSelectEntityPacket;
+import javax.annotation.Nullable;
 import net.minecraft.ChatFormatting;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
@@ -31,6 +32,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.player.Player;
@@ -53,7 +55,6 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -263,12 +264,12 @@ public final class AdhesiveSelectionClientHandler {
             placePatch(pending, player);
             return;
         }
-        net.minecraft.world.InteractionResult result = minecraft.gameMode.useItemOn(
+        InteractionResult result = minecraft.gameMode.useItemOn(
             player,
             pending.hand(),
             pending.hit()
         );
-        if (result == net.minecraft.world.InteractionResult.PASS) {
+        if (result == InteractionResult.PASS) {
             placePatch(pending, player);
         } else if (result.consumesAction()) {
             player.swing(pending.hand());

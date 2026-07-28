@@ -3,44 +3,47 @@ package dev.anvilcraft.plasticraft.recipe;
 import dev.anvilcraft.lib.v2.recipe.cache.BlockCache;
 import dev.anvilcraft.lib.v2.util.predicate.ChanceItemStack;
 import dev.anvilcraft.lib.v2.util.predicate.ItemIngredientPredicate;
-import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
-import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
-import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
-import dev.anvilcraft.plasticraft.api.blockentity.EnhancedPlasmaJetExtension;
-import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
-import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
-import dev.anvilcraft.plasticraft.init.ModParticles;
-import dev.anvilcraft.plasticraft.mixin.VillagerExperienceAccessor;
-import dev.anvilcraft.plasticraft.particle.DynamicFluidVaporParticleOptions;
 import dev.anvilcraft.lib.v2.yukkuri.api.event.LargeCauldronProcessEvent;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.IVaporConsumer;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporAction;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporStack;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationContext;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationManager;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporStack;
+import dev.anvilcraft.plasticraft.api.blockentity.EnhancedPlasmaJetExtension;
+import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
+import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
+import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.init.ModParticles;
+import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
+import dev.anvilcraft.plasticraft.mixin.VillagerExperienceAccessor;
+import dev.anvilcraft.plasticraft.particle.DynamicFluidVaporParticleOptions;
 import dev.dubhe.anvilcraft.api.block.IIgnitableCauldron;
+import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
 import dev.dubhe.anvilcraft.api.itemhandler.ItemHandlerUtil;
-import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
-import dev.dubhe.anvilcraft.init.block.ModFluids;
 import dev.dubhe.anvilcraft.init.block.ModFluidTags;
-import dev.dubhe.anvilcraft.recipe.anvil.wrap.SuperHeatingRecipe;
+import dev.dubhe.anvilcraft.init.block.ModFluids;
+import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.recipe.anvil.outcome.RoyalPreferenceOutcome;
 import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
+import dev.dubhe.anvilcraft.recipe.anvil.wrap.SuperHeatingRecipe;
 import dev.dubhe.anvilcraft.recipe.component.HasCauldronSimple;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.TagKey;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.npc.Villager;
@@ -61,6 +64,7 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.items.IItemHandler;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -68,6 +72,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+
+import static dev.dubhe.anvilcraft.init.recipe.ModRecipeTypes.SUPER_HEATING_TYPE;
 
 /** 等离子喷流对容器的气化、持续加工，以及冷凝塔堆叠识别。 */
 public final class CondenserTowerProcess {
@@ -546,7 +552,7 @@ public final class CondenserTowerProcess {
         ).reversed());
         List<RecipeHolder<SuperHeatingRecipe>> superHeatingRecipes = new ArrayList<>(
             level.getRecipeManager().getAllRecipesFor(
-                dev.dubhe.anvilcraft.init.recipe.ModRecipeTypes.SUPER_HEATING_TYPE.get()
+                SUPER_HEATING_TYPE.get()
             )
         );
         superHeatingRecipes.sort(Comparator.comparingInt(
@@ -736,7 +742,7 @@ public final class CondenserTowerProcess {
 
     private static boolean canApplyFluidTransform(
         LargeCauldronBlockEntity cauldron,
-        @org.jetbrains.annotations.Nullable FluidStack input,
+        @Nullable FluidStack input,
         int consume,
         Fluid output,
         int produce
@@ -795,11 +801,11 @@ public final class CondenserTowerProcess {
     }
 
     private static boolean isRoyalSteel(ItemStack stack) {
-        return stack.is(dev.dubhe.anvilcraft.init.item.ModItems.ROYAL_STEEL_INGOT.get())
+        return stack.is(ModItems.ROYAL_STEEL_INGOT.get())
             || stack.is(ModBlocks.ROYAL_STEEL_BLOCK.get().asItem());
     }
 
-    private static @org.jetbrains.annotations.Nullable List<MatchedItem> matchItems(
+    private static @Nullable List<MatchedItem> matchItems(
         IItemHandler input,
         List<ItemIngredientPredicate> predicates
     ) {
@@ -849,7 +855,7 @@ public final class CondenserTowerProcess {
         return false;
     }
 
-    private static @org.jetbrains.annotations.Nullable FluidStack resolveFluidInput(
+    private static @Nullable FluidStack resolveFluidInput(
         LargeCauldronBlockEntity cauldron,
         HasCauldronSimple definition
     ) {
@@ -865,8 +871,8 @@ public final class CondenserTowerProcess {
     private static boolean matchesFluidInput(FluidStack input, HasCauldronSimple definition) {
         if (input.isEmpty()) return false;
         if (definition.fluidTag() != null) {
-            net.minecraft.tags.TagKey<Fluid> tag = net.minecraft.tags.TagKey.create(
-                net.minecraft.core.registries.Registries.FLUID,
+            TagKey<Fluid> tag = TagKey.create(
+                Registries.FLUID,
                 definition.fluidTag()
             );
             return input.is(tag);
@@ -982,7 +988,7 @@ public final class CondenserTowerProcess {
         ServerLevel level,
         Vec3 surface,
         int vaporizationRate,
-        @org.jetbrains.annotations.Nullable FluidStack sourceFluid
+        @Nullable FluidStack sourceFluid
     ) {
         emitLargeCauldronVaporParticles(
             level,
@@ -1072,7 +1078,7 @@ public final class CondenserTowerProcess {
         ServerLevel level,
         Vec3 surface,
         int vaporizationRate,
-        @org.jetbrains.annotations.Nullable FluidStack sourceFluid
+        @Nullable FluidStack sourceFluid
     ) {
         RandomSource random = level.getRandom();
         int count = vaporParticleCount(vaporizationRate, 8);
@@ -1147,7 +1153,7 @@ public final class CondenserTowerProcess {
     }
 
     private static ParticleOptions vaporParticle(
-        @org.jetbrains.annotations.Nullable FluidStack sourceFluid,
+        @Nullable FluidStack sourceFluid,
         int vaporizationRate
     ) {
         if (isExperienceFluid(sourceFluid)) return ModParticles.EXPERIENCE_VAPOR.get();
@@ -1156,7 +1162,7 @@ public final class CondenserTowerProcess {
             : new DynamicFluidVaporParticleOptions(sourceFluid, vaporizationRate);
     }
 
-    private static boolean isExperienceFluid(@org.jetbrains.annotations.Nullable FluidStack fluid) {
+    private static boolean isExperienceFluid(@Nullable FluidStack fluid) {
         return fluid != null && !fluid.isEmpty() && fluid.is(ModFluids.EXP_FLUID.get());
     }
 

@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.entity;
 
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.recipe.CatalyticPressProcess;
+import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
@@ -106,7 +107,7 @@ public final class CatalyticPressLidEntity extends AbstractPlasticEntity {
     }
 
     @Override
-    protected boolean triggersAnvilCraftLandingEvents(net.minecraft.core.Direction impactDirection) {
+    protected boolean triggersAnvilCraftLandingEvents(Direction impactDirection) {
         return false;
     }
 

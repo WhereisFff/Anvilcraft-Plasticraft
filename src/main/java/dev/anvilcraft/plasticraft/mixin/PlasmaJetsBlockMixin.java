@@ -1,11 +1,13 @@
 package dev.anvilcraft.plasticraft.mixin;
 
-import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
-import dev.anvilcraft.plasticraft.recipe.HardenedResinCauldronSupport;
-import dev.anvilcraft.plasticraft.recipe.EnhancedPlasmaJetFuel;
 import dev.anvilcraft.lib.v2.recipe.cache.BlockCache;
+import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
+import dev.anvilcraft.plasticraft.recipe.EnhancedPlasmaJetFuel;
+import dev.anvilcraft.plasticraft.recipe.HardenedResinCauldronSupport;
 import dev.dubhe.anvilcraft.api.block.IIgnitableCauldron;
+import dev.dubhe.anvilcraft.block.HeaterBlock;
 import dev.dubhe.anvilcraft.block.PlasmaJetsBlock;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
@@ -41,8 +43,8 @@ abstract class PlasmaJetsBlockMixin {
 
         BlockState heater = level.getBlockState(pos.below().below());
         if (!PlasmaJetsBlock.isIgnitedOilCauldron(level, pos.below())
-            || !heater.is(dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER)
-            || heater.getValue(dev.dubhe.anvilcraft.block.HeaterBlock.OVERLOAD)) {
+            || !heater.is(ModBlocks.HEATER)
+            || heater.getValue(HeaterBlock.OVERLOAD)) {
             cir.setReturnValue(false);
             return;
         }
@@ -66,7 +68,7 @@ abstract class PlasmaJetsBlockMixin {
                 return;
             }
         }
-        level.setBlock(pos, dev.dubhe.anvilcraft.init.block.ModBlocks.PLASMA_JETS.getDefaultState(), 3);
+        level.setBlock(pos, ModBlocks.PLASMA_JETS.getDefaultState(), 3);
         cir.setReturnValue(true);
     }
 

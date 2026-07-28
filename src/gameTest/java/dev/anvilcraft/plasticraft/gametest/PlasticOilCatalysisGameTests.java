@@ -10,6 +10,7 @@ import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
+import dev.dubhe.anvilcraft.init.item.ModItems;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
@@ -28,6 +29,12 @@ import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
+
+import java.util.List;
+
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.FISH_TANK;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.OVERHEATED_EMBER_METAL_BLOCK;
 
 /** 塑料油环境催化的服务端回归测试。 */
 public final class PlasticOilCatalysisGameTests {
@@ -106,7 +113,7 @@ public final class PlasticOilCatalysisGameTests {
         setHighHeat(level, pos.below());
         level.setBlock(
             pos,
-            dev.dubhe.anvilcraft.init.block.ModBlocks.FISH_TANK.getDefaultState(),
+            FISH_TANK.getDefaultState(),
             Block.UPDATE_ALL
         );
         check(level.getBlockEntity(pos) instanceof FishTankBlockEntity, "the fish tank was not created");
@@ -138,7 +145,7 @@ public final class PlasticOilCatalysisGameTests {
         for (int x = -1; x <= 1; x++) {
             for (int z = -1; z <= 1; z++) setHighHeat(level, heatCenter.offset(x, 0, z));
         }
-        cauldron.getFluids().setFluids(java.util.List.of(plasticOil(LARGE_BATCH)));
+        cauldron.getFluids().setFluids(List.of(plasticOil(LARGE_BATCH)));
         ItemStack catalyst = royalSteelIngot();
         check(
             cauldron.getInputHandler().insertItem(0, catalyst, false).isEmpty(),
@@ -209,7 +216,7 @@ public final class PlasticOilCatalysisGameTests {
         BlockPos relativeBase
     ) {
         Level level = helper.getLevel();
-        LargeCauldronBlock block = dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON.get();
+        LargeCauldronBlock block = LARGE_CAULDRON.get();
         BlockPos base = helper.absolutePos(relativeBase);
         BlockState state = block.defaultBlockState();
         level.setBlock(base, state, Block.UPDATE_ALL);
@@ -224,7 +231,7 @@ public final class PlasticOilCatalysisGameTests {
     private static void setHighHeat(ServerLevel level, BlockPos pos) {
         level.setBlock(
             pos,
-            dev.dubhe.anvilcraft.init.block.ModBlocks.OVERHEATED_EMBER_METAL_BLOCK.getDefaultState(),
+            OVERHEATED_EMBER_METAL_BLOCK.getDefaultState(),
             Block.UPDATE_ALL
         );
     }
@@ -234,7 +241,7 @@ public final class PlasticOilCatalysisGameTests {
     }
 
     private static ItemStack royalSteelIngot() {
-        ItemStack stack = dev.dubhe.anvilcraft.init.item.ModItems.ROYAL_STEEL_INGOT.asStack();
+        ItemStack stack = ModItems.ROYAL_STEEL_INGOT.asStack();
         check(stack.is(ModItemTags.ROYAL_STEEL_ITEMS), "royal steel ingot was absent from the catalyst tag");
         return stack;
     }

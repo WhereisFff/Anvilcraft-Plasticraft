@@ -25,6 +25,7 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -157,7 +158,7 @@ public final class EscapingVaporEffects {
     }
 
     private static Map<BlockPos, OilVaporCloud> activeClouds(ServerLevel level, long gameTime) {
-        Map<BlockPos, OilVaporCloud> clouds = OIL_CLOUDS.computeIfAbsent(level, ignored -> new java.util.HashMap<>());
+        Map<BlockPos, OilVaporCloud> clouds = OIL_CLOUDS.computeIfAbsent(level, ignored -> new HashMap<>());
         clouds.values().removeIf(cloud -> cloud.expiresAt < gameTime);
         return clouds;
     }

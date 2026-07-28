@@ -1,35 +1,28 @@
 package dev.anvilcraft.plasticraft.item;
 
-import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.dubhe.anvilcraft.block.item.HasMobBlockItem;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.mixin.accessor.BaseSpawnerAccessor;
-import dev.dubhe.anvilcraft.util.ResentmentUtil;
-import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
 import dev.dubhe.anvilcraft.util.EntityUtil;
-import net.minecraft.ChatFormatting;
-import net.minecraft.network.chat.Component;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResult;
+import dev.dubhe.anvilcraft.util.ResentmentUtil;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.dispenser.BlockSource;
 import net.minecraft.core.dispenser.DefaultDispenseItemBehavior;
-import net.minecraft.sounds.SoundEvent;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.sounds.SoundEvent;
 import net.minecraft.util.random.SimpleWeightedRandomList;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.BaseSpawner;
 import net.minecraft.world.level.Level;
@@ -41,7 +34,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
-import java.util.List;
 import java.util.function.Supplier;
 
 /** 遵循 AnvilCraft 已保存生物组件约定的固定颜色树脂砧物品。 */
@@ -55,17 +47,6 @@ public class ResinAnvilItem extends AbstractPlasticEntityItem<ResinAnvilEntity> 
         Supplier<BlockState> displayState
     ) {
         super(block, properties, entityType, displayState);
-        PlasticItemTooltipManager.register(
-            AnvilcraftPlasticraft.of("resin_anvil"),
-            "A resin block kneaded into an anvil shape, full of elasticity",
-            """
-                Elastic and pushable; rebounds from blocks and entities
-                Shift-use with any Anvil Hammer to retrieve it directly
-                Retains Resin Block capture and time-warp behavior
-                Dry fast cooking hardens it
-                Creative players can Shift-use a magnet to magnetize it
-                Can be placed in any direction; only impacts on its bottom face can process recipes"""
-        );
     }
 
     @Override
@@ -208,24 +189,4 @@ public class ResinAnvilItem extends AbstractPlasticEntityItem<ResinAnvilEntity> 
         return InteractionResult.sidedSuccess(player.level().isClientSide);
     }
 
-    @Override
-    public void appendHoverText(
-        ItemStack stack,
-        Item.TooltipContext context,
-        List<Component> tooltip,
-        TooltipFlag flag
-    ) {
-        super.appendHoverText(stack, context, tooltip, flag);
-        SavedEntity saved = stack.get(ModComponents.SAVED_ENTITY);
-        if (saved == null || context.level() == null) return;
-        Entity entity = saved.toEntity(context.level());
-        if (entity == null) return;
-        tooltip.add(Component.literal("- ").append(entity.getDisplayName()).withStyle(ChatFormatting.DARK_GRAY));
-        if (saved.isMonster() && entity instanceof LivingEntity living) {
-            tooltip.add(Component.translatable(
-                "tooltip.anvilcraft.item.resin_block.resentment",
-                ResentmentUtil.getResentment(living)
-            ).withStyle(ChatFormatting.DARK_RED));
-        }
-    }
 }

@@ -25,10 +25,10 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.saveddata.SavedData;
-import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.event.level.ChunkWatchEvent;
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -40,6 +40,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 /** 皇家钢在受热流体中催化塑料油的通用服务端过程。 */
 public final class PlasticOilCatalysis {
@@ -203,7 +205,7 @@ public final class PlasticOilCatalysis {
     ) {
         int distinct = catalysts.stream()
             .map(item -> item.getItem().getItem())
-            .collect(java.util.stream.Collectors.toSet())
+            .collect(Collectors.toSet())
             .size();
         ProgressData data = ProgressData.get(level);
         double workPerTick = heat * catalystMultiplier(distinct);
@@ -234,7 +236,7 @@ public final class PlasticOilCatalysis {
     private static List<ItemEntity> looseCatalysts(
         ServerLevel level,
         BlockPos pos,
-        java.util.function.Predicate<ItemEntity> inside
+        Predicate<ItemEntity> inside
     ) {
         return level.getEntitiesOfClass(
             ItemEntity.class,

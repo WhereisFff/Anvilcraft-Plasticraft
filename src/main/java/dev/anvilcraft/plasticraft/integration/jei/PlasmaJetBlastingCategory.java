@@ -10,6 +10,7 @@ import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.client.support.RenderSupport;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiFluidUtil;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiRecipeUtil;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiRenderHelper;
@@ -27,8 +28,8 @@ import mezz.jei.api.recipe.IFocusGroup;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.recipe.category.IRecipeCategory;
-import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -72,7 +73,7 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
     private final BlockState largeCauldron;
 
     public PlasmaJetBlastingCategory(IGuiHelper helper) {
-        this.icon = helper.createDrawableItemStack(dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON.asStack());
+        this.icon = helper.createDrawableItemStack(ModBlocks.LARGE_CAULDRON.asStack());
         this.slot = JeiRenderHelper.getSlotDefault(helper);
         this.arrowIn = JeiRenderHelper.getArrowInput(helper);
         this.arrowOut = JeiRenderHelper.getArrowOutput(helper);
@@ -84,7 +85,7 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
             16
         ).setTextureSize(16, 16).build();
         this.timer = helper.createTickTimer(20, 20, false);
-        this.largeCauldron = dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON.getDefaultState()
+        this.largeCauldron = ModBlocks.LARGE_CAULDRON.getDefaultState()
             .setValue(LargeCauldronBlock.HALF, Cube3x3PartHalf.MID_CENTER);
     }
 

@@ -1,22 +1,23 @@
 package dev.anvilcraft.plasticraft.client;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.client.particle.FluidVaporParticle;
-import dev.anvilcraft.plasticraft.client.particle.ExperienceVaporParticle;
-import dev.anvilcraft.plasticraft.client.particle.EnhancedPlasmaJetsParticle;
-import dev.anvilcraft.plasticraft.client.particle.GaseousOilFlameParticle;
+import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.client.hud.AdhesiveBondHud;
 import dev.anvilcraft.plasticraft.client.hud.BondedBlockTooltipProvider;
-import dev.dubhe.anvilcraft.api.tooltip.HudTooltipManager;
-import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinCauldronRenderer;
-import dev.anvilcraft.plasticraft.client.renderer.entity.CatalyticPressLidRenderer;
+import dev.anvilcraft.plasticraft.client.particle.EnhancedPlasmaJetsParticle;
+import dev.anvilcraft.plasticraft.client.particle.ExperienceVaporParticle;
+import dev.anvilcraft.plasticraft.client.particle.FluidVaporParticle;
+import dev.anvilcraft.plasticraft.client.particle.GaseousOilFlameParticle;
 import dev.anvilcraft.plasticraft.client.renderer.AdhesivePatchRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.entity.CatalyticPressLidRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinCauldronRenderer;
 import dev.anvilcraft.plasticraft.init.ModParticles;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.anvilcraft.plasticraft.init.item.ModItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.dubhe.anvilcraft.api.tooltip.HudTooltipManager;
 import net.minecraft.client.renderer.ItemBlockRenderTypes;
 import net.minecraft.client.renderer.RenderType;
 import net.neoforged.api.distmarker.Dist;
@@ -26,8 +27,8 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.RegisterColorHandlersEvent;
-import net.neoforged.neoforge.client.event.RegisterParticleProvidersEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
+import net.neoforged.neoforge.client.event.RegisterParticleProvidersEvent;
 
 /** 为今后注册支持调色板的材料而保留的客户端入口点。 */
 @Mod(value = AnvilcraftPlasticraft.MOD_ID, dist = Dist.CLIENT)
@@ -72,7 +73,7 @@ public final class AnvilcraftPlasticraftClient {
     private static void registerBlockColors(RegisterColorHandlersEvent.Block event) {
         event.register(
             (state, level, pos, tintIndex) -> tintIndex == 0
-                ? PlasticMeltColor.tint(state.getValue(dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock.COLOR))
+                ? PlasticMeltColor.tint(state.getValue(UniversalPlasticMeltCauldronBlock.COLOR))
                 : 0xFFFFFFFF,
             ModBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get()
         );

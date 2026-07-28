@@ -41,6 +41,7 @@ import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.inventory.AnvilMenu;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
@@ -65,6 +66,12 @@ import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 import net.neoforged.testframework.gametest.GameTestPlayer;
 
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.GIANT_ANVIL;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.MAGNET_BLOCK;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.ROYAL_ANVIL;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.SLIDING_RAIL;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.SLIDING_RAIL_STOP;
+
 /** 高粘性树脂桶固定实体的服务端行为测试。 */
 public final class AdhesiveBondingGameTests {
     private static final double EPSILON = 1.0E-5D;
@@ -82,7 +89,7 @@ public final class AdhesiveBondingGameTests {
         FallingGiantAnvilEntity giantAnvil = FallingGiantAnvilEntity.fall(
             helper.getLevel(),
             helper.absolutePos(new BlockPos(3, 3, 4)),
-            dev.dubhe.anvilcraft.init.block.ModBlocks.GIANT_ANVIL.get().defaultBlockState(),
+            GIANT_ANVIL.get().defaultBlockState(),
             false
         );
         GameTestPlayer player = bucketPlayer(helper, new Vec3(5.5D, 2.0D, 2.5D));
@@ -100,7 +107,7 @@ public final class AdhesiveBondingGameTests {
 
         helper.runAfterDelay(14, () -> {
             check(!giantAnvil.isAlive(), "blockified giant anvil entity was not removed");
-            GiantAnvilBlock block = dev.dubhe.anvilcraft.init.block.ModBlocks.GIANT_ANVIL.get();
+            GiantAnvilBlock block = GIANT_ANVIL.get();
             for (Cube3x3PartHalf part : block.getParts()) {
                 BlockState state = helper.getBlockState(bottomCenter.offset(part.getOffset()));
                 check(
@@ -129,7 +136,7 @@ public final class AdhesiveBondingGameTests {
         FallingGiantAnvilEntity giantAnvil = FallingGiantAnvilEntity.fall(
             helper.getLevel(),
             helper.absolutePos(new BlockPos(3, 4, 4)),
-            dev.dubhe.anvilcraft.init.block.ModBlocks.GIANT_ANVIL.get().defaultBlockState(),
+            GIANT_ANVIL.get().defaultBlockState(),
             false
         );
         Zombie support = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(8.5D, 3.0D, 4.5D));
@@ -1608,7 +1615,7 @@ public final class AdhesiveBondingGameTests {
                 helper.absolutePos(floorOccupied)
             );
             BlockState floorState = helper.getBlockState(floorOccupied);
-            VoxelShape royalFloorShape = dev.dubhe.anvilcraft.init.block.ModBlocks.ROYAL_ANVIL
+            VoxelShape royalFloorShape = ROYAL_ANVIL
                 .getDefaultState()
                 .setValue(BlockStateProperties.HORIZONTAL_FACING, floorState.getValue(BlockStateProperties.HORIZONTAL_FACING))
                 .getCollisionShape(helper.getLevel(), helper.absolutePos(floorOccupied));
@@ -2757,12 +2764,12 @@ public final class AdhesiveBondingGameTests {
         for (int x = 2; x < 5; x++) {
             helper.setBlock(
                 new BlockPos(x, 1, 3),
-                dev.dubhe.anvilcraft.init.block.ModBlocks.SLIDING_RAIL.get().defaultBlockState()
+                SLIDING_RAIL.get().defaultBlockState()
             );
         }
         helper.setBlock(
             new BlockPos(5, 1, 3),
-            dev.dubhe.anvilcraft.init.block.ModBlocks.SLIDING_RAIL_STOP.get().defaultBlockState()
+            SLIDING_RAIL_STOP.get().defaultBlockState()
         );
         helper.setBlock(origin, Blocks.STONE);
         helper.setBlock(partner, Blocks.GOLD_BLOCK);
@@ -2840,11 +2847,11 @@ public final class AdhesiveBondingGameTests {
             bondedBlockEntity(helper, resinOccupied);
             helper.setBlock(
                 hardenedOccupied.above(4),
-                dev.dubhe.anvilcraft.init.block.ModBlocks.MAGNET_BLOCK.get().defaultBlockState()
+                MAGNET_BLOCK.get().defaultBlockState()
             );
             helper.setBlock(
                 resinOccupied.above(4),
-                dev.dubhe.anvilcraft.init.block.ModBlocks.MAGNET_BLOCK.get().defaultBlockState()
+                MAGNET_BLOCK.get().defaultBlockState()
             );
             helper.runAfterDelay(4, () -> {
                 check(
@@ -3059,7 +3066,7 @@ public final class AdhesiveBondingGameTests {
         player.moveTo(position.x, position.y, position.z);
         player.setItemInHand(
             InteractionHand.MAIN_HAND,
-            dev.anvilcraft.plasticraft.init.item.ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack()
+            ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack()
         );
         return player;
     }
@@ -3126,7 +3133,7 @@ public final class AdhesiveBondingGameTests {
         return new BlockHitResult(Vec3.atCenterOf(absolutePos), direction, absolutePos, false);
     }
 
-    private static int countItem(HardenedResinCauldronEntity cauldron, net.minecraft.world.item.Item item) {
+    private static int countItem(HardenedResinCauldronEntity cauldron, Item item) {
         int count = 0;
         for (int slot = 0; slot < cauldron.getItemHandler().getSlots(); slot++) {
             ItemStack stack = cauldron.getItemHandler().getStackInSlot(slot);

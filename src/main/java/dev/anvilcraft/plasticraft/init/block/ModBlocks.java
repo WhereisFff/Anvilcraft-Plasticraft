@@ -1,33 +1,37 @@
 package dev.anvilcraft.plasticraft.init.block;
 
+import dev.anvilcraft.lib.v2.registrum.providers.RegistrumBlockstateProvider;
 import dev.anvilcraft.lib.v2.registrum.util.entry.BlockEntry;
-import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.block.CatalyticPressLidBlock;
+import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
+import dev.anvilcraft.plasticraft.block.HardenedResinAnvilBlock;
+import dev.anvilcraft.plasticraft.block.HardenedResinCauldronBlock;
+import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
-import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
-import dev.anvilcraft.plasticraft.block.HardenedResinAnvilBlock;
-import dev.anvilcraft.plasticraft.block.HardenedResinCauldronBlock;
 import dev.anvilcraft.plasticraft.block.PlasticOilCauldronBlock;
 import dev.anvilcraft.plasticraft.block.ResinAnvilBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltFluidBlock;
 import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import dev.anvilcraft.plasticraft.init.item.ModItemTags;
+import dev.anvilcraft.plasticraft.item.CatalyticPressLidItem;
 import dev.anvilcraft.plasticraft.item.HardenedResinAnvilItem;
 import dev.anvilcraft.plasticraft.item.HardenedResinCauldronItem;
-import dev.anvilcraft.plasticraft.item.CatalyticPressLidItem;
 import dev.anvilcraft.plasticraft.item.HighViscosityResinBlockItem;
 import dev.anvilcraft.plasticraft.item.ResinAnvilItem;
+import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import dev.dubhe.anvilcraft.block.item.SimpleMultiPartBlockItem;
 import dev.dubhe.anvilcraft.block.multipart.SimpleMultiPartBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.util.DataGenUtil;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.CustomModelData;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DispenserBlock;
 import net.minecraft.world.level.block.LiquidBlock;
@@ -43,6 +47,8 @@ import net.neoforged.neoforge.client.model.generators.ModelProvider;
 import java.util.function.Supplier;
 
 import static dev.anvilcraft.plasticraft.AnvilcraftPlasticraft.REGISTRUM;
+import static dev.dubhe.anvilcraft.init.block.ModBlockTags.NON_MAGNETIC;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK;
 
 /** Plasticraft 可移动制品的方块和物品注册。 */
 public final class ModBlocks {
@@ -65,7 +71,7 @@ public final class ModBlocks {
 
     public static final BlockEntry<HighViscosityResinBlock> HIGH_VISCOSITY_RESIN_BLOCK = REGISTRUM
         .block("high_viscosity_resin_block", HighViscosityResinBlock::new)
-        .initialProperties(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK::get)
+        .initialProperties(RESIN_BLOCK::get)
         .properties(properties -> properties
             .mapColor(MapColor.COLOR_ORANGE)
             .noOcclusion()
@@ -149,7 +155,7 @@ public final class ModBlocks {
         .blockstate((context, provider) -> {
             ModelFile[] models = layeredCauldronModels(provider, context.getName(), "block/plastic_oil");
             provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
-                .modelFile(models[state.getValue(dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock.LEVEL) - 1])
+                .modelFile(models[state.getValue(Layered4LevelCauldronBlock.LEVEL) - 1])
                 .build());
         })
         .loot((tables, block) -> tables.dropOther(block, Items.CAULDRON))
@@ -195,7 +201,7 @@ public final class ModBlocks {
                 "block/universal_plastic_melt"
             );
             provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
-                .modelFile(models[state.getValue(dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock.LEVEL) - 1])
+                .modelFile(models[state.getValue(Layered4LevelCauldronBlock.LEVEL) - 1])
                 .build());
         })
         .loot((tables, block) -> tables.dropOther(block, Items.CAULDRON))
@@ -221,7 +227,7 @@ public final class ModBlocks {
         .tag(
             BlockTags.MINEABLE_WITH_PICKAXE,
             BlockTags.ANVIL,
-            dev.dubhe.anvilcraft.init.block.ModBlockTags.NON_MAGNETIC
+            NON_MAGNETIC
         )
         .blockstate((context, provider) -> {
         })
@@ -298,7 +304,7 @@ public final class ModBlocks {
         .tag(
             BlockTags.MINEABLE_WITH_PICKAXE,
             BlockTags.ANVIL,
-            dev.dubhe.anvilcraft.init.block.ModBlockTags.NON_MAGNETIC,
+            NON_MAGNETIC,
             ModBlockTags.RESIN_SHOCK_COMPATIBLE
         )
         .blockstate((context, provider) -> {
@@ -306,8 +312,8 @@ public final class ModBlocks {
         .item((block, properties) -> new ResinAnvilItem(
             block,
             properties.component(
-                net.minecraft.core.component.DataComponents.CUSTOM_MODEL_DATA,
-                new net.minecraft.world.item.component.CustomModelData(0)
+                DataComponents.CUSTOM_MODEL_DATA,
+                new CustomModelData(0)
             ),
             ModEntities.RESIN_ANVIL,
             block::defaultBlockState
@@ -349,7 +355,7 @@ public final class ModBlocks {
     }
 
     private static ModelFile[] layeredCauldronModels(
-        dev.anvilcraft.lib.v2.registrum.providers.RegistrumBlockstateProvider provider,
+        RegistrumBlockstateProvider provider,
         String name,
         String contentTexture
     ) {

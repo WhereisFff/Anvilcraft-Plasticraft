@@ -6,6 +6,7 @@ import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
 import dev.anvilcraft.plasticraft.init.block.ModBlockEntities;
+import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.dubhe.anvilcraft.block.RoyalAnvilBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -24,12 +25,15 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
-import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 实体化塑料制品的兼容方块。
@@ -49,8 +53,8 @@ public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity
         Block.box(5.0D, 4.0D, 4.0D, 11.0D, 10.0D, 12.0D),
         Block.box(3.0D, 10.0D, 0.0D, 13.0D, 16.0D, 16.0D)
     );
-    private static final java.util.Map<PlasticEntityOrientation, VoxelShape> BONDED_ANVIL_SHAPES =
-        new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<PlasticEntityOrientation, VoxelShape> BONDED_ANVIL_SHAPES =
+        new ConcurrentHashMap<>();
 
     protected AbstractPlasticEntityBlock(Properties properties) {
         // Bonded six-axis orientations live in the block entity and must not be
@@ -193,7 +197,7 @@ public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity
     protected ItemStack createDropStack(BlockState state) {
         ItemStack stack = new ItemStack(this);
         if (state.hasProperty(MAGNETIZED) && state.getValue(MAGNETIZED)) {
-            dev.anvilcraft.plasticraft.item.PlasticItemData.setMagnetized(stack, true);
+            PlasticItemData.setMagnetized(stack, true);
         }
         return stack;
     }

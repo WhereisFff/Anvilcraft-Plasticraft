@@ -1,6 +1,8 @@
 package dev.anvilcraft.plasticraft.block.entity;
 
+import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
 import dev.anvilcraft.plasticraft.init.block.ModBlockEntities;
+import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -58,9 +60,9 @@ public final class HighHeatFuelCauldronBlockEntity extends BlockEntity {
         super.loadAdditional(tag, registries);
         this.spent = tag.contains(TAG_SPENT)
             ? tag.getBoolean(TAG_SPENT)
-            : this.getBlockState().hasProperty(dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock.IGNITED)
-                && this.getBlockState().getValue(dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock.IGNITED)
-                && this.getBlockState().getValue(dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock.LEVEL) == 1;
+            : this.getBlockState().hasProperty(HighHeatFuelCauldronBlock.IGNITED)
+                && this.getBlockState().getValue(HighHeatFuelCauldronBlock.IGNITED)
+                && this.getBlockState().getValue(Layered4LevelCauldronBlock.LEVEL) == 1;
     }
 
     @Override

@@ -32,9 +32,10 @@ abstract class AbstractLiquidCategoryMixin {
         method = "setRecipe",
         at = @At(
             value = "INVOKE",
-            target = "Ldev/dubhe/anvilcraft/integration/jei/util/JeiFluidUtil;addFluidOutputSlot("
-                + "Lmezz/jei/api/gui/builder/IRecipeLayoutBuilder;Ljava/lang/String;II"
-                + "Ldev/dubhe/anvilcraft/recipe/component/HasCauldronSimple;)V"
+            target = """
+                Ldev/dubhe/anvilcraft/integration/jei/util/JeiFluidUtil;addFluidOutputSlot(\
+                Lmezz/jei/api/gui/builder/IRecipeLayoutBuilder;Ljava/lang/String;II\
+                Ldev/dubhe/anvilcraft/recipe/component/HasCauldronSimple;)V"""
         )
     )
     private void plasticraft$addColoredFluidOutput(
@@ -68,9 +69,10 @@ abstract class AbstractLiquidCategoryMixin {
         method = "setRecipe",
         at = @At(
             value = "INVOKE",
-            target = "Ldev/dubhe/anvilcraft/integration/jei/util/JeiFluidUtil;addDefaultOutputSlot("
-                + "Lmezz/jei/api/gui/builder/IRecipeLayoutBuilder;Ljava/lang/String;II"
-                + "Ldev/dubhe/anvilcraft/recipe/component/HasCauldronSimple;)V"
+            target = """
+                Ldev/dubhe/anvilcraft/integration/jei/util/JeiFluidUtil;addDefaultOutputSlot(\
+                Lmezz/jei/api/gui/builder/IRecipeLayoutBuilder;Ljava/lang/String;II\
+                Ldev/dubhe/anvilcraft/recipe/component/HasCauldronSimple;)V"""
         )
     )
     private void plasticraft$addColoredDefaultOutput(

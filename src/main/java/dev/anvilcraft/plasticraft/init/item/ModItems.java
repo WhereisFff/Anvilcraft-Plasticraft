@@ -11,10 +11,14 @@ import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.BucketItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.material.Fluid;
 import net.neoforged.neoforge.client.model.generators.ModelProvider;
 import net.neoforged.neoforge.common.Tags;
 
+import java.util.function.Supplier;
+
 import static dev.anvilcraft.plasticraft.AnvilcraftPlasticraft.REGISTRUM;
+import static dev.dubhe.anvilcraft.init.item.ModItemTags.ANVIL_HAMMER;
 
 /** 不依附于方块条目的 Plasticraft 物品注册。 */
 public final class ModItems {
@@ -25,7 +29,7 @@ public final class ModItems {
         .tag(
             ItemTags.MACE_ENCHANTABLE,
             ItemTags.DURABILITY_ENCHANTABLE,
-            dev.dubhe.anvilcraft.init.item.ModItemTags.ANVIL_HAMMER
+            ANVIL_HAMMER
         )
         .model((context, provider) -> {
         })
@@ -84,7 +88,7 @@ public final class ModItems {
 
     private static ItemEntry<BucketItem> fluidBucket(
         String id,
-        java.util.function.Supplier<? extends net.minecraft.world.level.material.Fluid> fluid,
+        Supplier<? extends Fluid> fluid,
         String name
     ) {
         return REGISTRUM.item(id, properties -> new BucketItem(fluid.get(), properties))

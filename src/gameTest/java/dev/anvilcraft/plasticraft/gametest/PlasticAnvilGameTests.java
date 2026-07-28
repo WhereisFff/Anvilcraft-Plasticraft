@@ -2,50 +2,26 @@ package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.lib.v2.recipe.util.InWorldRecipeContext;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
-import dev.anvilcraft.plasticraft.block.piston.HighViscosityPistonBudget;
-import dev.dubhe.anvilcraft.api.event.AnvilEvent;
-import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
-import dev.dubhe.anvilcraft.api.giantanvil.ShockDropBehavior;
-import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
-import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
-import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
-import dev.dubhe.anvilcraft.block.fluid.PipeBlock;
-import dev.dubhe.anvilcraft.block.sliding.ActivatorSlidingRailBlock;
-import dev.dubhe.anvilcraft.block.sliding.DetectorSlidingRailBlock;
-import dev.dubhe.anvilcraft.block.sliding.PoweredSlidingRailBlock;
-import dev.dubhe.anvilcraft.block.sliding.SlidingRailBlock;
-import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
-import dev.dubhe.anvilcraft.event.anvil.AnvilEventListener;
-import dev.dubhe.anvilcraft.event.giantanvil.shock.GiantAnvilShockEventListener;
-import dev.dubhe.anvilcraft.event.giantanvil.shock.ShockContext;
-import dev.dubhe.anvilcraft.init.block.ModBlockTags;
-import dev.dubhe.anvilcraft.init.item.ModItemTags;
-import dev.dubhe.anvilcraft.init.item.ModItems;
-import dev.dubhe.anvilcraft.init.recipe.ModRecipeTypes;
-import dev.dubhe.anvilcraft.recipe.anvil.outcome.RoyalPreferenceOutcome;
-import dev.dubhe.anvilcraft.recipe.anvil.wrap.FastCookingRecipe;
-import dev.dubhe.anvilcraft.recipe.anvil.wrap.SuperHeatingRecipe;
-import dev.dubhe.anvilcraft.util.AccelerateManager;
-import dev.dubhe.anvilcraft.util.GravityManager;
-import dev.dubhe.anvilcraft.util.GravityType;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.HardenedResinAnvilBlock;
 import dev.anvilcraft.plasticraft.block.HardenedResinCauldronBlock;
+import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
+import dev.anvilcraft.plasticraft.block.piston.HighViscosityPistonBudget;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
+import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.ResinShockDropBehavior;
-import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
-import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
-import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
 import dev.anvilcraft.plasticraft.event.ResinAnvilHammerEvents;
 import dev.anvilcraft.plasticraft.init.ModAttachments;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import dev.anvilcraft.plasticraft.init.ModMenuTypes;
+import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.ModFluids;
+import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.HardenedResinAnvilItem;
@@ -54,11 +30,40 @@ import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.anvilcraft.plasticraft.recipe.FluidFastCookingRecipe;
+import dev.dubhe.anvilcraft.api.event.AnvilEvent;
+import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
+import dev.dubhe.anvilcraft.api.giantanvil.ShockDropBehavior;
+import dev.dubhe.anvilcraft.block.HeaterBlock;
+import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
+import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
+import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
+import dev.dubhe.anvilcraft.block.fluid.PipeBlock;
+import dev.dubhe.anvilcraft.block.item.HasMobBlockItem;
+import dev.dubhe.anvilcraft.block.sliding.ActivatorSlidingRailBlock;
+import dev.dubhe.anvilcraft.block.sliding.DetectorSlidingRailBlock;
+import dev.dubhe.anvilcraft.block.sliding.PoweredSlidingRailBlock;
+import dev.dubhe.anvilcraft.block.sliding.SlidingRailBlock;
+import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
+import dev.dubhe.anvilcraft.event.anvil.AnvilEventListener;
+import dev.dubhe.anvilcraft.event.giantanvil.shock.GiantAnvilShockEventListener;
+import dev.dubhe.anvilcraft.event.giantanvil.shock.ShockContext;
+import dev.dubhe.anvilcraft.init.block.ModBlockEntities;
+import dev.dubhe.anvilcraft.init.block.ModBlockTags;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
-import net.minecraft.world.entity.item.ItemEntity;
+import dev.dubhe.anvilcraft.init.item.ModItemTags;
+import dev.dubhe.anvilcraft.init.item.ModItems;
+import dev.dubhe.anvilcraft.init.recipe.ModRecipeTypes;
+import dev.dubhe.anvilcraft.item.AnvilHammerItem;
+import dev.dubhe.anvilcraft.recipe.anvil.outcome.RoyalPreferenceOutcome;
+import dev.dubhe.anvilcraft.recipe.anvil.wrap.FastCookingRecipe;
+import dev.dubhe.anvilcraft.recipe.anvil.wrap.SuperHeatingRecipe;
+import dev.dubhe.anvilcraft.recipe.anvil.wrap.TimeWarpRecipe;
+import dev.dubhe.anvilcraft.util.AccelerateManager;
+import dev.dubhe.anvilcraft.util.GravityManager;
+import dev.dubhe.anvilcraft.util.GravityType;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
@@ -67,24 +72,29 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.TagKey;
+import net.minecraft.world.Container;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.Container;
-import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.EquipmentSlotGroup;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.animal.Cow;
 import net.minecraft.world.entity.item.FallingBlockEntity;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Ravager;
 import net.minecraft.world.entity.monster.Zombie;
-import net.minecraft.world.effect.MobEffectInstance;
-import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.vehicle.Boat;
 import net.minecraft.world.entity.vehicle.Minecart;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -123,6 +133,21 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
+
+import static dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.ACTIVATOR_SLIDING_RAIL;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.DETECTOR_SLIDING_RAIL;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.FISH_TANK;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.HEAVY_IRON_BLOCK;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.MAGNET_BLOCK;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.PIPE_STRAIGHT;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.POWERED_SLIDING_RAIL;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.ROYAL_STEEL_BLOCK;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.SLIDING_RAIL;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.SLIDING_RAIL_STOP;
 
 /** 对持久化落方块物理约定的运行时测试。 */
 public final class PlasticAnvilGameTests {
@@ -352,7 +377,7 @@ public final class PlasticAnvilGameTests {
         PlasticEntityOrientation orientation = new PlasticEntityOrientation(Direction.WEST, 3);
         original.setOrientation(orientation);
         ItemStack drop = ModBlocks.HARDEND_RESIN_ANVIL.asStack();
-        HardenedResinAnvilItem.setColor(drop, net.minecraft.world.item.DyeColor.CYAN);
+        HardenedResinAnvilItem.setColor(drop, DyeColor.CYAN);
         original.setDropStack(drop);
 
         CompoundTag saved = original.saveWithoutId(new CompoundTag());
@@ -384,7 +409,7 @@ public final class PlasticAnvilGameTests {
         server.getEntityData().packDirty();
 
         BlockState magnetic = server.getDisplayState().setValue(
-            dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock.MAGNETIZED,
+            AbstractPlasticEntityBlock.MAGNETIZED,
             true
         );
         server.setDisplayState(magnetic);
@@ -575,7 +600,7 @@ public final class PlasticAnvilGameTests {
         check(fastRecipe.getHasCauldron().fluid().equals(BuiltInRegistries.FLUID.getKey(Fluids.WATER)), "input was not water");
         check(fastRecipe.getHasCauldron().consume() == 1000, "fast cooking did not consume a full water bucket");
         check(
-            fastRecipe.getHasCauldron().transform().equals(dev.anvilcraft.plasticraft.init.block.ModFluids.liquidHighViscosityResinId()),
+            fastRecipe.getHasCauldron().transform().equals(ModFluids.liquidHighViscosityResinId()),
             "fast cooking transformed into the wrong fluid"
         );
         check(fastRecipe.getHasCauldron().produce() == 1000, "fast cooking did not produce a full resin bucket");
@@ -584,13 +609,13 @@ public final class PlasticAnvilGameTests {
             .byKey(AnvilcraftPlasticraft.of("time_warp/high_viscosity_resin_block"))
             .orElseThrow(() -> new GameTestAssertException("high-viscosity resin time-warp recipe was not loaded"));
         check(
-            warpHolder.value() instanceof dev.dubhe.anvilcraft.recipe.anvil.wrap.TimeWarpRecipe,
+            warpHolder.value() instanceof TimeWarpRecipe,
             "fluid solidification recipe was not a time-warp recipe"
         );
-        dev.dubhe.anvilcraft.recipe.anvil.wrap.TimeWarpRecipe warpRecipe =
-            (dev.dubhe.anvilcraft.recipe.anvil.wrap.TimeWarpRecipe) warpHolder.value();
+        TimeWarpRecipe warpRecipe =
+            (TimeWarpRecipe) warpHolder.value();
         check(
-            warpRecipe.getHasCauldron().fluid().equals(dev.anvilcraft.plasticraft.init.block.ModFluids.liquidHighViscosityResinId()),
+            warpRecipe.getHasCauldron().fluid().equals(ModFluids.liquidHighViscosityResinId()),
             "time warp consumed the wrong fluid"
         );
         check(warpRecipe.getHasCauldron().consume() == 1000, "time warp did not consume the full resin bucket");
@@ -652,7 +677,7 @@ public final class PlasticAnvilGameTests {
 
         check(isEmpty(pot.getInput()), "low campfire fast cooking did not consume every ingredient");
         check(
-            pot.getFluidHandler().getFluid().is(dev.anvilcraft.plasticraft.init.block.ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get()),
+            pot.getFluidHandler().getFluid().is(ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get()),
             "low campfire fast cooking did not transform the pot fluid"
         );
         check(
@@ -675,8 +700,8 @@ public final class PlasticAnvilGameTests {
 
         helper.setBlock(
             new BlockPos(3, 1, 3),
-            dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER.getDefaultState()
-                .setValue(dev.dubhe.anvilcraft.block.HeaterBlock.OVERLOAD, false)
+            HEATER.getDefaultState()
+                .setValue(HeaterBlock.OVERLOAD, false)
         );
         HardenedResinCauldronEntity ingotPot = createPot(
             helper,
@@ -692,8 +717,8 @@ public final class PlasticAnvilGameTests {
 
         helper.setBlock(
             new BlockPos(7, 1, 3),
-            dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER.getDefaultState()
-                .setValue(dev.dubhe.anvilcraft.block.HeaterBlock.OVERLOAD, false)
+            HEATER.getDefaultState()
+                .setValue(HeaterBlock.OVERLOAD, false)
         );
         HardenedResinCauldronEntity blockPot = createPot(
             helper,
@@ -727,7 +752,7 @@ public final class PlasticAnvilGameTests {
         check(
             countItem(
                 blockPot.getOutput(),
-                dev.dubhe.anvilcraft.init.block.ModBlocks.ROYAL_STEEL_BLOCK.get().asItem()
+                ROYAL_STEEL_BLOCK.get().asItem()
             ) == 2,
             "preferred gem block did not double the royal steel block output"
         );
@@ -773,13 +798,13 @@ public final class PlasticAnvilGameTests {
     @TestHolder(description = "High-viscosity resin sticks entities inside fish tanks and large cauldrons")
     static void highViscosityResinContainerEntityMovement(ExtendedGameTestHelper helper) {
         FluidStack resin = new FluidStack(
-            dev.anvilcraft.plasticraft.init.block.ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get(),
+            ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get(),
             1000
         );
         BlockPos fishTankPos = new BlockPos(2, 1, 2);
         helper.setBlock(
             fishTankPos,
-            dev.dubhe.anvilcraft.init.block.ModBlocks.FISH_TANK.get().defaultBlockState()
+            FISH_TANK.get().defaultBlockState()
         );
         BlockPos absoluteFishTankPos = helper.absolutePos(fishTankPos);
         check(
@@ -813,7 +838,7 @@ public final class PlasticAnvilGameTests {
         );
 
         BlockPos largeCauldronPos = new BlockPos(6, 2, 6);
-        BlockState largeCauldronState = dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON.get()
+        BlockState largeCauldronState = LARGE_CAULDRON.get()
             .defaultBlockState()
             .setValue(LargeCauldronBlock.HALF, Cube3x3PartHalf.MID_CENTER);
         helper.setBlock(largeCauldronPos, largeCauldronState);
@@ -890,11 +915,11 @@ public final class PlasticAnvilGameTests {
         helper.setBlock(source, ModBlocks.LIQUID_HIGH_VISCOSITY_RESIN.get());
         helper.getLevel().scheduleTick(
             helper.absolutePos(source),
-            dev.anvilcraft.plasticraft.init.block.ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get(),
+            ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get(),
             1
         );
         check(
-            dev.anvilcraft.plasticraft.init.block.ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get()
+            ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get()
                 .getTickDelay(helper.getLevel()) == 40,
             "liquid resin did not use a 40 tick flow delay"
         );
@@ -913,14 +938,14 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate
     @TestHolder(description = "Large hostile mobs ignore resin size limits but still require Weakness")
     static void highViscosityResinCapturesLargeMobs(ExtendedGameTestHelper helper) {
-        net.minecraft.world.entity.monster.Ravager ravager = helper.spawnWithNoFreeWill(
+        Ravager ravager = helper.spawnWithNoFreeWill(
             EntityType.RAVAGER,
             new Vec3(1.5D, 1.0D, 1.5D)
         );
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         ItemStack resin = ModBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asStack();
         check(
-            !dev.dubhe.anvilcraft.block.item.HasMobBlockItem.canMobBeSaved(ravager, null, resin),
+            !HasMobBlockItem.canMobBeSaved(ravager, null, resin),
             "base resin unexpectedly accepted the oversized ravager"
         );
         check(
@@ -973,11 +998,11 @@ public final class PlasticAnvilGameTests {
             0.0F
         );
         check(
-            context.testCorner(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get()),
+            context.testCorner(RESIN_BLOCK.get()),
             "high-viscosity resin failed the resin shock corner check"
         );
         check(
-            context.testBorder(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get()),
+            context.testBorder(RESIN_BLOCK.get()),
             "high-viscosity resin failed the resin shock border check"
         );
         helper.succeed();
@@ -1015,11 +1040,11 @@ public final class PlasticAnvilGameTests {
             1.0F
         );
         check(
-            context.testCorner(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get()),
+            context.testCorner(RESIN_BLOCK.get()),
             "resin anvil entities did not match the resin shock corners"
         );
         check(
-            context.testBorder(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get()),
+            context.testBorder(RESIN_BLOCK.get()),
             "resin anvil entities did not match the resin shock border"
         );
         ShockDropBehavior resinDrop = context.getBorderAnvilBehavior()
@@ -1067,10 +1092,10 @@ public final class PlasticAnvilGameTests {
     @TestHolder(description = "Bonded resin-anvil blocks form a resin shock base without being bounced loose")
     static void bondedResinAnvilBlocksStayFixedDuringResinShock(ExtendedGameTestHelper helper) {
         BlockPos center = new BlockPos(5, 1, 5);
-        helper.setBlock(center, dev.dubhe.anvilcraft.init.block.ModBlocks.HEAVY_IRON_BLOCK.get());
+        helper.setBlock(center, HEAVY_IRON_BLOCK.get());
         BlockState bondedState = ModBlocks.RESIN_ANVIL.get()
             .defaultBlockState()
-            .setValue(dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock.BONDED, true);
+            .setValue(AbstractPlasticEntityBlock.BONDED, true);
         for (int xOffset = -1; xOffset <= 1; xOffset++) {
             for (int zOffset = -1; zOffset <= 1; zOffset++) {
                 if (xOffset == 0 && zOffset == 0) continue;
@@ -1085,8 +1110,8 @@ public final class PlasticAnvilGameTests {
             0.0F
         );
         check(
-            context.testCorner(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get())
-                && context.testBorder(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get()),
+            context.testCorner(RESIN_BLOCK.get())
+                && context.testBorder(RESIN_BLOCK.get()),
             "bonded resin anvils did not qualify as a resin shock pedestal"
         );
 
@@ -1106,7 +1131,7 @@ public final class PlasticAnvilGameTests {
         check(
             helper.getBlockState(bondedInRange).is(ModBlocks.RESIN_ANVIL.get())
                 && helper.getBlockState(bondedInRange)
-                    .getValue(dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock.BONDED),
+                    .getValue(AbstractPlasticEntityBlock.BONDED),
             "resin shock bounced a bonded resin anvil loose"
         );
         check(helper.getBlockState(freeInRange).isAir(), "resin shock did not bounce a free resin anvil");
@@ -1220,11 +1245,11 @@ public final class PlasticAnvilGameTests {
     @TestHolder(description = "The resin anvil hammer inherits hammer behavior, repairs with resin, and has no portable menu")
     static void resinAnvilHammerItemContract(ExtendedGameTestHelper helper) {
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
-        ItemStack hammer = dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack();
+        ItemStack hammer = RESIN_ANVIL_HAMMER.asStack();
         ResinAnvilHammerItem item = (ResinAnvilHammerItem) hammer.getItem();
         player.setItemInHand(InteractionHand.MAIN_HAND, hammer);
 
-        check(item instanceof dev.dubhe.anvilcraft.item.AnvilHammerItem, "resin hammer did not inherit AnvilHammerItem");
+        check(item instanceof AnvilHammerItem, "resin hammer did not inherit AnvilHammerItem");
         check(hammer.getMaxDamage() == 35, "resin hammer durability differs from the standard hammer");
         var modifiers = hammer.getAttributeModifiers().modifiers();
         var attackDamageModifier = modifiers.stream()
@@ -1280,7 +1305,7 @@ public final class PlasticAnvilGameTests {
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         player.experienceLevel = 12;
         HardenedResinAnvilMenu menu = new HardenedResinAnvilMenu(1, player.getInventory(), -1);
-        ItemStack input = dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack();
+        ItemStack input = RESIN_ANVIL_HAMMER.asStack();
         input.setDamageValue(30);
         input.set(DataComponents.REPAIR_COST, 80);
         menu.getSlot(0).set(input);
@@ -1308,7 +1333,7 @@ public final class PlasticAnvilGameTests {
     static void resinAnvilHammerKnockbackIsNonDamaging(ExtendedGameTestHelper helper) {
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         player.setYRot(0.0F);
-        ItemStack hammer = dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack();
+        ItemStack hammer = RESIN_ANVIL_HAMMER.asStack();
         player.setItemInHand(InteractionHand.MAIN_HAND, hammer);
         ResinAnvilEntity target = createResinAnvil(
             helper,
@@ -1330,7 +1355,7 @@ public final class PlasticAnvilGameTests {
         AtomicInteger landingEventCount = new AtomicInteger();
         AtomicInteger resinSoundCount = new AtomicInteger();
         AtomicInteger anvilSoundCount = new AtomicInteger();
-        ResourceLocation resinImpactSound = dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK
+        ResourceLocation resinImpactSound = RESIN_BLOCK
             .getDefaultState().getSoundType().getHitSound().getLocation();
         BlockPos impactPos = target.blockPosition();
         helper.addTemporaryListener((AnvilEvent.OnLand event) -> {
@@ -1377,13 +1402,13 @@ public final class PlasticAnvilGameTests {
         player.setDeltaMovement(Vec3.ZERO);
         player.setItemInHand(
             InteractionHand.MAIN_HAND,
-            dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack()
+            RESIN_ANVIL_HAMMER.asStack()
         );
         BlockPos target = helper.absolutePos(BlockPos.ZERO);
         AtomicInteger landingEventCount = new AtomicInteger();
         AtomicInteger resinSoundCount = new AtomicInteger();
         AtomicInteger anvilSoundCount = new AtomicInteger();
-        ResourceLocation resinImpactSound = dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK
+        ResourceLocation resinImpactSound = RESIN_BLOCK
             .getDefaultState().getSoundType().getHitSound().getLocation();
         helper.addTemporaryListener((AnvilEvent.OnLand event) -> {
             if (event.getPos().equals(target.above())
@@ -1577,7 +1602,7 @@ public final class PlasticAnvilGameTests {
         cauldron.setMagnetized(true);
         cauldron.getInput().insertItem(0, new ItemStack(Items.COBBLESTONE, 3), false);
 
-        ItemStack resinHammer = dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack();
+        ItemStack resinHammer = RESIN_ANVIL_HAMMER.asStack();
         player.setItemInHand(InteractionHand.MAIN_HAND, resinHammer);
         check(
             resinAnvil.interact(player, InteractionHand.MAIN_HAND).consumesAction(),
@@ -1649,7 +1674,7 @@ public final class PlasticAnvilGameTests {
         Entity capturedMob = helper.spawnWithNoFreeWill(EntityType.COW, new Vec3(2.5D, 1.0D, 2.5D));
         InteractionResult captureResult = resinAnvil.interactLivingEntity(
             player,
-            (net.minecraft.world.entity.LivingEntity) capturedMob,
+            (LivingEntity) capturedMob,
             InteractionHand.MAIN_HAND
         );
         check(captureResult.consumesAction(), "resin anvil item did not capture the mob");
@@ -1694,7 +1719,7 @@ public final class PlasticAnvilGameTests {
         check(!loaded.hasCapturedMob(), "resin anvil retained the captured component after release");
         check(
             !helper.getLevel().getEntitiesOfClass(
-                net.minecraft.world.entity.animal.Cow.class,
+                Cow.class,
                 loaded.getBoundingBox().inflate(3.0D),
                 Entity::isAlive
             ).isEmpty(),
@@ -1817,7 +1842,7 @@ public final class PlasticAnvilGameTests {
             helper.setBlock(poweredPos.below(), Blocks.REDSTONE_BLOCK);
             helper.setBlock(
                 poweredPos,
-                dev.dubhe.anvilcraft.init.block.ModBlocks.POWERED_SLIDING_RAIL.get()
+                POWERED_SLIDING_RAIL.get()
                     .defaultBlockState()
                     .setValue(PoweredSlidingRailBlock.FACING, Direction.EAST)
                     .setValue(PoweredSlidingRailBlock.POWERED, true)
@@ -1825,7 +1850,7 @@ public final class PlasticAnvilGameTests {
             BlockPos brakePos = new BlockPos(x, 1, 6);
             helper.setBlock(
                 brakePos,
-                dev.dubhe.anvilcraft.init.block.ModBlocks.POWERED_SLIDING_RAIL.get()
+                POWERED_SLIDING_RAIL.get()
                     .defaultBlockState()
                     .setValue(PoweredSlidingRailBlock.FACING, Direction.EAST)
                     .setValue(PoweredSlidingRailBlock.POWERED, false)
@@ -1877,9 +1902,9 @@ public final class PlasticAnvilGameTests {
     static void poweredSlidingRailsPullPlasticProductsFromStopLikeBlocks(ExtendedGameTestHelper helper) {
         int[] zPositions = {2, 5, 8};
         BlockState[] supports = {
-            dev.dubhe.anvilcraft.init.block.ModBlocks.SLIDING_RAIL_STOP.get().defaultBlockState(),
-            dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER.get().defaultBlockState(),
-            dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER.get().defaultBlockState()
+            SLIDING_RAIL_STOP.get().defaultBlockState(),
+            HEATER.get().defaultBlockState(),
+            HEATER.get().defaultBlockState()
         };
         for (int index = 0; index < zPositions.length; index++) {
             BlockPos supportPos = new BlockPos(3, 1, zPositions[index]);
@@ -1888,7 +1913,7 @@ public final class PlasticAnvilGameTests {
             helper.setBlock(railPos.below(), Blocks.REDSTONE_BLOCK);
             helper.setBlock(
                 railPos,
-                dev.dubhe.anvilcraft.init.block.ModBlocks.POWERED_SLIDING_RAIL.get()
+                POWERED_SLIDING_RAIL.get()
                     .defaultBlockState()
                     .setValue(PoweredSlidingRailBlock.FACING, Direction.EAST)
                     .setValue(PoweredSlidingRailBlock.POWERED, true)
@@ -1928,7 +1953,7 @@ public final class PlasticAnvilGameTests {
             for (int x = 1; x <= 15; x++) {
                 helper.setBlock(
                     new BlockPos(x, 1, z),
-                    dev.dubhe.anvilcraft.init.block.ModBlocks.SLIDING_RAIL.get()
+                    SLIDING_RAIL.get()
                         .defaultBlockState()
                         .setValue(SlidingRailBlock.AXIS, Direction.Axis.X)
                 );
@@ -1969,7 +1994,7 @@ public final class PlasticAnvilGameTests {
             helper.setBlock(railPos.below(), Blocks.REDSTONE_BLOCK);
             helper.setBlock(
                 railPos,
-                dev.dubhe.anvilcraft.init.block.ModBlocks.POWERED_SLIDING_RAIL.get()
+                POWERED_SLIDING_RAIL.get()
                     .defaultBlockState()
                     .setValue(PoweredSlidingRailBlock.FACING, Direction.EAST)
                     .setValue(PoweredSlidingRailBlock.POWERED, true)
@@ -2027,7 +2052,7 @@ public final class PlasticAnvilGameTests {
         BlockPos railPos = new BlockPos(3, 1, 3);
         helper.setBlock(
             railPos,
-            dev.dubhe.anvilcraft.init.block.ModBlocks.DETECTOR_SLIDING_RAIL.get()
+            DETECTOR_SLIDING_RAIL.get()
                 .defaultBlockState()
                 .setValue(DetectorSlidingRailBlock.FACING, Direction.EAST)
         );
@@ -2042,7 +2067,7 @@ public final class PlasticAnvilGameTests {
             BlockState state = helper.getBlockState(railPos);
             check(state.getValue(DetectorSlidingRailBlock.POWERED), "detector rail dropped its occupied signal");
             int power = helper.getLevel()
-                .getBlockEntity(helper.absolutePos(railPos), dev.dubhe.anvilcraft.init.block.ModBlockEntities.DETECTOR_SLIDING_RAIL.get())
+                .getBlockEntity(helper.absolutePos(railPos), ModBlockEntities.DETECTOR_SLIDING_RAIL.get())
                 .orElseThrow(() -> new GameTestAssertException("detector rail block entity was missing"))
                 .getPower();
             check(power == 1, "one resin entity produced detector strength " + power);
@@ -2064,7 +2089,7 @@ public final class PlasticAnvilGameTests {
         helper.setBlock(railPos.below(), Blocks.REDSTONE_BLOCK);
         helper.setBlock(
             railPos,
-            dev.dubhe.anvilcraft.init.block.ModBlocks.ACTIVATOR_SLIDING_RAIL.get()
+            ACTIVATOR_SLIDING_RAIL.get()
                 .defaultBlockState()
                 .setValue(ActivatorSlidingRailBlock.FACING, Direction.EAST)
                 .setValue(ActivatorSlidingRailBlock.POWERED, true)
@@ -2113,7 +2138,7 @@ public final class PlasticAnvilGameTests {
         player.setYRot(-90.0F);
         player.setItemInHand(
             InteractionHand.MAIN_HAND,
-            dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack()
+            RESIN_ANVIL_HAMMER.asStack()
         );
         player.attack(anvil);
         check(anvil.getDeltaMovement().x > 2.4D, "resin hammer did not launch the hardened anvil");
@@ -2183,7 +2208,7 @@ public final class PlasticAnvilGameTests {
         BlockPos pos = new BlockPos(3, 1, 3);
         BlockState state = ModBlocks.RESIN_ANVIL.get()
             .defaultBlockState()
-            .setValue(dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock.BONDED, true);
+            .setValue(AbstractPlasticEntityBlock.BONDED, true);
         helper.setBlock(pos, state);
         Zombie falling = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 2.0D, 3.5D));
         falling.setDeltaMovement(0.0D, -0.75D, 0.0D);
@@ -2490,7 +2515,7 @@ public final class PlasticAnvilGameTests {
         check(isEmpty(pot.getInput()), "anvil hammer attack did not consume every fast-cooking ingredient");
         check(
             pot.getFluidHandler().getFluid().is(
-                dev.anvilcraft.plasticraft.init.block.ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get()
+                ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get()
             ),
             "anvil hammer attack did not transform the hardened resin cauldron fluid"
         );
@@ -2530,11 +2555,11 @@ public final class PlasticAnvilGameTests {
         pot.getInput().insertItem(2, ModItems.LIME_POWDER.asStack(), false);
 
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
-        ItemStack hammer = dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack();
+        ItemStack hammer = RESIN_ANVIL_HAMMER.asStack();
         player.setItemInHand(InteractionHand.MAIN_HAND, hammer);
         AtomicInteger resinSoundCount = new AtomicInteger();
         AtomicInteger anvilSoundCount = new AtomicInteger();
-        ResourceLocation resinImpactSound = dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK
+        ResourceLocation resinImpactSound = RESIN_BLOCK
             .getDefaultState().getSoundType().getHitSound().getLocation();
         helper.addTemporaryListener((PlayLevelSoundEvent.AtPosition event) -> {
             if (event.getLevel() != helper.getLevel() || event.getSound() == null) return;
@@ -2548,7 +2573,7 @@ public final class PlasticAnvilGameTests {
         check(isEmpty(pot.getInput()), "resin anvil hammer attack did not consume every fast-cooking ingredient");
         check(
             pot.getFluidHandler().getFluid().is(
-                dev.anvilcraft.plasticraft.init.block.ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get()
+                ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get()
             ),
             "resin anvil hammer attack did not transform the hardened resin cauldron fluid"
         );
@@ -2633,7 +2658,7 @@ public final class PlasticAnvilGameTests {
             IFluidHandler.FluidAction.EXECUTE
         );
 
-        BlockState pipe = dev.dubhe.anvilcraft.init.block.ModBlocks.PIPE_STRAIGHT.get().defaultBlockState()
+        BlockState pipe = PIPE_STRAIGHT.get().defaultBlockState()
             .setValue(PipeBlock.AXIS, Direction.Axis.Y);
         for (int y = 2; y <= 5; y++) {
             helper.setBlock(new BlockPos(3, y, 3), pipe);
@@ -2702,7 +2727,7 @@ public final class PlasticAnvilGameTests {
     @TestHolder(description = "Magnet forces target only magnetized plastic entities")
     static void magnetForcesModEntitiesSelectively(ExtendedGameTestHelper helper) {
         BlockPos magnetPos = new BlockPos(1, 2, 3);
-        helper.setBlock(magnetPos, dev.dubhe.anvilcraft.init.block.ModBlocks.MAGNET_BLOCK.get().defaultBlockState());
+        helper.setBlock(magnetPos, MAGNET_BLOCK.get().defaultBlockState());
         HardenedResinAnvilEntity magnetized = createAnvil(helper, new Vec3(4.5D, 2.0D, 3.5D));
         HardenedResinAnvilEntity plain = createAnvil(helper, new Vec3(6.5D, 2.0D, 3.5D));
         magnetized.setMagnetized(true);
@@ -2929,7 +2954,7 @@ public final class PlasticAnvilGameTests {
     @TestHolder(description = "Fish tank outputs become inputs on the next anvil impact")
     static void fishTankReprocessesItsOutputWithoutDuplicatingInput(ExtendedGameTestHelper helper) {
         BlockPos tankPos = new BlockPos(3, 2, 3);
-        helper.setBlock(tankPos, dev.dubhe.anvilcraft.init.block.ModBlocks.FISH_TANK.get().defaultBlockState());
+        helper.setBlock(tankPos, FISH_TANK.get().defaultBlockState());
         BlockPos absoluteTankPos = helper.absolutePos(tankPos);
         check(
             helper.getLevel().getBlockEntity(absoluteTankPos) instanceof FishTankBlockEntity,
@@ -3535,7 +3560,7 @@ public final class PlasticAnvilGameTests {
         helper.runAfterDelay(3, () -> {
             double supportStartY = support.getY();
             double anvilStartY = anvil.getY();
-            support.move(net.minecraft.world.entity.MoverType.SELF, new Vec3(0.0D, 0.25D, 0.0D));
+            support.move(MoverType.SELF, new Vec3(0.0D, 0.25D, 0.0D));
             check(support.getY() > supportStartY + 0.2D, "carrier was clipped by the supported anvil");
             check(anvil.getY() > anvilStartY + 0.2D, "normal carrier movement was not transferred to the anvil");
             helper.succeed();
@@ -3704,7 +3729,7 @@ public final class PlasticAnvilGameTests {
         helper.runAfterDelay(2, () -> anvil.setNoGravity(true));
         helper.runAfterDelay(4, () -> {
             double startX = anvil.getX();
-            support.move(net.minecraft.world.entity.MoverType.SELF, new Vec3(0.3D, 0.0D, 0.0D));
+            support.move(MoverType.SELF, new Vec3(0.3D, 0.0D, 0.0D));
             check(Math.abs(anvil.getX() - startX) < 0.05D, "no-gravity anvil retained a stale carrier");
             helper.succeed();
         });
@@ -4371,7 +4396,7 @@ public final class PlasticAnvilGameTests {
             );
             check(
                 helper.getLevel().getEntitiesOfClass(
-                    net.minecraft.world.entity.item.ItemEntity.class,
+                    ItemEntity.class,
                     new AABB(helper.absolutePos(new BlockPos(2, 1, 2))).inflate(3.0D),
                     item -> item.getItem().is(ModBlocks.HARDEND_RESIN_ANVIL.get().asItem())
                 ).isEmpty(),
@@ -4422,7 +4447,7 @@ public final class PlasticAnvilGameTests {
             );
             double supportStartX = support.getX();
             double anvilStartX = anvil.getX();
-            support.move(net.minecraft.world.entity.MoverType.SELF, new Vec3(0.2D, 0.0D, 0.0D));
+            support.move(MoverType.SELF, new Vec3(0.2D, 0.0D, 0.0D));
             check(support.getX() > supportStartX + 0.15D, "horizontal carrier was clipped by the supported anvil");
             check(anvil.getX() > anvilStartX + 0.15D, "horizontal carrier movement did not transfer to the anvil");
             helper.succeed();
@@ -4430,7 +4455,7 @@ public final class PlasticAnvilGameTests {
     }
 
     private static CraftingInput resinAnvilCraftingInput(ItemStack center) {
-        ItemStack resinBlock = new ItemStack(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.get());
+        ItemStack resinBlock = new ItemStack(RESIN_BLOCK.get());
         ItemStack resin = ModItems.RESIN.asStack();
         return CraftingInput.of(3, 3, List.of(
             resinBlock.copy(), resinBlock.copy(), resinBlock.copy(),
@@ -4775,7 +4800,7 @@ public final class PlasticAnvilGameTests {
         player.moveTo(position.x, position.y, position.z);
         player.setItemSlot(
             EquipmentSlot.HEAD,
-            dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER.asStack()
+            RESIN_ANVIL_HAMMER.asStack()
         );
         return player;
     }

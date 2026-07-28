@@ -1,8 +1,12 @@
 package dev.anvilcraft.plasticraft.init.entity;
 
 import dev.anvilcraft.lib.v2.registrum.util.entry.EntityEntry;
-import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
+import dev.anvilcraft.plasticraft.client.renderer.entity.CatalyticPressLidRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinAnvilRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinCauldronRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.entity.ResinAnvilRenderer;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
+import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
@@ -18,7 +22,7 @@ public final class ModEntities {
             .clientTrackingRange(10)
             .updateInterval(1))
         .lang("Catalytic Press Lid")
-        .renderer(() -> dev.anvilcraft.plasticraft.client.renderer.entity.CatalyticPressLidRenderer::new)
+        .renderer(() -> CatalyticPressLidRenderer::new)
         .register();
 
     public static final EntityEntry<HardenedResinAnvilEntity> HARDEND_RESIN_ANVIL = REGISTRUM
@@ -28,7 +32,7 @@ public final class ModEntities {
             .clientTrackingRange(10)
             .updateInterval(1))
         .lang("Hardened Resin Anvil")
-        .renderer(() -> dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinAnvilRenderer::new)
+        .renderer(() -> HardenedResinAnvilRenderer::new)
         .register();
 
     public static final EntityEntry<HardenedResinCauldronEntity> HARDEND_RESIN_CAULDRON = REGISTRUM
@@ -38,7 +42,7 @@ public final class ModEntities {
             .clientTrackingRange(10)
             .updateInterval(1))
         .lang("Hardened Resin Cauldron")
-        .renderer(() -> dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinCauldronRenderer::new)
+        .renderer(() -> HardenedResinCauldronRenderer::new)
         .register();
 
     public static final EntityEntry<ResinAnvilEntity> RESIN_ANVIL = REGISTRUM
@@ -48,7 +52,7 @@ public final class ModEntities {
             .clientTrackingRange(10)
             .updateInterval(1))
         .lang("Resin Anvil")
-        .renderer(() -> dev.anvilcraft.plasticraft.client.renderer.entity.ResinAnvilRenderer::new)
+        .renderer(() -> ResinAnvilRenderer::new)
         .register();
 
     private ModEntities() {

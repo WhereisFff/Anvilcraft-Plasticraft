@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.entity;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -177,7 +178,7 @@ public record PlasticEntityOrientation(Direction attachmentFace, int quarterTurn
     }
 
     /**
-     * 返回 {@link net.minecraft.world.entity.Entity#setPos(Vec3)} 所需的底面中心位置。
+     * 返回 {@link Entity#setPos(Vec3)} 所需的底面中心位置。
      * 即使渲染的砧附着在墙面或天花板上，实体位置仍以底面中心表示。
      */
     public Vec3 entityPosition(BlockPos occupiedPos) {

@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.client.hud;
 import dev.anvilcraft.plasticraft.init.ModAttachments;
 import dev.dubhe.anvilcraft.api.tooltip.TooltipRenderHelper;
 import dev.dubhe.anvilcraft.item.AnvilHammerItem;
+import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.player.LocalPlayer;
@@ -23,7 +24,7 @@ public final class AdhesiveBondHud {
     private AdhesiveBondHud() {
     }
 
-    public static void render(GuiGraphics graphics, net.minecraft.client.DeltaTracker ignored) {
+    public static void render(GuiGraphics graphics, DeltaTracker ignored) {
         Minecraft minecraft = Minecraft.getInstance();
         LocalPlayer player = minecraft.player;
         if (player == null || minecraft.screen != null || minecraft.options.hideGui) return;

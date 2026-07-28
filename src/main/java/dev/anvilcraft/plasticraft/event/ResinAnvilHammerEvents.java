@@ -3,21 +3,23 @@ package dev.anvilcraft.plasticraft.event;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
-import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.dubhe.anvilcraft.api.event.HammerChangeBlockEvent;
-import net.minecraft.sounds.SoundSource;
+import net.minecraft.core.Direction;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.Mth;
 import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -43,7 +45,7 @@ public final class ResinAnvilHammerEvents {
             return;
         }
         event.setVerified(false);
-        if (event.getLevel() instanceof net.minecraft.world.level.Level level) {
+        if (event.getLevel() instanceof Level level) {
             level.playSound(
                 null,
                 event.getPos(),
@@ -61,7 +63,7 @@ public final class ResinAnvilHammerEvents {
     ) {
         PlasticEntityOrientation current = bonded.getPlasticOrientation();
         if (event.getState().hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
-            net.minecraft.core.Direction longAxis = event.getState().getValue(BlockStateProperties.HORIZONTAL_FACING);
+            Direction longAxis = event.getState().getValue(BlockStateProperties.HORIZONTAL_FACING);
             if (longAxis.getAxis() != current.attachmentFace().getAxis()) {
                 return PlasticEntityOrientation.fromLongAxis(current.attachmentFace(), longAxis);
             }

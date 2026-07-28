@@ -26,6 +26,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
@@ -34,6 +35,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
+
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK;
 
 /**
  * 初期弹性树脂砧。它有意不提供菜单：空手使用会释放可选的已保存生物组件，
@@ -116,7 +119,7 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
 
     @Override
     public Optional<BlockState> anvilcraft$getShockBaseState() {
-        return Optional.of(dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.getDefaultState());
+        return Optional.of(RESIN_BLOCK.getDefaultState());
     }
 
     public boolean hasCapturedMob() {
@@ -259,7 +262,7 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
 
     @Override
     protected SoundEvent impactSound() {
-        return dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.getDefaultState().getSoundType().getHitSound();
+        return RESIN_BLOCK.getDefaultState().getSoundType().getHitSound();
     }
 
     private void applyBoundedEntityImpulse(
@@ -353,12 +356,12 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
         this.level().playSound(
             null,
             this.blockPosition(),
-            dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.getDefaultState().getSoundType().getPlaceSound(),
+            RESIN_BLOCK.getDefaultState().getSoundType().getPlaceSound(),
             SoundSource.BLOCKS,
             0.8F,
             0.9F + this.random.nextFloat() * 0.2F
         );
-        this.gameEvent(net.minecraft.world.level.gameevent.GameEvent.ENTITY_PLACE, player);
+        this.gameEvent(GameEvent.ENTITY_PLACE, player);
         return true;
     }
 }

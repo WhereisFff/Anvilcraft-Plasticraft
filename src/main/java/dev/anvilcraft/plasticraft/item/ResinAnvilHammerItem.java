@@ -1,9 +1,8 @@
 package dev.anvilcraft.plasticraft.item;
 
-import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
+import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.item.AnvilHammerItem;
 import dev.dubhe.anvilcraft.util.TriggerUtil;
 import net.minecraft.core.BlockPos;
@@ -24,6 +23,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.neoforged.neoforge.common.NeoForge;
 
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK;
+
 /** 继承本体全部铁砧锤能力，并提供树脂材质的轻量攻击与修复规则。 */
 public class ResinAnvilHammerItem extends AnvilHammerItem {
     public static final double KNOCKBACK_STRENGTH = 2.5D;
@@ -43,16 +44,6 @@ public class ResinAnvilHammerItem extends AnvilHammerItem {
 
     public ResinAnvilHammerItem(Properties properties) {
         super(properties);
-        PlasticItemTooltipManager.register(
-            AnvilcraftPlasticraft.of("resin_anvil_hammer"),
-            "A lightweight anvil hammer made from an elastic resin anvil",
-            """
-                Retains every standard Anvil Hammer function except the portable anvil menu
-                Left-clicking any entity deals no damage and applies Knockback V
-                Left-clicking a block launches you opposite your full view direction with Knockback V
-                Has 35 durability and can be repaired with resin
-                Repairs in a Hardened Resin Anvil cost no experience and add no prior-work penalty"""
-        );
     }
 
     /** 发布树脂铁砧落地事件，并使用树脂击打音效替代原版铁砧落地音效。 */
@@ -74,7 +65,7 @@ public class ResinAnvilHammerItem extends AnvilHammerItem {
         level.playSound(
             null,
             impactPos,
-            dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK.getDefaultState().getSoundType().getHitSound(),
+            RESIN_BLOCK.getDefaultState().getSoundType().getHitSound(),
             SoundSource.PLAYERS,
             0.8F,
             0.9F + player.getRandom().nextFloat() * 0.2F
@@ -109,7 +100,7 @@ public class ResinAnvilHammerItem extends AnvilHammerItem {
 
     @Override
     public boolean isValidRepairItem(ItemStack stack, ItemStack repairCandidate) {
-        return repairCandidate.is(dev.dubhe.anvilcraft.init.item.ModItems.RESIN.get());
+        return repairCandidate.is(ModItems.RESIN.get());
     }
 
     @Override

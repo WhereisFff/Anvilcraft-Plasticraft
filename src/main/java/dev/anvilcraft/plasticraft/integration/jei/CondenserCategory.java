@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.integration.jei;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
+import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.recipe.CondenserGas;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
@@ -9,14 +10,16 @@ import dev.dubhe.anvilcraft.client.support.RenderSupport;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiRenderHelper;
 import mezz.jei.api.gui.ITickTimer;
 import mezz.jei.api.gui.builder.IRecipeLayoutBuilder;
+import mezz.jei.api.gui.builder.ITooltipBuilder;
+import mezz.jei.api.gui.drawable.IDrawable;
 import mezz.jei.api.gui.ingredient.IRecipeSlotsView;
 import mezz.jei.api.gui.widgets.IRecipeExtrasBuilder;
-import mezz.jei.api.gui.drawable.IDrawable;
 import mezz.jei.api.helpers.IGuiHelper;
 import mezz.jei.api.recipe.IFocusGroup;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.recipe.category.IRecipeCategory;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -24,6 +27,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.Fluids;
 import org.jetbrains.annotations.Nullable;
 
 /** 冷凝收集的 JEI 页面：虚拟气体从左侧进入，冷凝塔从顶部收集并输出液体。 */
@@ -41,7 +45,7 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
 
     public CondenserCategory(IGuiHelper helper) {
         this.icon = helper.createDrawableItemStack(
-            new ItemStack(dev.anvilcraft.plasticraft.init.block.ModBlocks.CONDENSER_TOWER)
+            new ItemStack(ModBlocks.CONDENSER_TOWER)
         );
         this.slot = JeiRenderHelper.getSlotDefault(helper);
         this.steam = helper.drawableBuilder(
@@ -54,7 +58,7 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
         this.arrowIn = JeiRenderHelper.getArrowInput(helper);
         this.arrowOut = JeiRenderHelper.getArrowOutput(helper);
         this.timer = helper.createTickTimer(20, 20, false);
-        this.tower = dev.anvilcraft.plasticraft.init.block.ModBlocks.CONDENSER_TOWER.getDefaultState()
+        this.tower = ModBlocks.CONDENSER_TOWER.getDefaultState()
             .setValue(CondenserTowerBlock.HALF, Cube3x3PartHalf.MID_CENTER);
     }
 
@@ -91,7 +95,7 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
     ) {
         CondenserRecipe recipe = holder.value();
         Fluid fluid = BuiltInRegistries.FLUID.get(recipe.fluid());
-        if (fluid == null || fluid == net.minecraft.world.level.material.Fluids.EMPTY) return;
+        if (fluid == null || fluid == Fluids.EMPTY) return;
         builder.addSlot(RecipeIngredientRole.OUTPUT, 120, 24)
             .addFluidStack(fluid, recipe.produce());
     }
@@ -124,12 +128,12 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
         RenderSupport.renderBlock(graphics, this.tower, 81, 33, 10, 7.0F, RenderSupport.SINGLE_BLOCK);
 
         Component output = Component.literal(recipe.produce() + " mB");
-        graphics.drawCenteredString(net.minecraft.client.Minecraft.getInstance().font, output, 128, 45, 0xFFFFFFFF);
+        graphics.drawCenteredString(Minecraft.getInstance().font, output, 128, 45, 0xFFFFFFFF);
     }
 
     @Override
     public void getTooltip(
-        mezz.jei.api.gui.builder.ITooltipBuilder tooltip,
+        ITooltipBuilder tooltip,
         RecipeHolder<CondenserRecipe> holder,
         IRecipeSlotsView recipeSlotsView,
         double mouseX,

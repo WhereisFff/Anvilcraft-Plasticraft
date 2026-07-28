@@ -6,12 +6,14 @@ import dev.anvilcraft.plasticraft.init.ModAttachments;
 import dev.dubhe.anvilcraft.entity.FallingGiantAnvilEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.LinkedHashMap;
@@ -68,7 +70,7 @@ public final class AdhesiveFallingBlockBehavior {
         if (FallingBlock.isFree(belowState)) return;
         VoxelShape collision = belowState.getCollisionShape(entity.level(), belowPos);
         if (collision.isEmpty()) return;
-        double surfaceY = belowPos.getY() + collision.max(net.minecraft.core.Direction.Axis.Y);
+        double surfaceY = belowPos.getY() + collision.max(Direction.Axis.Y);
         double distance = entity.getBoundingBox().minY - surfaceY;
         if (distance >= -0.05D && distance <= 0.20D) entity.setOnGround(true);
     }
@@ -99,14 +101,14 @@ public final class AdhesiveFallingBlockBehavior {
             EntityAdhesion adhesion = new EntityAdhesion(
                 placedPos,
                 face,
-                net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(
+                BuiltInRegistries.BLOCK.getKey(
                     level.getBlockState(placedPos).getBlock()
                 ),
                 anchor.position(),
                 anchor.isNoGravity()
             );
             anchor.setData(ModAttachments.ENTITY_ADHESION, adhesion);
-            anchor.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
+            anchor.setDeltaMovement(Vec3.ZERO);
             anchor.fallDistance = 0.0F;
             anchor.hasImpulse = true;
             anchor.hurtMarked = true;

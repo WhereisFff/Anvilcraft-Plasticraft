@@ -7,6 +7,8 @@ import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
@@ -22,6 +24,7 @@ import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FlowingFluid;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.function.Supplier;
@@ -71,7 +74,7 @@ public class UniversalPlasticMeltFluidBlock extends LiquidBlock implements Entit
 
     @Override
     public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
-        entity.makeStuckInBlock(state, new net.minecraft.world.phys.Vec3(0.25D, 0.05D, 0.25D));
+        entity.makeStuckInBlock(state, new Vec3(0.25D, 0.05D, 0.25D));
     }
 
     @Override
@@ -100,11 +103,11 @@ public class UniversalPlasticMeltFluidBlock extends LiquidBlock implements Entit
         if (level.getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity melt) {
             PlasticMeltColor.set(result, melt.getColor());
         }
-        level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
         ItemEntity item = new ItemEntity(level, pos.getX() + 0.5D, pos.getY() + 0.2D, pos.getZ() + 0.5D, result);
         item.setDefaultPickUpDelay();
         level.addFreshEntity(item);
-        level.playSound(null, pos, net.minecraft.sounds.SoundEvents.FIRE_EXTINGUISH,
-            net.minecraft.sounds.SoundSource.BLOCKS, 0.8F, 1.15F);
+        level.playSound(null, pos, SoundEvents.FIRE_EXTINGUISH,
+            SoundSource.BLOCKS, 0.8F, 1.15F);
     }
 }

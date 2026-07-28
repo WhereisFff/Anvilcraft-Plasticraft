@@ -1,10 +1,12 @@
 package dev.anvilcraft.plasticraft.recipe;
 
+import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
 import dev.dubhe.anvilcraft.recipe.anvil.builder.AbstractRecipeBuilder;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -19,7 +21,6 @@ import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
-import net.minecraft.core.registries.BuiltInRegistries;
 
 import java.util.Objects;
 
@@ -123,10 +124,10 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
     public static final class Serializer implements RecipeSerializer<CondenserRecipe> {
         private static final MapCodec<CondenserRecipe> CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
             ResourceLocation.CODEC.fieldOf("gas").forGetter(CondenserRecipe::gas),
-            com.mojang.serialization.Codec.INT.fieldOf("consume").forGetter(CondenserRecipe::consume),
+            Codec.INT.fieldOf("consume").forGetter(CondenserRecipe::consume),
             ResourceLocation.CODEC.fieldOf("fluid").forGetter(CondenserRecipe::fluid),
-            com.mojang.serialization.Codec.INT.fieldOf("produce").forGetter(CondenserRecipe::produce),
-            com.mojang.serialization.Codec.INT.optionalFieldOf("tower_level", 1)
+            Codec.INT.fieldOf("produce").forGetter(CondenserRecipe::produce),
+            Codec.INT.optionalFieldOf("tower_level", 1)
                 .forGetter(CondenserRecipe::towerLevel)
         ).apply(instance, CondenserRecipe::new));
 

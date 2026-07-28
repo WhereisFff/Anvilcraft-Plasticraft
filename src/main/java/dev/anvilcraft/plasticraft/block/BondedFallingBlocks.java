@@ -1,14 +1,15 @@
 package dev.anvilcraft.plasticraft.block;
 
 import dev.anvilcraft.plasticraft.init.ModAttachments;
+import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -343,7 +344,7 @@ public final class BondedFallingBlocks {
                 put(level, pos, new BondedFallingBlockInfo(
                     info.blockState(),
                     replacementSupport,
-                    net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(replacementState.getBlock()),
+                    BuiltInRegistries.BLOCK.getKey(replacementState.getBlock()),
                     info.pistonMovable()
                 ));
                 return;

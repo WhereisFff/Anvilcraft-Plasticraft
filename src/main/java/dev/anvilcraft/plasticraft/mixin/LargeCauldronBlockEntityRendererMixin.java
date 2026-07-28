@@ -28,9 +28,10 @@ abstract class LargeCauldronBlockEntityRendererMixin {
     @Unique private static final float plasticraft$FLAME_SCALE = 3.0F;
 
     @Redirect(
-        method = "render(Ldev/dubhe/anvilcraft/block/entity/LargeCauldronBlockEntity;F"
-            + "Lcom/mojang/blaze3d/vertex/PoseStack;"
-            + "Lnet/minecraft/client/renderer/MultiBufferSource;II)V",
+        method = """
+            render(Ldev/dubhe/anvilcraft/block/entity/LargeCauldronBlockEntity;F\
+            Lcom/mojang/blaze3d/vertex/PoseStack;\
+            Lnet/minecraft/client/renderer/MultiBufferSource;II)V""",
         at = @At(
             value = "INVOKE",
             target = "Ldev/dubhe/anvilcraft/block/entity/LargeCauldronBlockEntity;isIgnited()Z"
@@ -41,9 +42,10 @@ abstract class LargeCauldronBlockEntityRendererMixin {
     }
 
     @Inject(
-        method = "render(Ldev/dubhe/anvilcraft/block/entity/LargeCauldronBlockEntity;F"
-            + "Lcom/mojang/blaze3d/vertex/PoseStack;"
-            + "Lnet/minecraft/client/renderer/MultiBufferSource;II)V",
+        method = """
+            render(Ldev/dubhe/anvilcraft/block/entity/LargeCauldronBlockEntity;F\
+            Lcom/mojang/blaze3d/vertex/PoseStack;\
+            Lnet/minecraft/client/renderer/MultiBufferSource;II)V""",
         at = @At("TAIL")
     )
     private void plasticraft$renderFluidEffects(

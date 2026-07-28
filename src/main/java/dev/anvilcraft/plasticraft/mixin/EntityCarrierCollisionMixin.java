@@ -4,9 +4,9 @@ import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
 import dev.anvilcraft.plasticraft.api.entity.ElasticCollisionEntity;
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
+import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContext;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContextHolder;
-import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.MoverType;
@@ -17,11 +17,11 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.gen.Invoker;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.gen.Invoker;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -58,12 +58,13 @@ abstract class EntityCarrierCollisionMixin implements CarrierMoveContextHolder {
         method = "collide",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/world/entity/Entity;collideBoundingBox("
-                + "Lnet/minecraft/world/entity/Entity;"
-                + "Lnet/minecraft/world/phys/Vec3;"
-                + "Lnet/minecraft/world/phys/AABB;"
-                + "Lnet/minecraft/world/level/Level;"
-                + "Ljava/util/List;)Lnet/minecraft/world/phys/Vec3;"
+            target = """
+                Lnet/minecraft/world/entity/Entity;collideBoundingBox(\
+                Lnet/minecraft/world/entity/Entity;\
+                Lnet/minecraft/world/phys/Vec3;\
+                Lnet/minecraft/world/phys/AABB;\
+                Lnet/minecraft/world/level/Level;\
+                Ljava/util/List;)Lnet/minecraft/world/phys/Vec3;"""
         )
     )
     private Vec3 plasticraft$collideWithPlasticShape(

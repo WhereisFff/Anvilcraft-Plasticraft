@@ -1,12 +1,13 @@
 package dev.anvilcraft.plasticraft.recipe;
 
-import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporAction;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporStack;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationContext;
+import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationManager;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationOffer;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationSource;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporStack;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporAction;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationManager;
+import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
 import dev.dubhe.anvilcraft.recipe.component.HasCauldronSimple;
@@ -14,10 +15,10 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
-import net.neoforged.neoforge.fluids.FluidStack;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
+import net.neoforged.neoforge.fluids.FluidStack;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -60,7 +61,7 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
 
         List<RecipeHolder<PlasmaJetBlastingRecipe>> recipes = new ArrayList<>(
             context.level().getRecipeManager().getAllRecipesFor(
-                dev.anvilcraft.plasticraft.init.ModRecipeTypes.PLASMA_JET_BLASTING_TYPE.get()
+                ModRecipeTypes.PLASMA_JET_BLASTING_TYPE.get()
             )
         );
         recipes.sort(Comparator.comparingInt(

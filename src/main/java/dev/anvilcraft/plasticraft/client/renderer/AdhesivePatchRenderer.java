@@ -2,20 +2,20 @@ package dev.anvilcraft.plasticraft.client.renderer;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.block.BlockAdhesionState;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlockInfo;
 import dev.anvilcraft.plasticraft.block.BondedFallingChunkData;
-import dev.anvilcraft.plasticraft.block.BlockAdhesionState;
 import dev.anvilcraft.plasticraft.block.CatalyticPressLidBlock;
 import dev.anvilcraft.plasticraft.block.HardenedResinCauldronBlock;
-import dev.anvilcraft.plasticraft.block.piston.PistonAdhesionController;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.block.piston.PistonAdhesionController;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
-import dev.anvilcraft.plasticraft.entity.adhesive.EntityAdhesion;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
+import dev.anvilcraft.plasticraft.entity.adhesive.EntityAdhesion;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondLink;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
@@ -24,6 +24,7 @@ import dev.anvilcraft.plasticraft.init.ModAttachments;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.dubhe.anvilcraft.block.FishTankBlock;
 import dev.dubhe.anvilcraft.entity.SlidingBlockEntity;
+import javax.annotation.Nullable;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -47,8 +48,8 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.piston.PistonMovingBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
-import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -57,10 +58,10 @@ import org.joml.Matrix3f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** 在同步的粘合状态存在时渲染高粘性树脂胶面。 */
@@ -91,7 +92,7 @@ public final class AdhesivePatchRenderer {
         ClientLevel level = minecraft.level;
         if (level == null) return;
         PoseStack pose = event.getPoseStack();
-        net.minecraft.world.phys.Vec3 camera = event.getCamera().getPosition();
+        Vec3 camera = event.getCamera().getPosition();
         MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
         pose.pushPose();
         pose.translate(-camera.x, -camera.y, -camera.z);
@@ -106,7 +107,7 @@ public final class AdhesivePatchRenderer {
         ClientLevel level,
         PoseStack pose,
         MultiBufferSource.BufferSource buffers,
-        net.minecraft.world.phys.Vec3 camera,
+        Vec3 camera,
         float partialTick
     ) {
         Set<PatchKey> slidingPatchKeys = new HashSet<>();
@@ -187,7 +188,7 @@ public final class AdhesivePatchRenderer {
         }
     }
 
-    private static List<Patch> blockPatches(ClientLevel level, net.minecraft.world.phys.Vec3 camera) {
+    private static List<Patch> blockPatches(ClientLevel level, Vec3 camera) {
         ChunkPos cameraChunk = new ChunkPos(BlockPos.containing(camera));
         long gameTime = level.getGameTime();
         if (cachedLevel == level
@@ -206,7 +207,7 @@ public final class AdhesivePatchRenderer {
                     ModAttachments.BONDED_FALLING_BLOCKS.get()
                 );
                 if (data == null) continue;
-                for (java.util.Map.Entry<BlockPos, BlockAdhesionState> entry : data.adhesions().entrySet()) {
+                for (Map.Entry<BlockPos, BlockAdhesionState> entry : data.adhesions().entrySet()) {
                     BlockPos ownerPos = entry.getKey();
                     BlockAdhesionState state = entry.getValue();
                     for (Direction face : Direction.values()) {
@@ -236,7 +237,7 @@ public final class AdhesivePatchRenderer {
                         }
                     }
                 }
-                for (java.util.Map.Entry<BlockPos, BondedFallingBlockInfo> entry : data.entries().entrySet()) {
+                for (Map.Entry<BlockPos, BondedFallingBlockInfo> entry : data.entries().entrySet()) {
                     BondedFallingBlockInfo info = entry.getValue();
                     Direction face = Direction.fromDelta(
                         entry.getKey().getX() - info.supportPos().getX(),
@@ -282,7 +283,7 @@ public final class AdhesivePatchRenderer {
         float partialTick
     ) {
         Direction worldFace = AdhesiveFaces.worldFace(entity, storedFace);
-        net.minecraft.world.phys.AABB box = entity.getBoundingBox().move(
+        AABB box = entity.getBoundingBox().move(
             entity.getPosition(partialTick).subtract(entity.position())
         );
         Vec3 center = box.getCenter();

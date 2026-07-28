@@ -27,6 +27,8 @@ import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.CHUTE;
+
 /** 覆盖实体塑料容器与原版、AnvilCraft 物品运输设备之间的自动化传输。 */
 public final class PlasticEntityItemTransferGameTests {
     private PlasticEntityItemTransferGameTests() {
@@ -137,7 +139,7 @@ public final class PlasticEntityItemTransferGameTests {
     }
 
     private static BaseChuteBlockEntity placeChute(ExtendedGameTestHelper helper, BlockPos relativePos) {
-        BlockState state = dev.dubhe.anvilcraft.init.block.ModBlocks.CHUTE.get()
+        BlockState state = CHUTE.get()
             .defaultBlockState()
             .setValue(ChuteBlock.FACING, Direction.DOWN)
             .setValue(ChuteBlock.ENABLED, true);

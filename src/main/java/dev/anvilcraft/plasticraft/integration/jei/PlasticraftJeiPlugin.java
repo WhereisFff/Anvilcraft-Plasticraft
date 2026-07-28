@@ -1,15 +1,16 @@
 package dev.anvilcraft.plasticraft.integration.jei;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
-import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
+import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
+import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
 import dev.dubhe.anvilcraft.integration.jei.AnvilCraftJeiPlugin;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiRecipeUtil;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.constants.RecipeTypes;
+import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.registration.IRecipeCatalystRegistration;
 import mezz.jei.api.registration.IRecipeCategoryRegistration;
 import mezz.jei.api.registration.IRecipeRegistration;
@@ -19,12 +20,14 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
-import net.minecraft.world.item.crafting.RecipeType;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON;
+import static net.minecraft.world.item.crafting.RecipeType.CRAFTING;
 
 /**
  * 可选的 JEI 集成。仅当 JEI 存在时才会发现此类，
@@ -34,15 +37,15 @@ import java.util.stream.Collectors;
 public final class PlasticraftJeiPlugin implements IModPlugin {
     private static final ResourceLocation UID = AnvilcraftPlasticraft.of("jei_plugin");
     private static final String ENHANCED_RECIPE_PREFIX = "jei/enhanced/";
-    public static final mezz.jei.api.recipe.RecipeType<RecipeHolder<PlasmaJetBlastingRecipe>> PLASMA_JET_BLASTING =
-        mezz.jei.api.recipe.RecipeType.createRecipeHolderType(
+    public static final RecipeType<RecipeHolder<PlasmaJetBlastingRecipe>> PLASMA_JET_BLASTING =
+        RecipeType.createRecipeHolderType(
             AnvilcraftPlasticraft.of("plasma_jet_blasting")
         );
-    public static final mezz.jei.api.recipe.RecipeType<RecipeHolder<CondenserRecipe>> CONDENSER =
-        mezz.jei.api.recipe.RecipeType.createRecipeHolderType(
+    public static final RecipeType<RecipeHolder<CondenserRecipe>> CONDENSER =
+        RecipeType.createRecipeHolderType(
             AnvilcraftPlasticraft.of("condenser")
         );
-    private static final List<mezz.jei.api.recipe.RecipeType<?>> ANVIL_PROCESSING_TYPES = List.of(
+    private static final List<RecipeType<?>> ANVIL_PROCESSING_TYPES = List.of(
         AnvilCraftJeiPlugin.MESH,
         AnvilCraftJeiPlugin.BLOCK_COMPRESS,
         AnvilCraftJeiPlugin.BLOCK_CRUSH,
@@ -61,7 +64,7 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
         AnvilCraftJeiPlugin.NEUTRON_IRRADIATION,
         AnvilCraftJeiPlugin.PROCEDURAL_PROCESS
     );
-    private static final List<mezz.jei.api.recipe.RecipeType<?>> CAULDRON_PROCESSING_TYPES = List.of(
+    private static final List<RecipeType<?>> CAULDRON_PROCESSING_TYPES = List.of(
         AnvilCraftJeiPlugin.FAST_COOKING,
         AnvilCraftJeiPlugin.ITEM_COMPRESS,
         AnvilCraftJeiPlugin.NEUTRON_IRRADIATION,
@@ -118,17 +121,17 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
     @Override
     public void registerRecipeCatalysts(IRecipeCatalystRegistration registration) {
         registration.addRecipeCatalyst(
-            dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON.asStack(),
+            LARGE_CAULDRON.asStack(),
             PLASMA_JET_BLASTING
         );
         registration.addRecipeCatalyst(ModBlocks.CONDENSER_TOWER.asStack(), PLASMA_JET_BLASTING);
         registration.addRecipeCatalyst(ModBlocks.CONDENSER_TOWER.asStack(), CONDENSER);
-        for (mezz.jei.api.recipe.RecipeType<?> recipeType : ANVIL_PROCESSING_TYPES) {
+        for (RecipeType<?> recipeType : ANVIL_PROCESSING_TYPES) {
             registration.addRecipeCatalyst(ModBlocks.RESIN_ANVIL.asStack(), recipeType);
             registration.addRecipeCatalyst(ModBlocks.HARDEND_RESIN_ANVIL.asStack(), recipeType);
         }
         // 液体混合不在此列表中，继续只接受大型炼药锅和巨型铁砧。
-        for (mezz.jei.api.recipe.RecipeType<?> recipeType : CAULDRON_PROCESSING_TYPES) {
+        for (RecipeType<?> recipeType : CAULDRON_PROCESSING_TYPES) {
             registration.addRecipeCatalyst(ModBlocks.HARDEND_RESIN_CAULDRON.asStack(), recipeType);
         }
         registration.addRecipeCatalyst(
@@ -151,7 +154,7 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
             .map(RecipeHolder::id)
             .collect(Collectors.toSet());
         List<RecipeHolder<CraftingRecipe>> missingRecipes = minecraft.level.getRecipeManager()
-            .getAllRecipesFor(RecipeType.CRAFTING)
+            .getAllRecipesFor(CRAFTING)
             .stream()
             .filter(holder -> holder.id().getNamespace().equals(AnvilcraftPlasticraft.MOD_ID))
             .filter(holder -> !registeredIds.contains(holder.id()))

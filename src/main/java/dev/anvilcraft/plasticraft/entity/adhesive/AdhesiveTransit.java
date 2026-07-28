@@ -2,15 +2,17 @@ package dev.anvilcraft.plasticraft.entity.adhesive;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -93,7 +95,7 @@ public record AdhesiveTransit(
                 buffer.readDouble()
             );
             int pointCount = Math.clamp(buffer.readVarInt(), 2, MAX_PATH_POINTS);
-            List<Vec3> path = new java.util.ArrayList<>(pointCount);
+            List<Vec3> path = new ArrayList<>(pointCount);
             for (int i = 0; i < pointCount; i++) {
                 path.add(new Vec3(buffer.readDouble(), buffer.readDouble(), buffer.readDouble()));
             }
@@ -150,17 +152,17 @@ public record AdhesiveTransit(
         return this.supportEntityUuid.isPresent();
     }
 
-    public Vec3 supportMovement(@javax.annotation.Nullable Entity supportEntity) {
+    public Vec3 supportMovement(@Nullable Entity supportEntity) {
         return supportEntity == null || !this.hasEntityTarget()
             ? Vec3.ZERO
             : supportEntity.position().subtract(this.supportEntityStartPosition);
     }
 
-    public Vec3 targetPosition(@javax.annotation.Nullable Entity supportEntity) {
+    public Vec3 targetPosition(@Nullable Entity supportEntity) {
         return this.targetPosition().add(this.supportMovement(supportEntity));
     }
 
-    public Vec3 positionAt(double progress, @javax.annotation.Nullable Entity supportEntity) {
+    public Vec3 positionAt(double progress, @Nullable Entity supportEntity) {
         return this.positionAt(progress).add(this.supportMovement(supportEntity));
     }
 

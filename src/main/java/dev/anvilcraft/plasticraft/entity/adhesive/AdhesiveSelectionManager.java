@@ -1,11 +1,12 @@
 package dev.anvilcraft.plasticraft.entity.adhesive;
 
-import net.minecraft.server.level.ServerLevel;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import javax.annotation.Nullable;
 import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 
-import javax.annotation.Nullable;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,7 +28,7 @@ public final class AdhesiveSelectionManager {
         Selection current = selections(player).get(player.getUUID());
         Direction selectedFace = current != null
             && current.targetUuid().equals(target.getUUID())
-            && target instanceof dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity
+            && target instanceof AbstractPlasticEntity
             && current.selectedFace() == clickedFace
             ? clickedFace.getOpposite()
             : clickedFace;

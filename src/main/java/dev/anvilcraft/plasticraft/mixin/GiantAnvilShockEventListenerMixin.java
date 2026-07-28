@@ -16,8 +16,9 @@ abstract class GiantAnvilShockEventListenerMixin {
         method = "lambda$static$25",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/world/level/block/state/BlockState;getBlock()"
-                + "Lnet/minecraft/world/level/block/Block;"
+            target = """
+                Lnet/minecraft/world/level/block/state/BlockState;getBlock()\
+                Lnet/minecraft/world/level/block/Block;"""
         )
     )
     private static Block plasticraft$keepBondedPlasticAnvilFixed(BlockState state) {

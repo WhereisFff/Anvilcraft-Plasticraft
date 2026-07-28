@@ -17,8 +17,8 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.List;
 
@@ -114,8 +114,9 @@ abstract class FallingBlockEntityAdhesionMixin {
         method = "tick",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/world/level/block/FallingBlock;isFree("
-                + "Lnet/minecraft/world/level/block/state/BlockState;)Z"
+            target = """
+                Lnet/minecraft/world/level/block/FallingBlock;isFree(\
+                Lnet/minecraft/world/level/block/state/BlockState;)Z"""
         )
     )
     private boolean plasticraft$acceptAlignedPlasticEntitySupport(BlockState state) {

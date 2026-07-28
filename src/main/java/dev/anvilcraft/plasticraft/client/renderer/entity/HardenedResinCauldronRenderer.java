@@ -13,10 +13,10 @@ import dev.dubhe.anvilcraft.api.itemhandler.ItemHandlerUtil;
 import dev.dubhe.anvilcraft.client.init.ModRenderTypes;
 import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.Sheets;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
+import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.texture.OverlayTexture;
@@ -32,10 +32,9 @@ import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.fluids.FluidStack;
+import org.joml.Quaternionf;
 
 import java.util.List;
-
-import org.joml.Quaternionf;
 
 /** 渲染带朝向的釜模型及其同步流体表面。 */
 public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinCauldronEntity> {
@@ -249,7 +248,7 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
                     stack,
                     ItemDisplayContext.GROUND,
                     packedLight,
-                    net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY,
+                    OverlayTexture.NO_OVERLAY,
                     pose,
                     buffers,
                     entity.level(),
