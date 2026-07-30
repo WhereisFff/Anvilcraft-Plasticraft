@@ -205,8 +205,19 @@ public class BondedEntityBlockEntity extends BlockEntity
         return this.pendingReturnOrientation != null || this.hammerReturnStarted >= 0L;
     }
 
+    public boolean canHammerRotateTo(PlasticEntityOrientation targetOrientation) {
+        if (!(this.getOrCreateRenderEntity() instanceof AbstractPlasticEntity plasticEntity)) return false;
+        Vec3 targetPosition = plasticEntity.plasticraft$placementPosition(this.worldPosition, targetOrientation);
+        return plasticEntity.canHammerRotateTo(targetOrientation, targetPosition, this.worldPosition);
+    }
+
     public boolean startHammerDeflection(PlasticEntityOrientation targetOrientation) {
-        if (!this.initialized || !this.plastic || this.level == null) return false;
+        if (!this.initialized
+            || !this.plastic
+            || this.level == null
+            || !this.canHammerRotateTo(targetOrientation)) {
+            return false;
+        }
         byte stableOrientation = this.pendingReturnOrientation == null
             ? this.orientation
             : this.pendingReturnOrientation;
@@ -396,11 +407,7 @@ public class BondedEntityBlockEntity extends BlockEntity
             }
             plasticEntity.setOrientation(plasticOrientation);
             plasticEntity.setDisplayState(this.displayState);
-            restored.setPos(plasticOrientation.entityPosition(
-                this.worldPosition,
-                restored.getBbWidth(),
-                restored.getBbHeight()
-            ));
+            restored.setPos(plasticEntity.plasticraft$placementPosition(this.worldPosition, plasticOrientation));
         } else {
             restored.setPos(
                 this.worldPosition.getX() + 0.5D,
@@ -555,11 +562,7 @@ public class BondedEntityBlockEntity extends BlockEntity
         PlasticEntityOrientation plasticOrientation = this.getPlasticOrientation();
         plasticEntity.setOrientation(plasticOrientation);
         plasticEntity.setDisplayState(this.displayState);
-        plasticEntity.setPos(plasticOrientation.entityPosition(
-            this.worldPosition,
-            plasticEntity.getBbWidth(),
-            plasticEntity.getBbHeight()
-        ));
+        plasticEntity.setPos(plasticEntity.plasticraft$placementPosition(this.worldPosition, plasticOrientation));
         plasticEntity.setNoGravity(true);
         plasticEntity.setDeltaMovement(Vec3.ZERO);
     }

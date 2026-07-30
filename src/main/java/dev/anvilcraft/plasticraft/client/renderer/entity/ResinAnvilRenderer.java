@@ -3,7 +3,6 @@ package dev.anvilcraft.plasticraft.client.renderer.entity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
-import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.entity.EntityRenderer;
@@ -30,11 +29,17 @@ public class ResinAnvilRenderer extends EntityRenderer<ResinAnvilEntity> {
         MultiBufferSource buffers,
         int packedLight
     ) {
-        PlasticEntityOrientation preview = PlasticHammerScreen.getPreviewOrientation(entity);
+        PlasticHammerScreen.HammerPreview preview = PlasticHammerScreen.getPreview(entity);
         if (preview != null) {
             pose.pushPose();
-            PlasticEntityRenderTransforms.applyPreview(pose, entity, preview);
-            PlasticEntityRenderHelper.renderHammerPreviewModel(entity, this.dispatcher, pose, buffers);
+            PlasticEntityRenderTransforms.applyPreview(pose, entity, preview.orientation());
+            PlasticEntityRenderHelper.renderHammerPreviewModel(
+                entity,
+                this.dispatcher,
+                pose,
+                buffers,
+                preview.valid()
+            );
             pose.popPose();
             pose.pushPose();
             PlasticEntityRenderTransforms.applyWorldAlignedPreview(pose, entity);

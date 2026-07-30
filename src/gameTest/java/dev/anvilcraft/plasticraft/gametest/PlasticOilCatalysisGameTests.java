@@ -19,6 +19,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.ItemLike;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -32,9 +33,21 @@ import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 
 import java.util.List;
 
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.CUT_FROST_METAL_BLOCK;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.CUT_FROST_METAL_PILLAR;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.CUT_FROST_METAL_SLAB;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.CUT_FROST_METAL_STAIRS;
 import static dev.dubhe.anvilcraft.init.block.ModBlocks.FISH_TANK;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_ANVIL;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_DECO_BLOCK;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_DECO_OUTLINE;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_GLASS;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_GRINDSTONE;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_METAL_BLOCK;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_SMITHING_TABLE;
 import static dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON;
 import static dev.dubhe.anvilcraft.init.block.ModBlocks.OVERHEATED_EMBER_METAL_BLOCK;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.SLIDING_RAIL;
 
 /** 塑料油环境催化的服务端回归测试。 */
 public final class PlasticOilCatalysisGameTests {
@@ -53,8 +66,58 @@ public final class PlasticOilCatalysisGameTests {
         check(close(PlasticOilCatalysis.catalystMultiplier(1), 0.25D), "one catalyst was not quarter speed");
         check(close(PlasticOilCatalysis.catalystMultiplier(8), 0.5D), "eight catalysts were not half speed");
         check(
+            close(PlasticOilCatalysis.catalystMultiplier(0, 1), 0.125D),
+            "one frost-metal catalyst was not half as fast as royal steel"
+        );
+        check(
+            close(PlasticOilCatalysis.catalystMultiplier(0, 8), 0.25D),
+            "eight frost-metal catalysts were not half as fast as royal steel"
+        );
+        check(
+            close(PlasticOilCatalysis.catalystMultiplier(0, Integer.MAX_VALUE), 0.275D),
+            "the frost-metal catalyst curve did not stop at half the royal-steel cap"
+        );
+        check(
+            close(
+                PlasticOilCatalysis.catalystMultiplier(1, 1),
+                PlasticOilCatalysis.catalystMultiplier(1)
+                    + (PlasticOilCatalysis.catalystMultiplier(2) - PlasticOilCatalysis.catalystMultiplier(1)) / 2.0D
+            ),
+            "a frost-metal catalyst did not contribute half a royal-steel gain"
+        );
+        check(
             close(PlasticOilCatalysis.catalystMultiplier(Integer.MAX_VALUE), 0.55D),
             "the open catalyst curve did not stop at 0.55"
+        );
+        checkFrostMetalCatalysts(
+            FROST_ANVIL,
+            FROST_GRINDSTONE,
+            FROST_SMITHING_TABLE,
+            FROST_METAL_BLOCK,
+            CUT_FROST_METAL_BLOCK,
+            CUT_FROST_METAL_PILLAR,
+            CUT_FROST_METAL_SLAB,
+            CUT_FROST_METAL_STAIRS,
+            FROST_DECO_BLOCK,
+            FROST_DECO_OUTLINE,
+            FROST_GLASS,
+            ModItems.FROST_METAL_INGOT,
+            ModItems.FROST_METAL_NUGGET,
+            ModItems.FROST_METAL_PICKAXE,
+            ModItems.FROST_METAL_AXE,
+            ModItems.FROST_METAL_SHOVEL,
+            ModItems.FROST_METAL_HOE,
+            ModItems.FROST_METAL_SWORD,
+            ModItems.FROST_ANVIL_HAMMER,
+            ModItems.FROST_DRAGON_ROD,
+            ModItems.FROST_METAL_HEAVY_HALBERD,
+            ModItems.FROST_METAL_RESONATOR,
+            ModItems.FROST_METAL_UPGRADE_SMITHING_TEMPLATE
+        );
+        check(!Blocks.ICE.asItem().getDefaultInstance().is(ModItemTags.FROST_METAL_ITEMS), "ice became a catalyst");
+        check(
+            !SLIDING_RAIL.asItem().getDefaultInstance().is(ModItemTags.FROST_METAL_ITEMS),
+            "a sliding rail became a catalyst"
         );
         helper.succeed();
     }
@@ -106,6 +169,26 @@ public final class PlasticOilCatalysisGameTests {
 
     @GameTest(timeoutTicks = 12)
     @EmptyTemplate(value = "5x6x5", floor = true)
+    @TestHolder(description = "Loose frost metal catalyzes a world-source plastic oil without consumption")
+    static void frostMetalCatalyzesWorldSource(ExtendedGameTestHelper helper) {
+        ServerLevel level = (ServerLevel) helper.getLevel();
+        BlockPos sourcePos = helper.absolutePos(new BlockPos(2, 2, 2));
+        setHighHeat(level, sourcePos.below());
+        level.setBlock(sourcePos, ModBlocks.PLASTIC_OIL.get().defaultBlockState(), Block.UPDATE_ALL);
+
+        ItemEntity catalyst = spawnCatalyst(level, sourcePos.getCenter(), frostMetalIngot());
+        helper.runAfterDelay(10, () -> {
+            check(
+                level.getFluidState(sourcePos).isSourceOfType(ModFluids.UNIVERSAL_PLASTIC_MELT.get()),
+                "the frost-metal catalyst did not convert the world plastic-oil source"
+            );
+            check(catalyst.isAlive(), "the frost-metal catalyst was consumed");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 12)
+    @EmptyTemplate(value = "5x6x5", floor = true)
     @TestHolder(description = "A Fish Tank converts all plastic oil while retaining its royal-steel catalyst")
     static void fishTankCatalysis(ExtendedGameTestHelper helper) {
         ServerLevel level = (ServerLevel) helper.getLevel();
@@ -131,6 +214,33 @@ public final class PlasticOilCatalysisGameTests {
         helper.runAfterDelay(4, () -> {
             assertMelt(tank.getFluidHandler().getFluid(), BUCKET, "fish tank");
             check(count(tank.getInputHandler(), catalyst.getItem()) == 1, "the fish tank consumed its catalyst");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 12)
+    @EmptyTemplate(value = "5x6x5", floor = true)
+    @TestHolder(description = "A Fish Tank converts plastic oil with a frost-metal catalyst")
+    static void frostMetalFishTankCatalysis(ExtendedGameTestHelper helper) {
+        ServerLevel level = (ServerLevel) helper.getLevel();
+        BlockPos pos = helper.absolutePos(new BlockPos(2, 2, 2));
+        setHighHeat(level, pos.below());
+        level.setBlock(pos, FISH_TANK.getDefaultState(), Block.UPDATE_ALL);
+        check(level.getBlockEntity(pos) instanceof FishTankBlockEntity, "the Fish Tank was not created");
+        FishTankBlockEntity tank = (FishTankBlockEntity) level.getBlockEntity(pos);
+        check(
+            tank.getFluidHandler().fill(plasticOil(BUCKET), IFluidHandler.FluidAction.EXECUTE) == BUCKET,
+            "the Fish Tank rejected plastic oil"
+        );
+        ItemStack catalyst = frostMetalIngot();
+        check(
+            tank.getInputHandler().insertItem(0, catalyst, false).isEmpty(),
+            "the Fish Tank rejected its frost-metal catalyst"
+        );
+
+        helper.runAfterDelay(4, () -> {
+            assertMelt(tank.getFluidHandler().getFluid(), BUCKET, "Fish Tank");
+            check(count(tank.getInputHandler(), catalyst.getItem()) == 1, "the Fish Tank consumed its frost-metal catalyst");
             helper.succeed();
         });
     }
@@ -185,7 +295,11 @@ public final class PlasticOilCatalysisGameTests {
     }
 
     private static ItemEntity spawnCatalyst(ServerLevel level, Vec3 position) {
-        ItemEntity item = new ItemEntity(level, position.x, position.y, position.z, royalSteelIngot());
+        return spawnCatalyst(level, position, royalSteelIngot());
+    }
+
+    private static ItemEntity spawnCatalyst(ServerLevel level, Vec3 position, ItemStack stack) {
+        ItemEntity item = new ItemEntity(level, position.x, position.y, position.z, stack);
         item.setNoGravity(true);
         item.setDeltaMovement(Vec3.ZERO);
         check(level.addFreshEntity(item), "failed to spawn a loose catalyst");
@@ -244,6 +358,19 @@ public final class PlasticOilCatalysisGameTests {
         ItemStack stack = ModItems.ROYAL_STEEL_INGOT.asStack();
         check(stack.is(ModItemTags.ROYAL_STEEL_ITEMS), "royal steel ingot was absent from the catalyst tag");
         return stack;
+    }
+
+    private static ItemStack frostMetalIngot() {
+        return ModItems.FROST_METAL_INGOT.asStack();
+    }
+
+    private static void checkFrostMetalCatalysts(ItemLike... catalysts) {
+        for (ItemLike catalyst : catalysts) {
+            check(
+                catalyst.asItem().getDefaultInstance().is(ModItemTags.FROST_METAL_ITEMS),
+                catalyst.asItem() + " was absent from the frost-metal catalyst tag"
+            );
+        }
     }
 
     private static int count(IItemHandler handler, Item item) {

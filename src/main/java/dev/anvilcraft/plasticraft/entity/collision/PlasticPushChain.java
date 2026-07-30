@@ -6,6 +6,7 @@ import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
@@ -204,9 +205,17 @@ public final class PlasticPushChain {
         private double projection(Vec3 direction) {
             double projection = Double.NEGATIVE_INFINITY;
             for (Entity member : this.members) {
-                projection = Math.max(projection, member.getBoundingBox().getCenter().dot(direction));
+                for (AABB component : ShapedCollisionEntity.collisionComponents(
+                    member,
+                    member.getBoundingBox()
+                )) {
+                    double x = direction.x >= 0.0D ? component.maxX : component.minX;
+                    double y = direction.y >= 0.0D ? component.maxY : component.minY;
+                    double z = direction.z >= 0.0D ? component.maxZ : component.minZ;
+                    projection = Math.max(projection, x * direction.x + y * direction.y + z * direction.z);
+                }
             }
-            return projection;
+            return Double.isFinite(projection) ? projection : this.leader.position().dot(direction);
         }
     }
 

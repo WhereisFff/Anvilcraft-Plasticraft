@@ -6,6 +6,7 @@ import dev.anvilcraft.plasticraft.block.IgnitedFluidEffects;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
@@ -38,7 +39,6 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.stats.Stats;
@@ -51,7 +51,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.DyeColor;
@@ -90,6 +89,9 @@ import static dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER;
 /** 带有兼容鱼缸的物品和流体存储能力的可移动六向釜。 */
 public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     implements IItemHandlerCache, IItemHandlerHolder, IEntityCauldron {
+    private static final PlasticEntityGeometry GEOMETRY = PlasticEntityGeometry.of(
+        HardenedResinCauldronBlock.COLLISION_SHAPE
+    );
     public static final int CAPACITY = 1000;
     public static final float COLLISION_SIZE = 1.0F;
     private static final double FLUID_INNER_INSET = 0.126D;
@@ -349,13 +351,8 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     }
 
     @Override
-    public EntityDimensions getDimensions(Pose pose) {
-        return EntityDimensions.scalable(COLLISION_SIZE, COLLISION_SIZE);
-    }
-
-    @Override
-    protected VoxelShape getLocalCollisionShape() {
-        return HardenedResinCauldronBlock.COLLISION_SHAPE;
+    protected PlasticEntityGeometry getLocalGeometry() {
+        return GEOMETRY;
     }
 
     @Override
@@ -435,15 +432,6 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         stack = stack.copy();
         PlasticItemData.setMaterial(stack, "hardened_resin");
         return stack;
-    }
-
-    @Override
-    protected boolean supportsHammerRotation() {
-        return true;
-    }
-
-    @Override
-    protected void openAnvilMenu(ServerPlayer player) {
     }
 
     public boolean hasOutlet() {

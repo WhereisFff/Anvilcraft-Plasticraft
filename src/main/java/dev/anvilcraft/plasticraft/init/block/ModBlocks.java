@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.init.block;
 
 import dev.anvilcraft.lib.v2.registrum.providers.RegistrumBlockstateProvider;
 import dev.anvilcraft.lib.v2.registrum.util.entry.BlockEntry;
+import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.CatalyticPressLidBlock;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.block.HardenedResinAnvilBlock;
@@ -12,24 +13,31 @@ import dev.anvilcraft.plasticraft.block.HighViscosityResinCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
 import dev.anvilcraft.plasticraft.block.PlasticOilCauldronBlock;
 import dev.anvilcraft.plasticraft.block.ResinAnvilBlock;
+import dev.anvilcraft.plasticraft.block.UniversalPlasticBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltFluidBlock;
+import dev.anvilcraft.plasticraft.block.UniversalPlasticShape;
 import dev.anvilcraft.plasticraft.init.entity.ModEntities;
 import dev.anvilcraft.plasticraft.init.item.ModItemTags;
 import dev.anvilcraft.plasticraft.item.CatalyticPressLidItem;
+import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.HardenedResinAnvilItem;
 import dev.anvilcraft.plasticraft.item.HardenedResinCauldronItem;
 import dev.anvilcraft.plasticraft.item.HighViscosityResinBlockItem;
 import dev.anvilcraft.plasticraft.item.ResinAnvilItem;
+import dev.anvilcraft.plasticraft.item.UniversalPlasticBlockItem;
 import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import dev.dubhe.anvilcraft.block.item.SimpleMultiPartBlockItem;
 import dev.dubhe.anvilcraft.block.multipart.SimpleMultiPartBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.util.DataGenUtil;
+import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomModelData;
 import net.minecraft.world.level.block.Blocks;
@@ -41,6 +49,7 @@ import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.material.PushReaction;
 import net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent;
 import net.neoforged.neoforge.client.model.generators.ConfiguredModel;
+import net.neoforged.neoforge.client.model.generators.ModelBuilder;
 import net.neoforged.neoforge.client.model.generators.ModelFile;
 import net.neoforged.neoforge.client.model.generators.ModelProvider;
 
@@ -208,6 +217,78 @@ public final class ModBlocks {
         .tag(BlockTags.MINEABLE_WITH_PICKAXE, BlockTags.CAULDRONS)
         .onRegister(block -> Item.BY_BLOCK.put(block, Items.CAULDRON))
         .register();
+    public static final BlockEntry<UniversalPlasticBlock> UNIVERSAL_PLASTIC = REGISTRUM
+        .block("universal_plastic", UniversalPlasticBlock::new)
+        .initialProperties(() -> Blocks.WHITE_CONCRETE)
+        .properties(properties -> properties
+            .mapColor(MapColor.SNOW)
+            .noOcclusion()
+            .strength(1.5F, 3.0F)
+            .sound(SoundType.BONE_BLOCK)
+            .pushReaction(PushReaction.NORMAL))
+        .lang("Universal Plastic Block")
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE, ModBlockTags.PLASTIC_PRODUCTS)
+        .loot((tables, block) -> tables.dropSelf(block))
+        .blockstate((context, provider) -> {
+            // 数据生成阶段为十六种熔体颜色分别烘焙模型；所有模型共用公共生成器给出的确定性 UV。
+            ModelFile[] models = new ModelFile[DyeColor.values().length];
+            for (DyeColor color : DyeColor.values()) {
+                provider.models().existingFileHelper.trackGenerated(
+                    UniversalPlasticShape.sprite(color),
+                    ModelProvider.TEXTURE
+                );
+                var model = provider.models()
+                    .getBuilder(context.getName() + "_" + color.getName())
+                    .texture("particle", UniversalPlasticShape.sprite(color))
+                    .texture("plastic", UniversalPlasticShape.sprite(color));
+                var element = model.element().from(0.0F, 0.0F, 0.0F).to(16.0F, 14.0F, 16.0F);
+                for (Direction direction : Direction.values()) {
+                    var region = UniversalPlasticShape.uv(direction);
+                    element.face(direction)
+                        .uvs(
+                            region.modelU0(UniversalPlasticShape.TEXTURE_LAYOUT.atlasWidth()),
+                            region.modelV0(UniversalPlasticShape.TEXTURE_LAYOUT.atlasHeight()),
+                            region.modelU1(UniversalPlasticShape.TEXTURE_LAYOUT.atlasWidth()),
+                            region.modelV1(UniversalPlasticShape.TEXTURE_LAYOUT.atlasHeight())
+                        )
+                        .texture("#plastic")
+                        .end();
+                }
+                element.end();
+                models[color.getId()] = model;
+            }
+            provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
+                .modelFile(models[state.getValue(DyeableMaterial.COLOR).getId()])
+                .build());
+        })
+        .item((block, properties) -> new UniversalPlasticBlockItem(
+            block,
+            properties,
+            ModEntities.UNIVERSAL_PLASTIC,
+            block::defaultBlockState
+        ))
+        .tag(ModItemTags.PLASTIC_PRODUCTS, ModItemTags.BUOYANT_PLASTIC_ITEMS)
+        .model((context, provider) -> {
+            // 物品模型继承同色方块几何，但独立提供缩小后的掉落、手持和三面 GUI 视角。
+            var base = provider.getBuilder(context.getName()).parent(new ModelFile.UncheckedModelFile(
+                provider.modLoc("block/" + context.getName() + "_white")
+            ));
+            addUniversalPlasticItemTransforms(base);
+            for (DyeColor color : DyeColor.values()) {
+                if (color == DyeColor.WHITE) continue;
+                var variant = provider.getBuilder(context.getName() + "_" + color.getName())
+                    .parent(new ModelFile.UncheckedModelFile(
+                        provider.modLoc("block/" + context.getName() + "_" + color.getName())
+                    ));
+                addUniversalPlasticItemTransforms(variant);
+                base.override()
+                    .predicate(AnvilcraftPlasticraft.of("plastic_color"), color.getId())
+                    .model(variant)
+                    .end();
+            }
+        })
+        .build()
+        .register();
     public static final BlockEntry<LiquidBlock> CRUDE_OIL_ACID = fluidBlock(
         "crude_oil_acid",
         ModFluids.CRUDE_OIL_ACID,
@@ -325,6 +406,41 @@ public final class ModBlocks {
         .register();
 
     private ModBlocks() {
+    }
+
+    /** 为通用塑料物品固定标准显示变换，避免掉落物按一格实体原尺寸渲染。 */
+    private static void addUniversalPlasticItemTransforms(ModelBuilder<?> model) {
+        model.transforms()
+            .transform(ItemDisplayContext.THIRD_PERSON_RIGHT_HAND)
+                .rotation(75.0F, 45.0F, 0.0F)
+                .translation(0.0F, 2.5F, 0.0F)
+                .scale(0.375F)
+                .end()
+            .transform(ItemDisplayContext.THIRD_PERSON_LEFT_HAND)
+                .rotation(75.0F, 45.0F, 0.0F)
+                .translation(0.0F, 2.5F, 0.0F)
+                .scale(0.375F)
+                .end()
+            .transform(ItemDisplayContext.FIRST_PERSON_RIGHT_HAND)
+                .rotation(0.0F, 45.0F, 0.0F)
+                .scale(0.4F)
+                .end()
+            .transform(ItemDisplayContext.FIRST_PERSON_LEFT_HAND)
+                .rotation(0.0F, -135.0F, 0.0F)
+                .scale(0.4F)
+                .end()
+            .transform(ItemDisplayContext.GROUND)
+                .translation(0.0F, 3.0F, 0.0F)
+                .scale(0.25F)
+                .end()
+            .transform(ItemDisplayContext.GUI)
+                .rotation(30.0F, -135.0F, 0.0F)
+                .scale(0.625F)
+                .end()
+            .transform(ItemDisplayContext.FIXED)
+                .scale(0.5F)
+                .end()
+            .end();
     }
 
     private static BlockEntry<LiquidBlock> fluidBlock(

@@ -7,12 +7,9 @@ import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -29,7 +26,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.function.Supplier;
 
-/** 只保留源方块、携带颜色并能够冷却成塑料粒的熔体。 */
+/** 只保留单格流体、携带颜色并统一固化为通用塑料制品的熔体。 */
 public class UniversalPlasticMeltFluidBlock extends LiquidBlock implements EntityBlock {
     public UniversalPlasticMeltFluidBlock(Supplier<? extends FlowingFluid> fluid, Properties properties) {
         super(fluid.get(), properties.randomTicks());
@@ -48,16 +45,13 @@ public class UniversalPlasticMeltFluidBlock extends LiquidBlock implements Entit
 
     @Override
     protected void tick(BlockState state, ServerLevel level, BlockPos pos, RandomSource random) {
-        if (shouldCool(level, pos)) {
-            cool(level, pos);
-            return;
-        }
+        if (trySolidifyFromEnvironment(level, pos)) return;
         level.scheduleTick(pos, this, 10);
     }
 
     @Override
     protected void randomTick(BlockState state, ServerLevel level, BlockPos pos, RandomSource random) {
-        if (shouldCool(level, pos)) cool(level, pos);
+        trySolidifyFromEnvironment(level, pos);
     }
 
     @Override
@@ -88,6 +82,12 @@ public class UniversalPlasticMeltFluidBlock extends LiquidBlock implements Entit
         return bucket;
     }
 
+    /** 计划刻、随机刻和测试共用的环境判定入口，结算仍委托给唯一固化服务。 */
+    public static boolean trySolidifyFromEnvironment(ServerLevel level, BlockPos pos) {
+        if (!shouldCool(level, pos)) return false;
+        return UniversalPlasticSolidification.solidify(level, pos);
+    }
+
     private static boolean shouldCool(ServerLevel level, BlockPos pos) {
         if (level.isRainingAt(pos.above())) return true;
         for (Direction direction : Direction.values()) {
@@ -98,16 +98,4 @@ public class UniversalPlasticMeltFluidBlock extends LiquidBlock implements Entit
         return false;
     }
 
-    private static void cool(ServerLevel level, BlockPos pos) {
-        ItemStack result = new ItemStack(ModItems.UNIVERSAL_PLASTIC_GRANULE.get(), 16);
-        if (level.getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity melt) {
-            PlasticMeltColor.set(result, melt.getColor());
-        }
-        level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
-        ItemEntity item = new ItemEntity(level, pos.getX() + 0.5D, pos.getY() + 0.2D, pos.getZ() + 0.5D, result);
-        item.setDefaultPickUpDelay();
-        level.addFreshEntity(item);
-        level.playSound(null, pos, SoundEvents.FIRE_EXTINGUISH,
-            SoundSource.BLOCKS, 0.8F, 1.15F);
-    }
 }

@@ -283,15 +283,8 @@ public final class AdhesivePatchRenderer {
         float partialTick
     ) {
         Direction worldFace = AdhesiveFaces.worldFace(entity, storedFace);
-        AABB box = entity.getBoundingBox().move(
-            entity.getPosition(partialTick).subtract(entity.position())
-        );
-        Vec3 center = box.getCenter();
-        Vec3 surfaceCenter = switch (worldFace.getAxis()) {
-            case X -> new Vec3(worldFace == Direction.EAST ? box.maxX : box.minX, center.y, center.z);
-            case Y -> new Vec3(center.x, worldFace == Direction.UP ? box.maxY : box.minY, center.z);
-            case Z -> new Vec3(center.x, center.y, worldFace == Direction.SOUTH ? box.maxZ : box.minZ);
-        };
+        Vec3 surfaceCenter = AdhesiveFaces.storedFaceAlignmentPoint(entity, storedFace)
+            .add(entity.getPosition(partialTick).subtract(entity.position()));
         pose.pushPose();
         pose.translate(surfaceCenter.x, surfaceCenter.y, surfaceCenter.z);
         pose.mulPose(rotationFromUp(worldFace));
@@ -378,7 +371,7 @@ public final class AdhesivePatchRenderer {
         PlasticEntityOrientation from = animation == null ? plasticEntity.getOrientation() : animation.from();
         PlasticEntityOrientation to = animation == null ? from : animation.to();
         float progress = animation == null ? 0.0F : animation.progress();
-        return entity.getPosition(partialTick).add(PlasticEntityRenderTransforms.faceCenterOffset(
+        return entity.getPosition(partialTick).add(PlasticEntityRenderTransforms.faceAlignmentOffset(
             plasticEntity,
             storedFace,
             from,
@@ -528,10 +521,10 @@ public final class AdhesivePatchRenderer {
             ? from
             : animation.to();
         float progress = animation == null ? 0.0F : animation.progress();
-        Vec3 fromPosition = from.entityPosition(blockPos, entity.getBbWidth(), entity.getBbHeight());
-        Vec3 toPosition = to.entityPosition(blockPos, entity.getBbWidth(), entity.getBbHeight());
+        Vec3 fromPosition = entity.plasticraft$placementPosition(blockPos, from);
+        Vec3 toPosition = entity.plasticraft$placementPosition(blockPos, to);
         Vec3 entityPosition = fromPosition.lerp(toPosition, progress);
-        Vec3 attachedPoint = entityPosition.add(PlasticEntityRenderTransforms.faceCenterOffset(
+        Vec3 attachedPoint = entityPosition.add(PlasticEntityRenderTransforms.faceAlignmentOffset(
             entity,
             blockEntity.getAdhesiveLocalFace(),
             from,

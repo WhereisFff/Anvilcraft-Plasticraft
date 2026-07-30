@@ -204,6 +204,9 @@ public final class CatalyticPressProcess {
         FluidStack melt
     ) {
         BlockPos outputPos = source.pos().relative(direction);
+        if (PlasticGranuleCauldronOutput.tryProcess(level, outputPos, source.handler(), melt)) {
+            return true;
+        }
         FluidContainerLookup.Result direct = FluidContainerLookup.find(level, outputPos, direction.getOpposite());
         if (direct != null) {
             return transferAll(level, outputPos, source.handler(), direct.handler(), melt);

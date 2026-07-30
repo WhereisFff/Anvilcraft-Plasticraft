@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.entity.physics;
 
 import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.dubhe.anvilcraft.util.GravityManager;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
@@ -14,7 +15,6 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,7 +27,8 @@ public final class PlasticEntityPhysics {
     public static final double MAX_CARRY_DISTANCE = 0.75D;
 
     private static final double MIN_EFFECTIVE_GRAVITY_SQR = 1.0E-10D;
-    private static final double CORNER_CONTACT_PROGRESS_EPSILON = 0.025D;
+    /** 将角点附近的候选面视为同一接触，避免浮点误差在两条轴之间切换。 */
+    private static final double CONTACT_PROGRESS_EPSILON = 0.025D;
 
     private PlasticEntityPhysics() {
     }
@@ -94,6 +95,7 @@ public final class PlasticEntityPhysics {
     @Nullable
     public static Entity findSupport(FallingBlockEntity entity, AABB entityBox, Direction gravityDirection) {
         List<AABB> entityComponents = collisionComponents(entity, entityBox);
+        if (entityComponents.isEmpty()) return null;
         AABB queryBox = entity instanceof ShapedCollisionEntity
             ? enclosingBounds(entityComponents).inflate(SUPPORT_PROBE_DEPTH + FACE_EPSILON)
             : supportProbe(entityBox, gravityDirection);
@@ -320,7 +322,7 @@ public final class PlasticEntityPhysics {
     }
 
     /**
-     * 返回玩家位移是否触及侧面，并能将其沿表面切向的位移传递给塑料实体。
+     * 返回推动实体的位移是否触及侧面，并能将其沿表面切向的位移传递给塑料实体。
      */
     public static boolean canPushFromSide(
         FallingBlockEntity target,
@@ -348,6 +350,24 @@ public final class PlasticEntityPhysics {
         return sidePushMovement(target, pusher, pusherBox, gravityDirection, requestedMovement) != null;
     }
 
+    /** 侧推需要推动者受支撑，避免跳跃或下落时把水平位移传给塑料实体。 */
+    public static boolean hasSidePushSupport(Entity pusher) {
+        return hasSidePushSupport(pusher, pusher.getBoundingBox());
+    }
+
+    /**
+     * 使用推动位移开始前的碰撞箱判定支撑，避免最后一步离开边缘时提前丢失本次合法侧推。
+     */
+    private static boolean hasSidePushSupport(Entity pusher, AABB pusherBox) {
+        if (pusher instanceof AbstractPlasticEntity plasticEntity) {
+            Direction gravityDirection = plasticEntity.plasticraft$currentPushGravityDirection();
+            return hasBlockSupport(plasticEntity, pusherBox, gravityDirection)
+                || findSupport(plasticEntity, pusherBox, gravityDirection) != null;
+        }
+        return hasBlockSupport(pusher, pusherBox, Direction.DOWN)
+            || hasEntitySupport(pusher, pusherBox, Direction.DOWN);
+    }
+
     /**
      * 将侧推分解到接触面的法向。平行于该面的位移仍由推动者保留，
      * 因而斜向行走会从实体旁滑过，而不会带着实体横向移动。
@@ -362,11 +382,13 @@ public final class PlasticEntityPhysics {
         Direction gravityDirection,
         Vec3 requestedMovement
     ) {
-        if (!(pusher instanceof Player) && !(pusher instanceof CarrierMovableEntity)
+        if ((!(pusher instanceof CarrierMovableEntity)
+            && !EntitySelector.pushableBy(target).test(pusher))
             || pusher.isRemoved()
             || pusher.isSpectator()
             || pusher.noPhysics
             || target.isPassengerOfSameVehicle(pusher)
+            || !hasSidePushSupport(pusher, pusherBox)
             || !isWithinCarryDistance(requestedMovement)) {
             return null;
         }
@@ -377,57 +399,53 @@ public final class PlasticEntityPhysics {
             return null;
         }
 
+        List<AABB> pusherComponents = collisionComponents(pusher, pusherBox);
         List<AABB> targetComponents = collisionComponents(target, target.getBoundingBox());
-        AABB targetBounds = enclosingBounds(targetComponents);
-        AABB sweptPusherBox = pusherBox.expandTowards(requestedMovement).inflate(FACE_EPSILON);
-        List<SidePushContact> contacts = new ArrayList<>(2);
+        if (pusherComponents.isEmpty() || targetComponents.isEmpty()) return null;
+        SidePushContact bestContact = null;
         for (Direction direction : Direction.values()) {
             if (direction.getAxis() == gravityDirection.getAxis()) continue;
             int sign = direction.getAxisDirection().getStep();
             double movement = requestedMovement.get(direction.getAxis()) * sign;
             if (movement <= FACE_EPSILON) continue;
-
-            double pusherFace = faceCoordinate(pusherBox, direction);
-            double pusherCenter = pusherBox.getCenter().get(direction.getAxis());
-            double exteriorFace = faceCoordinate(targetBounds, direction.getOpposite());
-            if ((exteriorFace - pusherCenter) * sign <= FACE_EPSILON) continue;
-
             double directionProgress = Double.POSITIVE_INFINITY;
             double directionTransfer = 0.0D;
-            for (AABB targetComponent : targetComponents) {
-                double targetFace = faceCoordinate(targetComponent, direction.getOpposite());
-                double gap = (targetFace - pusherFace) * sign;
-                if (gap < -SIDE_PUSH_QUERY_DISTANCE - FACE_EPSILON || gap > movement + FACE_EPSILON) continue;
-                if (tangentialOverlap(sweptPusherBox, targetComponent, direction) <= FACE_EPSILON) continue;
+            for (AABB pusherComponent : pusherComponents) {
+                AABB sweptPusherBox = pusherComponent.expandTowards(requestedMovement).inflate(FACE_EPSILON);
+                double pusherFace = faceCoordinate(pusherComponent, direction);
+                double pusherCenter = pusherComponent.getCenter().get(direction.getAxis());
+                for (AABB targetComponent : targetComponents) {
+                    double targetFace = faceCoordinate(targetComponent, direction.getOpposite());
+                    if ((targetFace - pusherCenter) * sign <= FACE_EPSILON) continue;
+                    double gap = (targetFace - pusherFace) * sign;
+                    if (gap < -FACE_EPSILON
+                        || gap > movement + FACE_EPSILON
+                        || tangentialOverlap(sweptPusherBox, targetComponent, direction) <= FACE_EPSILON) {
+                        continue;
+                    }
 
-                double contactDistance = Math.max(0.0D, gap);
-                double progress = contactDistance / movement;
-                if (progress < directionProgress - FACE_EPSILON) {
-                    directionProgress = progress;
-                    directionTransfer = Math.max(0.0D, movement - contactDistance) * sign;
+                    double contactDistance = Math.max(0.0D, gap);
+                    double progress = contactDistance / movement;
+                    if (progress < directionProgress - FACE_EPSILON) {
+                        directionProgress = progress;
+                        directionTransfer = Math.max(0.0D, movement - contactDistance) * sign;
+                    }
                 }
             }
             if (directionProgress != Double.POSITIVE_INFINITY) {
-                contacts.add(new SidePushContact(
+                SidePushContact contact = new SidePushContact(
                     directionProgress,
+                    movement,
+                    direction,
                     axisVector(direction.getAxis(), directionTransfer)
-                ));
+                );
+                if (bestContact == null || isPreferredSidePushContact(contact, bestContact)) {
+                    bestContact = contact;
+                }
             }
         }
-        if (contacts.isEmpty()) return null;
-
-        double bestProgress = contacts.stream()
-            .mapToDouble(SidePushContact::progress)
-            .min()
-            .orElseThrow();
-        Vec3 transferred = Vec3.ZERO;
-        for (SidePushContact contact : contacts) {
-            // 两个面在同一刻附近接触时视作稳定的斜角推动，避免每刻在 X/Z 之间来回切换。
-            if (contact.progress() <= bestProgress + CORNER_CONTACT_PROGRESS_EPSILON) {
-                transferred = transferred.add(contact.movement());
-            }
-        }
-        return transferred;
+        // 同一次移动只传递一个最先接触面的法向，斜向输入的其余部分仍由推动者保留。
+        return bestContact == null ? null : bestContact.movement();
     }
 
     /**
@@ -514,7 +532,7 @@ public final class PlasticEntityPhysics {
 
     /** 返回方块碰撞形状是否支撑有效重力面。 */
     public static boolean hasBlockSupport(FallingBlockEntity entity, Direction gravityDirection) {
-        return hasBlockSupport(entity, entity.getBoundingBox(), gravityDirection);
+        return hasBlockSupport((Entity) entity, entity.getBoundingBox(), gravityDirection);
     }
 
     /** 检查记录的碰撞箱是否受支撑，使多步移动能保留移动前的接触状态。 */
@@ -523,12 +541,35 @@ public final class PlasticEntityPhysics {
         AABB box,
         Direction gravityDirection
     ) {
+        return hasBlockSupport((Entity) entity, box, gravityDirection);
+    }
+
+    /** 供普通推动实体复用与塑料实体相同的真实方块支撑判定。 */
+    public static boolean hasBlockSupport(Entity entity, Direction gravityDirection) {
+        return hasBlockSupport(entity, entity.getBoundingBox(), gravityDirection);
+    }
+
+    private static boolean hasBlockSupport(Entity entity, AABB box, Direction gravityDirection) {
         for (AABB component : collisionComponents(entity, box)) {
             if (entity.level().getBlockCollisions(entity, supportProbe(component, gravityDirection))
                 .iterator()
                 .hasNext()) {
                 return true;
             }
+        }
+        return false;
+    }
+
+    private static boolean hasEntitySupport(Entity entity, AABB box, Direction gravityDirection) {
+        List<AABB> components = collisionComponents(entity, box);
+        if (components.isEmpty()) return false;
+        AABB probe = enclosingBounds(components).inflate(SUPPORT_PROBE_DEPTH + FACE_EPSILON);
+        for (Entity candidate : entity.level().getEntities(
+            entity,
+            probe,
+            other -> !other.isRemoved() && !other.isSpectator()
+        )) {
+            if (hasSurfaceSupport(entity, box, candidate, gravityDirection)) return true;
         }
         return false;
     }
@@ -587,8 +628,12 @@ public final class PlasticEntityPhysics {
         FallingBlockEntity entity,
         Direction gravityDirection
     ) {
-        AABB box = entity.getBoundingBox();
-        Vec3 center = box.getCenter();
+        List<AABB> components = collisionComponents(entity, entity.getBoundingBox());
+        if (components.isEmpty()) return entity.blockPosition();
+        AABB box = enclosingBounds(components);
+        Vec3 center = entity instanceof AbstractPlasticEntity plasticEntity
+            ? plasticEntity.plasticraft$getRotationCenter()
+            : box.getCenter();
         Vec3 faceCenter = switch (gravityDirection.getAxis()) {
             case X -> new Vec3(faceCoordinate(box, gravityDirection), center.y, center.z);
             case Y -> new Vec3(center.x, faceCoordinate(box, gravityDirection), center.z);
@@ -614,8 +659,15 @@ public final class PlasticEntityPhysics {
 
     /** 当最小分离面与有效重力方向相切时返回 true。 */
     public static boolean isSideContact(Entity entity, Entity other, Direction gravityDirection) {
-        AABB box = entity.getBoundingBox();
-        AABB otherBox = other.getBoundingBox();
+        for (AABB box : collisionComponents(entity, entity.getBoundingBox())) {
+            for (AABB otherBox : collisionComponents(other, other.getBoundingBox())) {
+                if (isSideContact(box, otherBox, gravityDirection)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isSideContact(AABB box, AABB otherBox, Direction gravityDirection) {
         double xSeparation = signedIntervalSeparation(box.minX, box.maxX, otherBox.minX, otherBox.maxX);
         double ySeparation = signedIntervalSeparation(box.minY, box.maxY, otherBox.minY, otherBox.maxY);
         double zSeparation = signedIntervalSeparation(box.minZ, box.maxZ, otherBox.minZ, otherBox.maxZ);
@@ -644,6 +696,7 @@ public final class PlasticEntityPhysics {
         );
         for (Entity other : nearby) {
             if (supportId != null && supportId.equals(other.getUUID())) continue;
+            if (!hasSidePushSupport(other)) continue;
             if (gravityDirection != null && isSupportCandidate(entity, other, gravityDirection)) {
                 continue;
             }
@@ -673,6 +726,23 @@ public final class PlasticEntityPhysics {
             case X -> new Vec3(value, 0.0D, 0.0D);
             case Y -> new Vec3(0.0D, value, 0.0D);
             case Z -> new Vec3(0.0D, 0.0D, value);
+        };
+    }
+
+    private static boolean isPreferredSidePushContact(SidePushContact candidate, SidePushContact current) {
+        if (candidate.progress() < current.progress() - CONTACT_PROGRESS_EPSILON) return true;
+        if (candidate.progress() > current.progress() + CONTACT_PROGRESS_EPSILON) return false;
+        if (candidate.axisMovement() > current.axisMovement() + FACE_EPSILON) return true;
+        if (candidate.axisMovement() < current.axisMovement() - FACE_EPSILON) return false;
+        return sidePushAxisPriority(candidate.direction().getAxis())
+            < sidePushAxisPriority(current.direction().getAxis());
+    }
+
+    private static int sidePushAxisPriority(Direction.Axis axis) {
+        return switch (axis) {
+            case X -> 0;
+            case Y -> 1;
+            case Z -> 2;
         };
     }
 
@@ -746,7 +816,12 @@ public final class PlasticEntityPhysics {
     private record SupportContact(double gap, double overlap) {
     }
 
-    private record SidePushContact(double progress, Vec3 movement) {
+    private record SidePushContact(
+        double progress,
+        double axisMovement,
+        Direction direction,
+        Vec3 movement
+    ) {
     }
 
     private static double overlap(double firstMin, double firstMax, double secondMin, double secondMax) {

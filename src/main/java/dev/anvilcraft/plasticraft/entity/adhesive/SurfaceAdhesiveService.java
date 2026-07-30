@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.entity.adhesive;
 
+import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.block.BlockAdhesionState;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.init.ModAttachments;
@@ -49,21 +50,28 @@ public final class SurfaceAdhesiveService {
     static boolean hasUncoveredContact(ServerLevel level, Entity target, BlockPos supportPos, Direction face) {
         AABB patch = patchBounds(supportPos, face);
         if (!patch.intersects(target.getBoundingBox())) return false;
-        SurfaceRect contact = projectedContact(supportPos, face, target.getBoundingBox());
-        if (contact == null) return false;
-
-        List<SurfaceRect> covered = new ArrayList<>();
-        for (Entity entity : level.getEntities(
+        List<Entity> attached = level.getEntities(
             (Entity) null,
             patch,
             entity -> entity != target && isAttachedTo(entity, supportPos, face)
-        )) {
-            SurfaceRect overlap = projectedContact(supportPos, face, entity.getBoundingBox());
-            if (overlap == null) continue;
-            SurfaceRect intersection = contact.intersection(overlap);
-            if (intersection.hasArea()) covered.add(intersection);
+        );
+        for (AABB targetBox : ShapedCollisionEntity.interactionComponents(target)) {
+            if (!patch.intersects(targetBox)) continue;
+            SurfaceRect contact = projectedContact(supportPos, face, targetBox);
+            if (contact == null) continue;
+
+            List<SurfaceRect> covered = new ArrayList<>();
+            for (Entity entity : attached) {
+                for (AABB attachedBox : ShapedCollisionEntity.interactionComponents(entity)) {
+                    SurfaceRect overlap = projectedContact(supportPos, face, attachedBox);
+                    if (overlap == null) continue;
+                    SurfaceRect intersection = contact.intersection(overlap);
+                    if (intersection.hasArea()) covered.add(intersection);
+                }
+            }
+            if (hasUncoveredArea(contact, covered)) return true;
         }
-        return hasUncoveredArea(contact, covered);
+        return false;
     }
 
     private static boolean isAttachedTo(Entity entity, BlockPos supportPos, Direction face) {

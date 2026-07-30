@@ -11,6 +11,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import org.spongepowered.asm.mixin.Mixin;
@@ -64,15 +65,21 @@ abstract class FallingBlockEntityAdhesionMixin {
         FallingBlockEntity entity,
         Operation<Boolean> original
     ) {
-        if (PlasticFallingBlockSupport.touchesIncompletePlasticAnvil(entity)) {
-            if (this.dropItem && entity.level().getGameRules().getBoolean(GameRules.RULE_DOENTITYDROPS)) {
-                entity.spawnAtLocation(entity.getBlockState().getBlock());
+        return switch (PlasticFallingBlockSupport.resolveLanding(entity)) {
+            case LAND -> true;
+            case BOUNCE -> false;
+            case BREAK -> {
+                Block block = entity.getBlockState().getBlock();
+                BlockPos pos = entity.blockPosition();
+                entity.discard();
+                if (this.dropItem && entity.level().getGameRules().getBoolean(GameRules.RULE_DOENTITYDROPS)) {
+                    entity.callOnBrokenAfterFall(block, pos);
+                    entity.spawnAtLocation(block);
+                }
+                yield false;
             }
-            entity.discard();
-            return false;
-        }
-        if (PlasticFallingBlockSupport.landOnSupport(entity)) return true;
-        return original.call(entity);
+            case NONE -> original.call(entity);
+        };
     }
 
     @Inject(method = "tick", at = @At("RETURN"))

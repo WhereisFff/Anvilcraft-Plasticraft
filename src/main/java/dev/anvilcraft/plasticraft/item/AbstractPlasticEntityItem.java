@@ -24,7 +24,6 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.GameEvent;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -35,8 +34,6 @@ import java.util.function.Supplier;
 /** 所有实体化塑料制品共用的六面放置流程。 */
 public abstract class AbstractPlasticEntityItem<E extends AbstractPlasticEntity> extends BlockItem
     implements EntityFacePlaceableItem {
-    private static final double PLACEMENT_COLLISION_EPSILON = 1.0E-7D;
-
     private final Supplier<? extends EntityType<? extends E>> entityType;
     private final Supplier<BlockState> displayState;
 
@@ -104,13 +101,13 @@ public abstract class AbstractPlasticEntityItem<E extends AbstractPlasticEntity>
         BlockPos occupiedPos = level.getBlockState(clickedPos).canBeReplaced()
             ? clickedPos
             : clickedPos.relative(attachmentFace);
-        PlasticEntityOrientation orientation = PlasticEntityOrientation.forPlacement(attachmentFace, player);
+        PlasticEntityOrientation orientation = this.placementOrientation(attachmentFace, player);
 
         EntityType<? extends E> type = this.entityType.get();
         if (type == null) {
             return InteractionResult.FAIL;
         }
-        Vec3 position = orientation.entityPosition(occupiedPos, type.getWidth(), type.getHeight());
+        Vec3 provisionalPosition = Vec3.atBottomCenterOf(occupiedPos);
 
         ItemStack entityStack = stack.copyWithCount(1);
         PlasticItemData.setMaterial(entityStack, this.materialKey());
@@ -131,10 +128,12 @@ public abstract class AbstractPlasticEntityItem<E extends AbstractPlasticEntity>
         }
         state = orientation.applyToState(state);
 
-        E entity = this.createEntity(type, level, position, state, entityStack, orientation);
+        E entity = this.createEntity(type, level, provisionalPosition, state, entityStack, orientation);
+        Vec3 position = entity.plasticraft$placementPosition(occupiedPos, orientation);
+        entity.setPos(position);
+        entity.setStartPos(entity.blockPosition());
         entity.setMagnetized(PlasticItemData.isMagnetized(entityStack));
-        AABB collisionBox = entity.getBoundingBox().deflate(PLACEMENT_COLLISION_EPSILON);
-        if (!level.noCollision(entity, collisionBox)) {
+        if (!entity.plasticraft$canOccupy(orientation, position)) {
             return InteractionResult.FAIL;
         }
 
@@ -167,6 +166,11 @@ public abstract class AbstractPlasticEntityItem<E extends AbstractPlasticEntity>
 
     protected BlockState prepareDisplayState(ItemStack stack, BlockState state) {
         return state;
+    }
+
+    /** 允许尺寸不是完整立方体的制品约束放置朝向，确保实体包围盒和局部碰撞保持一致。 */
+    protected PlasticEntityOrientation placementOrientation(Direction attachmentFace, Player player) {
+        return PlasticEntityOrientation.forPlacement(attachmentFace, player);
     }
 
     /** 仅含旧颜色数据的物品堆转换为实体时写入的稳定材料键。 */

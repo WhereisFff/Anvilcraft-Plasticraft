@@ -5,10 +5,12 @@ import dev.anvilcraft.plasticraft.client.renderer.entity.CatalyticPressLidRender
 import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinAnvilRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinCauldronRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.ResinAnvilRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.entity.UniversalPlasticEntityRenderer;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
+import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import net.minecraft.world.entity.MobCategory;
 
@@ -55,6 +57,16 @@ public final class ModEntities {
         .renderer(() -> ResinAnvilRenderer::new)
         .register();
 
+    public static final EntityEntry<UniversalPlasticEntity> UNIVERSAL_PLASTIC = REGISTRUM
+        .<UniversalPlasticEntity>entity("universal_plastic", UniversalPlasticEntity::new, MobCategory.MISC)
+        .properties(builder -> builder
+            .sized(UniversalPlasticEntity.COLLISION_SIZE, UniversalPlasticEntity.COLLISION_SIZE)
+            .clientTrackingRange(10)
+            .updateInterval(1))
+        .lang("Universal Plastic Block")
+        .renderer(() -> UniversalPlasticEntityRenderer::new)
+        .register();
+
     private ModEntities() {
     }
 
@@ -63,5 +75,6 @@ public final class ModEntities {
         HardenedResinAnvilEntity.configureDefaultDrop(ModBlocks.HARDEND_RESIN_ANVIL::asStack);
         HardenedResinCauldronEntity.configureDefaultDrop(ModBlocks.HARDEND_RESIN_CAULDRON::asStack);
         ResinAnvilEntity.configureDefaultDrop(ModBlocks.RESIN_ANVIL::asStack);
+        UniversalPlasticEntity.configureDefaultDrop(ModBlocks.UNIVERSAL_PLASTIC::asStack);
     }
 }

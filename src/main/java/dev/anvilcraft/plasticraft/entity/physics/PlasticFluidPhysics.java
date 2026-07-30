@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.entity.physics;
 
+import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.init.item.ModItemTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
@@ -9,6 +10,8 @@ import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.List;
+
 /** 塑料方块实体和物品实体共用的确定性流体表面采样。 */
 public final class PlasticFluidPhysics {
     private static final double EPSILON = 1.0E-6D;
@@ -17,29 +20,49 @@ public final class PlasticFluidPhysics {
     }
 
     public static FluidContact sample(Entity entity) {
-        AABB box = entity.getBoundingBox();
+        List<AABB> components = entity instanceof ShapedCollisionEntity shaped
+            ? shaped.plasticraft$getCollisionBox().components()
+            : List.of(entity.getBoundingBox());
+        if (components.isEmpty()) return FluidContact.EMPTY;
+
         double surface = Double.NEGATIVE_INFINITY;
+        double totalVolume = 0.0D;
+        double submergedVolume = 0.0D;
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-        int minX = Mth.floor(box.minX + EPSILON);
-        int maxX = Mth.floor(box.maxX - EPSILON);
-        int minY = Mth.floor(box.minY - 1.0D);
-        int maxY = Mth.floor(box.maxY + EPSILON);
-        int minZ = Mth.floor(box.minZ + EPSILON);
-        int maxZ = Mth.floor(box.maxZ - EPSILON);
-        for (int x = minX; x <= maxX; x++) {
-            for (int y = minY; y <= maxY; y++) {
-                for (int z = minZ; z <= maxZ; z++) {
-                    cursor.set(x, y, z);
-                    FluidState fluid = entity.level().getFluidState(cursor);
-                    if (fluid.isEmpty()) continue;
-                    double candidate = y + fluid.getHeight(entity.level(), cursor);
-                    if (candidate > box.minY + EPSILON && candidate > surface) surface = candidate;
+        for (AABB box : components) {
+            totalVolume += box.getXsize() * box.getYsize() * box.getZsize();
+            int minX = Mth.floor(box.minX + EPSILON);
+            int maxX = Mth.floor(box.maxX - EPSILON);
+            int minY = Mth.floor(box.minY + EPSILON);
+            int maxY = Mth.floor(box.maxY - EPSILON);
+            int minZ = Mth.floor(box.minZ + EPSILON);
+            int maxZ = Mth.floor(box.maxZ - EPSILON);
+            for (int x = minX; x <= maxX; x++) {
+                double overlapX = overlap(box.minX, box.maxX, x, x + 1.0D);
+                if (overlapX <= EPSILON) continue;
+                for (int y = minY; y <= maxY; y++) {
+                    for (int z = minZ; z <= maxZ; z++) {
+                        double overlapZ = overlap(box.minZ, box.maxZ, z, z + 1.0D);
+                        if (overlapZ <= EPSILON) continue;
+                        cursor.set(x, y, z);
+                        FluidState fluid = entity.level().getFluidState(cursor);
+                        if (fluid.isEmpty()) continue;
+                        double candidate = y + fluid.getHeight(entity.level(), cursor);
+                        double overlapY = overlap(box.minY, box.maxY, y, candidate);
+                        if (overlapY <= EPSILON) continue;
+                        submergedVolume += overlapX * overlapY * overlapZ;
+                        surface = Math.max(surface, candidate);
+                    }
                 }
             }
         }
-        if (!Double.isFinite(surface)) return FluidContact.EMPTY;
-        double fraction = Mth.clamp((surface - box.minY) / box.getYsize(), 0.0D, 1.0D);
+        if (!Double.isFinite(surface) || totalVolume <= EPSILON) return FluidContact.EMPTY;
+        double fraction = Mth.clamp(submergedVolume / totalVolume, 0.0D, 1.0D);
         return new FluidContact(fraction, surface);
+    }
+
+    private static double overlap(double firstMin, double firstMax, double secondMin, double secondMax) {
+        return Math.max(0.0D, Math.min(firstMax, secondMax) - Math.max(firstMin, secondMin));
     }
 
     public static void floatPlasticItem(ItemEntity item) {

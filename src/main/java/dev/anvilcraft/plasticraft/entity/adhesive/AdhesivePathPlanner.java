@@ -204,7 +204,13 @@ public final class AdhesivePathPlanner {
         PlasticEntityOrientation targetOrientation = entity instanceof AbstractPlasticEntity plastic
             ? AdhesiveFaces.targetOrientation(plastic, sourceFace, supportWorldFace.getOpposite(), player)
             : null;
-        Vec3 targetPosition = targetPosition(entity, supportEntity, supportWorldFace);
+        Vec3 targetPosition = targetPosition(
+            entity,
+            sourceFace,
+            targetOrientation,
+            supportEntity,
+            supportWorldFace
+        );
         double directDistance = entity.position().distanceTo(targetPosition);
         List<Vec3> directPreview = List.of(entity.position(), targetPosition);
         BlockPos occupiedPos = BlockPos.containing(targetPosition);
@@ -276,6 +282,20 @@ public final class AdhesivePathPlanner {
                 directDistance
             );
         }
+        // 目标姿态的轮廓可能超出当前姿态，路径搜索不能只检查移动前的几何。
+        if (entity instanceof AbstractPlasticEntity plasticEntity
+            && targetOrientation != null
+            && !plasticEntity.plasticraft$canOccupyBlocks(targetOrientation, targetPosition)) {
+            return new Plan(
+                Status.TARGET_BLOCKED,
+                directPreview,
+                targetPosition,
+                occupiedPos,
+                targetOrientation,
+                sourceFace,
+                directDistance
+            );
+        }
 
         AABB originalBox = entity.getBoundingBox();
         Vec3 start = entity.position();
@@ -330,8 +350,8 @@ public final class AdhesivePathPlanner {
         @Nullable PlasticEntityOrientation orientation
     ) {
         BlockPos occupiedPos = supportPos.relative(attachmentFace);
-        if (entity instanceof AbstractPlasticEntity && orientation != null) {
-            return orientation.entityPosition(occupiedPos, entity.getBbWidth(), entity.getBbHeight());
+        if (entity instanceof AbstractPlasticEntity plasticEntity && orientation != null) {
+            return plasticEntity.plasticraft$placementPosition(occupiedPos, orientation);
         }
         if (AdhesiveFallingBlockBehavior.canBlockifyComponent(entity.level(), entity)) {
             return Vec3.atBottomCenterOf(occupiedPos);
@@ -356,27 +376,18 @@ public final class AdhesivePathPlanner {
         return entity.position().add(desiredCenter.subtract(box.getCenter()));
     }
 
-    private static Vec3 targetPosition(Entity entity, Entity supportEntity, Direction supportFace) {
-        AABB supportBox = supportEntity.getBoundingBox();
-        Vec3 surfaceCenter = supportBox.getCenter();
-        surfaceCenter = switch (supportFace.getAxis()) {
-            case X -> new Vec3(supportFace == Direction.EAST ? supportBox.maxX : supportBox.minX,
-                surfaceCenter.y, surfaceCenter.z);
-            case Y -> new Vec3(surfaceCenter.x,
-                supportFace == Direction.UP ? supportBox.maxY : supportBox.minY, surfaceCenter.z);
-            case Z -> new Vec3(surfaceCenter.x, surfaceCenter.y,
-                supportFace == Direction.SOUTH ? supportBox.maxZ : supportBox.minZ);
-        };
-        AABB sourceBox = entity.getBoundingBox();
-        double halfExtent = switch (supportFace.getAxis()) {
-            case X -> sourceBox.getXsize() * 0.5D;
-            case Y -> sourceBox.getYsize() * 0.5D;
-            case Z -> sourceBox.getZsize() * 0.5D;
-        };
-        Vec3 desiredCenter = surfaceCenter.add(Vec3.atLowerCornerOf(supportFace.getNormal()).scale(
-            halfExtent + 0.001D
-        ));
-        return entity.position().add(desiredCenter.subtract(sourceBox.getCenter()));
+    private static Vec3 targetPosition(
+        Entity entity,
+        Direction sourceFace,
+        @Nullable PlasticEntityOrientation targetOrientation,
+        Entity supportEntity,
+        Direction supportFace
+    ) {
+        Vec3 supportPoint = AdhesiveFaces.worldFaceAlignmentPoint(supportEntity, supportFace);
+        Vec3 sourcePoint = entity instanceof AbstractPlasticEntity plastic && targetOrientation != null
+            ? AdhesiveFaces.storedFaceAlignmentPoint(plastic, targetOrientation, sourceFace)
+            : AdhesiveFaces.storedFaceAlignmentPoint(entity, sourceFace);
+        return entity.position().add(supportPoint.subtract(sourcePoint));
     }
 
     private static List<Vec3> findGridPath(

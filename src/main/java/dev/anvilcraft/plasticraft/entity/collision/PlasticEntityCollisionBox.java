@@ -20,24 +20,41 @@ public final class PlasticEntityCollisionBox {
     private final List<AABB> components;
     private final AABB bounds;
 
-    private PlasticEntityCollisionBox(VoxelShape shape) {
+    private PlasticEntityCollisionBox(VoxelShape shape, AABB bounds) {
         this.shape = Objects.requireNonNull(shape, "shape").optimize();
-        if (this.shape.isEmpty()) {
-            throw new IllegalArgumentException("Plastic entity collision shape must not be empty");
-        }
         this.components = List.copyOf(this.shape.toAabbs());
-        this.bounds = this.shape.bounds();
+        this.bounds = Objects.requireNonNull(bounds, "bounds");
     }
 
     /** 将已经旋转到实体坐标系的形状锚定到实体底面中心。 */
     public static PlasticEntityCollisionBox atEntityPosition(VoxelShape relativeShape, Vec3 entityPosition) {
+        return atEntityPosition(
+            relativeShape,
+            relativeShape,
+            entityPosition,
+            PlasticEntityGeometry.UNIT_CUBE_ENTITY_ORIGIN
+        );
+    }
+
+    /** 将物理形状和宽阶段轮廓锚定到实体位置。 */
+    public static PlasticEntityCollisionBox atEntityPosition(
+        VoxelShape relativeShape,
+        VoxelShape relativeBoundsShape,
+        Vec3 entityPosition,
+        Vec3 entityOrigin
+    ) {
         Objects.requireNonNull(relativeShape, "relativeShape");
+        Objects.requireNonNull(relativeBoundsShape, "relativeBoundsShape");
         Objects.requireNonNull(entityPosition, "entityPosition");
-        return new PlasticEntityCollisionBox(relativeShape.move(
-            entityPosition.x - 0.5D,
-            entityPosition.y,
-            entityPosition.z - 0.5D
-        ));
+        Objects.requireNonNull(entityOrigin, "entityOrigin");
+        if (relativeBoundsShape.isEmpty()) {
+            throw new IllegalArgumentException("Plastic entity bounds shape must not be empty");
+        }
+        Vec3 movement = entityPosition.subtract(entityOrigin);
+        return new PlasticEntityCollisionBox(
+            relativeShape.move(movement.x, movement.y, movement.z),
+            relativeBoundsShape.bounds().move(movement)
+        );
     }
 
     public VoxelShape shape() {
@@ -56,7 +73,10 @@ public final class PlasticEntityCollisionBox {
     public PlasticEntityCollisionBox move(Vec3 movement) {
         Objects.requireNonNull(movement, "movement");
         if (movement.equals(Vec3.ZERO)) return this;
-        return new PlasticEntityCollisionBox(this.shape.move(movement.x, movement.y, movement.z));
+        return new PlasticEntityCollisionBox(
+            this.shape.move(movement.x, movement.y, movement.z),
+            this.bounds.move(movement)
+        );
     }
 
     /**
@@ -74,6 +94,7 @@ public final class PlasticEntityCollisionBox {
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(entityCollisions, "entityCollisions");
         if (requestedMovement.lengthSqr() == 0.0D) return requestedMovement;
+        if (this.components.isEmpty()) return requestedMovement;
 
         AABB sweptBounds = this.bounds.expandTowards(requestedMovement);
         List<VoxelShape> colliders = new ArrayList<>(entityCollisions.size() + 8);

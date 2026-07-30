@@ -21,15 +21,15 @@ Gaseous crude oil rises through the condenser stack. The first three layers full
 
 | Layer | Input | Output |
 | --- | --- | --- |
-| First | 5 mB gaseous crude oil | 5 mB <ref item="anvilcraftplasticraft:high_heat_fuel_bucket"/> |
-| Second | 40 mB gaseous crude oil | 40 mB <ref item="anvilcraftplasticraft:plastic_oil_bucket"/> |
-| Third | 5 mB gaseous crude oil | 5 mB <ref item="anvilcraftplasticraft:crude_oil_acid_bucket"/> |
+| First | 10 mB gaseous crude oil | 10 mB <ref item="anvilcraftplasticraft:high_heat_fuel_bucket"/> |
+| Second | 30 mB gaseous crude oil | 30 mB <ref item="anvilcraftplasticraft:plastic_oil_bucket"/> |
+| Third | 10 mB gaseous crude oil | 10 mB <ref item="anvilcraftplasticraft:crude_oil_acid_bucket"/> |
 
-A normal jet creates only 5 mB of gaseous oil per game tick, so the first layer can accept all of it as it arrives. An enhanced jet creates 50 mB per game tick and saturates the three-layer process. The fourth productive layer is reserved for future recipes that need a taller stack.
+A normal jet creates only 5 mB of gaseous oil per game tick. The first layer buffers the first 5 mB, then condenses one 10 mB batch after the next game tick. An enhanced jet creates 50 mB per game tick and saturates the three-layer process. The fourth productive layer is reserved for future recipes that need a taller stack.
 
 ## Gaseous experience
 
-Experience fluid vaporizes into gaseous experience at a 1:1 ratio and produces slowly rising experience particles above the liquid. The first condenser layer converts each 250 mB of gaseous experience back into 250 mB of experience fluid. It fills the condensate tank first. After that tank reaches 64 B, gaseous experience continues filling the separate 64 B gas buffer. Vapor escapes from an open tower top only after both buffers are full.
+Experience fluid vaporizes into gaseous experience at a 1:1 ratio and produces slowly rising experience particles above the liquid. The first condenser layer converts each 50 mB of gaseous experience back into 50 mB of experience fluid. It fills the condensate tank first. After that tank reaches 64 B, gaseous experience continues filling the separate 64 B gas buffer. Vapor escapes from an open tower top only after both buffers are full.
 
 Without a condenser, an adult employed villager or player can absorb escaping gaseous experience within three blocks horizontally and up to three blocks above any actual open outlet of the Large Cauldron. With a condenser installed, the range is measured from the actual open center outlet above the highest layer; vapor cannot be absorbed through the tower from below. A player gains one experience point per 10 mB, twice the yield of the corresponding experience fluid. A villager reaches master after absorbing a total of 64 B. Multiple eligible entities split each release equally with ordinary rounding; for example, three entities receive 33 mB each from a 100 mB release.
 

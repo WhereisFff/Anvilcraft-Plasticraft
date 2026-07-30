@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.client.renderer.entity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -38,10 +39,43 @@ public final class CatalyticPressLidRenderer extends EntityRenderer<CatalyticPre
         MultiBufferSource buffers,
         int packedLight
     ) {
+        PlasticHammerScreen.HammerPreview preview = PlasticHammerScreen.getPreview(entity);
+        if (preview != null) {
+            pose.pushPose();
+            PlasticEntityRenderTransforms.applyPreview(pose, entity, preview.orientation());
+            PlasticEntityRenderHelper.renderHammerPreviewModel(
+                entity,
+                this.dispatcher,
+                pose,
+                buffers,
+                preview.valid()
+            );
+            this.renderArm(entity, partialTick, pose, buffers, packedLight, true, preview.valid());
+            pose.popPose();
+            pose.pushPose();
+            PlasticEntityRenderTransforms.applyWorldAlignedPreview(pose, entity);
+            PlasticEntityRenderHelper.renderHammerAxis(entity, this.dispatcher, pose, buffers);
+            pose.popPose();
+            super.render(entity, yaw, partialTick, pose, buffers, packedLight);
+            return;
+        }
         pose.pushPose();
         PlasticEntityRenderTransforms.apply(pose, entity, partialTick);
         PlasticEntityRenderHelper.renderBlock(entity, this.dispatcher, pose, buffers, packedLight);
+        this.renderArm(entity, partialTick, pose, buffers, packedLight, false, true);
+        pose.popPose();
+        super.render(entity, yaw, partialTick, pose, buffers, packedLight);
+    }
 
+    private void renderArm(
+        CatalyticPressLidEntity entity,
+        float partialTick,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        int packedLight,
+        boolean preview,
+        boolean previewValid
+    ) {
         pose.pushPose();
         pose.translate(0.0D, entity.armLift(partialTick), 0.0D);
         if (entity.isReady() && entity.pressAnimationProgress(partialTick) == 0.0F) {
@@ -51,6 +85,18 @@ public final class CatalyticPressLidRenderer extends EntityRenderer<CatalyticPre
             pose.mulPose(Axis.XP.rotationDegrees(wobble));
             pose.mulPose(Axis.ZP.rotationDegrees(Mth.cos(phase * 0.87F) * 1.2F));
             pose.translate(-0.5D, 0.0D, -0.5D);
+        }
+        if (preview) {
+            PlasticEntityRenderHelper.renderHammerPreviewModel(
+                entity.getDisplayState(),
+                Minecraft.getInstance().getModelManager().getModel(ARM_MODEL),
+                this.dispatcher,
+                pose,
+                buffers,
+                previewValid
+            );
+            pose.popPose();
+            return;
         }
         this.dispatcher.getModelRenderer().renderModel(
             pose.last(),
@@ -64,8 +110,6 @@ public final class CatalyticPressLidRenderer extends EntityRenderer<CatalyticPre
             OverlayTexture.NO_OVERLAY
         );
         pose.popPose();
-        pose.popPose();
-        super.render(entity, yaw, partialTick, pose, buffers, packedLight);
     }
 
     @Override

@@ -12,12 +12,15 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.util.TriState;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.List;
 
 /** 让持久化树脂制品以单方块载荷的语义经过 AnvilCraft 滑轨。 */
 public final class PlasticSlidingRailPhysics {
@@ -191,21 +194,71 @@ public final class PlasticSlidingRailPhysics {
 
     @Nullable
     private static RailContact findRailContact(AbstractPlasticEntity entity) {
-        AABB box = entity.getBoundingBox();
-        BlockPos pos = BlockPos.containing(entity.getX(), box.minY - 0.02D, entity.getZ());
-        BlockState state = entity.level().getBlockState(pos);
+        AABB box = physicalBounds(entity);
+        if (box == null) return null;
+        Vec3 center = entity.plasticraft$getRotationCenter();
+        BlockPos pos = BlockPos.containing(center.x, box.minY - 0.02D, center.z);
+        if (Math.abs(box.minY - (pos.getY() + 1.0D)) > RAIL_CONTACT_TOLERANCE) return null;
+        RailContact centered = railContactAt(entity.level(), pos);
+        return centered == null ? findOverlappingRailContact(entity, box, center, pos.getY()) : centered;
+    }
+
+    @Nullable
+    private static RailContact findOverlappingRailContact(
+        AbstractPlasticEntity entity,
+        AABB bounds,
+        Vec3 center,
+        int supportY
+    ) {
+        RailContact closest = null;
+        double closestDistanceSqr = Double.POSITIVE_INFINITY;
+        for (AABB component : entity.plasticraft$getCollisionBox().components()) {
+            if (Math.abs(component.minY - bounds.minY) > PlasticEntityPhysics.FACE_EPSILON) continue;
+            int minimumX = Mth.floor(component.minX + PlasticEntityPhysics.FACE_EPSILON);
+            int maximumX = Mth.floor(component.maxX - PlasticEntityPhysics.FACE_EPSILON);
+            int minimumZ = Mth.floor(component.minZ + PlasticEntityPhysics.FACE_EPSILON);
+            int maximumZ = Mth.floor(component.maxZ - PlasticEntityPhysics.FACE_EPSILON);
+            for (int x = minimumX; x <= maximumX; x++) {
+                for (int z = minimumZ; z <= maximumZ; z++) {
+                    BlockPos pos = new BlockPos(x, supportY, z);
+                    RailContact contact = railContactAt(entity.level(), pos);
+                    if (contact == null) continue;
+                    double distanceSqr = horizontalDistanceSqr(center, pos);
+                    if (closest == null
+                        || distanceSqr < closestDistanceSqr - PlasticEntityPhysics.FACE_EPSILON
+                        || Math.abs(distanceSqr - closestDistanceSqr) <= PlasticEntityPhysics.FACE_EPSILON
+                            && pos.asLong() < closest.pos().asLong()) {
+                        closest = contact;
+                        closestDistanceSqr = distanceSqr;
+                    }
+                }
+            }
+        }
+        return closest;
+    }
+
+    @Nullable
+    private static RailContact railContactAt(Level level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
         if (!(state.getBlock() instanceof BaseSlidingRailBlock)
             || state.is(ModBlockTags.SLIDING_RAIL_STOP_LIKE)) {
             return null;
         }
-        if (Math.abs(box.minY - (pos.getY() + 1.0D)) > RAIL_CONTACT_TOLERANCE) return null;
         return new RailContact(pos, state);
+    }
+
+    private static double horizontalDistanceSqr(Vec3 center, BlockPos pos) {
+        double x = center.x - pos.getX() - 0.5D;
+        double z = center.z - pos.getZ() - 0.5D;
+        return x * x + z * z;
     }
 
     @Nullable
     private static RailContact findPoweredLaunchContact(AbstractPlasticEntity entity) {
-        AABB box = entity.getBoundingBox();
-        BlockPos supportPos = BlockPos.containing(entity.getX(), box.minY - 0.02D, entity.getZ());
+        AABB box = physicalBounds(entity);
+        if (box == null) return null;
+        Vec3 center = entity.plasticraft$getRotationCenter();
+        BlockPos supportPos = BlockPos.containing(center.x, box.minY - 0.02D, center.z);
         if (Math.abs(box.minY - (supportPos.getY() + 1.0D)) > RAIL_CONTACT_TOLERANCE
             || !entity.level().getBlockState(supportPos).is(ModBlockTags.SLIDING_RAIL_STOP_LIKE)) {
             return null;
@@ -222,10 +275,21 @@ public final class PlasticSlidingRailPhysics {
         return null;
     }
 
+    @Nullable
+    private static AABB physicalBounds(AbstractPlasticEntity entity) {
+        List<AABB> components = entity.plasticraft$getCollisionBox().components();
+        if (components.isEmpty()) return null;
+        AABB bounds = components.getFirst();
+        for (int index = 1; index < components.size(); index++) {
+            bounds = bounds.minmax(components.get(index));
+        }
+        return bounds;
+    }
+
     private static void accelerateAndCenter(AbstractPlasticEntity entity, BlockPos railPos, Direction facing) {
         Direction.Axis centerAxis = facing.getClockWise().getAxis();
         double center = coordinate(railPos.getCenter(), centerAxis);
-        double offset = center - coordinate(entity.position(), centerAxis);
+        double offset = center - coordinate(entity.plasticraft$getRotationCenter(), centerAxis);
         double centeredVelocity = coordinate(entity.getDeltaMovement(), centerAxis) * POWERED_CENTER_RETENTION
             + offset * POWERED_CENTER_PULL;
         Vec3 horizontal = centerAxis == Direction.Axis.X
@@ -236,7 +300,7 @@ public final class PlasticSlidingRailPhysics {
 
     private static void brakeAndCenter(AbstractPlasticEntity entity, BlockPos railPos) {
         Vec3 center = railPos.getCenter();
-        Vec3 position = entity.position();
+        Vec3 position = entity.plasticraft$getRotationCenter();
         Vec3 velocity = entity.getDeltaMovement();
         moveHorizontally(entity, new Vec3(
             velocity.x * BRAKE_RETENTION + (center.x - position.x) * BRAKE_CENTER_PULL,
@@ -247,7 +311,8 @@ public final class PlasticSlidingRailPhysics {
 
     private static void holdAtCenter(AbstractPlasticEntity entity, BlockPos railPos) {
         Vec3 center = railPos.getCenter();
-        entity.setPos(center.x, entity.getY(), center.z);
+        Vec3 rotationCenter = entity.plasticraft$getRotationCenter();
+        entity.setPos(entity.position().add(center.x - rotationCenter.x, 0.0D, center.z - rotationCenter.z));
         moveHorizontally(entity, Vec3.ZERO);
     }
 

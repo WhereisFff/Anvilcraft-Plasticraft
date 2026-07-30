@@ -13,6 +13,8 @@ import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.BooleanOp;
+import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
@@ -105,14 +107,82 @@ abstract class EntityCarrierCollisionMixin implements CarrierMoveContextHolder {
             limitedMovement = targetLimitedMovement;
         }
         if (stepBlockedTargets != null) {
+            if (actualMovement.y > PlasticEntityPhysics.FACE_EPSILON) {
+                context.beginCollisionRetry(stepBlockedTargets);
+                try {
+                    Vec3 steppedMovement = this.plasticraft$invokeCollide(requestedMovement);
+                    if (isSafeSteppedCollision(self, steppedMovement, stepBlockedTargets)) {
+                        return steppedMovement;
+                    }
+                } finally {
+                    context.endCollisionRetry();
+                }
+            }
             context.beginCollisionRetry(stepBlockedTargets);
             try {
-                return this.plasticraft$invokeCollide(requestedMovement);
+                AABB collisionBox = self.getBoundingBox();
+                List<VoxelShape> collisions = self.level().getEntityCollisions(
+                    self,
+                    collisionBox.expandTowards(requestedMovement)
+                );
+                // 目标无法随动时只重新执行普通碰撞裁剪，不能借锅底或矮实体自动跨步进入其内部。
+                Vec3 collisionLimitedMovement = ShapedCollisionEntity.collideBoundingBox(
+                    self,
+                    requestedMovement,
+                    collisionBox,
+                    self.level(),
+                    collisions
+                );
+                // 已经轻微嵌入时，原版轴向裁剪不会主动退出交叠区域。
+                // 水平位移还必须受承载预检的结果约束，才能在目标被墙挡住时保持在锅外。
+                return new Vec3(
+                    restrictRetryComponent(
+                        collisionLimitedMovement.x,
+                        limitedMovement.x,
+                        requestedMovement.x
+                    ),
+                    collisionLimitedMovement.y,
+                    restrictRetryComponent(
+                        collisionLimitedMovement.z,
+                        limitedMovement.z,
+                        requestedMovement.z
+                    )
+                );
             } finally {
                 context.endCollisionRetry();
             }
         }
         return limitedMovement;
+    }
+
+    private static boolean isSafeSteppedCollision(
+        Entity carrier,
+        Vec3 movement,
+        List<CarrierMovableEntity> targets
+    ) {
+        if (movement.y <= PlasticEntityPhysics.FACE_EPSILON) return false;
+        VoxelShape movedCarrier = Shapes.create(carrier.getBoundingBox().move(movement));
+        for (CarrierMovableEntity target : targets) {
+            if (!(target instanceof Entity targetEntity) || targetEntity.isRemoved()) continue;
+            if (Shapes.joinIsNotEmpty(
+                movedCarrier,
+                ShapedCollisionEntity.collisionShape(targetEntity),
+                BooleanOp.AND
+            )) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static double restrictRetryComponent(double collisionMovement, double carrierMovement, double requested) {
+        if (requested > 0.0D) {
+            return Math.min(Math.max(0.0D, collisionMovement), Math.max(0.0D, carrierMovement));
+        }
+        if (requested < 0.0D) {
+            return Math.max(Math.min(0.0D, collisionMovement), Math.min(0.0D, carrierMovement));
+        }
+        return 0.0D;
     }
 
     @Inject(method = "move", at = @At("RETURN"))

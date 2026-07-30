@@ -27,11 +27,16 @@ public record EntityBondState(
 ) {
     public static final Codec<EntityBondState> CODEC = RecordCodecBuilder.create(instance -> instance.group(
         UUIDUtil.CODEC.fieldOf("leader").forGetter(EntityBondState::leaderUuid),
-        Codec.INT.optionalFieldOf("leader_entity_id", -1).forGetter(EntityBondState::leaderEntityId),
         Vec3.CODEC.fieldOf("offset_from_leader").forGetter(EntityBondState::offsetFromLeader),
         Codec.BOOL.optionalFieldOf("original_no_gravity", false).forGetter(EntityBondState::originalNoGravity),
         EntityBondLink.CODEC.listOf(0, 6).fieldOf("links").forGetter(EntityBondState::links)
-    ).apply(instance, EntityBondState::new));
+    ).apply(instance, (leaderUuid, offset, originalNoGravity, links) -> new EntityBondState(
+        leaderUuid,
+        -1,
+        offset,
+        originalNoGravity,
+        links
+    )));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, EntityBondState> STREAM_CODEC = StreamCodec.of(
         (buffer, state) -> {
@@ -134,6 +139,16 @@ public record EntityBondState(
             offset,
             this.originalNoGravity,
             this.links
+        );
+    }
+
+    public EntityBondState withResolvedEntityIds(int leaderEntityId, List<EntityBondLink> links) {
+        return new EntityBondState(
+            this.leaderUuid,
+            leaderEntityId,
+            this.offsetFromLeader,
+            this.originalNoGravity,
+            links
         );
     }
 

@@ -41,12 +41,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
 
-/** 皇家钢在受热流体中催化塑料油的通用服务端过程。 */
+/** 皇家钢和浮霜金属在受热流体中催化塑料油的通用服务端过程。 */
 public final class PlasticOilCatalysis {
     public static final int BASE_WORK = 800;
     public static final double MAX_OPEN_MULTIPLIER = 0.55D;
+    public static final double FROST_METAL_EFFICIENCY = 0.5D;
 
     private PlasticOilCatalysis() {
     }
@@ -60,11 +60,22 @@ public final class PlasticOilCatalysis {
         return Math.min(MAX_OPEN_MULTIPLIER, fitted);
     }
 
+    /** 浮霜金属保留皇家钢魔力，但低温与外部热源相抵，只提供皇家钢新增种类一半的速度。 */
+    public static double catalystMultiplier(int royalSteelItems, int frostMetalItems) {
+        int royalSteel = Math.max(0, royalSteelItems);
+        int frostMetal = Math.max(0, frostMetalItems);
+        double royalMultiplier = catalystMultiplier(royalSteel);
+        if (frostMetal == 0) return royalMultiplier;
+        int combined = (int) Math.min(Integer.MAX_VALUE, (long) royalSteel + frostMetal);
+        return royalMultiplier
+            + (catalystMultiplier(combined) - royalMultiplier) * FROST_METAL_EFFICIENCY;
+    }
+
     /** 普通炼药锅和世界流体源依靠其中的掉落物推进反应。 */
     public static void tickLooseCatalyst(ItemEntity catalyst) {
         if (!(catalyst.level() instanceof ServerLevel level)
             || catalyst.isRemoved()
-            || !catalyst.getItem().is(ModItemTags.ROYAL_STEEL_ITEMS)) {
+            || !isCatalyst(catalyst.getItem())) {
             return;
         }
         BlockPos pos = catalyst.blockPosition();
@@ -108,7 +119,7 @@ public final class PlasticOilCatalysis {
             level,
             tank.getBlockPos(),
             tank.getFluidHandler(),
-            countDistinct(tank.getItemHandler()),
+            countCatalysts(tank.getItemHandler()),
             CatalyticPressHeat.power(level.getBlockState(tank.getBlockPos().below())),
             true
         );
@@ -122,7 +133,7 @@ public final class PlasticOilCatalysis {
             level,
             pos,
             cauldron.getFluidHandler(),
-            countDistinct(cauldron.getItemHandler()),
+            countCatalysts(cauldron.getItemHandler()),
             CatalyticPressHeat.power(level.getBlockState(pos.below())),
             true
         );
@@ -131,14 +142,15 @@ public final class PlasticOilCatalysis {
     /** 大型炼药锅按底部九格的实际总热功率取平均值。 */
     public static void tickLargeCauldron(ServerLevel level, LargeCauldronBlockEntity cauldron) {
         if (!cauldron.isMainPart()) return;
-        Set<Item> catalysts = new HashSet<>();
-        collectDistinct(cauldron.getInputHandler(), catalysts);
-        collectDistinct(cauldron.getOutputHandler(), catalysts);
+        Set<Item> royalSteelCatalysts = new HashSet<>();
+        Set<Item> frostMetalCatalysts = new HashSet<>();
+        collectCatalysts(cauldron.getInputHandler(), royalSteelCatalysts, frostMetalCatalysts);
+        collectCatalysts(cauldron.getOutputHandler(), royalSteelCatalysts, frostMetalCatalysts);
         tickFluidContainer(
             level,
             cauldron.getBlockPos(),
             cauldron.getFluids(),
-            catalysts.size(),
+            new CatalystCounts(royalSteelCatalysts.size(), frostMetalCatalysts.size()),
             largeCauldronHeat(level, cauldron.getBlockPos()),
             false
         );
@@ -164,7 +176,7 @@ public final class PlasticOilCatalysis {
         ServerLevel level,
         BlockPos pos,
         IFluidHandler fluids,
-        int distinctCatalysts,
+        CatalystCounts catalysts,
         double heat,
         boolean checkLid
     ) {
@@ -176,7 +188,7 @@ public final class PlasticOilCatalysis {
         if (checkLid && hasSealedLid(level, pos)) return;
 
         ProgressData data = ProgressData.get(level);
-        double workPerTick = heat * catalystMultiplier(distinctCatalysts);
+        double workPerTick = heat * catalystMultiplier(catalysts.royalSteelItems(), catalysts.frostMetalItems());
         if (workPerTick <= 0.0D) {
             syncPausedProgress(level, pos, data);
             return;
@@ -203,12 +215,9 @@ public final class PlasticOilCatalysis {
         List<ItemEntity> catalysts,
         Transformation transformation
     ) {
-        int distinct = catalysts.stream()
-            .map(item -> item.getItem().getItem())
-            .collect(Collectors.toSet())
-            .size();
+        CatalystCounts counts = countCatalysts(catalysts);
         ProgressData data = ProgressData.get(level);
-        double workPerTick = heat * catalystMultiplier(distinct);
+        double workPerTick = heat * catalystMultiplier(counts.royalSteelItems(), counts.frostMetalItems());
         if (workPerTick <= 0.0D) {
             syncPausedProgress(level, pos, data);
             return;
@@ -242,21 +251,43 @@ public final class PlasticOilCatalysis {
             ItemEntity.class,
             new AABB(pos),
             item -> !item.isRemoved()
-                && item.getItem().is(ModItemTags.ROYAL_STEEL_ITEMS)
+                && isCatalyst(item.getItem())
                 && inside.test(item)
         );
     }
 
-    private static int countDistinct(IItemHandler handler) {
-        Set<Item> result = new HashSet<>();
-        collectDistinct(handler, result);
-        return result.size();
+    private static boolean isCatalyst(ItemStack stack) {
+        return stack.is(ModItemTags.ROYAL_STEEL_ITEMS) || stack.is(ModItemTags.FROST_METAL_ITEMS);
     }
 
-    private static void collectDistinct(IItemHandler handler, Set<Item> result) {
+    private static CatalystCounts countCatalysts(IItemHandler handler) {
+        Set<Item> royalSteel = new HashSet<>();
+        Set<Item> frostMetal = new HashSet<>();
+        collectCatalysts(handler, royalSteel, frostMetal);
+        return new CatalystCounts(royalSteel.size(), frostMetal.size());
+    }
+
+    private static CatalystCounts countCatalysts(List<ItemEntity> catalysts) {
+        Set<Item> royalSteel = new HashSet<>();
+        Set<Item> frostMetal = new HashSet<>();
+        for (ItemEntity catalyst : catalysts) {
+            collectCatalyst(catalyst.getItem(), royalSteel, frostMetal);
+        }
+        return new CatalystCounts(royalSteel.size(), frostMetal.size());
+    }
+
+    private static void collectCatalysts(IItemHandler handler, Set<Item> royalSteel, Set<Item> frostMetal) {
         for (int slot = 0; slot < handler.getSlots(); slot++) {
             ItemStack stack = handler.getStackInSlot(slot);
-            if (stack.is(ModItemTags.ROYAL_STEEL_ITEMS)) result.add(stack.getItem());
+            collectCatalyst(stack, royalSteel, frostMetal);
+        }
+    }
+
+    private static void collectCatalyst(ItemStack stack, Set<Item> royalSteel, Set<Item> frostMetal) {
+        if (stack.is(ModItemTags.ROYAL_STEEL_ITEMS)) {
+            royalSteel.add(stack.getItem());
+        } else if (stack.is(ModItemTags.FROST_METAL_ITEMS)) {
+            frostMetal.add(stack.getItem());
         }
     }
 
@@ -312,6 +343,9 @@ public final class PlasticOilCatalysis {
     @FunctionalInterface
     private interface Transformation {
         boolean apply();
+    }
+
+    private record CatalystCounts(int royalSteelItems, int frostMetalItems) {
     }
 
     /** 没有方块实体的反应位置也通过维度数据持久化进度。 */

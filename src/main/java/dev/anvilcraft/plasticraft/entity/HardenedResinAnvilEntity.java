@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.entity;
 
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
@@ -11,16 +12,20 @@ import dev.dubhe.anvilcraft.api.giantanvil.IShockEntity;
 import dev.dubhe.anvilcraft.api.giantanvil.ShockAnvilBehavior;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.stats.Stats;
 import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySelector;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.common.NeoForge;
 
 import java.util.Objects;
@@ -29,6 +34,9 @@ import java.util.function.Supplier;
 
 /** 具体的硬化树脂砧，共用移动逻辑位于抽象基类中。 */
 public class HardenedResinAnvilEntity extends AbstractPlasticEntity implements IShockEntity {
+    private static final PlasticEntityGeometry GEOMETRY = PlasticEntityGeometry.of(
+        AbstractPlasticEntityBlock.ROYAL_ANVIL_COLLISION_SHAPE
+    );
     private static final double MIN_DAMAGE_SPEED = 0.58D;
     private static final float MIN_IMPACT_DAMAGE = 1.0F;
     private static final float HAMMER_IMPACT_DAMAGE = 10.0F;
@@ -59,8 +67,8 @@ public class HardenedResinAnvilEntity extends AbstractPlasticEntity implements I
     }
 
     @Override
-    protected VoxelShape getLocalCollisionShape() {
-        return AbstractPlasticEntityBlock.ROYAL_ANVIL_COLLISION_SHAPE;
+    protected PlasticEntityGeometry getLocalGeometry() {
+        return GEOMETRY;
     }
 
     @Override
@@ -75,13 +83,13 @@ public class HardenedResinAnvilEntity extends AbstractPlasticEntity implements I
     }
 
     @Override
-    protected boolean supportsHammerRotation() {
-        return true;
-    }
-
-    @Override
-    protected void openAnvilMenu(ServerPlayer player) {
-        HardenedResinAnvilMenu.open(player, this);
+    protected InteractionResult interactNormally(Player player, InteractionHand hand) {
+        if (this.level().isClientSide) return InteractionResult.SUCCESS;
+        if (!(player instanceof ServerPlayer serverPlayer)) return InteractionResult.PASS;
+        HardenedResinAnvilMenu.open(serverPlayer, this);
+        player.awardStat(Stats.INTERACT_WITH_ANVIL);
+        this.gameEvent(GameEvent.ENTITY_INTERACT, player);
+        return InteractionResult.CONSUME;
     }
 
     @Override

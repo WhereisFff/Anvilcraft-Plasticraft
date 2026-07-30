@@ -65,9 +65,37 @@ public final class PlasticEntityRenderHelper {
         PoseStack pose,
         MultiBufferSource buffers
     ) {
+        renderHammerPreviewModel(entity, dispatcher, pose, buffers, true);
+    }
+
+    public static void renderHammerPreviewModel(
+        AbstractPlasticEntity entity,
+        BlockRenderDispatcher dispatcher,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        boolean valid
+    ) {
         BlockState state = PlasticEntityRenderTransforms.canonicalize(entity.getDisplayState());
         BakedModel model = dispatcher.getBlockModel(state);
-        VertexConsumer consumer = buffers.getBuffer(ModRenderTypes.TRANSLUCENT_COLORED_OVERLAY);
+        renderHammerPreviewModel(state, model, dispatcher, pose, buffers, valid);
+    }
+
+    /** 合法姿态沿用本体淡蓝覆盖，碰撞姿态用红色顶点色将其转为淡红覆盖。 */
+    public static void renderHammerPreviewModel(
+        BlockState state,
+        BakedModel model,
+        BlockRenderDispatcher dispatcher,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        boolean valid
+    ) {
+        int greenBlue = valid ? 255 : 26;
+        VertexConsumer consumer = new PreviewColorVertexConsumer(
+            buffers.getBuffer(ModRenderTypes.TRANSLUCENT_COLORED_OVERLAY),
+            255,
+            greenBlue,
+            greenBlue
+        );
         dispatcher.getModelRenderer().renderModel(
             pose.last(),
             consumer,
@@ -125,5 +153,55 @@ public final class PlasticEntityRenderHelper {
             LightTexture.FULL_BRIGHT,
             OverlayTexture.NO_OVERLAY
         );
+    }
+
+    private static final class PreviewColorVertexConsumer implements VertexConsumer {
+        private final VertexConsumer delegate;
+        private final int red;
+        private final int green;
+        private final int blue;
+
+        private PreviewColorVertexConsumer(VertexConsumer delegate, int red, int green, int blue) {
+            this.delegate = delegate;
+            this.red = red;
+            this.green = green;
+            this.blue = blue;
+        }
+
+        @Override
+        public VertexConsumer addVertex(float x, float y, float z) {
+            this.delegate.addVertex(x, y, z);
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setColor(int red, int green, int blue, int alpha) {
+            this.delegate.setColor(this.red, this.green, this.blue, alpha);
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv(float u, float v) {
+            this.delegate.setUv(u, v);
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv1(int u, int v) {
+            this.delegate.setUv1(u, v);
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv2(int u, int v) {
+            this.delegate.setUv2(u, v);
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setNormal(float x, float y, float z) {
+            this.delegate.setNormal(x, y, z);
+            return this;
+        }
     }
 }

@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.entity.collision;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import net.minecraft.core.Direction;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
@@ -14,8 +15,17 @@ public final class PlasticEntityCollisionShapes {
     }
 
     public static VoxelShape rotate(VoxelShape shape, PlasticEntityOrientation orientation) {
+        return rotate(shape, orientation, PlasticEntityGeometry.UNIT_CUBE_PIVOT);
+    }
+
+    public static VoxelShape rotate(
+        VoxelShape shape,
+        PlasticEntityOrientation orientation,
+        Vec3 pivot
+    ) {
         Objects.requireNonNull(shape, "shape");
         Objects.requireNonNull(orientation, "orientation");
+        Objects.requireNonNull(pivot, "pivot");
         if (shape.isEmpty()) return shape;
 
         Direction xAxis = orientation.orthogonalAxis();
@@ -32,18 +42,18 @@ public final class PlasticEntityCollisionShapes {
             for (int x = 0; x < 2; x++) {
                 for (int y = 0; y < 2; y++) {
                     for (int z = 0; z < 2; z++) {
-                        double localX = (x == 0 ? box.minX : box.maxX) - 0.5D;
-                        double localY = (y == 0 ? box.minY : box.maxY) - 0.5D;
-                        double localZ = (z == 0 ? box.minZ : box.maxZ) - 0.5D;
-                        double transformedX = 0.5D
+                        double localX = (x == 0 ? box.minX : box.maxX) - pivot.x;
+                        double localY = (y == 0 ? box.minY : box.maxY) - pivot.y;
+                        double localZ = (z == 0 ? box.minZ : box.maxZ) - pivot.z;
+                        double transformedX = pivot.x
                             + localX * xAxis.getStepX()
                             + localY * yAxis.getStepX()
                             + localZ * zAxis.getStepX();
-                        double transformedY = 0.5D
+                        double transformedY = pivot.y
                             + localX * xAxis.getStepY()
                             + localY * yAxis.getStepY()
                             + localZ * zAxis.getStepY();
-                        double transformedZ = 0.5D
+                        double transformedZ = pivot.z
                             + localX * xAxis.getStepZ()
                             + localY * yAxis.getStepZ()
                             + localZ * zAxis.getStepZ();

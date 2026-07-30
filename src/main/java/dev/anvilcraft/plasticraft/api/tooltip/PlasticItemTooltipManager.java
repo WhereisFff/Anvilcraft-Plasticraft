@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.item.AbstractPlasticEntityItem;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.item.ResinAnvilItem;
+import dev.anvilcraft.plasticraft.item.UniversalPlasticBlockItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticGranuleItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticMeltBucketItem;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
@@ -62,20 +63,24 @@ public final class PlasticItemTooltipManager {
             AnvilcraftPlasticraft.of("plastic_oil_bucket"),
             "The second-layer condensate and primary feedstock for later plastic processing",
             """
-                Heat it from directly below while it touches a royal-steel item to create universal plastic melt
-                Open reactions scale logarithmically from 25% speed; a sealed catalytic press lid runs at full speed
+                Heat it from directly below while it touches a royal-steel or frost-metal item to create universal plastic melt
+                Royal steel starts at 25% speed and reaches 50% with eight distinct items; frost metal runs at half speed
                 A Large Cauldron averages the actual heat output of all nine blocks beneath it"""
         );
         registerNormal(
             AnvilcraftPlasticraft.of("crude_oil_acid_bucket"),
             "The third-layer essence separated from gaseous crude oil"
         );
+        registerNormal(
+            AnvilcraftPlasticraft.of("universal_plastic"),
+            "A movable, functionless product formed whenever world-placed universal plastic melt solidifies"
+        );
         register(
             AnvilcraftPlasticraft.of("catalytic_press_lid"),
             "A sealed full-speed royal-steel catalyst for converting plastic oil",
             """
-                Plastic oil reacts with royal-steel items while heated from directly below
-                An open vessel starts at 25% speed; eight distinct catalysts reach 50%
+                Plastic oil reacts with royal-steel or frost-metal items while heated from directly below
+                Royal steel starts at 25% speed; frost metal runs at half the open-catalysis speed
                 Bond this lid above a vessel for full speed, then press it with a falling anvil"""
         );
         register(
@@ -181,6 +186,7 @@ public final class PlasticItemTooltipManager {
         }
         if (stack.getItem() instanceof UniversalPlasticGranuleItem
             || stack.getItem() instanceof UniversalPlasticMeltBucketItem
+            || stack.getItem() instanceof UniversalPlasticBlockItem
         ) {
             dynamicTooltip.add(Component.translatable(
                 "tooltip.anvilcraftplasticraft.color",

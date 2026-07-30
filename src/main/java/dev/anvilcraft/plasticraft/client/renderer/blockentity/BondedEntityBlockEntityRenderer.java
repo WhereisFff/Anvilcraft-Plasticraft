@@ -49,10 +49,9 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
         Entity renderEntity = blockEntity.getOrCreateRenderEntity();
         if (renderEntity instanceof AbstractPlasticEntity plasticEntity) {
             PlasticEntityOrientation orientation = blockEntity.getPlasticOrientation();
-            Vec3 entityPosition = orientation.entityPosition(
+            Vec3 entityPosition = plasticEntity.plasticraft$placementPosition(
                 blockEntity.getBlockPos(),
-                plasticEntity.getBbWidth(),
-                plasticEntity.getBbHeight()
+                orientation
             );
             Vec3 relative = entityPosition.subtract(Vec3.atLowerCornerOf(blockEntity.getBlockPos()));
             EntityRenderer<? super AbstractPlasticEntity> renderer = Minecraft.getInstance()

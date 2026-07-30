@@ -7,10 +7,8 @@ import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
 import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticOilCatalysisRenderer;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
-import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.init.block.ModFluids;
 import dev.dubhe.anvilcraft.api.itemhandler.ItemHandlerUtil;
-import dev.dubhe.anvilcraft.client.init.ModRenderTypes;
 import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -59,12 +57,18 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
         MultiBufferSource buffers,
         int packedLight
     ) {
-        PlasticEntityOrientation preview = PlasticHammerScreen.getPreviewOrientation(entity);
+        PlasticHammerScreen.HammerPreview preview = PlasticHammerScreen.getPreview(entity);
         if (preview != null) {
             pose.pushPose();
-            PlasticEntityRenderTransforms.applyPreview(pose, entity, preview);
-            PlasticEntityRenderHelper.renderHammerPreviewModel(entity, this.dispatcher, pose, buffers);
-            this.renderOutlet(entity, pose, buffers, packedLight, true);
+            PlasticEntityRenderTransforms.applyPreview(pose, entity, preview.orientation());
+            PlasticEntityRenderHelper.renderHammerPreviewModel(
+                entity,
+                this.dispatcher,
+                pose,
+                buffers,
+                preview.valid()
+            );
+            this.renderOutlet(entity, pose, buffers, packedLight, true, preview.valid());
             pose.popPose();
             pose.pushPose();
             PlasticEntityRenderTransforms.applyWorldAlignedPreview(pose, entity);
@@ -84,7 +88,7 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
         pose.pushPose();
         PlasticEntityRenderTransforms.apply(pose, entity, partialTick);
         PlasticEntityRenderHelper.renderBlock(entity, this.dispatcher, pose, buffers, packedLight);
-        this.renderOutlet(entity, pose, buffers, packedLight, false);
+        this.renderOutlet(entity, pose, buffers, packedLight, false, true);
         flush(buffers);
         if (!items.isEmpty() && !gravityAlignedItems && !entity.shouldEjectStoredItems()) {
             this.renderItems(entity, items, fill, false, false, pose, buffers, packedLight);
@@ -160,7 +164,8 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
         PoseStack pose,
         MultiBufferSource buffers,
         int packedLight,
-        boolean preview
+        boolean preview,
+        boolean previewValid
     ) {
         Direction localDirection = entity.getOutletLocalDirection();
         if (localDirection == null) return;
@@ -178,9 +183,21 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
         pose.mulPose(Axis.YP.rotationDegrees(rotation));
         pose.translate(-0.5D, -0.5D, -0.5D);
         BakedModel model = Minecraft.getInstance().getModelManager().getModel(OUTLET_MODEL);
+        if (preview) {
+            PlasticEntityRenderHelper.renderHammerPreviewModel(
+                entity.getDisplayState(),
+                model,
+                this.dispatcher,
+                pose,
+                buffers,
+                previewValid
+            );
+            pose.popPose();
+            return;
+        }
         this.dispatcher.getModelRenderer().renderModel(
             pose.last(),
-            buffers.getBuffer(preview ? ModRenderTypes.TRANSLUCENT_COLORED_OVERLAY : Sheets.cutoutBlockSheet()),
+            buffers.getBuffer(Sheets.cutoutBlockSheet()),
             entity.getDisplayState(),
             model,
             1.0F,

@@ -116,7 +116,7 @@ public final class CondenserTowerGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate("11x12x11")
-    @TestHolder(description = "Large cauldrons vaporize only their top oil layer at five millibuckets per jet")
+    @TestHolder(description = "Normal jets buffer two five-millibucket oil portions into one condenser batch")
     static void largeCauldronVaporizationUsesTopLayer(ExtendedGameTestHelper helper) {
         BlockPos base = new BlockPos(5, 2, 5);
         LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
@@ -143,17 +143,29 @@ public final class CondenserTowerGameTests {
             );
             check(cauldron.getTopFluid().getAmount() == 995,
                 "one jet did not vaporize 5 mB from the top oil layer");
-            FluidStack condensed = tower.getFluidHandler().getFluidInTank(0);
-            check(condensed.is(HIGH_HEAT_FUEL.get())
-                    && condensed.getAmount() == 5,
-                "the condenser tower did not condense 5 mB of high-heat fuel through Yukkuri; fluid="
-                    + BuiltInRegistries.FLUID.getKey(condensed.getFluid())
-                    + ", amount=" + condensed.getAmount()
-                    + ", gas=" + tower.getGasId()
-                    + ", gasAmount=" + tower.getGasAmount());
-            check(tower.getGasAmount() == 0,
-                "the condenser tower retained gas after completing a 5 mB condensation batch");
-            helper.succeed();
+            check(tower.getStoredFluid().isEmpty() && tower.getGasAmount() == 5,
+                "the first 5 mB portion did not remain buffered below the 10 mB condensation batch");
+
+            // 普通喷流第二刻再送入 5 mB，第一层此时才应凑满并结算一个 10 mB 批次。
+            helper.runAfterDelay(1, () -> {
+                CondenserTowerProcess.tickLargeCauldron(
+                    (ServerLevel) helper.getLevel(),
+                    cauldron
+                );
+                check(cauldron.getTopFluid().getAmount() == 990,
+                    "two normal-jet ticks did not vaporize 10 mB from the top oil layer");
+                FluidStack condensed = tower.getFluidHandler().getFluidInTank(0);
+                check(condensed.is(HIGH_HEAT_FUEL.get())
+                        && condensed.getAmount() == 10,
+                    "the condenser tower did not condense the 10 mB high-heat-fuel batch; fluid="
+                        + BuiltInRegistries.FLUID.getKey(condensed.getFluid())
+                        + ", amount=" + condensed.getAmount()
+                        + ", gas=" + tower.getGasId()
+                        + ", gasAmount=" + tower.getGasAmount());
+                check(tower.getGasAmount() == 0,
+                    "the condenser tower retained gas after completing a 10 mB condensation batch");
+                helper.succeed();
+            });
         });
     }
 
@@ -307,14 +319,14 @@ public final class CondenserTowerGameTests {
         check(cauldron.getTopFluid().getAmount() == 950,
             "enhanced jet did not vaporize 50 mB of crude oil");
         check(first.getStoredFluid().is(HIGH_HEAT_FUEL.get())
-                && first.getStoredFluid().getAmount() == 5,
-            "first tower did not condense 5 mB of high-heat fuel");
+                && first.getStoredFluid().getAmount() == 10,
+            "first tower did not condense 10 mB of high-heat fuel");
         check(second.getStoredFluid().is(PLASTIC_OIL.get())
-                && second.getStoredFluid().getAmount() == 40,
-            "second tower did not condense 40 mB of plastic oil");
+                && second.getStoredFluid().getAmount() == 30,
+            "second tower did not condense 30 mB of plastic oil");
         check(third.getStoredFluid().is(CRUDE_OIL_ACID.get())
-                && third.getStoredFluid().getAmount() == 5,
-            "third tower did not condense 5 mB of crude-oil essence");
+                && third.getStoredFluid().getAmount() == 10,
+            "third tower did not condense 10 mB of crude-oil essence");
         helper.succeed();
     }
 
@@ -347,13 +359,13 @@ public final class CondenserTowerGameTests {
         check(cauldron.getTopFluid().getAmount() == 950,
             "a full middle tower stopped open-stack vaporization");
         check(first.getStoredFluid().is(HIGH_HEAT_FUEL.get())
-                && first.getStoredFluid().getAmount() == 5,
-            "the first tower did not condense its 5 mB share");
+                && first.getStoredFluid().getAmount() == 10,
+            "the first tower did not condense its 10 mB share");
         check(second.getGasAmount() == TOWER_CAPACITY
                 && second.getStoredFluid().getAmount() == TOWER_CAPACITY,
             "the full middle tower changed while bypassing vapor");
         check(third.getStoredFluid().is(CRUDE_OIL_ACID.get())
-                && third.getStoredFluid().getAmount() == 5,
+                && third.getStoredFluid().getAmount() == 10,
             "vapor did not bypass the full middle tower and reach the third layer");
         helper.succeed();
     }
@@ -696,7 +708,7 @@ public final class CondenserTowerGameTests {
         CondenserTowerBlockEntity tower = placeTower(helper, helper.absolutePos(base).above(3));
 
         check(tower.collectGas(CondenserGas.GASEOUS_EXPERIENCE, 250) == 250,
-            "tower did not accept the first gaseous-experience condensation batch");
+            "tower did not accept five 50 mB gaseous-experience condensation batches");
         CondenserTowerProcess.tickLargeCauldron((ServerLevel) helper.getLevel(), cauldron);
         check(tower.getStoredFluid().is(ModFluids.EXP_FLUID.get())
                 && tower.getStoredFluid().getAmount() == 250

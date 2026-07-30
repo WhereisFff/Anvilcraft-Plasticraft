@@ -32,10 +32,7 @@ public final class PlasticEntityRenderTransforms {
             : state;
     }
 
-    /**
-     * 从 Entity 的底面中心原点移动到方块视觉中心，应用离散朝向，
-     * 随后还原方块模型的 [0, 1] 立方体原点。
-     */
+    /** 按实体几何声明的枢轴和原点应用离散朝向。 */
     public static void apply(PoseStack pose, AbstractPlasticEntity entity) {
         apply(pose, entity, entity.getOrientation());
     }
@@ -81,18 +78,11 @@ public final class PlasticEntityRenderTransforms {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(orientation, "orientation");
 
-        pose.translate(0.0D, entity.getBbHeight() * 0.5D, 0.0D);
-        Direction face = orientation.attachmentFace();
-        double faceSize = face.getAxis() == Direction.Axis.Y ? entity.getBbHeight() : entity.getBbWidth();
-        double attachmentInset = Math.max(0.0D, (1.0D - faceSize) * 0.5D);
-        // 从碰撞中心移回所占方块单元的中心。
-        pose.translate(
-            face.getStepX() * attachmentInset,
-            face.getStepY() * attachmentInset,
-            face.getStepZ() * attachmentInset
-        );
+        Vec3 pivot = entity.plasticraft$getGeometry().rotationPivot();
+        Vec3 origin = entity.plasticraft$getGeometry().entityOrigin();
+        pose.translate(pivot.x - origin.x, pivot.y - origin.y, pivot.z - origin.z);
         pose.mulPose(ROTATIONS[rotationIndex(orientation)]);
-        pose.translate(-0.5D, -0.5D, -0.5D);
+        pose.translate(-pivot.x, -pivot.y, -pivot.z);
     }
 
     /** 以实体当前位置应用预览朝向，不将自由移动后的实体吸附回方块网格。 */
@@ -104,11 +94,12 @@ public final class PlasticEntityRenderTransforms {
         apply(pose, entity, orientation);
     }
 
-    /** 将世界坐标轴模型的中心放到实体碰撞箱中心。 */
+    /** 将未旋转模型的声明原点放到实体位置。 */
     public static void applyWorldAlignedPreview(PoseStack pose, AbstractPlasticEntity entity) {
         Objects.requireNonNull(pose, "pose");
         Objects.requireNonNull(entity, "entity");
-        pose.translate(-0.5D, entity.getBbHeight() * 0.5D - 0.5D, -0.5D);
+        Vec3 origin = entity.plasticraft$getGeometry().entityOrigin();
+        pose.translate(-origin.x, -origin.y, -origin.z);
     }
 
     /** 在已经移动到方块中心的 PoseStack 上应用实体的离散朝向。 */
@@ -129,11 +120,7 @@ public final class PlasticEntityRenderTransforms {
         return new RenderOverrideScope(previous);
     }
 
-    /**
-     * Returns the model's semantic bottom-center offset from the entity position.
-     * The entity position is always the world-Y bottom-center of its collision box,
-     * which is not the model bottom after a wall or ceiling rotation.
-     */
+    /** 返回模型局部底面中心相对实体位置的插值偏移。 */
     public static Vec3 bottomCenterOffset(
         AbstractPlasticEntity entity,
         PlasticEntityOrientation start,
@@ -151,26 +138,58 @@ public final class PlasticEntityRenderTransforms {
         PlasticEntityOrientation target,
         float progress
     ) {
+        return facePointOffset(
+            entity,
+            entity.plasticraft$getGeometry().surfaceCenter(localFace),
+            start,
+            target,
+            progress
+        );
+    }
+
+    /** 返回胶合面对齐锚点相对实体位置的插值偏移。 */
+    public static Vec3 faceAlignmentOffset(
+        AbstractPlasticEntity entity,
+        Direction localFace,
+        PlasticEntityOrientation start,
+        PlasticEntityOrientation target,
+        float progress
+    ) {
+        return facePointOffset(
+            entity,
+            entity.plasticraft$getGeometry().faceAlignmentPoint(localFace),
+            start,
+            target,
+            progress
+        );
+    }
+
+    private static Vec3 facePointOffset(
+        AbstractPlasticEntity entity,
+        Vec3 localFaceCenter,
+        PlasticEntityOrientation start,
+        PlasticEntityOrientation target,
+        float progress
+    ) {
         Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(localFace, "localFace");
+        Objects.requireNonNull(localFaceCenter, "localFaceCenter");
         Objects.requireNonNull(start, "start");
         Objects.requireNonNull(target, "target");
         float clamped = Math.clamp(progress, 0.0F, 1.0F);
-        Vec3 startOffset = attachmentOffset(entity, start.attachmentFace());
-        Vec3 targetOffset = attachmentOffset(entity, target.attachmentFace());
-        Vec3 attachmentOffset = startOffset.lerp(targetOffset, clamped);
+        Vec3 pivot = entity.plasticraft$getGeometry().rotationPivot();
+        Vec3 origin = entity.plasticraft$getGeometry().entityOrigin();
         Quaternionf rotation = new Quaternionf(ROTATIONS[rotationIndex(start)])
             .slerp(ROTATIONS[rotationIndex(target)], clamped);
-        Vector3f localFaceCenter = new Vector3f(
-            localFace.getStepX() * 0.5F,
-            localFace.getStepY() * 0.5F,
-            localFace.getStepZ() * 0.5F
+        Vector3f rotatedOffset = new Vector3f(
+            (float) (localFaceCenter.x - pivot.x),
+            (float) (localFaceCenter.y - pivot.y),
+            (float) (localFaceCenter.z - pivot.z)
         ).rotate(rotation);
         return new Vec3(
-            localFaceCenter.x(),
-            entity.getBbHeight() * 0.5D + localFaceCenter.y(),
-            localFaceCenter.z()
-        ).add(attachmentOffset);
+            pivot.x - origin.x + rotatedOffset.x(),
+            pivot.y - origin.y + rotatedOffset.y(),
+            pivot.z - origin.z + rotatedOffset.z()
+        );
     }
 
     private static void applyInterpolated(
@@ -180,21 +199,13 @@ public final class PlasticEntityRenderTransforms {
         PlasticEntityOrientation target,
         float progress
     ) {
-        pose.translate(0.0D, entity.getBbHeight() * 0.5D, 0.0D);
-        Vec3 startOffset = attachmentOffset(entity, start.attachmentFace());
-        Vec3 targetOffset = attachmentOffset(entity, target.attachmentFace());
-        Vec3 offset = startOffset.lerp(targetOffset, progress);
-        pose.translate(offset.x, offset.y, offset.z);
+        Vec3 pivot = entity.plasticraft$getGeometry().rotationPivot();
+        Vec3 origin = entity.plasticraft$getGeometry().entityOrigin();
+        pose.translate(pivot.x - origin.x, pivot.y - origin.y, pivot.z - origin.z);
         Quaternionf rotation = new Quaternionf(ROTATIONS[rotationIndex(start)])
             .slerp(ROTATIONS[rotationIndex(target)], progress);
         pose.mulPose(rotation);
-        pose.translate(-0.5D, -0.5D, -0.5D);
-    }
-
-    private static Vec3 attachmentOffset(AbstractPlasticEntity entity, Direction face) {
-        double faceSize = face.getAxis() == Direction.Axis.Y ? entity.getBbHeight() : entity.getBbWidth();
-        double attachmentInset = Math.max(0.0D, (1.0D - faceSize) * 0.5D);
-        return Vec3.atLowerCornerOf(face.getNormal()).scale(attachmentInset);
+        pose.translate(-pivot.x, -pivot.y, -pivot.z);
     }
 
     private static Quaternionf[] createRotations() {

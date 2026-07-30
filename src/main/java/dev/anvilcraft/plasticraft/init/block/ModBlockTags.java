@@ -16,6 +16,10 @@ public final class ModBlockTags {
         Registries.BLOCK,
         AnvilcraftPlasticraft.of("plastic_melt_coolants")
     );
+    public static final TagKey<Block> PLASTIC_PRODUCTS = TagKey.create(
+        Registries.BLOCK,
+        AnvilcraftPlasticraft.of("plastic_products")
+    );
 
     private ModBlockTags() {
     }

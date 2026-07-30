@@ -131,7 +131,7 @@ public final class AdhesiveBondingService {
             return false;
         }
 
-        EntityBondManager.prepareLeader(level, target);
+        EntityBondManager.prepareAlignedLeader(level, target);
 
         boolean plastic = target instanceof AbstractPlasticEntity;
         byte startOrientation = plastic
@@ -351,7 +351,7 @@ public final class AdhesiveBondingService {
             return false;
         }
 
-        EntityBondManager.prepareLeader(level, movingEntity);
+        EntityBondManager.prepareAlignedLeader(level, movingEntity);
         boolean plastic = movingEntity instanceof AbstractPlasticEntity;
         byte startOrientation = plastic
             ? ((AbstractPlasticEntity) movingEntity).getOrientation().pack()
@@ -417,8 +417,8 @@ public final class AdhesiveBondingService {
         entity.setPos(position);
         entity.hasImpulse = true;
         entity.hurtMarked = true;
-        if (transit.plastic() && rawProgress >= 0.72D && entity instanceof AbstractPlasticEntity plasticEntity) {
-            plasticEntity.setOrientation(PlasticEntityOrientation.unpack(transit.targetOrientation()));
+        if (transit.plastic() && rawProgress >= 0.72D) {
+            applyTransitOrientation(entity, transit, transit.targetOrientation());
         }
         if (validateAndComplete && !entity.level().isClientSide && rawProgress >= 1.0D) {
             completeTransit(entity, transit, supportEntity);
@@ -433,6 +433,14 @@ public final class AdhesiveBondingService {
         if (!(entity.level() instanceof ServerLevel level)) return;
         if (transit.hasEntityTarget()) {
             if (supportEntity == null) {
+                cancelTransit(entity, transit);
+                return;
+            }
+            if (entity instanceof AbstractPlasticEntity plasticEntity
+                && !plasticEntity.plasticraft$canOccupyBlocks(
+                    plasticEntity.getOrientation(),
+                    plasticEntity.position()
+                )) {
                 cancelTransit(entity, transit);
                 return;
             }
@@ -468,6 +476,8 @@ public final class AdhesiveBondingService {
                 cancelTransit(entity, transit);
                 return;
             }
+            Entity leader = EntityBondManager.resolveLeader(level, supportEntity);
+            if (leader != null) EntityBondManager.prepareAlignedLeader(level, leader);
             entity.removeData(ModAttachments.ADHESIVE_TRANSIT);
             level.playSound(
                 null,
@@ -619,9 +629,7 @@ public final class AdhesiveBondingService {
         entity.setPos(transit.targetPosition());
         entity.hasImpulse = true;
         entity.hurtMarked = true;
-        if (transit.plastic() && entity instanceof AbstractPlasticEntity plasticEntity) {
-            plasticEntity.setOrientation(PlasticEntityOrientation.unpack(transit.targetOrientation()));
-        }
+        applyTransitOrientation(entity, transit, transit.targetOrientation());
     }
 
     private static Entity resolveSupportEntity(Entity movingEntity, AdhesiveTransit transit) {
@@ -1101,14 +1109,22 @@ public final class AdhesiveBondingService {
 
     private static void cancelTransit(Entity entity, AdhesiveTransit transit) {
         entity.removeData(ModAttachments.ADHESIVE_TRANSIT);
-        if (transit.plastic() && entity instanceof AbstractPlasticEntity plasticEntity) {
-            plasticEntity.setOrientation(PlasticEntityOrientation.unpack(transit.startOrientation()));
-        }
+        applyTransitOrientation(entity, transit, transit.startOrientation());
         entity.setNoGravity(transit.originalNoGravity());
         entity.setDeltaMovement(Vec3.ZERO);
         entity.fallDistance = 0.0F;
         entity.hasImpulse = true;
         entity.hurtMarked = true;
+    }
+
+    private static void applyTransitOrientation(Entity entity, AdhesiveTransit transit, byte orientation) {
+        if (!transit.plastic() || !(entity instanceof AbstractPlasticEntity plasticEntity)) return;
+        PlasticEntityOrientation targetOrientation = PlasticEntityOrientation.unpack(orientation);
+        if (plasticEntity.getOrientation().equals(targetOrientation)) return;
+        plasticEntity.setOrientation(targetOrientation);
+        if (entity.level() instanceof ServerLevel level) {
+            EntityBondManager.prepareAlignedLeader(level, plasticEntity);
+        }
     }
 
     private static void consumeBucket(Player player, InteractionHand hand) {

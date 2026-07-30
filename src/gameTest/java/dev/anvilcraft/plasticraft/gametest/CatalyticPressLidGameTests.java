@@ -8,6 +8,7 @@ import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
+import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFallingBlockSupport;
 import dev.anvilcraft.plasticraft.event.CatalyticPressAnvilEvents;
@@ -19,8 +20,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.entity.item.FallingBlockEntity;
-import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -269,10 +270,10 @@ public final class CatalyticPressLidGameTests {
         helper.succeed();
     }
 
-    @GameTest(timeoutTicks = 45)
+    @GameTest(timeoutTicks = 135)
     @EmptyTemplate(value = "7x9x7", floor = true)
-    @TestHolder(description = "Falling anvils break into items on both plastic anvil entities")
-    static void fallingAnvilsBreakOnPlasticAnvilEntities(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "Falling anvils settle on the aligned collision tops of both plastic anvil entities")
+    static void fallingAnvilsLandOnPlasticAnvilEntities(ExtendedGameTestHelper helper) {
         ResinAnvilEntity resinAnvil = spawnResinAnvil(
             helper,
             new BlockPos(2, 1, 3),
@@ -289,45 +290,17 @@ public final class CatalyticPressLidGameTests {
         spawnFallingAnvil(helper, new BlockPos(2, 7, 3), -0.1D);
         spawnFallingAnvil(helper, new BlockPos(4, 7, 3), -0.1D);
 
-        helper.runAfterDelay(35, () -> {
+        helper.runAfterDelay(120, () -> {
             check(resinAnvil.isAlive(), "falling anvil destroyed the resin anvil entity");
             check(hardenedAnvil.isAlive(), "falling anvil destroyed the hardened resin anvil entity");
-            assertFallingAnvilDidNotBlockify(helper, new BlockPos(2, 1, 3));
-            assertFallingAnvilDidNotBlockify(helper, new BlockPos(4, 1, 3));
-            int droppedAnvils = helper.getLevel().getEntitiesOfClass(
-                ItemEntity.class,
-                new AABB(
-                    Vec3.atLowerCornerOf(helper.absolutePos(BlockPos.ZERO)),
-                    Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(7, 9, 7)))
-                ),
-                item -> item.getItem().is(Blocks.ANVIL.asItem())
-            ).stream().mapToInt(item -> item.getItem().getCount()).sum();
-            check(droppedAnvils == 2, "plastic anvil entities produced " + droppedAnvils + " anvil drops");
-            helper.succeed();
-        });
-    }
-
-    @GameTest(timeoutTicks = 10)
-    @EmptyTemplate(value = "7x5x7", floor = true)
-    @TestHolder(description = "Falling anvils break into items on both plastic anvil blocks")
-    static void fallingAnvilsBreakOnPlasticAnvilBlocks(ExtendedGameTestHelper helper) {
-        helper.setBlock(new BlockPos(2, 1, 3), ModBlocks.RESIN_ANVIL.get());
-        helper.setBlock(new BlockPos(4, 1, 3), ModBlocks.HARDEND_RESIN_ANVIL.get());
-        spawnFallingAnvil(helper, new BlockPos(2, 2, 3), -0.1D);
-        spawnFallingAnvil(helper, new BlockPos(4, 2, 3), -0.1D);
-
-        helper.runAfterDelay(3, () -> {
-            assertFallingAnvilDidNotBlockify(helper, new BlockPos(2, 1, 3));
-            assertFallingAnvilDidNotBlockify(helper, new BlockPos(4, 1, 3));
-            int droppedAnvils = helper.getLevel().getEntitiesOfClass(
-                ItemEntity.class,
-                new AABB(
-                    Vec3.atLowerCornerOf(helper.absolutePos(BlockPos.ZERO)),
-                    Vec3.atLowerCornerOf(helper.absolutePos(new BlockPos(7, 5, 7)))
-                ),
-                item -> item.getItem().is(Blocks.ANVIL.asItem())
-            ).stream().mapToInt(item -> item.getItem().getCount()).sum();
-            check(droppedAnvils == 2, "plastic anvil blocks produced " + droppedAnvils + " anvil drops");
+            check(
+                helper.getBlockState(new BlockPos(2, 2, 3)).is(BlockTags.ANVIL),
+                "falling anvil did not land on the resin anvil collision top"
+            );
+            check(
+                helper.getBlockState(new BlockPos(4, 2, 3)).is(BlockTags.ANVIL),
+                "falling anvil did not land on the hardened resin anvil collision top"
+            );
             helper.succeed();
         });
     }
@@ -365,6 +338,47 @@ public final class CatalyticPressLidGameTests {
                 ).isEmpty();
                 check(fallingAgain, "anvil did not continue falling after its support moved");
                 helper.succeed();
+            });
+        });
+    }
+
+    @GameTest(timeoutTicks = 55)
+    @EmptyTemplate(value = "5x8x5", floor = true)
+    @TestHolder(description = "A short plastic collision holds a landed anvil while its logical cell remains occupied")
+    static void fallingAnvilUsesAlignedShortCollisionTop(ExtendedGameTestHelper helper) {
+        BlockPos snowPos = new BlockPos(2, 1, 2);
+        helper.setBlock(snowPos, Blocks.SNOW);
+        UniversalPlasticEntity support = spawnUniversalPlastic(
+            helper,
+            Vec3.atBottomCenterOf(helper.absolutePos(snowPos)).add(0.0D, 2.0D / 16.0D, 0.0D)
+        );
+        spawnFallingAnvil(helper, new BlockPos(2, 6, 2), -0.1D);
+        BlockPos landedPos = new BlockPos(2, 2, 2);
+
+        helper.runAfterDelay(30, () -> {
+            check(
+                helper.getBlockState(landedPos).is(BlockTags.ANVIL),
+                "anvil did not land on the grid-aligned short collision top"
+            );
+            check(
+                PlasticFallingBlockSupport.hasSupport(helper.getLevel(), helper.absolutePos(landedPos), null),
+                "short collision top was not recorded as the landed anvil support"
+            );
+            support.setPos(support.position().add(0.0D, -1.0D / 16.0D, 0.0D));
+            check(
+                !PlasticFallingBlockSupport.hasSupport(helper.getLevel(), helper.absolutePos(landedPos), null),
+                "misaligned short collision top still supported the landed anvil"
+            );
+            helper.runAfterDelay(2, () -> {
+                check(
+                    helper.getBlockState(landedPos).is(BlockTags.ANVIL),
+                    "anvil fell while the plastic entity still occupied the cell below"
+                );
+                support.setPos(support.position().add(2.0D, 0.0D, 0.0D));
+                helper.runAfterDelay(2, () -> {
+                    check(helper.getBlockState(landedPos).isAir(), "anvil stayed fixed after the cell below became empty");
+                    helper.succeed();
+                });
             });
         });
     }
@@ -485,6 +499,23 @@ public final class CatalyticPressLidGameTests {
         return cauldron;
     }
 
+    private static UniversalPlasticEntity spawnUniversalPlastic(
+        ExtendedGameTestHelper helper,
+        Vec3 position
+    ) {
+        UniversalPlasticEntity plastic = new UniversalPlasticEntity(
+            ModEntities.UNIVERSAL_PLASTIC.get(),
+            helper.getLevel(),
+            position,
+            ModBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            ModBlocks.UNIVERSAL_PLASTIC.asStack(),
+            PlasticEntityOrientation.DEFAULT
+        );
+        plastic.setNoGravity(true);
+        check(helper.getLevel().addFreshEntity(plastic), "failed to add universal plastic support");
+        return plastic;
+    }
+
     private static BondedEntityBlockEntity bondedBlockEntity(
         ExtendedGameTestHelper helper,
         BlockPos relativePos
@@ -514,17 +545,6 @@ public final class CatalyticPressLidGameTests {
 
     private static boolean close(double first, double second) {
         return Math.abs(first - second) <= EPSILON;
-    }
-
-    private static void assertFallingAnvilDidNotBlockify(
-        ExtendedGameTestHelper helper,
-        BlockPos supportPos
-    ) {
-        check(!helper.getBlockState(supportPos).is(Blocks.ANVIL), "falling anvil overlapped its plastic support");
-        check(
-            !helper.getBlockState(supportPos.above()).is(Blocks.ANVIL),
-            "falling anvil blockified above its incomplete plastic support"
-        );
     }
 
     private static void check(boolean condition, String message) {

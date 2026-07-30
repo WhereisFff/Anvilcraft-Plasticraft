@@ -36,8 +36,8 @@
 		},
 		{
 			"name": "Anvil top_outline",
-			"from": [13, 16, 15.9],
-			"to": [3, 10, 0.1],
+			"from": [13, 16, 16],
+			"to": [3, 10, 0],
 			"rotation": {"angle": 0, "axis": "y", "origin": [8, 13, 8]},
 			"faces": {
 				"north": {"uv": [3, 0, 13, 6], "rotation": 180, "texture": "#0", "cullface": "south"},
@@ -51,7 +51,7 @@
 		{
 			"name": "Anvil base_outline",
 			"from": [14, 4, 14],
-			"to": [2, 0.1, 2],
+			"to": [2, 0, 2],
 			"rotation": {"angle": 0, "axis": "y", "origin": [8, 2, 8]},
 			"faces": {
 				"north": {"uv": [2, 12, 14, 16], "rotation": 180, "texture": "#0"},

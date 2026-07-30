@@ -664,7 +664,7 @@ public final class AdhesiveSelectionClientHandler {
             double movementProgress = smoothstep(rawProgress);
             double rotationProgress = smoothstep(Math.clamp((rawProgress - 0.72D) / 0.28D, 0.0D, 1.0D));
             Vec3 position = positionAt(entityPath, movementProgress);
-            Vec3 faceOffset = PlasticEntityRenderTransforms.faceCenterOffset(
+            Vec3 faceOffset = PlasticEntityRenderTransforms.faceAlignmentOffset(
                 entity,
                 selectedFace,
                 startOrientation,
@@ -682,13 +682,18 @@ public final class AdhesiveSelectionClientHandler {
         @Nullable BlockPos supportPos,
         Direction face
     ) {
-        if (supportEntity != null) return appendSurfaceEndpoint(path, supportEntity.getBoundingBox(), face);
+        if (supportEntity != null) {
+            return appendSurfaceEndpoint(path, AdhesiveFaces.worldFaceAlignmentPoint(supportEntity, face));
+        }
         return supportPos == null ? path : appendSurfaceEndpoint(path, supportPos, face);
     }
 
     private static List<Vec3> appendSurfaceEndpoint(List<Vec3> path, AABB box, Direction face) {
+        return appendSurfaceEndpoint(path, boxFaceCenter(box, face));
+    }
+
+    private static List<Vec3> appendSurfaceEndpoint(List<Vec3> path, Vec3 surface) {
         if (path.isEmpty()) return path;
-        Vec3 surface = boxFaceCenter(box, face);
         if (path.getLast().distanceToSqr(surface) <= 0.0025D) return path;
         List<Vec3> result = new ArrayList<>(path.size() + 1);
         result.addAll(path);

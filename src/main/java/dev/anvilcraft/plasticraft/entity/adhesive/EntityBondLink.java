@@ -20,9 +20,13 @@ public record EntityBondLink(
     public static final Codec<EntityBondLink> CODEC = RecordCodecBuilder.create(instance -> instance.group(
         Direction.CODEC.fieldOf("face").forGetter(EntityBondLink::face),
         UUIDUtil.CODEC.fieldOf("other_entity").forGetter(EntityBondLink::otherEntityUuid),
-        Codec.INT.optionalFieldOf("other_entity_id", -1).forGetter(EntityBondLink::otherEntityId),
         Direction.CODEC.fieldOf("other_face").forGetter(EntityBondLink::otherFace)
-    ).apply(instance, EntityBondLink::new));
+    ).apply(instance, (face, otherEntityUuid, otherFace) -> new EntityBondLink(
+        face,
+        otherEntityUuid,
+        -1,
+        otherFace
+    )));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, EntityBondLink> STREAM_CODEC = StreamCodec.of(
         (buffer, link) -> {

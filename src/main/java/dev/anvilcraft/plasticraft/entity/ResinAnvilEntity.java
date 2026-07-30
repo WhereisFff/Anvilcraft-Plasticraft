@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.entity;
 import dev.anvilcraft.plasticraft.api.entity.ElasticCollisionEntity;
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.ResinShockDropBehavior;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
@@ -13,7 +14,6 @@ import dev.dubhe.anvilcraft.block.item.HasMobBlockItem;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.util.BlockMiningEffect;
 import net.minecraft.core.Direction;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
@@ -22,6 +22,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -29,7 +30,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.List;
 import java.util.Objects;
@@ -43,6 +43,9 @@ import static dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK;
  * 常规放置和贴实体面放置仍由共用基类负责。
  */
 public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCollisionEntity, IShockEntity {
+    private static final PlasticEntityGeometry GEOMETRY = PlasticEntityGeometry.of(
+        AbstractPlasticEntityBlock.ROYAL_ANVIL_COLLISION_SHAPE
+    );
     private static final double BLOCK_RESTITUTION = 0.80D;
     private static final double ENTITY_RESTITUTION = 0.72D;
     private static final double TANGENTIAL_RETENTION = 0.68D;
@@ -84,8 +87,8 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
     }
 
     @Override
-    protected VoxelShape getLocalCollisionShape() {
-        return AbstractPlasticEntityBlock.ROYAL_ANVIL_COLLISION_SHAPE;
+    protected PlasticEntityGeometry getLocalGeometry() {
+        return GEOMETRY;
     }
 
     @Override
@@ -95,16 +98,6 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
         stack = stack.copyWithCount(1);
         PlasticItemData.setMaterial(stack, "resin");
         return stack;
-    }
-
-    @Override
-    protected boolean supportsHammerRotation() {
-        return true;
-    }
-
-    @Override
-    protected void openAnvilMenu(ServerPlayer player) {
-        // 树脂是硬化前的形态，永远不会打开铁砧界面。
     }
 
     @Override
@@ -219,8 +212,7 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
         Vec3 requestedMovement,
         Vec3 actualMovement
     ) {
-        if (collider instanceof AbstractPlasticEntity
-            || collider.isSuppressingBounce()
+        if (collider.isSuppressingBounce()
             || requestedMovement.lengthSqr()
                 <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
             return;
@@ -247,6 +239,10 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
             double incidentSpeed = requestedMovement.dot(normal);
             if (incidentSpeed <= PlasticEntityPhysics.FACE_EPSILON) continue;
             if (direction.getAxis() != gravityDirection.getAxis()) continue;
+            if ((collider instanceof FallingBlockEntity || collider instanceof AbstractPlasticEntity)
+                && incidentSpeed < MIN_BOUNCE_SPEED) {
+                continue;
+            }
             double currentNormal = colliderVelocity.dot(normal);
             colliderVelocity = colliderVelocity.subtract(normal.scale(currentNormal))
                 .add(normal.scale(-incidentSpeed * restitution));

@@ -19,7 +19,8 @@ public final class ModBlockEntities {
             ModBlocks.HARDEND_RESIN_CAULDRON,
             ModBlocks.CATALYTIC_PRESS_LID,
             ModBlocks.RESIN_ANVIL,
-            ModBlocks.HARDEND_RESIN_ANVIL
+            ModBlocks.HARDEND_RESIN_ANVIL,
+            ModBlocks.UNIVERSAL_PLASTIC
         )
         .renderer(() -> BondedEntityBlockEntityRenderer::new)
         .register();

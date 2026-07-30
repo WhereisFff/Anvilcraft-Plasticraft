@@ -23,7 +23,14 @@ public final class PlasticMeltColor {
     }
 
     public static void set(ItemStack stack, DyeColor color) {
-        CustomData.update(DataComponents.CUSTOM_DATA, stack, tag -> write(tag, color));
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, tag -> {
+            // 塑料粒必须显式保存白色，供村民交易的组件谓词区分“白色”和“任意颜色”。
+            if (stack.getItem() instanceof UniversalPlasticGranuleItem) {
+                tag.putString(COLOR_KEY, color.getName());
+            } else {
+                write(tag, color);
+            }
+        });
     }
 
     public static void set(FluidStack stack, DyeColor color) {
@@ -48,6 +55,17 @@ public final class PlasticMeltColor {
 
     public static int tint(DyeColor color) {
         return color.getTextureDiffuseColor();
+    }
+
+    /**
+     * 创建只包含指定塑料颜色的自定义数据。
+     *
+     * <p>村民的 {@code ItemCost} 需要实际存在的组件才能执行精确匹配，因此这里不会省略白色。</p>
+     */
+    public static CustomData explicitColorData(DyeColor color) {
+        CompoundTag tag = new CompoundTag();
+        tag.putString(COLOR_KEY, color.getName());
+        return CustomData.of(tag);
     }
 
     private static DyeColor get(CustomData data) {

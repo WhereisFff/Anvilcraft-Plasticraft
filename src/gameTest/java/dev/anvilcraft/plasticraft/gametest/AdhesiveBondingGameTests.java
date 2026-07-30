@@ -9,10 +9,13 @@ import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
+import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesivePathPlanner;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveSelectionManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityAdhesion;
+import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondLink;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
 import dev.anvilcraft.plasticraft.entity.adhesive.SurfaceAdhesiveService;
@@ -36,6 +39,7 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.item.FallingBlockEntity;
@@ -66,6 +70,8 @@ import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 import net.neoforged.testframework.gametest.GameTestPlayer;
 
+import java.util.List;
+
 import static dev.dubhe.anvilcraft.init.block.ModBlocks.GIANT_ANVIL;
 import static dev.dubhe.anvilcraft.init.block.ModBlocks.MAGNET_BLOCK;
 import static dev.dubhe.anvilcraft.init.block.ModBlocks.ROYAL_ANVIL;
@@ -77,6 +83,50 @@ public final class AdhesiveBondingGameTests {
     private static final double EPSILON = 1.0E-5D;
 
     private AdhesiveBondingGameTests() {
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "8x6x8", floor = true)
+    @TestHolder(description = "Persisted entity bonds refresh their runtime entity ids")
+    static void persistedEntityBondsRefreshRuntimeEntityIds(ExtendedGameTestHelper helper) {
+        Zombie leader = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 2.0D, 3.5D));
+        Zombie follower = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.5D, 2.0D, 3.5D));
+        Vec3 followerOffset = follower.position().subtract(leader.position());
+        leader.setData(ModAttachments.ENTITY_BONDS, new EntityBondState(
+            leader.getUUID(),
+            -1,
+            Vec3.ZERO,
+            false,
+            List.of(new EntityBondLink(Direction.EAST, follower.getUUID(), -1, Direction.WEST))
+        ));
+        follower.setData(ModAttachments.ENTITY_BONDS, new EntityBondState(
+            leader.getUUID(),
+            -1,
+            followerOffset,
+            false,
+            List.of(new EntityBondLink(Direction.WEST, leader.getUUID(), -1, Direction.EAST))
+        ));
+
+        EntityBondManager.tick(leader);
+        EntityBondManager.tick(follower);
+
+        EntityBondState leaderBonds = EntityBondManager.get(leader);
+        EntityBondState followerBonds = EntityBondManager.get(follower);
+        check(
+            leaderBonds != null
+                && leaderBonds.leaderEntityId() == leader.getId()
+                && leaderBonds.linkAt(Direction.EAST) != null
+                && leaderBonds.linkAt(Direction.EAST).otherEntityId() == follower.getId(),
+            "leader bond did not refresh persisted runtime ids"
+        );
+        check(
+            followerBonds != null
+                && followerBonds.leaderEntityId() == leader.getId()
+                && followerBonds.linkAt(Direction.WEST) != null
+                && followerBonds.linkAt(Direction.WEST).otherEntityId() == leader.getId(),
+            "follower bond did not refresh persisted runtime ids"
+        );
+        helper.succeed();
     }
 
     @GameTest(timeoutTicks = 35)
@@ -783,6 +833,385 @@ public final class AdhesiveBondingGameTests {
         });
     }
 
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "10x6x8", floor = true)
+    @TestHolder(description = "Universal plastic bonds with exact side contact and remains stationary")
+    static void universalPlasticEntityBondHasNoSideGapOrDrift(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity moving = createUniversalPlastic(helper, new Vec3(2.5D, 2.0D, 4.5D));
+        UniversalPlasticEntity support = createUniversalPlastic(helper, new Vec3(6.5D, 2.0D, 4.5D));
+        moving.setNoGravity(true);
+        support.setNoGravity(true);
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(4.5D, 2.0D, 2.5D));
+
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, moving, Direction.EAST),
+            "universal plastic selection failed"
+        );
+        check(
+            AdhesiveBondingService.bondSelectedToEntity(
+                player,
+                InteractionHand.MAIN_HAND,
+                support,
+                Direction.WEST
+            ),
+            "universal plastic entity bond failed"
+        );
+
+        helper.runAfterDelay(12, () -> {
+            check(EntityBondManager.hasBonds(moving), "universal plastic bond was not completed");
+            check(
+                close(
+                    AdhesiveFaces.storedFaceCenter(moving, Direction.EAST),
+                    AdhesiveFaces.worldFaceCenter(support, Direction.WEST)
+                ),
+                "side-bonded universal plastic retained a gap"
+            );
+            Vec3 movingPosition = moving.position();
+            Vec3 supportPosition = support.position();
+            helper.runAfterDelay(6, () -> {
+                check(close(moving.position(), movingPosition), "bonded universal plastic follower drifted");
+                check(close(support.position(), supportPosition), "bonded universal plastic leader drifted");
+                helper.succeed();
+            });
+        });
+    }
+
+    @GameTest(timeoutTicks = 15)
+    @EmptyTemplate(value = "10x6x8", floor = true)
+    @TestHolder(description = "Rotated universal plastic cannot be bonded through the floor")
+    static void universalPlasticEntityBondRejectsRotatedFloorOverlap(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity moving = createUniversalPlastic(helper, new Vec3(2.5D, 1.0D, 4.5D));
+        UniversalPlasticEntity support = createUniversalPlastic(helper, new Vec3(6.5D, 1.0D, 4.5D));
+        moving.setNoGravity(true);
+        support.setNoGravity(true);
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(4.5D, 2.0D, 2.5D));
+
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, moving, Direction.DOWN),
+            "universal plastic bottom selection failed"
+        );
+        AdhesivePathPlanner.Plan plan = AdhesivePathPlanner.planToEntity(
+            helper.getLevel(),
+            moving,
+            player,
+            support,
+            Direction.WEST,
+            Direction.DOWN
+        );
+        check(
+            !moving.plasticraft$canOccupyBlocks(plan.targetOrientation(), plan.targetPosition()),
+            "test setup did not rotate universal plastic into the floor"
+        );
+        check(
+            plan.status() == AdhesivePathPlanner.Status.TARGET_BLOCKED,
+            "rotated universal plastic floor overlap was not reported as a blocked target: " + plan.status()
+        );
+        check(
+            !AdhesiveBondingService.bondSelectedToEntity(
+                player,
+                InteractionHand.MAIN_HAND,
+                support,
+                Direction.WEST
+            ),
+            "side bond accepted universal plastic rotated one pixel into the floor"
+        );
+        check(
+            !moving.hasData(ModAttachments.ADHESIVE_TRANSIT),
+            "rejected universal plastic side bond started transit"
+        );
+        check(
+            player.getMainHandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()),
+            "rejected universal plastic side bond consumed resin"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 35)
+    @EmptyTemplate(value = "11x7x8", floor = true)
+    @TestHolder(description = "Every member of a transported universal plastic group snaps to its bonded face")
+    static void transportedUniversalPlasticGroupHasNoFollowerGap(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity follower = createUniversalPlastic(helper, new Vec3(2.5D, 2.0D, 4.5D));
+        UniversalPlasticEntity selected = createUniversalPlastic(helper, new Vec3(3.5D, 2.0D, 4.5D));
+        UniversalPlasticEntity support = createUniversalPlastic(helper, new Vec3(7.5D, 2.0D, 4.5D));
+        follower.setNoGravity(true);
+        selected.setNoGravity(true);
+        support.setNoGravity(true);
+        check(
+            EntityBondManager.connect(
+                helper.getLevel(), follower, Direction.EAST, selected, Direction.WEST, true
+            ),
+            "universal plastic follower could not be bonded"
+        );
+        follower.setPos(follower.position().add(-1.0D / 16.0D, 0.0D, 0.0D));
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(5.5D, 2.0D, 2.5D));
+
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, selected, Direction.EAST),
+            "group leader selection failed"
+        );
+        check(
+            AdhesiveBondingService.bondSelectedToEntity(
+                player,
+                InteractionHand.MAIN_HAND,
+                support,
+                Direction.WEST
+            ),
+            "universal plastic group could not be bonded to its support"
+        );
+
+        helper.runAfterDelay(12, () -> {
+            check(
+                close(
+                    AdhesiveFaces.storedFaceCenter(follower, Direction.EAST),
+                    AdhesiveFaces.storedFaceCenter(selected, Direction.WEST)
+                ),
+                "unselected universal plastic follower retained a gap"
+            );
+            check(
+                close(
+                    AdhesiveFaces.storedFaceCenter(selected, Direction.EAST),
+                    AdhesiveFaces.storedFaceCenter(support, Direction.WEST)
+                ),
+                "selected universal plastic did not touch its support"
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 35)
+    @EmptyTemplate(value = "11x8x8", floor = true)
+    @TestHolder(description = "Every member of two joined universal plastic columns remains flush")
+    static void joinedUniversalPlasticColumnsHaveNoFollowerGap(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity sourceBottom = createUniversalPlastic(helper, new Vec3(2.5D, 2.0D, 4.5D));
+        UniversalPlasticEntity sourceTop = createUniversalPlastic(helper, new Vec3(2.5D, 2.875D, 4.5D));
+        UniversalPlasticEntity targetBottom = createUniversalPlastic(helper, new Vec3(6.5D, 2.0D, 4.5D));
+        UniversalPlasticEntity targetTop = createUniversalPlastic(helper, new Vec3(6.5D, 2.875D, 4.5D));
+        for (UniversalPlasticEntity plastic : List.of(sourceBottom, sourceTop, targetBottom, targetTop)) {
+            plastic.setNoGravity(true);
+        }
+        check(
+            EntityBondManager.connect(
+                helper.getLevel(), sourceBottom, Direction.UP, sourceTop, Direction.DOWN, true
+            ),
+            "source universal plastic column could not be bonded"
+        );
+        check(
+            EntityBondManager.connect(
+                helper.getLevel(), targetBottom, Direction.UP, targetTop, Direction.DOWN, true
+            ),
+            "target universal plastic column could not be bonded"
+        );
+        sourceTop.setPos(sourceTop.position().add(-1.0D / 16.0D, 0.0D, 0.0D));
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(4.5D, 2.0D, 2.5D));
+
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, sourceBottom, Direction.EAST),
+            "source column selection failed"
+        );
+        check(
+            AdhesiveBondingService.bondSelectedToEntity(
+                player,
+                InteractionHand.MAIN_HAND,
+                targetBottom,
+                Direction.WEST
+            ),
+            "universal plastic columns could not be bonded"
+        );
+
+        helper.runAfterDelay(12, () -> {
+            check(
+                close(
+                    AdhesiveFaces.storedFaceCenter(sourceBottom, Direction.UP),
+                    AdhesiveFaces.storedFaceCenter(sourceTop, Direction.DOWN)
+                ),
+                "source universal plastic column retained an internal gap"
+            );
+            check(
+                close(
+                    AdhesiveFaces.storedFaceCenter(targetBottom, Direction.UP),
+                    AdhesiveFaces.storedFaceCenter(targetTop, Direction.DOWN)
+                ),
+                "target universal plastic column retained an internal gap"
+            );
+            check(
+                close(
+                    AdhesiveFaces.storedFaceCenter(sourceBottom, Direction.EAST),
+                    AdhesiveFaces.storedFaceCenter(targetBottom, Direction.WEST)
+                ),
+                "selected universal plastic did not touch its target"
+            );
+            check(
+                close(
+                    AdhesiveFaces.storedFaceCenter(sourceTop, Direction.EAST),
+                    AdhesiveFaces.storedFaceCenter(targetTop, Direction.WEST)
+                ),
+                "unselected universal plastic did not follow its column"
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "10x8x8", floor = true)
+    @TestHolder(description = "Rotating a transported universal plastic group keeps its bonded faces aligned")
+    static void rotatingUniversalPlasticGroupKeepsFollowerContact(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity selected = createUniversalPlastic(helper, new Vec3(2.5D, 3.0D, 4.5D));
+        UniversalPlasticEntity follower = createUniversalPlastic(helper, new Vec3(2.5D, 3.875D, 4.5D));
+        UniversalPlasticEntity support = createUniversalPlastic(helper, new Vec3(6.5D, 3.0D, 4.5D));
+        selected.setNoGravity(true);
+        follower.setNoGravity(true);
+        support.setNoGravity(true);
+        check(
+            EntityBondManager.connect(
+                helper.getLevel(), selected, Direction.UP, follower, Direction.DOWN, true
+            ),
+            "rotating universal plastic follower could not be bonded"
+        );
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(4.5D, 3.0D, 2.5D));
+
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, selected, Direction.DOWN),
+            "rotating universal plastic selection failed"
+        );
+        check(
+            AdhesiveBondingService.bondSelectedToEntity(
+                player,
+                InteractionHand.MAIN_HAND,
+                support,
+                Direction.WEST
+            ),
+            "rotating universal plastic entity bond failed"
+        );
+
+        helper.runAfterDelay(8, () -> {
+            check(
+                selected.getOrientation().attachmentFace() == Direction.WEST,
+                "selected universal plastic did not rotate during transit"
+            );
+            check(
+                close(
+                    AdhesiveFaces.storedFaceCenter(selected, Direction.UP),
+                    AdhesiveFaces.storedFaceCenter(follower, Direction.DOWN)
+                ),
+                "rotating selected universal plastic left its follower behind"
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 15)
+    @EmptyTemplate(value = "8x7x7", floor = true)
+    @TestHolder(description = "An airborne player cannot side-push universal plastic")
+    static void airbornePlayerCannotPushUniversalPlastic(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity plastic = createUniversalPlastic(helper, new Vec3(4.5D, 3.0D, 3.5D));
+        plastic.setNoGravity(true);
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        Vec3 playerPosition = helper.absoluteVec(new Vec3(3.69D, 3.0D, 3.5D));
+        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        player.setOnGround(true);
+        Vec3 start = plastic.position();
+
+        player.move(MoverType.SELF, new Vec3(0.35D, 0.0D, 0.0D));
+
+        check(close(plastic.position(), start), "airborne player pushed universal plastic");
+        player.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "10x8x8", floor = true)
+    @TestHolder(description = "An inverted resin anvil bonds directly to the true cauldron rim surface")
+    static void invertedAnvilBondUsesTrueCauldronSurface(ExtendedGameTestHelper helper) {
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 4.0D, 4.5D));
+        HardenedResinCauldronEntity cauldron = createCauldron(helper, new Vec3(6.5D, 2.0D, 4.5D));
+        anvil.setNoGravity(true);
+        cauldron.setNoGravity(true);
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(4.5D, 2.0D, 2.5D));
+
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, anvil, Direction.UP),
+            "anvil top selection failed"
+        );
+        check(
+            AdhesiveBondingService.bondSelectedToEntity(
+                player,
+                InteractionHand.MAIN_HAND,
+                cauldron,
+                Direction.UP
+            ),
+            "anvil-to-cauldron entity bond failed"
+        );
+
+        helper.runAfterDelay(12, () -> {
+            check(
+                anvil.getOrientation().worldDirection(Direction.UP) == Direction.DOWN,
+                "selected anvil top did not rotate toward the cauldron"
+            );
+            check(
+                close(
+                    AdhesiveFaces.storedFaceCenter(anvil, Direction.UP),
+                    AdhesiveFaces.worldFaceCenter(cauldron, Direction.UP)
+                ),
+                "anvil and cauldron true collision surfaces did not touch"
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "10x8x8", floor = true)
+    @TestHolder(description = "An anvil bonded by an asymmetric side stays centered over a resin cauldron")
+    static void sideBondedAnvilCentersOnCauldron(ExtendedGameTestHelper helper) {
+        HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 4.0D, 4.5D));
+        HardenedResinCauldronEntity cauldron = createCauldron(helper, new Vec3(6.5D, 2.0D, 4.5D));
+        anvil.setNoGravity(true);
+        cauldron.setNoGravity(true);
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(4.5D, 2.0D, 2.5D));
+
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, anvil, Direction.EAST),
+            "anvil side selection failed"
+        );
+        check(
+            AdhesiveBondingService.bondSelectedToEntity(
+                player,
+                InteractionHand.MAIN_HAND,
+                cauldron,
+                Direction.UP
+            ),
+            "sideways anvil-to-cauldron entity bond failed"
+        );
+
+        helper.runAfterDelay(12, () -> {
+            check(
+                anvil.getOrientation().worldDirection(Direction.EAST) == Direction.DOWN,
+                "selected asymmetric anvil side did not rotate toward the cauldron"
+            );
+            check(
+                Math.abs(
+                    AdhesiveFaces.storedFaceCenter(anvil, Direction.EAST).y
+                        - AdhesiveFaces.worldFaceCenter(cauldron, Direction.UP).y
+                ) < EPSILON,
+                "sideways anvil did not touch the cauldron surface"
+            );
+            check(
+                close(
+                    AdhesiveFaces.storedFaceAlignmentPoint(anvil, Direction.EAST),
+                    AdhesiveFaces.worldFaceAlignmentPoint(cauldron, Direction.UP)
+                ),
+                "sideways anvil bond anchors did not align"
+            );
+            Vec3 anvilCenter = anvil.plasticraft$getRotationCenter();
+            Vec3 cauldronCenter = cauldron.plasticraft$getRotationCenter();
+            check(
+                Math.abs(anvilCenter.x - cauldronCenter.x) < EPSILON
+                    && Math.abs(anvilCenter.z - cauldronCenter.z) < EPSILON,
+                "sideways anvil was not centered over the cauldron"
+            );
+            helper.succeed();
+        });
+    }
+
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "8x6x8", floor = true)
     @TestHolder(description = "Strong knockback preserves entity bonds and starts elastic motion")
@@ -929,8 +1358,8 @@ public final class AdhesiveBondingGameTests {
             for (int z = 2; z <= 6; z++) helper.setBlock(x, 1, z, Blocks.STONE);
         }
         HardenedResinCauldronEntity newestFollower = createCauldron(helper, new Vec3(4.5D, 2.0D, 3.5D));
-        ResinAnvilEntity middleFollower = createResinAnvil(helper, new Vec3(5.49D, 2.0D, 3.5D));
-        HardenedResinAnvilEntity leader = createAnvil(helper, new Vec3(6.48D, 2.0D, 3.5D));
+        ResinAnvilEntity middleFollower = createResinAnvil(helper, new Vec3(5.5D, 2.0D, 3.5D));
+        HardenedResinAnvilEntity leader = createAnvil(helper, new Vec3(6.5D, 2.0D, 3.5D));
         check(EntityBondManager.connect(
             helper.getLevel(), middleFollower, Direction.EAST, leader, Direction.WEST, false
         ), "resin anvil could not be bonded as a follower");
@@ -938,9 +1367,33 @@ public final class AdhesiveBondingGameTests {
             helper.getLevel(), newestFollower, Direction.EAST, middleFollower, Direction.WEST, false
         ), "resin cauldron could not be bonded as the newest follower");
         check(EntityBondManager.isFollower(newestFollower), "newest bonded plastic entity was not a follower");
+        List<AbstractPlasticEntity> component = List.of(newestFollower, middleFollower, leader);
+        for (AbstractPlasticEntity member : component) {
+            EntityBondState state = EntityBondManager.get(member);
+            check(state != null, "bonded plastic member had no state to persist");
+            member.setData(ModAttachments.ENTITY_BONDS, state.withResolvedEntityIds(
+                -1,
+                state.links().stream().map(link -> link.withOtherEntityId(-1)).toList()
+            ));
+        }
+        for (AbstractPlasticEntity member : component) EntityBondManager.tick(member);
+        for (AbstractPlasticEntity member : component) {
+            EntityBondState state = EntityBondManager.get(member);
+            check(
+                state != null && state.leaderEntityId() == leader.getId(),
+                "persisted plastic bond did not restore its leader runtime id"
+            );
+            for (EntityBondLink link : state.links()) {
+                Entity linked = EntityBondManager.resolve(helper.getLevel(), link);
+                check(
+                    linked != null && link.otherEntityId() == linked.getId(),
+                    "persisted plastic bond did not restore a linked runtime id"
+                );
+            }
+        }
 
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.5D, 2.0D, 2.71D));
+        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.5D, 2.0D, 2.70D));
         player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
         helper.runAfterDelay(3, () -> {
             double playerStart = player.getZ();
@@ -976,15 +1429,15 @@ public final class AdhesiveBondingGameTests {
             for (int z = 2; z <= 6; z++) helper.setBlock(x, 1, z, Blocks.STONE);
         }
         HardenedResinCauldronEntity follower = createCauldron(helper, new Vec3(5.5D, 2.0D, 4.5D));
-        HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(6.49D, 2.0D, 4.5D));
-        HardenedResinCauldronEntity independent = createCauldron(helper, new Vec3(7.48D, 2.0D, 4.5D));
+        HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(6.5D, 2.0D, 4.5D));
+        HardenedResinCauldronEntity independent = createCauldron(helper, new Vec3(7.5D, 2.0D, 4.5D));
         check(EntityBondManager.connect(
             helper.getLevel(), follower, Direction.EAST, leader, Direction.WEST, false
         ), "plastic follower could not bond to its leader");
         check(EntityBondManager.isFollower(follower), "pushed plastic entity was not the follower");
 
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.71D, 2.0D, 4.5D));
+        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.70D, 2.0D, 4.5D));
         player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
         helper.runAfterDelay(3, () -> {
             double playerStart = player.getX();
@@ -1017,13 +1470,13 @@ public final class AdhesiveBondingGameTests {
             for (int z = 2; z <= 8; z++) helper.setBlock(x, 1, z, Blocks.STONE);
         }
         HardenedResinCauldronEntity follower = createCauldron(helper, new Vec3(5.5D, 2.0D, 5.5D));
-        HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(6.49D, 2.0D, 5.5D));
+        HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(6.5D, 2.0D, 5.5D));
         check(EntityBondManager.connect(
             helper.getLevel(), follower, Direction.EAST, leader, Direction.WEST, false
         ), "seam test entities could not be bonded");
 
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        Vec3 playerPosition = helper.absoluteVec(new Vec3(5.995D, 2.0D, 4.71D));
+        Vec3 playerPosition = helper.absoluteVec(new Vec3(5.995D, 2.0D, 4.70D));
         player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
         helper.runAfterDelay(3, () -> {
             Vec3 playerStart = player.position();
@@ -1057,7 +1510,7 @@ public final class AdhesiveBondingGameTests {
         player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
         double productY = 2.0D + player.getBbHeight() - 3.0D / 16.0D;
         HardenedResinCauldronEntity follower = createCauldron(helper, new Vec3(4.5D, productY, 3.5D));
-        HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(5.49D, productY, 3.5D));
+        HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(5.5D, productY, 3.5D));
         follower.setNoGravity(true);
         leader.setNoGravity(true);
         check(EntityBondManager.connect(
@@ -1113,7 +1566,7 @@ public final class AdhesiveBondingGameTests {
         player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
         double productY = 2.0D + player.getBbHeight() - 3.0D / 16.0D;
         HardenedResinCauldronEntity follower = createCauldron(helper, new Vec3(4.5D, productY, 3.5D));
-        HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(5.49D, productY, 3.5D));
+        HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(5.5D, productY, 3.5D));
         follower.setNoGravity(true);
         leader.setNoGravity(true);
         check(EntityBondManager.connect(
@@ -2518,7 +2971,7 @@ public final class AdhesiveBondingGameTests {
         BlockPos occupied = support.above();
         helper.setBlock(support, Blocks.STONE);
         HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(6.5D, 3.0D, 3.5D));
-        GameTestPlayer player = bucketPlayer(helper, new Vec3(3.5D, 2.0D, 1.5D));
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(3.5D, 2.0D, 2.0D));
         check(AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, anvil), "plastic anvil selection failed");
         check(AdhesiveBondingService.bondSelected(
             player,
@@ -2824,7 +3277,7 @@ public final class AdhesiveBondingGameTests {
         helper.setBlock(resinSupport, Blocks.STONE);
         HardenedResinAnvilEntity hardened = createAnvil(helper, new Vec3(2.5D, 2.0D, 3.5D));
         ResinAnvilEntity resin = createResinAnvil(helper, new Vec3(8.5D, 2.0D, 3.5D));
-        GameTestPlayer player = bucketPlayer(helper, new Vec3(5.5D, 2.0D, 1.5D));
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(5.5D, 2.0D, 2.0D));
 
         check(AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, hardened), "hardened anvil selection failed");
         check(AdhesiveBondingService.bondSelected(
@@ -3111,6 +3564,22 @@ public final class AdhesiveBondingGameTests {
         );
         check(helper.getLevel().addFreshEntity(cauldron), "failed to add plastic pot");
         return cauldron;
+    }
+
+    private static UniversalPlasticEntity createUniversalPlastic(
+        ExtendedGameTestHelper helper,
+        Vec3 relativePosition
+    ) {
+        UniversalPlasticEntity plastic = new UniversalPlasticEntity(
+            ModEntities.UNIVERSAL_PLASTIC.get(),
+            helper.getLevel(),
+            helper.absoluteVec(relativePosition),
+            ModBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            ModBlocks.UNIVERSAL_PLASTIC.asStack(),
+            PlasticEntityOrientation.DEFAULT
+        );
+        check(helper.getLevel().addFreshEntity(plastic), "failed to add universal plastic");
+        return plastic;
     }
 
     private static BondedEntityBlockEntity bondedBlockEntity(ExtendedGameTestHelper helper, BlockPos relativePos) {

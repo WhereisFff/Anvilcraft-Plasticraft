@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
 import dev.anvilcraft.plasticraft.data.PlasticraftDatagen;
 import dev.anvilcraft.plasticraft.event.HighViscosityResinEvents;
+import dev.anvilcraft.plasticraft.event.PlasticVillagerTrades;
 import dev.anvilcraft.plasticraft.fluid.UniversalPlasticMeltBucketWrapper;
 import dev.anvilcraft.plasticraft.init.ModAttachments;
 import dev.anvilcraft.plasticraft.init.ModMenuTypes;
@@ -64,6 +65,7 @@ public final class AnvilcraftPlasticraft {
         NeoForge.EVENT_BUS.addListener(CondenserTowerProcess::onLargeCauldronProcess);
         NeoForge.EVENT_BUS.addListener(EscapingVaporEffects::rightClickBlock);
         NeoForge.EVENT_BUS.addListener(PlasticOilCatalysis::onChunkSent);
+        NeoForge.EVENT_BUS.addListener(PlasticVillagerTrades::addTrades);
         modEventBus.addListener(HighViscosityResinEvents::registerCauldronFluidContent);
         modEventBus.addListener(ModBlocks::registerDispenserBehavior);
         modEventBus.addListener(AnvilcraftPlasticraft::registerCapabilities);

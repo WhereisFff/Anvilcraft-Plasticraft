@@ -20,7 +20,7 @@ public final class PlasticMagnetism {
     public static Vec3 calculatePointGravity(AbstractPlasticEntity entity, double baseGravity) {
         if (!entity.anvilcraft$isMagnetized()) return Vec3.ZERO;
         int radius = Math.max(1, AnvilCraft.CONFIG.magnetAttractsDistance);
-        Vec3 center = entity.getBoundingBox().getCenter();
+        Vec3 center = entity.plasticraft$getRotationCenter();
         BlockPos origin = BlockPos.containing(center);
         Vec3 result = Vec3.ZERO;
         for (BlockPos pos : BlockPos.betweenClosed(origin.offset(-radius, -radius, -radius), origin.offset(radius, radius, radius))) {

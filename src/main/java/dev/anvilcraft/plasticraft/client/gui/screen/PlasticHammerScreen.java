@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import dev.anvilcraft.lib.v2.wheel.client.gui.component.WheelWidget;
+import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderHelper;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
@@ -23,6 +24,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.joml.Matrix4f;
 
@@ -125,19 +128,23 @@ public final class PlasticHammerScreen extends Screen {
         Minecraft minecraft = Minecraft.getInstance();
         Camera camera = minecraft.gameRenderer.getMainCamera();
         PlasticEntityOrientation preview = new PlasticEntityOrientation(direction, this.quarterTurn);
+        AABB bounds = this.target.plasticraft$getGeometry().oriented(preview).bounds();
+        Vec3 center = bounds.getCenter();
+        Vec3 origin = this.target.plasticraft$getGeometry().entityOrigin();
+        double largestSize = Math.max(bounds.getXsize(), Math.max(bounds.getYsize(), bounds.getZsize()));
+        float iconScale = (float) (ICON_SCALE / Math.max(1.0D, largestSize));
         pose.pushPose();
         pose.translate(width * 0.5F, height * 0.5F + 2.0F, 0.0F);
-        // 沿用本体轮盘模型的原点补偿，抵消方块模型的视觉偏移。
+        // 保留轮盘组件的屏幕位置补偿，模型本身按实际几何居中。
         pose.translate(-7.0F, 7.0F, 0.0F);
-        pose.scale(ICON_SCALE, ICON_SCALE, ICON_SCALE);
+        pose.scale(iconScale, iconScale, iconScale);
         pose.mulPose(new Matrix4f().scaling(1.0F, -1.0F, 1.0F));
-        pose.translate(0.5F, 0.5F, 0.5F);
         if (camera.getEntity() != null) {
             pose.mulPose(Axis.XP.rotationDegrees(camera.getEntity().getXRot()));
             pose.mulPose(Axis.YP.rotationDegrees(camera.getEntity().getYRot() + 180.0F));
         }
-        PlasticEntityRenderTransforms.rotate(pose, preview);
-        pose.translate(-0.5F, -0.5F, -0.5F);
+        pose.translate(origin.x - center.x, origin.y - center.y, origin.z - center.z);
+        PlasticEntityRenderTransforms.apply(pose, this.target, preview);
         RenderSystem.setupGui3DDiffuseLighting(RenderSupport.L1, RenderSupport.L2);
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         BlockRenderDispatcher dispatcher = minecraft.getBlockRenderer();
@@ -206,17 +213,18 @@ public final class PlasticHammerScreen extends Screen {
     public void completeSelection() {
         if (this.finishing || this.wheel == null) return;
         this.syncSelection();
-        if (this.bondedBlockPos == null) {
+        HammerPreview preview = this.selectedPreview();
+        if (preview.valid() && this.bondedBlockPos == null) {
             PacketDistributor.sendToServer(new PlasticEntityHammerRotatePacket(
                 this.target.getId(),
                 this.hand,
-                this.selectedDirection
+                preview.orientation().attachmentFace()
             ));
-        } else {
+        } else if (preview.valid()) {
             PacketDistributor.sendToServer(new BondedPlasticHammerRotatePacket(
                 this.bondedBlockPos,
                 this.hand,
-                this.selectedDirection
+                preview.orientation().attachmentFace()
             ));
         }
         this.finishing = true;
@@ -229,23 +237,35 @@ public final class PlasticHammerScreen extends Screen {
     }
 
     @Nullable
-    public static PlasticEntityOrientation getPreviewOrientation(AbstractPlasticEntity entity) {
+    public static HammerPreview getPreview(AbstractPlasticEntity entity) {
         if (!(Minecraft.getInstance().screen instanceof PlasticHammerScreen screen)
             || screen.target != entity
             || screen.finishing) {
             return null;
         }
-        return new PlasticEntityOrientation(screen.selectedDirection, screen.quarterTurn);
+        return screen.selectedPreview();
     }
 
     @Nullable
-    public static PlasticEntityOrientation getPreviewOrientation(BlockPos pos) {
+    public static HammerPreview getPreview(BlockPos pos) {
         if (!(Minecraft.getInstance().screen instanceof PlasticHammerScreen screen)
             || !screen.targets(pos)
             || screen.finishing) {
             return null;
         }
-        return new PlasticEntityOrientation(screen.selectedDirection, screen.quarterTurn);
+        return screen.selectedPreview();
+    }
+
+    private HammerPreview selectedPreview() {
+        PlasticEntityOrientation orientation = new PlasticEntityOrientation(this.selectedDirection, this.quarterTurn);
+        if (this.bondedBlockPos == null) {
+            return new HammerPreview(orientation, this.target.canHammerRotateTo(orientation));
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        boolean valid = minecraft.level != null
+            && minecraft.level.getBlockEntity(this.bondedBlockPos) instanceof BondedEntityBlockEntity bonded
+            && bonded.canHammerRotateTo(orientation);
+        return new HammerPreview(orientation, valid);
     }
 
     @Override
@@ -261,6 +281,9 @@ public final class PlasticHammerScreen extends Screen {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    public record HammerPreview(PlasticEntityOrientation orientation, boolean valid) {
     }
 
     private static final class DirectionWheelWidget extends WheelWidget {

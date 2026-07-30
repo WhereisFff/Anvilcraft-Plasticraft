@@ -36,6 +36,7 @@ public final class PlasticraftLanguageData {
         provider.add("item.anvilcraftplasticraft.hardend_resin_anvil", "Hardened Resin Anvil");
         provider.add("item.anvilcraftplasticraft.hardend_resin_cauldron", "Hardened Resin Cauldron");
         provider.add("item.anvilcraftplasticraft.resin_anvil", "Resin Anvil");
+        provider.add("item.anvilcraftplasticraft.universal_plastic", "Universal Plastic Block");
 
         // 高黏度树脂粘接工具的操作结果消息。
         provider.add("message.anvilcraftplasticraft.adhesive.out_of_range", "Too far away");

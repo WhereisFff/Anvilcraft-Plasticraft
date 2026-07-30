@@ -91,6 +91,33 @@ public final class PlasticraftTagData {
                 itemKey(ModItems.FROST_METAL_UPGRADE_SMITHING_TEMPLATE)
             );
 
+            // 浮霜金属催化剂覆盖浮霜金属及其衍生制品，冰雪和滑轨仅作为冷却物品，不参与催化。
+            provider.addTag(ModItemTags.FROST_METAL_ITEMS).add(
+                itemKey(ModBlocks.FROST_ANVIL),
+                itemKey(ModBlocks.FROST_GRINDSTONE),
+                itemKey(ModBlocks.FROST_SMITHING_TABLE),
+                itemKey(ModBlocks.FROST_METAL_BLOCK),
+                itemKey(ModBlocks.CUT_FROST_METAL_BLOCK),
+                itemKey(ModBlocks.CUT_FROST_METAL_PILLAR),
+                itemKey(ModBlocks.CUT_FROST_METAL_SLAB),
+                itemKey(ModBlocks.CUT_FROST_METAL_STAIRS),
+                itemKey(ModBlocks.FROST_DECO_BLOCK),
+                itemKey(ModBlocks.FROST_DECO_OUTLINE),
+                itemKey(ModBlocks.FROST_GLASS),
+                itemKey(ModItems.FROST_METAL_INGOT),
+                itemKey(ModItems.FROST_METAL_NUGGET),
+                itemKey(ModItems.FROST_METAL_PICKAXE),
+                itemKey(ModItems.FROST_METAL_AXE),
+                itemKey(ModItems.FROST_METAL_SHOVEL),
+                itemKey(ModItems.FROST_METAL_HOE),
+                itemKey(ModItems.FROST_METAL_SWORD),
+                itemKey(ModItems.FROST_ANVIL_HAMMER),
+                itemKey(ModItems.FROST_DRAGON_ROD),
+                itemKey(ModItems.FROST_METAL_HEAVY_HALBERD),
+                itemKey(ModItems.FROST_METAL_RESONATOR),
+                itemKey(ModItems.FROST_METAL_UPGRADE_SMITHING_TEMPLATE)
+            );
+
             // 皇家钢催化剂标签覆盖本体皇家钢制品，并包含 Plasticraft 的催化压盖。
             provider.addTag(ModItemTags.ROYAL_STEEL_ITEMS).add(
                 itemKey(ModBlocks.ROYAL_ANVIL),

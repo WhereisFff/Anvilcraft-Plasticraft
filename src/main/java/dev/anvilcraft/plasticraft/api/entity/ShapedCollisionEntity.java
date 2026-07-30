@@ -23,6 +23,11 @@ public interface ShapedCollisionEntity {
         return this.plasticraft$getCollisionShape();
     }
 
+    /** 返回用于选取与表面交互的轮廓；纯平面实体可只提供此形状。 */
+    default VoxelShape plasticraft$getInteractionShape() {
+        return this.plasticraft$getCollisionShape();
+    }
+
     static VoxelShape collisionShape(Entity entity) {
         return entity instanceof ShapedCollisionEntity shaped
             ? shaped.plasticraft$getCollisionShape()
@@ -33,6 +38,16 @@ public interface ShapedCollisionEntity {
         return entity instanceof ShapedCollisionEntity shaped
             ? shaped.plasticraft$getCollisionBox().bounds()
             : entity.getBoundingBox();
+    }
+
+    static VoxelShape interactionShape(Entity entity) {
+        return entity instanceof ShapedCollisionEntity shaped
+            ? shaped.plasticraft$getInteractionShape()
+            : Shapes.create(entity.getBoundingBox());
+    }
+
+    static List<AABB> interactionComponents(Entity entity) {
+        return interactionShape(entity).toAabbs();
     }
 
     /** 返回实体在指定参考包围盒位置上的真实碰撞子盒。 */

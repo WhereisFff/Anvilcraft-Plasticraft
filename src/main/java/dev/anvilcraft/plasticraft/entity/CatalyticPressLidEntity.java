@@ -8,12 +8,9 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.Pose;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
@@ -82,11 +79,6 @@ public final class CatalyticPressLidEntity extends AbstractPlasticEntity {
     }
 
     @Override
-    public EntityDimensions getDimensions(Pose pose) {
-        return EntityDimensions.scalable(WIDTH, HEIGHT);
-    }
-
-    @Override
     public AABB getBoundingBoxForCulling() {
         return super.getBoundingBoxForCulling().inflate(RENDER_BOUNDS_EXPANSION);
     }
@@ -95,10 +87,6 @@ public final class CatalyticPressLidEntity extends AbstractPlasticEntity {
     protected ItemStack createDefaultDropStack() {
         ItemStack stack = defaultDropSupplier.get();
         return stack == null ? ItemStack.EMPTY : stack.copy();
-    }
-
-    @Override
-    protected void openAnvilMenu(ServerPlayer player) {
     }
 
     @Override

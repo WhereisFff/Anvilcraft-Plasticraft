@@ -21,15 +21,15 @@ categories:
 
 | 层数 | 消耗 | 产物 |
 | --- | --- | --- |
-| 第一层 | 5 mB 气态原油 | 5 mB <ref item="anvilcraftplasticraft:high_heat_fuel_bucket"/> |
-| 第二层 | 40 mB 气态原油 | 40 mB <ref item="anvilcraftplasticraft:plastic_oil_bucket"/> |
-| 第三层 | 5 mB 气态原油 | 5 mB <ref item="anvilcraftplasticraft:crude_oil_acid_bucket"/> |
+| 第一层 | 10 mB 气态原油 | 10 mB <ref item="anvilcraftplasticraft:high_heat_fuel_bucket"/> |
+| 第二层 | 30 mB 气态原油 | 30 mB <ref item="anvilcraftplasticraft:plastic_oil_bucket"/> |
+| 第三层 | 10 mB 气态原油 | 10 mB <ref item="anvilcraftplasticraft:crude_oil_acid_bucket"/> |
 
-普通喷流每 gt 只产生 5 mB 气态原油，因此第一层即可及时接收全部蒸汽；强化喷流每 gt 产生 50 mB，正好跑满前三层。第四层保留给后续需要更高冷凝塔的配方。
+普通喷流每 gt 只产生 5 mB 气态原油；第一层会缓存首个 5 mB，并在下一 gt 累计到 10 mB 后完成冷凝。强化喷流每 gt 产生 50 mB，正好跑满前三层。第四层保留给后续需要更高冷凝塔的配方。
 
 ## 气态经验
 
-经验流体会按 1:1 气化为气态经验，并在液面上产生缓慢上浮的经验颗粒。第一层冷凝塔每次把 250 mB 气态经验冷凝为 250 mB 经验流体。冷凝液槽会优先填充；达到 64 B 后，气态经验继续进入 64 B 气体缓存。只有两者都满时，多余气体才会从开放的塔顶逸出。
+经验流体会按 1:1 气化为气态经验，并在液面上产生缓慢上浮的经验颗粒。第一层冷凝塔每次把 50 mB 气态经验冷凝为 50 mB 经验流体。冷凝液槽会优先填充；达到 64 B 后，气态经验继续进入 64 B 气体缓存。只有两者都满时，多余气体才会从开放的塔顶逸出。
 
 没有冷凝塔时，玩家或有职业的成年村民可以在大型炼药锅任意实际开放出口的水平 3 格内及上方 3 格内吸收逸出的气态经验。安装冷凝塔后，吸收范围改从最高一层塔顶中心的实际开放出口计算，无法隔着冷凝塔从下方吸收。玩家每吸收 10 mB 气态经验获得 1 点经验，即同量经验流体的两倍收益；村民累计吸收 64 B 后可从新手升到大师。多个可吸收实体会均分当次气体并四舍五入，例如 100 mB 分给三个实体时每个实体获得 33 mB。
 

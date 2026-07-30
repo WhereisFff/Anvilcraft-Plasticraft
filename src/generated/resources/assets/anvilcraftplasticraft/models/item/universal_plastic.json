@@ -1,0 +1,186 @@
+{
+  "parent": "anvilcraftplasticraft:block/universal_plastic_white",
+  "display": {
+    "firstperson_lefthand": {
+      "rotation": [
+        0,
+        -135,
+        0
+      ],
+      "scale": [
+        0.4,
+        0.4,
+        0.4
+      ]
+    },
+    "firstperson_righthand": {
+      "rotation": [
+        0,
+        45,
+        0
+      ],
+      "scale": [
+        0.4,
+        0.4,
+        0.4
+      ]
+    },
+    "fixed": {
+      "scale": [
+        0.5,
+        0.5,
+        0.5
+      ]
+    },
+    "ground": {
+      "scale": [
+        0.25,
+        0.25,
+        0.25
+      ],
+      "translation": [
+        0,
+        3,
+        0
+      ]
+    },
+    "gui": {
+      "rotation": [
+        30,
+        -135,
+        0
+      ],
+      "scale": [
+        0.625,
+        0.625,
+        0.625
+      ]
+    },
+    "thirdperson_lefthand": {
+      "rotation": [
+        75,
+        45,
+        0
+      ],
+      "scale": [
+        0.375,
+        0.375,
+        0.375
+      ],
+      "translation": [
+        0,
+        2.5,
+        0
+      ]
+    },
+    "thirdperson_righthand": {
+      "rotation": [
+        75,
+        45,
+        0
+      ],
+      "scale": [
+        0.375,
+        0.375,
+        0.375
+      ],
+      "translation": [
+        0,
+        2.5,
+        0
+      ]
+    }
+  },
+  "overrides": [
+    {
+      "model": "anvilcraftplasticraft:item/universal_plastic_orange",
+      "predicate": {
+        "anvilcraftplasticraft:plastic_color": 1.0
+      }
+    },
+    {
+      "model": "anvilcraftplasticraft:item/universal_plastic_magenta",
+      "predicate": {
+        "anvilcraftplasticraft:plastic_color": 2.0
+      }
+    },
+    {
+      "model": "anvilcraftplasticraft:item/universal_plastic_light_blue",
+      "predicate": {
+        "anvilcraftplasticraft:plastic_color": 3.0
+      }
+    },
+    {
+      "model": "anvilcraftplasticraft:item/universal_plastic_yellow",
+      "predicate": {
+        "anvilcraftplasticraft:plastic_color": 4.0
+      }
+    },
+    {
+      "model": "anvilcraftplasticraft:item/universal_plastic_lime",
+      "predicate": {
+        "anvilcraftplasticraft:plastic_color": 5.0
+      }
+    },
+    {
+      "model": "anvilcraftplasticraft:item/universal_plastic_pink",
+      "predicate": {
+        "anvilcraftplasticraft:plastic_color": 6.0
+      }
+    },
+    {
+      "model": "anvilcraftplasticraft:item/universal_plastic_gray",
+      "predicate": {
+        "anvilcraftplasticraft:plastic_color": 7.0
+      }
+    },
+    {
+      "model": "anvilcraftplasticraft:item/universal_plastic_light_gray",
+      "predicate": {
+        "anvilcraftplasticraft:plastic_color": 8.0
+      }
+    },
+    {
+      "model": "anvilcraftplasticraft:item/universal_plastic_cyan",
+      "predicate": {
+        "anvilcraftplasticraft:plastic_color": 9.0
+      }
+    },
+    {
+      "model": "anvilcraftplasticraft:item/universal_plastic_purple",
+      "predicate": {
+        "anvilcraftplasticraft:plastic_color": 10.0
+      }
+    },
+    {
+      "model": "anvilcraftplasticraft:item/universal_plastic_blue",
+      "predicate": {
+        "anvilcraftplasticraft:plastic_color": 11.0
+      }
+    },
+    {
+      "model": "anvilcraftplasticraft:item/universal_plastic_brown",
+      "predicate": {
+        "anvilcraftplasticraft:plastic_color": 12.0
+      }
+    },
+    {
+      "model": "anvilcraftplasticraft:item/universal_plastic_green",
+      "predicate": {
+        "anvilcraftplasticraft:plastic_color": 13.0
+      }
+    },
+    {
+      "model": "anvilcraftplasticraft:item/universal_plastic_red",
+      "predicate": {
+        "anvilcraftplasticraft:plastic_color": 14.0
+      }
+    },
+    {
+      "model": "anvilcraftplasticraft:item/universal_plastic_black",
+      "predicate": {
+        "anvilcraftplasticraft:plastic_color": 15.0
+      }
+    }
+  ]
+}

@@ -96,7 +96,7 @@ public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity
         E entity = this.createPlasticEntity(
             entityType,
             level,
-            orientation.entityPosition(pos, entityType.getWidth(), entityType.getHeight()),
+            Vec3.atBottomCenterOf(pos),
             state,
             this.createDropStack(state),
             orientation
@@ -105,6 +105,8 @@ public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity
             level.scheduleTick(pos, this, this.getDelayAfterPlace());
             return;
         }
+        entity.setPos(entity.plasticraft$placementPosition(pos, orientation));
+        entity.setStartPos(entity.blockPosition());
 
         BlockState replacement = state.getFluidState().createLegacyBlock();
         if (!level.setBlock(pos, replacement, UPDATE_ALL)) {

@@ -2,7 +2,6 @@ package dev.anvilcraft.plasticraft.entity;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -20,9 +19,6 @@ import java.util.Objects;
  */
 public record PlasticEntityOrientation(Direction attachmentFace, int quarterTurn) {
     public static final PlasticEntityOrientation DEFAULT = new PlasticEntityOrientation(Direction.UP, 0);
-
-    public static final double COLLISION_SIZE = 1.0D;
-    public static final double COLLISION_HALF_SIZE = 0.5D;
     public static final double ATTACHMENT_INSET = 0.0D;
 
     private static final int FACE_MASK = 0b111;
@@ -167,25 +163,16 @@ public record PlasticEntityOrientation(Direction attachmentFace, int quarterTurn
         );
     }
 
-    /** 返回所占方块单元的中心；完整一格模型与支撑面和单元边界精确对齐。 */
-    public Vec3 collisionCenter(BlockPos occupiedPos) {
-        Objects.requireNonNull(occupiedPos, "occupiedPos");
-        return Vec3.atCenterOf(occupiedPos).add(
-            -this.attachmentFace.getStepX() * ATTACHMENT_INSET,
-            -this.attachmentFace.getStepY() * ATTACHMENT_INSET,
-            -this.attachmentFace.getStepZ() * ATTACHMENT_INSET
-        );
+    /**
+     * 仅供尚未创建实体时生成一格实体的临时位置；实际放置必须改用实体几何。
+     */
+    public Vec3 entityPosition(BlockPos occupiedPos) {
+        return entityPosition(occupiedPos, 1.0D, 1.0D);
     }
 
     /**
-     * 返回 {@link Entity#setPos(Vec3)} 所需的底面中心位置。
-     * 即使渲染的砧附着在墙面或天花板上，实体位置仍以底面中心表示。
+     * 仅保留给现有测试和一格实体构造器；X/Z 不等或偏心形状无法由 EntityDimensions 表达。
      */
-    public Vec3 entityPosition(BlockPos occupiedPos) {
-        return this.collisionCenter(occupiedPos).subtract(0.0D, COLLISION_HALF_SIZE, 0.0D);
-    }
-
-    /** 为尺寸可能不同于标准一格的实体返回底面中心位置。 */
     public Vec3 entityPosition(BlockPos occupiedPos, double width, double height) {
         Objects.requireNonNull(occupiedPos, "occupiedPos");
         if (!Double.isFinite(width) || !Double.isFinite(height) || width <= 0.0D || height <= 0.0D) {
@@ -202,10 +189,14 @@ public record PlasticEntityOrientation(Direction attachmentFace, int quarterTurn
             .subtract(0.0D, height * 0.5D, 0.0D);
     }
 
-    /** 将碰撞箱中心转换回实体的底面中心位置。 */
-    public static Vec3 entityPositionFromCollisionCenter(Vec3 collisionCenter) {
-        Objects.requireNonNull(collisionCenter, "collisionCenter");
-        return collisionCenter.subtract(0.0D, COLLISION_HALF_SIZE, 0.0D);
+    /** 返回一格构造辅助入口对应的方块单元中心。 */
+    public Vec3 collisionCenter(BlockPos occupiedPos) {
+        Objects.requireNonNull(occupiedPos, "occupiedPos");
+        return Vec3.atCenterOf(occupiedPos).add(
+            -this.attachmentFace.getStepX() * ATTACHMENT_INSET,
+            -this.attachmentFace.getStepY() * ATTACHMENT_INSET,
+            -this.attachmentFace.getStepZ() * ATTACHMENT_INSET
+        );
     }
 
     private static Direction zeroTurnLongAxis(Direction attachmentFace) {

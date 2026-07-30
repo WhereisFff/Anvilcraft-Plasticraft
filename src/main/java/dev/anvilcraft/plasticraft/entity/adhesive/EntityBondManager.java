@@ -78,6 +78,12 @@ public final class EntityBondManager {
         }
     }
 
+    /** 供树脂牵引使用：先消除胶接面缝隙，再按新的成员位置重设基准。 */
+    public static void prepareAlignedLeader(ServerLevel level, Entity leader) {
+        alignComponentLinks(leader);
+        prepareLeader(level, leader);
+    }
+
     public static boolean connect(
         ServerLevel level,
         Entity source,
@@ -137,9 +143,9 @@ public final class EntityBondManager {
     public static void tick(Entity entity) {
         EntityBondState state = get(entity);
         if (state == null) return;
-        if (entity.level() instanceof ServerLevel serverLevel
-            && pruneMissingLoadedPartners(serverLevel, entity, state)) {
-            return;
+        if (entity.level() instanceof ServerLevel serverLevel) {
+            state = refreshRuntimeEntityIds(serverLevel, entity, state);
+            if (pruneMissingLoadedPartners(serverLevel, entity, state)) return;
         }
         Entity leader = resolveLeader(entity.level(), state);
         if (leader == null || !leader.isAlive()) return;
@@ -410,6 +416,32 @@ public final class EntityBondManager {
         return level instanceof ServerLevel serverLevel ? serverLevel.getEntity(state.leaderUuid()) : null;
     }
 
+    private static EntityBondState refreshRuntimeEntityIds(
+        ServerLevel level,
+        Entity entity,
+        EntityBondState state
+    ) {
+        Entity leader = resolveLeader(level, state);
+        int leaderEntityId = leader != null && leader.isAlive() ? leader.getId() : state.leaderEntityId();
+        boolean changed = leaderEntityId != state.leaderEntityId();
+        List<EntityBondLink> links = new ArrayList<>(state.links().size());
+        for (EntityBondLink link : state.links()) {
+            Entity other = resolve(level, link);
+            EntityBondLink refreshed = other != null
+                && other.isAlive()
+                && other.getId() != link.otherEntityId()
+                ? link.withOtherEntityId(other.getId())
+                : link;
+            changed |= refreshed != link;
+            links.add(refreshed);
+        }
+        if (!changed) return state;
+
+        EntityBondState refreshed = state.withResolvedEntityIds(leaderEntityId, links);
+        entity.setData(ModAttachments.ENTITY_BONDS, refreshed);
+        return refreshed;
+    }
+
     private static EntityBondState stateWithLink(
         Entity entity,
         EntityBondLink link,
@@ -425,6 +457,34 @@ public final class EntityBondManager {
                 List.of(link)
             )
             : state.withLink(link);
+    }
+
+    /** 沿胶接图从基准向外传播真实胶接面对齐点，消除旧坐标偏移留下的缝隙。 */
+    private static void alignComponentLinks(Entity leader) {
+        Set<UUID> aligned = new HashSet<>();
+        ArrayDeque<Entity> pending = new ArrayDeque<>();
+        aligned.add(leader.getUUID());
+        pending.add(leader);
+        while (!pending.isEmpty()) {
+            Entity current = pending.removeFirst();
+            EntityBondState state = get(current);
+            if (state == null) continue;
+            for (EntityBondLink link : state.links()) {
+                Entity neighbor = resolve(current.level(), link);
+                if (neighbor == null || !neighbor.isAlive() || !aligned.add(neighbor.getUUID())) continue;
+                Vec3 targetPosition = neighbor.position().add(
+                    AdhesiveFaces.storedFaceAlignmentPoint(current, link.face()).subtract(
+                        AdhesiveFaces.storedFaceAlignmentPoint(neighbor, link.otherFace())
+                    )
+                );
+                if (neighbor.position().distanceToSqr(targetPosition) > 1.0E-10D) {
+                    neighbor.setPos(targetPosition);
+                    neighbor.hasImpulse = true;
+                    neighbor.hurtMarked = true;
+                }
+                pending.addLast(neighbor);
+            }
+        }
     }
 
     private static void enforceFollower(Entity follower, Entity leader) {
