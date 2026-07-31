@@ -1,0 +1,32 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_liquid_high_viscosity_resin_bucket": {
+      "conditions": {
+        "items": [
+          {
+            "items": "anvilcraftplasticraft:liquid_high_viscosity_resin_bucket"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "anvilcraftplasticraft:time_warp/high_viscosity_resin_block"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_liquid_high_viscosity_resin_bucket"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "anvilcraftplasticraft:time_warp/high_viscosity_resin_block"
+    ]
+  }
+}

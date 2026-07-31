@@ -1,0 +1,18 @@
+{
+  "type": "anvilcraft:time_warp",
+  "ingredients": [
+    {
+      "items": "anvilcraftplasticraft:resin_anvil",
+      "predicates": {
+        "anvillib:not": {
+          "anvilcraft:saved_entity": {}
+        }
+      }
+    }
+  ],
+  "results": [
+    {
+      "id": "anvilcraft:amber_block"
+    }
+  ]
+}

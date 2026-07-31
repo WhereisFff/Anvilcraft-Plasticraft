@@ -1,0 +1,7 @@
+{
+  "type": "anvilcraftplasticraft:condenser",
+  "consume": 50,
+  "fluid": "minecraft:water",
+  "gas": "yukkuri:gaseous_water",
+  "produce": 50
+}

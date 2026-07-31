@@ -1,0 +1,28 @@
+{
+  "type": "anvilcraft:fast_cooking",
+  "ingredients": [
+    {
+      "components": {
+        "minecraft:custom_model_data": 1
+      },
+      "items": "anvilcraftplasticraft:resin_anvil",
+      "predicates": {
+        "anvillib:not": {
+          "anvilcraft:saved_entity": {}
+        }
+      }
+    }
+  ],
+  "results": [
+    {
+      "components": {
+        "minecraft:custom_data": {
+          "Magnetized": 1,
+          "PlasticMaterial": "hardened_resin"
+        },
+        "minecraft:custom_model_data": 1
+      },
+      "id": "anvilcraftplasticraft:hardend_resin_anvil"
+    }
+  ]
+}

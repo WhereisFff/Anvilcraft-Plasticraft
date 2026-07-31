@@ -1,40 +1,28 @@
 dependencies {
-    // AnvilLib is used directly for Registrum and its data providers.
+    gameTestImplementation("net.neoforged:testframework:${neo_version}") { transitive = false }
+
+    // AnvilLib 直接用于 Registrum 及其数据提供器。
     api(libs.anvillib)
     interfaceInjectionData(libs.anvillib.recipe)
     interfaceInjectionData(libs.anvillib.moveableEntityBlock)
 
-    // The published remote snapshot is the reproducible default. A local jar is
-    // opt-in so an older build in ../AnvilCraft cannot silently override the
-    // remote HEAD; use -Panvilcraft_jar=... (or -Puse_local_anvilcraft=true)
-    // for an IDEA run against a freshly built sibling project.
+    // 显式 JAR 路径保留给独立联调；默认依赖坐标从远程 Maven 解析。
     File localAnvilCraftJar = null
     if (project.hasProperty('anvilcraft_jar')) {
         File configured = project.file(project.property('anvilcraft_jar'))
         if (configured.isFile()) localAnvilCraftJar = configured
-    } else if (project.findProperty('use_local_anvilcraft')?.toString()?.toBoolean()) {
-        File localBuildDir = project.file('../AnvilCraft/build/libs')
-        if (localBuildDir.isDirectory()) {
-            Set<File> candidates = project.fileTree(localBuildDir) {
-                include 'anvilcraft-neoforge-1.21.1-*.jar'
-                exclude '*-sources.jar'
-            }.files
-            if (!candidates.isEmpty()) localAnvilCraftJar = candidates.max { it.lastModified() }
-        }
     }
 
     if (localAnvilCraftJar != null) {
         logger.lifecycle("Using local AnvilCraft artifact: ${localAnvilCraftJar}")
         implementation(files(localAnvilCraftJar))
-        // A JAR is a binary artifact, not an interface-injection text file.
-        // The matching JSON is registered in moddevgradle.gradle below.
     } else {
         implementation(libs.anvilcraft) { transitive = false }
         interfaceInjectionData(libs.anvilcraft) { transitive = false }
     }
 
-    // Optional integrations stay out of the published jar. The base mod normally
-    // supplies Ageratum, while these runtime entries make local Client runs richer.
+    // 可选集成不打入发布的 JAR。Ageratum 通常由本体模组提供，
+    // 这些运行时依赖仅用于完善本地客户端的运行环境。
     compileOnly(libs.ageratum)
     compileOnly(libs.jei.common.api)
     compileOnly(libs.jei.forge.api)

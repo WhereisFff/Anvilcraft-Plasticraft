@@ -7,7 +7,7 @@ plugins {
 }
 
 String buildNumber = System.getenv('GITHUB_RUN_NUMBER')
-String buildType = System.getenv('BUILD_TYPE') ?: 'build'
+String buildType = System.getenv('BUILD_TYPE') ?: 'snapshot'
 String githubRef = System.getenv('GITHUB_REF')
 if (githubRef != null && githubRef.startsWith('refs/tags/')) {
     version = githubRef.substring(githubRef.lastIndexOf('/') + 1)
@@ -15,6 +15,19 @@ if (githubRef != null && githubRef.startsWith('refs/tags/')) {
     version = "${mod_version}" + (buildNumber != null ? "+${buildType}.${buildNumber}" : '')
 }
 group = maven_group
+
+sourceSets {
+    gameTest {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+}
+
+configurations {
+    gameTestImplementation.extendsFrom implementation
+    gameTestCompileOnly.extendsFrom compileOnly
+    gameTestRuntimeOnly.extendsFrom runtimeOnly
+}
 
 apply from: "$rootDir/gradle/scripts/moddevgradle.gradle"
 apply from: "$rootDir/gradle/scripts/repositories.gradle"

@@ -1,9 +1,7 @@
 neoForge {
     version = libs.versions.neoForge.get()
 
-    // Keep the interface surface supplied by AnvilCraft available when the
-    // addon uses a locally built AnvilCraft JAR.  Passing that JAR directly to
-    // interfaceInjectionData would make JST try to decode binary bytes as JSON.
+    // 提供本模组使用的 AnvilCraft 接口注入声明；本体构件通过 dependencies.gradle 引入。
     interfaceInjectionData {
         from file('src/main/resources/interface_injections.json')
         publish file('src/main/resources/interface_injections.json')
@@ -14,8 +12,18 @@ neoForge {
         mappingsVersion = project.parchment_mappings_version
     }
 
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+        }
+        "${mod_id}_tests" {
+            sourceSet(sourceSets.gameTest)
+        }
+    }
+
     runs {
         configureEach {
+            loadedMods = [mods."${mod_id}"]
             systemProperty 'forge.logging.markers', 'REGISTRIES'
             systemProperty 'terminal.jline', 'true'
             logLevel = org.slf4j.event.Level.DEBUG
@@ -28,17 +36,19 @@ neoForge {
         client {
             client()
             programArguments.addAll '--width', '1440', '--height', '841'
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
 
         server {
             server()
+            gameDirectory.value(project.layout.projectDirectory.dir('run/server'))
             programArgument '--nogui'
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
 
         gameTestServer {
             type = 'gameTestServer'
+            gameDirectory.value(project.layout.projectDirectory.dir('run/gameTestServer'))
+            sourceSet = sourceSets.gameTest
+            loadedMods = [mods."${mod_id}", mods."${mod_id}_tests"]
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
 
@@ -50,12 +60,6 @@ neoForge {
                 '--output', file('src/generated/resources').absolutePath,
                 '--existing', file('src/main/resources').absolutePath
             )
-        }
-    }
-
-    mods {
-        "${mod_id}" {
-            sourceSet(sourceSets.main)
         }
     }
 }

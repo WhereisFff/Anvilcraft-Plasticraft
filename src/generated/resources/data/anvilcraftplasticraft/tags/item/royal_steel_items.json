@@ -1,0 +1,25 @@
+{
+  "values": [
+    "anvilcraft:royal_anvil",
+    "anvilcraft:royal_grindstone",
+    "anvilcraft:royal_smithing_table",
+    "anvilcraft:royal_steel_block",
+    "anvilcraft:smooth_royal_steel_block",
+    "anvilcraft:cut_royal_steel_block",
+    "anvilcraft:cut_royal_steel_pillar",
+    "anvilcraft:cut_royal_steel_slab",
+    "anvilcraft:cut_royal_steel_stairs",
+    "anvilcraft:tempering_glass",
+    "anvilcraft:royal_steel_ingot",
+    "anvilcraft:royal_steel_nugget",
+    "anvilcraft:royal_steel_pickaxe",
+    "anvilcraft:royal_steel_axe",
+    "anvilcraft:royal_steel_shovel",
+    "anvilcraft:royal_steel_hoe",
+    "anvilcraft:royal_steel_sword",
+    "anvilcraft:royal_anvil_hammer",
+    "anvilcraft:royal_dragon_rod",
+    "anvilcraft:royal_steel_upgrade_smithing_template",
+    "anvilcraftplasticraft:catalytic_press_lid"
+  ]
+}

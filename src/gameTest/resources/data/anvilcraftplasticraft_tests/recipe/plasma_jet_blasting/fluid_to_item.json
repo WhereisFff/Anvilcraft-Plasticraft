@@ -1,0 +1,10 @@
+{
+  "type": "anvilcraftplasticraft:plasma_jet_blasting",
+  "consume": 50,
+  "fluid": "minecraft:lava",
+  "results": [
+    {
+      "id": "minecraft:clay_ball"
+    }
+  ]
+}

@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      BUILD_TYPE: snapshot
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,8 +32,19 @@ jobs:
       - name: Build
         run: ./gradlew build --no-daemon --console=plain
 
+      - name: Resolve artifact name
+        id: artifact
+        shell: bash
+        run: |
+          jar_path="$(find build/libs -maxdepth 1 -type f -name 'anvilcraft-plasticraft-*.jar' ! -name '*-sources.jar' -print -quit)"
+          test -n "$jar_path"
+          echo "name=$(basename "$jar_path" .jar)" >> "$GITHUB_OUTPUT"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: anvilcraft-plastic
-          path: build/libs/*.jar
+          name: ${{ steps.artifact.outputs.name }}
+          path: |
+            build/libs/${{ steps.artifact.outputs.name }}.jar
+            build/libs/${{ steps.artifact.outputs.name }}-sources.jar
+          if-no-files-found: error

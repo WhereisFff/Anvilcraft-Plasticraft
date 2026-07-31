@@ -1,0 +1,31 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "key": {
+    "B": {
+      "item": "anvilcraft:resin_block"
+    },
+    "I": {
+      "item": "anvilcraft:magnet_ingot"
+    },
+    "R": {
+      "item": "anvilcraft:resin"
+    }
+  },
+  "pattern": [
+    "BBB",
+    " I ",
+    "RRR"
+  ],
+  "result": {
+    "components": {
+      "minecraft:custom_data": {
+        "Magnetized": 1,
+        "PlasticMaterial": "resin"
+      },
+      "minecraft:custom_model_data": 1
+    },
+    "count": 1,
+    "id": "anvilcraftplasticraft:resin_anvil"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "anvilcraftplasticraft:item/universal_plastic_granule"
+  }
+}

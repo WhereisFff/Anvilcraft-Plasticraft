@@ -1,5 +1,14 @@
 {
   "values": [
-    "anvilcraftplasticraft:plastic_anvil"
+    "anvilcraftplasticraft:condenser_tower",
+    "anvilcraftplasticraft:liquid_high_viscosity_resin_cauldron",
+    "anvilcraftplasticraft:high_heat_fuel_cauldron",
+    "anvilcraftplasticraft:plastic_oil_cauldron",
+    "anvilcraftplasticraft:universal_plastic_melt_cauldron",
+    "anvilcraftplasticraft:universal_plastic",
+    "anvilcraftplasticraft:hardend_resin_anvil",
+    "anvilcraftplasticraft:hardend_resin_cauldron",
+    "anvilcraftplasticraft:catalytic_press_lid",
+    "anvilcraftplasticraft:resin_anvil"
   ]
 }

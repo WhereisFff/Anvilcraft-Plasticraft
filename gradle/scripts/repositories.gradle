@@ -1,16 +1,19 @@
 repositories {
+    def centralRepository = mavenCentral()
+    def anvilRepository = maven {
+        name = 'Cjsah Maven'
+        url = 'https://server.cjsah.net:1002/maven/'
+        content {
+            includeGroup 'dev.anvilcraft.lib'
+            includeGroup 'dev.dubhe'
+            includeGroup 'dev.anvilcraft.resource'
+        }
+    }
+
     exclusiveContent {
         forRepositories(
-            mavenCentral(),
-            maven {
-                name = 'Cjsah Maven'
-                url = 'https://server.cjsah.net:1002/maven/'
-                content {
-                    includeGroup 'dev.anvilcraft.lib'
-                    includeGroup 'dev.dubhe'
-                    includeGroup 'dev.anvilcraft.resource'
-                }
-            }
+            centralRepository,
+            anvilRepository
         )
         filter {
             includeGroup 'dev.anvilcraft.lib'
@@ -29,13 +32,4 @@ repositories {
         content { includeGroup 'mezz.jei' }
     }
 
-    // Local Maven is only a fallback for unrelated development artifacts.
-    // Keep the AnvilCraft ecosystem remote-first; a sibling AnvilCraft build
-    // must be selected explicitly with -Puse_local_anvilcraft=true.
-    mavenLocal {
-        content {
-            excludeGroupByRegex 'dev\\.dubhe(\\..*)?'
-            excludeGroupByRegex 'dev\\.anvilcraft(\\..*)?'
-        }
-    }
 }

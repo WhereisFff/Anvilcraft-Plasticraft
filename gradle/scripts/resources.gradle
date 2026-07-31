@@ -1,10 +1,12 @@
-def generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
+tasks.withType(ProcessResources).configureEach {
     def replaceProperties = [
         minecraft_version      : minecraft_version,
         minecraft_version_range: minecraft_version_range,
         neo_version            : neo_version,
         neo_version_range      : neo_version_range,
         loader_version_range   : loader_version_range,
+        anvilcraft_version_range: anvilcraft_version_range,
+        anvillib_version_range  : anvillib_version_range,
         mod_id                 : mod_id,
         mod_name               : mod_name,
         mod_license            : mod_license,
@@ -13,10 +15,8 @@ def generateModMetadata = tasks.register('generateModMetadata', ProcessResources
         mod_description        : mod_description
     ]
     inputs.properties replaceProperties
-    expand replaceProperties
-    from 'src/main/templates'
-    into 'build/generated/sources/modMetadata'
-}
 
-sourceSets.main.resources.srcDir generateModMetadata
-neoForge.ideSyncTask generateModMetadata
+    filesMatching(['META-INF/neoforge.mods.toml']) {
+        expand replaceProperties
+    }
+}

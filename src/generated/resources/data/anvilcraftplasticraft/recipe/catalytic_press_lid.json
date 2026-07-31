@@ -1,0 +1,24 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "H": {
+      "item": "anvilcraft:hardend_resin"
+    },
+    "R": {
+      "item": "anvilcraft:royal_steel_ingot"
+    },
+    "W": {
+      "item": "anvilcraft:heavy_iron_wall"
+    }
+  },
+  "pattern": [
+    "WRW",
+    "HHH",
+    " R "
+  ],
+  "result": {
+    "count": 1,
+    "id": "anvilcraftplasticraft:catalytic_press_lid"
+  }
+}

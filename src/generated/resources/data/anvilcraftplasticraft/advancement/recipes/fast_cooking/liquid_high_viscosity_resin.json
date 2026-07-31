@@ -1,0 +1,54 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_lime_powder": {
+      "conditions": {
+        "items": [
+          {
+            "items": "anvilcraft:lime_powder"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_resin": {
+      "conditions": {
+        "items": [
+          {
+            "items": "anvilcraft:resin"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_slime_ball": {
+      "conditions": {
+        "items": [
+          {
+            "items": "minecraft:slime_ball"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "anvilcraftplasticraft:fast_cooking/liquid_high_viscosity_resin"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_resin",
+      "has_slime_ball",
+      "has_lime_powder"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "anvilcraftplasticraft:fast_cooking/liquid_high_viscosity_resin"
+    ]
+  }
+}

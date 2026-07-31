@@ -1,0 +1,7 @@
+{
+  "type": "anvilcraftplasticraft:condenser",
+  "consume": 10,
+  "fluid": "anvilcraftplasticraft:high_heat_fuel",
+  "gas": "yukkuri:gaseous_oil",
+  "produce": 10
+}

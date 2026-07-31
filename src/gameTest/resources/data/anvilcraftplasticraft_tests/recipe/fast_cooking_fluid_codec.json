@@ -1,0 +1,12 @@
+{
+  "type": "anvilcraft:fast_cooking",
+  "consume": 1000,
+  "fluid": "minecraft:water",
+  "ingredients": [
+    {
+      "items": "minecraft:stick"
+    }
+  ],
+  "produce": 1000,
+  "transform": "minecraft:lava"
+}

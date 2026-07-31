@@ -1,0 +1,20 @@
+{
+  "type": "anvilcraftplasticraft:fluid_fast_cooking",
+  "consume": 1000,
+  "fluid": "minecraft:water",
+  "ingredients": [
+    {
+      "count": 4,
+      "items": "anvilcraft:resin"
+    },
+    {
+      "count": 4,
+      "items": "minecraft:slime_ball"
+    },
+    {
+      "items": "anvilcraft:lime_powder"
+    }
+  ],
+  "produce": 1000,
+  "transform": "anvilcraftplasticraft:liquid_high_viscosity_resin"
+}

@@ -1,0 +1,5 @@
+{
+  "parent": "neoforge:item/bucket_drip",
+  "fluid": "anvilcraftplasticraft:crude_oil_acid",
+  "loader": "neoforge:fluid_container"
+}

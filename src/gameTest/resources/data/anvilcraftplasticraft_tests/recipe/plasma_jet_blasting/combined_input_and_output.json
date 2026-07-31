@@ -1,0 +1,17 @@
+{
+  "type": "anvilcraftplasticraft:plasma_jet_blasting",
+  "consume": 50,
+  "fluid": "minecraft:water",
+  "ingredients": [
+    {
+      "items": "minecraft:coal"
+    }
+  ],
+  "produce": 50,
+  "results": [
+    {
+      "id": "minecraft:diamond"
+    }
+  ],
+  "transform": "minecraft:lava"
+}

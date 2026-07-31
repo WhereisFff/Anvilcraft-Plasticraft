@@ -1,0 +1,7 @@
+{
+  "type": "anvilcraftplasticraft:plasma_jet_blasting",
+  "consume": 50,
+  "fluid": "minecraft:water",
+  "produce": 50,
+  "transform": "yukkuri:gaseous_water"
+}

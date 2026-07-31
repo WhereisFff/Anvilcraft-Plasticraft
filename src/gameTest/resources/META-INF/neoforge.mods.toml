@@ -1,0 +1,15 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "LGPL-3.0-or-later"
+
+[[mods]]
+modId = "anvilcraftplasticraft_tests"
+displayName = "Anvilcraft: Plasticraft Tests"
+description = '''Development-only GameTest entry point for Anvilcraft: Plasticraft.'''
+
+[[dependencies.anvilcraftplasticraft_tests]]
+modId = "anvilcraftplasticraft"
+type = "required"
+versionRange = "[0.1.0,)"
+ordering = "AFTER"
+side = "BOTH"
