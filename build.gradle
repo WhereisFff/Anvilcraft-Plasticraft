@@ -7,7 +7,7 @@ plugins {
 }
 
 String buildNumber = System.getenv('GITHUB_RUN_NUMBER')
-String buildType = System.getenv('BUILD_TYPE') ?: 'build'
+String buildType = System.getenv('BUILD_TYPE') ?: 'snapshot'
 String githubRef = System.getenv('GITHUB_REF')
 if (githubRef != null && githubRef.startsWith('refs/tags/')) {
     version = githubRef.substring(githubRef.lastIndexOf('/') + 1)

@@ -11,5 +11,5 @@ jar {
 }
 
 base {
-    archivesName = "${project.name}-${libs.versions.minecraft.get()}"
+    archivesName = "anvilcraft-plasticraft-${libs.versions.minecraft.get()}"
 }
