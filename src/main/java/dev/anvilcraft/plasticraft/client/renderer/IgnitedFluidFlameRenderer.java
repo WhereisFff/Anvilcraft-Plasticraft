@@ -17,10 +17,12 @@ public final class IgnitedFluidFlameRenderer {
     private static final ModelResourceLocation ORDINARY_FLAME_MODEL = ModelResourceLocation.standalone(
         ResourceLocation.fromNamespaceAndPath("anvilcraft", "block/fire_cauldron_fire4")
     );
-    public static final ModelResourceLocation SOUL_FLAME_MODEL = ModelResourceLocation.standalone(
-        AnvilcraftPlasticraft.of("block/soul_fire_cauldron_fire4")
+    public static final ModelResourceLocation BLUE_FLAME_MODEL = ModelResourceLocation.standalone(
+        AnvilcraftPlasticraft.of("block/blue_fire")
     );
-    private static final float MODEL_SURFACE_Y = 1.0F - (1.0F / 16.0F + 0.001F);
+    private static final float ORDINARY_MODEL_SURFACE_Y = 15.0F / 16.0F - 0.001F;
+    private static final float BLUE_MODEL_SURFACE_Y = -0.001F;
+    private static final float BLUE_FLAME_SCALE = 1.1F;
 
     private IgnitedFluidFlameRenderer() {
     }
@@ -32,17 +34,33 @@ public final class IgnitedFluidFlameRenderer {
         float scale,
         int packedOverlay
     ) {
-        render(poseStack, buffers, surfaceY, scale, packedOverlay, ORDINARY_FLAME_MODEL);
+        render(
+            poseStack,
+            buffers,
+            surfaceY,
+            scale,
+            packedOverlay,
+            ORDINARY_FLAME_MODEL,
+            ORDINARY_MODEL_SURFACE_Y
+        );
     }
 
-    public static void renderSoul(
+    public static void renderBlue(
         PoseStack poseStack,
         MultiBufferSource buffers,
         float surfaceY,
         float scale,
         int packedOverlay
     ) {
-        render(poseStack, buffers, surfaceY, scale, packedOverlay, SOUL_FLAME_MODEL);
+        render(
+            poseStack,
+            buffers,
+            surfaceY,
+            scale * BLUE_FLAME_SCALE,
+            packedOverlay,
+            BLUE_FLAME_MODEL,
+            BLUE_MODEL_SURFACE_Y
+        );
     }
 
     private static void render(
@@ -51,13 +69,14 @@ public final class IgnitedFluidFlameRenderer {
         float surfaceY,
         float scale,
         int packedOverlay,
-        ModelResourceLocation modelLocation
+        ModelResourceLocation modelLocation,
+        float modelSurfaceY
     ) {
         BlockRenderDispatcher dispatcher = Minecraft.getInstance().getBlockRenderer();
         BakedModel model = dispatcher.getBlockModelShaper().getModelManager().getModel(modelLocation);
         float centerOffset = (1.0F - scale) * 0.5F;
         poseStack.pushPose();
-        poseStack.translate(centerOffset, surfaceY - MODEL_SURFACE_Y * scale, centerOffset);
+        poseStack.translate(centerOffset, surfaceY - modelSurfaceY * scale, centerOffset);
         poseStack.scale(scale, scale, scale);
         dispatcher.getModelRenderer().renderModel(
             poseStack.last(),

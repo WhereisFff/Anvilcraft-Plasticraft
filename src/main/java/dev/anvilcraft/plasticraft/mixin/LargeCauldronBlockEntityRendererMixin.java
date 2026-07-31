@@ -92,7 +92,7 @@ abstract class LargeCauldronBlockEntityRendererMixin {
             0.0F,
             1.0F
         );
-        IgnitedFluidFlameRenderer.renderSoul(
+        IgnitedFluidFlameRenderer.renderBlue(
             poseStack,
             buffers,
             plasticraft$CONTENT_MIN_Y + plasticraft$CONTENT_HEIGHT * fill,

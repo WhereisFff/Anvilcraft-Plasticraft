@@ -30,7 +30,7 @@ public final class HighHeatFuelCauldronBlockEntityRenderer
         if (!state.getValue(HighHeatFuelCauldronBlock.IGNITED) || blockEntity.isSpent()) return;
         int level = state.getValue(Layered4LevelCauldronBlock.LEVEL);
         float surfaceY = (6.0F + level * 2.0F) / 16.0F + 0.01F;
-        IgnitedFluidFlameRenderer.renderSoul(
+        IgnitedFluidFlameRenderer.renderBlue(
             pose,
             buffers,
             surfaceY,

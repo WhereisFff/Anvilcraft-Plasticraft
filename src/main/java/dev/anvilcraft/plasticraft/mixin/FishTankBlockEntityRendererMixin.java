@@ -74,7 +74,7 @@ abstract class FishTankBlockEntityRendererMixin {
         if (!tank.isIgnited() || !fluid.is(ModFluids.HIGH_HEAT_FUEL.get())) return;
         float fill = Math.min((float) fluid.getAmount() / tank.getFluidHandler().getCapacity(), 1.0F);
         float surfaceY = TANK_WALL + (1.0F - 2.0F * TANK_WALL) * fill;
-        IgnitedFluidFlameRenderer.renderSoul(
+        IgnitedFluidFlameRenderer.renderBlue(
             poseStack,
             buffers,
             surfaceY,

@@ -1,14 +1,11 @@
 package dev.anvilcraft.plasticraft.integration.jei;
 
-import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.recipe.CondenserGas;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.client.support.RenderSupport;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiRenderHelper;
-import mezz.jei.api.gui.ITickTimer;
 import mezz.jei.api.gui.builder.IRecipeLayoutBuilder;
 import mezz.jei.api.gui.builder.ITooltipBuilder;
 import mezz.jei.api.gui.drawable.IDrawable;
@@ -37,10 +34,9 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
 
     private final IDrawable icon;
     private final IDrawable slot;
-    private final IDrawable steam;
+    private final VaporDrawableSet vaporDrawables;
     private final IDrawable arrowIn;
     private final IDrawable arrowOut;
-    private final ITickTimer timer;
     private final BlockState tower;
 
     public CondenserCategory(IGuiHelper helper) {
@@ -48,16 +44,9 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
             new ItemStack(ModBlocks.CONDENSER_TOWER)
         );
         this.slot = JeiRenderHelper.getSlotDefault(helper);
-        this.steam = helper.drawableBuilder(
-            AnvilcraftPlasticraft.of("textures/gui/jei/steam.png"),
-            0,
-            0,
-            16,
-            16
-        ).setTextureSize(16, 16).build();
+        this.vaporDrawables = new VaporDrawableSet(helper);
         this.arrowIn = JeiRenderHelper.getArrowInput(helper);
         this.arrowOut = JeiRenderHelper.getArrowOutput(helper);
-        this.timer = helper.createTickTimer(20, 20, false);
         this.tower = ModBlocks.CONDENSER_TOWER.getDefaultState()
             .setValue(CondenserTowerBlock.HALF, Cube3x3PartHalf.MID_CENTER);
     }
@@ -118,11 +107,7 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
     ) {
         CondenserRecipe recipe = holder.value();
         this.slot.draw(graphics, 119, 23);
-        if (CondenserGas.GASEOUS_EXPERIENCE.equals(CondenserGas.canonicalize(recipe.gas()))) {
-            PlasmaJetBlastingCategory.drawExperienceOrb(graphics, 15, 23, this.timer.getValue());
-        } else {
-            this.steam.draw(graphics, 16, 24);
-        }
+        this.vaporDrawables.draw(graphics, recipe.gas(), 16, 24);
         this.arrowIn.draw(graphics, 48, 30);
         this.arrowOut.draw(graphics, 96, 29);
         RenderSupport.renderBlock(graphics, this.tower, 81, 33, 10, 7.0F, RenderSupport.SINGLE_BLOCK);

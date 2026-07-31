@@ -131,7 +131,7 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
         }
         if (entity.anvilcraft$isIgnited()) {
             if (fluid.is(ModFluids.HIGH_HEAT_FUEL.get())) {
-                IgnitedFluidFlameRenderer.renderSoul(
+                IgnitedFluidFlameRenderer.renderBlue(
                     pose,
                     buffers,
                     fluidTop,

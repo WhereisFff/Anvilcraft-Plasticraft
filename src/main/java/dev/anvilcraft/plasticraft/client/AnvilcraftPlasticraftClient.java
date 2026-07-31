@@ -110,7 +110,7 @@ public final class AnvilcraftPlasticraftClient {
         event.register(HardenedResinCauldronRenderer.OUTLET_MODEL);
         event.register(CatalyticPressLidRenderer.ARM_MODEL);
         event.register(AdhesivePatchRenderer.MODEL);
-        event.register(IgnitedFluidFlameRenderer.SOUL_FLAME_MODEL);
+        event.register(IgnitedFluidFlameRenderer.BLUE_FLAME_MODEL);
     }
 
     private static void registerParticleProviders(RegisterParticleProvidersEvent event) {
