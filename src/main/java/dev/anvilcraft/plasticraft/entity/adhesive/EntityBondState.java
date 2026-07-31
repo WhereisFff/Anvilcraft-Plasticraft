@@ -152,4 +152,14 @@ public record EntityBondState(
         );
     }
 
+    public EntityBondState withLinks(List<EntityBondLink> links) {
+        return new EntityBondState(
+            this.leaderUuid,
+            this.leaderEntityId,
+            this.offsetFromLeader,
+            this.originalNoGravity,
+            links
+        );
+    }
+
 }

@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.event;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesivePreviewService;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveSelectionManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.init.ModAttachments;
@@ -25,6 +26,7 @@ import net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 /** 为非标准输入路径提供服务端树脂桶交互兜底。 */
 @EventBusSubscriber(modid = AnvilcraftPlasticraft.MOD_ID)
@@ -34,13 +36,23 @@ public final class HighViscosityResinAdhesionEvents {
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void knockbackStartsAdhesiveRebound(LivingKnockBackEvent event) {
+        if (event.getEntity().level().isClientSide || !hasAdhesive(event.getEntity())) return;
         double resistance = event.getEntity().getAttributeValue(
             Attributes.KNOCKBACK_RESISTANCE
         );
         double effectiveStrength = event.getStrength() * Math.max(0.0D, 1.0D - resistance);
-        if (hasAdhesive(event.getEntity())) {
-            AdhesiveBondingService.beginElasticMotion(event.getEntity(), effectiveStrength);
-        }
+        Entity knockbackTarget = AdhesiveBondingService.prepareKnockback(
+            event.getEntity(),
+            effectiveStrength
+        );
+        if (knockbackTarget == event.getEntity()) return;
+        event.setCanceled(true);
+        AdhesiveBondingService.applyKnockback(
+            knockbackTarget,
+            effectiveStrength,
+            event.getRatioX(),
+            event.getRatioZ()
+        );
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
@@ -104,7 +116,7 @@ public final class HighViscosityResinAdhesionEvents {
             return;
         }
         if (event.getEntity().level().isClientSide) return;
-        boolean bonded = AdhesiveBondingService.bondSelected(
+        boolean bonded = AdhesivePreviewService.confirmBlock(
             event.getEntity(),
             event.getHand(),
             event.getPos(),
@@ -122,6 +134,11 @@ public final class HighViscosityResinAdhesionEvents {
     @SubscribeEvent
     public static void playerChangedDimension(PlayerEvent.PlayerChangedDimensionEvent event) {
         AdhesiveSelectionManager.clear(event.getEntity());
+    }
+
+    @SubscribeEvent
+    public static void serverTick(ServerTickEvent.Post event) {
+        AdhesivePreviewService.tick(event.getServer());
     }
 
     @SubscribeEvent
@@ -151,7 +168,7 @@ public final class HighViscosityResinAdhesionEvents {
         if (AdhesiveBondingService.reclaimEntity(player, hand, target, hitFace)) return;
         Entity selected = AdhesiveSelectionManager.resolveServerSelection(player);
         if (selected != null && selected != target) {
-            AdhesiveBondingService.bondSelectedToEntity(player, hand, target, hitFace);
+            AdhesivePreviewService.confirmEntity(player, hand, target, hitFace);
         } else {
             AdhesiveBondingService.select(player, hand, target, hitFace);
         }

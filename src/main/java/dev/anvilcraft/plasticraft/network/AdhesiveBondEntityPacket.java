@@ -4,7 +4,7 @@ import dev.anvilcraft.lib.v2.codec.StreamCodecUtil;
 import dev.anvilcraft.lib.v2.network.packet.IPacket;
 import dev.anvilcraft.lib.v2.network.packet.IServerboundPacket;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesivePreviewService;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveSelectionManager;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.core.BlockPos;
@@ -46,6 +46,6 @@ public record AdhesiveBondEntityPacket(
     public void handleOnServer(Player player) {
         Entity selected = AdhesiveSelectionManager.resolveServerSelection(player);
         if (selected == null || selected.getId() != this.entityId) return;
-        AdhesiveBondingService.bondSelected(player, this.hand, this.supportPos, this.attachmentFace);
+        AdhesivePreviewService.confirmBlock(player, this.hand, this.supportPos, this.attachmentFace);
     }
 }

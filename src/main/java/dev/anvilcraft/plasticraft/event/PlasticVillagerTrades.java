@@ -16,7 +16,7 @@ import net.neoforged.neoforge.event.village.VillagerTradesEvent;
 /** 向 AnvilCraft 珠宝商追加 Plasticraft 自己的收购项目。 */
 public final class PlasticVillagerTrades {
     private static final int NOVICE_LEVEL = 1;
-    private static final int GRANULE_COST = 16;
+    private static final int GRANULE_COST = 8;
     private static final int EMERALD_PAYMENT = 2;
     private static final int MAX_USES = 16;
     private static final int VILLAGER_XP = 2;

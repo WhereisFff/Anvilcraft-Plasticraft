@@ -15,7 +15,6 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -130,19 +129,19 @@ public final class ResinAnvilHammerEvents {
 
     /** 使用原版击退附魔的方向与强度换算：击退 V 对应 5 * 0.5。 */
     private static void knockbackFromView(Entity target, Player attacker) {
-        AdhesiveBondingService.beginElasticMotion(target, ResinAnvilHammerItem.KNOCKBACK_STRENGTH);
+        if (target.level().isClientSide) return;
+        Entity knockbackTarget = AdhesiveBondingService.prepareKnockback(
+            target,
+            ResinAnvilHammerItem.KNOCKBACK_STRENGTH
+        );
         float yaw = attacker.getYRot() * Mth.DEG_TO_RAD;
         double directionX = Mth.sin(yaw);
         double directionZ = -Mth.cos(yaw);
-        if (target instanceof LivingEntity livingTarget) {
-            livingTarget.knockback(ResinAnvilHammerItem.KNOCKBACK_STRENGTH, directionX, directionZ);
-        } else {
-            target.push(
-                -directionX * ResinAnvilHammerItem.KNOCKBACK_STRENGTH,
-                0.1D,
-                -directionZ * ResinAnvilHammerItem.KNOCKBACK_STRENGTH
-            );
-        }
-        target.hurtMarked = true;
+        AdhesiveBondingService.applyKnockback(
+            knockbackTarget,
+            ResinAnvilHammerItem.KNOCKBACK_STRENGTH,
+            directionX,
+            directionZ
+        );
     }
 }

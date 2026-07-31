@@ -8,6 +8,7 @@ import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
+import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionBox;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticPushChain;
@@ -125,7 +126,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     private static final byte NO_HAMMER_ORIENTATION = -1;
     private static final int HAMMER_DEFLECTION_HOLD_TICKS = 2;
     private static final double HAMMER_ROTATION_COLLISION_EPSILON = 1.0E-6D;
-    private static final double CLIENT_HARD_CORRECTION_DISTANCE = PlasticEntityPhysics.MAX_CARRY_DISTANCE;
+    private static final double CLIENT_HARD_CORRECTION_DISTANCE = 16.0D;
     private static final double CLIENT_MAX_PREDICTION_DISTANCE_SQR = 4.0D;
     private static final long CLIENT_PREDICTION_TIMEOUT_TICKS = 10L;
     public static final int HAMMER_RETURN_ANIMATION_TICKS = 5;
@@ -151,6 +152,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     private final PlasticSlidingRailPhysics.State slidingRailState = new PlasticSlidingRailPhysics.State();
     private Set<BlockPos> supportedFallingBlocks = Set.of();
     private boolean clientSnapshotPending;
+    private int clientSnapshotSteps;
     private float clientSnapshotYRot;
     private float clientSnapshotXRot;
     private boolean clientServerPositionInitialized;
@@ -259,6 +261,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         this.clientSnapshotYRot = this.getYRot();
         this.clientSnapshotXRot = this.getXRot();
         this.clientSnapshotPending = false;
+        this.clientSnapshotSteps = 0;
         this.clientServerPositionInitialized = true;
         this.clientServerX = this.getX();
         this.clientServerY = this.getY();
@@ -282,7 +285,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON;
         boolean rotationChanged = Math.abs(Mth.wrapDegrees(yRot - this.clientSnapshotYRot)) > 1.0E-3F
             || Math.abs(Mth.wrapDegrees(xRot - this.clientSnapshotXRot)) > 1.0E-3F;
-        if (!PlasticEntityPhysics.isWithinCarryDistance(serverMovement)) {
+        if (!Double.isFinite(serverMovement.lengthSqr())
+            || serverMovement.lengthSqr()
+                > CLIENT_HARD_CORRECTION_DISTANCE * CLIENT_HARD_CORRECTION_DISTANCE) {
             this.clientPredictedCarrierMovement = Vec3.ZERO;
             this.clientPendingServerMovement = Vec3.ZERO;
             this.clientLastPredictionConfirmationGameTime = Long.MIN_VALUE;
@@ -301,6 +306,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         this.clientServerZ = z;
         this.clientSnapshotYRot = yRot;
         this.clientSnapshotXRot = xRot;
+        this.clientSnapshotSteps = Math.max(1, steps);
         this.clientSnapshotPending = true;
     }
 
@@ -321,12 +327,16 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     @Override
     public float lerpTargetYRot() {
-        return this.clientSnapshotPending ? this.clientSnapshotYRot : this.getYRot();
+        return this.clientSnapshotPending || this.clientSnapshotSteps > 0
+            ? this.clientSnapshotYRot
+            : this.getYRot();
     }
 
     @Override
     public float lerpTargetXRot() {
-        return this.clientSnapshotPending ? this.clientSnapshotXRot : this.getXRot();
+        return this.clientSnapshotPending || this.clientSnapshotSteps > 0
+            ? this.clientSnapshotXRot
+            : this.getXRot();
     }
 
     /** 用服务端已前进的距离逐轴确认本地推动，迟到快照只消费已经确认的部分。 */
@@ -359,6 +369,14 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         this.clientPredictedCarrierMovement = Vec3.ZERO;
         this.clientLastPredictionConfirmationGameTime = Long.MIN_VALUE;
         return true;
+    }
+
+    private boolean shouldHardCorrectClientSnapshot(Vec3 snapshotPosition) {
+        return !Double.isFinite(snapshotPosition.x)
+            || !Double.isFinite(snapshotPosition.y)
+            || !Double.isFinite(snapshotPosition.z)
+            || this.position().distanceToSqr(snapshotPosition)
+                > CLIENT_HARD_CORRECTION_DISTANCE * CLIENT_HARD_CORRECTION_DISTANCE;
     }
 
     public final PlasticEntityOrientation getOrientation() {
@@ -569,8 +587,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
                 this.yOld = this.yo = this.clientCarrierMoveStartY;
                 this.zOld = this.zo = this.clientCarrierMoveStartZ;
             }
-            boolean positionUpdate = this.clientSnapshotPending;
-            if (this.clientSnapshotPending) {
+            boolean receivedSnapshot = this.clientSnapshotPending;
+            if (receivedSnapshot) {
                 Vec3 previousPrediction = this.clientPredictedCarrierMovement;
                 this.clientPredictedCarrierMovement = reconcileClientPrediction(
                     previousPrediction,
@@ -582,26 +600,39 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
                     this.clientLastPredictionConfirmationGameTime = this.level().getGameTime();
                 }
                 this.clientPendingServerMovement = Vec3.ZERO;
+                this.clientSnapshotPending = false;
             }
-            positionUpdate |= this.clearExpiredClientPrediction();
+            boolean predictionCleared = this.clearExpiredClientPrediction();
+            if (predictionCleared && this.clientSnapshotSteps == 0) {
+                this.clientSnapshotSteps = 1;
+            }
             // 服务端确认量与本刻本地推动在同一处归并，避免包处理顺序让链尾实体重复前进。
-            if (positionUpdate && this.clientServerPositionInitialized) {
+            if (this.clientServerPositionInitialized
+                && (receivedSnapshot || predictionCleared || this.clientSnapshotSteps > 0)) {
                 Vec3 snapshotPosition = new Vec3(
                     this.clientServerX,
                     this.clientServerY,
                     this.clientServerZ
                 ).add(this.clientPredictedCarrierMovement);
-                this.clientSnapshotHardCorrection |= this.position().distanceToSqr(snapshotPosition)
-                    > CLIENT_HARD_CORRECTION_DISTANCE * CLIENT_HARD_CORRECTION_DISTANCE;
-                this.setPos(snapshotPosition);
-                this.setRot(this.clientSnapshotYRot, this.clientSnapshotXRot);
-                this.clientSnapshotPending = false;
-                if (this.clientSnapshotHardCorrection) {
+                if (this.clientSnapshotHardCorrection || this.shouldHardCorrectClientSnapshot(snapshotPosition)) {
+                    this.setPos(snapshotPosition);
+                    this.setRot(this.clientSnapshotYRot, this.clientSnapshotXRot);
+                    this.clientSnapshotSteps = 0;
                     this.xOld = this.xo = this.getX();
                     this.yOld = this.yo = this.getY();
                     this.zOld = this.zo = this.getZ();
-                    this.clientSnapshotHardCorrection = false;
+                } else {
+                    int interpolationSteps = Math.max(1, this.clientSnapshotSteps);
+                    this.setPos(this.position().lerp(snapshotPosition, 1.0D / interpolationSteps));
+                    this.setRot(
+                        this.getYRot()
+                            + Mth.wrapDegrees(this.clientSnapshotYRot - this.getYRot()) / interpolationSteps,
+                        this.getXRot()
+                            + Mth.wrapDegrees(this.clientSnapshotXRot - this.getXRot()) / interpolationSteps
+                    );
+                    this.clientSnapshotSteps = interpolationSteps - 1;
                 }
+                this.clientSnapshotHardCorrection = false;
             }
             // 仅重建本地玩家碰撞预测所需的支撑关系，实体运动仍由服务端快照决定。
             this.refreshClientSupportObservation();
@@ -877,10 +908,15 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     }
 
     private void applySurfaceFriction(Direction gravityDirection) {
-        if (gravityDirection == null || !PlasticEntityPhysics.hasBlockSupport(this, gravityDirection)) return;
-        BlockPos supportPos = PlasticEntityPhysics.landingPosition(this, gravityDirection).relative(gravityDirection);
+        if (gravityDirection == null) return;
+        AbstractPlasticEntity frictionMember = this.findSurfaceFrictionMember(gravityDirection);
+        if (frictionMember == null) return;
+        BlockPos supportPos = PlasticEntityPhysics.landingPosition(
+            frictionMember,
+            gravityDirection
+        ).relative(gravityDirection);
         BlockState supportState = this.level().getBlockState(supportPos);
-        float friction = supportState.getFriction(this.level(), supportPos, this);
+        float friction = supportState.getFriction(this.level(), supportPos, frictionMember);
         double retention;
         if (friction >= 0.9F) {
             retention = 0.96D;
@@ -896,6 +932,22 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         Vec3 tangential = velocity.subtract(normal.scale(normalVelocity)).scale(retention);
         if (tangential.lengthSqr() < 1.0E-5D) tangential = Vec3.ZERO;
         this.setDeltaMovement(tangential.add(normal.scale(normalVelocity)));
+    }
+
+    private AbstractPlasticEntity findSurfaceFrictionMember(Direction gravityDirection) {
+        if (PlasticEntityPhysics.hasBlockSupport(this, gravityDirection)) return this;
+        if (!EntityBondManager.hasBonds(this) || EntityBondManager.isFollower(this)) return null;
+        for (Entity member : EntityBondManager.component(this.level(), this)) {
+            if (!(member instanceof AbstractPlasticEntity plastic) || plastic == this) continue;
+            EntityBondState bonds = EntityBondManager.get(plastic);
+            if (bonds == null || !bonds.leaderUuid().equals(this.getUUID())) continue;
+            Direction memberGravityDirection = plastic.plasticraft$currentPushGravityDirection();
+            if (memberGravityDirection != gravityDirection) continue;
+            Vec3 expectedPosition = this.position().add(bonds.offsetFromLeader());
+            AABB expectedBounds = plastic.getBoundingBox().move(expectedPosition.subtract(plastic.position()));
+            if (PlasticEntityPhysics.hasBlockSupport(plastic, expectedBounds, gravityDirection)) return plastic;
+        }
+        return null;
     }
 
     protected final boolean isOnSlidingRail() {
@@ -1355,6 +1407,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
                 this.clientPredictedCarrierMovement = Vec3.ZERO;
                 this.clientLastPredictionConfirmationGameTime = Long.MIN_VALUE;
                 if (this.clientServerPositionInitialized) {
+                    this.clientSnapshotSteps = 1;
                     this.clientSnapshotPending = true;
                     this.clientSnapshotHardCorrection = true;
                 }
@@ -1463,7 +1516,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     @Override
     public boolean canCollideWith(Entity entity) {
-        return Boat.canVehicleCollide(this, entity);
+        return !EntityBondManager.areInSameComponent(this, entity)
+            && Boat.canVehicleCollide(this, entity);
     }
 
     @Override

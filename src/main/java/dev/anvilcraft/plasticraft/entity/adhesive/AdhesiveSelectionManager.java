@@ -36,6 +36,7 @@ public final class AdhesiveSelectionManager {
     }
 
     private static void selectStoredFace(Player player, Entity target, Direction selectedFace) {
+        AdhesivePreviewService.clear(player);
         selections(player).put(
             player.getUUID(),
             new Selection(target.getUUID(), target.getId(), selectedFace)
@@ -74,6 +75,7 @@ public final class AdhesiveSelectionManager {
 
     public static void clear(Player player) {
         selections(player).remove(player.getUUID());
+        AdhesivePreviewService.clear(player);
     }
 
     private static Map<UUID, Selection> selections(Player player) {

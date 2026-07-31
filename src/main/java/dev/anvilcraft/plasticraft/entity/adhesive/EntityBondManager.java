@@ -1,6 +1,8 @@
 package dev.anvilcraft.plasticraft.entity.adhesive;
 
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.init.ModAttachments;
 import net.minecraft.core.Direction;
 import net.minecraft.core.BlockPos;
@@ -78,10 +80,73 @@ public final class EntityBondManager {
         }
     }
 
+    /** 树脂牵引期间只刷新相对偏移，避免基准实体恢复到牵引前的重力状态。 */
+    public static void updateLeaderOffsets(Level level, Entity leader) {
+        for (Entity member : component(level, leader)) {
+            EntityBondState state = get(member);
+            if (state == null) continue;
+            member.setData(
+                ModAttachments.ENTITY_BONDS,
+                state.withLeader(leader, member.position().subtract(leader.position()))
+            );
+        }
+    }
+
     /** 供树脂牵引使用：先消除胶接面缝隙，再按新的成员位置重设基准。 */
     public static void prepareAlignedLeader(ServerLevel level, Entity leader) {
         alignComponentLinks(leader);
         prepareLeader(level, leader);
+    }
+
+    /** 普通实体不旋转，但所有连接记录都要映射到旋转后的普通实体世界面。 */
+    public static void transformOrdinaryMemberFaces(
+        Level level,
+        Entity root,
+        PlasticEntityOrientation startOrientation,
+        PlasticEntityOrientation targetOrientation
+    ) {
+        if (startOrientation.equals(targetOrientation)) return;
+        Map<UUID, List<EntityBondLink>> changed = new HashMap<>();
+        for (Entity member : component(level, root)) {
+            EntityBondState state = get(member);
+            if (state == null) continue;
+            List<EntityBondLink> links = new ArrayList<>(state.links().size());
+            for (EntityBondLink link : state.links()) {
+                Entity other = resolve(level, link);
+                if (other == null) {
+                    links.add(link);
+                    continue;
+                }
+                links.add(new EntityBondLink(
+                    transformedStoredFace(startOrientation, targetOrientation, member, link.face()),
+                    link.otherEntityUuid(),
+                    link.otherEntityId(),
+                    transformedStoredFace(
+                        startOrientation,
+                        targetOrientation,
+                        other,
+                        link.otherFace()
+                    )
+                ));
+            }
+            changed.put(member.getUUID(), links);
+        }
+        for (Entity member : component(level, root)) {
+            List<EntityBondLink> links = changed.get(member.getUUID());
+            if (links == null) continue;
+            EntityBondState state = get(member);
+            if (state != null) member.setData(ModAttachments.ENTITY_BONDS, state.withLinks(links));
+        }
+    }
+
+    private static Direction transformedStoredFace(
+        PlasticEntityOrientation startOrientation,
+        PlasticEntityOrientation targetOrientation,
+        Entity member,
+        Direction storedFace
+    ) {
+        if (member instanceof AbstractPlasticEntity) return storedFace;
+        return targetOrientation.worldDirection(startOrientation.localDirection(storedFace));
     }
 
     public static boolean connect(
@@ -196,10 +261,15 @@ public final class EntityBondManager {
         Vec3 allowed = movement;
         for (Entity member : component(leader.level(), leader)) {
             if (member == leader || allowed.lengthSqr() <= 1.0E-12D) continue;
-            List<VoxelShape> entityCollisions = leader.level().getEntityCollisions(
+            List<VoxelShape> entityCollisions = leader.level().getEntities(
                 member,
-                ShapedCollisionEntity.collisionBounds(member).expandTowards(allowed)
-            );
+                ShapedCollisionEntity.collisionBounds(member).expandTowards(allowed),
+                other -> !other.isRemoved()
+                    && !other.isSpectator()
+                    && !other.isPassengerOfSameVehicle(member)
+                    && !areInSameComponent(member, other)
+                    && member.canCollideWith(other)
+            ).stream().map(ShapedCollisionEntity::collisionShape).toList();
             allowed = ShapedCollisionEntity.collideBoundingBox(
                 member,
                 allowed,

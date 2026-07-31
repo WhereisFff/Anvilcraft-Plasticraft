@@ -12,8 +12,11 @@ import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveGroupTransform;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesivePathPlanner;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesivePreviewService;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveSelectionManager;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveTransit;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityAdhesion;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondLink;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
@@ -35,6 +38,7 @@ import dev.dubhe.anvilcraft.entity.FallingGiantAnvilEntity;
 import dev.dubhe.anvilcraft.entity.SlidingBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.tags.BlockTags;
@@ -42,6 +46,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MoverType;
+import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.inventory.AnvilMenu;
@@ -1089,6 +1094,10 @@ public final class AdhesiveBondingGameTests {
                 "selected universal plastic did not rotate during transit"
             );
             check(
+                follower.getOrientation().attachmentFace() == Direction.WEST,
+                "rotating selected universal plastic did not rotate its follower"
+            );
+            check(
                 close(
                     AdhesiveFaces.storedFaceCenter(selected, Direction.UP),
                     AdhesiveFaces.storedFaceCenter(follower, Direction.DOWN)
@@ -1097,6 +1106,270 @@ public final class AdhesiveBondingGameTests {
             );
             helper.succeed();
         });
+    }
+
+    @GameTest(timeoutTicks = 15)
+    @EmptyTemplate(value = "10x8x8", floor = true)
+    @TestHolder(description = "A route-only rotation collision does not reject the adhesive transit")
+    static void rotatingTransitAllowsOrientationSwitchCollision(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity moving = createUniversalPlastic(helper, new Vec3(2.5D, 3.0D, 4.5D));
+        moving.setNoGravity(true);
+        Vec3 targetPosition = helper.absoluteVec(new Vec3(6.5D, 3.0D, 4.5D));
+        PlasticEntityOrientation targetOrientation = new PlasticEntityOrientation(Direction.WEST, 1);
+        helper.setBlock(5, 2, 4, Blocks.STONE);
+        AdhesivePathPlanner.Plan unrotatedPlan = new AdhesivePathPlanner.Plan(
+            AdhesivePathPlanner.Status.VALID,
+            List.of(moving.position(), targetPosition),
+            targetPosition,
+            BlockPos.containing(targetPosition),
+            moving.getOrientation(),
+            Direction.DOWN,
+            moving.position().distanceTo(targetPosition)
+        );
+        AdhesivePathPlanner.Plan rotatingPlan = new AdhesivePathPlanner.Plan(
+            AdhesivePathPlanner.Status.VALID,
+            List.of(moving.position(), targetPosition),
+            targetPosition,
+            BlockPos.containing(targetPosition),
+            targetOrientation,
+            Direction.DOWN,
+            moving.position().distanceTo(targetPosition)
+        );
+
+        check(
+            moving.plasticraft$canOccupyBlocks(targetOrientation, targetPosition),
+            "rotation-switch test left the target orientation inside the obstacle"
+        );
+        check(
+            AdhesiveGroupTransform.isPlanClear(helper.getLevel(), moving, unrotatedPlan),
+            "rotation-switch obstacle blocked the unrotated path"
+        );
+        check(
+            AdhesiveGroupTransform.isPlanClear(helper.getLevel(), moving, rotatingPlan),
+            "route-only rotation collision rejected the target position"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "10x8x8", floor = true)
+    @TestHolder(description = "A transported mixed entity group rotates plastic members but not ordinary member facing")
+    static void rotatingMixedEntityGroupPreservesOrdinaryFacing(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity selected = createUniversalPlastic(helper, new Vec3(4.5D, 6.0D, 4.5D));
+        Vec3 middlePosition = helper.absoluteVec(new Vec3(3.5D, 6.0D, 4.5D));
+        ArmorStand middle = new ArmorStand(helper.getLevel(), middlePosition.x, middlePosition.y, middlePosition.z);
+        UniversalPlasticEntity follower = createUniversalPlastic(helper, new Vec3(2.5D, 6.0D, 4.5D));
+        UniversalPlasticEntity support = createUniversalPlastic(helper, new Vec3(7.5D, 6.0D, 4.5D));
+        selected.setNoGravity(true);
+        check(helper.getLevel().addFreshEntity(middle), "failed to add mixed group ordinary member");
+        middle.setNoGravity(true);
+        follower.setNoGravity(true);
+        support.setNoGravity(true);
+        middle.setYRot(37.0F);
+        middle.setXRot(11.0F);
+        middle.setYHeadRot(37.0F);
+        middle.setYBodyRot(37.0F);
+        check(
+            EntityBondManager.connect(
+                helper.getLevel(), selected, Direction.WEST, middle, Direction.EAST, true
+            ),
+            "mixed group root could not bond to the ordinary member"
+        );
+        check(
+            EntityBondManager.connect(
+                helper.getLevel(), middle, Direction.WEST, follower, Direction.EAST, true
+            ),
+            "mixed group ordinary member could not bond to the plastic follower"
+        );
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(5.0D, 6.0D, 2.5D));
+        player.setYRot(-90.0F);
+        float middleYRot = middle.getYRot();
+        float middleXRot = middle.getXRot();
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, selected, Direction.DOWN),
+            "mixed group rotation selection failed"
+        );
+        check(
+            AdhesiveBondingService.bondSelectedToEntity(
+                player,
+                InteractionHand.MAIN_HAND,
+                support,
+                Direction.WEST
+            ),
+            "mixed group rotation transit failed"
+        );
+
+        helper.runAfterDelay(8, () -> {
+            check(
+                selected.getOrientation().attachmentFace() == Direction.WEST
+                    && follower.getOrientation().attachmentFace() == Direction.WEST,
+                "mixed group did not rotate every plastic member"
+            );
+            check(
+                Math.abs(middle.getYRot() - middleYRot) <= EPSILON
+                    && Math.abs(middle.getXRot() - middleXRot) <= EPSILON,
+                "mixed group rotated the ordinary member: expected="
+                    + middleYRot + "/" + middleXRot
+                    + ", actual=" + middle.getYRot() + "/" + middle.getXRot()
+            );
+            check(
+                close(
+                    AdhesiveFaces.storedFaceCenter(selected, Direction.WEST),
+                    AdhesiveFaces.storedFaceCenter(middle, Direction.UP)
+                ) && close(
+                    AdhesiveFaces.storedFaceCenter(middle, Direction.DOWN),
+                    AdhesiveFaces.storedFaceCenter(follower, Direction.EAST)
+                ),
+                "mixed group did not retain its internal contacts after rotation"
+            );
+            EntityBondState middleBonds = EntityBondManager.get(middle);
+            check(
+                middleBonds != null
+                    && middleBonds.linkAt(Direction.UP) != null
+                    && middleBonds.linkAt(Direction.DOWN) != null,
+                "mixed group did not rotate the ordinary entity's stored bond faces"
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 15)
+    @EmptyTemplate(value = "10x7x8", floor = true)
+    @TestHolder(description = "A transported group rejects a block overlap on an unselected follower")
+    static void transportedGroupRejectsFollowerBlockOverlap(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity follower = createUniversalPlastic(helper, new Vec3(3.5D, 3.0D, 3.5D));
+        UniversalPlasticEntity selected = createUniversalPlastic(helper, new Vec3(3.5D, 3.0D, 4.5D));
+        UniversalPlasticEntity support = createUniversalPlastic(helper, new Vec3(7.5D, 3.0D, 4.5D));
+        follower.setNoGravity(true);
+        selected.setNoGravity(true);
+        support.setNoGravity(true);
+        check(
+            EntityBondManager.connect(
+                helper.getLevel(), follower, Direction.SOUTH, selected, Direction.NORTH, true
+            ),
+            "follower could not be bonded to the selected plastic"
+        );
+        helper.setBlock(6, 3, 3, Blocks.OBSIDIAN);
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(5.5D, 3.0D, 2.5D));
+        AdhesivePathPlanner.Plan plan = AdhesivePathPlanner.planToEntity(
+            helper.getLevel(),
+            selected,
+            player,
+            support,
+            Direction.WEST,
+            Direction.EAST
+        );
+        check(plan.valid(), "root-only plan was unexpectedly blocked: " + plan.status());
+        Vec3 followerPosition = follower.position();
+        Vec3 selectedPosition = selected.position();
+        Vec3 supportPosition = support.position();
+        PlasticEntityOrientation followerOrientation = follower.getOrientation();
+        PlasticEntityOrientation selectedOrientation = selected.getOrientation();
+        PlasticEntityOrientation supportOrientation = support.getOrientation();
+
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, selected, Direction.EAST),
+            "follower block overlap selection failed"
+        );
+        check(
+            !AdhesiveBondingService.bondSelectedToEntity(
+                player,
+                InteractionHand.MAIN_HAND,
+                support,
+                Direction.WEST
+            ),
+            "group transit accepted a follower overlap with a block"
+        );
+        check(
+            player.getMainHandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()),
+            "rejected follower block overlap consumed resin"
+        );
+        check(
+            !selected.hasData(ModAttachments.ADHESIVE_TRANSIT)
+                && !follower.hasData(ModAttachments.ADHESIVE_TRANSIT)
+                && !support.hasData(ModAttachments.ADHESIVE_TRANSIT),
+            "rejected follower block overlap started group transit"
+        );
+        check(
+            close(follower.position(), followerPosition)
+                && close(selected.position(), selectedPosition)
+                && close(support.position(), supportPosition)
+                && follower.getOrientation().equals(followerOrientation)
+                && selected.getOrientation().equals(selectedOrientation)
+                && support.getOrientation().equals(supportOrientation),
+            "rejected follower block overlap changed entity positions or orientations"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 15)
+    @EmptyTemplate(value = "10x7x8", floor = true)
+    @TestHolder(description = "A transported group rejects an entity overlap on an unselected follower")
+    static void transportedGroupRejectsFollowerEntityOverlap(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity follower = createUniversalPlastic(helper, new Vec3(3.5D, 3.0D, 3.5D));
+        UniversalPlasticEntity selected = createUniversalPlastic(helper, new Vec3(3.5D, 3.0D, 4.5D));
+        UniversalPlasticEntity support = createUniversalPlastic(helper, new Vec3(7.5D, 3.0D, 4.5D));
+        Zombie blocker = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(6.5D, 3.0D, 3.5D));
+        follower.setNoGravity(true);
+        selected.setNoGravity(true);
+        support.setNoGravity(true);
+        blocker.setNoGravity(true);
+        check(
+            EntityBondManager.connect(
+                helper.getLevel(), follower, Direction.SOUTH, selected, Direction.NORTH, true
+            ),
+            "follower could not be bonded to the selected plastic"
+        );
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(5.5D, 3.0D, 2.5D));
+        AdhesivePathPlanner.Plan plan = AdhesivePathPlanner.planToEntity(
+            helper.getLevel(),
+            selected,
+            player,
+            support,
+            Direction.WEST,
+            Direction.EAST
+        );
+        check(plan.valid(), "root-only plan was unexpectedly blocked: " + plan.status());
+        Vec3 followerPosition = follower.position();
+        Vec3 selectedPosition = selected.position();
+        Vec3 supportPosition = support.position();
+        PlasticEntityOrientation followerOrientation = follower.getOrientation();
+        PlasticEntityOrientation selectedOrientation = selected.getOrientation();
+        PlasticEntityOrientation supportOrientation = support.getOrientation();
+
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, selected, Direction.EAST),
+            "follower entity overlap selection failed"
+        );
+        check(
+            !AdhesiveBondingService.bondSelectedToEntity(
+                player,
+                InteractionHand.MAIN_HAND,
+                support,
+                Direction.WEST
+            ),
+            "group transit accepted a follower overlap with an ordinary entity"
+        );
+        check(
+            player.getMainHandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()),
+            "rejected follower entity overlap consumed resin"
+        );
+        check(
+            !selected.hasData(ModAttachments.ADHESIVE_TRANSIT)
+                && !follower.hasData(ModAttachments.ADHESIVE_TRANSIT)
+                && !support.hasData(ModAttachments.ADHESIVE_TRANSIT),
+            "rejected follower entity overlap started group transit"
+        );
+        check(
+            close(follower.position(), followerPosition)
+                && close(selected.position(), selectedPosition)
+                && close(support.position(), supportPosition)
+                && follower.getOrientation().equals(followerOrientation)
+                && selected.getOrientation().equals(selectedOrientation)
+                && support.getOrientation().equals(supportOrientation),
+            "rejected follower entity overlap changed entity positions or orientations"
+        );
+        helper.succeed();
     }
 
     @GameTest(timeoutTicks = 15)
@@ -1214,8 +1487,8 @@ public final class AdhesiveBondingGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "8x6x8", floor = true)
-    @TestHolder(description = "Strong knockback preserves entity bonds and starts elastic motion")
-    static void strongKnockbackPreservesEntityComponent(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "Strong knockback moves an unanchored entity component as one group")
+    static void strongKnockbackMovesUnanchoredEntityComponent(ExtendedGameTestHelper helper) {
         Zombie first = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 2.0D, 3.5D));
         Zombie middle = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 2.0D, 3.5D));
         Zombie last = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.5D, 2.0D, 3.5D));
@@ -1229,25 +1502,108 @@ public final class AdhesiveBondingGameTests {
             helper.getLevel(), middle, Direction.EAST, last, Direction.WEST, true
         ), "second entity bond failed");
 
+        Vec3 firstStart = first.position();
+        Vec3 middleOffset = middle.position().subtract(firstStart);
+        Vec3 lastOffset = last.position().subtract(firstStart);
         CommonHooks.onLivingKnockBack(first, 2.5F, 0.0D, 1.0D);
         check(EntityBondManager.hasBonds(first), "strong knockback disconnected the struck entity");
         check(
-            first.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
-            "strong knockback did not start elastic motion"
+            !first.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+            "unanchored entity component started elastic motion"
         );
-        EntityBondState middleBonds = EntityBondManager.get(middle);
-        EntityBondState lastBonds = EntityBondManager.get(last);
+        EntityBondState firstBonds = EntityBondManager.get(first);
         check(
-            middleBonds != null
-                && middleBonds.linkAt(Direction.WEST) != null
-                && middleBonds.linkAt(Direction.EAST) != null,
-            "strong knockback changed the middle entity's bonds"
+            firstBonds != null && firstBonds.leaderUuid().equals(first.getUUID()),
+            "struck entity did not become the unanchored component leader"
+        );
+        first.setDeltaMovement(0.45D, 0.0D, 0.0D);
+        helper.runAfterDelay(2, () -> {
+            check(first.getX() > firstStart.x + 0.05D, "unanchored struck entity did not move");
+            check(
+                close(middle.position(), first.position().add(middleOffset)),
+                "unanchored middle entity did not follow the group leader"
+            );
+            check(
+                close(last.position(), first.position().add(lastOffset)),
+                "unanchored last entity did not follow the group leader"
+            );
+            EntityBondState middleBonds = EntityBondManager.get(middle);
+            EntityBondState lastBonds = EntityBondManager.get(last);
+            check(
+                middleBonds != null
+                    && middleBonds.linkAt(Direction.WEST) != null
+                    && middleBonds.linkAt(Direction.EAST) != null,
+                "strong knockback changed the middle entity's bonds"
+            );
+            check(
+                lastBonds != null && lastBonds.linkAt(Direction.WEST) != null,
+                "strong knockback disconnected an entity that was not struck"
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate(value = "8x6x8", floor = true)
+    @TestHolder(description = "A block-anchored entity component rebounds together after a follower is hit")
+    static void strongKnockbackReboundsAnchoredEntityComponent(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(2, 1, 3);
+        helper.setBlock(support, Blocks.STONE);
+        Zombie anchored = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 2.0D, 3.5D));
+        Zombie struck = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 2.0D, 3.5D));
+        anchored.setNoGravity(true);
+        struck.setNoGravity(true);
+        check(EntityBondManager.connect(
+            helper.getLevel(), anchored, Direction.EAST, struck, Direction.WEST, true
+        ), "anchored entity bond failed");
+
+        Vec3 anchoredStart = anchored.position();
+        Vec3 struckStart = struck.position();
+        Vec3 struckOffset = struckStart.subtract(anchoredStart);
+        anchored.setData(ModAttachments.ENTITY_ADHESION, new EntityAdhesion(
+            helper.absolutePos(support),
+            Direction.UP,
+            BuiltInRegistries.BLOCK.getKey(Blocks.STONE),
+            anchoredStart,
+            true
+        ));
+
+        CommonHooks.onLivingKnockBack(struck, 2.5F, 0.0D, 1.0D);
+        check(
+            anchored.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+            "block anchor did not receive the group elastic motion"
         );
         check(
-            lastBonds != null && lastBonds.linkAt(Direction.WEST) != null,
-            "strong knockback disconnected an entity that was not struck"
+            !struck.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+            "struck follower retained a separate elastic motion"
         );
-        helper.succeed();
+        EntityBondState struckBonds = EntityBondManager.get(struck);
+        check(
+            struckBonds != null && struckBonds.leaderUuid().equals(anchored.getUUID()),
+            "block anchor did not become the rebound component leader"
+        );
+        helper.runAfterDelay(2, () -> {
+            check(
+                anchored.position().distanceToSqr(anchoredStart) > 0.01D,
+                "anchored component did not move away from its adhesive point"
+            );
+            check(
+                close(struck.position(), anchored.position().add(struckOffset)),
+                "struck follower did not rebound with the anchored component"
+            );
+            helper.runAfterDelay(20, () -> {
+                check(
+                    !anchored.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+                    "anchored component rebound did not finish"
+                );
+                check(close(anchored.position(), anchoredStart), "block anchor did not return after rebound");
+                check(
+                    close(struck.position(), anchored.position().add(struckOffset)),
+                    "anchored component did not return as one group"
+                );
+                helper.succeed();
+            });
+        });
     }
 
     @GameTest(timeoutTicks = 20)
@@ -1734,6 +2090,98 @@ public final class AdhesiveBondingGameTests {
         });
     }
 
+    @GameTest(timeoutTicks = 35)
+    @EmptyTemplate(value = "10x7x7", floor = true)
+    @TestHolder(description = "A block placed into a resin transit stops the entity before a block bond")
+    static void adhesiveTransitStopsBeforeNewBlockBondObstacle(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(8, 1, 3);
+        BlockPos blocker = new BlockPos(5, 2, 3);
+        helper.setBlock(support, Blocks.STONE);
+        Zombie moving = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 2.0D, 3.5D));
+        moving.setNoGravity(true);
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(4.5D, 2.0D, 1.5D));
+
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, moving, Direction.EAST),
+            "block-transit obstacle source could not be selected"
+        );
+        Vec3 supportPlayerPosition = helper.absoluteVec(new Vec3(7.5D, 2.0D, 1.5D));
+        player.moveTo(supportPlayerPosition.x, supportPlayerPosition.y, supportPlayerPosition.z);
+        check(
+            AdhesiveBondingService.bondSelected(
+                player,
+                InteractionHand.MAIN_HAND,
+                helper.absolutePos(support),
+                Direction.UP
+            ),
+            "block-transit obstacle setup could not start"
+        );
+
+        helper.runAfterDelay(2, () -> {
+            helper.setBlock(blocker, Blocks.OBSIDIAN);
+            helper.runAfterDelay(14, () -> {
+                BlockPos absoluteBlocker = helper.absolutePos(blocker);
+                check(!moving.hasData(ModAttachments.ADHESIVE_TRANSIT), "blocked block transit did not stop");
+                check(!moving.hasData(ModAttachments.ENTITY_ADHESION), "blocked block transit still attached");
+                check(
+                    moving.getBoundingBox().maxX <= absoluteBlocker.getX() + 0.002D,
+                    "blocked block transit crossed the obstacle"
+                );
+                check(
+                    !moving.getBoundingBox().intersects(new AABB(absoluteBlocker)),
+                    "blocked block transit stopped inside the obstacle"
+                );
+                helper.succeed();
+            });
+        });
+    }
+
+    @GameTest(timeoutTicks = 35)
+    @EmptyTemplate(value = "10x7x7", floor = true)
+    @TestHolder(description = "A block placed into a resin transit stops the entity before an entity bond")
+    static void adhesiveTransitStopsBeforeNewEntityBondObstacle(ExtendedGameTestHelper helper) {
+        BlockPos blocker = new BlockPos(5, 2, 3);
+        Zombie moving = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 2.0D, 3.5D));
+        Zombie support = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(8.5D, 2.0D, 3.5D));
+        moving.setNoGravity(true);
+        support.setNoGravity(true);
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(4.5D, 2.0D, 1.5D));
+
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, moving, Direction.EAST),
+            "entity-transit obstacle source could not be selected"
+        );
+        Vec3 supportPlayerPosition = helper.absoluteVec(new Vec3(7.5D, 2.0D, 1.5D));
+        player.moveTo(supportPlayerPosition.x, supportPlayerPosition.y, supportPlayerPosition.z);
+        check(
+            AdhesiveBondingService.bondSelectedToEntity(
+                player,
+                InteractionHand.MAIN_HAND,
+                support,
+                Direction.WEST
+            ),
+            "entity-transit obstacle setup could not start"
+        );
+
+        helper.runAfterDelay(2, () -> {
+            helper.setBlock(blocker, Blocks.OBSIDIAN);
+            helper.runAfterDelay(14, () -> {
+                BlockPos absoluteBlocker = helper.absolutePos(blocker);
+                check(!moving.hasData(ModAttachments.ADHESIVE_TRANSIT), "blocked entity transit did not stop");
+                check(!EntityBondManager.hasBonds(moving), "blocked entity transit still attached");
+                check(
+                    moving.getBoundingBox().maxX <= absoluteBlocker.getX() + 0.002D,
+                    "blocked entity transit crossed the obstacle"
+                );
+                check(
+                    !moving.getBoundingBox().intersects(new AABB(absoluteBlocker)),
+                    "blocked entity transit stopped inside the obstacle"
+                );
+                helper.succeed();
+            });
+        });
+    }
+
     @GameTest(timeoutTicks = 45)
     @EmptyTemplate(value = "9x8x7", floor = true)
     @TestHolder(description = "Bonded falling blocks blockify together and lose mutual support after one breaks")
@@ -1801,8 +2249,8 @@ public final class AdhesiveBondingGameTests {
 
     @GameTest(timeoutTicks = 55)
     @EmptyTemplate(value = "10x8x7", floor = true)
-    @TestHolder(description = "A plastic entity group blockifies together when one member bonds to a block")
-    static void plasticEntityGroupBlockifiesTogether(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "A plastic entity group clears mutual adhesive when its support releases it")
+    static void plasticEntityGroupClearsMutualAdhesiveWhenReleased(ExtendedGameTestHelper helper) {
         HardenedResinAnvilEntity source = createAnvil(helper, new Vec3(2.5D, 3.0D, 3.5D));
         HardenedResinAnvilEntity target = createAnvil(helper, new Vec3(5.5D, 3.0D, 3.5D));
         source.setNoGravity(true);
@@ -1856,7 +2304,42 @@ public final class AdhesiveBondingGameTests {
                     bondedBlockEntity(helper, followerBlock).isInitialized(),
                     "follower block entity was not initialized"
                 );
-                helper.succeed();
+                check(
+                    BondedFallingBlocks.hasBlockBond(
+                        helper.getLevel(),
+                        helper.absolutePos(rootBlock),
+                        Direction.WEST
+                    ) && BondedFallingBlocks.hasBlockBond(
+                        helper.getLevel(),
+                        helper.absolutePos(followerBlock),
+                        Direction.EAST
+                    ),
+                    "blockified group lost its mutual adhesive before release"
+                );
+                check(
+                    helper.getLevel().destroyBlock(helper.absolutePos(support), false, player),
+                    "external support could not be destroyed"
+                );
+                helper.runAfterDelay(4, () -> {
+                    check(helper.getBlockState(rootBlock).isAir(), "root block did not release after support removal");
+                    check(helper.getBlockState(followerBlock).isAir(), "follower block did not release after support removal");
+                    check(
+                        BondedFallingBlocks.getAdhesion(helper.getLevel(), helper.absolutePos(rootBlock)) == null,
+                        "released root block retained adhesive data"
+                    );
+                    check(
+                        BondedFallingBlocks.getAdhesion(helper.getLevel(), helper.absolutePos(followerBlock)) == null,
+                        "released follower block retained adhesive data"
+                    );
+                    check(
+                        helper.getLevel().getEntitiesOfClass(
+                            HardenedResinAnvilEntity.class,
+                            new AABB(helper.absolutePos(followerBlock)).inflate(3.0D)
+                        ).size() >= 2,
+                        "released plastic group did not restore both entities"
+                    );
+                    helper.succeed();
+                });
             });
         });
     }
@@ -2134,7 +2617,6 @@ public final class AdhesiveBondingGameTests {
             helper.absolutePos(support),
             Direction.UP
         ), "plastic anvil bonding failed");
-
         helper.runAfterDelay(10, () -> {
             BondedEntityBlockEntity bonded = bondedBlockEntity(helper, occupied);
             player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
@@ -2605,6 +3087,107 @@ public final class AdhesiveBondingGameTests {
         helper.succeed();
     }
 
+    @GameTest(timeoutTicks = 35)
+    @EmptyTemplate(value = "10x7x7", floor = true)
+    @TestHolder(description = "A rounded detour around a two-block wall completes the adhesive transit")
+    static void adhesiveTransitFollowsRoundedWallDetour(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(7, 1, 3);
+        helper.setBlock(support, Blocks.STONE);
+        helper.setBlock(4, 2, 3, Blocks.GLASS);
+        helper.setBlock(4, 3, 3, Blocks.GLASS);
+        Zombie moving = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 2.0D, 3.5D));
+        moving.setNoGravity(true);
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(3.5D, 2.0D, 1.5D));
+
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, moving, Direction.EAST),
+            "rounded-detour source could not be selected"
+        );
+        Vec3 supportPlayerPosition = helper.absoluteVec(new Vec3(6.5D, 2.0D, 1.5D));
+        player.moveTo(supportPlayerPosition.x, supportPlayerPosition.y, supportPlayerPosition.z);
+        check(
+            AdhesiveBondingService.bondSelected(
+                player,
+                InteractionHand.MAIN_HAND,
+                helper.absolutePos(support),
+                Direction.UP
+            ),
+            "rounded-detour transit could not start"
+        );
+
+        helper.runAfterDelay(24, () -> {
+            check(!moving.hasData(ModAttachments.ADHESIVE_TRANSIT), "rounded detour did not finish");
+            check(moving.hasData(ModAttachments.ENTITY_ADHESION), "rounded detour stopped before bonding");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 50)
+    @EmptyTemplate(value = "10x7x7", floor = true)
+    @TestHolder(description = "Async adhesive preview reuses its detour for the confirmed transit")
+    static void adhesiveAsyncPreviewReusesAuthoritativeDetour(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(7, 1, 3);
+        helper.setBlock(support, Blocks.STONE);
+        helper.setBlock(4, 2, 3, Blocks.GLASS);
+        helper.setBlock(4, 3, 3, Blocks.GLASS);
+        Zombie moving = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 2.0D, 3.5D));
+        moving.setNoGravity(true);
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(3.5D, 2.0D, 1.5D));
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, moving, Direction.EAST),
+            "async-preview source could not be selected"
+        );
+        player.moveTo(
+            helper.absoluteVec(new Vec3(6.5D, 2.0D, 1.5D)).x,
+            helper.absoluteVec(new Vec3(6.5D, 2.0D, 1.5D)).y,
+            helper.absoluteVec(new Vec3(6.5D, 2.0D, 1.5D)).z
+        );
+        AdhesivePreviewService.requestBlock(
+            player,
+            1,
+            moving.getId(),
+            helper.absolutePos(support),
+            Direction.UP
+        );
+
+        helper.runAfterDelay(1, () -> {
+            check(
+                AdhesivePreviewService.confirmBlock(
+                    player,
+                    InteractionHand.MAIN_HAND,
+                    helper.absolutePos(support),
+                    Direction.UP
+                ),
+                "async-preview confirmation was not queued"
+            );
+            int[] attempts = {0};
+            Runnable[] poll = new Runnable[1];
+            poll[0] = () -> {
+                AdhesiveTransit transit = moving.getExistingDataOrNull(ModAttachments.ADHESIVE_TRANSIT.get());
+                if (transit != null) {
+                    check(
+                        transit.path().size() > 3,
+                        "confirmed transit lost the authoritative wall detour: " + transit.path()
+                    );
+                    check(
+                        transit.path().stream().anyMatch(point ->
+                            Math.abs(point.y - moving.position().y) > 0.25D
+                                || Math.abs(point.z - moving.position().z) > 0.25D),
+                        "confirmed transit stayed on the blocked direct line: " + transit.path()
+                    );
+                    helper.succeed();
+                    return;
+                }
+                if (++attempts[0] >= 30) {
+                    check(false, "async-preview confirmation never started transit");
+                    return;
+                }
+                helper.runAfterDelay(1, poll[0]);
+            };
+            poll[0].run();
+        });
+    }
+
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "18x11x15", floor = true)
     @TestHolder(description = "Adhesive path planning can spend its detour budget beyond the old four-block margin")
@@ -2949,6 +3532,8 @@ public final class AdhesiveBondingGameTests {
         ), "plastic anvil bonding failed");
 
         helper.runAfterDelay(10, () -> {
+            check(!anvil.hasData(ModAttachments.ADHESIVE_TRANSIT), "bonded block transit did not finish");
+            bondedBlockEntity(helper, occupied);
             PistonStructureResolver resolver = new PistonStructureResolver(
                 helper.getLevel(),
                 helper.absolutePos(piston),

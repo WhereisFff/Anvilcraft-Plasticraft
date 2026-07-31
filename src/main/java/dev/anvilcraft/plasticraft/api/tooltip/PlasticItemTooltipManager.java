@@ -40,9 +40,15 @@ public final class PlasticItemTooltipManager {
     public static void init() {
         if (initialized) return;
         initialized = true;
-        registerNormal(
+        register(
             AnvilcraftPlasticraft.of("liquid_high_viscosity_resin_bucket"),
-            "Highly adhesive and non-volatile; it appears to need thousands of years to solidify"
+            "Highly adhesive and non-volatile; it appears to need thousands of years to solidify",
+            """
+                Right-click an entity, then a block or another entity to bond them
+                Unanchored bonded groups move together under knockback; block-anchored groups rebound together
+                A moving white dashed line means the server is still searching
+                The colored solid line shows the server result; bondable routes match the later white transit trail
+                Green and yellow can bond; red cannot"""
         );
         register(
             AnvilcraftPlasticraft.of("condenser_tower"),

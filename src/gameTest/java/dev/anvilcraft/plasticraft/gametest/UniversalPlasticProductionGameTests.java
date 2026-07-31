@@ -77,6 +77,8 @@ import static dev.dubhe.anvilcraft.init.item.ModItems.ANVIL_HAMMER;
 public final class UniversalPlasticProductionGameTests {
     private static final int BUCKET = 1_000;
     private static final int GRANULES = 16;
+    private static final int JEWELER_GRANULE_COST = 8;
+    private static final int JEWELER_EMERALD_PAYMENT = 2;
 
     private UniversalPlasticProductionGameTests() {
     }
@@ -323,8 +325,8 @@ public final class UniversalPlasticProductionGameTests {
             MerchantOffer offer = listing.getOffer(null, random);
             check(offer != null, "jeweler listing returned no offer");
             check(offer.getBaseCostA().is(ModItems.UNIVERSAL_PLASTIC_GRANULE.get()), "trade buys the wrong item");
-            check(offer.getBaseCostA().getCount() == GRANULES, "trade buys the wrong granule count");
-            check(offer.getResult().is(Items.EMERALD) && offer.getResult().getCount() == 2,
+            check(offer.getBaseCostA().getCount() == JEWELER_GRANULE_COST, "trade buys the wrong granule count");
+            check(offer.getResult().is(Items.EMERALD) && offer.getResult().getCount() == JEWELER_EMERALD_PAYMENT,
                 "trade pays the wrong amount");
             check(offer.getMaxUses() == 16, "trade has the wrong maximum uses");
             check(offer.getXp() == 2, "trade grants the wrong villager experience");
@@ -340,8 +342,8 @@ public final class UniversalPlasticProductionGameTests {
                 "trade rejected its requested " + requestedColor.getName() + " granules");
             check(!offer.satisfiedBy(coloredGranules(otherColor), ItemStack.EMPTY),
                 "trade accepted " + otherColor.getName() + " instead of " + requestedColor.getName());
-            check(!offer.satisfiedBy(matching.copyWithCount(GRANULES - 1), ItemStack.EMPTY),
-                "trade accepted fewer than sixteen granules");
+            check(!offer.satisfiedBy(matching.copyWithCount(JEWELER_GRANULE_COST - 1), ItemStack.EMPTY),
+                "trade accepted fewer than eight granules");
         }
         check(requestedColors.size() == DyeColor.values().length,
             "random jeweler offers did not cover all sixteen granule colors: " + requestedColors);

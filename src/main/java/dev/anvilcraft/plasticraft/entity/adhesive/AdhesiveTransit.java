@@ -166,6 +166,36 @@ public record AdhesiveTransit(
         return this.positionAt(progress).add(this.supportMovement(supportEntity));
     }
 
+    /** 返回最接近指定位置的路径进度，用于在服务端沿原定折线继续牵引。 */
+    public double closestPathProgress(Vec3 position, @Nullable Entity supportEntity) {
+        Objects.requireNonNull(position, "position");
+        Vec3 localPosition = position.subtract(this.supportMovement(supportEntity));
+        double totalLength = this.pathLength();
+        if (totalLength <= 1.0E-6D) return 1.0D;
+
+        double closestDistanceSqr = Double.POSITIVE_INFINITY;
+        double closestLength = 0.0D;
+        double traversed = 0.0D;
+        for (int index = 1; index < this.path.size(); index++) {
+            Vec3 from = this.path.get(index - 1);
+            Vec3 to = this.path.get(index);
+            Vec3 segment = to.subtract(from);
+            double segmentLength = segment.length();
+            double local = segmentLength <= 1.0E-6D
+                ? 0.0D
+                : Math.clamp(localPosition.subtract(from).dot(segment) / segment.lengthSqr(), 0.0D, 1.0D);
+            double pathLength = traversed + segmentLength * local;
+            double distanceSqr = localPosition.distanceToSqr(from.lerp(to, local));
+            if (distanceSqr < closestDistanceSqr - 1.0E-10D
+                || Math.abs(distanceSqr - closestDistanceSqr) <= 1.0E-10D && pathLength > closestLength) {
+                closestDistanceSqr = distanceSqr;
+                closestLength = pathLength;
+            }
+            traversed += segmentLength;
+        }
+        return Math.clamp(closestLength / totalLength, 0.0D, 1.0D);
+    }
+
     public double rawProgress(long gameTime, float partialTick) {
         // Keep the elapsed-time subtraction in double precision.  Promoting the
         // absolute game time to float first causes visible interpolation jitter
@@ -189,10 +219,7 @@ public record AdhesiveTransit(
         if (progress <= 0.0D) return this.path.getFirst();
         if (progress >= 1.0D) return this.path.getLast();
 
-        double totalLength = 0.0D;
-        for (int i = 1; i < this.path.size(); i++) {
-            totalLength += this.path.get(i - 1).distanceTo(this.path.get(i));
-        }
+        double totalLength = this.pathLength();
         if (totalLength <= 1.0E-6D) return this.path.getLast();
 
         double targetLength = totalLength * progress;
@@ -208,5 +235,13 @@ public record AdhesiveTransit(
             traversed += segmentLength;
         }
         return this.path.getLast();
+    }
+
+    public double pathLength() {
+        double totalLength = 0.0D;
+        for (int index = 1; index < this.path.size(); index++) {
+            totalLength += this.path.get(index - 1).distanceTo(this.path.get(index));
+        }
+        return totalLength;
     }
 }

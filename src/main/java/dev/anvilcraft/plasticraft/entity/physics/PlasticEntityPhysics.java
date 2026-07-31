@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.entity.physics;
 import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.dubhe.anvilcraft.util.GravityManager;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
@@ -162,6 +163,7 @@ public final class PlasticEntityPhysics {
         if (candidate.isRemoved()
             || candidate.isSpectator()
             || entity.isPassengerOfSameVehicle(candidate)
+            || EntityBondManager.areInSameComponent(entity, candidate)
             || !entity.canCollideWith(candidate)) {
             return false;
         }
@@ -208,6 +210,7 @@ public final class PlasticEntityPhysics {
         if (support.isRemoved()
             || support.isSpectator()
             || entity.isPassengerOfSameVehicle(support)
+            || EntityBondManager.areInSameComponent(entity, support)
             || !entity.canCollideWith(support)) {
             return false;
         }
@@ -388,6 +391,7 @@ public final class PlasticEntityPhysics {
             || pusher.isSpectator()
             || pusher.noPhysics
             || target.isPassengerOfSameVehicle(pusher)
+            || EntityBondManager.areInSameComponent(target, pusher)
             || !hasSidePushSupport(pusher, pusherBox)
             || !isWithinCarryDistance(requestedMovement)) {
             return null;
@@ -463,6 +467,7 @@ public final class PlasticEntityPhysics {
             || supported.isSpectator()
             || support.isSpectator()
             || supported.isPassengerOfSameVehicle(support)
+            || EntityBondManager.areInSameComponent(supported, support)
             || !supported.canCollideWith(support)) {
             return false;
         }

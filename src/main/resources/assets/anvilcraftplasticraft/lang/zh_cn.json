@@ -33,6 +33,7 @@
   "tooltip.anvilcraftplasticraft.item.hardend_resin_cauldron": "用硬化树脂板拼成的锅，很轻便",
   "tooltip.anvilcraftplasticraft.item.hardend_resin_cauldron.shift": "可被推动，可储存物品和最多 1000 mB 流体\n手持任意铁砧锤潜行右击可收回背包，锅内物品也会一并取回\n任意一面可连接管道头、泵和控制阀\n创造模式玩家可用磁铁潜行右击使其磁化\n可朝任意方向放置，看起来不朝上会把液体洒出来",
   "tooltip.anvilcraftplasticraft.item.liquid_high_viscosity_resin_bucket": "粘性很大且不会挥发，看起来需要成千上万年才能凝固",
+  "tooltip.anvilcraftplasticraft.item.liquid_high_viscosity_resin_bucket.shift": "右击实体后再右击方块或另一实体即可粘接\n未固定的粘接组受击退时整体移动，固定到方块时整组回弹\n白色动态虚线表示服务端仍在搜索\n彩色实线显示服务端结果，可粘接路线与确认后的白色轨迹一致\n绿色和黄色可粘接，红色不可粘接",
   "tooltip.anvilcraftplasticraft.item.condenser_tower": "可堆叠在大型炼药锅上方的 3x3x3 冷凝模块",
   "tooltip.anvilcraftplasticraft.item.condenser_tower.shift": "每层可储存 64 B 流体，并提供四个只能输出的接口\n原油蒸汽会在前三层依次分离为高热燃料、塑料油和原油精华\n封住顶层中心出口后，任意一层储满都会使整组冷凝塔产生蒸汽背压",
   "tooltip.anvilcraftplasticraft.item.high_heat_fuel_bucket": "可点燃蓝色强化喷流的燃料",

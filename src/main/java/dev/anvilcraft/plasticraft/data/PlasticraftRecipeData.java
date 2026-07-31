@@ -60,6 +60,7 @@ import static dev.anvilcraft.plasticraft.init.item.ModItems.RESIN_ANVIL_HAMMER;
 import static dev.anvilcraft.plasticraft.init.item.ModItems.UNIVERSAL_PLASTIC_GRANULE;
 import static dev.dubhe.anvilcraft.init.block.ModBlocks.AMBER_BLOCK;
 import static dev.dubhe.anvilcraft.init.block.ModBlocks.CORRUPTED_BEACON;
+import static dev.dubhe.anvilcraft.init.block.ModBlocks.HEAVY_IRON_WALL;
 import static dev.dubhe.anvilcraft.init.block.ModBlocks.MOB_AMBER_BLOCK;
 import static dev.dubhe.anvilcraft.init.block.ModBlocks.RESENTFUL_AMBER_BLOCK;
 import static dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK;
@@ -173,10 +174,16 @@ public final class PlasticraftRecipeData {
             .unlockedBy("has_hardend_resin", RegistrumRecipeProvider.has(ModItems.HARDEND_RESIN))
             .save(provider, AnvilcraftPlasticraft.of("hardend_resin_cauldron"));
 
-        // 有序合成：横向排列三份硬化树脂，产出用于密封催化容器的压盖。
+        // 有序合成：重质铁围墙、皇家钢锭和硬化树脂共同构成催化容器压盖。
         ShapedRecipeBuilder.shaped(RecipeCategory.DECORATIONS, ModBlocks.CATALYTIC_PRESS_LID.asItem())
+            .pattern("WRW")
             .pattern("HHH")
+            .pattern(" R ")
+            .define('W', Ingredient.of(HEAVY_IRON_WALL.asItem()))
+            .define('R', Ingredient.of(ModItems.ROYAL_STEEL_INGOT.get()))
             .define('H', Ingredient.of(ModItems.HARDEND_RESIN.get()))
+            .unlockedBy("has_heavy_iron_wall", RegistrumRecipeProvider.has(HEAVY_IRON_WALL))
+            .unlockedBy("has_royal_steel_ingot", RegistrumRecipeProvider.has(ModItems.ROYAL_STEEL_INGOT))
             .unlockedBy("has_hardend_resin", RegistrumRecipeProvider.has(ModItems.HARDEND_RESIN))
             .save(provider, AnvilcraftPlasticraft.of("catalytic_press_lid"));
 

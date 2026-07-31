@@ -4,10 +4,18 @@
   "key": {
     "H": {
       "item": "anvilcraft:hardend_resin"
+    },
+    "R": {
+      "item": "anvilcraft:royal_steel_ingot"
+    },
+    "W": {
+      "item": "anvilcraft:heavy_iron_wall"
     }
   },
   "pattern": [
-    "HHH"
+    "WRW",
+    "HHH",
+    " R "
   ],
   "result": {
     "count": 1,

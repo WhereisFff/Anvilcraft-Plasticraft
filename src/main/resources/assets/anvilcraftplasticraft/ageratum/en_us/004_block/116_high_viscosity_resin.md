@@ -20,8 +20,10 @@ Place four resin, four slime balls, and one lime powder in a cauldron or fish ta
 ## Adhesive Bucket
 
 - Right-click an entity to select it, then right-click a block or another entity to bond them. Falling giant anvils are supported as complete 3x3x3 structures.
+- While the server is searching, a moving white dashed line is shown only as a search indicator; it changes to a colored solid line when the result arrives. For a bondable target, that solid line is the collision-free route calculated by the server, and the white transit trail after confirmation reuses it. Green means the direct distance is at most 12 blocks, yellow means more than 12 but at most 16, and red means the current target cannot be bonded. Confirmation is blocked beyond 16 blocks, and the selection disconnects beyond 20.
 - With no entity selected, release within 0.5 seconds to use an interactive block normally. Hold longer to place exposed adhesive; non-interactive blocks receive adhesive immediately.
 - An entity touching exposed adhesive bonds to that face. Placing a block in front of the adhesive bonds both blocks.
+- An unanchored bonded entity group moves as one under knockback. If any member is bonded to a block, the whole group rebounds together around that attachment.
 - Pistons and sliding rails move bonded block groups together. Ordinary falling blocks do not time out while bonded, but still land as blocks and retain their bond.
 
 ## High-Viscosity Resin Block

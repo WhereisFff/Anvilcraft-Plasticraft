@@ -15,6 +15,7 @@ import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
+import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFluidPhysics;
@@ -1337,23 +1338,25 @@ public final class PlasticAnvilGameTests {
         helper.succeed();
     }
 
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate(value = "7x6x7", floor = true)
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "10x6x12", floor = true)
     @TestHolder(description = "Resin hammer entity clicks trigger a resin-sounded anvil impact without damage")
     static void resinAnvilHammerKnockbackIsNonDamaging(ExtendedGameTestHelper helper) {
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        Vec3 playerPosition = helper.absoluteVec(new Vec3(3.5D, 2.0D, 1.5D));
+        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
         player.setYRot(0.0F);
         ItemStack hammer = RESIN_ANVIL_HAMMER.asStack();
         player.setItemInHand(InteractionHand.MAIN_HAND, hammer);
         ResinAnvilEntity target = createResinAnvil(
             helper,
-            new Vec3(3.5D, 1.0D, 3.5D),
+            new Vec3(3.5D, 2.0D, 3.5D),
             ModBlocks.RESIN_ANVIL.asStack()
         );
         target.setNoGravity(true);
         target.setDeltaMovement(Vec3.ZERO);
-        Zombie middle = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.5D, 1.0D, 3.5D));
-        Zombie last = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(5.5D, 1.0D, 3.5D));
+        Zombie middle = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.5D, 2.0D, 3.5D));
+        Zombie last = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(5.5D, 2.0D, 3.5D));
         middle.setNoGravity(true);
         last.setNoGravity(true);
         check(EntityBondManager.connect(
@@ -1362,6 +1365,9 @@ public final class PlasticAnvilGameTests {
         check(EntityBondManager.connect(
             helper.getLevel(), middle, Direction.EAST, last, Direction.WEST, true
         ), "remaining hammer-test bond failed");
+        Vec3 targetStart = target.position();
+        Vec3 middleOffset = middle.position().subtract(targetStart);
+        Vec3 lastOffset = last.position().subtract(targetStart);
         AtomicInteger landingEventCount = new AtomicInteger();
         AtomicInteger resinSoundCount = new AtomicInteger();
         AtomicInteger anvilSoundCount = new AtomicInteger();
@@ -1391,15 +1397,194 @@ public final class PlasticAnvilGameTests {
         check(anvilSoundCount.get() == 0, "entity click also played the vanilla anvil landing sound");
         check(EntityBondManager.hasBonds(target), "resin hammer disconnected the struck entity");
         check(
-            target.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
-            "resin hammer did not start elastic motion on the struck entity"
+            !target.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+            "resin hammer started elastic motion on an unanchored group"
+        );
+        EntityBondState targetBonds = EntityBondManager.get(target);
+        check(
+            targetBonds != null && targetBonds.leaderUuid().equals(target.getUUID()),
+            "resin hammer did not make the struck entity the unanchored group leader"
         );
         check(
             EntityBondManager.hasBonds(middle) && EntityBondManager.hasBonds(last),
             "resin hammer disconnected entities that were not struck"
         );
-        target.discard();
-        helper.succeed();
+        helper.runAfterDelay(2, () -> {
+            check(target.getZ() > targetStart.z + 0.05D, "resin hammer did not move the unanchored group");
+            check(
+                close(middle.position(), target.position().add(middleOffset)),
+                "resin hammer did not move the middle entity with the unanchored group"
+            );
+            check(
+                close(last.position(), target.position().add(lastOffset)),
+                "resin hammer did not move the last entity with the unanchored group"
+            );
+            target.discard();
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "10x7x32", floor = true)
+    @TestHolder(description = "A resin hammer does not double a vertically bonded plastic pair's carried movement")
+    static void resinAnvilHammerDoesNotAccelerateVerticalPlasticPair(ExtendedGameTestHelper helper) {
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.5D, 2.0D, 2.5D));
+        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        player.setYRot(0.0F);
+        player.setItemInHand(InteractionHand.MAIN_HAND, RESIN_ANVIL_HAMMER.asStack());
+
+        UniversalPlasticEntity lower = new UniversalPlasticEntity(
+            ModEntities.UNIVERSAL_PLASTIC.get(),
+            helper.getLevel(),
+            helper.absoluteVec(new Vec3(4.5D, 2.0D, 4.5D)),
+            ModBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            ModBlocks.UNIVERSAL_PLASTIC.asStack(),
+            PlasticEntityOrientation.DEFAULT
+        );
+        UniversalPlasticEntity upper = new UniversalPlasticEntity(
+            ModEntities.UNIVERSAL_PLASTIC.get(),
+            helper.getLevel(),
+            helper.absoluteVec(new Vec3(4.5D, 3.0D, 4.5D)),
+            ModBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            ModBlocks.UNIVERSAL_PLASTIC.asStack(),
+            PlasticEntityOrientation.DEFAULT
+        );
+        check(helper.getLevel().addFreshEntity(lower), "failed to add lower universal plastic");
+        check(helper.getLevel().addFreshEntity(upper), "failed to add upper universal plastic");
+        AABB lowerBounds = lower.plasticraft$getCollisionBox().bounds();
+        AABB upperBounds = upper.plasticraft$getCollisionBox().bounds();
+        upper.setPos(upper.position().add(0.0D, lowerBounds.maxY - upperBounds.minY, 0.0D));
+        lower.setNoGravity(true);
+        upper.setNoGravity(true);
+        lower.setDeltaMovement(Vec3.ZERO);
+        upper.setDeltaMovement(Vec3.ZERO);
+        check(
+            EntityBondManager.connect(
+                helper.getLevel(), lower, Direction.UP, upper, Direction.DOWN, true
+            ),
+            "vertical universal plastic bond failed"
+        );
+        check(
+            PlasticEntityPhysics.findSupport(upper, Direction.DOWN) == null,
+            "a vertically bonded plastic member still treated its own group as support"
+        );
+        Vec3 lowerStart = lower.position();
+        Vec3 upperOffset = upper.position().subtract(lowerStart);
+        Vec3[] previousLowerPosition = {lowerStart};
+
+        player.attack(lower);
+        check(lower.getDeltaMovement().z > 2.4D, "resin hammer did not launch the vertical plastic pair");
+        List<VoxelShape> knockbackCollisions = helper.getLevel().getEntityCollisions(
+            lower,
+            lower.getBoundingBox().expandTowards(lower.getDeltaMovement())
+        );
+        check(
+            knockbackCollisions.isEmpty(),
+            "a vertical bonded member still blocked its leader's knockback"
+        );
+        Vec3 clampedKnockback = EntityBondManager.clampLeaderMovement(lower, lower.getDeltaMovement());
+        check(
+            clampedKnockback.z > 2.4D,
+            "component collision clipping removed the vertical pair's knockback: " + clampedKnockback
+        );
+        EntityBondState lowerBonds = EntityBondManager.get(lower);
+        check(
+            lowerBonds != null && lowerBonds.leaderUuid().equals(lower.getUUID()),
+            "resin hammer did not make the struck vertical member the group leader"
+        );
+
+        helper.startSequence()
+            .thenExecuteFor(5, () -> {
+                Vec3 movement = lower.position().subtract(previousLowerPosition[0]);
+                check(
+                    movement.lengthSqr() < 9.0D,
+                    "vertical plastic pair accelerated after a single hammer hit: " + movement
+                );
+                check(
+                    close(upper.position(), lower.position().add(upperOffset)),
+                    "vertical plastic follower separated during resin hammer knockback"
+                );
+                previousLowerPosition[0] = lower.position();
+            })
+            .thenExecute(() -> {
+                double travelled = lower.getZ() - lowerStart.z;
+                check(
+                    travelled > 1.0D,
+                    "resin hammer did not move the vertical plastic pair: travelled=" + travelled
+                        + ", lower=" + lower.position()
+                        + ", delta=" + lower.getDeltaMovement()
+                );
+                check(
+                    travelled < 16.0D,
+                    "vertical plastic pair counted its own carried movement twice: " + travelled
+                );
+            })
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate(value = "10x8x64", floor = true)
+    @TestHolder(description = "A resin hammer uses a grounded bonded member's friction when striking an upper plastic")
+    static void resinAnvilHammerFollowerKnockbackUsesGroundFriction(ExtendedGameTestHelper helper) {
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.5D, 2.0D, 1.5D));
+        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        player.setYRot(0.0F);
+        player.setItemInHand(InteractionHand.MAIN_HAND, RESIN_ANVIL_HAMMER.asStack());
+
+        UniversalPlasticEntity lower = new UniversalPlasticEntity(
+            ModEntities.UNIVERSAL_PLASTIC.get(),
+            helper.getLevel(),
+            helper.absoluteVec(new Vec3(4.5D, 2.0D, 4.5D)),
+            ModBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            ModBlocks.UNIVERSAL_PLASTIC.asStack(),
+            PlasticEntityOrientation.DEFAULT
+        );
+        UniversalPlasticEntity upper = new UniversalPlasticEntity(
+            ModEntities.UNIVERSAL_PLASTIC.get(),
+            helper.getLevel(),
+            helper.absoluteVec(new Vec3(4.5D, 3.0D, 4.5D)),
+            ModBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            ModBlocks.UNIVERSAL_PLASTIC.asStack(),
+            PlasticEntityOrientation.DEFAULT
+        );
+        check(helper.getLevel().addFreshEntity(lower), "failed to add grounded lower universal plastic");
+        check(helper.getLevel().addFreshEntity(upper), "failed to add upper universal plastic");
+        AABB lowerBounds = lower.plasticraft$getCollisionBox().bounds();
+        AABB upperBounds = upper.plasticraft$getCollisionBox().bounds();
+        upper.setPos(upper.position().add(0.0D, lowerBounds.maxY - upperBounds.minY, 0.0D));
+        check(
+            PlasticEntityPhysics.hasBlockSupport(lower, Direction.DOWN),
+            "lower universal plastic was not placed on the test floor"
+        );
+        check(
+            EntityBondManager.connect(
+                helper.getLevel(), lower, Direction.UP, upper, Direction.DOWN, false
+            ),
+            "grounded vertical universal plastic bond failed"
+        );
+        Vec3 lowerOffset = lower.position().subtract(upper.position());
+
+        player.attack(upper);
+        check(upper.getDeltaMovement().z > 2.4D, "resin hammer did not launch the upper plastic");
+        EntityBondState upperBonds = EntityBondManager.get(upper);
+        check(
+            upperBonds != null && upperBonds.leaderUuid().equals(upper.getUUID()),
+            "resin hammer did not make the struck upper plastic the group leader"
+        );
+
+        helper.startSequence()
+            .thenExecuteFor(10, () -> check(
+                close(lower.position(), upper.position().add(lowerOffset)),
+                "grounded follower separated during resin hammer knockback"
+            ))
+            .thenExecute(() -> check(
+                upper.getDeltaMovement().z < 0.5D,
+                "upper-led bonded group did not inherit the lower member's ground friction: "
+                    + upper.getDeltaMovement()
+            ))
+            .thenSucceed();
     }
 
     @GameTest(timeoutTicks = 20)

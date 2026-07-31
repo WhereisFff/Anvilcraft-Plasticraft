@@ -19,9 +19,7 @@ For gravity-affected blocks such as sand and anvils, the `14 px` top is not a bl
 
 Granules are deliberately limited to recipe or container processing. Each of these routes produces 16 granules with the melt's colour per `1000 mB`:
 
-- Large Cauldron fluid mixing with `1000 mB` water;
-- Large Cauldron fluid mixing with `1000 mB` powder snow;
 - the existing solid-liquid cooling recipe with a cold item;
 - a Catalytic Press Lid outlet aimed at a full vanilla water cauldron.
 
-These routes do not change the rule for a melt fluid block in the world. Each novice AnvilCraft Jeweler offer randomly requests one of the 16 colours, buying 16 granules of that colour for 2 emeralds, up to 16 trades per offer.
+These routes do not change the rule for a melt fluid block in the world. Each novice AnvilCraft Jeweler offer randomly requests one of the 16 colours, buying 8 granules of that colour for 2 emeralds, up to 16 trades per offer.

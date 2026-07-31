@@ -10,6 +10,7 @@ import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveGroupTransform;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesivePathPlanner;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveSelectionManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveTransit;
@@ -19,6 +20,7 @@ import dev.anvilcraft.plasticraft.network.AdhesiveBondEntitiesPacket;
 import dev.anvilcraft.plasticraft.network.AdhesiveBondEntityPacket;
 import dev.anvilcraft.plasticraft.network.AdhesiveClearSelectionPacket;
 import dev.anvilcraft.plasticraft.network.AdhesivePlacePatchPacket;
+import dev.anvilcraft.plasticraft.network.AdhesivePreviewRequestPacket;
 import dev.anvilcraft.plasticraft.network.AdhesiveSelectEntityPacket;
 import javax.annotation.Nullable;
 import net.minecraft.ChatFormatting;
@@ -64,8 +66,12 @@ import java.util.UUID;
 public final class AdhesiveSelectionClientHandler {
     private static final long BOX_ENTER_MILLIS = 180L;
     private static final long BOX_EXIT_MILLIS = 220L;
-    private static final long PATH_REFRESH_TICKS = 4L;
+    private static final long PREVIEW_REQUEST_TIMEOUT_MILLIS = 3_000L;
+    private static final double PREVIEW_RESTART_DISTANCE_SQR = 0.0625D;
     private static final double PATH_TUBE_WIDTH = 0.045D;
+    private static final double SEARCH_DASH_LENGTH = 0.28D;
+    private static final double SEARCH_DASH_GAP = 0.18D;
+    private static final double SEARCH_DASH_SPEED = 1.2D;
     private static final double GRID_OUTWARD_OFFSET = 0.004D;
     private static final double SELECTED_GRID_INSET = 0.004D;
     private static final int WHITE = 0xFFFFFFFF;
@@ -84,7 +90,6 @@ public final class AdhesiveSelectionClientHandler {
             return overridesBlockInteraction(type);
         }
     };
-
     private static @Nullable UUID animatedUuid;
     private static @Nullable Entity animatedEntity;
     private static @Nullable AABB animatedBox;
@@ -92,9 +97,27 @@ public final class AdhesiveSelectionClientHandler {
     private static long boxExitStarted = -1L;
     private static @Nullable PreviewKey cachedPreviewKey;
     private static @Nullable AdhesivePathPlanner.Plan cachedPreview;
-    private static long cachedPreviewTick = Long.MIN_VALUE;
+    private static @Nullable PreviewKey previewTaskKey;
+    private static @Nullable AdhesivePathPlanner.Plan pendingPreview;
+    private static int nextPreviewRequestId;
+    private static int activePreviewRequestId = -1;
+    private static long previewRequestStartedAt;
+    private static boolean previewPathReady;
+    private static boolean cachedPreviewGroupClear;
     private static Vec3 cachedPreviewStart = Vec3.ZERO;
     private static Vec3 cachedPreviewSupportStart = Vec3.ZERO;
+    private static @Nullable List<Vec3> sampledPreviewInput;
+    private static List<Vec3> sampledPreviewPath = List.of();
+    private static @Nullable AdhesivePathPlanner.Plan cachedRenderPlan;
+    private static @Nullable Entity cachedRenderEntity;
+    private static @Nullable Entity cachedRenderSupportEntity;
+    private static @Nullable BlockPos cachedRenderSupportPos;
+    private static @Nullable Direction cachedRenderFace;
+    private static Vec3 cachedRenderSupportPosition = Vec3.ZERO;
+    private static List<Vec3> cachedRenderPath = List.of();
+    private static @Nullable AdhesivePathPlanner.Plan cachedPreviewProjectionPlan;
+    private static @Nullable Entity cachedPreviewProjectionRoot;
+    private static @Nullable AdhesiveGroupTransform.Projection cachedPreviewProjection;
     private static @Nullable PendingBlockUse pendingBlockUse;
 
     private AdhesiveSelectionClientHandler() {
@@ -141,6 +164,7 @@ public final class AdhesiveSelectionClientHandler {
             Direction hitFace = AdhesiveFaces.hitFace(target, entityHit.getLocation());
             if (AdhesiveBondingService.hasAdhesiveOnFace(target, hitFace)) {
                 AdhesiveSelectionManager.clear(player);
+                clearPreviewTask();
                 startExitAnimation();
                 PacketDistributor.sendToServer(new AdhesiveSelectEntityPacket(target.getId(), hand, hitFace));
                 cancel(event);
@@ -215,19 +239,239 @@ public final class AdhesiveSelectionClientHandler {
             || player.getOffhandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get());
         if (!holdingBucket) {
             AdhesiveSelectionManager.clear(player);
+            clearPreviewTask();
             startExitAnimation();
             return;
         }
         Entity selected = getSelectedEntity(minecraft);
         if (selected == null || selected.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
             AdhesiveSelectionManager.clear(player);
+            clearPreviewTask();
             startExitAnimation();
             return;
         }
+        updatePreview(minecraft, minecraft.level, player, selected);
         if (previewBreakDistanceExceeded(minecraft, selected, player)) {
             clearSelection(minecraft, player);
             displayRangeMessage(player, TOO_FAR_MESSAGE, "Too far away; selection disconnected");
         }
+    }
+
+    private static void updatePreview(
+        Minecraft minecraft,
+        @Nullable ClientLevel level,
+        LocalPlayer player,
+        Entity selected
+    ) {
+        if (level == null) return;
+        if (!selected.hasData(ModAttachments.ENTITY_ADHESION)
+            && minecraft.hitResult instanceof BlockHitResult blockHit
+            && blockHit.getType() != HitResult.Type.MISS) {
+            PreviewKey key = new PreviewKey(
+                selected.getUUID(),
+                null,
+                -1,
+                blockHit.getBlockPos(),
+                blockHit.getDirection(),
+                AdhesiveSelectionManager.getSelectedFace(player),
+                player.getDirection()
+            );
+            if (shouldRestartPreview(key, selected, null)) {
+                startBlockPreviewRequest(key, level, selected, player, blockHit);
+            }
+            return;
+        }
+        if (minecraft.hitResult instanceof EntityHitResult entityHit
+            && entityHit.getEntity() != selected) {
+            Entity supportEntity = entityHit.getEntity();
+            Direction supportFace = AdhesiveFaces.hitFace(supportEntity, entityHit.getLocation());
+            Direction selectedFace = AdhesiveSelectionManager.getSelectedFace(player);
+            boolean reverse = selected.hasData(ModAttachments.ENTITY_ADHESION);
+            Entity movingEntity = reverse ? supportEntity : selected;
+            Entity anchorEntity = reverse ? selected : supportEntity;
+            Direction anchorFace = reverse ? AdhesiveFaces.worldFace(selected, selectedFace) : supportFace;
+            Direction movingFace = reverse ? AdhesiveFaces.storedFace(supportEntity, supportFace) : selectedFace;
+            PreviewKey key = new PreviewKey(
+                selected.getUUID(),
+                supportEntity.getUUID(),
+                supportEntity.getId(),
+                BlockPos.ZERO,
+                supportFace,
+                selectedFace,
+                player.getDirection()
+            );
+            if (shouldRestartPreview(key, selected, supportEntity)) {
+                startEntityPreviewRequest(
+                    key,
+                    level,
+                    selected,
+                    player,
+                    supportEntity,
+                    movingEntity,
+                    anchorEntity,
+                    anchorFace,
+                    movingFace,
+                    supportFace
+                );
+            }
+            return;
+        }
+        clearPreviewTask();
+    }
+
+    private static boolean shouldRestartPreview(
+        PreviewKey key,
+        Entity selected,
+        @Nullable Entity supportEntity
+    ) {
+        if (key.equals(previewTaskKey)) {
+            return previewMoved(selected, cachedPreviewStart, supportEntity, cachedPreviewSupportStart)
+                || activePreviewRequestId >= 0
+                && Util.getMillis() - previewRequestStartedAt >= PREVIEW_REQUEST_TIMEOUT_MILLIS;
+        }
+        if (!key.equals(cachedPreviewKey)) return true;
+        return previewMoved(selected, cachedPreviewStart, supportEntity, cachedPreviewSupportStart);
+    }
+
+    private static boolean previewMoved(
+        Entity selected,
+        Vec3 selectedStart,
+        @Nullable Entity supportEntity,
+        Vec3 supportStart
+    ) {
+        return selected.position().distanceToSqr(selectedStart) > PREVIEW_RESTART_DISTANCE_SQR
+            || supportEntity != null
+            && supportEntity.position().distanceToSqr(supportStart) > PREVIEW_RESTART_DISTANCE_SQR;
+    }
+
+    private static void startBlockPreviewRequest(
+        PreviewKey key,
+        ClientLevel level,
+        Entity selected,
+        LocalPlayer player,
+        BlockHitResult hit
+    ) {
+        AdhesivePathPlanner.Plan direct = AdhesivePathPlanner.beginPreview(
+            level,
+            selected,
+            player,
+            hit.getBlockPos(),
+            hit.getDirection(),
+            AdhesiveSelectionManager.getSelectedFace(player)
+        ).displayPlan();
+        startPreviewRequest(key, selected, null, direct);
+        PacketDistributor.sendToServer(new AdhesivePreviewRequestPacket(
+            nextPreviewRequestId(),
+            AdhesivePreviewRequestPacket.Mode.BLOCK,
+            selected.getId(),
+            -1,
+            hit.getBlockPos(),
+            hit.getDirection()
+        ));
+    }
+
+    private static void startEntityPreviewRequest(
+        PreviewKey key,
+        ClientLevel level,
+        Entity selected,
+        LocalPlayer player,
+        Entity supportEntity,
+        Entity movingEntity,
+        Entity anchorEntity,
+        Direction anchorFace,
+        Direction movingFace,
+        Direction supportFace
+    ) {
+        AdhesivePathPlanner.Plan direct = AdhesivePathPlanner.beginPreviewToEntity(
+            level,
+            movingEntity,
+            player,
+            anchorEntity,
+            anchorFace,
+            movingFace
+        ).displayPlan();
+        startPreviewRequest(key, selected, supportEntity, direct);
+        PacketDistributor.sendToServer(new AdhesivePreviewRequestPacket(
+            nextPreviewRequestId(),
+            AdhesivePreviewRequestPacket.Mode.ENTITY,
+            selected.getId(),
+            supportEntity.getId(),
+            BlockPos.ZERO,
+            supportFace
+        ));
+    }
+
+    private static void startPreviewRequest(
+        PreviewKey key,
+        Entity selected,
+        @Nullable Entity supportEntity,
+        AdhesivePathPlanner.Plan direct
+    ) {
+        clearPreviewTask(false);
+        previewTaskKey = key;
+        pendingPreview = direct;
+        cachedPreviewKey = null;
+        cachedPreview = null;
+        cachedPreviewGroupClear = false;
+        cachedPreviewStart = selected.position();
+        cachedPreviewSupportStart = supportEntity == null ? Vec3.ZERO : supportEntity.position();
+        sampledPreviewInput = null;
+        sampledPreviewPath = List.of();
+        clearPreviewProjection();
+        previewPathReady = false;
+    }
+
+    private static void clearPreviewTask() {
+        clearPreviewTask(true);
+    }
+
+    private static void clearPreviewTask(boolean sendCancel) {
+        if (sendCancel
+            && activePreviewRequestId >= 0
+            && Minecraft.getInstance().getConnection() != null) {
+            PacketDistributor.sendToServer(new AdhesivePreviewRequestPacket(
+                activePreviewRequestId,
+                AdhesivePreviewRequestPacket.Mode.CANCEL,
+                -1,
+                -1,
+                BlockPos.ZERO,
+                Direction.DOWN
+            ));
+        }
+        previewTaskKey = null;
+        pendingPreview = null;
+        activePreviewRequestId = -1;
+        previewRequestStartedAt = 0L;
+        previewPathReady = false;
+        cachedPreviewKey = null;
+        cachedPreview = null;
+        cachedPreviewGroupClear = false;
+        cachedPreviewStart = Vec3.ZERO;
+        cachedPreviewSupportStart = Vec3.ZERO;
+        sampledPreviewInput = null;
+        sampledPreviewPath = List.of();
+        cachedRenderPlan = null;
+        cachedRenderEntity = null;
+        cachedRenderSupportEntity = null;
+        cachedRenderSupportPos = null;
+        cachedRenderFace = null;
+        cachedRenderSupportPosition = Vec3.ZERO;
+        cachedRenderPath = List.of();
+        clearPreviewProjection();
+    }
+
+    private static int nextPreviewRequestId() {
+        nextPreviewRequestId++;
+        if (nextPreviewRequestId <= 0) nextPreviewRequestId = 1;
+        activePreviewRequestId = nextPreviewRequestId;
+        previewRequestStartedAt = Util.getMillis();
+        return activePreviewRequestId;
+    }
+
+    private static void clearPreviewProjection() {
+        cachedPreviewProjectionPlan = null;
+        cachedPreviewProjectionRoot = null;
+        cachedPreviewProjection = null;
     }
 
     @SubscribeEvent
@@ -382,14 +626,15 @@ public final class AdhesiveSelectionClientHandler {
             preview = previewPath(level, selected, player, blockHit);
             previewSupportPos = blockHit.getBlockPos();
             previewSupportFace = blockHit.getDirection();
-            path = previewRenderPath(
-                selected,
-                preview,
-                null,
-                blockHit.getBlockPos(),
-                blockHit.getDirection()
-            );
-            pathColor = previewPathColor(preview);
+            if (preview != null) {
+                path = previewRenderPath(
+                    selected,
+                    preview,
+                    null,
+                    blockHit.getBlockPos(),
+                    blockHit.getDirection()
+                );
+            }
         } else if (selected != null
             && minecraft.hitResult instanceof EntityHitResult entityHit
             && entityHit.getEntity() != selected) {
@@ -404,18 +649,26 @@ public final class AdhesiveSelectionClientHandler {
                     AdhesiveSelectionManager.getSelectedFace(player)
                 );
             }
-            path = previewRenderPath(
-                previewMovingEntity,
-                preview,
-                previewSupport,
-                null,
-                previewSupportFace
-            );
-            pathColor = previewPathColor(preview);
+            if (preview != null) {
+                path = previewRenderPath(
+                    previewMovingEntity,
+                    preview,
+                    previewSupport,
+                    null,
+                    previewSupportFace
+                );
+            }
         } else if (transit != null) {
             path = transitRenderPath(animatedEntity, transit, transitSupport);
         }
-
+        boolean previewSearching = preview != null && !previewPathReady;
+        if (preview != null && previewPathReady) {
+            pathColor = previewPathColor(preview, cachedPreviewGroupClear);
+        }
+        boolean previewClear = previewPathReady
+            && preview != null
+            && preview.valid()
+            && cachedPreviewGroupClear;
         PoseStack pose = event.getPoseStack();
         Vec3 camera = event.getCamera().getPosition();
         MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
@@ -439,7 +692,20 @@ public final class AdhesiveSelectionClientHandler {
             );
         }
         if (!path.isEmpty()) {
-            renderPath(pose, buffers, path, pathColor);
+            if (previewSearching) {
+                ThickLineRenderer.renderDashed(
+                    pose,
+                    buffers,
+                    path,
+                    WHITE,
+                    PATH_TUBE_WIDTH,
+                    SEARCH_DASH_LENGTH,
+                    SEARCH_DASH_GAP,
+                    now * SEARCH_DASH_SPEED / 1_000.0D
+                );
+            } else {
+                renderPath(pose, buffers, path, pathColor);
+            }
         }
         if (preview != null && previewSupportFace != null) {
             renderPreviewEndpoint(
@@ -447,6 +713,7 @@ public final class AdhesiveSelectionClientHandler {
                 buffers,
                 previewMovingEntity,
                 preview,
+                previewClear,
                 previewSupport,
                 previewSupportPos,
                 previewSupportFace
@@ -459,7 +726,7 @@ public final class AdhesiveSelectionClientHandler {
         if (selected == null && transit == null && boxProgress <= 0.0F) resetAnimation();
     }
 
-    private static AdhesivePathPlanner.Plan previewPath(
+    private static @Nullable AdhesivePathPlanner.Plan previewPath(
         ClientLevel level,
         Entity selected,
         LocalPlayer player,
@@ -469,28 +736,13 @@ public final class AdhesiveSelectionClientHandler {
         PreviewKey key = new PreviewKey(
             selected.getUUID(),
             null,
+            -1,
             hit.getBlockPos(),
             hit.getDirection(),
-            selectedFace
+            selectedFace,
+            player.getDirection()
         );
-        long gameTime = level.getGameTime();
-        if (!key.equals(cachedPreviewKey)
-            || cachedPreview == null
-            || gameTime - cachedPreviewTick >= PATH_REFRESH_TICKS
-            || selected.position().distanceToSqr(cachedPreviewStart) > 0.0625D) {
-            cachedPreview = AdhesivePathPlanner.plan(
-                level,
-                selected,
-                player,
-                hit.getBlockPos(),
-                hit.getDirection(),
-                selectedFace
-            );
-            cachedPreviewKey = key;
-            cachedPreviewTick = gameTime;
-            cachedPreviewStart = selected.position();
-        }
-        return cachedPreview;
+        return previewForKey(key);
     }
 
     private static @Nullable AdhesivePathPlanner.Plan previewAtHit(
@@ -525,6 +777,7 @@ public final class AdhesiveSelectionClientHandler {
 
     private static void clearSelection(Minecraft minecraft, LocalPlayer player) {
         AdhesiveSelectionManager.clear(player);
+        clearPreviewTask();
         if (minecraft.getConnection() != null) {
             PacketDistributor.sendToServer(new AdhesiveClearSelectionPacket());
         }
@@ -538,8 +791,8 @@ public final class AdhesiveSelectionClientHandler {
         );
     }
 
-    private static int previewPathColor(AdhesivePathPlanner.Plan preview) {
-        if (!preview.valid()) {
+    private static int previewPathColor(AdhesivePathPlanner.Plan preview, boolean groupClear) {
+        if (!preview.valid() || !groupClear) {
             return DANGER_RED;
         }
         return preview.directDistance() <= AdhesivePathPlanner.SAFE_DISTANCE
@@ -547,7 +800,7 @@ public final class AdhesiveSelectionClientHandler {
             : WARNING_YELLOW;
     }
 
-    private static AdhesivePathPlanner.Plan previewPath(
+    private static @Nullable AdhesivePathPlanner.Plan previewPath(
         ClientLevel level,
         Entity selected,
         LocalPlayer player,
@@ -555,38 +808,58 @@ public final class AdhesiveSelectionClientHandler {
         Direction supportFace
     ) {
         Direction selectedFace = AdhesiveSelectionManager.getSelectedFace(player);
-        boolean reverse = selected.hasData(ModAttachments.ENTITY_ADHESION);
-        Entity movingEntity = reverse ? supportEntity : selected;
-        Entity anchorEntity = reverse ? selected : supportEntity;
-        Direction anchorFace = reverse ? AdhesiveFaces.worldFace(selected, selectedFace) : supportFace;
-        Direction movingFace = reverse ? AdhesiveFaces.storedFace(supportEntity, supportFace) : selectedFace;
         PreviewKey key = new PreviewKey(
             selected.getUUID(),
             supportEntity.getUUID(),
+            supportEntity.getId(),
             BlockPos.ZERO,
             supportFace,
-            selectedFace
+            selectedFace,
+            player.getDirection()
         );
-        long gameTime = level.getGameTime();
-        if (!key.equals(cachedPreviewKey)
-            || cachedPreview == null
-            || gameTime - cachedPreviewTick >= PATH_REFRESH_TICKS
-            || selected.position().distanceToSqr(cachedPreviewStart) > 0.0625D
-            || supportEntity.position().distanceToSqr(cachedPreviewSupportStart) > 0.0625D) {
-            cachedPreview = AdhesivePathPlanner.planToEntity(
-                level,
-                movingEntity,
-                player,
-                anchorEntity,
-                anchorFace,
-                movingFace
-            );
-            cachedPreviewKey = key;
-            cachedPreviewTick = gameTime;
-            cachedPreviewStart = selected.position();
-            cachedPreviewSupportStart = supportEntity.position();
-        }
-        return cachedPreview;
+        return previewForKey(key);
+    }
+
+    private static @Nullable AdhesivePathPlanner.Plan previewForKey(PreviewKey key) {
+        if (key.equals(cachedPreviewKey)) return cachedPreview;
+        return key.equals(previewTaskKey)
+            ? pendingPreview
+            : null;
+    }
+
+    public static void handlePreviewPath(
+        int requestId,
+        boolean groupClear,
+        AdhesivePathPlanner.Plan plan
+    ) {
+        if (requestId != activePreviewRequestId || previewTaskKey == null) return;
+        PreviewKey key = previewTaskKey;
+        cachedPreviewKey = key;
+        cachedPreview = plan;
+        cachedPreviewGroupClear = groupClear;
+        pendingPreview = null;
+        previewTaskKey = null;
+        activePreviewRequestId = -1;
+        previewRequestStartedAt = 0L;
+        previewPathReady = true;
+        sampledPreviewInput = null;
+        sampledPreviewPath = List.of();
+        clearPreviewProjection();
+    }
+
+    public static void handlePreviewRejected(int requestId) {
+        if (requestId != activePreviewRequestId || previewTaskKey == null) return;
+        cachedPreviewKey = previewTaskKey;
+        cachedPreview = null;
+        cachedPreviewGroupClear = false;
+        pendingPreview = null;
+        previewTaskKey = null;
+        activePreviewRequestId = -1;
+        previewRequestStartedAt = 0L;
+        previewPathReady = false;
+        sampledPreviewInput = null;
+        sampledPreviewPath = List.of();
+        clearPreviewProjection();
     }
 
     private static List<Vec3> appendSurfaceEndpoint(List<Vec3> path, BlockPos supportPos, Direction face) {
@@ -606,17 +879,48 @@ public final class AdhesiveSelectionClientHandler {
         @Nullable BlockPos supportPos,
         Direction face
     ) {
-        if (entity instanceof AbstractPlasticEntity plastic && preview.targetOrientation() != null) {
-            List<Vec3> path = plasticFacePath(
-                plastic,
-                preview.points(),
-                plastic.getOrientation(),
-                preview.targetOrientation(),
-                preview.sourceFace()
-            );
-            return appendEndpoint(path, supportEntity, supportPos, face);
+        boolean sameSupportPos = cachedRenderSupportPos == null
+            ? supportPos == null
+            : cachedRenderSupportPos.equals(supportPos);
+        boolean sameSupportPosition = supportEntity == null
+            || supportEntity.position().distanceToSqr(cachedRenderSupportPosition) <= 1.0E-10D;
+        if (cachedRenderPlan != preview
+            || cachedRenderEntity != entity
+            || cachedRenderSupportEntity != supportEntity
+            || !sameSupportPos
+            || cachedRenderFace != face
+            || !sameSupportPosition) {
+            cachedRenderPlan = preview;
+            cachedRenderEntity = entity;
+            cachedRenderSupportEntity = supportEntity;
+            cachedRenderSupportPos = supportPos;
+            cachedRenderFace = face;
+            cachedRenderSupportPosition = supportEntity == null ? Vec3.ZERO : supportEntity.position();
+            cachedRenderPath = buildPreviewRenderPath(entity, preview, supportEntity, supportPos, face);
         }
-        return appendEndpoint(preview.points(), supportEntity, supportPos, face);
+        return cachedRenderPath;
+    }
+
+    private static List<Vec3> buildPreviewRenderPath(
+        Entity entity,
+        AdhesivePathPlanner.Plan preview,
+        @Nullable Entity supportEntity,
+        @Nullable BlockPos supportPos,
+        Direction face
+    ) {
+        PlasticEntityOrientation startOrientation = entity instanceof AbstractPlasticEntity plastic
+            ? plastic.getOrientation()
+            : null;
+        return buildRenderPath(
+            entity,
+            preview.points(),
+            startOrientation,
+            preview.targetOrientation(),
+            preview.sourceFace(),
+            supportEntity,
+            supportPos,
+            face
+        );
     }
 
     private static List<Vec3> transitRenderPath(
@@ -625,27 +929,42 @@ public final class AdhesiveSelectionClientHandler {
         @Nullable Entity supportEntity
     ) {
         List<Vec3> adjustedPath = offsetPath(transit.path(), transit.supportMovement(supportEntity));
-        if (entity instanceof AbstractPlasticEntity plastic && transit.plastic()) {
-            List<Vec3> path = plasticFacePath(
-                plastic,
-                adjustedPath,
-                PlasticEntityOrientation.unpack(transit.startOrientation()),
-                PlasticEntityOrientation.unpack(transit.targetOrientation()),
-                transit.sourceFace()
-            );
-            return appendEndpoint(
-                path,
-                supportEntity,
-                transit.hasEntityTarget() ? null : transit.supportPos(),
-                transit.attachmentFace()
-            );
-        }
-        return appendEndpoint(
+        return buildRenderPath(
+            entity,
             adjustedPath,
+            transit.plastic() ? PlasticEntityOrientation.unpack(transit.startOrientation()) : null,
+            transit.plastic() ? PlasticEntityOrientation.unpack(transit.targetOrientation()) : null,
+            transit.plastic() ? transit.sourceFace() : null,
             supportEntity,
             transit.hasEntityTarget() ? null : transit.supportPos(),
             transit.attachmentFace()
         );
+    }
+
+    private static List<Vec3> buildRenderPath(
+        @Nullable Entity entity,
+        List<Vec3> path,
+        @Nullable PlasticEntityOrientation startOrientation,
+        @Nullable PlasticEntityOrientation targetOrientation,
+        @Nullable Direction sourceFace,
+        @Nullable Entity supportEntity,
+        @Nullable BlockPos supportPos,
+        Direction face
+    ) {
+        List<Vec3> renderedPath = path;
+        if (entity instanceof AbstractPlasticEntity plastic
+            && startOrientation != null
+            && targetOrientation != null
+            && sourceFace != null) {
+            renderedPath = plasticFacePath(
+                plastic,
+                path,
+                startOrientation,
+                targetOrientation,
+                sourceFace
+            );
+        }
+        return appendEndpoint(renderedPath, supportEntity, supportPos, face);
     }
 
     private static List<Vec3> plasticFacePath(
@@ -785,7 +1104,11 @@ public final class AdhesiveSelectionClientHandler {
         int color
     ) {
         if (points.size() < 2) return;
-        ThickLineRenderer.render(pose, buffers, resamplePath(points), color, PATH_TUBE_WIDTH);
+        if (points != sampledPreviewInput) {
+            sampledPreviewInput = points;
+            sampledPreviewPath = resamplePath(points);
+        }
+        ThickLineRenderer.render(pose, buffers, sampledPreviewPath, color, PATH_TUBE_WIDTH);
     }
 
     private static void addQuad(
@@ -819,6 +1142,7 @@ public final class AdhesiveSelectionClientHandler {
         MultiBufferSource.BufferSource buffers,
         Entity selected,
         AdhesivePathPlanner.Plan preview,
+        boolean previewClear,
         @Nullable Entity supportEntity,
         @Nullable BlockPos supportPos,
         Direction supportFace
@@ -836,15 +1160,21 @@ public final class AdhesiveSelectionClientHandler {
         } else if (supportPos != null) {
             renderFaceGrid(pose, buffers, new AABB(supportPos), supportFace);
         }
-        if (preview.valid() && selected instanceof FallingBlockEntity fallingBlock) {
-            renderTargetGhost(
-                pose,
-                buffers,
-                fallingBlock,
-                preview.targetPosition(),
-                preview.targetOrientation()
-            );
+        if (previewClear) renderPreviewGroup(pose, buffers, previewProjection(selected, preview));
+    }
+
+    private static AdhesiveGroupTransform.Projection previewProjection(
+        Entity root,
+        AdhesivePathPlanner.Plan preview
+    ) {
+        if (cachedPreviewProjection == null
+            || cachedPreviewProjectionPlan != preview
+            || cachedPreviewProjectionRoot != root) {
+            cachedPreviewProjectionPlan = preview;
+            cachedPreviewProjectionRoot = root;
+            cachedPreviewProjection = AdhesiveGroupTransform.projectTarget(root, preview);
         }
+        return cachedPreviewProjection;
     }
 
     private static void renderTransitEndpoint(
@@ -867,17 +1197,29 @@ public final class AdhesiveSelectionClientHandler {
         } else {
             renderFaceGrid(pose, buffers, new AABB(transit.supportPos()), transit.attachmentFace());
         }
-        if (movingEntity instanceof FallingBlockEntity fallingBlock) {
-            PlasticEntityOrientation orientation = transit.plastic()
-                ? PlasticEntityOrientation.unpack(transit.targetOrientation())
-                : null;
-            renderTargetGhost(
-                pose,
-                buffers,
-                fallingBlock,
-                transit.targetPosition(supportEntity),
-                orientation
-            );
+        PlasticEntityOrientation orientation = transit.plastic()
+            ? PlasticEntityOrientation.unpack(transit.targetOrientation())
+            : null;
+        renderPreviewGroup(
+            pose,
+            buffers,
+            AdhesiveGroupTransform.project(movingEntity, transit.targetPosition(supportEntity), orientation)
+        );
+    }
+
+    private static void renderPreviewGroup(
+        PoseStack pose,
+        MultiBufferSource.BufferSource buffers,
+        AdhesiveGroupTransform.Projection projection
+    ) {
+        if (!projection.valid()) return;
+        for (AdhesiveGroupTransform.Member member : projection.members()) {
+            Entity entity = member.entity();
+            if (entity instanceof FallingBlockEntity fallingBlock) {
+                renderTargetGhost(pose, buffers, fallingBlock, member.position(), member.orientation());
+            } else {
+                renderAnimatedBox(pose, buffers, member.collisionBounds().inflate(0.006D), 1.0F);
+            }
         }
     }
 
@@ -1011,8 +1353,7 @@ public final class AdhesiveSelectionClientHandler {
         animatedBox = target.getBoundingBox().inflate(0.006D);
         boxEnterStarted = Util.getMillis();
         boxExitStarted = -1L;
-        cachedPreviewKey = null;
-        cachedPreview = null;
+        clearPreviewTask();
     }
 
     private static void startExitAnimation() {
@@ -1024,10 +1365,7 @@ public final class AdhesiveSelectionClientHandler {
         animatedEntity = null;
         animatedBox = null;
         boxExitStarted = -1L;
-        cachedPreviewKey = null;
-        cachedPreview = null;
-        cachedPreviewTick = Long.MIN_VALUE;
-        cachedPreviewSupportStart = Vec3.ZERO;
+        clearPreviewTask();
     }
 
     private static void cancel(InputEvent.InteractionKeyMappingTriggered event) {
@@ -1077,9 +1415,11 @@ public final class AdhesiveSelectionClientHandler {
     private record PreviewKey(
         UUID entityUuid,
         @Nullable UUID supportEntityUuid,
+        int supportEntityId,
         BlockPos supportPos,
         Direction attachmentFace,
-        Direction selectedFace
+        Direction selectedFace,
+        Direction playerDirection
     ) {
         private PreviewKey {
             supportPos = supportPos.immutable();

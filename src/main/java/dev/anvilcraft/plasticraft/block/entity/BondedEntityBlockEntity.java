@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.block.entity;
 import dev.anvilcraft.lib.v2.recipe.cache.IItemHandlerCache;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
+import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
@@ -422,7 +423,10 @@ public class BondedEntityBlockEntity extends BlockEntity
         BlockState fixedState = this.getBlockState();
         CompoundTag savedData = this.saveWithoutMetadata(serverLevel.registryAccess());
         if (!serverLevel.setBlock(this.worldPosition, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)) return null;
-        if (serverLevel.addFreshEntity(restored)) return restored;
+        if (serverLevel.addFreshEntity(restored)) {
+            BondedFallingBlocks.removeAll(serverLevel, this.worldPosition);
+            return restored;
+        }
 
         serverLevel.setBlock(this.worldPosition, fixedState, Block.UPDATE_ALL);
         if (serverLevel.getBlockEntity(this.worldPosition) instanceof BondedEntityBlockEntity replacement) {
