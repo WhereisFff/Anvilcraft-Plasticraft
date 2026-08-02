@@ -12,6 +12,7 @@ import dev.anvilcraft.plasticraft.client.particle.GaseousOilFlameParticle;
 import dev.anvilcraft.plasticraft.client.renderer.AdhesivePatchRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticTextureSpriteSource;
+import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingViewportResources;
 import dev.anvilcraft.plasticraft.client.renderer.entity.CatalyticPressLidRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinCauldronRenderer;
 import dev.anvilcraft.plasticraft.init.ModParticles;
@@ -32,6 +33,7 @@ import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.RegisterColorHandlersEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
+import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import net.neoforged.neoforge.client.event.RegisterParticleProvidersEvent;
 import net.neoforged.neoforge.common.NeoForge;
 
@@ -44,6 +46,7 @@ public final class AnvilcraftPlasticraftClient {
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerAdditionalModels);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerParticleProviders);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerGuiLayers);
+        modEventBus.addListener(AnvilcraftPlasticraftClient::registerReloadListeners);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerBlockColors);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerItemColors);
         modEventBus.addListener(PlasticTextureSpriteSource::registerType);
@@ -54,6 +57,7 @@ public final class AnvilcraftPlasticraftClient {
 
     private static void clearPlasticTextureCache(ClientPlayerNetworkEvent.LoggingOut event) {
         PlasticTextureCache.clear();
+        MoldingViewportResources.INSTANCE.closeAll();
     }
 
     private static void clientSetup(FMLClientSetupEvent event) {
@@ -124,5 +128,9 @@ public final class AnvilcraftPlasticraftClient {
 
     private static void registerGuiLayers(RegisterGuiLayersEvent event) {
         event.registerAboveAll(AnvilcraftPlasticraft.of("adhesive_bond_hud"), AdhesiveBondHud::render);
+    }
+
+    private static void registerReloadListeners(RegisterClientReloadListenersEvent event) {
+        event.registerReloadListener(MoldingViewportResources.INSTANCE);
     }
 }

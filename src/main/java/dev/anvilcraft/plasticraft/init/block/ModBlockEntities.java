@@ -4,15 +4,26 @@ import dev.anvilcraft.lib.v2.registrum.util.entry.BlockEntityEntry;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.HighHeatFuelCauldronBlockEntity;
+import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.BondedEntityBlockEntityRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.CondenserTowerBlockEntityRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.HighHeatFuelCauldronBlockEntityRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.blockentity.PlasticMoldingChamberRenderer;
 
 import static dev.anvilcraft.plasticraft.AnvilcraftPlasticraft.REGISTRUM;
 
 /** Plasticraft 方块实体注册。 */
 public final class ModBlockEntities {
+    public static final BlockEntityEntry<PlasticMoldingChamberBlockEntity> PLASTIC_MOLDING_CHAMBER = REGISTRUM
+        .<PlasticMoldingChamberBlockEntity>blockEntity(
+            "plastic_molding_chamber",
+            PlasticMoldingChamberBlockEntity::new
+        )
+        .validBlock(ModBlocks.PLASTIC_MOLDING_CHAMBER)
+        .renderer(() -> PlasticMoldingChamberRenderer::new)
+        .register();
+
     public static final BlockEntityEntry<BondedEntityBlockEntity> BONDED_ENTITY = REGISTRUM
         .blockEntity("bonded_entity", BondedEntityBlockEntity::new)
         .validBlocks(

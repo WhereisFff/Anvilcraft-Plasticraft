@@ -38,6 +38,66 @@ public final class PlasticraftLanguageData {
         provider.add("item.anvilcraftplasticraft.resin_anvil", "Resin Anvil");
         provider.add("item.anvilcraftplasticraft.universal_plastic", "Universal Plastic Block");
 
+        // 塑料成型舱物品说明、容器标题和建模器界面语言文件生成。
+        provider.add(
+            "tooltip.anvilcraftplasticraft.plastic_molding_chamber",
+            "Edits and projects a 48 x 48 x 48 model in a rear 3 x 3 x 3 collisionless workspace"
+        );
+        provider.add(
+            "container.anvilcraftplasticraft.plastic_molding_chamber",
+            "Plastic Molding Chamber"
+        );
+        provider.add("screen.anvilcraftplasticraft.molding.search_type", "Search type");
+        provider.add("screen.anvilcraftplasticraft.molding.search_json", "Search model");
+        provider.add("screen.anvilcraftplasticraft.molding.rename", "Rename");
+        provider.add("screen.anvilcraftplasticraft.molding.numeric", "Numeric property");
+        provider.add("screen.anvilcraftplasticraft.molding.numeric.tooltip", "%1$s %2$s");
+        provider.add("screen.anvilcraftplasticraft.molding.numeric.position", "Position");
+        provider.add("screen.anvilcraftplasticraft.molding.numeric.size", "Size");
+        provider.add("screen.anvilcraftplasticraft.molding.numeric.pivot", "Pivot");
+        provider.add("screen.anvilcraftplasticraft.molding.numeric.rotation", "Rotation");
+        provider.add("screen.anvilcraftplasticraft.molding.no_writer", "Read-only");
+        provider.add("screen.anvilcraftplasticraft.molding.writer", "Editing: %s");
+        provider.add(
+            "screen.anvilcraftplasticraft.molding.analysis",
+            "%1$s px / %2$s mB / %3$s clay"
+        );
+        provider.add("screen.anvilcraftplasticraft.molding.out_of_bounds", "Outside workspace");
+        provider.add("screen.anvilcraftplasticraft.molding.tool.move", "Move");
+        provider.add("screen.anvilcraftplasticraft.molding.tool.scale", "Resize");
+        provider.add("screen.anvilcraftplasticraft.molding.tool.rotate", "Rotate");
+        provider.add("screen.anvilcraftplasticraft.molding.tool.pivot", "Pivot");
+        provider.add("screen.anvilcraftplasticraft.molding.tool.mirror", "Mirror");
+        provider.add("screen.anvilcraftplasticraft.molding.type", "Assign type");
+        provider.add("screen.anvilcraftplasticraft.molding.type.normal", "Normal product");
+        provider.add("screen.anvilcraftplasticraft.molding.undo", "Undo");
+        provider.add("screen.anvilcraftplasticraft.molding.copy", "Copy");
+        provider.add("screen.anvilcraftplasticraft.molding.cut", "Cut (also delete)");
+        provider.add("screen.anvilcraftplasticraft.molding.paste", "Paste");
+        provider.add("screen.anvilcraftplasticraft.molding.json", "JSON management");
+        provider.add("screen.anvilcraftplasticraft.molding.takeover", "Take over editing");
+        provider.add("screen.anvilcraftplasticraft.molding.element.tooltip", "%1$s - %2$s");
+        provider.add("screen.anvilcraftplasticraft.molding.element.cube", "Cube");
+        provider.add("screen.anvilcraftplasticraft.molding.element.group", "Group");
+        provider.add("screen.anvilcraftplasticraft.molding.context.new_cube", "New cube");
+        provider.add("screen.anvilcraftplasticraft.molding.context.rename", "Rename");
+        provider.add("screen.anvilcraftplasticraft.molding.context.delete", "Delete");
+        provider.add("screen.anvilcraftplasticraft.molding.context.hide", "Show or hide");
+        provider.add("screen.anvilcraftplasticraft.molding.context.lock", "Lock or unlock");
+        provider.add("screen.anvilcraftplasticraft.molding.context.group", "Group selection");
+        provider.add("screen.anvilcraftplasticraft.molding.context.center_pivot", "Center pivot");
+        provider.add("screen.anvilcraftplasticraft.molding.context.focus", "Focus selection");
+        provider.add("screen.anvilcraftplasticraft.molding.context.reset_camera", "Frame workspace");
+
+        // 塑料成型舱编辑会话与服务端命令拒绝原因语言文件生成。
+        provider.add("message.anvilcraftplasticraft.molding.invalid_session", "Editing session expired");
+        provider.add("message.anvilcraftplasticraft.molding.stale_revision", "Model changed; view refreshed");
+        provider.add("message.anvilcraftplasticraft.molding.not_editable", "Chamber is not editable");
+        provider.add("message.anvilcraftplasticraft.molding.nothing_to_undo", "Nothing to undo");
+        provider.add("message.anvilcraftplasticraft.molding.nothing_to_redo", "Nothing to redo");
+        provider.add("message.anvilcraftplasticraft.molding.invalid_command", "Invalid model edit");
+        provider.add("message.anvilcraftplasticraft.molding.session_taken_over", "Editing control acquired");
+
         // 高黏度树脂粘接工具的操作结果消息。
         provider.add("message.anvilcraftplasticraft.adhesive.out_of_range", "Too far away");
         provider.add(

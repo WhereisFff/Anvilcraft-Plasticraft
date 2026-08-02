@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.integration.jei;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.client.gui.screen.PlasticMoldingChamberScreen;
 import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
 import dev.anvilcraft.plasticraft.init.block.ModBlocks;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
@@ -11,6 +12,7 @@ import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.constants.RecipeTypes;
 import mezz.jei.api.recipe.RecipeType;
+import mezz.jei.api.registration.IGuiHandlerRegistration;
 import mezz.jei.api.registration.IRecipeCatalystRegistration;
 import mezz.jei.api.registration.IRecipeCategoryRegistration;
 import mezz.jei.api.registration.IRecipeRegistration;
@@ -112,6 +114,12 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
             CONDENSER,
             JeiRecipeUtil.getRecipeHoldersFromType(ModRecipeTypes.CONDENSER_TYPE.get())
         );
+    }
+
+    @Override
+    public void registerGuiHandlers(IGuiHandlerRegistration registration) {
+        // 返回空属性只对成型舱屏幕禁用 JEI 侧栏，不改变玩家保存的全局显隐状态。
+        registration.addGuiScreenHandler(PlasticMoldingChamberScreen.class, ignored -> null);
     }
 
     static boolean isEnhancedRecipe(RecipeHolder<PlasmaJetBlastingRecipe> holder) {

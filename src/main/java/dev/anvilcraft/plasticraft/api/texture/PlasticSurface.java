@@ -8,14 +8,14 @@ import java.util.Objects;
  *
  * <p>顶点使用模型局部坐标而不是方块或实体类型，法线同样位于模型局部空间。
  * 顶点数和法线方向都不限定为方块六面，因此凹形、断开模型、任意角度旋转后的模型
- * 和无厚度双面平面都能经过同一个公共入口。</p>
+ * 和零厚度 cube 的双面表面都能经过同一个公共入口。</p>
  *
  * @param id                    表面在形状内的稳定 ID
  * @param vertices              按环绕顺序排列的至少三个局部顶点
  * @param normal                指向表面外侧的局部单位法线
  * @param pixelWidth            按稳定纹素密度展开后的宽度
  * @param pixelHeight           按稳定纹素密度展开后的高度
- * @param doubleSided           无厚度面是否需要双面渲染
+ * @param doubleSided           零厚度 cube 的表面是否需要双面渲染
  * @param grooveShade           凹槽造成的离散变暗级数
  * @param ambientOcclusionShade 邻近遮蔽造成的离散变暗级数
  */

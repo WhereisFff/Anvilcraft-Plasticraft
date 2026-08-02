@@ -21,7 +21,7 @@ import net.minecraft.world.item.ItemStack;
 /** 使用浅色塑料背景的 AnvilCraft 风格界面。 */
 public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAnvilMenu> {
     private static final ResourceLocation BACKGROUND = AnvilcraftPlasticraft.of(
-        "textures/gui/crafting/background/hardend_resin_anvil.png"
+        "textures/gui/background/hardend_resin_anvil.png"
     );
     private EditBox name;
     private final Player player;

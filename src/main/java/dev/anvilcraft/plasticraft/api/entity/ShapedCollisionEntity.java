@@ -23,7 +23,7 @@ public interface ShapedCollisionEntity {
         return this.plasticraft$getCollisionShape();
     }
 
-    /** 返回用于选取与表面交互的轮廓；纯平面实体可只提供此形状。 */
+    /** 返回用于选取与表面交互的轮廓；纯零厚度 cube 制品可只提供此形状。 */
     default VoxelShape plasticraft$getInteractionShape() {
         return this.plasticraft$getCollisionShape();
     }

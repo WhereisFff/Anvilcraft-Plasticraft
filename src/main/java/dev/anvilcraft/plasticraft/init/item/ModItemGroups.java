@@ -37,6 +37,7 @@ public final class ModItemGroups {
                 output.accept(ModItems.UNIVERSAL_PLASTIC_GRANULE.get());
                 output.accept(ModBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem());
                 output.accept(ModBlocks.CONDENSER_TOWER.asItem());
+                output.accept(ModBlocks.PLASTIC_MOLDING_CHAMBER.asItem());
             })
             .title(Component.translatable(TITLE_KEY))
             // NeoForge 的排序图将 withTabsBefore(X) 记录为 X -> this，

@@ -83,10 +83,10 @@ AnvilCraft 本体通过 `gradle/libs.versions.toml` 中的远程 Maven 构件提
 
 ## 贡献者
 
-| 贡献者 | 分工 |
-| --- | --- |
-| [WhereisFff](https://github.com/WhereisFff) | 策划、程序 |
-| [Leaden-TP](https://github.com/Leaden-TP) | 美术 |
+| 贡献者 | 分工       |
+| --- |----------|
+| [WhereisFff](https://github.com/WhereisFff) | 策划、程序、美术 |
+| [Leaden-TP](https://github.com/Leaden-TP) | 美术       |
 
 欢迎通过 [Issue](https://github.com/WhereisFff/Anvilcraft-Plasticraft/issues) 反馈问题或提出建议，也欢迎提交 Pull Request。
 参与开发前请先阅读[贡献指南](CONTRIBUTING.md)。

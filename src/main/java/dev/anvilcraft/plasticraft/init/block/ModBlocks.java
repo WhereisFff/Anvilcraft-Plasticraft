@@ -12,6 +12,8 @@ import dev.anvilcraft.plasticraft.block.HighViscosityResinBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
 import dev.anvilcraft.plasticraft.block.PlasticOilCauldronBlock;
+import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberBlock;
+import dev.anvilcraft.plasticraft.block.PlasticMoldingRegionBlock;
 import dev.anvilcraft.plasticraft.block.ResinAnvilBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
@@ -24,6 +26,7 @@ import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.HardenedResinAnvilItem;
 import dev.anvilcraft.plasticraft.item.HardenedResinCauldronItem;
 import dev.anvilcraft.plasticraft.item.HighViscosityResinBlockItem;
+import dev.anvilcraft.plasticraft.item.PlasticMoldingChamberItem;
 import dev.anvilcraft.plasticraft.item.ResinAnvilItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticBlockItem;
 import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
@@ -61,6 +64,49 @@ import static dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK;
 
 /** Plasticraft 可移动制品的方块和物品注册。 */
 public final class ModBlocks {
+    public static final BlockEntry<PlasticMoldingChamberBlock> PLASTIC_MOLDING_CHAMBER = REGISTRUM
+        .block("plastic_molding_chamber", PlasticMoldingChamberBlock::new)
+        .initialProperties(() -> Blocks.IRON_BLOCK)
+        .properties(properties -> properties
+            .noOcclusion()
+            .strength(5.0F, 1200.0F)
+            .sound(SoundType.METAL)
+            .pushReaction(PushReaction.BLOCK))
+        .lang("Plastic Molding Chamber")
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE)
+        .loot((tables, block) -> tables.dropSelf(block))
+        .blockstate((context, provider) -> provider.horizontalBlock(
+            context.get(),
+            provider.models().cubeAll(
+                context.getName(),
+                provider.modLoc("block/plastic_molding_chamber_placeholder")
+            )
+        ))
+        .item(PlasticMoldingChamberItem::new)
+        .model((context, provider) -> provider.withExistingParent(
+            context.getName(),
+            provider.modLoc("block/" + context.getName())
+        ))
+        .build()
+        .register();
+
+    public static final BlockEntry<PlasticMoldingRegionBlock> PLASTIC_MOLDING_REGION = REGISTRUM
+        .block("plastic_molding_region", PlasticMoldingRegionBlock::new)
+        .initialProperties(() -> Blocks.BARRIER)
+        .properties(properties -> properties
+            .mapColor(MapColor.NONE)
+            .noOcclusion()
+            .noCollission()
+            .strength(-1.0F, 3600000.0F)
+            .pushReaction(PushReaction.BLOCK)
+            .noLootTable())
+        .lang("Plastic Molding Region")
+        .blockstate((context, provider) -> provider.simpleBlock(
+            context.get(),
+            provider.models().getBuilder(context.getName())
+        ))
+        .register();
+
     public static final BlockEntry<CondenserTowerBlock> CONDENSER_TOWER = REGISTRUM
         .block("condenser_tower", CondenserTowerBlock::new)
         .initialProperties(() -> Blocks.IRON_BLOCK)

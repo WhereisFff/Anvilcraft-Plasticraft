@@ -1,0 +1,19 @@
+{
+  "variants": {
+    "facing=east": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber",
+      "y": 90
+    },
+    "facing=north": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber"
+    },
+    "facing=south": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber",
+      "y": 270
+    }
+  }
+}

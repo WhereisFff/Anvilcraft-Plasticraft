@@ -44,6 +44,37 @@ sourceSets.main.resources {
     exclude '.cache/**'
 }
 
+def moldingRendererSources = fileTree('src/main/java/dev/anvilcraft/plasticraft/client/renderer/molding') {
+    include '**/*.java'
+}
+
+tasks.register('verifyMoldingRendererArchitecture') {
+    group = 'verification'
+    description = 'Rejects direct native OpenGL dependencies in the molding renderer backend.'
+    inputs.files(moldingRendererSources)
+
+    doLast {
+        def forbidden = ['org.lwjgl', 'GlStateManager']
+        def violations = []
+        moldingRendererSources.files.sort().each { source ->
+            source.readLines('UTF-8').eachWithIndex { line, index ->
+                forbidden.each { token ->
+                    if (line.contains(token)) {
+                        violations.add("${source}:${index + 1}: forbidden reference ${token}")
+                    }
+                }
+            }
+        }
+        if (!violations.isEmpty()) {
+            throw new GradleException(violations.join(System.lineSeparator()))
+        }
+    }
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('verifyMoldingRendererArchitecture')
+}
+
 idea {
     module {
         downloadSources = true
