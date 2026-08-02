@@ -3,10 +3,13 @@ package dev.anvilcraft.plasticraft.block;
 import com.mojang.serialization.MapCodec;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
+import dev.dubhe.anvilcraft.item.DiskItem;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -22,8 +25,9 @@ import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
-import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
+import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import net.minecraft.world.phys.BlockHitResult;
 import org.jetbrains.annotations.Nullable;
 
@@ -31,10 +35,13 @@ import org.jetbrains.annotations.Nullable;
 public class PlasticMoldingChamberBlock extends BaseEntityBlock {
     public static final MapCodec<PlasticMoldingChamberBlock> CODEC = simpleCodec(PlasticMoldingChamberBlock::new);
     public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
+    public static final BooleanProperty LOCKED = BlockStateProperties.LOCKED;
 
     public PlasticMoldingChamberBlock(Properties properties) {
         super(properties);
-        this.registerDefaultState(this.stateDefinition.any().setValue(FACING, Direction.NORTH));
+        this.registerDefaultState(this.stateDefinition.any()
+            .setValue(FACING, Direction.NORTH)
+            .setValue(LOCKED, false));
     }
 
     @Override
@@ -79,6 +86,26 @@ public class PlasticMoldingChamberBlock extends BaseEntityBlock {
     }
 
     @Override
+    protected ItemInteractionResult useItemOn(
+        ItemStack stack,
+        BlockState state,
+        Level level,
+        BlockPos pos,
+        Player player,
+        InteractionHand hand,
+        BlockHitResult hitResult
+    ) {
+        if (!(stack.getItem() instanceof DiskItem)) {
+            return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        }
+        if (player instanceof ServerPlayer serverPlayer
+            && level.getBlockEntity(pos) instanceof PlasticMoldingChamberBlockEntity chamber) {
+            chamber.openMenu(serverPlayer);
+        }
+        return ItemInteractionResult.SUCCESS;
+    }
+
+    @Override
     protected void onRemove(
         BlockState state,
         Level level,
@@ -109,7 +136,7 @@ public class PlasticMoldingChamberBlock extends BaseEntityBlock {
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
-        builder.add(FACING);
+        builder.add(FACING, LOCKED);
     }
 
     @Override

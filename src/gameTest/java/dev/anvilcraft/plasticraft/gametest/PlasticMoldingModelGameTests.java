@@ -1329,6 +1329,51 @@ public final class PlasticMoldingModelGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate("1x1x1")
+    @TestHolder(description = "Delete all cubes submits one atomic command and preserves everything when a cube is locked")
+    static void deleteAllCubesAtomically(ExtendedGameTestHelper helper) {
+        MoldingElement first = cube(uuid(223), 16.0D, 16.0D, 16.0D, 20.0D, 20.0D, 20.0D);
+        MoldingElement second = cube(uuid(224), 24.0D, 24.0D, 24.0D, 28.0D, 28.0D, 28.0D);
+        EditableMoldingModel source = model(List.of(first, second), List.of());
+        List<MoldingCommand> submitted = new ArrayList<>();
+        MoldingEditorController controller = new MoldingEditorController(
+            source,
+            0L,
+            true,
+            (revision, command) -> submitted.add(command)
+        );
+        controller.select(first.id(), false);
+
+        check(controller.deleteAllElements(), "delete-all command was rejected");
+        check(submitted.size() == 1 && submitted.getFirst() instanceof MoldingCommand.RemoveElements,
+            "delete-all did not submit one semantic removal command");
+        check(controller.model().elements().isEmpty(), "delete-all left cubes in the model");
+        check(controller.selection().isEmpty(), "delete-all retained a stale selection");
+
+        MoldingElement locked = new MoldingElement(
+            second.id(),
+            second.name(),
+            second.groupId(),
+            second.from(),
+            second.to(),
+            second.transform(),
+            second.visible(),
+            true
+        );
+        List<MoldingCommand> rejected = new ArrayList<>();
+        MoldingEditorController lockedController = new MoldingEditorController(
+            model(List.of(first, locked), List.of()),
+            0L,
+            true,
+            (revision, command) -> rejected.add(command)
+        );
+        check(!lockedController.deleteAllElements(), "delete-all removed a locked cube");
+        check(lockedController.model().elements().size() == 2 && rejected.isEmpty(),
+            "failed delete-all partially changed the model");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("1x1x1")
     @TestHolder(description = "New cubes use the shared origin and moving an element carries its pivot")
     static void axisCornerCubeCreation(ExtendedGameTestHelper helper) {
         List<MoldingCommand> submitted = new ArrayList<>();

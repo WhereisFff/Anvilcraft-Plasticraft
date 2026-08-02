@@ -71,6 +71,14 @@ public final class MoldingEditorController {
         return this.selection;
     }
 
+    public boolean hasSelectedElements() {
+        return !selectedElements().isEmpty();
+    }
+
+    public boolean hasClipboardElements() {
+        return !this.clipboardElements.isEmpty();
+    }
+
     public MoldingTool tool() {
         return this.tool;
     }
@@ -198,6 +206,14 @@ public final class MoldingEditorController {
         boolean submitted = this.submit(
             commands.size() == 1 ? commands.getFirst() : new MoldingCommand.Batch(commands)
         );
+        if (submitted) this.selection = MoldingSelection.EMPTY;
+        return submitted;
+    }
+
+    public boolean deleteAllElements() {
+        List<UUID> elementIds = this.model.elements().stream().map(MoldingElement::id).toList();
+        if (elementIds.isEmpty()) return false;
+        boolean submitted = this.submit(new MoldingCommand.RemoveElements(elementIds));
         if (submitted) this.selection = MoldingSelection.EMPTY;
         return submitted;
     }

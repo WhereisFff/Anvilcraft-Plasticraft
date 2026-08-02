@@ -25,6 +25,7 @@ import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
 import dev.anvilcraft.plasticraft.recipe.EscapingVaporEffects;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetVaporizationSource;
 import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
+import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.CreativeModeTab;
@@ -116,6 +117,23 @@ public final class AnvilcraftPlasticraft {
             YukkuriCapabilities.VAPOR_CONSUMER,
             CondenserTowerBlockEntity::vaporCapability,
             PlasticraftBlocks.CONDENSER_TOWER.get()
+        );
+        event.registerBlockEntity(
+            Capabilities.ItemHandler.BLOCK,
+            PlasticraftBlockEntities.PLASTIC_MOLDING_CHAMBER.get(),
+            (chamber, side) -> side == Direction.UP || side == Direction.DOWN ? null : chamber.clayItemHandler()
+        );
+        event.registerBlockEntity(
+            Capabilities.FluidHandler.BLOCK,
+            PlasticraftBlockEntities.PLASTIC_MOLDING_CHAMBER.get(),
+            (chamber, side) -> side == null || side == Direction.UP || side == Direction.DOWN
+                ? chamber.fluidHandler()
+                : null
+        );
+        event.registerBlockEntity(
+            Capabilities.EnergyStorage.BLOCK,
+            PlasticraftBlockEntities.PLASTIC_MOLDING_CHAMBER.get(),
+            (chamber, side) -> chamber.energyStorage()
         );
         event.registerItem(
             Capabilities.FluidHandler.ITEM,

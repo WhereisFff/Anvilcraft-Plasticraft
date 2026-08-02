@@ -6,6 +6,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -80,6 +81,17 @@ public final class PlasticMoldingChamberStructure {
             positions.add(regionPos(controller, front, part));
         }
         return List.copyOf(positions);
+    }
+
+    public static AABB regionBounds(BlockPos controller, Direction front) {
+        List<BlockPos> positions = regionPositions(controller, front);
+        int minX = positions.stream().mapToInt(BlockPos::getX).min().orElse(controller.getX());
+        int minY = positions.stream().mapToInt(BlockPos::getY).min().orElse(controller.getY());
+        int minZ = positions.stream().mapToInt(BlockPos::getZ).min().orElse(controller.getZ());
+        int maxX = positions.stream().mapToInt(BlockPos::getX).max().orElse(controller.getX());
+        int maxY = positions.stream().mapToInt(BlockPos::getY).max().orElse(controller.getY());
+        int maxZ = positions.stream().mapToInt(BlockPos::getZ).max().orElse(controller.getZ());
+        return new AABB(minX, minY, minZ, maxX + 1.0D, maxY + 1.0D, maxZ + 1.0D);
     }
 
     public static boolean canPlace(Level level, BlockPos controller, Direction front) {

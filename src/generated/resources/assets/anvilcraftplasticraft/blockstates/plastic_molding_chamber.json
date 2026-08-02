@@ -1,19 +1,34 @@
 {
   "variants": {
-    "facing=east": {
+    "facing=east,locked=false": {
       "model": "anvilcraftplasticraft:block/plastic_molding_chamber",
-      "y": 90
+      "y": 270
     },
-    "facing=north": {
-      "model": "anvilcraftplasticraft:block/plastic_molding_chamber"
+    "facing=east,locked=true": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber_locked",
+      "y": 270
     },
-    "facing=south": {
+    "facing=north,locked=false": {
       "model": "anvilcraftplasticraft:block/plastic_molding_chamber",
       "y": 180
     },
-    "facing=west": {
+    "facing=north,locked=true": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber_locked",
+      "y": 180
+    },
+    "facing=south,locked=false": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber"
+    },
+    "facing=south,locked=true": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber_locked"
+    },
+    "facing=west,locked=false": {
       "model": "anvilcraftplasticraft:block/plastic_molding_chamber",
-      "y": 270
+      "y": 90
+    },
+    "facing=west,locked=true": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber_locked",
+      "y": 90
     }
   }
 }

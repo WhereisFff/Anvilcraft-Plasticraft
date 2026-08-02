@@ -12,15 +12,17 @@ import dev.anvilcraft.plasticraft.client.molding.scene.EditorScenePart;
 import dev.anvilcraft.plasticraft.client.molding.scene.EditorVertex;
 import dev.anvilcraft.plasticraft.client.molding.scene.MoldingSceneBuilder;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.LevelRenderer;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
@@ -47,7 +49,21 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
         int packedLight,
         int packedOverlay
     ) {
-        if (chamber.machineState() != PlasticMoldingMachineState.EDITABLE) return;
+        if (chamber.machineState() == PlasticMoldingMachineState.EDITABLE
+            || chamber.machineState() == PlasticMoldingMachineState.WAITING_TO_LOCK
+            || chamber.machineState() == PlasticMoldingMachineState.MOLD_FILLING) {
+            renderProjection(chamber, poseStack, bufferSource);
+        }
+        if (chamber.hasMoldCollision()) {
+            renderMold(chamber, partialTick, poseStack, bufferSource);
+        }
+    }
+
+    private void renderProjection(
+        PlasticMoldingChamberBlockEntity chamber,
+        PoseStack poseStack,
+        MultiBufferSource bufferSource
+    ) {
         Direction front = chamber.getBlockState().getValue(PlasticMoldingChamberBlock.FACING);
         Vector3d directionToCamera = worldDirectionToCamera(chamber, front);
         Vector3d cameraPosition = new Vector3d(directionToCamera).mul(16.0D).add(24.0D, 24.0D, 24.0D);
@@ -67,6 +83,35 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
         Matrix4f pose = poseStack.last().pose();
         renderMesh(cached.mesh, chamber, front, pose, bufferSource, true);
         renderMesh(guides, chamber, front, pose, bufferSource, false);
+    }
+
+    private static void renderMold(
+        PlasticMoldingChamberBlockEntity chamber,
+        float partialTick,
+        PoseStack poseStack,
+        MultiBufferSource bufferSource
+    ) {
+        Level level = chamber.getLevel();
+        if (level == null) return;
+        Direction front = chamber.getBlockState().getValue(PlasticMoldingChamberBlock.FACING);
+        int completedLayers = Math.round(
+            chamber.moldFillFraction(partialTick) * PlasticMoldingChamberBlockEntity.MOLD_FILL_LAYERS
+        );
+        for (BlockPos region : PlasticMoldingChamberStructure.regionPositions(chamber.getBlockPos(), front)) {
+            int layer = region.getY() - chamber.getBlockPos().getY();
+            if (layer >= completedLayers) continue;
+            BlockPos offset = region.subtract(chamber.getBlockPos());
+            poseStack.pushPose();
+            poseStack.translate(offset.getX(), offset.getY(), offset.getZ());
+            Minecraft.getInstance().getBlockRenderer().renderSingleBlock(
+                Blocks.CLAY.defaultBlockState(),
+                poseStack,
+                bufferSource,
+                LevelRenderer.getLightColor(level, region),
+                OverlayTexture.NO_OVERLAY
+            );
+            poseStack.popPose();
+        }
     }
 
     private static void renderMesh(

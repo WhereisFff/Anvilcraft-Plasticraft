@@ -73,13 +73,21 @@ public final class PlasticraftBlocks {
         .lang("Plastic Molding Chamber")
         .tag(BlockTags.MINEABLE_WITH_PICKAXE)
         .loot((tables, block) -> tables.dropSelf(block))
-        .blockstate((context, provider) -> provider.horizontalBlock(
-            context.get(),
-            provider.models().cubeAll(
+        .blockstate((context, provider) -> {
+            // 塑料成型舱未锁定与锁定占位模型生成，正式资源沿用这两个稳定 ID 原位替换。
+            ModelFile unlocked = provider.models().cubeAll(
                 context.getName(),
                 provider.modLoc("block/plastic_molding_chamber_placeholder")
-            )
-        ))
+            );
+            ModelFile locked = provider.models().cubeAll(
+                context.getName() + "_locked",
+                provider.modLoc("block/plastic_molding_chamber_placeholder")
+            );
+            provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
+                .modelFile(state.getValue(PlasticMoldingChamberBlock.LOCKED) ? locked : unlocked)
+                .rotationY((int) state.getValue(PlasticMoldingChamberBlock.FACING).toYRot())
+                .build());
+        })
         .item(PlasticMoldingChamberItem::new)
         .model((context, provider) -> provider.withExistingParent(
             context.getName(),
@@ -94,7 +102,6 @@ public final class PlasticraftBlocks {
         .properties(properties -> properties
             .mapColor(MapColor.NONE)
             .noOcclusion()
-            .noCollission()
             .strength(-1.0F, 3600000.0F)
             .pushReaction(PushReaction.BLOCK)
             .noLootTable())

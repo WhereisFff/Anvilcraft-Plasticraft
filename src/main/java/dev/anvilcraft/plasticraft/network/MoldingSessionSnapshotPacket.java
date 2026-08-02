@@ -87,9 +87,10 @@ public record MoldingSessionSnapshotPacket(
             ));
         }
         if (!this.reason.isEmpty()) {
-            player.displayClientMessage(
-                Component.translatable("message.anvilcraftplasticraft.molding." + this.reason),
-                true
+            PlasticMoldingChamberMenu.showTitleMessage(
+                player,
+                this.chamberPos,
+                Component.translatable("message.anvilcraftplasticraft.molding." + this.reason)
             );
         }
     }
