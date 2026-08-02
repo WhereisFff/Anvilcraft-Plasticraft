@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.block.entity;
 
 import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
-import dev.anvilcraft.plasticraft.init.block.ModBlockEntities;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
@@ -28,7 +28,7 @@ public final class HighHeatFuelCauldronBlockEntity extends BlockEntity {
     }
 
     public HighHeatFuelCauldronBlockEntity(BlockPos pos, BlockState state) {
-        this(ModBlockEntities.HIGH_HEAT_FUEL_CAULDRON.get(), pos, state);
+        this(PlasticraftBlockEntities.HIGH_HEAT_FUEL_CAULDRON.get(), pos, state);
     }
 
     public boolean isSpent() {

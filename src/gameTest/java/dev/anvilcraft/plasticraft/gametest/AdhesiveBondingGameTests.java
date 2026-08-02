@@ -24,10 +24,10 @@ import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
 import dev.anvilcraft.plasticraft.entity.adhesive.SurfaceAdhesiveService;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.event.BondedFallingBlockEvents;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.entity.ModEntities;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.anvilcraft.plasticraft.network.BondedPlasticHammerRotatePacket;
 import dev.anvilcraft.plasticraft.network.PlasticEntityHammerRotatePacket;
@@ -36,6 +36,7 @@ import dev.dubhe.anvilcraft.block.sliding.ISlidingRail;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.entity.FallingGiantAnvilEntity;
 import dev.dubhe.anvilcraft.entity.SlidingBlockEntity;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -77,12 +78,6 @@ import net.neoforged.testframework.gametest.GameTestPlayer;
 
 import java.util.List;
 
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.GIANT_ANVIL;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.MAGNET_BLOCK;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.ROYAL_ANVIL;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.SLIDING_RAIL;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.SLIDING_RAIL_STOP;
-
 /** 高粘性树脂桶固定实体的服务端行为测试。 */
 public final class AdhesiveBondingGameTests {
     private static final double EPSILON = 1.0E-5D;
@@ -97,14 +92,16 @@ public final class AdhesiveBondingGameTests {
         Zombie leader = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 2.0D, 3.5D));
         Zombie follower = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.5D, 2.0D, 3.5D));
         Vec3 followerOffset = follower.position().subtract(leader.position());
-        leader.setData(ModAttachments.ENTITY_BONDS, new EntityBondState(
+        leader.setData(
+            PlasticraftAttachments.ENTITY_BONDS, new EntityBondState(
             leader.getUUID(),
             -1,
             Vec3.ZERO,
             false,
             List.of(new EntityBondLink(Direction.EAST, follower.getUUID(), -1, Direction.WEST))
         ));
-        follower.setData(ModAttachments.ENTITY_BONDS, new EntityBondState(
+        follower.setData(
+            PlasticraftAttachments.ENTITY_BONDS, new EntityBondState(
             leader.getUUID(),
             -1,
             followerOffset,
@@ -144,7 +141,7 @@ public final class AdhesiveBondingGameTests {
         FallingGiantAnvilEntity giantAnvil = FallingGiantAnvilEntity.fall(
             helper.getLevel(),
             helper.absolutePos(new BlockPos(3, 3, 4)),
-            GIANT_ANVIL.get().defaultBlockState(),
+            ModBlocks.GIANT_ANVIL.get().defaultBlockState(),
             false
         );
         GameTestPlayer player = bucketPlayer(helper, new Vec3(5.5D, 2.0D, 2.5D));
@@ -162,7 +159,7 @@ public final class AdhesiveBondingGameTests {
 
         helper.runAfterDelay(14, () -> {
             check(!giantAnvil.isAlive(), "blockified giant anvil entity was not removed");
-            GiantAnvilBlock block = GIANT_ANVIL.get();
+            GiantAnvilBlock block = ModBlocks.GIANT_ANVIL.get();
             for (Cube3x3PartHalf part : block.getParts()) {
                 BlockState state = helper.getBlockState(bottomCenter.offset(part.getOffset()));
                 check(
@@ -191,7 +188,7 @@ public final class AdhesiveBondingGameTests {
         FallingGiantAnvilEntity giantAnvil = FallingGiantAnvilEntity.fall(
             helper.getLevel(),
             helper.absolutePos(new BlockPos(3, 4, 4)),
-            GIANT_ANVIL.get().defaultBlockState(),
+            ModBlocks.GIANT_ANVIL.get().defaultBlockState(),
             false
         );
         Zombie support = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(8.5D, 3.0D, 4.5D));
@@ -282,7 +279,7 @@ public final class AdhesiveBondingGameTests {
         zombie.setNoGravity(true);
 
         helper.runAfterDelay(2, () -> {
-            EntityAdhesion adhesion = zombie.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+            EntityAdhesion adhesion = zombie.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
             check(adhesion != null, "entity touching a bare patch was not bonded");
             check(
                 adhesion.supportPos().equals(helper.absolutePos(support))
@@ -354,12 +351,12 @@ public final class AdhesiveBondingGameTests {
         Zombie second = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.85D, 3.0D, 3.85D));
         SurfaceAdhesiveService.tickEntity(first);
         SurfaceAdhesiveService.tickEntity(second);
-        check(first.hasData(ModAttachments.ENTITY_ADHESION), "first patch corner did not bond its entity");
-        check(second.hasData(ModAttachments.ENTITY_ADHESION), "uncovered patch corner did not bond the second entity");
+        check(first.hasData(PlasticraftAttachments.ENTITY_ADHESION), "first patch corner did not bond its entity");
+        check(second.hasData(PlasticraftAttachments.ENTITY_ADHESION), "uncovered patch corner did not bond the second entity");
         Zombie occludedCorner = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.85D, 3.0D, 3.85D));
         SurfaceAdhesiveService.tickEntity(occludedCorner);
         check(
-            !occludedCorner.hasData(ModAttachments.ENTITY_ADHESION),
+            !occludedCorner.hasData(PlasticraftAttachments.ENTITY_ADHESION),
             "a covered corner bonded because another attached entity occupied a disjoint corner"
         );
         check(
@@ -383,8 +380,8 @@ public final class AdhesiveBondingGameTests {
         Zombie occluded = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(8.5D, 3.0D, 3.5D));
         SurfaceAdhesiveService.tickEntity(covering);
         SurfaceAdhesiveService.tickEntity(occluded);
-        check(covering.hasData(ModAttachments.ENTITY_ADHESION), "covering entity did not bond to the patch");
-        check(!occluded.hasData(ModAttachments.ENTITY_ADHESION), "fully covered patch bonded an overlapping entity");
+        check(covering.hasData(PlasticraftAttachments.ENTITY_ADHESION), "covering entity did not bond to the patch");
+        check(!occluded.hasData(PlasticraftAttachments.ENTITY_ADHESION), "fully covered patch bonded an overlapping entity");
         helper.succeed();
     }
 
@@ -432,7 +429,7 @@ public final class AdhesiveBondingGameTests {
             "placing adhesive on the neighboring face did not consume the resin bucket"
         );
 
-        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack());
+        player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack());
         check(
             AdhesiveBondingService.placePatch(
                 player,
@@ -451,7 +448,7 @@ public final class AdhesiveBondingGameTests {
             "exact-face reclaim removed adhesive from the neighboring block"
         );
         check(
-            player.getMainHandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()),
+            player.getMainHandItem().is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()),
             "exact-face reclaim consumed the held resin bucket"
         );
 
@@ -497,7 +494,7 @@ public final class AdhesiveBondingGameTests {
         Zombie linked = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.5D, 2.0D, 3.5D));
         Zombie northLinked = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 2.0D, 2.5D));
         SurfaceAdhesiveService.tickEntity(target);
-        check(target.hasData(ModAttachments.ENTITY_ADHESION), "entity reclaim target did not bond to its patch");
+        check(target.hasData(PlasticraftAttachments.ENTITY_ADHESION), "entity reclaim target did not bond to its patch");
         check(
             EntityBondManager.connect(helper.getLevel(), target, Direction.EAST, linked, Direction.WEST, true),
             "entity reclaim target could not receive a second adhesive link"
@@ -538,7 +535,7 @@ public final class AdhesiveBondingGameTests {
         );
         check(!EntityBondManager.hasBonds(linked), "reclaimed face remained linked from its partner");
         check(EntityBondManager.hasBonds(northLinked), "reclaiming one face disconnected another partner");
-        check(target.hasData(ModAttachments.ENTITY_ADHESION), "reclaiming an entity face removed the block anchor");
+        check(target.hasData(PlasticraftAttachments.ENTITY_ADHESION), "reclaiming an entity face removed the block anchor");
 
         check(
             AdhesiveBondingService.reclaimEntity(
@@ -546,7 +543,7 @@ public final class AdhesiveBondingGameTests {
             ),
             "resin bucket did not reclaim the clicked block-anchor face"
         );
-        check(!target.hasData(ModAttachments.ENTITY_ADHESION), "clicked block-anchor face was not reclaimed");
+        check(!target.hasData(PlasticraftAttachments.ENTITY_ADHESION), "clicked block-anchor face was not reclaimed");
         check(EntityBondManager.hasBonds(target), "reclaiming the block anchor removed another entity face");
         check(EntityBondManager.hasBonds(northLinked), "block-anchor reclaim disconnected another partner");
         check(
@@ -569,7 +566,7 @@ public final class AdhesiveBondingGameTests {
         Zombie anchor = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.5D, 2.0D, 3.5D));
         Zombie moving = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(1.5D, 2.0D, 3.5D));
         SurfaceAdhesiveService.tickEntity(anchor);
-        check(anchor.hasData(ModAttachments.ENTITY_ADHESION), "free-face anchor did not bond to its patch");
+        check(anchor.hasData(PlasticraftAttachments.ENTITY_ADHESION), "free-face anchor did not bond to its patch");
         GameTestPlayer player = bucketPlayer(helper, new Vec3(3.5D, 2.0D, 1.5D));
 
         check(
@@ -586,13 +583,13 @@ public final class AdhesiveBondingGameTests {
             "anchored free face did not start pulling the second entity"
         );
         check(
-            !anchor.hasData(ModAttachments.ADHESIVE_TRANSIT)
-                && moving.hasData(ModAttachments.ADHESIVE_TRANSIT),
+            !anchor.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
+                && moving.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT),
             "anchored entity moved instead of the second entity"
         );
 
         helper.runAfterDelay(12, () -> {
-            check(anchor.hasData(ModAttachments.ENTITY_ADHESION), "pulling another entity released the anchor");
+            check(anchor.hasData(PlasticraftAttachments.ENTITY_ADHESION), "pulling another entity released the anchor");
             EntityBondState anchorBonds = EntityBondManager.get(anchor);
             EntityBondState movingBonds = EntityBondManager.get(moving);
             check(
@@ -703,7 +700,7 @@ public final class AdhesiveBondingGameTests {
             helper.runAfterDelay(4, () -> {
                 check(!sand.isAlive(), "entity-bonded falling block did not land as a block");
                 check(helper.getLevel().getBlockState(landingPos).is(Blocks.SAND), "landed block state was not sand");
-                EntityAdhesion adhesion = support.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+                EntityAdhesion adhesion = support.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
                 check(adhesion != null, "remaining entity was not anchored to the landed block");
                 check(adhesion.supportPos().equals(landingPos), "landed block bond used the wrong support position");
                 check(
@@ -798,7 +795,7 @@ public final class AdhesiveBondingGameTests {
                 "bonded follower did not follow its leader"
             );
 
-            player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack());
+            player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack());
             check(
                 AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, rejected, Direction.EAST),
                 "second source selection failed"
@@ -813,7 +810,7 @@ public final class AdhesiveBondingGameTests {
                 "occupied target face accepted a second entity"
             );
             check(
-                player.getMainHandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()),
+                player.getMainHandItem().is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()),
                 "rejected entity bond consumed resin"
             );
             check(
@@ -921,11 +918,11 @@ public final class AdhesiveBondingGameTests {
             "side bond accepted universal plastic rotated one pixel into the floor"
         );
         check(
-            !moving.hasData(ModAttachments.ADHESIVE_TRANSIT),
+            !moving.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT),
             "rejected universal plastic side bond started transit"
         );
         check(
-            player.getMainHandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()),
+            player.getMainHandItem().is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()),
             "rejected universal plastic side bond consumed resin"
         );
         helper.succeed();
@@ -1281,13 +1278,13 @@ public final class AdhesiveBondingGameTests {
             "group transit accepted a follower overlap with a block"
         );
         check(
-            player.getMainHandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()),
+            player.getMainHandItem().is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()),
             "rejected follower block overlap consumed resin"
         );
         check(
-            !selected.hasData(ModAttachments.ADHESIVE_TRANSIT)
-                && !follower.hasData(ModAttachments.ADHESIVE_TRANSIT)
-                && !support.hasData(ModAttachments.ADHESIVE_TRANSIT),
+            !selected.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
+                && !follower.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
+                && !support.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT),
             "rejected follower block overlap started group transit"
         );
         check(
@@ -1351,13 +1348,13 @@ public final class AdhesiveBondingGameTests {
             "group transit accepted a follower overlap with an ordinary entity"
         );
         check(
-            player.getMainHandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()),
+            player.getMainHandItem().is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()),
             "rejected follower entity overlap consumed resin"
         );
         check(
-            !selected.hasData(ModAttachments.ADHESIVE_TRANSIT)
-                && !follower.hasData(ModAttachments.ADHESIVE_TRANSIT)
-                && !support.hasData(ModAttachments.ADHESIVE_TRANSIT),
+            !selected.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
+                && !follower.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
+                && !support.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT),
             "rejected follower entity overlap started group transit"
         );
         check(
@@ -1508,7 +1505,7 @@ public final class AdhesiveBondingGameTests {
         CommonHooks.onLivingKnockBack(first, 2.5F, 0.0D, 1.0D);
         check(EntityBondManager.hasBonds(first), "strong knockback disconnected the struck entity");
         check(
-            !first.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+            !first.hasData(PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION),
             "unanchored entity component started elastic motion"
         );
         EntityBondState firstBonds = EntityBondManager.get(first);
@@ -1560,7 +1557,8 @@ public final class AdhesiveBondingGameTests {
         Vec3 anchoredStart = anchored.position();
         Vec3 struckStart = struck.position();
         Vec3 struckOffset = struckStart.subtract(anchoredStart);
-        anchored.setData(ModAttachments.ENTITY_ADHESION, new EntityAdhesion(
+        anchored.setData(
+            PlasticraftAttachments.ENTITY_ADHESION, new EntityAdhesion(
             helper.absolutePos(support),
             Direction.UP,
             BuiltInRegistries.BLOCK.getKey(Blocks.STONE),
@@ -1570,11 +1568,11 @@ public final class AdhesiveBondingGameTests {
 
         CommonHooks.onLivingKnockBack(struck, 2.5F, 0.0D, 1.0D);
         check(
-            anchored.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+            anchored.hasData(PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION),
             "block anchor did not receive the group elastic motion"
         );
         check(
-            !struck.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+            !struck.hasData(PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION),
             "struck follower retained a separate elastic motion"
         );
         EntityBondState struckBonds = EntityBondManager.get(struck);
@@ -1593,7 +1591,7 @@ public final class AdhesiveBondingGameTests {
             );
             helper.runAfterDelay(20, () -> {
                 check(
-                    !anchored.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+                    !anchored.hasData(PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION),
                     "anchored component rebound did not finish"
                 );
                 check(close(anchored.position(), anchoredStart), "block anchor did not return after rebound");
@@ -1727,7 +1725,8 @@ public final class AdhesiveBondingGameTests {
         for (AbstractPlasticEntity member : component) {
             EntityBondState state = EntityBondManager.get(member);
             check(state != null, "bonded plastic member had no state to persist");
-            member.setData(ModAttachments.ENTITY_BONDS, state.withResolvedEntityIds(
+            member.setData(
+                PlasticraftAttachments.ENTITY_BONDS, state.withResolvedEntityIds(
                 -1,
                 state.links().stream().map(link -> link.withOtherEntityId(-1)).toList()
             ));
@@ -2048,7 +2047,7 @@ public final class AdhesiveBondingGameTests {
 
         helper.runAfterDelay(14, () -> {
             check(
-                helper.getBlockState(occupied).is(ModBlocks.HARDEND_RESIN_ANVIL.get())
+                helper.getBlockState(occupied).is(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get())
                     && helper.getBlockState(occupied).getValue(AbstractPlasticEntityBlock.BONDED),
                 "mixed-group plastic entity did not blockify"
             );
@@ -2083,7 +2082,7 @@ public final class AdhesiveBondingGameTests {
         helper.setBlock(occupied, Blocks.OBSIDIAN);
 
         helper.runAfterDelay(12, () -> {
-            check(!anvil.hasData(ModAttachments.ADHESIVE_TRANSIT), "failed transit was not canceled");
+            check(!anvil.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT), "failed transit was not canceled");
             check(anvil.getOrientation().equals(startingOrientation), "failed transit kept its target orientation");
             check(!anvil.isRemoved(), "failed transit removed the plastic entity");
             helper.succeed();
@@ -2121,8 +2120,8 @@ public final class AdhesiveBondingGameTests {
             helper.setBlock(blocker, Blocks.OBSIDIAN);
             helper.runAfterDelay(14, () -> {
                 BlockPos absoluteBlocker = helper.absolutePos(blocker);
-                check(!moving.hasData(ModAttachments.ADHESIVE_TRANSIT), "blocked block transit did not stop");
-                check(!moving.hasData(ModAttachments.ENTITY_ADHESION), "blocked block transit still attached");
+                check(!moving.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT), "blocked block transit did not stop");
+                check(!moving.hasData(PlasticraftAttachments.ENTITY_ADHESION), "blocked block transit still attached");
                 check(
                     moving.getBoundingBox().maxX <= absoluteBlocker.getX() + 0.002D,
                     "blocked block transit crossed the obstacle"
@@ -2167,7 +2166,7 @@ public final class AdhesiveBondingGameTests {
             helper.setBlock(blocker, Blocks.OBSIDIAN);
             helper.runAfterDelay(14, () -> {
                 BlockPos absoluteBlocker = helper.absolutePos(blocker);
-                check(!moving.hasData(ModAttachments.ADHESIVE_TRANSIT), "blocked entity transit did not stop");
+                check(!moving.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT), "blocked entity transit did not stop");
                 check(!EntityBondManager.hasBonds(moving), "blocked entity transit still attached");
                 check(
                     moving.getBoundingBox().maxX <= absoluteBlocker.getX() + 0.002D,
@@ -2277,7 +2276,7 @@ public final class AdhesiveBondingGameTests {
             check(EntityBondManager.hasBonds(target), "plastic target did not retain its entity bond");
             Vec3 nearSupport = helper.absoluteVec(new Vec3(7.0D, 3.0D, 1.5D));
             player.moveTo(nearSupport.x, nearSupport.y, nearSupport.z);
-            player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack());
+            player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack());
             check(
                 AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, target, Direction.EAST),
                 "plastic group anchor selection failed"
@@ -2290,12 +2289,12 @@ public final class AdhesiveBondingGameTests {
             ), "plastic group could not bond to a block");
             helper.runAfterDelay(14, () -> {
                 check(
-                    helper.getBlockState(rootBlock).is(ModBlocks.HARDEND_RESIN_ANVIL.get())
+                    helper.getBlockState(rootBlock).is(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get())
                         && helper.getBlockState(rootBlock).getValue(AbstractPlasticEntityBlock.BONDED),
                     "plastic group root did not blockify"
                 );
                 check(
-                    helper.getBlockState(followerBlock).is(ModBlocks.HARDEND_RESIN_ANVIL.get())
+                    helper.getBlockState(followerBlock).is(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get())
                         && helper.getBlockState(followerBlock).getValue(AbstractPlasticEntityBlock.BONDED),
                     "plastic group follower did not blockify"
                 );
@@ -2360,17 +2359,17 @@ public final class AdhesiveBondingGameTests {
             helper.absolutePos(support),
             Direction.UP
         ), "ordinary entity bonding failed");
-        check(zombie.hasData(ModAttachments.ADHESIVE_TRANSIT), "ordinary entity did not enter adhesive transit");
+        check(zombie.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT), "ordinary entity did not enter adhesive transit");
         check(player.getMainHandItem().is(Items.BUCKET), "survival bonding did not return an empty bucket");
 
         helper.runAfterDelay(10, () -> {
-            check(zombie.hasData(ModAttachments.ENTITY_ADHESION), "ordinary entity has no adhesion attachment");
+            check(zombie.hasData(PlasticraftAttachments.ENTITY_ADHESION), "ordinary entity has no adhesion attachment");
             Vec3 fixedPosition = zombie.position();
             zombie.move(MoverType.SELF, new Vec3(1.0D, 0.0D, 0.0D));
             check(close(zombie.position(), fixedPosition), "bonded entity moved through the move entry point");
             helper.setBlock(support, Blocks.DIRT);
             helper.runAfterDelay(2, () -> {
-                check(!zombie.hasData(ModAttachments.ENTITY_ADHESION), "replaced support did not release the entity");
+                check(!zombie.hasData(PlasticraftAttachments.ENTITY_ADHESION), "replaced support did not release the entity");
                 check(!zombie.isNoGravity(), "released entity did not restore its gravity flag");
                 helper.succeed();
             });
@@ -2394,10 +2393,10 @@ public final class AdhesiveBondingGameTests {
         ), "ordinary entity bonding failed");
 
         helper.runAfterDelay(10, () -> {
-            check(zombie.hasData(ModAttachments.ENTITY_ADHESION), "ordinary entity has no adhesion attachment");
+            check(zombie.hasData(PlasticraftAttachments.ENTITY_ADHESION), "ordinary entity has no adhesion attachment");
             zombie.setPos(zombie.position().add(3.0D, 0.0D, 0.0D));
             AdhesiveBondingService.tickBondedEntity(zombie, true);
-            check(!zombie.hasData(ModAttachments.ENTITY_ADHESION), "teleported entity remained bonded");
+            check(!zombie.hasData(PlasticraftAttachments.ENTITY_ADHESION), "teleported entity remained bonded");
             check(!zombie.isNoGravity(), "teleported entity kept its bonded no-gravity flag");
             helper.succeed();
         });
@@ -2420,17 +2419,17 @@ public final class AdhesiveBondingGameTests {
             Direction.UP
         ), "ordinary entity bonding failed");
         helper.runAfterDelay(10, () -> {
-            check(zombie.hasData(ModAttachments.ENTITY_ADHESION), "ordinary entity has no adhesion attachment");
+            check(zombie.hasData(PlasticraftAttachments.ENTITY_ADHESION), "ordinary entity has no adhesion attachment");
             Vec3 fixedPosition = zombie.position();
             CommonHooks.onLivingKnockBack(zombie, 0.49F, 0.0D, 1.0D);
             check(
-                !zombie.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+                !zombie.hasData(PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION),
                 "sub-threshold knockback started elastic motion"
             );
             CommonHooks.onLivingKnockBack(zombie, 0.5F, 0.0D, 1.0D);
-            check(zombie.hasData(ModAttachments.ENTITY_ADHESION), "Knockback I released the entity");
+            check(zombie.hasData(PlasticraftAttachments.ENTITY_ADHESION), "Knockback I released the entity");
             check(
-                zombie.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+                zombie.hasData(PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION),
                 "Knockback I did not start elastic motion"
             );
             zombie.setDeltaMovement(0.5D, 0.0D, 0.0D);
@@ -2440,9 +2439,9 @@ public final class AdhesiveBondingGameTests {
                     "elastic entity did not move away from its adhesive point"
                 );
                 helper.runAfterDelay(9, () -> {
-                    check(zombie.hasData(ModAttachments.ENTITY_ADHESION), "elastic rebound released the entity");
+                    check(zombie.hasData(PlasticraftAttachments.ENTITY_ADHESION), "elastic rebound released the entity");
                     check(
-                        !zombie.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION),
+                        !zombie.hasData(PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION),
                         "Knockback I rebound did not settle quickly"
                     );
                     check(close(zombie.position(), fixedPosition), "elastic entity did not return to its adhesive point");
@@ -2469,9 +2468,9 @@ public final class AdhesiveBondingGameTests {
             helper.absolutePos(support),
             Direction.EAST
         ), "plastic anvil bonding failed");
-        check(anvil.hasData(ModAttachments.ADHESIVE_TRANSIT), "plastic anvil did not enter adhesive transit");
+        check(anvil.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT), "plastic anvil did not enter adhesive transit");
         helper.runAfterDelay(10, () -> {
-            check(helper.getBlockState(occupied).is(ModBlocks.HARDEND_RESIN_ANVIL.get()), "wrong fixed block was placed");
+            check(helper.getBlockState(occupied).is(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get()), "wrong fixed block was placed");
             check(
                 helper.getBlockState(occupied).getValue(AbstractPlasticEntityBlock.BONDED),
                 "fixed plastic block is missing its bonded state"
@@ -2485,7 +2484,7 @@ public final class AdhesiveBondingGameTests {
             );
             check(!anvil.isRemoved(), "plastic anvil did not retain its blockification handoff frame");
             check(
-                anvil.hasData(ModAttachments.ADHESIVE_TRANSIT),
+                anvil.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT),
                 "plastic anvil lost its transit ghost before the fixed block appeared"
             );
 
@@ -2504,7 +2503,7 @@ public final class AdhesiveBondingGameTests {
                         "restored plastic entity lost its bonded orientation"
                     );
                     check(
-                        !restored.hasData(ModAttachments.ADHESIVE_TRANSIT),
+                        !restored.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT),
                         "restored plastic entity retained its completed adhesive transit"
                     );
                     check(!restored.isNoGravity(), "restored plastic entity kept the transit no-gravity flag");
@@ -2535,7 +2534,7 @@ public final class AdhesiveBondingGameTests {
             helper.absolutePos(floorSupport),
             Direction.UP
         ), "hardened anvil bonding failed");
-        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack());
+        player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack());
         player.moveTo(helper.absoluteVec(new Vec3(7.5D, 3.0D, 4.5D)));
         check(AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, resin), "resin anvil selection failed");
         check(AdhesiveBondingService.bondSelected(
@@ -2551,7 +2550,7 @@ public final class AdhesiveBondingGameTests {
                 helper.absolutePos(floorOccupied)
             );
             BlockState floorState = helper.getBlockState(floorOccupied);
-            VoxelShape royalFloorShape = ROYAL_ANVIL
+            VoxelShape royalFloorShape = ModBlocks.ROYAL_ANVIL
                 .getDefaultState()
                 .setValue(BlockStateProperties.HORIZONTAL_FACING, floorState.getValue(BlockStateProperties.HORIZONTAL_FACING))
                 .getCollisionShape(helper.getLevel(), helper.absolutePos(floorOccupied));
@@ -2647,7 +2646,7 @@ public final class AdhesiveBondingGameTests {
                 !(player.containerMenu instanceof HardenedResinAnvilMenu),
                 "shift-clicking left the fixed hardened resin anvil menu open"
             );
-            player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.RESIN_ANVIL_HAMMER.asStack());
+            player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.RESIN_ANVIL_HAMMER.asStack());
             check(
                 !helper.getBlockState(occupied).useItemOn(
                     player.getMainHandItem(),
@@ -2659,7 +2658,7 @@ public final class AdhesiveBondingGameTests {
                 "shift-clicking a fixed anvil with a hammer invoked the cached entity"
             );
             check(
-                player.getInventory().countItem(ModBlocks.HARDEND_RESIN_ANVIL.asItem()) == 0,
+                player.getInventory().countItem(PlasticraftBlocks.HARDEND_RESIN_ANVIL.asItem()) == 0,
                 "shift-clicking the cached entity duplicated the fixed anvil item"
             );
             bondedBlockEntity(helper, occupied);
@@ -2804,7 +2803,7 @@ public final class AdhesiveBondingGameTests {
             helper.absolutePos(floorSupport),
             Direction.UP
         ), "floor pot bonding failed");
-        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack());
+        player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack());
         Vec3 wallPlayerPosition = helper.absoluteVec(new Vec3(7.5D, 3.0D, 4.5D));
         player.moveTo(wallPlayerPosition.x, wallPlayerPosition.y, wallPlayerPosition.z);
         check(AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, wallEntity), "wall pot selection failed");
@@ -2897,7 +2896,7 @@ public final class AdhesiveBondingGameTests {
                     "falling anvil shattered instead of landing on the bonded pot"
                 );
                 check(
-                    helper.getBlockState(cauldronPos).is(ModBlocks.HARDEND_RESIN_CAULDRON.get())
+                    helper.getBlockState(cauldronPos).is(PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get())
                         && helper.getBlockState(cauldronPos).getValue(AbstractPlasticEntityBlock.BONDED),
                     "falling anvil destroyed the bonded pot"
                 );
@@ -3116,8 +3115,8 @@ public final class AdhesiveBondingGameTests {
         );
 
         helper.runAfterDelay(24, () -> {
-            check(!moving.hasData(ModAttachments.ADHESIVE_TRANSIT), "rounded detour did not finish");
-            check(moving.hasData(ModAttachments.ENTITY_ADHESION), "rounded detour stopped before bonding");
+            check(!moving.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT), "rounded detour did not finish");
+            check(moving.hasData(PlasticraftAttachments.ENTITY_ADHESION), "rounded detour stopped before bonding");
             helper.succeed();
         });
     }
@@ -3163,7 +3162,7 @@ public final class AdhesiveBondingGameTests {
             int[] attempts = {0};
             Runnable[] poll = new Runnable[1];
             poll[0] = () -> {
-                AdhesiveTransit transit = moving.getExistingDataOrNull(ModAttachments.ADHESIVE_TRANSIT.get());
+                AdhesiveTransit transit = moving.getExistingDataOrNull(PlasticraftAttachments.ADHESIVE_TRANSIT.get());
                 if (transit != null) {
                     check(
                         transit.path().size() > 3,
@@ -3506,10 +3505,10 @@ public final class AdhesiveBondingGameTests {
         ), "entity beyond sixteen blocks was bonded");
         check(!AdhesiveSelectionManager.hasSelection(player), "out-of-range route kept the entity selected");
         check(
-            player.getMainHandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()),
+            player.getMainHandItem().is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()),
             "failed distant bonding consumed the resin bucket"
         );
-        check(!zombie.hasData(ModAttachments.ADHESIVE_TRANSIT), "distant entity entered adhesive transit");
+        check(!zombie.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT), "distant entity entered adhesive transit");
         helper.succeed();
     }
 
@@ -3532,7 +3531,7 @@ public final class AdhesiveBondingGameTests {
         ), "plastic anvil bonding failed");
 
         helper.runAfterDelay(10, () -> {
-            check(!anvil.hasData(ModAttachments.ADHESIVE_TRANSIT), "bonded block transit did not finish");
+            check(!anvil.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT), "bonded block transit did not finish");
             bondedBlockEntity(helper, occupied);
             PistonStructureResolver resolver = new PistonStructureResolver(
                 helper.getLevel(),
@@ -3577,7 +3576,7 @@ public final class AdhesiveBondingGameTests {
                 BlockPos movedOccupied = occupied.east();
                 check(helper.getBlockState(movedSupport).is(Blocks.STONE), "piston did not move the bonded support");
                 check(
-                    helper.getBlockState(movedOccupied).is(ModBlocks.HARDEND_RESIN_ANVIL.get())
+                    helper.getBlockState(movedOccupied).is(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get())
                         && helper.getBlockState(movedOccupied).getValue(AbstractPlasticEntityBlock.BONDED),
                     "piston did not move the bonded plastic block"
                 );
@@ -3725,13 +3724,13 @@ public final class AdhesiveBondingGameTests {
 
         helper.setBlock(piston.west(), Blocks.REDSTONE_BLOCK);
         helper.runAfterDelay(2, () -> {
-            check(zombie.hasData(ModAttachments.ENTITY_ADHESION), "extension released the bonded entity");
+            check(zombie.hasData(PlasticraftAttachments.ENTITY_ADHESION), "extension released the bonded entity");
             check(
                 zombie.getX() > startPosition.x + 0.05D && zombie.getX() <= startPosition.x + 1.0D + EPSILON,
                 "bonded entity did not follow the extending block"
             );
             helper.runAfterDelay(4, () -> {
-                EntityAdhesion pushed = zombie.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+                EntityAdhesion pushed = zombie.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
                 check(pushed != null, "extended entity lost its adhesive attachment");
                 check(
                     pushed.supportPos().equals(helper.absolutePos(movedSupport)),
@@ -3741,13 +3740,13 @@ public final class AdhesiveBondingGameTests {
 
                 helper.setBlock(piston.west(), Blocks.AIR);
                 helper.runAfterDelay(2, () -> {
-                    check(zombie.hasData(ModAttachments.ENTITY_ADHESION), "retraction released the bonded entity");
+                    check(zombie.hasData(PlasticraftAttachments.ENTITY_ADHESION), "retraction released the bonded entity");
                     check(
                         zombie.getX() < startPosition.x + 0.95D && zombie.getX() >= startPosition.x - EPSILON,
                         "bonded entity did not follow the retracting block"
                     );
                     helper.runAfterDelay(4, () -> {
-                        EntityAdhesion returned = zombie.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+                        EntityAdhesion returned = zombie.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
                         check(returned != null, "returned entity lost its adhesive attachment");
                         check(
                             returned.supportPos().equals(helper.absolutePos(support)),
@@ -3802,12 +3801,12 @@ public final class AdhesiveBondingGameTests {
         for (int x = 2; x < 5; x++) {
             helper.setBlock(
                 new BlockPos(x, 1, 3),
-                SLIDING_RAIL.get().defaultBlockState()
+                ModBlocks.SLIDING_RAIL.get().defaultBlockState()
             );
         }
         helper.setBlock(
             new BlockPos(5, 1, 3),
-            SLIDING_RAIL_STOP.get().defaultBlockState()
+            ModBlocks.SLIDING_RAIL_STOP.get().defaultBlockState()
         );
         helper.setBlock(origin, Blocks.STONE);
         helper.setBlock(partner, Blocks.GOLD_BLOCK);
@@ -3871,7 +3870,7 @@ public final class AdhesiveBondingGameTests {
             helper.absolutePos(hardenedSupport),
             Direction.UP
         ), "hardened anvil bonding failed");
-        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack());
+        player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack());
         check(AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, resin), "resin anvil selection failed");
         check(AdhesiveBondingService.bondSelected(
             player,
@@ -3885,19 +3884,19 @@ public final class AdhesiveBondingGameTests {
             bondedBlockEntity(helper, resinOccupied);
             helper.setBlock(
                 hardenedOccupied.above(4),
-                MAGNET_BLOCK.get().defaultBlockState()
+                ModBlocks.MAGNET_BLOCK.get().defaultBlockState()
             );
             helper.setBlock(
                 resinOccupied.above(4),
-                MAGNET_BLOCK.get().defaultBlockState()
+                ModBlocks.MAGNET_BLOCK.get().defaultBlockState()
             );
             helper.runAfterDelay(4, () -> {
                 check(
-                    helper.getBlockState(hardenedOccupied).is(ModBlocks.HARDEND_RESIN_ANVIL.get()),
+                    helper.getBlockState(hardenedOccupied).is(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get()),
                     "AnvilCraft magnet lifted the bonded hardened resin anvil"
                 );
                 check(
-                    helper.getBlockState(resinOccupied).is(ModBlocks.RESIN_ANVIL.get()),
+                    helper.getBlockState(resinOccupied).is(PlasticraftBlocks.RESIN_ANVIL.get()),
                     "AnvilCraft magnet lifted the bonded resin anvil"
                 );
                 bondedBlockEntity(helper, hardenedOccupied);
@@ -3925,7 +3924,7 @@ public final class AdhesiveBondingGameTests {
         ), "plastic anvil bonding failed");
 
         helper.runAfterDelay(10, () -> {
-            player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.RESIN_ANVIL_HAMMER.asStack());
+            player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.RESIN_ANVIL_HAMMER.asStack());
             new BondedPlasticHammerRotatePacket(
                 helper.absolutePos(occupied),
                 InteractionHand.MAIN_HAND,
@@ -3933,7 +3932,7 @@ public final class AdhesiveBondingGameTests {
             ).handleOnServer(player);
 
             check(
-                helper.getBlockState(occupied).is(ModBlocks.HARDEND_RESIN_ANVIL.get()),
+                helper.getBlockState(occupied).is(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get()),
                 "hammer rotation released the bonded block"
             );
             BondedEntityBlockEntity deflected = bondedBlockEntity(helper, occupied);
@@ -3987,7 +3986,7 @@ public final class AdhesiveBondingGameTests {
             "plastic anvil could not bond to the ordinary entity"
         );
         GameTestPlayer player = bucketPlayer(helper, new Vec3(4.5D, 2.0D, 1.5D));
-        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.RESIN_ANVIL_HAMMER.asStack());
+        player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.RESIN_ANVIL_HAMMER.asStack());
 
         new PlasticEntityHammerRotatePacket(
             cauldron.getId(), InteractionHand.MAIN_HAND, Direction.EAST
@@ -4104,18 +4103,18 @@ public final class AdhesiveBondingGameTests {
         player.moveTo(position.x, position.y, position.z);
         player.setItemInHand(
             InteractionHand.MAIN_HAND,
-            ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack()
+            PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack()
         );
         return player;
     }
 
     private static HardenedResinAnvilEntity createAnvil(ExtendedGameTestHelper helper, Vec3 relativePosition) {
         HardenedResinAnvilEntity anvil = new HardenedResinAnvilEntity(
-            ModEntities.HARDEND_RESIN_ANVIL.get(),
+            PlasticraftEntities.HARDEND_RESIN_ANVIL.get(),
             helper.getLevel(),
             helper.absoluteVec(relativePosition),
-            ModBlocks.HARDEND_RESIN_ANVIL.get().defaultBlockState(),
-            ModBlocks.HARDEND_RESIN_ANVIL.asStack(),
+            PlasticraftBlocks.HARDEND_RESIN_ANVIL.get().defaultBlockState(),
+            PlasticraftBlocks.HARDEND_RESIN_ANVIL.asStack(),
             PlasticEntityOrientation.DEFAULT
         );
         check(helper.getLevel().addFreshEntity(anvil), "failed to add plastic anvil");
@@ -4124,11 +4123,11 @@ public final class AdhesiveBondingGameTests {
 
     private static ResinAnvilEntity createResinAnvil(ExtendedGameTestHelper helper, Vec3 relativePosition) {
         ResinAnvilEntity anvil = new ResinAnvilEntity(
-            ModEntities.RESIN_ANVIL.get(),
+            PlasticraftEntities.RESIN_ANVIL.get(),
             helper.getLevel(),
             helper.absoluteVec(relativePosition),
-            ModBlocks.RESIN_ANVIL.get().defaultBlockState(),
-            ModBlocks.RESIN_ANVIL.asStack(),
+            PlasticraftBlocks.RESIN_ANVIL.get().defaultBlockState(),
+            PlasticraftBlocks.RESIN_ANVIL.asStack(),
             PlasticEntityOrientation.DEFAULT
         );
         check(helper.getLevel().addFreshEntity(anvil), "failed to add resin anvil");
@@ -4140,11 +4139,11 @@ public final class AdhesiveBondingGameTests {
         Vec3 relativePosition
     ) {
         HardenedResinCauldronEntity cauldron = new HardenedResinCauldronEntity(
-            ModEntities.HARDEND_RESIN_CAULDRON.get(),
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
             helper.getLevel(),
             helper.absoluteVec(relativePosition),
-            ModBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
-            ModBlocks.HARDEND_RESIN_CAULDRON.asStack(),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(),
             PlasticEntityOrientation.DEFAULT
         );
         check(helper.getLevel().addFreshEntity(cauldron), "failed to add plastic pot");
@@ -4156,11 +4155,11 @@ public final class AdhesiveBondingGameTests {
         Vec3 relativePosition
     ) {
         UniversalPlasticEntity plastic = new UniversalPlasticEntity(
-            ModEntities.UNIVERSAL_PLASTIC.get(),
+            PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
             helper.getLevel(),
             helper.absoluteVec(relativePosition),
-            ModBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
-            ModBlocks.UNIVERSAL_PLASTIC.asStack(),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack(),
             PlasticEntityOrientation.DEFAULT
         );
         check(helper.getLevel().addFreshEntity(plastic), "failed to add universal plastic");

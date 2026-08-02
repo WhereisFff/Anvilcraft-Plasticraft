@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.recipe;
 
-import dev.anvilcraft.plasticraft.init.ModParticles;
+import dev.anvilcraft.plasticraft.init.PlasticraftParticles;
 import dev.dubhe.anvilcraft.init.item.ModItemTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -235,7 +235,7 @@ public final class EscapingVaporEffects {
             BlockPos outlet = cloud.outlets.get(Math.floorMod(phase + index, cloud.outlets.size()));
             Vec3 center = outlet.getBottomCenter();
             level.sendParticles(
-                ModParticles.GASEOUS_OIL_FLAME.get(),
+                PlasticraftParticles.GASEOUS_OIL_FLAME.get(),
                 center.x,
                 center.y + 0.03D,
                 center.z,

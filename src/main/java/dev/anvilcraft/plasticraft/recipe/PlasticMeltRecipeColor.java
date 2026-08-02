@@ -4,8 +4,8 @@ import dev.anvilcraft.lib.v2.recipe.util.InWorldRecipeContext;
 import dev.anvilcraft.lib.v2.recipe.util.InWorldRecipeData;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
@@ -55,7 +55,7 @@ public final class PlasticMeltRecipeColor {
         if (!data.hasMelt || data.dyeColor == null || data.cauldronPos == null) return;
         BlockPos pos = data.cauldronPos;
         BlockState blockState = context.getLevel().getBlockState(pos);
-        if (blockState.is(ModBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())) {
+        if (blockState.is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())) {
             context.getLevel().setBlock(
                 pos,
                 blockState.setValue(UniversalPlasticMeltCauldronBlock.COLOR, data.dyeColor),
@@ -66,7 +66,7 @@ public final class PlasticMeltRecipeColor {
             List<FluidStack> fluids = cauldron.getFluids().copyFluids();
             boolean changed = false;
             for (FluidStack fluid : fluids) {
-                if (!fluid.is(ModFluids.UNIVERSAL_PLASTIC_MELT.get())) continue;
+                if (!fluid.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())) continue;
                 PlasticMeltColor.set(fluid, data.dyeColor);
                 changed = true;
             }
@@ -79,7 +79,7 @@ public final class PlasticMeltRecipeColor {
 
     private static DyeColor colorAt(InWorldRecipeContext context, BlockPos pos, FluidStack melt) {
         BlockState state = context.getLevel().getBlockState(pos);
-        if (state.is(ModBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())) {
+        if (state.is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())) {
             return state.getValue(UniversalPlasticMeltCauldronBlock.COLOR);
         }
         return PlasticMeltColor.get(melt);
@@ -88,7 +88,7 @@ public final class PlasticMeltRecipeColor {
     private static FluidStack findMelt(IFluidHandler handler) {
         for (int tank = 0; tank < handler.getTanks(); tank++) {
             FluidStack fluid = handler.getFluidInTank(tank);
-            if (fluid.is(ModFluids.UNIVERSAL_PLASTIC_MELT.get())) return fluid.copy();
+            if (fluid.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())) return fluid.copy();
         }
         return FluidStack.EMPTY;
     }

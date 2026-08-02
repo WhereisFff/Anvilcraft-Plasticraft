@@ -2,8 +2,8 @@ package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.entity.ModEntities;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
@@ -27,11 +27,11 @@ public final class HardenedResinCauldronSpillGameTests {
     static void nonPlaceableFluidSpillsWithoutWorldBlock(ExtendedGameTestHelper helper) {
         Level level = helper.getLevel();
         HardenedResinCauldronEntity cauldron = new HardenedResinCauldronEntity(
-            ModEntities.HARDEND_RESIN_CAULDRON.get(),
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
             level,
             helper.absoluteVec(new Vec3(3.5D, 2.0D, 3.5D)),
-            ModBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
-            ModBlocks.HARDEND_RESIN_CAULDRON.asStack(),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(),
             new PlasticEntityOrientation(Direction.EAST, 0)
         );
         cauldron.setNoGravity(true);

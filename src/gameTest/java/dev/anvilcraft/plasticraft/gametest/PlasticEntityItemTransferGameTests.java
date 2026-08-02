@@ -2,10 +2,11 @@ package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.entity.ModEntities;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.dubhe.anvilcraft.block.ChuteBlock;
 import dev.dubhe.anvilcraft.block.entity.BaseChuteBlockEntity;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
@@ -26,8 +27,6 @@ import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
-
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.CHUTE;
 
 /** 覆盖实体塑料容器与原版、AnvilCraft 物品运输设备之间的自动化传输。 */
 public final class PlasticEntityItemTransferGameTests {
@@ -139,7 +138,7 @@ public final class PlasticEntityItemTransferGameTests {
     }
 
     private static BaseChuteBlockEntity placeChute(ExtendedGameTestHelper helper, BlockPos relativePos) {
-        BlockState state = CHUTE.get()
+        BlockState state = ModBlocks.CHUTE.get()
             .defaultBlockState()
             .setValue(ChuteBlock.FACING, Direction.DOWN)
             .setValue(ChuteBlock.ENABLED, true);
@@ -168,11 +167,11 @@ public final class PlasticEntityItemTransferGameTests {
     ) {
         Level level = helper.getLevel();
         HardenedResinCauldronEntity cauldron = new HardenedResinCauldronEntity(
-            ModEntities.HARDEND_RESIN_CAULDRON.get(),
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
             level,
             helper.absoluteVec(relativePosition),
-            ModBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
-            ModBlocks.HARDEND_RESIN_CAULDRON.asStack(),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(),
             PlasticEntityOrientation.DEFAULT
         );
         cauldron.setNoGravity(true);

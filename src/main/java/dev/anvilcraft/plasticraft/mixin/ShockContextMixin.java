@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.mixin;
 
 import com.llamalad7.mixinextras.injector.ModifyReturnValue;
-import dev.anvilcraft.plasticraft.init.block.ModBlockTags;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockTags;
 import dev.dubhe.anvilcraft.event.giantanvil.shock.ShockContext;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import net.minecraft.core.Holder;
@@ -15,25 +15,25 @@ abstract class ShockContextMixin {
     @ModifyReturnValue(method = "testCorner(Lnet/minecraft/core/Holder;)Z", at = @At("RETURN"))
     private boolean plasticraft$testTaggedCorner(boolean original, Holder<Block> expected) {
         if (original || expected.value() != ModBlocks.RESIN_BLOCK.get()) return original;
-        return this.plasticraft$self().testCorner(ModBlockTags.RESIN_SHOCK_COMPATIBLE);
+        return this.plasticraft$self().testCorner(PlasticraftBlockTags.RESIN_SHOCK_COMPATIBLE);
     }
 
     @ModifyReturnValue(method = "testBorder(Lnet/minecraft/core/Holder;)Z", at = @At("RETURN"))
     private boolean plasticraft$testTaggedBorder(boolean original, Holder<Block> expected) {
         if (original || expected.value() != ModBlocks.RESIN_BLOCK.get()) return original;
-        return this.plasticraft$self().testBorder(ModBlockTags.RESIN_SHOCK_COMPATIBLE);
+        return this.plasticraft$self().testBorder(PlasticraftBlockTags.RESIN_SHOCK_COMPATIBLE);
     }
 
     @ModifyReturnValue(method = "testCorner(Lnet/minecraft/world/level/block/Block;)Z", at = @At("RETURN"))
     private boolean plasticraft$testTaggedCorner(boolean original, Block expected) {
         if (original || expected != ModBlocks.RESIN_BLOCK.get()) return original;
-        return this.plasticraft$self().testCorner(ModBlockTags.RESIN_SHOCK_COMPATIBLE);
+        return this.plasticraft$self().testCorner(PlasticraftBlockTags.RESIN_SHOCK_COMPATIBLE);
     }
 
     @ModifyReturnValue(method = "testBorder(Lnet/minecraft/world/level/block/Block;)Z", at = @At("RETURN"))
     private boolean plasticraft$testTaggedBorder(boolean original, Block expected) {
         if (original || expected != ModBlocks.RESIN_BLOCK.get()) return original;
-        return this.plasticraft$self().testBorder(ModBlockTags.RESIN_SHOCK_COMPATIBLE);
+        return this.plasticraft$self().testBorder(PlasticraftBlockTags.RESIN_SHOCK_COMPATIBLE);
     }
 
     private ShockContext plasticraft$self() {

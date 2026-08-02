@@ -1,8 +1,8 @@
 package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.fluid.UniversalPlasticMeltBucketWrapper;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import net.minecraft.core.component.DataComponents;
@@ -28,11 +28,11 @@ public final class PlasticMeltColorGameTests {
     @TestHolder(description = "Default-white plastic melt from buckets merges with component-free melt")
     static void defaultWhiteMeltMergesInLargeCauldron(ExtendedGameTestHelper helper) {
         FluidStack componentFree = new FluidStack(
-            ModFluids.UNIVERSAL_PLASTIC_MELT.get(),
+            PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(),
             2 * FluidType.BUCKET_VOLUME
         );
         FluidStack fromBucket = new UniversalPlasticMeltBucketWrapper(
-            ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET.asStack()
+            PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.asStack()
         ).getFluid();
 
         check(!fromBucket.has(DataComponents.CUSTOM_DATA), "default-white melt retained empty custom data");
@@ -54,7 +54,7 @@ public final class PlasticMeltColorGameTests {
         check(handler.getTotalAmount() == 3 * FluidType.BUCKET_VOLUME, "large cauldron lost melt while merging");
         check(nonEmptyTanks(handler) == 1, "large cauldron split default-white melt into multiple layers");
 
-        FluidStack withOtherData = new FluidStack(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), FluidType.BUCKET_VOLUME);
+        FluidStack withOtherData = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), FluidType.BUCKET_VOLUME);
         CompoundTag customData = new CompoundTag();
         customData.putBoolean("Preserved", true);
         withOtherData.set(DataComponents.CUSTOM_DATA, CustomData.of(customData));

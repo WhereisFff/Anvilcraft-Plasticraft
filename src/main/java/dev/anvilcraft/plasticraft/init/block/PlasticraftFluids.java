@@ -4,7 +4,7 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.client.renderer.HighViscosityResinFluidExtension;
 import dev.anvilcraft.plasticraft.client.renderer.UniversalPlasticMeltFluidExtension;
 import dev.anvilcraft.plasticraft.fluid.UniversalPlasticMeltFluidType;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.fluid.StationaryPlasticMeltFluid;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
@@ -20,7 +20,7 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
 /** Plasticraft 的可储存与可放置流体注册。 */
-public final class ModFluids {
+public final class PlasticraftFluids {
     public static final DeferredRegister<FluidType> FLUID_TYPES = DeferredRegister.create(
         NeoForgeRegistries.FLUID_TYPES,
         AnvilcraftPlasticraft.MOD_ID
@@ -124,8 +124,8 @@ public final class ModFluids {
         LIQUID_HIGH_VISCOSITY_RESIN,
         FLOWING_LIQUID_HIGH_VISCOSITY_RESIN
     )
-        .bucket(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET)
-        .block(ModBlocks.LIQUID_HIGH_VISCOSITY_RESIN)
+        .bucket(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET)
+        .block(PlasticraftBlocks.LIQUID_HIGH_VISCOSITY_RESIN)
         .tickRate(40)
         .slopeFindDistance(2)
         .levelDecreasePerBlock(3)
@@ -136,8 +136,8 @@ public final class ModFluids {
         HIGH_HEAT_FUEL,
         FLOWING_HIGH_HEAT_FUEL
     )
-        .bucket(ModItems.HIGH_HEAT_FUEL_BUCKET)
-        .block(ModBlocks.HIGH_HEAT_FUEL)
+        .bucket(PlasticraftItems.HIGH_HEAT_FUEL_BUCKET)
+        .block(PlasticraftBlocks.HIGH_HEAT_FUEL)
         .tickRate(10)
         .slopeFindDistance(3)
         .explosionResistance(100.0F);
@@ -147,8 +147,8 @@ public final class ModFluids {
         PLASTIC_OIL,
         FLOWING_PLASTIC_OIL
     )
-        .bucket(ModItems.PLASTIC_OIL_BUCKET)
-        .block(ModBlocks.PLASTIC_OIL)
+        .bucket(PlasticraftItems.PLASTIC_OIL_BUCKET)
+        .block(PlasticraftBlocks.PLASTIC_OIL)
         .tickRate(12)
         .slopeFindDistance(3)
         .explosionResistance(100.0F);
@@ -158,8 +158,8 @@ public final class ModFluids {
         CRUDE_OIL_ACID,
         FLOWING_CRUDE_OIL_ACID
     )
-        .bucket(ModItems.CRUDE_OIL_ACID_BUCKET)
-        .block(ModBlocks.CRUDE_OIL_ACID)
+        .bucket(PlasticraftItems.CRUDE_OIL_ACID_BUCKET)
+        .block(PlasticraftBlocks.CRUDE_OIL_ACID)
         .tickRate(12)
         .slopeFindDistance(3)
         .explosionResistance(100.0F);
@@ -170,14 +170,14 @@ public final class ModFluids {
             UNIVERSAL_PLASTIC_MELT,
             FLOWING_UNIVERSAL_PLASTIC_MELT
         )
-            .bucket(ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET)
-            .block(ModBlocks.UNIVERSAL_PLASTIC_MELT)
+            .bucket(PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET)
+            .block(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT)
             .tickRate(40)
             .slopeFindDistance(1)
             .levelDecreasePerBlock(8)
             .explosionResistance(100.0F);
 
-    private ModFluids() {
+    private PlasticraftFluids() {
     }
 
     private static DeferredHolder<FluidType, FluidType> registerFluidType(

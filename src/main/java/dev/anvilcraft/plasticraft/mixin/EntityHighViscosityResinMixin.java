@@ -4,7 +4,7 @@ import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
@@ -26,14 +26,14 @@ abstract class EntityHighViscosityResinMixin {
     @ModifyVariable(method = "move", at = @At("HEAD"), argsOnly = true)
     private Vec3 plasticraft$stopNonPlayerMovement(Vec3 movement) {
         Entity entity = (Entity) (Object) this;
-        if (entity.hasData(ModAttachments.ADHESIVE_TRANSIT)
-            || entity.hasData(ModAttachments.ENTITY_ADHESION)
+        if (entity.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
+            || entity.hasData(PlasticraftAttachments.ENTITY_ADHESION)
                 && !AdhesiveBondingService.isElasticMotion(entity)) {
             entity.setDeltaMovement(Vec3.ZERO);
             entity.hasImpulse = true;
             return Vec3.ZERO;
         }
-        EntityBondState bonds = entity.getExistingDataOrNull(ModAttachments.ENTITY_BONDS.get());
+        EntityBondState bonds = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_BONDS.get());
         if (bonds != null
             && !bonds.leaderUuid().equals(entity.getUUID())
             && !AdhesiveBondingService.isElasticMotion(entity)) {

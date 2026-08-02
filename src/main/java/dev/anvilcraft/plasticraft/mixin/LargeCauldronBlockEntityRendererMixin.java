@@ -4,7 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.block.IgnitedFluidEffects;
 import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticOilCatalysisRenderer;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.client.renderer.blockentity.LargeCauldronBlockEntityRenderer;
@@ -65,7 +65,7 @@ abstract class LargeCauldronBlockEntityRendererMixin {
             if (fluid.isEmpty()) continue;
             float layerMaxY = layerMinY
                 + plasticraft$CONTENT_HEIGHT * fluid.getAmount() / LargeCauldronFluidHandler.TOTAL_CAPACITY;
-            if (fluid.is(ModFluids.PLASTIC_OIL.get())) {
+            if (fluid.is(PlasticraftFluids.PLASTIC_OIL.get())) {
                 PlasticOilCatalysisRenderer.renderContainerOverlay(
                     cauldron.getLevel(),
                     cauldron.getBlockPos(),

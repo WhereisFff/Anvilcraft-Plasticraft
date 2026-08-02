@@ -8,8 +8,8 @@ import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
@@ -23,11 +23,11 @@ import dev.dubhe.anvilcraft.api.itemhandler.PollableItemHandler;
 import dev.dubhe.anvilcraft.block.HeaterBlock;
 import dev.dubhe.anvilcraft.block.PlasmaJetsBlock;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.block.ModFluidTags;
 import dev.dubhe.anvilcraft.init.item.ModItemTags;
 import dev.dubhe.anvilcraft.item.AnvilHammerItem;
 import dev.dubhe.anvilcraft.util.AnvilUtil;
-import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -83,8 +83,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
-
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER;
+import javax.annotation.Nullable;
 
 /** 带有兼容鱼缸的物品和流体存储能力的可移动六向釜。 */
 public class HardenedResinCauldronEntity extends AbstractPlasticEntity
@@ -229,7 +228,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
 
     public HardenedResinCauldronEntity(EntityType<? extends HardenedResinCauldronEntity> type, Level level) {
         super(type, level);
-        this.setDisplayState(ModBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState());
+        this.setDisplayState(PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState());
     }
 
     public HardenedResinCauldronEntity(
@@ -494,7 +493,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     /** 让实体形态硬化树脂锅中的通用塑料熔体也施加蜘蛛网式减速。 */
     private void stickEntitiesInUniversalMelt() {
         FluidStack fluid = this.fluidHandler.getFluid();
-        if (!fluid.is(ModFluids.UNIVERSAL_PLASTIC_MELT.get())) return;
+        if (!fluid.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())) return;
         if (this.getOrientation().attachmentFace() != Direction.UP) return;
         AABB box = this.getBoundingBox();
         double fill = Math.clamp((double) fluid.getAmount() / CAPACITY, 0.0D, 1.0D);
@@ -517,7 +516,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
 
     public boolean plasticraft$isEntityInsideUniversalMelt(Entity entity) {
         FluidStack fluid = this.fluidHandler.getFluid();
-        if (!fluid.is(ModFluids.UNIVERSAL_PLASTIC_MELT.get())
+        if (!fluid.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())
             || this.getOrientation().attachmentFace() != Direction.UP) return false;
         AABB box = this.getBoundingBox();
         double fill = Math.clamp((double) fluid.getAmount() / CAPACITY, 0.0D, 1.0D);
@@ -728,7 +727,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         }
         BlockPos occupied = BlockPos.containing(this.getBoundingBox().getCenter());
         BlockState heater = this.level().getBlockState(occupied.below());
-        if (!heater.is(HEATER)
+        if (!heater.is(ModBlocks.HEATER)
             || heater.getValue(HeaterBlock.OVERLOAD)) {
             return;
         }

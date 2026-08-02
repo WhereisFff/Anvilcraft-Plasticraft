@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.event;
 
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.item.HighViscosityResinBlockItem;
 import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import net.minecraft.world.InteractionResult;
@@ -16,7 +16,7 @@ public final class HighViscosityResinEvents {
 
     public static void useEntity(PlayerInteractEvent.EntityInteract event) {
         ItemStack stack = event.getItemStack();
-        if (!stack.is(ModBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())) return;
+        if (!stack.is(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())) return;
         InteractionResult result = HighViscosityResinBlockItem.useEntity(
             event.getEntity(),
             event.getTarget(),
@@ -29,26 +29,26 @@ public final class HighViscosityResinEvents {
 
     public static void registerCauldronFluidContent(RegisterCauldronFluidContentEvent event) {
         event.register(
-            ModBlocks.LIQUID_HIGH_VISCOSITY_RESIN_CAULDRON.get(),
-            ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get(),
+            PlasticraftBlocks.LIQUID_HIGH_VISCOSITY_RESIN_CAULDRON.get(),
+            PlasticraftFluids.LIQUID_HIGH_VISCOSITY_RESIN.get(),
             1000,
             Layered4LevelCauldronBlock.LEVEL
         );
         event.register(
-            ModBlocks.HIGH_HEAT_FUEL_CAULDRON.get(),
-            ModFluids.HIGH_HEAT_FUEL.get(),
+            PlasticraftBlocks.HIGH_HEAT_FUEL_CAULDRON.get(),
+            PlasticraftFluids.HIGH_HEAT_FUEL.get(),
             1000,
             Layered4LevelCauldronBlock.LEVEL
         );
         event.register(
-            ModBlocks.PLASTIC_OIL_CAULDRON.get(),
-            ModFluids.PLASTIC_OIL.get(),
+            PlasticraftBlocks.PLASTIC_OIL_CAULDRON.get(),
+            PlasticraftFluids.PLASTIC_OIL.get(),
             1000,
             Layered4LevelCauldronBlock.LEVEL
         );
         event.register(
-            ModBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get(),
-            ModFluids.UNIVERSAL_PLASTIC_MELT.get(),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get(),
+            PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(),
             1000,
             Layered4LevelCauldronBlock.LEVEL
         );

@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.block;
 
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.dubhe.anvilcraft.block.FishTankBlock;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
@@ -81,20 +81,20 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
     private static boolean containsUniversalPlasticMelt(Level level, BlockState state, BlockPos pos) {
         if (state.getBlock() instanceof FishTankBlock
             && level.getBlockEntity(pos) instanceof FishTankBlockEntity tank) {
-            return tank.getFluidHandler().getFluid().is(ModFluids.UNIVERSAL_PLASTIC_MELT.get());
+            return tank.getFluidHandler().getFluid().is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get());
         }
         if (state.getBlock() instanceof LargeCauldronBlock) {
             LargeCauldronBlockEntity cauldron = LargeCauldronBlockEntity.getMain(level, pos, state);
             if (cauldron == null) return false;
             IFluidHandler fluids = cauldron.getFluidHandler();
             for (int tank = 0; tank < fluids.getTanks(); tank++) {
-                if (fluids.getFluidInTank(tank).is(ModFluids.UNIVERSAL_PLASTIC_MELT.get())) return true;
+                if (fluids.getFluidInTank(tank).is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())) return true;
             }
         }
         if (state.getBlock() instanceof HardenedResinCauldronBlock
             && level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
             && bonded.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron) {
-            return cauldron.getFluidHandler().getFluid().is(ModFluids.UNIVERSAL_PLASTIC_MELT.get());
+            return cauldron.getFluidHandler().getFluid().is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get());
         }
         if (state.getBlock() instanceof UniversalPlasticMeltCauldronBlock) {
             return state.getValue(UniversalPlasticMeltCauldronBlock.LEVEL) > 0;
@@ -161,8 +161,8 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
     }
 
     private static boolean isHighViscosityResin(FluidStack fluid) {
-        return !fluid.isEmpty() && (fluid.is(ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get())
-            || fluid.is(ModFluids.UNIVERSAL_PLASTIC_MELT.get()));
+        return !fluid.isEmpty() && (fluid.is(PlasticraftFluids.LIQUID_HIGH_VISCOSITY_RESIN.get())
+            || fluid.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get()));
     }
 
     public static boolean isEntityTouching(Entity entity) {
@@ -179,7 +179,7 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
                 for (int z = minZ; z <= maxZ; z++) {
                     pos.set(x, y, z);
                     BlockState state = entity.level().getBlockState(pos);
-                    if (state.is(ModBlocks.LIQUID_HIGH_VISCOSITY_RESIN.get())) return true;
+                    if (state.is(PlasticraftBlocks.LIQUID_HIGH_VISCOSITY_RESIN.get())) return true;
                     if (state.getBlock() instanceof HighViscosityResinCauldronBlock cauldron
                         && cauldron.containsEntity(state, pos, entity)) {
                         return true;
@@ -206,8 +206,8 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
                 for (int z = minZ; z <= maxZ; z++) {
                     pos.set(x, y, z);
                     BlockState state = entity.level().getBlockState(pos);
-                    if (state.is(ModBlocks.UNIVERSAL_PLASTIC_MELT.get())
-                        || (state.is(ModBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())
+                    if (state.is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT.get())
+                        || (state.is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())
                             && isEntityInsideContainer(state, entity.level(), pos, entity))) {
                         return true;
                     }

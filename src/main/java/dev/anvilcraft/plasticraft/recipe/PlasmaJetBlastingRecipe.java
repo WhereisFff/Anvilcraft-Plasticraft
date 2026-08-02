@@ -4,7 +4,7 @@ import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import dev.anvilcraft.lib.v2.util.predicate.ChanceItemStack;
 import dev.anvilcraft.lib.v2.util.predicate.ItemIngredientPredicate;
-import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
+import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
 import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
 import dev.dubhe.anvilcraft.recipe.anvil.util.WrapUtils;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.AbstractProcessRecipe;
@@ -55,12 +55,12 @@ public final class PlasmaJetBlastingRecipe extends AbstractProcessRecipe<PlasmaJ
 
     @Override
     public RecipeSerializer<PlasmaJetBlastingRecipe> getSerializer() {
-        return ModRecipeTypes.PLASMA_JET_BLASTING_SERIALIZER.get();
+        return PlasticraftRecipeTypes.PLASMA_JET_BLASTING_SERIALIZER.get();
     }
 
     @Override
     public RecipeType<PlasmaJetBlastingRecipe> getType() {
-        return ModRecipeTypes.PLASMA_JET_BLASTING_TYPE.get();
+        return PlasticraftRecipeTypes.PLASMA_JET_BLASTING_TYPE.get();
     }
 
     public static final class Serializer implements RecipeSerializer<PlasmaJetBlastingRecipe> {

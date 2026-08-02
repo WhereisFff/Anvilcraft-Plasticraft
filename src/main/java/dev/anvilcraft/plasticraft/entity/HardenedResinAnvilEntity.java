@@ -3,7 +3,7 @@ package dev.anvilcraft.plasticraft.entity;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
@@ -52,7 +52,7 @@ public class HardenedResinAnvilEntity extends AbstractPlasticEntity implements I
 
     public HardenedResinAnvilEntity(EntityType<? extends HardenedResinAnvilEntity> entityType, Level level) {
         super(entityType, level);
-        this.setDisplayState(ModBlocks.HARDEND_RESIN_ANVIL.get().defaultBlockState());
+        this.setDisplayState(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get().defaultBlockState());
     }
 
     public HardenedResinAnvilEntity(

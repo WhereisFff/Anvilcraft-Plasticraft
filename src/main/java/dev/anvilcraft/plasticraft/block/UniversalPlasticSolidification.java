@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.block;
 
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -26,12 +26,12 @@ public final class UniversalPlasticSolidification {
      */
     public static boolean solidify(ServerLevel level, BlockPos pos) {
         BlockState meltState = level.getBlockState(pos);
-        if (!meltState.is(ModBlocks.UNIVERSAL_PLASTIC_MELT.get())) return false;
+        if (!meltState.is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT.get())) return false;
 
         DyeColor color = level.getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity melt
             ? melt.getColor()
             : DyeColor.WHITE;
-        BlockState product = ModBlocks.UNIVERSAL_PLASTIC.get()
+        BlockState product = PlasticraftBlocks.UNIVERSAL_PLASTIC.get()
             .defaultBlockState()
             .setValue(DyeableMaterial.COLOR, color);
         if (!level.setBlock(pos, product, Block.UPDATE_ALL)) return false;

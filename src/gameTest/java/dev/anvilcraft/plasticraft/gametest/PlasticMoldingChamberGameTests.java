@@ -5,7 +5,7 @@ import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberStructure;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingRegionBlock;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.molding.model.MoldingCommand;
 import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
@@ -46,7 +46,7 @@ public final class PlasticMoldingChamberGameTests {
         );
         for (Placement placement : placements) {
             BlockPos controller = helper.absolutePos(placement.relativeController());
-            BlockState controllerState = ModBlocks.PLASTIC_MOLDING_CHAMBER.get().defaultBlockState()
+            BlockState controllerState = PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.get().defaultBlockState()
                 .setValue(PlasticMoldingChamberBlock.FACING, placement.front());
             check(
                 PlasticMoldingChamberStructure.placeAtomically(helper.getLevel(), controller, controllerState),
@@ -61,7 +61,7 @@ public final class PlasticMoldingChamberGameTests {
                 BlockPos region = PlasticMoldingChamberStructure.regionPos(controller, placement.front(), part);
                 check(unique.add(region), "duplicate region coordinate for " + placement.front());
                 BlockState state = helper.getLevel().getBlockState(region);
-                check(state.is(ModBlocks.PLASTIC_MOLDING_REGION.get()), "region part was missing at " + region);
+                check(state.is(PlasticraftBlocks.PLASTIC_MOLDING_REGION.get()), "region part was missing at " + region);
                 check(state.getValue(PlasticMoldingRegionBlock.FACING) == placement.front(), "region facing drifted");
                 check(state.getValue(PlasticMoldingRegionBlock.PART) == part, "region part index drifted");
                 check(
@@ -139,7 +139,7 @@ public final class PlasticMoldingChamberGameTests {
         MoldingRegionPart obstructionPart = MoldingRegionPart.D2_R1_U1;
         BlockPos obstruction = PlasticMoldingChamberStructure.regionPos(controller, front, obstructionPart);
         helper.getLevel().setBlockAndUpdate(obstruction, Blocks.STONE.defaultBlockState());
-        BlockState state = ModBlocks.PLASTIC_MOLDING_CHAMBER.get().defaultBlockState()
+        BlockState state = PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.get().defaultBlockState()
             .setValue(PlasticMoldingChamberBlock.FACING, front);
 
         check(
@@ -163,7 +163,7 @@ public final class PlasticMoldingChamberGameTests {
     @TestHolder(description = "Single-writer sessions reject stale revisions, cap history at ten, and invalidate takeover victims")
     static void authoritativeSessionAndHistory(ExtendedGameTestHelper helper) {
         BlockPos controller = helper.absolutePos(new BlockPos(4, 2, 2));
-        BlockState state = ModBlocks.PLASTIC_MOLDING_CHAMBER.get().defaultBlockState()
+        BlockState state = PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.get().defaultBlockState()
             .setValue(PlasticMoldingChamberBlock.FACING, Direction.NORTH);
         check(
             PlasticMoldingChamberStructure.placeAtomically(helper.getLevel(), controller, state),

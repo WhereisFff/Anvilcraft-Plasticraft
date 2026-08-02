@@ -6,8 +6,8 @@ import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesivePreviewService;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveSelectionManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
@@ -74,7 +74,7 @@ public final class HighViscosityResinAdhesionEvents {
     public static void interactEntity(PlayerInteractEvent.EntityInteract event) {
         if (event.getEntity().level().isClientSide
             || event.getEntity().isShiftKeyDown()
-            || !event.getItemStack().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) {
+            || !event.getItemStack().is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) {
             return;
         }
         handleEntityUse(
@@ -91,7 +91,7 @@ public final class HighViscosityResinAdhesionEvents {
     public static void interactEntitySpecific(PlayerInteractEvent.EntityInteractSpecific event) {
         if (event.getEntity().level().isClientSide
             || event.getEntity().isShiftKeyDown()
-            || !event.getItemStack().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) {
+            || !event.getItemStack().is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) {
             return;
         }
         handleEntityUse(
@@ -107,7 +107,7 @@ public final class HighViscosityResinAdhesionEvents {
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void rightClickBlock(PlayerInteractEvent.RightClickBlock event) {
         if (event.getEntity().isShiftKeyDown()
-            || !event.getItemStack().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) {
+            || !event.getItemStack().is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) {
             return;
         }
         if (!AdhesiveSelectionManager.hasSelection(event.getEntity())) {
@@ -145,15 +145,15 @@ public final class HighViscosityResinAdhesionEvents {
     public static void playerTick(PlayerTickEvent.Post event) {
         if (!AdhesiveSelectionManager.hasSelection(event.getEntity())) return;
         boolean holdingBucket = event.getEntity().getMainHandItem()
-            .is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())
-            || event.getEntity().getOffhandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get());
+            .is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())
+            || event.getEntity().getOffhandItem().is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get());
         if (!holdingBucket) {
             AdhesiveSelectionManager.clear(event.getEntity());
             return;
         }
         if (!event.getEntity().level().isClientSide) {
             var selected = AdhesiveSelectionManager.resolveServerSelection(event.getEntity());
-            if (selected == null || selected.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
+            if (selected == null || selected.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)) {
                 AdhesiveSelectionManager.clear(event.getEntity());
             }
         }
@@ -175,7 +175,7 @@ public final class HighViscosityResinAdhesionEvents {
     }
 
     private static boolean hasAdhesive(Entity entity) {
-        return entity.hasData(ModAttachments.ENTITY_ADHESION) || EntityBondManager.hasBonds(entity);
+        return entity.hasData(PlasticraftAttachments.ENTITY_ADHESION) || EntityBondManager.hasBonds(entity);
     }
 
     private static void releaseEntity(Entity entity) {

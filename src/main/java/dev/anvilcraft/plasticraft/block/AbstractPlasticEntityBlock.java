@@ -5,7 +5,7 @@ import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
-import dev.anvilcraft.plasticraft.init.block.ModBlockEntities;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.dubhe.anvilcraft.block.RoyalAnvilBlock;
 import net.minecraft.core.BlockPos;
@@ -185,7 +185,7 @@ public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity
 
     @Override
     public @Nullable BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
-        return ModBlockEntities.BONDED_ENTITY.create(pos, state);
+        return PlasticraftBlockEntities.BONDED_ENTITY.create(pos, state);
     }
 
     @Override

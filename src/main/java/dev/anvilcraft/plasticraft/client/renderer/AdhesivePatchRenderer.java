@@ -20,7 +20,7 @@ import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondLink;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
 import dev.anvilcraft.plasticraft.entity.adhesive.SlidingAdhesionData;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.dubhe.anvilcraft.block.FishTankBlock;
 import dev.dubhe.anvilcraft.entity.SlidingBlockEntity;
@@ -116,7 +116,7 @@ public final class AdhesivePatchRenderer {
             if (entity instanceof SlidingBlockEntity slidingBlock) {
                 renderSlidingPatches(level, pose, buffers, slidingBlock, partialTick, slidingPatchKeys);
             }
-            EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+            EntityAdhesion adhesion = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
             if (adhesion != null) {
                 renderEntityAdhesive(
                     level,
@@ -159,7 +159,7 @@ public final class AdhesivePatchRenderer {
         float partialTick,
         Set<PatchKey> renderedPatches
     ) {
-        SlidingAdhesionData data = entity.getExistingDataOrNull(ModAttachments.SLIDING_BLOCK_ADHESION.get());
+        SlidingAdhesionData data = entity.getExistingDataOrNull(PlasticraftAttachments.SLIDING_BLOCK_ADHESION.get());
         if (data == null || data.parts().isEmpty()) return;
 
         BlockPos origin = entity.getStartPos();
@@ -204,7 +204,7 @@ public final class AdhesivePatchRenderer {
                 LevelChunk chunk = level.getChunkSource().getChunk(chunkX, chunkZ, false);
                 if (chunk == null) continue;
                 BondedFallingChunkData data = chunk.getExistingDataOrNull(
-                    ModAttachments.BONDED_FALLING_BLOCKS.get()
+                    PlasticraftAttachments.BONDED_FALLING_BLOCKS.get()
                 );
                 if (data == null) continue;
                 for (Map.Entry<BlockPos, BlockAdhesionState> entry : data.adhesions().entrySet()) {
@@ -660,7 +660,7 @@ public final class AdhesivePatchRenderer {
         for (Entity entity : level.entitiesForRendering()) {
             if (!entity.isAlive()) continue;
             Set<Direction> faces = new HashSet<>();
-            EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+            EntityAdhesion adhesion = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
             if (adhesion != null) faces.add(adhesion.attachmentFace().getOpposite());
             EntityBondState bonds = EntityBondManager.get(entity);
             if (bonds != null) {

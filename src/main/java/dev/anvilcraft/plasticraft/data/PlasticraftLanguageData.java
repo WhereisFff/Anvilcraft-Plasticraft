@@ -2,10 +2,9 @@ package dev.anvilcraft.plasticraft.data;
 
 import dev.anvilcraft.lib.v2.registrum.providers.ProviderType;
 import dev.anvilcraft.lib.v2.registrum.providers.RegistrumLangProvider;
+import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
-import dev.anvilcraft.plasticraft.init.item.ModItemGroups;
-
-import static dev.anvilcraft.plasticraft.AnvilcraftPlasticraft.REGISTRUM;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItemGroups;
 
 /** 生成物品名、界面文本、提示文本和可选集成所需的英文语言数据。 */
 public final class PlasticraftLanguageData {
@@ -13,7 +12,7 @@ public final class PlasticraftLanguageData {
     }
 
     public static void register() {
-        REGISTRUM.addDataGenerator(ProviderType.LANG, PlasticraftLanguageData::generate);
+        AnvilcraftPlasticraft.REGISTRUM.addDataGenerator(ProviderType.LANG, PlasticraftLanguageData::generate);
     }
 
     private static void generate(RegistrumLangProvider provider) {
@@ -32,7 +31,7 @@ public final class PlasticraftLanguageData {
         );
 
         // 物品组及无法由 Registrum 条目自动生成的物品名称。
-        provider.add(ModItemGroups.TITLE_KEY, "Anvilcraft: Plasticraft");
+        provider.add(PlasticraftItemGroups.TITLE_KEY, "Anvilcraft: Plasticraft");
         provider.add("item.anvilcraftplasticraft.hardend_resin_anvil", "Hardened Resin Anvil");
         provider.add("item.anvilcraftplasticraft.hardend_resin_cauldron", "Hardened Resin Cauldron");
         provider.add("item.anvilcraftplasticraft.resin_anvil", "Resin Anvil");

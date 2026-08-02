@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.block;
 
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.cauldron.CauldronInteraction;
@@ -31,20 +31,20 @@ public class HighViscosityResinCauldronBlock extends Layered4LevelCauldronBlock 
                 player,
                 hand,
                 stack,
-                ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack(),
-                ModBlocks.LIQUID_HIGH_VISCOSITY_RESIN_CAULDRON.get()::isFull,
+                PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack(),
+                PlasticraftBlocks.LIQUID_HIGH_VISCOSITY_RESIN_CAULDRON.get()::isFull,
                 SoundEvents.BUCKET_FILL
             )
         );
         CauldronInteraction.EMPTY.map().put(
-            ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get(),
+            PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get(),
             (state, level, pos, player, hand, stack) -> CauldronInteraction.emptyBucket(
                 level,
                 pos,
                 player,
                 hand,
                 stack,
-                ModBlocks.LIQUID_HIGH_VISCOSITY_RESIN_CAULDRON.get().fullFilled(),
+                PlasticraftBlocks.LIQUID_HIGH_VISCOSITY_RESIN_CAULDRON.get().fullFilled(),
                 SoundEvents.BUCKET_EMPTY
             )
         );

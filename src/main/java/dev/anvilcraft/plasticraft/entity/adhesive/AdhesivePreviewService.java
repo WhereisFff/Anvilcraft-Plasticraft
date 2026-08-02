@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.entity.adhesive;
 
-import dev.anvilcraft.plasticraft.init.ModAttachments;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.network.AdhesivePreviewPathPacket;
 import dev.anvilcraft.plasticraft.network.AdhesivePreviewRejectedPacket;
 import net.minecraft.core.BlockPos;
@@ -269,8 +269,8 @@ public final class AdhesivePreviewService {
         Entity selected = AdhesiveSelectionManager.resolveServerSelection(player);
         if (selected == null
             || selected.getId() != selectedEntityId
-            || selected.hasData(ModAttachments.ENTITY_ADHESION)
-            || selected.hasData(ModAttachments.ADHESIVE_TRANSIT)
+            || selected.hasData(PlasticraftAttachments.ENTITY_ADHESION)
+            || selected.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
             || !AdhesiveBondingService.canUseSupport(player, level, supportPos, attachmentFace)) {
             return null;
         }
@@ -321,14 +321,14 @@ public final class AdhesivePreviewService {
             || target == null
             || target == selected
             || !target.isAlive()
-            || target.hasData(ModAttachments.ADHESIVE_TRANSIT)
+            || target.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
             || !player.canInteractWithEntity(target, 0.0D)) {
             return null;
         }
 
         Direction selectedFace = AdhesiveSelectionManager.getSelectedFace(player);
-        boolean reverse = selected.hasData(ModAttachments.ENTITY_ADHESION);
-        if (reverse && target.hasData(ModAttachments.ENTITY_ADHESION)) return null;
+        boolean reverse = selected.hasData(PlasticraftAttachments.ENTITY_ADHESION);
+        if (reverse && target.hasData(PlasticraftAttachments.ENTITY_ADHESION)) return null;
         Entity movingEntity = reverse ? target : selected;
         Entity anchorEntity = reverse ? selected : target;
         Direction anchorFace = reverse ? AdhesiveFaces.worldFace(selected, selectedFace) : targetFace;
@@ -437,8 +437,8 @@ public final class AdhesivePreviewService {
             Entity selected = AdhesiveSelectionManager.resolveServerSelection(this.player);
             Entity moving = this.resolveMovingEntity();
             Entity anchor = this.resolveAnchorEntity();
-            boolean holdingBucket = this.player.getMainHandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())
-                || this.player.getOffhandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get());
+            boolean holdingBucket = this.player.getMainHandItem().is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())
+                || this.player.getOffhandItem().is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get());
             return !this.player.isRemoved()
                 && this.player.isAlive()
                 && this.player.level() == this.level
@@ -446,14 +446,14 @@ public final class AdhesivePreviewService {
                 && selected != null
                 && selected.getUUID().equals(this.selectedUuid)
                 && selected.getId() == this.selectedEntityId
-                && !selected.hasData(ModAttachments.ADHESIVE_TRANSIT)
+                && !selected.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
                 && moving != null
                 && moving.isAlive()
-                && !moving.hasData(ModAttachments.ADHESIVE_TRANSIT)
+                && !moving.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
                 && (this.anchorUuid == null
                     || anchor != null
                     && anchor.isAlive()
-                    && !anchor.hasData(ModAttachments.ADHESIVE_TRANSIT));
+                    && !anchor.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT));
         }
 
         private boolean contextUnchanged() {

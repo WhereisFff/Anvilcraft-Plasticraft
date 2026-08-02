@@ -6,7 +6,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 
-public final class ModItemTags {
+public final class PlasticraftItemTags {
     public static final TagKey<Item> PLASTIC_ANVILS = TagKey.create(
         Registries.ITEM,
         ResourceLocation.fromNamespaceAndPath(AnvilcraftPlasticraft.MOD_ID, "plastic_anvils")
@@ -36,6 +36,6 @@ public final class ModItemTags {
         AnvilcraftPlasticraft.of("plastic_products")
     );
 
-    private ModItemTags() {
+    private PlasticraftItemTags() {
     }
 }

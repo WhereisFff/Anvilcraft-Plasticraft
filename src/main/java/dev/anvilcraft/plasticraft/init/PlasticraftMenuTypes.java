@@ -1,15 +1,14 @@
 package dev.anvilcraft.plasticraft.init;
 
 import dev.anvilcraft.lib.v2.registrum.util.entry.MenuEntry;
+import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.client.gui.screen.HardenedResinAnvilScreen;
 import dev.anvilcraft.plasticraft.client.gui.screen.PlasticMoldingChamberScreen;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.anvilcraft.plasticraft.inventory.PlasticMoldingChamberMenu;
 
-import static dev.anvilcraft.plasticraft.AnvilcraftPlasticraft.REGISTRUM;
-
-public final class ModMenuTypes {
-    public static final MenuEntry<PlasticMoldingChamberMenu> PLASTIC_MOLDING_CHAMBER = REGISTRUM
+public final class PlasticraftMenuTypes {
+    public static final MenuEntry<PlasticMoldingChamberMenu> PLASTIC_MOLDING_CHAMBER = AnvilcraftPlasticraft.REGISTRUM
         .menu(
             "plastic_molding_chamber",
             (type, id, inventory, buffer) -> new PlasticMoldingChamberMenu(type, id, inventory, buffer),
@@ -17,7 +16,7 @@ public final class ModMenuTypes {
         )
         .register();
 
-    public static final MenuEntry<HardenedResinAnvilMenu> HARDEND_RESIN_ANVIL = REGISTRUM
+    public static final MenuEntry<HardenedResinAnvilMenu> HARDEND_RESIN_ANVIL = AnvilcraftPlasticraft.REGISTRUM
         .menu(
             "hardend_resin_anvil",
             (type, id, inventory, buffer) -> new HardenedResinAnvilMenu(type, id, inventory, buffer),
@@ -25,7 +24,7 @@ public final class ModMenuTypes {
         )
         .register();
 
-    private ModMenuTypes() {
+    private PlasticraftMenuTypes() {
     }
 
     public static void register() {

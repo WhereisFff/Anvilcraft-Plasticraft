@@ -1,8 +1,8 @@
 package dev.anvilcraft.plasticraft.inventory;
 
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
-import dev.anvilcraft.plasticraft.init.ModMenuTypes;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.PlasticraftMenuTypes;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingCommand;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelStreams;
@@ -87,7 +87,7 @@ public class PlasticMoldingChamberMenu extends AbstractContainerMenu {
         player.openMenu(
             new SimpleMenuProvider(
                 (containerId, inventory, ignored) -> new PlasticMoldingChamberMenu(
-                    ModMenuTypes.PLASTIC_MOLDING_CHAMBER.get(),
+                    PlasticraftMenuTypes.PLASTIC_MOLDING_CHAMBER.get(),
                     containerId,
                     inventory,
                     chamber,
@@ -156,7 +156,7 @@ public class PlasticMoldingChamberMenu extends AbstractContainerMenu {
 
     @Override
     public boolean stillValid(Player player) {
-        return player.level().getBlockState(this.chamberPos).is(ModBlocks.PLASTIC_MOLDING_CHAMBER.get())
+        return player.level().getBlockState(this.chamberPos).is(PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.get())
             && player.distanceToSqr(this.chamberPos.getCenter()) <= 64.0D;
     }
 

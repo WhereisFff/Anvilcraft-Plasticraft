@@ -3,7 +3,7 @@ package dev.anvilcraft.plasticraft.entity.adhesive;
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import net.minecraft.core.Direction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -30,7 +30,7 @@ public final class EntityBondManager {
     }
 
     public static @Nullable EntityBondState get(Entity entity) {
-        return entity.getExistingDataOrNull(ModAttachments.ENTITY_BONDS.get());
+        return entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_BONDS.get());
     }
 
     public static boolean hasBonds(Entity entity) {
@@ -68,7 +68,7 @@ public final class EntityBondManager {
             EntityBondState state = get(member);
             if (state == null) continue;
             member.setData(
-                ModAttachments.ENTITY_BONDS,
+                PlasticraftAttachments.ENTITY_BONDS,
                 state.withLeader(leader, member.position().subtract(leader.position()))
             );
             if (member == leader) {
@@ -86,7 +86,7 @@ public final class EntityBondManager {
             EntityBondState state = get(member);
             if (state == null) continue;
             member.setData(
-                ModAttachments.ENTITY_BONDS,
+                PlasticraftAttachments.ENTITY_BONDS,
                 state.withLeader(leader, member.position().subtract(leader.position()))
             );
         }
@@ -135,7 +135,7 @@ public final class EntityBondManager {
             List<EntityBondLink> links = changed.get(member.getUUID());
             if (links == null) continue;
             EntityBondState state = get(member);
-            if (state != null) member.setData(ModAttachments.ENTITY_BONDS, state.withLinks(links));
+            if (state != null) member.setData(PlasticraftAttachments.ENTITY_BONDS, state.withLinks(links));
         }
     }
 
@@ -194,7 +194,7 @@ public final class EntityBondManager {
                 targetLeader,
                 member.position().subtract(targetLeader.position())
             );
-            member.setData(ModAttachments.ENTITY_BONDS, rebased);
+            member.setData(PlasticraftAttachments.ENTITY_BONDS, rebased);
             if (member == targetLeader) {
                 member.setNoGravity(rebased.originalNoGravity());
             } else {
@@ -231,7 +231,7 @@ public final class EntityBondManager {
     }
 
     public static void removeForBlockification(Entity entity) {
-        entity.removeData(ModAttachments.ENTITY_BONDS);
+        entity.removeData(PlasticraftAttachments.ENTITY_BONDS);
     }
 
     public static boolean isFollower(Entity entity) {
@@ -455,13 +455,13 @@ public final class EntityBondManager {
         if (state.links().isEmpty()) {
             restoreStandalone(entity, state);
         } else {
-            entity.setData(ModAttachments.ENTITY_BONDS, state);
+            entity.setData(PlasticraftAttachments.ENTITY_BONDS, state);
         }
     }
 
     private static void restoreStandalone(Entity entity, EntityBondState state) {
-        entity.removeData(ModAttachments.ADHESIVE_ELASTIC_MOTION);
-        entity.removeData(ModAttachments.ENTITY_BONDS);
+        entity.removeData(PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION);
+        entity.removeData(PlasticraftAttachments.ENTITY_BONDS);
         entity.setNoGravity(state.originalNoGravity());
         entity.setDeltaMovement(Vec3.ZERO);
         entity.fallDistance = 0.0F;
@@ -508,7 +508,7 @@ public final class EntityBondManager {
         if (!changed) return state;
 
         EntityBondState refreshed = state.withResolvedEntityIds(leaderEntityId, links);
-        entity.setData(ModAttachments.ENTITY_BONDS, refreshed);
+        entity.setData(PlasticraftAttachments.ENTITY_BONDS, refreshed);
         return refreshed;
     }
 

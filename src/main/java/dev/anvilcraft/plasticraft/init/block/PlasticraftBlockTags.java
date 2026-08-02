@@ -7,7 +7,7 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 
 /** 供树脂兼容冲击系统使用的跨模组方块标签。 */
-public final class ModBlockTags {
+public final class PlasticraftBlockTags {
     public static final TagKey<Block> RESIN_SHOCK_COMPATIBLE = TagKey.create(
         Registries.BLOCK,
         ResourceLocation.fromNamespaceAndPath("anvilcraft", "resin_shock_compatible")
@@ -21,6 +21,6 @@ public final class ModBlockTags {
         AnvilcraftPlasticraft.of("plastic_products")
     );
 
-    private ModBlockTags() {
+    private PlasticraftBlockTags() {
     }
 }

@@ -3,8 +3,8 @@ package dev.anvilcraft.plasticraft.client.renderer;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.PlasticOilCauldronBlock;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.network.PlasticOilCatalysisSyncPacket;
 import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
 import net.minecraft.client.Minecraft;
@@ -98,7 +98,7 @@ public final class PlasticOilCatalysisRenderer {
         int packedLight,
         boolean renderBottom
     ) {
-        if (!fluid.is(ModFluids.PLASTIC_OIL.get())) return;
+        if (!fluid.is(PlasticraftFluids.PLASTIC_OIL.get())) return;
         float progress = progress(level, pos, partialTick);
         if (progress <= 0.0F) return;
         renderMeltBox(
@@ -138,8 +138,8 @@ public final class PlasticOilCatalysisRenderer {
             if (progress <= 0.0F) continue;
 
             BlockState state = level.getBlockState(pos);
-            boolean cauldron = state.is(ModBlocks.PLASTIC_OIL_CAULDRON.get());
-            boolean source = level.getFluidState(pos).isSourceOfType(ModFluids.PLASTIC_OIL.get());
+            boolean cauldron = state.is(PlasticraftBlocks.PLASTIC_OIL_CAULDRON.get());
+            boolean source = level.getFluidState(pos).isSourceOfType(PlasticraftFluids.PLASTIC_OIL.get());
             if (!cauldron && !source) continue;
 
             pose.pushPose();
@@ -215,7 +215,7 @@ public final class PlasticOilCatalysisRenderer {
         boolean renderBottom
     ) {
         float opacity = smoothStep(Mth.clamp(progress, 0.0F, 1.0F));
-        FluidStack overlay = new FluidStack(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), Math.max(1, amount));
+        FluidStack overlay = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), Math.max(1, amount));
         UniversalPlasticMeltFluidExtension.setCatalysisOpacity(overlay, opacity);
         FluidRenderHelper.INSTANCE.renderFluidBox(
             overlay,

@@ -11,16 +11,16 @@ import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
-import dev.anvilcraft.plasticraft.block.PlasticOilCauldronBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingRegionBlock;
+import dev.anvilcraft.plasticraft.block.PlasticOilCauldronBlock;
 import dev.anvilcraft.plasticraft.block.ResinAnvilBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltFluidBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticShape;
-import dev.anvilcraft.plasticraft.init.entity.ModEntities;
-import dev.anvilcraft.plasticraft.init.item.ModItemTags;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
 import dev.anvilcraft.plasticraft.item.CatalyticPressLidItem;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.HardenedResinAnvilItem;
@@ -33,6 +33,8 @@ import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import dev.dubhe.anvilcraft.block.item.SimpleMultiPartBlockItem;
 import dev.dubhe.anvilcraft.block.multipart.SimpleMultiPartBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
+import dev.dubhe.anvilcraft.init.block.ModBlockTags;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.util.DataGenUtil;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
@@ -58,13 +60,9 @@ import net.neoforged.neoforge.client.model.generators.ModelProvider;
 
 import java.util.function.Supplier;
 
-import static dev.anvilcraft.plasticraft.AnvilcraftPlasticraft.REGISTRUM;
-import static dev.dubhe.anvilcraft.init.block.ModBlockTags.NON_MAGNETIC;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK;
-
 /** Plasticraft 可移动制品的方块和物品注册。 */
-public final class ModBlocks {
-    public static final BlockEntry<PlasticMoldingChamberBlock> PLASTIC_MOLDING_CHAMBER = REGISTRUM
+public final class PlasticraftBlocks {
+    public static final BlockEntry<PlasticMoldingChamberBlock> PLASTIC_MOLDING_CHAMBER = AnvilcraftPlasticraft.REGISTRUM
         .block("plastic_molding_chamber", PlasticMoldingChamberBlock::new)
         .initialProperties(() -> Blocks.IRON_BLOCK)
         .properties(properties -> properties
@@ -90,7 +88,7 @@ public final class ModBlocks {
         .build()
         .register();
 
-    public static final BlockEntry<PlasticMoldingRegionBlock> PLASTIC_MOLDING_REGION = REGISTRUM
+    public static final BlockEntry<PlasticMoldingRegionBlock> PLASTIC_MOLDING_REGION = AnvilcraftPlasticraft.REGISTRUM
         .block("plastic_molding_region", PlasticMoldingRegionBlock::new)
         .initialProperties(() -> Blocks.BARRIER)
         .properties(properties -> properties
@@ -107,7 +105,7 @@ public final class ModBlocks {
         ))
         .register();
 
-    public static final BlockEntry<CondenserTowerBlock> CONDENSER_TOWER = REGISTRUM
+    public static final BlockEntry<CondenserTowerBlock> CONDENSER_TOWER = AnvilcraftPlasticraft.REGISTRUM
         .block("condenser_tower", CondenserTowerBlock::new)
         .initialProperties(() -> Blocks.IRON_BLOCK)
         .properties(properties -> properties
@@ -124,9 +122,9 @@ public final class ModBlocks {
         .tag(BlockTags.MINEABLE_WITH_PICKAXE)
         .register();
 
-    public static final BlockEntry<HighViscosityResinBlock> HIGH_VISCOSITY_RESIN_BLOCK = REGISTRUM
+    public static final BlockEntry<HighViscosityResinBlock> HIGH_VISCOSITY_RESIN_BLOCK = AnvilcraftPlasticraft.REGISTRUM
         .block("high_viscosity_resin_block", HighViscosityResinBlock::new)
-        .initialProperties(RESIN_BLOCK::get)
+        .initialProperties(ModBlocks.RESIN_BLOCK::get)
         .properties(properties -> properties
             .mapColor(MapColor.COLOR_ORANGE)
             .noOcclusion()
@@ -142,10 +140,10 @@ public final class ModBlocks {
             provider.modLoc("block/high_viscosity_resin")
         ))
         .build()
-        .tag(ModBlockTags.RESIN_SHOCK_COMPATIBLE)
+        .tag(PlasticraftBlockTags.RESIN_SHOCK_COMPATIBLE)
         .register();
 
-    public static final BlockEntry<HighViscosityResinCauldronBlock> LIQUID_HIGH_VISCOSITY_RESIN_CAULDRON = REGISTRUM
+    public static final BlockEntry<HighViscosityResinCauldronBlock> LIQUID_HIGH_VISCOSITY_RESIN_CAULDRON = AnvilcraftPlasticraft.REGISTRUM
         .block("liquid_high_viscosity_resin_cauldron", HighViscosityResinCauldronBlock::new)
         .initialProperties(() -> Blocks.CAULDRON)
         .lang("Liquid High-Viscosity Resin Cauldron")
@@ -156,10 +154,10 @@ public final class ModBlocks {
         .onRegister(block -> Item.BY_BLOCK.put(block, Items.CAULDRON))
         .register();
 
-    public static final BlockEntry<HighViscosityResinFluidBlock> LIQUID_HIGH_VISCOSITY_RESIN = REGISTRUM
+    public static final BlockEntry<HighViscosityResinFluidBlock> LIQUID_HIGH_VISCOSITY_RESIN = AnvilcraftPlasticraft.REGISTRUM
         .block(
             "liquid_high_viscosity_resin",
-            properties -> new HighViscosityResinFluidBlock(ModFluids.LIQUID_HIGH_VISCOSITY_RESIN.get(), properties)
+            properties -> new HighViscosityResinFluidBlock(PlasticraftFluids.LIQUID_HIGH_VISCOSITY_RESIN.get(), properties)
         )
         .properties(properties -> properties
             .mapColor(MapColor.COLOR_ORANGE)
@@ -181,12 +179,12 @@ public final class ModBlocks {
 
     public static final BlockEntry<LiquidBlock> HIGH_HEAT_FUEL = fluidBlock(
         "high_heat_fuel",
-        ModFluids.HIGH_HEAT_FUEL,
+        PlasticraftFluids.HIGH_HEAT_FUEL,
         "high_heat_fuel",
         MapColor.COLOR_YELLOW,
         "High-Heat Fuel"
     );
-    public static final BlockEntry<HighHeatFuelCauldronBlock> HIGH_HEAT_FUEL_CAULDRON = REGISTRUM
+    public static final BlockEntry<HighHeatFuelCauldronBlock> HIGH_HEAT_FUEL_CAULDRON = AnvilcraftPlasticraft.REGISTRUM
         .block("high_heat_fuel_cauldron", HighHeatFuelCauldronBlock::new)
         .initialProperties(() -> Blocks.CAULDRON)
         .lang("High-Heat Fuel Cauldron")
@@ -198,12 +196,12 @@ public final class ModBlocks {
         .register();
     public static final BlockEntry<LiquidBlock> PLASTIC_OIL = fluidBlock(
         "plastic_oil",
-        ModFluids.PLASTIC_OIL,
+        PlasticraftFluids.PLASTIC_OIL,
         "plastic_oil",
         MapColor.COLOR_LIGHT_BLUE,
         "Plastic Oil"
     );
-    public static final BlockEntry<PlasticOilCauldronBlock> PLASTIC_OIL_CAULDRON = REGISTRUM
+    public static final BlockEntry<PlasticOilCauldronBlock> PLASTIC_OIL_CAULDRON = AnvilcraftPlasticraft.REGISTRUM
         .block("plastic_oil_cauldron", PlasticOilCauldronBlock::new)
         .initialProperties(() -> Blocks.CAULDRON)
         .lang("Plastic Oil Cauldron")
@@ -217,10 +215,10 @@ public final class ModBlocks {
         .tag(BlockTags.MINEABLE_WITH_PICKAXE, BlockTags.CAULDRONS)
         .onRegister(block -> Item.BY_BLOCK.put(block, Items.CAULDRON))
         .register();
-    public static final BlockEntry<UniversalPlasticMeltFluidBlock> UNIVERSAL_PLASTIC_MELT = REGISTRUM
+    public static final BlockEntry<UniversalPlasticMeltFluidBlock> UNIVERSAL_PLASTIC_MELT = AnvilcraftPlasticraft.REGISTRUM
         .block(
             "universal_plastic_melt",
-            properties -> new UniversalPlasticMeltFluidBlock(ModFluids.UNIVERSAL_PLASTIC_MELT, properties)
+            properties -> new UniversalPlasticMeltFluidBlock(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT, properties)
         )
         .properties(properties -> properties
             .mapColor(MapColor.SNOW)
@@ -245,7 +243,7 @@ public final class ModBlocks {
             );
         })
         .register();
-    public static final BlockEntry<UniversalPlasticMeltCauldronBlock> UNIVERSAL_PLASTIC_MELT_CAULDRON = REGISTRUM
+    public static final BlockEntry<UniversalPlasticMeltCauldronBlock> UNIVERSAL_PLASTIC_MELT_CAULDRON = AnvilcraftPlasticraft.REGISTRUM
         .block("universal_plastic_melt_cauldron", UniversalPlasticMeltCauldronBlock::new)
         .initialProperties(() -> Blocks.CAULDRON)
         .lang("Universal Plastic Melt Cauldron")
@@ -263,7 +261,7 @@ public final class ModBlocks {
         .tag(BlockTags.MINEABLE_WITH_PICKAXE, BlockTags.CAULDRONS)
         .onRegister(block -> Item.BY_BLOCK.put(block, Items.CAULDRON))
         .register();
-    public static final BlockEntry<UniversalPlasticBlock> UNIVERSAL_PLASTIC = REGISTRUM
+    public static final BlockEntry<UniversalPlasticBlock> UNIVERSAL_PLASTIC = AnvilcraftPlasticraft.REGISTRUM
         .block("universal_plastic", UniversalPlasticBlock::new)
         .initialProperties(() -> Blocks.WHITE_CONCRETE)
         .properties(properties -> properties
@@ -273,7 +271,7 @@ public final class ModBlocks {
             .sound(SoundType.BONE_BLOCK)
             .pushReaction(PushReaction.NORMAL))
         .lang("Universal Plastic Block")
-        .tag(BlockTags.MINEABLE_WITH_PICKAXE, ModBlockTags.PLASTIC_PRODUCTS)
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE, PlasticraftBlockTags.PLASTIC_PRODUCTS)
         .loot((tables, block) -> tables.dropSelf(block))
         .blockstate((context, provider) -> {
             // 数据生成阶段为十六种熔体颜色分别烘焙模型；所有模型共用公共生成器给出的确定性 UV。
@@ -310,10 +308,10 @@ public final class ModBlocks {
         .item((block, properties) -> new UniversalPlasticBlockItem(
             block,
             properties,
-            ModEntities.UNIVERSAL_PLASTIC,
+            PlasticraftEntities.UNIVERSAL_PLASTIC,
             block::defaultBlockState
         ))
-        .tag(ModItemTags.PLASTIC_PRODUCTS, ModItemTags.BUOYANT_PLASTIC_ITEMS)
+        .tag(PlasticraftItemTags.PLASTIC_PRODUCTS, PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS)
         .model((context, provider) -> {
             // 物品模型继承同色方块几何，但独立提供缩小后的掉落、手持和三面 GUI 视角。
             var base = provider.getBuilder(context.getName()).parent(new ModelFile.UncheckedModelFile(
@@ -337,13 +335,13 @@ public final class ModBlocks {
         .register();
     public static final BlockEntry<LiquidBlock> CRUDE_OIL_ACID = fluidBlock(
         "crude_oil_acid",
-        ModFluids.CRUDE_OIL_ACID,
+        PlasticraftFluids.CRUDE_OIL_ACID,
         "oil_essence",
         MapColor.COLOR_BLACK,
         "Crude Oil Essence"
     );
 
-    public static final BlockEntry<HardenedResinAnvilBlock> HARDEND_RESIN_ANVIL = REGISTRUM
+    public static final BlockEntry<HardenedResinAnvilBlock> HARDEND_RESIN_ANVIL = AnvilcraftPlasticraft.REGISTRUM
         .block("hardend_resin_anvil", HardenedResinAnvilBlock::new)
         .initialProperties(() -> Blocks.ANVIL)
         .properties(properties -> properties
@@ -354,23 +352,23 @@ public final class ModBlocks {
         .tag(
             BlockTags.MINEABLE_WITH_PICKAXE,
             BlockTags.ANVIL,
-            NON_MAGNETIC
+            ModBlockTags.NON_MAGNETIC
         )
         .blockstate((context, provider) -> {
         })
         .item((block, properties) -> new HardenedResinAnvilItem(
             block,
             properties,
-            ModEntities.HARDEND_RESIN_ANVIL,
+            PlasticraftEntities.HARDEND_RESIN_ANVIL,
             block::defaultBlockState
         ))
-        .tag(ModItemTags.PLASTIC_ANVILS, ModItemTags.BUOYANT_PLASTIC_ITEMS, ItemTags.ANVIL)
+        .tag(PlasticraftItemTags.PLASTIC_ANVILS, PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS, ItemTags.ANVIL)
         .model((context, provider) -> {
         })
         .build()
         .register();
 
-    public static final BlockEntry<HardenedResinCauldronBlock> HARDEND_RESIN_CAULDRON = REGISTRUM
+    public static final BlockEntry<HardenedResinCauldronBlock> HARDEND_RESIN_CAULDRON = AnvilcraftPlasticraft.REGISTRUM
         .block("hardend_resin_cauldron", HardenedResinCauldronBlock::new)
         .initialProperties(() -> Blocks.CAULDRON)
         .properties(properties -> properties
@@ -384,16 +382,16 @@ public final class ModBlocks {
         .item((block, properties) -> new HardenedResinCauldronItem(
             block,
             properties,
-            ModEntities.HARDEND_RESIN_CAULDRON,
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON,
             block::defaultBlockState
         ))
-        .tag(ModItemTags.PLASTIC_CAULDRONS, ModItemTags.BUOYANT_PLASTIC_ITEMS)
+        .tag(PlasticraftItemTags.PLASTIC_CAULDRONS, PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS)
         .model((context, provider) -> {
         })
         .build()
         .register();
 
-    public static final BlockEntry<CatalyticPressLidBlock> CATALYTIC_PRESS_LID = REGISTRUM
+    public static final BlockEntry<CatalyticPressLidBlock> CATALYTIC_PRESS_LID = AnvilcraftPlasticraft.REGISTRUM
         .block("catalytic_press_lid", CatalyticPressLidBlock::new)
         .initialProperties(() -> Blocks.ANVIL)
         .properties(properties -> properties
@@ -409,10 +407,10 @@ public final class ModBlocks {
         .item((block, properties) -> new CatalyticPressLidItem(
             block,
             properties,
-            ModEntities.CATALYTIC_PRESS_LID,
+            PlasticraftEntities.CATALYTIC_PRESS_LID,
             block::defaultBlockState
         ))
-        .tag(ModItemTags.BUOYANT_PLASTIC_ITEMS)
+        .tag(PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS)
         .model((context, provider) -> provider.withExistingParent(
             context.getName(),
             provider.modLoc("block/catalytic_press_lid")
@@ -420,7 +418,7 @@ public final class ModBlocks {
         .build()
         .register();
 
-    public static final BlockEntry<ResinAnvilBlock> RESIN_ANVIL = REGISTRUM
+    public static final BlockEntry<ResinAnvilBlock> RESIN_ANVIL = AnvilcraftPlasticraft.REGISTRUM
         .block("resin_anvil", ResinAnvilBlock::new)
         .initialProperties(() -> Blocks.ANVIL)
         .properties(properties -> properties
@@ -431,8 +429,8 @@ public final class ModBlocks {
         .tag(
             BlockTags.MINEABLE_WITH_PICKAXE,
             BlockTags.ANVIL,
-            NON_MAGNETIC,
-            ModBlockTags.RESIN_SHOCK_COMPATIBLE
+            ModBlockTags.NON_MAGNETIC,
+            PlasticraftBlockTags.RESIN_SHOCK_COMPATIBLE
         )
         .blockstate((context, provider) -> {
         })
@@ -442,16 +440,16 @@ public final class ModBlocks {
                 DataComponents.CUSTOM_MODEL_DATA,
                 new CustomModelData(0)
             ),
-            ModEntities.RESIN_ANVIL,
+            PlasticraftEntities.RESIN_ANVIL,
             block::defaultBlockState
         ))
-        .tag(ModItemTags.PLASTIC_ANVILS, ModItemTags.BUOYANT_PLASTIC_ITEMS)
+        .tag(PlasticraftItemTags.PLASTIC_ANVILS, PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS)
         .model((context, provider) -> {
         })
         .build()
         .register();
 
-    private ModBlocks() {
+    private PlasticraftBlocks() {
     }
 
     /** 为通用塑料物品固定标准显示变换，避免掉落物按一格实体原尺寸渲染。 */
@@ -496,7 +494,7 @@ public final class ModBlocks {
         MapColor mapColor,
         String name
     ) {
-        return REGISTRUM.block(id, properties -> new LiquidBlock(source.get(), properties))
+        return AnvilcraftPlasticraft.REGISTRUM.block(id, properties -> new LiquidBlock(source.get(), properties))
             .initialProperties(() -> Blocks.WATER)
             .properties(properties -> properties
                 .mapColor(mapColor)

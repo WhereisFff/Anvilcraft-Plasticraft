@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.block.entity;
 
-import dev.anvilcraft.plasticraft.init.block.ModBlockEntities;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -17,7 +17,7 @@ public class UniversalPlasticMeltBlockEntity extends BlockEntity {
     private DyeColor color = DyeColor.WHITE;
 
     public UniversalPlasticMeltBlockEntity(BlockPos pos, BlockState state) {
-        this(ModBlockEntities.UNIVERSAL_PLASTIC_MELT.get(), pos, state);
+        this(PlasticraftBlockEntities.UNIVERSAL_PLASTIC_MELT.get(), pos, state);
     }
 
     public UniversalPlasticMeltBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {

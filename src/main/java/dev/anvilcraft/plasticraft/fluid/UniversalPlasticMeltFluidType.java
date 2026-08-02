@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.fluid;
 
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -14,7 +14,7 @@ public final class UniversalPlasticMeltFluidType extends FluidType {
 
     @Override
     public ItemStack getBucket(FluidStack stack) {
-        ItemStack bucket = ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET.asStack();
+        ItemStack bucket = PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.asStack();
         PlasticMeltColor.set(bucket, PlasticMeltColor.get(stack));
         return bucket;
     }

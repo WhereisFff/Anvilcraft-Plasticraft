@@ -6,11 +6,12 @@ import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.ResinShockDropBehavior;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.dubhe.anvilcraft.api.giantanvil.IShockEntity;
 import dev.dubhe.anvilcraft.api.giantanvil.ShockAnvilBehavior;
 import dev.dubhe.anvilcraft.block.item.HasMobBlockItem;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.util.BlockMiningEffect;
 import net.minecraft.core.Direction;
@@ -35,8 +36,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
-
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK;
 
 /**
  * 初期弹性树脂砧。它有意不提供菜单：空手使用会释放可选的已保存生物组件，
@@ -67,7 +66,7 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
 
     public ResinAnvilEntity(EntityType<? extends ResinAnvilEntity> entityType, Level level) {
         super(entityType, level);
-        this.setDisplayState(ModBlocks.RESIN_ANVIL.get().defaultBlockState());
+        this.setDisplayState(PlasticraftBlocks.RESIN_ANVIL.get().defaultBlockState());
     }
 
     public ResinAnvilEntity(
@@ -112,7 +111,7 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
 
     @Override
     public Optional<BlockState> anvilcraft$getShockBaseState() {
-        return Optional.of(RESIN_BLOCK.getDefaultState());
+        return Optional.of(ModBlocks.RESIN_BLOCK.getDefaultState());
     }
 
     public boolean hasCapturedMob() {
@@ -258,7 +257,7 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
 
     @Override
     protected SoundEvent impactSound() {
-        return RESIN_BLOCK.getDefaultState().getSoundType().getHitSound();
+        return ModBlocks.RESIN_BLOCK.getDefaultState().getSoundType().getHitSound();
     }
 
     private void applyBoundedEntityImpulse(
@@ -352,7 +351,7 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
         this.level().playSound(
             null,
             this.blockPosition(),
-            RESIN_BLOCK.getDefaultState().getSoundType().getPlaceSound(),
+            ModBlocks.RESIN_BLOCK.getDefaultState().getSoundType().getPlaceSound(),
             SoundSource.BLOCKS,
             0.8F,
             0.9F + this.random.nextFloat() * 0.2F

@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.block.piston;
 
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityAdhesion;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -53,13 +53,13 @@ public final class PistonAdhesionController {
         for (Entity entity : level.getEntities(
             (Entity) null,
             searchBounds,
-            candidate -> candidate.hasData(ModAttachments.ENTITY_ADHESION)
+            candidate -> candidate.hasData(PlasticraftAttachments.ENTITY_ADHESION)
         )) {
-            EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+            EntityAdhesion adhesion = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
             if (adhesion == null) continue;
             PistonMovement movement = movementsBySource.get(adhesion.supportPos());
             if (movement == null) continue;
-            entity.setData(ModAttachments.ENTITY_ADHESION, adhesion.moved(movement.direction()));
+            entity.setData(PlasticraftAttachments.ENTITY_ADHESION, adhesion.moved(movement.direction()));
             index.byEntity.put(entity.getUUID(), movement);
         }
     }
@@ -77,7 +77,7 @@ public final class PistonAdhesionController {
         EntityAdhesion movedAdhesion = adhesion;
         if (adhesion.supportPos().equals(movement.source())) {
             movedAdhesion = adhesion.moved(movement.direction());
-            entity.setData(ModAttachments.ENTITY_ADHESION, movedAdhesion);
+            entity.setData(PlasticraftAttachments.ENTITY_ADHESION, movedAdhesion);
         } else if (!adhesion.supportPos().equals(movement.destination())) {
             index.byEntity.remove(entity.getUUID());
             return null;

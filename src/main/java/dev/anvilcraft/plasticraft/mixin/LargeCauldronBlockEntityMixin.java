@@ -1,8 +1,8 @@
 package dev.anvilcraft.plasticraft.mixin;
 
 import dev.anvilcraft.plasticraft.block.IgnitedFluidEffects;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
@@ -58,7 +58,7 @@ abstract class LargeCauldronBlockEntityMixin {
         this.plasticraft$mixingColor = DyeColor.WHITE;
         LargeCauldronBlockEntity cauldron = (LargeCauldronBlockEntity) (Object) this;
         for (FluidStack fluid : cauldron.getFluids().copyFluids()) {
-            if (!fluid.is(ModFluids.UNIVERSAL_PLASTIC_MELT.get())) continue;
+            if (!fluid.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())) continue;
             this.plasticraft$mixingColor = PlasticMeltColor.get(fluid);
             break;
         }
@@ -76,7 +76,7 @@ abstract class LargeCauldronBlockEntityMixin {
         index = 1
     )
     private ItemStack plasticraft$colorMixedGranules(ItemStack result) {
-        if (result.is(ModItems.UNIVERSAL_PLASTIC_GRANULE.get())) {
+        if (result.is(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get())) {
             PlasticMeltColor.set(result, this.plasticraft$mixingColor);
         }
         return result;

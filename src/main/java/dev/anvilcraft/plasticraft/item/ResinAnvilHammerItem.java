@@ -1,7 +1,8 @@
 package dev.anvilcraft.plasticraft.item;
 
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.item.AnvilHammerItem;
 import dev.dubhe.anvilcraft.util.TriggerUtil;
@@ -22,8 +23,6 @@ import net.minecraft.world.item.component.ItemAttributeModifiers;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.neoforged.neoforge.common.NeoForge;
-
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.RESIN_BLOCK;
 
 /** 继承本体全部铁砧锤能力，并提供树脂材质的轻量攻击与修复规则。 */
 public class ResinAnvilHammerItem extends AnvilHammerItem {
@@ -65,7 +64,7 @@ public class ResinAnvilHammerItem extends AnvilHammerItem {
         level.playSound(
             null,
             impactPos,
-            RESIN_BLOCK.getDefaultState().getSoundType().getHitSound(),
+            ModBlocks.RESIN_BLOCK.getDefaultState().getSoundType().getHitSound(),
             SoundSource.PLAYERS,
             0.8F,
             0.9F + player.getRandom().nextFloat() * 0.2F
@@ -115,6 +114,6 @@ public class ResinAnvilHammerItem extends AnvilHammerItem {
 
     @Override
     public Block getAnvil() {
-        return ModBlocks.RESIN_ANVIL.get();
+        return PlasticraftBlocks.RESIN_ANVIL.get();
     }
 }

@@ -22,7 +22,7 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 /** Plasticraft 的 NeoForge 数据附件注册入口。 */
-public final class ModAttachments {
+public final class PlasticraftAttachments {
     private static final DeferredRegister<AttachmentType<?>> ATTACHMENTS = DeferredRegister.create(
         NeoForgeRegistries.ATTACHMENT_TYPES,
         AnvilcraftPlasticraft.MOD_ID
@@ -102,7 +102,7 @@ public final class ModAttachments {
             .build()
     );
 
-    private ModAttachments() {
+    private PlasticraftAttachments() {
     }
 
     public static void register(IEventBus eventBus) {

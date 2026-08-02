@@ -3,13 +3,14 @@ package dev.anvilcraft.plasticraft.block;
 import com.mojang.serialization.MapCodec;
 import dev.anvilcraft.lib.v2.recipe.cache.BlockCache;
 import dev.anvilcraft.plasticraft.block.entity.HighHeatFuelCauldronBlockEntity;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.dubhe.anvilcraft.api.block.IIgnitableCauldron;
 import dev.dubhe.anvilcraft.block.HeaterBlock;
 import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import dev.dubhe.anvilcraft.block.PlasmaJetsBlock;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModItemTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.cauldron.CauldronInteraction;
@@ -38,8 +39,6 @@ import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.phys.BlockHitResult;
-
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.HEATER;
 
 /** 以每层高热燃料分段维持强化喷流的四级炼药锅。 */
 public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implements IIgnitableCauldron, EntityBlock {
@@ -78,22 +77,22 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
                 player,
                 hand,
                 stack,
-                ModItems.HIGH_HEAT_FUEL_BUCKET.asStack(),
-                candidate -> candidate.is(ModBlocks.HIGH_HEAT_FUEL_CAULDRON.get())
+                PlasticraftItems.HIGH_HEAT_FUEL_BUCKET.asStack(),
+                candidate -> candidate.is(PlasticraftBlocks.HIGH_HEAT_FUEL_CAULDRON.get())
                     && candidate.getValue(LEVEL) == MAX_LEVEL
                     && !candidate.getValue(IGNITED),
                 SoundEvents.BUCKET_FILL
             )
         );
         CauldronInteraction.EMPTY.map().put(
-            ModItems.HIGH_HEAT_FUEL_BUCKET.get(),
+            PlasticraftItems.HIGH_HEAT_FUEL_BUCKET.get(),
             (state, level, pos, player, hand, stack) -> CauldronInteraction.emptyBucket(
                 level,
                 pos,
                 player,
                 hand,
                 stack,
-                ModBlocks.HIGH_HEAT_FUEL_CAULDRON.get().fullFilled(),
+                PlasticraftBlocks.HIGH_HEAT_FUEL_CAULDRON.get().fullFilled(),
                 SoundEvents.BUCKET_EMPTY
             )
         );
@@ -121,7 +120,7 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
     }
 
     private static boolean canIgnite(BlockState state) {
-        return state.is(ModBlocks.HIGH_HEAT_FUEL_CAULDRON.get())
+        return state.is(PlasticraftBlocks.HIGH_HEAT_FUEL_CAULDRON.get())
             && state.getValue(LEVEL) == MAX_LEVEL
             && !state.getValue(IGNITED);
     }
@@ -129,14 +128,14 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
     private static void ignite(LevelAccessor level, BlockPos pos, BlockState state) {
         if (!canIgnite(state)) return;
         level.setBlock(pos, state.setValue(IGNITED, true), Block.UPDATE_ALL);
-        if (level instanceof Level world && world.getBlockState(pos.below()).is(HEATER)) {
+        if (level instanceof Level world && world.getBlockState(pos.below()).is(ModBlocks.HEATER)) {
             world.scheduleTick(pos, state.getBlock(), 2);
         }
     }
 
     public static boolean consumeLayer(Level level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
-        if (!state.is(ModBlocks.HIGH_HEAT_FUEL_CAULDRON.get())
+        if (!state.is(PlasticraftBlocks.HIGH_HEAT_FUEL_CAULDRON.get())
             || !state.getValue(IGNITED)
             || !(level.getBlockEntity(pos) instanceof HighHeatFuelCauldronBlockEntity blockEntity)
             || blockEntity.isSpent()) {
@@ -152,7 +151,7 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
     }
 
     public static boolean isSpent(Level level, BlockPos pos) {
-        return level.getBlockState(pos).is(ModBlocks.HIGH_HEAT_FUEL_CAULDRON.get())
+        return level.getBlockState(pos).is(PlasticraftBlocks.HIGH_HEAT_FUEL_CAULDRON.get())
             && level.getBlockEntity(pos) instanceof HighHeatFuelCauldronBlockEntity blockEntity
             && blockEntity.isSpent();
     }
@@ -202,7 +201,7 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
 
     @Override
     public void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean movedByPiston) {
-        if (state.getValue(IGNITED) && level.getBlockState(pos.below()).is(HEATER)) {
+        if (state.getValue(IGNITED) && level.getBlockState(pos.below()).is(ModBlocks.HEATER)) {
             level.scheduleTick(pos, this, 2);
         }
     }
@@ -216,7 +215,7 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
         BlockPos neighborPos,
         boolean movedByPiston
     ) {
-        if (state.getValue(IGNITED) && level.getBlockState(pos.below()).is(HEATER)) {
+        if (state.getValue(IGNITED) && level.getBlockState(pos.below()).is(ModBlocks.HEATER)) {
             level.scheduleTick(pos, this, 2);
         }
     }
@@ -226,7 +225,7 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
         BlockState heater = level.getBlockState(pos.below());
         if (state.getValue(IGNITED)
             && state.getValue(LEVEL) == MAX_LEVEL
-            && heater.is(HEATER)
+            && heater.is(ModBlocks.HEATER)
             && !heater.getValue(HeaterBlock.OVERLOAD)
             && !PlasmaJetsBlock.trySpawn(pos.above(), level)) {
             level.scheduleTick(pos, this, 10);
@@ -252,7 +251,7 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
 
     @Override
     public Fluid getFluid(BlockCache cache, BlockPos pos) {
-        return ModFluids.HIGH_HEAT_FUEL.get();
+        return PlasticraftFluids.HIGH_HEAT_FUEL.get();
     }
 
     @Override

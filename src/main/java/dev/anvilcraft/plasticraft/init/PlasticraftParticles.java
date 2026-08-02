@@ -14,7 +14,7 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
 /** Plasticraft 的客户端视觉粒子类型。 */
-public final class ModParticles {
+public final class PlasticraftParticles {
     private static final DeferredRegister<ParticleType<?>> PARTICLES = DeferredRegister.create(
         Registries.PARTICLE_TYPE,
         AnvilcraftPlasticraft.MOD_ID
@@ -68,7 +68,7 @@ public final class ModParticles {
         () -> new SimpleParticleType(false)
     );
 
-    private ModParticles() {
+    private PlasticraftParticles() {
     }
 
     public static void register(IEventBus modEventBus) {

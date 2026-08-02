@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.block;
 
 import com.mojang.serialization.MapCodec;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
-import dev.anvilcraft.plasticraft.init.block.ModBlockEntities;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerPlayer;
@@ -119,7 +119,7 @@ public class PlasticMoldingChamberBlock extends BaseEntityBlock {
 
     @Override
     public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
-        return ModBlockEntities.PLASTIC_MOLDING_CHAMBER.create(pos, state);
+        return PlasticraftBlockEntities.PLASTIC_MOLDING_CHAMBER.create(pos, state);
     }
 
     @Nullable
@@ -133,7 +133,7 @@ public class PlasticMoldingChamberBlock extends BaseEntityBlock {
             ? null
             : createTickerHelper(
                 type,
-                ModBlockEntities.PLASTIC_MOLDING_CHAMBER.get(),
+                PlasticraftBlockEntities.PLASTIC_MOLDING_CHAMBER.get(),
                 PlasticMoldingChamberBlockEntity::serverTick
             );
     }

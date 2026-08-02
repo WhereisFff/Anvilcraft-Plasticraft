@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.entity;
 
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.recipe.CatalyticPressProcess;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -55,7 +55,7 @@ public final class CatalyticPressLidEntity extends AbstractPlasticEntity {
 
     public CatalyticPressLidEntity(EntityType<? extends CatalyticPressLidEntity> type, Level level) {
         super(type, level);
-        this.setDisplayState(ModBlocks.CATALYTIC_PRESS_LID.get().defaultBlockState());
+        this.setDisplayState(PlasticraftBlocks.CATALYTIC_PRESS_LID.get().defaultBlockState());
     }
 
     public CatalyticPressLidEntity(

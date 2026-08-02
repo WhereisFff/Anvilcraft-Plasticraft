@@ -6,9 +6,9 @@ import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
-import dev.anvilcraft.plasticraft.init.item.ModItemTags;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import net.minecraft.core.BlockPos;
@@ -80,7 +80,7 @@ public final class PlasticOilCatalysis {
         }
         BlockPos pos = catalyst.blockPosition();
         BlockState state = level.getBlockState(pos);
-        if (state.is(ModBlocks.PLASTIC_OIL_CAULDRON.get())) {
+        if (state.is(PlasticraftBlocks.PLASTIC_OIL_CAULDRON.get())) {
             PlasticOilCauldronBlock cauldron = (PlasticOilCauldronBlock) state.getBlock();
             if (!cauldron.containsEntity(state, pos, catalyst) || hasSealedLid(level, pos)) return;
             List<ItemEntity> catalysts = looseCatalysts(
@@ -90,7 +90,7 @@ public final class PlasticOilCatalysis {
             );
             advance(level, pos, CatalyticPressHeat.power(level.getBlockState(pos.below())), catalysts, () -> {
                 int levelValue = state.getValue(PlasticOilCauldronBlock.LEVEL);
-                BlockState result = ModBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get()
+                BlockState result = PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get()
                     .defaultBlockState()
                     .setValue(UniversalPlasticMeltCauldronBlock.LEVEL, levelValue)
                     .setValue(UniversalPlasticMeltCauldronBlock.COLOR, DyeColor.WHITE);
@@ -98,7 +98,7 @@ public final class PlasticOilCatalysis {
             });
             return;
         }
-        if (!level.getFluidState(pos).isSourceOfType(ModFluids.PLASTIC_OIL.get())) {
+        if (!level.getFluidState(pos).isSourceOfType(PlasticraftFluids.PLASTIC_OIL.get())) {
             clearProgress(level, pos);
             return;
         }
@@ -107,7 +107,7 @@ public final class PlasticOilCatalysis {
             CatalyticPressProcess.placeMelt(
                 level,
                 pos,
-                new FluidStack(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), 1_000)
+                new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 1_000)
             );
             return true;
         });
@@ -202,7 +202,7 @@ public final class PlasticOilCatalysis {
         CatalyticPressProcess.syncMeltContainerColor(
             level,
             pos,
-            new FluidStack(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), plasticOil.getAmount())
+            new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), plasticOil.getAmount())
         );
         PlasticOilCatalysisVisualSync.complete(level, pos);
         playCompletionSound(level, pos);
@@ -257,7 +257,7 @@ public final class PlasticOilCatalysis {
     }
 
     private static boolean isCatalyst(ItemStack stack) {
-        return stack.is(ModItemTags.ROYAL_STEEL_ITEMS) || stack.is(ModItemTags.FROST_METAL_ITEMS);
+        return stack.is(PlasticraftItemTags.ROYAL_STEEL_ITEMS) || stack.is(PlasticraftItemTags.FROST_METAL_ITEMS);
     }
 
     private static CatalystCounts countCatalysts(IItemHandler handler) {
@@ -284,9 +284,9 @@ public final class PlasticOilCatalysis {
     }
 
     private static void collectCatalyst(ItemStack stack, Set<Item> royalSteel, Set<Item> frostMetal) {
-        if (stack.is(ModItemTags.ROYAL_STEEL_ITEMS)) {
+        if (stack.is(PlasticraftItemTags.ROYAL_STEEL_ITEMS)) {
             royalSteel.add(stack.getItem());
-        } else if (stack.is(ModItemTags.FROST_METAL_ITEMS)) {
+        } else if (stack.is(PlasticraftItemTags.FROST_METAL_ITEMS)) {
             frostMetal.add(stack.getItem());
         }
     }
@@ -294,7 +294,7 @@ public final class PlasticOilCatalysis {
     private static FluidStack findPlasticOil(IFluidHandler handler) {
         for (int tank = 0; tank < handler.getTanks(); tank++) {
             FluidStack stored = handler.getFluidInTank(tank);
-            if (stored.is(ModFluids.PLASTIC_OIL.get())) return stored.copy();
+            if (stored.is(PlasticraftFluids.PLASTIC_OIL.get())) return stored.copy();
         }
         return FluidStack.EMPTY;
     }
@@ -310,7 +310,7 @@ public final class PlasticOilCatalysis {
             if (!drained.isEmpty()) handler.fill(drained, IFluidHandler.FluidAction.EXECUTE);
             return false;
         }
-        FluidStack output = new FluidStack(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), drained.getAmount());
+        FluidStack output = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), drained.getAmount());
         int filled = handler.fill(output, IFluidHandler.FluidAction.EXECUTE);
         if (filled == output.getAmount()) return true;
         if (filled > 0) {

@@ -8,8 +8,8 @@ import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidNetworkScanner;
@@ -49,7 +49,7 @@ public final class CatalyticPressProcess {
         }
 
         FluidStack stored = firstFluid(container.handler());
-        if (!stored.is(ModFluids.PLASTIC_OIL.get())) {
+        if (!stored.is(PlasticraftFluids.PLASTIC_OIL.get())) {
             if (lid.catalyticProgress() > 0) {
                 PlasticOilCatalysisVisualSync.clear(level, container.pos());
                 lid.resetCatalysis();
@@ -94,7 +94,7 @@ public final class CatalyticPressProcess {
             return;
         }
         FluidStack melt = firstFluid(container.handler());
-        if (!melt.is(ModFluids.UNIVERSAL_PLASTIC_MELT.get())) {
+        if (!melt.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())) {
             lid.resetCatalysis();
             return;
         }
@@ -141,13 +141,13 @@ public final class CatalyticPressProcess {
         IFluidHandler handler,
         FluidStack stored
     ) {
-        if (!stored.is(ModFluids.PLASTIC_OIL.get()) || stored.getAmount() <= 0) return null;
+        if (!stored.is(PlasticraftFluids.PLASTIC_OIL.get()) || stored.getAmount() <= 0) return null;
         FluidStack simulated = handler.drain(stored, IFluidHandler.FluidAction.SIMULATE);
         if (simulated.getAmount() != stored.getAmount()
             || !FluidStack.isSameFluidSameComponents(simulated, stored)) return null;
         return new FluidTransformation(
             simulated.copy(),
-            new FluidStack(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), simulated.getAmount())
+            new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), simulated.getAmount())
         );
     }
 
@@ -166,7 +166,7 @@ public final class CatalyticPressProcess {
             replaceFluid(container.handler(), stored);
         }
         BlockState state = level.getBlockState(container.pos());
-        if (state.is(ModBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())) {
+        if (state.is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())) {
             level.setBlock(container.pos(), state.setValue(UniversalPlasticMeltCauldronBlock.COLOR, color), Block.UPDATE_CLIENTS);
         }
     }
@@ -243,7 +243,7 @@ public final class CatalyticPressProcess {
     public static void syncMeltContainerColor(ServerLevel level, BlockPos pos, FluidStack melt) {
         DyeColor color = PlasticMeltColor.get(melt);
         BlockState state = level.getBlockState(pos);
-        if (state.is(ModBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())
+        if (state.is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())
             && state.getValue(UniversalPlasticMeltCauldronBlock.COLOR) != color) {
             level.setBlock(
                 pos,
@@ -281,11 +281,11 @@ public final class CatalyticPressProcess {
             EntityBondManager.disconnectEntity(level, container.plasticCauldron());
             container.plasticCauldron().discard();
         }
-        level.setBlock(container.pos(), ModBlocks.UNIVERSAL_PLASTIC_MELT.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(container.pos(), PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT.get().defaultBlockState(), Block.UPDATE_ALL);
         if (level.getBlockEntity(container.pos()) instanceof UniversalPlasticMeltBlockEntity blockEntity) {
             blockEntity.setColor(color);
         }
-        level.levelEvent(2001, container.pos(), Block.getId(ModBlocks.CATALYTIC_PRESS_LID.get().defaultBlockState()));
+        level.levelEvent(2001, container.pos(), Block.getId(PlasticraftBlocks.CATALYTIC_PRESS_LID.get().defaultBlockState()));
     }
 
     private static void launchLid(ServerLevel level, CatalyticPressLidEntity lid) {
@@ -307,7 +307,7 @@ public final class CatalyticPressProcess {
     }
 
     public static void placeMelt(ServerLevel level, BlockPos pos, FluidStack melt) {
-        level.setBlock(pos, ModBlocks.UNIVERSAL_PLASTIC_MELT.get().defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(pos, PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT.get().defaultBlockState(), Block.UPDATE_ALL);
         if (level.getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity blockEntity) {
             blockEntity.setColor(PlasticMeltColor.get(melt));
         }

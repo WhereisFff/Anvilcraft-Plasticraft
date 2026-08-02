@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.mixin;
 
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.entity.adhesive.SlidingAdhesionData;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import dev.dubhe.anvilcraft.entity.SlidingBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -48,7 +48,7 @@ abstract class SlidingBlockEntityAdhesionMixin {
         if (!this.plasticraft$adhesionSnapshot.isEmpty()) {
             SlidingBlockEntity self = (SlidingBlockEntity) (Object) this;
             self.setData(
-                ModAttachments.SLIDING_BLOCK_ADHESION,
+                PlasticraftAttachments.SLIDING_BLOCK_ADHESION,
                 SlidingAdhesionData.from(this.plasticraft$adhesionSnapshot, origin)
             );
         }

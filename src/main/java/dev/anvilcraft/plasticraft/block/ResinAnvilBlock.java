@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.block;
 
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
-import dev.anvilcraft.plasticraft.init.entity.ModEntities;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.dubhe.anvilcraft.block.ResinBlock;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
@@ -33,7 +33,7 @@ public class ResinAnvilBlock extends AbstractPlasticEntityBlock<ResinAnvilEntity
 
     @Override
     protected EntityType<? extends ResinAnvilEntity> getPlasticEntityType() {
-        return ModEntities.RESIN_ANVIL.get();
+        return PlasticraftEntities.RESIN_ANVIL.get();
     }
 
     @Override

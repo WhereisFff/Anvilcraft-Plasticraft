@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.block;
 
-import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -23,7 +23,7 @@ public final class BondedFallingBlocks {
     public static @Nullable BondedFallingBlockInfo get(Level level, BlockPos pos) {
         if (!level.hasChunkAt(pos)) return null;
         LevelChunk chunk = level.getChunkAt(pos);
-        BondedFallingChunkData data = chunk.getExistingDataOrNull(ModAttachments.BONDED_FALLING_BLOCKS.get());
+        BondedFallingChunkData data = chunk.getExistingDataOrNull(PlasticraftAttachments.BONDED_FALLING_BLOCKS.get());
         BondedFallingBlockInfo info = data == null ? null : data.get(pos);
         if (info != null && level instanceof ServerLevel serverLevel) migrateLegacyBond(serverLevel, pos, info);
         return info;
@@ -32,7 +32,7 @@ public final class BondedFallingBlocks {
     public static @Nullable BlockAdhesionState getAdhesion(Level level, BlockPos pos) {
         if (!level.hasChunkAt(pos)) return null;
         BondedFallingChunkData data = level.getChunkAt(pos)
-            .getExistingDataOrNull(ModAttachments.BONDED_FALLING_BLOCKS.get());
+            .getExistingDataOrNull(PlasticraftAttachments.BONDED_FALLING_BLOCKS.get());
         return data == null ? null : data.getAdhesion(pos);
     }
 
@@ -143,9 +143,9 @@ public final class BondedFallingBlocks {
 
     private static void putRaw(Level level, BlockPos pos, BondedFallingBlockInfo info) {
         LevelChunk chunk = level.getChunkAt(pos);
-        BondedFallingChunkData data = chunk.getExistingDataOrNull(ModAttachments.BONDED_FALLING_BLOCKS.get());
+        BondedFallingChunkData data = chunk.getExistingDataOrNull(PlasticraftAttachments.BONDED_FALLING_BLOCKS.get());
         if (data == null) data = BondedFallingChunkData.empty();
-        chunk.setData(ModAttachments.BONDED_FALLING_BLOCKS, data.with(pos, info));
+        chunk.setData(PlasticraftAttachments.BONDED_FALLING_BLOCKS, data.with(pos, info));
         chunk.setUnsaved(true);
     }
 
@@ -265,7 +265,7 @@ public final class BondedFallingBlocks {
     private static @Nullable BondedFallingBlockInfo getRaw(Level level, BlockPos pos) {
         if (!level.hasChunkAt(pos)) return null;
         BondedFallingChunkData data = level.getChunkAt(pos)
-            .getExistingDataOrNull(ModAttachments.BONDED_FALLING_BLOCKS.get());
+            .getExistingDataOrNull(PlasticraftAttachments.BONDED_FALLING_BLOCKS.get());
         return data == null ? null : data.get(pos);
     }
 
@@ -275,14 +275,14 @@ public final class BondedFallingBlocks {
     ) {
         BondedFallingChunkData changed = changedChunks.get(chunk);
         if (changed != null) return changed;
-        BondedFallingChunkData current = chunk.getExistingDataOrNull(ModAttachments.BONDED_FALLING_BLOCKS.get());
+        BondedFallingChunkData current = chunk.getExistingDataOrNull(PlasticraftAttachments.BONDED_FALLING_BLOCKS.get());
         return current == null ? BondedFallingChunkData.empty() : current;
     }
 
     private static @Nullable BondedFallingBlockInfo removeRaw(Level level, BlockPos pos) {
         if (!level.hasChunkAt(pos)) return null;
         LevelChunk chunk = level.getChunkAt(pos);
-        BondedFallingChunkData data = chunk.getExistingDataOrNull(ModAttachments.BONDED_FALLING_BLOCKS.get());
+        BondedFallingChunkData data = chunk.getExistingDataOrNull(PlasticraftAttachments.BONDED_FALLING_BLOCKS.get());
         if (data == null) return null;
         BondedFallingBlockInfo removed = data.get(pos);
         if (removed != null) store(level, chunk, data.without(pos));
@@ -300,7 +300,7 @@ public final class BondedFallingBlocks {
             return;
         }
         LevelChunk chunk = level.getChunkAt(pos);
-        BondedFallingChunkData data = chunk.getExistingDataOrNull(ModAttachments.BONDED_FALLING_BLOCKS.get());
+        BondedFallingChunkData data = chunk.getExistingDataOrNull(PlasticraftAttachments.BONDED_FALLING_BLOCKS.get());
         if (data == null) data = BondedFallingChunkData.empty();
         store(level, chunk, data.withAdhesion(pos, state));
     }
@@ -308,7 +308,7 @@ public final class BondedFallingBlocks {
     private static @Nullable BlockAdhesionState removeAdhesionRaw(Level level, BlockPos pos) {
         if (!level.hasChunkAt(pos)) return null;
         LevelChunk chunk = level.getChunkAt(pos);
-        BondedFallingChunkData data = chunk.getExistingDataOrNull(ModAttachments.BONDED_FALLING_BLOCKS.get());
+        BondedFallingChunkData data = chunk.getExistingDataOrNull(PlasticraftAttachments.BONDED_FALLING_BLOCKS.get());
         if (data == null) return null;
         BlockAdhesionState removed = data.getAdhesion(pos);
         if (removed != null) store(level, chunk, data.withoutAdhesion(pos));
@@ -317,9 +317,9 @@ public final class BondedFallingBlocks {
 
     private static void store(Level level, LevelChunk chunk, BondedFallingChunkData data) {
         if (data.entries().isEmpty() && data.adhesions().isEmpty()) {
-            chunk.removeData(ModAttachments.BONDED_FALLING_BLOCKS);
+            chunk.removeData(PlasticraftAttachments.BONDED_FALLING_BLOCKS);
         } else {
-            chunk.setData(ModAttachments.BONDED_FALLING_BLOCKS, data);
+            chunk.setData(PlasticraftAttachments.BONDED_FALLING_BLOCKS, data);
         }
         chunk.setUnsaved(true);
     }

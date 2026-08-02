@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.mixin;
 
 import dev.anvilcraft.lib.v2.recipe.outcome.SpawnItem;
 import dev.anvilcraft.lib.v2.recipe.util.InWorldRecipeContext;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.recipe.PlasticMeltRecipeColor;
 import net.minecraft.world.item.ItemStack;
@@ -26,7 +26,7 @@ abstract class SpawnItemMixin {
         InWorldRecipeContext context
     ) {
         ItemStack result = original.copyWithCount(count);
-        if (result.is(ModItems.UNIVERSAL_PLASTIC_GRANULE.get())) {
+        if (result.is(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get())) {
             PlasticMeltColor.set(result, PlasticMeltRecipeColor.resultColor(context));
         }
         return result;

@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.mixin;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.dubhe.anvilcraft.integration.jei.category.anvil.liquid.AbstractLiquidCategory;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiFluidUtil;
@@ -107,7 +107,7 @@ abstract class AbstractLiquidCategoryMixin {
         HasCauldronSimple cauldron
     ) {
         if (!recipeHolder.id().getNamespace().equals(AnvilcraftPlasticraft.MOD_ID)
-            || !cauldron.transform().equals(ModFluids.UNIVERSAL_PLASTIC_MELT.getId())) {
+            || !cauldron.transform().equals(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.getId())) {
             return null;
         }
         String path = recipeHolder.id().getPath();
@@ -130,14 +130,14 @@ abstract class AbstractLiquidCategoryMixin {
         DyeColor color
     ) {
         long displayAmount = cauldron.produce() > 0 ? cauldron.produce() : FluidType.BUCKET_VOLUME;
-        FluidStack fluid = new FluidStack(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), (int) displayAmount);
+        FluidStack fluid = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), (int) displayAmount);
         PlasticMeltColor.set(fluid, color);
         IRecipeSlotBuilder slot = builder.addSlot(RecipeIngredientRole.OUTPUT, x, y)
             .setSlotName(OUTPUT_SLOT_PREFIX + name)
             .setFluidRenderer(displayAmount, false, width, height);
         slot.addFluidStack(fluid.getFluid(), displayAmount, fluid.getComponentsPatch());
 
-        ItemStack bucket = new ItemStack(ModFluids.UNIVERSAL_PLASTIC_MELT.get().getBucket());
+        ItemStack bucket = new ItemStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get().getBucket());
         PlasticMeltColor.set(bucket, color);
         builder.addInvisibleIngredients(RecipeIngredientRole.OUTPUT).addItemStacks(List.of(bucket));
     }

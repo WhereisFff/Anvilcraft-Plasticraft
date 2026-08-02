@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.particle;
 
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import dev.anvilcraft.plasticraft.init.ModParticles;
+import dev.anvilcraft.plasticraft.init.PlasticraftParticles;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleType;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -34,6 +34,6 @@ public record FluidVaporParticleOptions(FluidStack fluid) implements ParticleOpt
 
     @Override
     public ParticleType<?> getType() {
-        return ModParticles.FLUID_VAPOR.get();
+        return PlasticraftParticles.FLUID_VAPOR.get();
     }
 }

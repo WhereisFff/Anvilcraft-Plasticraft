@@ -3,7 +3,7 @@ package dev.anvilcraft.plasticraft.block;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
-import dev.anvilcraft.plasticraft.init.entity.ModEntities;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -38,7 +38,7 @@ public final class CatalyticPressLidBlock extends AbstractPlasticEntityBlock<Cat
 
     @Override
     protected EntityType<? extends CatalyticPressLidEntity> getPlasticEntityType() {
-        return ModEntities.CATALYTIC_PRESS_LID.get();
+        return PlasticraftEntities.CATALYTIC_PRESS_LID.get();
     }
 
     @Override

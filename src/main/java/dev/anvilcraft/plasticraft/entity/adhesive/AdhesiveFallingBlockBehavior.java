@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.entity.adhesive;
 
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import dev.dubhe.anvilcraft.entity.FallingGiantAnvilEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -41,8 +41,8 @@ public final class AdhesiveFallingBlockBehavior {
         if (entity instanceof AbstractPlasticEntity) return false;
 
         boolean hasBonds = EntityBondManager.hasBonds(entity);
-        boolean controlled = entity.hasData(ModAttachments.ADHESIVE_TRANSIT)
-            || entity.hasData(ModAttachments.ENTITY_ADHESION);
+        boolean controlled = entity.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
+            || entity.hasData(PlasticraftAttachments.ENTITY_ADHESION);
         if (hasBonds || controlled) entity.time = 0;
         if (hasBonds && entity instanceof FallingGiantAnvilEntity) return true;
         return controlled;
@@ -55,8 +55,8 @@ public final class AdhesiveFallingBlockBehavior {
     public static void afterTick(FallingBlockEntity entity) {
         if (entity instanceof AbstractPlasticEntity) return;
         if (EntityBondManager.hasBonds(entity)
-            || entity.hasData(ModAttachments.ADHESIVE_TRANSIT)
-            || entity.hasData(ModAttachments.ENTITY_ADHESION)) {
+            || entity.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
+            || entity.hasData(PlasticraftAttachments.ENTITY_ADHESION)) {
             entity.time = 0;
         }
     }
@@ -107,7 +107,7 @@ public final class AdhesiveFallingBlockBehavior {
                 anchor.position(),
                 anchor.isNoGravity()
             );
-            anchor.setData(ModAttachments.ENTITY_ADHESION, adhesion);
+            anchor.setData(PlasticraftAttachments.ENTITY_ADHESION, adhesion);
             anchor.setDeltaMovement(Vec3.ZERO);
             anchor.fallDistance = 0.0F;
             anchor.hasImpulse = true;

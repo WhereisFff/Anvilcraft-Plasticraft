@@ -11,16 +11,16 @@ import dev.anvilcraft.plasticraft.data.PlasticraftDatagen;
 import dev.anvilcraft.plasticraft.event.HighViscosityResinEvents;
 import dev.anvilcraft.plasticraft.event.PlasticVillagerTrades;
 import dev.anvilcraft.plasticraft.fluid.UniversalPlasticMeltBucketWrapper;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
-import dev.anvilcraft.plasticraft.init.ModMenuTypes;
-import dev.anvilcraft.plasticraft.init.ModParticles;
-import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
-import dev.anvilcraft.plasticraft.init.block.ModBlockEntities;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
-import dev.anvilcraft.plasticraft.init.entity.ModEntities;
-import dev.anvilcraft.plasticraft.init.item.ModItemGroups;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftMenuTypes;
+import dev.anvilcraft.plasticraft.init.PlasticraftParticles;
+import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItemGroups;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
 import dev.anvilcraft.plasticraft.recipe.EscapingVaporEffects;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetVaporizationSource;
@@ -47,17 +47,17 @@ public final class AnvilcraftPlasticraft {
         .defaultCreativeTab((ResourceKey<CreativeModeTab>) null);
 
     public AnvilcraftPlasticraft(IEventBus modEventBus, ModContainer ignored) {
-        ModAttachments.register(modEventBus);
-        ModItemGroups.register(modEventBus);
-        ModFluids.register(modEventBus);
-        ModBlocks.register();
-        ModBlockEntities.register();
-        ModItems.register();
+        PlasticraftAttachments.register(modEventBus);
+        PlasticraftItemGroups.register(modEventBus);
+        PlasticraftFluids.register(modEventBus);
+        PlasticraftBlocks.register();
+        PlasticraftBlockEntities.register();
+        PlasticraftItems.register();
         PlasticItemTooltipManager.init();
-        ModEntities.register();
-        ModMenuTypes.register();
-        ModParticles.register(modEventBus);
-        ModRecipeTypes.register(modEventBus);
+        PlasticraftEntities.register();
+        PlasticraftMenuTypes.register();
+        PlasticraftParticles.register(modEventBus);
+        PlasticraftRecipeTypes.register(modEventBus);
         PlasticraftDatagen.init();
         VaporizationSources.register(PlasmaJetVaporizationSource.INSTANCE);
         NeoForge.EVENT_BUS.addListener(AnvilcraftPlasticraft::addItemTooltips);
@@ -67,7 +67,7 @@ public final class AnvilcraftPlasticraft {
         NeoForge.EVENT_BUS.addListener(PlasticOilCatalysis::onChunkSent);
         NeoForge.EVENT_BUS.addListener(PlasticVillagerTrades::addTrades);
         modEventBus.addListener(HighViscosityResinEvents::registerCauldronFluidContent);
-        modEventBus.addListener(ModBlocks::registerDispenserBehavior);
+        modEventBus.addListener(PlasticraftBlocks::registerDispenserBehavior);
         modEventBus.addListener(AnvilcraftPlasticraft::registerCapabilities);
         modEventBus.addListener(AnvilcraftPlasticraft::registerPayloads);
         LOGGER.info("Loading {}", MOD_NAME);
@@ -84,43 +84,43 @@ public final class AnvilcraftPlasticraft {
     private static void registerCapabilities(RegisterCapabilitiesEvent event) {
         event.registerEntity(
             Capabilities.ItemHandler.ENTITY,
-            ModEntities.HARDEND_RESIN_CAULDRON.get(),
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
             (cauldron, side) -> cauldron.getItemHandler()
         );
         event.registerEntity(
             Capabilities.ItemHandler.ENTITY_AUTOMATION,
-            ModEntities.HARDEND_RESIN_CAULDRON.get(),
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
             (cauldron, side) -> cauldron.getItemHandler()
         );
         event.registerEntity(
             Capabilities.FluidHandler.ENTITY,
-            ModEntities.HARDEND_RESIN_CAULDRON.get(),
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
             (cauldron, side) -> cauldron.getFluidHandler()
         );
         event.registerBlockEntity(
             Capabilities.FluidHandler.BLOCK,
-            ModBlockEntities.BONDED_ENTITY.get(),
+            PlasticraftBlockEntities.BONDED_ENTITY.get(),
             (bonded, side) -> bonded.getCapabilityFluidHandler()
         );
         event.registerBlockEntity(
             Capabilities.ItemHandler.BLOCK,
-            ModBlockEntities.BONDED_ENTITY.get(),
+            PlasticraftBlockEntities.BONDED_ENTITY.get(),
             (bonded, side) -> bonded.getItemHandler()
         );
         event.registerBlock(
             Capabilities.FluidHandler.BLOCK,
             CondenserTowerBlockEntity::capability,
-            ModBlocks.CONDENSER_TOWER.get()
+            PlasticraftBlocks.CONDENSER_TOWER.get()
         );
         event.registerBlock(
             YukkuriCapabilities.VAPOR_CONSUMER,
             CondenserTowerBlockEntity::vaporCapability,
-            ModBlocks.CONDENSER_TOWER.get()
+            PlasticraftBlocks.CONDENSER_TOWER.get()
         );
         event.registerItem(
             Capabilities.FluidHandler.ITEM,
             (stack, ignored) -> new UniversalPlasticMeltBucketWrapper(stack),
-            ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET.get()
+            PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.get()
         );
     }
 

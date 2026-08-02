@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.block;
 
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import net.minecraft.core.BlockPos;
@@ -58,26 +58,27 @@ public class UniversalPlasticMeltCauldronBlock extends Layered4LevelCauldronBloc
                 hand,
                 stack,
                 coloredBucket(state.getValue(COLOR)),
-                candidate -> candidate.is(ModBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())
+                candidate -> candidate.is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())
                     && candidate.getValue(LEVEL) == MAX_LEVEL,
                 SoundEvents.BUCKET_FILL
             )
         );
-        CauldronInteraction.EMPTY.map().put(ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET.get(),
+        CauldronInteraction.EMPTY.map().put(
+            PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.get(),
             (state, level, pos, player, hand, stack) -> CauldronInteraction.emptyBucket(
                 level,
                 pos,
                 player,
                 hand,
                 stack,
-                ModBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get().fullFilled()
+                PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get().fullFilled()
                     .setValue(COLOR, PlasticMeltColor.get(stack)),
                 SoundEvents.BUCKET_EMPTY
             ));
     }
 
     private static ItemStack coloredBucket(DyeColor color) {
-        ItemStack bucket = ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET.asStack();
+        ItemStack bucket = PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.asStack();
         PlasticMeltColor.set(bucket, color);
         return bucket;
     }

@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.client.hud;
 
-import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import dev.dubhe.anvilcraft.api.tooltip.TooltipRenderHelper;
 import dev.dubhe.anvilcraft.item.AnvilHammerItem;
 import net.minecraft.client.DeltaTracker;
@@ -32,8 +32,8 @@ public final class AdhesiveBondHud {
         if (!(minecraft.hitResult instanceof EntityHitResult hit)) return;
 
         Entity entity = hit.getEntity();
-        if (!entity.hasData(ModAttachments.ENTITY_ADHESION)
-            && !entity.hasData(ModAttachments.ENTITY_BONDS)) {
+        if (!entity.hasData(PlasticraftAttachments.ENTITY_ADHESION)
+            && !entity.hasData(PlasticraftAttachments.ENTITY_BONDS)) {
             return;
         }
 

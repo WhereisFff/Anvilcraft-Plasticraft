@@ -7,7 +7,7 @@ import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationManager;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationOffer;
 import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationSource;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
+import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
 import dev.dubhe.anvilcraft.recipe.component.HasCauldronSimple;
@@ -61,7 +61,7 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
 
         List<RecipeHolder<PlasmaJetBlastingRecipe>> recipes = new ArrayList<>(
             context.level().getRecipeManager().getAllRecipesFor(
-                ModRecipeTypes.PLASMA_JET_BLASTING_TYPE.get()
+                PlasticraftRecipeTypes.PLASMA_JET_BLASTING_TYPE.get()
             )
         );
         recipes.sort(Comparator.comparingInt(

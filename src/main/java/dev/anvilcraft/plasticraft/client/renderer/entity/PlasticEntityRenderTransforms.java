@@ -4,7 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveTransit;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -55,7 +55,7 @@ public final class PlasticEntityRenderTransforms {
             );
             return;
         }
-        AdhesiveTransit transit = entity.getExistingDataOrNull(ModAttachments.ADHESIVE_TRANSIT.get());
+        AdhesiveTransit transit = entity.getExistingDataOrNull(PlasticraftAttachments.ADHESIVE_TRANSIT.get());
         if (transit == null || !transit.plastic()) {
             apply(pose, entity, entity.getOrientation());
             return;

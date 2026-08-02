@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.entity;
 
 import dev.anvilcraft.plasticraft.block.UniversalPlasticShape;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
@@ -25,7 +25,7 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity {
 
     public UniversalPlasticEntity(EntityType<? extends UniversalPlasticEntity> entityType, Level level) {
         super(entityType, level);
-        this.setDisplayState(ModBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState());
+        this.setDisplayState(PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState());
     }
 
     public UniversalPlasticEntity(

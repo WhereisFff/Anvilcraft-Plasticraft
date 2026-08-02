@@ -1,8 +1,8 @@
 package dev.anvilcraft.plasticraft.block;
 
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
-import dev.anvilcraft.plasticraft.init.block.ModBlockTags;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockTags;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -74,7 +74,7 @@ public class UniversalPlasticMeltFluidBlock extends LiquidBlock implements Entit
     @Override
     public ItemStack pickupBlock(@Nullable Player player, LevelAccessor level, BlockPos pos, BlockState state) {
         if (state.getValue(LEVEL) != 0) return ItemStack.EMPTY;
-        ItemStack bucket = ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET.asStack();
+        ItemStack bucket = PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.asStack();
         if (level.getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity melt) {
             PlasticMeltColor.set(bucket, melt.getColor());
         }
@@ -92,7 +92,7 @@ public class UniversalPlasticMeltFluidBlock extends LiquidBlock implements Entit
         if (level.isRainingAt(pos.above())) return true;
         for (Direction direction : Direction.values()) {
             BlockPos neighbor = pos.relative(direction);
-            if (level.getBlockState(neighbor).is(ModBlockTags.PLASTIC_MELT_COOLANTS)
+            if (level.getBlockState(neighbor).is(PlasticraftBlockTags.PLASTIC_MELT_COOLANTS)
                 || level.getFluidState(neighbor).is(FluidTags.WATER)) return true;
         }
         return false;

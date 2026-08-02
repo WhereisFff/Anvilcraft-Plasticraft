@@ -3,7 +3,7 @@ package dev.anvilcraft.plasticraft.mixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticOilCatalysisRenderer;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.client.renderer.blockentity.FishTankBlockEntityRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -31,7 +31,7 @@ abstract class FishTankBlockEntityRendererMixin {
         )
     )
     private boolean plasticraft$showOrdinaryFire(FishTankBlockEntity tank) {
-        return tank.isIgnited() && !tank.getFluidHandler().getFluid().is(ModFluids.HIGH_HEAT_FUEL.get());
+        return tank.isIgnited() && !tank.getFluidHandler().getFluid().is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
     }
 
     @Inject(
@@ -51,7 +51,7 @@ abstract class FishTankBlockEntityRendererMixin {
         CallbackInfo ci
     ) {
         FluidStack fluid = tank.getFluidHandler().getFluid();
-        if (tank.getLevel() != null && fluid.is(ModFluids.PLASTIC_OIL.get())) {
+        if (tank.getLevel() != null && fluid.is(PlasticraftFluids.PLASTIC_OIL.get())) {
             float fill = Math.min((float) fluid.getAmount() / tank.getFluidHandler().getCapacity(), 1.0F);
             float surfaceY = TANK_WALL + (1.0F - 2.0F * TANK_WALL) * fill;
             PlasticOilCatalysisRenderer.renderContainerOverlay(
@@ -71,7 +71,7 @@ abstract class FishTankBlockEntityRendererMixin {
                 true
             );
         }
-        if (!tank.isIgnited() || !fluid.is(ModFluids.HIGH_HEAT_FUEL.get())) return;
+        if (!tank.isIgnited() || !fluid.is(PlasticraftFluids.HIGH_HEAT_FUEL.get())) return;
         float fill = Math.min((float) fluid.getAmount() / tank.getFluidHandler().getCapacity(), 1.0F);
         float surfaceY = TANK_WALL + (1.0F - 2.0F * TANK_WALL) * fill;
         IgnitedFluidFlameRenderer.renderBlue(

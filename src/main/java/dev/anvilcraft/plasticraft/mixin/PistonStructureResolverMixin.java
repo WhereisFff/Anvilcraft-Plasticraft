@@ -5,7 +5,7 @@ import dev.anvilcraft.plasticraft.block.BondedFallingBlockInfo;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.piston.HighViscosityPistonBudget;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
@@ -79,7 +79,7 @@ abstract class PistonStructureResolverMixin {
                 for (Direction direction : Direction.values()) {
                     BlockPos resinPos = movedPos.relative(direction);
                     BlockState resinState = this.level.getBlockState(resinPos);
-                    if (!resinState.is(ModBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get())) continue;
+                    if (!resinState.is(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get())) continue;
                     if (!HighViscosityPistonBudget.canStickTogether(
                         movedPos,
                         movedState,

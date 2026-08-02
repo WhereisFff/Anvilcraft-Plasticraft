@@ -12,9 +12,9 @@ import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFallingBlockSupport;
 import dev.anvilcraft.plasticraft.event.CatalyticPressAnvilEvents;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
-import dev.anvilcraft.plasticraft.init.entity.ModEntities;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.recipe.CatalyticPressProcess;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -46,7 +46,7 @@ public final class CatalyticPressLidGameTests {
     @TestHolder(description = "A blockified catalytic press lid collision follows its stepped model")
     static void blockifiedCollisionMatchesModel(ExtendedGameTestHelper helper) {
         BlockPos pos = helper.absolutePos(new BlockPos(1, 2, 1));
-        BlockState state = ModBlocks.CATALYTIC_PRESS_LID.get()
+        BlockState state = PlasticraftBlocks.CATALYTIC_PRESS_LID.get()
             .defaultBlockState()
             .setValue(AbstractPlasticEntityBlock.BONDED, true);
         VoxelShape shape = state.getCollisionShape(helper.getLevel(), pos);
@@ -202,7 +202,7 @@ public final class CatalyticPressLidGameTests {
         CatalyticPressLidEntity lid = spawnReadyLid(helper, lidPos);
         check(
             cauldron.getFluidHandler().fill(
-                new FluidStack(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), 1_000),
+                new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 1_000),
                 IFluidHandler.FluidAction.EXECUTE
             ) == 1_000,
             "resin cauldron rejected the plastic melt"
@@ -210,12 +210,12 @@ public final class CatalyticPressLidGameTests {
 
         helper.setBlock(
             cauldronPos,
-            ModBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState()
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState()
                 .setValue(AbstractPlasticEntityBlock.BONDED, true)
         );
         helper.setBlock(
             lidPos,
-            ModBlocks.CATALYTIC_PRESS_LID.get().defaultBlockState()
+            PlasticraftBlocks.CATALYTIC_PRESS_LID.get().defaultBlockState()
                 .setValue(AbstractPlasticEntityBlock.BONDED, true)
         );
         BondedEntityBlockEntity bondedCauldron = bondedBlockEntity(helper, cauldronPos);
@@ -255,7 +255,7 @@ public final class CatalyticPressLidGameTests {
         CatalyticPressProcess.press(fixedLid);
 
         check(
-            helper.getBlockState(cauldronPos).is(ModBlocks.UNIVERSAL_PLASTIC_MELT.get()),
+            helper.getBlockState(cauldronPos).is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT.get()),
             "failed extrusion did not burst the resin cauldron"
         );
         check(helper.getBlockState(lidPos).isAir(), "failed extrusion did not launch the catalytic press lid");
@@ -394,11 +394,11 @@ public final class CatalyticPressLidGameTests {
             CatalyticPressLidEntity.HEIGHT
         );
         CatalyticPressLidEntity lid = new CatalyticPressLidEntity(
-            ModEntities.CATALYTIC_PRESS_LID.get(),
+            PlasticraftEntities.CATALYTIC_PRESS_LID.get(),
             helper.getLevel(),
             position,
-            ModBlocks.CATALYTIC_PRESS_LID.get().defaultBlockState(),
-            ModBlocks.CATALYTIC_PRESS_LID.asStack(),
+            PlasticraftBlocks.CATALYTIC_PRESS_LID.get().defaultBlockState(),
+            PlasticraftBlocks.CATALYTIC_PRESS_LID.asStack(),
             PlasticEntityOrientation.DEFAULT
         );
         lid.completeCatalysis();
@@ -438,15 +438,15 @@ public final class CatalyticPressLidGameTests {
         BlockPos pos = helper.absolutePos(relativePos);
         Vec3 position = orientation.entityPosition(
             pos,
-            ModEntities.RESIN_ANVIL.get().getWidth(),
-            ModEntities.RESIN_ANVIL.get().getHeight()
+            PlasticraftEntities.RESIN_ANVIL.get().getWidth(),
+            PlasticraftEntities.RESIN_ANVIL.get().getHeight()
         );
         ResinAnvilEntity anvil = new ResinAnvilEntity(
-            ModEntities.RESIN_ANVIL.get(),
+            PlasticraftEntities.RESIN_ANVIL.get(),
             helper.getLevel(),
             position,
-            ModBlocks.RESIN_ANVIL.get().defaultBlockState(),
-            ModBlocks.RESIN_ANVIL.asStack(),
+            PlasticraftBlocks.RESIN_ANVIL.get().defaultBlockState(),
+            PlasticraftBlocks.RESIN_ANVIL.asStack(),
             orientation
         );
         anvil.setDeltaMovement(0.0D, -0.5D, 0.0D);
@@ -461,15 +461,15 @@ public final class CatalyticPressLidGameTests {
         BlockPos pos = helper.absolutePos(relativePos);
         Vec3 position = PlasticEntityOrientation.DEFAULT.entityPosition(
             pos,
-            ModEntities.HARDEND_RESIN_ANVIL.get().getWidth(),
-            ModEntities.HARDEND_RESIN_ANVIL.get().getHeight()
+            PlasticraftEntities.HARDEND_RESIN_ANVIL.get().getWidth(),
+            PlasticraftEntities.HARDEND_RESIN_ANVIL.get().getHeight()
         );
         HardenedResinAnvilEntity anvil = new HardenedResinAnvilEntity(
-            ModEntities.HARDEND_RESIN_ANVIL.get(),
+            PlasticraftEntities.HARDEND_RESIN_ANVIL.get(),
             helper.getLevel(),
             position,
-            ModBlocks.HARDEND_RESIN_ANVIL.get().defaultBlockState(),
-            ModBlocks.HARDEND_RESIN_ANVIL.asStack(),
+            PlasticraftBlocks.HARDEND_RESIN_ANVIL.get().defaultBlockState(),
+            PlasticraftBlocks.HARDEND_RESIN_ANVIL.asStack(),
             PlasticEntityOrientation.DEFAULT
         );
         check(helper.getLevel().addFreshEntity(anvil), "failed to add hardened resin anvil");
@@ -483,15 +483,15 @@ public final class CatalyticPressLidGameTests {
         BlockPos pos = helper.absolutePos(relativePos);
         Vec3 position = PlasticEntityOrientation.DEFAULT.entityPosition(
             pos,
-            ModEntities.HARDEND_RESIN_CAULDRON.get().getWidth(),
-            ModEntities.HARDEND_RESIN_CAULDRON.get().getHeight()
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get().getWidth(),
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get().getHeight()
         );
         HardenedResinCauldronEntity cauldron = new HardenedResinCauldronEntity(
-            ModEntities.HARDEND_RESIN_CAULDRON.get(),
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
             helper.getLevel(),
             position,
-            ModBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
-            ModBlocks.HARDEND_RESIN_CAULDRON.asStack(),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(),
             PlasticEntityOrientation.DEFAULT
         );
         cauldron.setNoGravity(true);
@@ -504,11 +504,11 @@ public final class CatalyticPressLidGameTests {
         Vec3 position
     ) {
         UniversalPlasticEntity plastic = new UniversalPlasticEntity(
-            ModEntities.UNIVERSAL_PLASTIC.get(),
+            PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
             helper.getLevel(),
             position,
-            ModBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
-            ModBlocks.UNIVERSAL_PLASTIC.asStack(),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack(),
             PlasticEntityOrientation.DEFAULT
         );
         plastic.setNoGravity(true);

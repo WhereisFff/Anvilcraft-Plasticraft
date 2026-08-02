@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.event;
 
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.dubhe.anvilcraft.init.entity.ModVillagers;
 import net.minecraft.core.component.DataComponentPredicate;
@@ -53,7 +53,7 @@ public final class PlasticVillagerTrades {
             .expect(DataComponents.CUSTOM_DATA, PlasticMeltColor.explicitColorData(color))
             .build();
         return new ItemCost(
-            ModItems.UNIVERSAL_PLASTIC_GRANULE.get().builtInRegistryHolder(),
+            PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get().builtInRegistryHolder(),
             GRANULE_COST,
             components
         );

@@ -4,7 +4,7 @@ import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import dev.anvilcraft.lib.v2.util.predicate.ChanceItemStack;
 import dev.anvilcraft.lib.v2.util.predicate.ItemIngredientPredicate;
-import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
+import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
 import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
 import dev.dubhe.anvilcraft.recipe.anvil.util.WrapUtils;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.FastCookingRecipe;
@@ -30,7 +30,7 @@ public final class FluidFastCookingRecipe extends FastCookingRecipe {
 
     @Override
     public RecipeSerializer<FastCookingRecipe> getSerializer() {
-        return ModRecipeTypes.FLUID_FAST_COOKING.get();
+        return PlasticraftRecipeTypes.FLUID_FAST_COOKING.get();
     }
 
     public static Builder fluidBuilder() {

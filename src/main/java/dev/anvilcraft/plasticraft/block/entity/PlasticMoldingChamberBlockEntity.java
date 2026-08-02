@@ -4,7 +4,7 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberStructure;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingMachineState;
-import dev.anvilcraft.plasticraft.init.block.ModBlockEntities;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.inventory.PlasticMoldingChamberMenu;
 import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
@@ -65,7 +65,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity {
     private long leaseExpiresAt;
 
     public PlasticMoldingChamberBlockEntity(BlockPos pos, BlockState state) {
-        this(ModBlockEntities.PLASTIC_MOLDING_CHAMBER.get(), pos, state);
+        this(PlasticraftBlockEntities.PLASTIC_MOLDING_CHAMBER.get(), pos, state);
     }
 
     public PlasticMoldingChamberBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {

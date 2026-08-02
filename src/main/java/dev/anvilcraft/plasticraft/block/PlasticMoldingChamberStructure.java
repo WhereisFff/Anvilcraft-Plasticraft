@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.block;
 
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
@@ -100,7 +100,7 @@ public final class PlasticMoldingChamberStructure {
         if (!level.setBlock(controller, controllerState, Block.UPDATE_ALL)) return false;
         for (MoldingRegionPart part : MoldingRegionPart.values()) {
             BlockPos region = regionPos(controller, front, part);
-            BlockState state = ModBlocks.PLASTIC_MOLDING_REGION.get().defaultBlockState()
+            BlockState state = PlasticraftBlocks.PLASTIC_MOLDING_REGION.get().defaultBlockState()
                 .setValue(PlasticMoldingRegionBlock.FACING, front)
                 .setValue(PlasticMoldingRegionBlock.PART, part);
             if (level.setBlock(region, state, Block.UPDATE_ALL)) {
@@ -122,7 +122,7 @@ public final class PlasticMoldingChamberStructure {
                 complete = false;
                 continue;
             }
-            BlockState expected = ModBlocks.PLASTIC_MOLDING_REGION.get().defaultBlockState()
+            BlockState expected = PlasticraftBlocks.PLASTIC_MOLDING_REGION.get().defaultBlockState()
                 .setValue(PlasticMoldingRegionBlock.FACING, front)
                 .setValue(PlasticMoldingRegionBlock.PART, part);
             BlockState current = level.getBlockState(region);
@@ -140,7 +140,7 @@ public final class PlasticMoldingChamberStructure {
         for (MoldingRegionPart part : MoldingRegionPart.values()) {
             BlockPos region = regionPos(controller, front, part);
             BlockState state = level.getBlockState(region);
-            if (state.is(ModBlocks.PLASTIC_MOLDING_REGION.get())
+            if (state.is(PlasticraftBlocks.PLASTIC_MOLDING_REGION.get())
                 && state.getValue(PlasticMoldingRegionBlock.FACING) == front
                 && state.getValue(PlasticMoldingRegionBlock.PART) == part) {
                 level.removeBlock(region, false);
@@ -153,7 +153,7 @@ public final class PlasticMoldingChamberStructure {
         MoldingRegionPart part = state.getValue(PlasticMoldingRegionBlock.PART);
         BlockPos controller = controllerPos(region, front, part);
         BlockState controllerState = level.getBlockState(controller);
-        return controllerState.is(ModBlocks.PLASTIC_MOLDING_CHAMBER.get())
+        return controllerState.is(PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.get())
             && controllerState.getValue(PlasticMoldingChamberBlock.FACING) == front;
     }
 }

@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.recipe;
 
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.dubhe.anvilcraft.init.block.ModFluidTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -31,12 +31,12 @@ public final class HardenedResinCauldronSupport {
     public static Boolean isIgnitedHighHeatFuel(Level level, BlockPos pos) {
         HardenedResinCauldronEntity cauldron = find(level, pos);
         return cauldron == null ? null : cauldron.anvilcraft$isIgnited()
-            && cauldron.getFluidHandler().getFluid().is(ModFluids.HIGH_HEAT_FUEL.get());
+            && cauldron.getFluidHandler().getFluid().is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
     }
 
     public static Boolean hasHighHeatFuel(Level level, BlockPos pos) {
         HardenedResinCauldronEntity cauldron = find(level, pos);
-        return cauldron == null ? null : cauldron.getFluidHandler().getFluid().is(ModFluids.HIGH_HEAT_FUEL.get());
+        return cauldron == null ? null : cauldron.getFluidHandler().getFluid().is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
     }
 
     public static Boolean validBase(Level level, BlockPos pos) {
@@ -44,7 +44,7 @@ public final class HardenedResinCauldronSupport {
         if (cauldron == null) return null;
         if (cauldron.getOrientation().attachmentFace() != Direction.UP) return false;
         FluidStack fluid = cauldron.getFluidHandler().getFluid();
-        return fluid.isEmpty() || fluid.is(ModFluidTags.OIL) || fluid.is(ModFluids.HIGH_HEAT_FUEL.get());
+        return fluid.isEmpty() || fluid.is(ModFluidTags.OIL) || fluid.is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
     }
 
     public static Boolean consumeOnce(Level level, BlockPos pos) {
@@ -63,7 +63,7 @@ public final class HardenedResinCauldronSupport {
         HardenedResinCauldronEntity cauldron = find(level, pos);
         if (cauldron == null) return null;
         IFluidHandler handler = cauldron.getFluidHandler();
-        FluidStack request = new FluidStack(ModFluids.HIGH_HEAT_FUEL.get(), amount);
+        FluidStack request = new FluidStack(PlasticraftFluids.HIGH_HEAT_FUEL.get(), amount);
         FluidStack simulated = handler.drain(request, IFluidHandler.FluidAction.SIMULATE);
         if (!FluidStack.matches(simulated, request)) return false;
         FluidStack drained = handler.drain(request, IFluidHandler.FluidAction.EXECUTE);

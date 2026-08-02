@@ -1,7 +1,8 @@
 package dev.anvilcraft.plasticraft.gametest;
 
-import dev.anvilcraft.plasticraft.init.item.ModItemTags;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
 import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
@@ -13,19 +14,6 @@ import net.minecraft.world.level.block.Blocks;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
-
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.CUT_FROST_METAL_BLOCK;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.CUT_FROST_METAL_PILLAR;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.CUT_FROST_METAL_SLAB;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.CUT_FROST_METAL_STAIRS;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_ANVIL;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_DECO_BLOCK;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_DECO_OUTLINE;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_GLASS;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_GRINDSTONE;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_METAL_BLOCK;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.FROST_SMITHING_TABLE;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.SLIDING_RAIL;
 
 /** 塑料油环境催化的服务端回归测试。 */
 public final class PlasticOilCatalysisGameTests {
@@ -66,17 +54,17 @@ public final class PlasticOilCatalysisGameTests {
             "the open catalyst curve did not stop at 0.55"
         );
         checkFrostMetalCatalysts(
-            FROST_ANVIL,
-            FROST_GRINDSTONE,
-            FROST_SMITHING_TABLE,
-            FROST_METAL_BLOCK,
-            CUT_FROST_METAL_BLOCK,
-            CUT_FROST_METAL_PILLAR,
-            CUT_FROST_METAL_SLAB,
-            CUT_FROST_METAL_STAIRS,
-            FROST_DECO_BLOCK,
-            FROST_DECO_OUTLINE,
-            FROST_GLASS,
+            ModBlocks.FROST_ANVIL,
+            ModBlocks.FROST_GRINDSTONE,
+            ModBlocks.FROST_SMITHING_TABLE,
+            ModBlocks.FROST_METAL_BLOCK,
+            ModBlocks.CUT_FROST_METAL_BLOCK,
+            ModBlocks.CUT_FROST_METAL_PILLAR,
+            ModBlocks.CUT_FROST_METAL_SLAB,
+            ModBlocks.CUT_FROST_METAL_STAIRS,
+            ModBlocks.FROST_DECO_BLOCK,
+            ModBlocks.FROST_DECO_OUTLINE,
+            ModBlocks.FROST_GLASS,
             ModItems.FROST_METAL_INGOT,
             ModItems.FROST_METAL_NUGGET,
             ModItems.FROST_METAL_PICKAXE,
@@ -90,9 +78,9 @@ public final class PlasticOilCatalysisGameTests {
             ModItems.FROST_METAL_RESONATOR,
             ModItems.FROST_METAL_UPGRADE_SMITHING_TEMPLATE
         );
-        check(!Blocks.ICE.asItem().getDefaultInstance().is(ModItemTags.FROST_METAL_ITEMS), "ice became a catalyst");
+        check(!Blocks.ICE.asItem().getDefaultInstance().is(PlasticraftItemTags.FROST_METAL_ITEMS), "ice became a catalyst");
         check(
-            !SLIDING_RAIL.asItem().getDefaultInstance().is(ModItemTags.FROST_METAL_ITEMS),
+            !ModBlocks.SLIDING_RAIL.asItem().getDefaultInstance().is(PlasticraftItemTags.FROST_METAL_ITEMS),
             "a sliding rail became a catalyst"
         );
         helper.succeed();
@@ -118,7 +106,7 @@ public final class PlasticOilCatalysisGameTests {
     private static void checkFrostMetalCatalysts(ItemLike... catalysts) {
         for (ItemLike catalyst : catalysts) {
             check(
-                catalyst.asItem().getDefaultInstance().is(ModItemTags.FROST_METAL_ITEMS),
+                catalyst.asItem().getDefaultInstance().is(PlasticraftItemTags.FROST_METAL_ITEMS),
                 catalyst.asItem() + " was absent from the frost-metal catalyst tag"
             );
         }

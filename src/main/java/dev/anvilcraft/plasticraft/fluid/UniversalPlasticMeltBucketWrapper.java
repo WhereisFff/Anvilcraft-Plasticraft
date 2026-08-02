@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.fluid;
 
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -16,8 +16,8 @@ public final class UniversalPlasticMeltBucketWrapper extends FluidBucketWrapper 
 
     @Override
     public FluidStack getFluid() {
-        if (!this.container.is(ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET.get())) return FluidStack.EMPTY;
-        FluidStack fluid = new FluidStack(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), FluidType.BUCKET_VOLUME);
+        if (!this.container.is(PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.get())) return FluidStack.EMPTY;
+        FluidStack fluid = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), FluidType.BUCKET_VOLUME);
         PlasticMeltColor.set(fluid, PlasticMeltColor.get(this.container));
         return fluid;
     }
@@ -25,7 +25,7 @@ public final class UniversalPlasticMeltBucketWrapper extends FluidBucketWrapper 
     @Override
     protected void setFluid(FluidStack fluid) {
         super.setFluid(fluid);
-        if (!fluid.isEmpty() && this.container.is(ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET.get())) {
+        if (!fluid.isEmpty() && this.container.is(PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.get())) {
             PlasticMeltColor.set(this.container, PlasticMeltColor.get(fluid));
         }
     }

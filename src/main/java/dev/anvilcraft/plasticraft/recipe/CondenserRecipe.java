@@ -3,7 +3,7 @@ package dev.anvilcraft.plasticraft.recipe;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
+import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
 import dev.dubhe.anvilcraft.recipe.anvil.builder.AbstractRecipeBuilder;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -90,12 +90,12 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
 
     @Override
     public RecipeSerializer<CondenserRecipe> getSerializer() {
-        return ModRecipeTypes.CONDENSER_SERIALIZER.get();
+        return PlasticraftRecipeTypes.CONDENSER_SERIALIZER.get();
     }
 
     @Override
     public RecipeType<CondenserRecipe> getType() {
-        return ModRecipeTypes.CONDENSER_TYPE.get();
+        return PlasticraftRecipeTypes.CONDENSER_TYPE.get();
     }
 
     @Override

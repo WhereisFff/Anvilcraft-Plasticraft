@@ -3,7 +3,7 @@ package dev.anvilcraft.plasticraft.block;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
-import dev.anvilcraft.plasticraft.init.entity.ModEntities;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
@@ -69,7 +69,7 @@ public class UniversalPlasticBlock extends AbstractPlasticEntityBlock<UniversalP
 
     @Override
     protected EntityType<? extends UniversalPlasticEntity> getPlasticEntityType() {
-        return ModEntities.UNIVERSAL_PLASTIC.get();
+        return PlasticraftEntities.UNIVERSAL_PLASTIC.get();
     }
 
     @Override

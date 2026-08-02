@@ -6,10 +6,10 @@ import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.event.PlasticVillagerTrades;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
-import dev.anvilcraft.plasticraft.init.entity.ModEntities;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.recipe.CatalyticPressProcess;
 import dev.anvilcraft.plasticraft.recipe.PlasticGranuleCauldronOutput;
@@ -19,7 +19,10 @@ import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.block.state.GiantAnvilCube;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
+import dev.dubhe.anvilcraft.init.block.ModFluids;
 import dev.dubhe.anvilcraft.init.entity.ModVillagers;
+import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.recipe.FluidMixingRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.SolidLiquidRecipe;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
@@ -68,11 +71,6 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.GIANT_ANVIL;
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON;
-import static dev.dubhe.anvilcraft.init.block.ModFluids.POWDER_SNOW;
-import static dev.dubhe.anvilcraft.init.item.ModItems.ANVIL_HAMMER;
-
 /** TODO-00 中保留塑料粒的生产路径及珠宝商交易回归测试。 */
 public final class UniversalPlasticProductionGameTests {
     private static final int BUCKET = 1_000;
@@ -99,7 +97,7 @@ public final class UniversalPlasticProductionGameTests {
 
         Player player = helper.makeMockPlayer(GameType.CREATIVE);
         player.setPos(cauldron.position().add(0.0D, 0.5D, -2.0D));
-        player.setItemInHand(InteractionHand.MAIN_HAND, ANVIL_HAMMER.asStack());
+        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.ANVIL_HAMMER.asStack());
         check(
             cauldron.plasticraft$useAnvilHammer(player, InteractionHand.MAIN_HAND, Direction.EAST).consumesAction(),
             "anvil hammer did not open the catalytic outlet"
@@ -114,7 +112,7 @@ public final class UniversalPlasticProductionGameTests {
         ItemStack output = singleGranuleDrop(helper, outputPos);
         check(output.getCount() == GRANULES, "catalytic outlet produced " + output.getCount() + " granules");
         check(PlasticMeltColor.get(output) == DyeColor.PURPLE, "catalytic outlet lost the melt colour");
-        check(!helper.getBlockState(outputPos).is(ModBlocks.UNIVERSAL_PLASTIC.get()), "outlet created a plastic block");
+        check(!helper.getBlockState(outputPos).is(PlasticraftBlocks.UNIVERSAL_PLASTIC.get()), "outlet created a plastic block");
         helper.succeed();
     }
 
@@ -237,7 +235,7 @@ public final class UniversalPlasticProductionGameTests {
         FluidMixingRecipe waterRecipe = fluidMixingRecipe(helper, "universal_plastic_melt_with_water");
         FluidMixingRecipe snowRecipe = fluidMixingRecipe(helper, "universal_plastic_melt_with_powder_snow");
         assertFluidMixingDefinition(waterRecipe, Fluids.WATER, "water", helper.getLevel());
-        assertFluidMixingDefinition(snowRecipe, POWDER_SNOW.get(), "powder snow", helper.getLevel());
+        assertFluidMixingDefinition(snowRecipe, ModFluids.POWDER_SNOW.get(), "powder snow", helper.getLevel());
 
         LargeCauldronBlockEntity waterCauldron = placeLargeCauldron(helper, new BlockPos(3, 1, 3));
         waterCauldron.getFluids().setFluids(List.of(
@@ -250,7 +248,7 @@ public final class UniversalPlasticProductionGameTests {
         LargeCauldronBlockEntity snowCauldron = placeLargeCauldron(helper, new BlockPos(11, 1, 3));
         snowCauldron.getFluids().setFluids(List.of(
             coloredMelt(BUCKET, DyeColor.MAGENTA),
-            new FluidStack(POWDER_SNOW.get(), BUCKET)
+            new FluidStack(ModFluids.POWDER_SNOW.get(), BUCKET)
         ));
         processLargeCauldron(snowCauldron);
         assertInventoryGranules(snowCauldron.getOutputHandler(), DyeColor.MAGENTA, "powder-snow mixing");
@@ -268,12 +266,12 @@ public final class UniversalPlasticProductionGameTests {
         SolidLiquidRecipe recipe = (SolidLiquidRecipe) holder.value();
         check(recipe.getHasCauldron().consume() == BUCKET, "solid-liquid recipe consumes the wrong melt amount");
         check(
-            recipe.getHasCauldron().fluid().equals(ModFluids.UNIVERSAL_PLASTIC_MELT.getId()),
+            recipe.getHasCauldron().fluid().equals(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.getId()),
             "solid-liquid recipe targets the wrong fluid"
         );
         check(recipe.getResultItems().size() == 1, "solid-liquid recipe has an unexpected result count");
         check(
-            recipe.getResultItems().getFirst().getItem() == ModItems.UNIVERSAL_PLASTIC_GRANULE.get(),
+            recipe.getResultItems().getFirst().getItem() == PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get(),
             "solid-liquid recipe returns the wrong item"
         );
         check(recipe.getResultItems().getFirst().getMaxCount() == GRANULES, "solid-liquid recipe returns the wrong count");
@@ -324,7 +322,7 @@ public final class UniversalPlasticProductionGameTests {
         for (int attempt = 0; attempt < 256; attempt++) {
             MerchantOffer offer = listing.getOffer(null, random);
             check(offer != null, "jeweler listing returned no offer");
-            check(offer.getBaseCostA().is(ModItems.UNIVERSAL_PLASTIC_GRANULE.get()), "trade buys the wrong item");
+            check(offer.getBaseCostA().is(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get()), "trade buys the wrong item");
             check(offer.getBaseCostA().getCount() == JEWELER_GRANULE_COST, "trade buys the wrong granule count");
             check(offer.getResult().is(Items.EMERALD) && offer.getResult().getCount() == JEWELER_EMERALD_PAYMENT,
                 "trade pays the wrong amount");
@@ -378,7 +376,7 @@ public final class UniversalPlasticProductionGameTests {
         );
         check(recipe.getItemResults().size() == 1, name + " recipe has the wrong result count");
         ItemStack result = recipe.getItemResults().getFirst();
-        check(result.is(ModItems.UNIVERSAL_PLASTIC_GRANULE.get()), name + " recipe returns the wrong item");
+        check(result.is(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get()), name + " recipe returns the wrong item");
         check(result.getCount() == GRANULES, name + " recipe returns the wrong granule count");
     }
 
@@ -386,12 +384,12 @@ public final class UniversalPlasticProductionGameTests {
         check(cauldron.getLevel() instanceof ServerLevel, "large cauldron has no server level");
         ServerLevel level = (ServerLevel) cauldron.getLevel();
         BlockPos impactPos = cauldron.getBlockPos().above(3);
-        BlockState giantAnvil = GIANT_ANVIL.getDefaultState()
+        BlockState giantAnvil = ModBlocks.GIANT_ANVIL.getDefaultState()
             .setValue(GiantAnvilBlock.HALF, Cube3x3PartHalf.MID_CENTER)
             .setValue(GiantAnvilBlock.CUBE, GiantAnvilCube.CENTER);
         level.setBlock(impactPos, giantAnvil, Block.UPDATE_ALL);
         check(
-            GIANT_ANVIL.get().getMainPartPos(impactPos, giantAnvil).equals(impactPos),
+            ModBlocks.GIANT_ANVIL.get().getMainPartPos(impactPos, giantAnvil).equals(impactPos),
             "synthetic giant-anvil impact was not placed at its main part"
         );
         FallingBlockEntity impactEntity = new FallingBlockEntity(EntityType.FALLING_BLOCK, level);
@@ -406,7 +404,7 @@ public final class UniversalPlasticProductionGameTests {
         BlockPos relativeBase
     ) {
         Level level = helper.getLevel();
-        LargeCauldronBlock block = LARGE_CAULDRON.get();
+        LargeCauldronBlock block = ModBlocks.LARGE_CAULDRON.get();
         BlockPos base = helper.absolutePos(relativeBase);
         BlockState state = block.defaultBlockState();
         level.setBlock(base, state, Block.UPDATE_ALL);
@@ -425,15 +423,15 @@ public final class UniversalPlasticProductionGameTests {
         BlockPos pos = helper.absolutePos(relativePos);
         Vec3 position = PlasticEntityOrientation.DEFAULT.entityPosition(
             pos,
-            ModEntities.HARDEND_RESIN_CAULDRON.get().getWidth(),
-            ModEntities.HARDEND_RESIN_CAULDRON.get().getHeight()
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get().getWidth(),
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get().getHeight()
         );
         HardenedResinCauldronEntity cauldron = new HardenedResinCauldronEntity(
-            ModEntities.HARDEND_RESIN_CAULDRON.get(),
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
             helper.getLevel(),
             position,
-            ModBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
-            ModBlocks.HARDEND_RESIN_CAULDRON.asStack(),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(),
             PlasticEntityOrientation.DEFAULT
         );
         cauldron.setNoGravity(true);
@@ -448,15 +446,15 @@ public final class UniversalPlasticProductionGameTests {
         BlockPos pos = helper.absolutePos(relativePos);
         Vec3 position = PlasticEntityOrientation.DEFAULT.entityPosition(
             pos,
-            ModEntities.HARDEND_RESIN_ANVIL.get().getWidth(),
-            ModEntities.HARDEND_RESIN_ANVIL.get().getHeight()
+            PlasticraftEntities.HARDEND_RESIN_ANVIL.get().getWidth(),
+            PlasticraftEntities.HARDEND_RESIN_ANVIL.get().getHeight()
         );
         HardenedResinAnvilEntity anvil = new HardenedResinAnvilEntity(
-            ModEntities.HARDEND_RESIN_ANVIL.get(),
+            PlasticraftEntities.HARDEND_RESIN_ANVIL.get(),
             helper.getLevel(),
             position,
-            ModBlocks.HARDEND_RESIN_ANVIL.get().defaultBlockState(),
-            ModBlocks.HARDEND_RESIN_ANVIL.asStack(),
+            PlasticraftBlocks.HARDEND_RESIN_ANVIL.get().defaultBlockState(),
+            PlasticraftBlocks.HARDEND_RESIN_ANVIL.asStack(),
             PlasticEntityOrientation.DEFAULT
         );
         anvil.setNoGravity(true);
@@ -475,11 +473,11 @@ public final class UniversalPlasticProductionGameTests {
             CatalyticPressLidEntity.HEIGHT
         );
         CatalyticPressLidEntity lid = new CatalyticPressLidEntity(
-            ModEntities.CATALYTIC_PRESS_LID.get(),
+            PlasticraftEntities.CATALYTIC_PRESS_LID.get(),
             helper.getLevel(),
             position,
-            ModBlocks.CATALYTIC_PRESS_LID.get().defaultBlockState(),
-            ModBlocks.CATALYTIC_PRESS_LID.asStack(),
+            PlasticraftBlocks.CATALYTIC_PRESS_LID.get().defaultBlockState(),
+            PlasticraftBlocks.CATALYTIC_PRESS_LID.asStack(),
             PlasticEntityOrientation.DEFAULT
         );
         lid.completeCatalysis();
@@ -488,7 +486,7 @@ public final class UniversalPlasticProductionGameTests {
     }
 
     private static FluidStack coloredMelt(int amount, DyeColor color) {
-        FluidStack melt = new FluidStack(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), amount);
+        FluidStack melt = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), amount);
         PlasticMeltColor.set(melt, color);
         return melt;
     }
@@ -516,7 +514,7 @@ public final class UniversalPlasticProductionGameTests {
         return helper.getLevel().getEntitiesOfClass(
             ItemEntity.class,
             bounds,
-            item -> item.isAlive() && item.getItem().is(ModItems.UNIVERSAL_PLASTIC_GRANULE.get())
+            item -> item.isAlive() && item.getItem().is(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get())
         ).stream().map(ItemEntity::getItem).toList();
     }
 
@@ -524,7 +522,7 @@ public final class UniversalPlasticProductionGameTests {
         int count = 0;
         for (int slot = 0; slot < inventory.getSlots(); slot++) {
             ItemStack stack = inventory.getStackInSlot(slot);
-            if (!stack.is(ModItems.UNIVERSAL_PLASTIC_GRANULE.get())) continue;
+            if (!stack.is(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get())) continue;
             check(PlasticMeltColor.get(stack) == color, path + " produced a wrong-colour stack");
             count += stack.getCount();
         }
@@ -538,7 +536,7 @@ public final class UniversalPlasticProductionGameTests {
     }
 
     private static ItemStack coloredGranules(DyeColor color) {
-        ItemStack granules = new ItemStack(ModItems.UNIVERSAL_PLASTIC_GRANULE.get(), GRANULES);
+        ItemStack granules = new ItemStack(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get(), GRANULES);
         PlasticMeltColor.set(granules, color);
         return granules;
     }

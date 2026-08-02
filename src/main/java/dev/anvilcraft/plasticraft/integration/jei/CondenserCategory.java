@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.integration.jei;
 
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.client.support.RenderSupport;
@@ -41,13 +41,13 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
 
     public CondenserCategory(IGuiHelper helper) {
         this.icon = helper.createDrawableItemStack(
-            new ItemStack(ModBlocks.CONDENSER_TOWER)
+            new ItemStack(PlasticraftBlocks.CONDENSER_TOWER)
         );
         this.slot = JeiRenderHelper.getSlotDefault(helper);
         this.vaporDrawables = new VaporDrawableSet(helper);
         this.arrowIn = JeiRenderHelper.getArrowInput(helper);
         this.arrowOut = JeiRenderHelper.getArrowOutput(helper);
-        this.tower = ModBlocks.CONDENSER_TOWER.getDefaultState()
+        this.tower = PlasticraftBlocks.CONDENSER_TOWER.getDefaultState()
             .setValue(CondenserTowerBlock.HALF, Cube3x3PartHalf.MID_CENTER);
     }
 

@@ -2,10 +2,11 @@ package dev.anvilcraft.plasticraft.integration.jei;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.client.gui.screen.PlasticMoldingChamberScreen;
-import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.integration.jei.AnvilCraftJeiPlugin;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiRecipeUtil;
 import mezz.jei.api.IModPlugin;
@@ -27,9 +28,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-
-import static dev.dubhe.anvilcraft.init.block.ModBlocks.LARGE_CAULDRON;
-import static net.minecraft.world.item.crafting.RecipeType.CRAFTING;
 
 /**
  * 可选的 JEI 集成。仅当 JEI 存在时才会发现此类，
@@ -94,7 +92,7 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
     @Override
     public void registerRecipes(IRecipeRegistration registration) {
         List<RecipeHolder<PlasmaJetBlastingRecipe>> plasmaRecipes =
-            JeiRecipeUtil.getRecipeHoldersFromType(ModRecipeTypes.PLASMA_JET_BLASTING_TYPE.get());
+            JeiRecipeUtil.getRecipeHoldersFromType(PlasticraftRecipeTypes.PLASMA_JET_BLASTING_TYPE.get());
         List<RecipeHolder<PlasmaJetBlastingRecipe>> displayRecipes = new ArrayList<>(plasmaRecipes.size() * 2);
         for (RecipeHolder<PlasmaJetBlastingRecipe> holder : plasmaRecipes) {
             displayRecipes.add(holder);
@@ -112,7 +110,7 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
         );
         registration.addRecipes(
             CONDENSER,
-            JeiRecipeUtil.getRecipeHoldersFromType(ModRecipeTypes.CONDENSER_TYPE.get())
+            JeiRecipeUtil.getRecipeHoldersFromType(PlasticraftRecipeTypes.CONDENSER_TYPE.get())
         );
     }
 
@@ -129,21 +127,21 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
     @Override
     public void registerRecipeCatalysts(IRecipeCatalystRegistration registration) {
         registration.addRecipeCatalyst(
-            LARGE_CAULDRON.asStack(),
+            ModBlocks.LARGE_CAULDRON.asStack(),
             PLASMA_JET_BLASTING
         );
-        registration.addRecipeCatalyst(ModBlocks.CONDENSER_TOWER.asStack(), PLASMA_JET_BLASTING);
-        registration.addRecipeCatalyst(ModBlocks.CONDENSER_TOWER.asStack(), CONDENSER);
+        registration.addRecipeCatalyst(PlasticraftBlocks.CONDENSER_TOWER.asStack(), PLASMA_JET_BLASTING);
+        registration.addRecipeCatalyst(PlasticraftBlocks.CONDENSER_TOWER.asStack(), CONDENSER);
         for (RecipeType<?> recipeType : ANVIL_PROCESSING_TYPES) {
-            registration.addRecipeCatalyst(ModBlocks.RESIN_ANVIL.asStack(), recipeType);
-            registration.addRecipeCatalyst(ModBlocks.HARDEND_RESIN_ANVIL.asStack(), recipeType);
+            registration.addRecipeCatalyst(PlasticraftBlocks.RESIN_ANVIL.asStack(), recipeType);
+            registration.addRecipeCatalyst(PlasticraftBlocks.HARDEND_RESIN_ANVIL.asStack(), recipeType);
         }
         // 液体混合不在此列表中，继续只接受大型炼药锅和巨型铁砧。
         for (RecipeType<?> recipeType : CAULDRON_PROCESSING_TYPES) {
-            registration.addRecipeCatalyst(ModBlocks.HARDEND_RESIN_CAULDRON.asStack(), recipeType);
+            registration.addRecipeCatalyst(PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(), recipeType);
         }
         registration.addRecipeCatalyst(
-            new ItemStack(ModBlocks.HARDEND_RESIN_ANVIL.get()),
+            new ItemStack(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get()),
             RecipeTypes.ANVIL
         );
     }
@@ -162,7 +160,7 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
             .map(RecipeHolder::id)
             .collect(Collectors.toSet());
         List<RecipeHolder<CraftingRecipe>> missingRecipes = minecraft.level.getRecipeManager()
-            .getAllRecipesFor(CRAFTING)
+            .getAllRecipesFor(VanillaRecipeTypes.CRAFTING)
             .stream()
             .filter(holder -> holder.id().getNamespace().equals(AnvilcraftPlasticraft.MOD_ID))
             .filter(holder -> !registeredIds.contains(holder.id()))

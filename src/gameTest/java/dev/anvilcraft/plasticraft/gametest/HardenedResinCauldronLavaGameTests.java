@@ -4,8 +4,8 @@ import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.entity.ModEntities;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
@@ -84,7 +84,7 @@ public final class HardenedResinCauldronLavaGameTests {
         BlockPos support = new BlockPos(3, 1, 3);
         BlockPos occupied = support.above();
         helper.setBlock(support, Blocks.STONE);
-        BlockState bondedState = ModBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState()
+        BlockState bondedState = PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState()
             .setValue(AbstractPlasticEntityBlock.BONDED, true);
         helper.getLevel().setBlock(helper.absolutePos(occupied), bondedState, Block.UPDATE_ALL);
         check(
@@ -93,11 +93,11 @@ public final class HardenedResinCauldronLavaGameTests {
         );
         BondedEntityBlockEntity bonded = (BondedEntityBlockEntity) helper.getBlockEntity(occupied);
         HardenedResinCauldronEntity stored = new HardenedResinCauldronEntity(
-            ModEntities.HARDEND_RESIN_CAULDRON.get(),
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
             helper.getLevel(),
             helper.absoluteVec(new Vec3(3.5D, 2.0D, 3.5D)),
-            ModBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
-            ModBlocks.HARDEND_RESIN_CAULDRON.asStack(),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(),
             PlasticEntityOrientation.DEFAULT
         );
         check(
@@ -132,11 +132,11 @@ public final class HardenedResinCauldronLavaGameTests {
     ) {
         Level level = helper.getLevel();
         HardenedResinCauldronEntity cauldron = new HardenedResinCauldronEntity(
-            ModEntities.HARDEND_RESIN_CAULDRON.get(),
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
             level,
             helper.absoluteVec(relativePosition),
-            ModBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
-            ModBlocks.HARDEND_RESIN_CAULDRON.asStack(),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(),
             PlasticEntityOrientation.DEFAULT
         );
         cauldron.setNoGravity(true);

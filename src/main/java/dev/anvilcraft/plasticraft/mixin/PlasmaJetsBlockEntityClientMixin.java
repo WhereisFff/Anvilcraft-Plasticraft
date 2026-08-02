@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.mixin;
 
 import dev.anvilcraft.plasticraft.api.blockentity.EnhancedPlasmaJetExtension;
+import dev.anvilcraft.plasticraft.init.PlasticraftParticles;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
 import dev.dubhe.anvilcraft.init.ModParticles;
@@ -15,8 +16,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-
-import static dev.anvilcraft.plasticraft.init.ModParticles.ENHANCED_PLASMA_JETS;
 
 /**
  * 仅补齐大型炼药锅底部占位导致缺失的最后一格喷流粒子。
@@ -37,7 +36,7 @@ abstract class PlasmaJetsBlockEntityClientMixin {
     )
     private ParticleOptions plasticraft$useEnhancedParticle(ParticleOptions original) {
         return (Object) this instanceof EnhancedPlasmaJetExtension extension && extension.plasticraft$isEnhanced()
-            ? ENHANCED_PLASMA_JETS.get()
+            ? PlasticraftParticles.ENHANCED_PLASMA_JETS.get()
             : original;
     }
 
@@ -56,7 +55,7 @@ abstract class PlasmaJetsBlockEntityClientMixin {
         RandomSource random = level.getRandom();
         ParticleOptions particle = self instanceof EnhancedPlasmaJetExtension extension
             && extension.plasticraft$isEnhanced()
-            ? ENHANCED_PLASMA_JETS.get()
+            ? PlasticraftParticles.ENHANCED_PLASMA_JETS.get()
             : ModParticles.PLASMA_JETS.get();
         for (int i = 0; i < TOP_CELL_PARTICLES_PER_TICK; i++) {
             level.addParticle(

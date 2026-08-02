@@ -14,8 +14,8 @@ import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveGroupTransform;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesivePathPlanner;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveSelectionManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveTransit;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.network.AdhesiveBondEntitiesPacket;
 import dev.anvilcraft.plasticraft.network.AdhesiveBondEntityPacket;
 import dev.anvilcraft.plasticraft.network.AdhesiveClearSelectionPacket;
@@ -131,7 +131,7 @@ public final class AdhesiveSelectionClientHandler {
         InteractionHand hand = event.getHand();
         if (player == null
             || minecraft.getConnection() == null
-            || !player.getItemInHand(hand).is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) {
+            || !player.getItemInHand(hand).is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) {
             return;
         }
         if (player.isShiftKeyDown()) {
@@ -181,7 +181,7 @@ public final class AdhesiveSelectionClientHandler {
                 return;
             }
             if (target != player
-                && !target.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
+                && !target.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)) {
                 AdhesiveSelectionManager.select(player, target, hitFace);
                 beginSelectionAnimation(target);
                 PacketDistributor.sendToServer(new AdhesiveSelectEntityPacket(target.getId(), hand, hitFace));
@@ -232,11 +232,11 @@ public final class AdhesiveSelectionClientHandler {
                 || minecraft.getConnection() == null
                 || player.isShiftKeyDown()
                 || !player.getItemInHand(pendingBlockUse.hand())
-                    .is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()))) {
+                    .is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get()))) {
             pendingBlockUse = null;
         }
-        boolean holdingBucket = player.getMainHandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())
-            || player.getOffhandItem().is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get());
+        boolean holdingBucket = player.getMainHandItem().is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())
+            || player.getOffhandItem().is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get());
         if (!holdingBucket) {
             AdhesiveSelectionManager.clear(player);
             clearPreviewTask();
@@ -244,7 +244,7 @@ public final class AdhesiveSelectionClientHandler {
             return;
         }
         Entity selected = getSelectedEntity(minecraft);
-        if (selected == null || selected.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
+        if (selected == null || selected.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)) {
             AdhesiveSelectionManager.clear(player);
             clearPreviewTask();
             startExitAnimation();
@@ -264,7 +264,7 @@ public final class AdhesiveSelectionClientHandler {
         Entity selected
     ) {
         if (level == null) return;
-        if (!selected.hasData(ModAttachments.ENTITY_ADHESION)
+        if (!selected.hasData(PlasticraftAttachments.ENTITY_ADHESION)
             && minecraft.hitResult instanceof BlockHitResult blockHit
             && blockHit.getType() != HitResult.Type.MISS) {
             PreviewKey key = new PreviewKey(
@@ -286,7 +286,7 @@ public final class AdhesiveSelectionClientHandler {
             Entity supportEntity = entityHit.getEntity();
             Direction supportFace = AdhesiveFaces.hitFace(supportEntity, entityHit.getLocation());
             Direction selectedFace = AdhesiveSelectionManager.getSelectedFace(player);
-            boolean reverse = selected.hasData(ModAttachments.ENTITY_ADHESION);
+            boolean reverse = selected.hasData(PlasticraftAttachments.ENTITY_ADHESION);
             Entity movingEntity = reverse ? supportEntity : selected;
             Entity anchorEntity = reverse ? selected : supportEntity;
             Direction anchorFace = reverse ? AdhesiveFaces.worldFace(selected, selectedFace) : supportFace;
@@ -499,7 +499,7 @@ public final class AdhesiveSelectionClientHandler {
             || minecraft.getConnection() == null
             || minecraft.screen != null
             || player.isShiftKeyDown()
-            || !player.getItemInHand(pending.hand()).is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) {
+            || !player.getItemInHand(pending.hand()).is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) {
             return;
         }
 
@@ -610,7 +610,7 @@ public final class AdhesiveSelectionClientHandler {
         float boxProgress = selectionBoxProgress(selected != null, now);
         AdhesiveTransit transit = animatedEntity == null
             ? null
-            : animatedEntity.getExistingDataOrNull(ModAttachments.ADHESIVE_TRANSIT.get());
+            : animatedEntity.getExistingDataOrNull(PlasticraftAttachments.ADHESIVE_TRANSIT.get());
         Entity transitSupport = transit == null ? null : resolveTransitSupport(level, transit);
         List<Vec3> path = List.of();
         int pathColor = WHITE;
@@ -620,7 +620,7 @@ public final class AdhesiveSelectionClientHandler {
         @Nullable BlockPos previewSupportPos = null;
         @Nullable Direction previewSupportFace = null;
         if (selected != null
-            && !selected.hasData(ModAttachments.ENTITY_ADHESION)
+            && !selected.hasData(PlasticraftAttachments.ENTITY_ADHESION)
             && minecraft.hitResult instanceof BlockHitResult blockHit
             && blockHit.getType() != HitResult.Type.MISS) {
             preview = previewPath(level, selected, player, blockHit);
@@ -641,7 +641,7 @@ public final class AdhesiveSelectionClientHandler {
             previewSupport = entityHit.getEntity();
             previewSupportFace = AdhesiveFaces.hitFace(previewSupport, entityHit.getLocation());
             preview = previewPath(level, selected, player, previewSupport, previewSupportFace);
-            if (selected.hasData(ModAttachments.ENTITY_ADHESION)) {
+            if (selected.hasData(PlasticraftAttachments.ENTITY_ADHESION)) {
                 previewMovingEntity = previewSupport;
                 previewSupport = selected;
                 previewSupportFace = AdhesiveFaces.worldFace(
@@ -752,7 +752,7 @@ public final class AdhesiveSelectionClientHandler {
     ) {
         ClientLevel level = minecraft.level;
         if (level == null) return null;
-        if (!selected.hasData(ModAttachments.ENTITY_ADHESION)
+        if (!selected.hasData(PlasticraftAttachments.ENTITY_ADHESION)
             && minecraft.hitResult instanceof BlockHitResult blockHit
             && blockHit.getType() != HitResult.Type.MISS) {
             return previewPath(level, selected, player, blockHit);

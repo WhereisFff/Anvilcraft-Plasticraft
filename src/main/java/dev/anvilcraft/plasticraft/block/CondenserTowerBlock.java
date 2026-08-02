@@ -6,7 +6,7 @@ import dev.dubhe.anvilcraft.block.multipart.SimpleMultiPartBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidNetworkManager;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
-import dev.anvilcraft.plasticraft.init.block.ModBlockEntities;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
@@ -163,7 +163,7 @@ public class CondenserTowerBlock extends SimpleMultiPartBlock<Cube3x3PartHalf>
 
     @Override
     public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
-        return ModBlockEntities.CONDENSER_TOWER.create(pos, state);
+        return PlasticraftBlockEntities.CONDENSER_TOWER.create(pos, state);
     }
 
     /** 判断模块底部是否正好贴着大型炼药锅顶部。 */

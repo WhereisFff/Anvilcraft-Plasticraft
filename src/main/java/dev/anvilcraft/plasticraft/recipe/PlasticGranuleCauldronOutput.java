@@ -1,8 +1,8 @@
 package dev.anvilcraft.plasticraft.recipe;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -42,7 +42,7 @@ public final class PlasticGranuleCauldronOutput {
     ) {
         BlockState waterState = level.getBlockState(targetPos);
         if (!isFullWaterCauldron(waterState)
-            || !availableMelt.is(ModFluids.UNIVERSAL_PLASTIC_MELT.get())
+            || !availableMelt.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())
             || availableMelt.getAmount() < MELT_AMOUNT) {
             return false;
         }
@@ -51,7 +51,7 @@ public final class PlasticGranuleCauldronOutput {
         FluidStack simulated = source.drain(requested, IFluidHandler.FluidAction.SIMULATE);
         if (!isExactMelt(simulated, requested)) return false;
 
-        ItemStack granules = new ItemStack(ModItems.UNIVERSAL_PLASTIC_GRANULE.get(), GRANULE_COUNT);
+        ItemStack granules = new ItemStack(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get(), GRANULE_COUNT);
         PlasticMeltColor.set(granules, PlasticMeltColor.get(requested));
         ItemEntity output = new ItemEntity(
             level,

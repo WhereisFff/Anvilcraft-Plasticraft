@@ -3,7 +3,7 @@ package dev.anvilcraft.plasticraft.block;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
-import dev.anvilcraft.plasticraft.init.entity.ModEntities;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -58,7 +58,7 @@ public class HardenedResinCauldronBlock extends AbstractPlasticEntityBlock<Harde
 
     @Override
     protected EntityType<? extends HardenedResinCauldronEntity> getPlasticEntityType() {
-        return ModEntities.HARDEND_RESIN_CAULDRON.get();
+        return PlasticraftEntities.HARDEND_RESIN_CAULDRON.get();
     }
 
     @Override

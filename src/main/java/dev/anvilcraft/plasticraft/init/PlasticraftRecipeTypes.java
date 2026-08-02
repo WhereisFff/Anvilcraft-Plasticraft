@@ -13,7 +13,7 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
 /** 复用本体配方类型时所需的附属序列化器。 */
-public final class ModRecipeTypes {
+public final class PlasticraftRecipeTypes {
     private static final DeferredRegister<RecipeType<?>> TYPES = DeferredRegister.create(
         Registries.RECIPE_TYPE,
         AnvilcraftPlasticraft.MOD_ID
@@ -49,7 +49,7 @@ public final class ModRecipeTypes {
     public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<CondenserRecipe>> CONDENSER_SERIALIZER =
         SERIALIZERS.register("condenser", CondenserRecipe.Serializer::new);
 
-    private ModRecipeTypes() {
+    private PlasticraftRecipeTypes() {
     }
 
     public static void register(IEventBus modEventBus) {

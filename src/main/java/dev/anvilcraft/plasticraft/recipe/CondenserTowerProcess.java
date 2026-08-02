@@ -14,8 +14,8 @@ import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
-import dev.anvilcraft.plasticraft.init.ModParticles;
-import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
+import dev.anvilcraft.plasticraft.init.PlasticraftParticles;
+import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
 import dev.anvilcraft.plasticraft.mixin.VillagerExperienceAccessor;
 import dev.anvilcraft.plasticraft.particle.DynamicFluidVaporParticleOptions;
 import dev.dubhe.anvilcraft.api.block.IIgnitableCauldron;
@@ -31,6 +31,7 @@ import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.block.ModFluidTags;
 import dev.dubhe.anvilcraft.init.block.ModFluids;
 import dev.dubhe.anvilcraft.init.item.ModItems;
+import dev.dubhe.anvilcraft.init.recipe.ModRecipeTypes;
 import dev.dubhe.anvilcraft.recipe.anvil.outcome.RoyalPreferenceOutcome;
 import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.SuperHeatingRecipe;
@@ -72,8 +73,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-
-import static dev.dubhe.anvilcraft.init.recipe.ModRecipeTypes.SUPER_HEATING_TYPE;
 
 /** 等离子喷流对容器的气化、持续加工，以及冷凝塔堆叠识别。 */
 public final class CondenserTowerProcess {
@@ -525,7 +524,7 @@ public final class CondenserTowerProcess {
         ResourceLocation gas,
         int towerLevel
     ) {
-        return level.getRecipeManager().getAllRecipesFor(ModRecipeTypes.CONDENSER_TYPE.get()).stream()
+        return level.getRecipeManager().getAllRecipesFor(PlasticraftRecipeTypes.CONDENSER_TYPE.get()).stream()
             .filter(holder -> holder.value().towerLevel() == towerLevel)
             .filter(holder -> holder.value().gas().equals(CondenserGas.canonicalize(gas)))
             .sorted(Comparator.comparing(holder -> holder.id().toString()))
@@ -544,7 +543,7 @@ public final class CondenserTowerProcess {
         IItemHandler output = cauldron.getOutputHandler();
         List<RecipeHolder<PlasmaJetBlastingRecipe>> plasmaRecipes = new ArrayList<>(
             level.getRecipeManager().getAllRecipesFor(
-                ModRecipeTypes.PLASMA_JET_BLASTING_TYPE.get()
+                PlasticraftRecipeTypes.PLASMA_JET_BLASTING_TYPE.get()
             )
         );
         plasmaRecipes.sort(Comparator.comparingInt(
@@ -552,7 +551,7 @@ public final class CondenserTowerProcess {
         ).reversed());
         List<RecipeHolder<SuperHeatingRecipe>> superHeatingRecipes = new ArrayList<>(
             level.getRecipeManager().getAllRecipesFor(
-                SUPER_HEATING_TYPE.get()
+                ModRecipeTypes.SUPER_HEATING_TYPE.get()
             )
         );
         superHeatingRecipes.sort(Comparator.comparingInt(
@@ -1007,7 +1006,7 @@ public final class CondenserTowerProcess {
             level,
             surface,
             vaporizationRate,
-            ModParticles.EXPERIENCE_VAPOR.get()
+            PlasticraftParticles.EXPERIENCE_VAPOR.get()
         );
     }
 
@@ -1046,7 +1045,7 @@ public final class CondenserTowerProcess {
         if (maxY <= minY) return;
         RandomSource random = level.getRandom();
         ParticleOptions particle = isExperienceFluid(sourceFluid)
-            ? ModParticles.EXPERIENCE_VAPOR.get()
+            ? PlasticraftParticles.EXPERIENCE_VAPOR.get()
             : new DynamicFluidVaporParticleOptions(sourceFluid, true);
         for (int cellY = 0; cellY < PRESSURIZED_VAPOR_GRID_SIZE; cellY++) {
             for (int cellX = 0; cellX < PRESSURIZED_VAPOR_GRID_SIZE; cellX++) {
@@ -1135,7 +1134,7 @@ public final class CondenserTowerProcess {
         int escapingAmount
     ) {
         if (CondenserGas.GASEOUS_EXPERIENCE.equals(vaporType)) {
-            return ModParticles.EXPERIENCE_VAPOR_OUTLET.get();
+            return PlasticraftParticles.EXPERIENCE_VAPOR_OUTLET.get();
         }
         FluidStack particleFluid = sourceFluid.isEmpty()
             ? fallbackVaporFluid(vaporType)
@@ -1156,7 +1155,7 @@ public final class CondenserTowerProcess {
         @Nullable FluidStack sourceFluid,
         int vaporizationRate
     ) {
-        if (isExperienceFluid(sourceFluid)) return ModParticles.EXPERIENCE_VAPOR.get();
+        if (isExperienceFluid(sourceFluid)) return PlasticraftParticles.EXPERIENCE_VAPOR.get();
         return sourceFluid == null || sourceFluid.isEmpty()
             ? ParticleTypes.CLOUD
             : new DynamicFluidVaporParticleOptions(sourceFluid, vaporizationRate);

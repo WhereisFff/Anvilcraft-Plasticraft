@@ -9,7 +9,7 @@ import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.dubhe.anvilcraft.api.fluid.IFluidHandlerHolder;
 import dev.dubhe.anvilcraft.api.injection.tooltip.ITooltipProviderExtension;
@@ -165,7 +165,7 @@ public class BondedEntityBlockEntity extends BlockEntity
     }
 
     public boolean isHardenedResinAnvil() {
-        return this.displayState.is(ModBlocks.HARDEND_RESIN_ANVIL.get());
+        return this.displayState.is(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get());
     }
 
     public boolean isPistonMovable() {
