@@ -1,8 +1,9 @@
 package dev.anvilcraft.plasticraft.entity;
 
 import dev.anvilcraft.plasticraft.api.entity.ElasticCollisionEntity;
-import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
-import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
+import dev.anvilcraft.plasticraft.entity.collision.BuiltInPlasticEntityModels;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexCollisionResolver;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexShape;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.ResinShockDropBehavior;
@@ -42,9 +43,7 @@ import java.util.function.Supplier;
  * 常规放置和贴实体面放置仍由共用基类负责。
  */
 public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCollisionEntity, IShockEntity {
-    private static final PlasticEntityGeometry GEOMETRY = PlasticEntityGeometry.of(
-        AbstractPlasticEntityBlock.ROYAL_ANVIL_COLLISION_SHAPE
-    );
+    private static final PlasticEntityGeometry GEOMETRY = BuiltInPlasticEntityModels.RESIN_ANVIL.geometry();
     private static final double BLOCK_RESTITUTION = 0.80D;
     private static final double ENTITY_RESTITUTION = 0.72D;
     private static final double TANGENTIAL_RETENTION = 0.68D;
@@ -131,12 +130,8 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
             PlasticEntityPhysics.FACE_EPSILON
         );
         if (clippedContacts == 0) return velocityAfterMove;
-        AABB startBounds = this.plasticraft$getCollisionBox().bounds().move(actualMovement.scale(-1.0D));
+        AABB startBounds = this.getBoundingBox().move(actualMovement.scale(-1.0D));
         AABB sweptBox = startBounds.expandTowards(requestedMovement).inflate(CONTACT_EPSILON);
-        List<AABB> startComponents = ShapedCollisionEntity.collisionComponents(
-            this,
-            this.getBoundingBox().move(actualMovement.scale(-1.0D))
-        );
         List<Entity> collisionEntities = this.level().getEntities(
             this,
             sweptBox,
@@ -156,7 +151,7 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
             int directionMask = PlasticEntityPhysics.directionMask(direction);
             if ((clippedContacts & directionMask) == 0) continue;
             for (Entity other : collisionEntities) {
-                if (contactsFace(startComponents, other, actualMovement, direction)) {
+                if (contactsFace(this, startBounds, other, requestedMovement, actualMovement, direction)) {
                     entityContacts |= directionMask;
                     break;
                 }
@@ -188,7 +183,8 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
                 if (hasEntityContact) {
                     this.applyBoundedEntityImpulse(
                         collisionEntities,
-                        startComponents,
+                        startBounds,
+                        requestedMovement,
                         actualMovement,
                         direction,
                         incidentSpeed
@@ -225,13 +221,19 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
         if (clippedContacts == 0) return;
 
         Vec3 colliderVelocity = collider.getDeltaMovement();
-        List<AABB> colliderStartComponents = ShapedCollisionEntity.collisionComponents(collider, colliderStartBox);
         boolean bouncedCollider = false;
         Direction gravityDirection = this.plasticraft$currentPushGravityDirection();
         double restitution = collider instanceof LivingEntity ? 1.0D : BLOCK_RESTITUTION;
         for (Direction direction : Direction.values()) {
             if ((clippedContacts & PlasticEntityPhysics.directionMask(direction)) == 0
-                || !contactsFace(colliderStartComponents, this, actualMovement, direction)) {
+                || !contactsFace(
+                    collider,
+                    colliderStartBox,
+                    this,
+                    requestedMovement,
+                    actualMovement,
+                    direction
+                )) {
                 continue;
             }
             Vec3 normal = Vec3.atLowerCornerOf(direction.getNormal());
@@ -262,14 +264,15 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
 
     private void applyBoundedEntityImpulse(
         List<Entity> candidates,
-        List<AABB> startComponents,
+        AABB startBounds,
+        Vec3 requestedMovement,
         Vec3 actualMovement,
         Direction direction,
         double incidentSpeed
     ) {
         Vec3 normal = Vec3.atLowerCornerOf(direction.getNormal());
         for (Entity other : candidates) {
-            if (!contactsFace(startComponents, other, actualMovement, direction)) continue;
+            if (!contactsFace(this, startBounds, other, requestedMovement, actualMovement, direction)) continue;
             double relativeSpeed = incidentSpeed - other.getDeltaMovement().dot(normal);
             if (relativeSpeed <= PlasticEntityPhysics.FACE_EPSILON) continue;
             double impulse = Math.min(MAX_ENTITY_IMPULSE, relativeSpeed * 0.45D);
@@ -280,44 +283,32 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
     }
 
     private static boolean contactsFace(
-        List<AABB> movingComponents,
-        Entity other,
+        Entity moving,
+        AABB movingStartBounds,
+        Entity obstacle,
+        Vec3 requestedMovement,
         Vec3 actualMovement,
         Direction direction
     ) {
-        List<AABB> otherComponents = ShapedCollisionEntity.collisionComponents(other, other.getBoundingBox());
-        for (AABB movingComponent : movingComponents) {
-            AABB movedComponent = movingComponent.move(actualMovement);
-            for (AABB otherComponent : otherComponents) {
-                if (contactsFace(movedComponent, otherComponent, direction)) return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean contactsFace(AABB movingBox, AABB otherBox, Direction direction) {
-        double gap = switch (direction) {
-            case DOWN -> movingBox.minY - otherBox.maxY;
-            case UP -> otherBox.minY - movingBox.maxY;
-            case WEST -> movingBox.minX - otherBox.maxX;
-            case EAST -> otherBox.minX - movingBox.maxX;
-            case NORTH -> movingBox.minZ - otherBox.maxZ;
-            case SOUTH -> otherBox.minZ - movingBox.maxZ;
-        };
-        if (Math.abs(gap) > CONTACT_EPSILON) return false;
-
-        double xOverlap = overlap(movingBox.minX, movingBox.maxX, otherBox.minX, otherBox.maxX);
-        double yOverlap = overlap(movingBox.minY, movingBox.maxY, otherBox.minY, otherBox.maxY);
-        double zOverlap = overlap(movingBox.minZ, movingBox.maxZ, otherBox.minZ, otherBox.maxZ);
-        return switch (direction.getAxis()) {
-            case X -> yOverlap * zOverlap > PlasticEntityPhysics.FACE_EPSILON;
-            case Y -> xOverlap * zOverlap > PlasticEntityPhysics.FACE_EPSILON;
-            case Z -> xOverlap * yOverlap > PlasticEntityPhysics.FACE_EPSILON;
-        };
-    }
-
-    private static double overlap(double firstMin, double firstMax, double secondMin, double secondMax) {
-        return Math.max(0.0D, Math.min(firstMax, secondMax) - Math.max(firstMin, secondMin));
+        List<PlasticConvexShape> movingShapes = PlasticConvexCollisionResolver.collisionShapes(
+            moving,
+            movingStartBounds,
+            obstacle,
+            requestedMovement
+        ).stream().map(shape -> shape.move(actualMovement)).toList();
+        List<PlasticConvexShape> obstacleShapes = PlasticConvexCollisionResolver.collisionShapes(
+            obstacle,
+            obstacle.getBoundingBox(),
+            moving,
+            requestedMovement
+        );
+        double probeMovement = direction.getAxisDirection().getStep() * CONTACT_EPSILON * 2.0D;
+        return PlasticConvexCollisionResolver.blocksAxisMovement(
+            movingShapes,
+            obstacleShapes,
+            direction.getAxis(),
+            probeMovement
+        );
     }
 
     @Override

@@ -5,19 +5,19 @@ import dev.anvilcraft.plasticraft.api.texture.PlasticSurface;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureGenerator;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureInput;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureLayout;
+import dev.anvilcraft.plasticraft.entity.collision.BuiltInPlasticEntityModels;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.DyeColor;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.List;
 
 /** 通用塑料块的固定几何，以及送入公共贴图生成器的表面描述。 */
 public final class UniversalPlasticShape {
-    public static final VoxelShape COLLISION = Block.box(0.0D, 0.0D, 0.0D, 16.0D, 14.0D, 16.0D);
-    public static final PlasticEntityGeometry GEOMETRY = PlasticEntityGeometry.of(COLLISION);
+    public static final VoxelShape COLLISION = BuiltInPlasticEntityModels.UNIVERSAL_PLASTIC_COMPATIBILITY;
+    public static final PlasticEntityGeometry GEOMETRY = BuiltInPlasticEntityModels.UNIVERSAL_PLASTIC.geometry();
     public static final List<PlasticSurface> SURFACES = List.of(
         surface(
             Direction.DOWN,

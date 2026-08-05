@@ -1,11 +1,22 @@
 package dev.anvilcraft.plasticraft.molding.bake;
 
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.DataResult;
+
+import java.util.Arrays;
 import java.util.BitSet;
+import java.util.List;
 
 /** 固定为 48x48x48 的制造体素并集。 */
 public final class MoldingVolumeMask {
     public static final int SIZE = 48;
     public static final int CELL_COUNT = SIZE * SIZE * SIZE;
+    public static final int MAX_LONG_COUNT = (CELL_COUNT + Long.SIZE - 1) / Long.SIZE;
+    public static final Codec<MoldingVolumeMask> CODEC = Codec.LONG.listOf()
+        .validate(values -> values.size() <= MAX_LONG_COUNT
+            ? DataResult.success(values)
+            : DataResult.error(() -> "Molding volume mask is too large"))
+        .xmap(MoldingVolumeMask::fromLongList, MoldingVolumeMask::toLongList);
     private final BitSet cells;
 
     public MoldingVolumeMask() {
@@ -41,6 +52,31 @@ public final class MoldingVolumeMask {
         return new MoldingVolumeMask(this.copyBits());
     }
 
+    public long[] toLongArray() {
+        return this.cells.toLongArray();
+    }
+
+    public static MoldingVolumeMask fromLongArray(long[] values) {
+        if (values.length > MAX_LONG_COUNT) {
+            throw new IllegalArgumentException("Molding volume mask is too large");
+        }
+        BitSet cells = BitSet.valueOf(values);
+        if (cells.length() > CELL_COUNT) {
+            throw new IllegalArgumentException("Molding volume mask contains cells outside the workspace");
+        }
+        return new MoldingVolumeMask(cells);
+    }
+
+    private static MoldingVolumeMask fromLongList(List<Long> values) {
+        long[] packed = new long[values.size()];
+        for (int index = 0; index < values.size(); index++) packed[index] = values.get(index);
+        return fromLongArray(packed);
+    }
+
+    private List<Long> toLongList() {
+        return Arrays.stream(this.toLongArray()).boxed().toList();
+    }
+
     public static int index(int x, int y, int z) {
         return (y * SIZE + x) * SIZE + z;
     }
@@ -59,5 +95,15 @@ public final class MoldingVolumeMask {
 
     public static boolean inBounds(int x, int y, int z) {
         return x >= 0 && x < SIZE && y >= 0 && y < SIZE && z >= 0 && z < SIZE;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        return this == other || other instanceof MoldingVolumeMask mask && this.cells.equals(mask.cells);
+    }
+
+    @Override
+    public int hashCode() {
+        return this.cells.hashCode();
     }
 }

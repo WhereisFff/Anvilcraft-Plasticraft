@@ -32,10 +32,10 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
     public static final MapCodec<PlasticTextureSpriteSource> CODEC = MapCodec.unit(INSTANCE);
 
     private static final ResourceLocation TYPE_ID = AnvilcraftPlasticraft.of("generated_plastic");
-    private static final ResourceLocation BASE_RESOURCE = AnvilcraftPlasticraft.of(
+    static final ResourceLocation BASE_RESOURCE = AnvilcraftPlasticraft.of(
         "textures/palette/plastic_base.png"
     );
-    private static final ResourceLocation PALETTE_RESOURCE = AnvilcraftPlasticraft.of(
+    static final ResourceLocation PALETTE_RESOURCE = AnvilcraftPlasticraft.of(
         "textures/palette/universal_plastic_palette.png"
     );
     private static SpriteSourceType sourceType;
@@ -157,7 +157,7 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
         );
     }
 
-    private static byte[] readResource(ResourceManager manager, ResourceLocation id) throws IOException {
+    static byte[] readResource(ResourceManager manager, ResourceLocation id) throws IOException {
         Resource resource = manager.getResource(id).orElseThrow(() ->
             new PlasticTextureResourceException("Missing plastic texture resource " + id)
         );
@@ -166,7 +166,7 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
         }
     }
 
-    private static NativeImage readImage(ResourceLocation id, byte[] bytes) throws IOException {
+    static NativeImage readImage(ResourceLocation id, byte[] bytes) throws IOException {
         try {
             return NativeImage.read(new ByteArrayInputStream(bytes));
         } catch (IOException exception) {
@@ -174,7 +174,7 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
         }
     }
 
-    private static int[] toArgbPixels(NativeImage image) {
+    static int[] toArgbPixels(NativeImage image) {
         int[] pixels = new int[image.getWidth() * image.getHeight()];
         for (int y = 0; y < image.getHeight(); y++) {
             for (int x = 0; x < image.getWidth(); x++) {
@@ -185,7 +185,7 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
     }
 
     /** NativeImage 使用 ABGR，而公共生成器固定使用 ARGB；交换红蓝通道即可双向转换。 */
-    private static int swapRedBlue(int color) {
+    static int swapRedBlue(int color) {
         return color & 0xFF00FF00 | color >> 16 & 0xFF | (color & 0xFF) << 16;
     }
 }

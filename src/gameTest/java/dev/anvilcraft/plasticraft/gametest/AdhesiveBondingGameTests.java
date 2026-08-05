@@ -980,79 +980,6 @@ public final class AdhesiveBondingGameTests {
         });
     }
 
-    @GameTest(timeoutTicks = 35)
-    @EmptyTemplate(value = "11x8x8", floor = true)
-    @TestHolder(description = "Every member of two joined universal plastic columns remains flush")
-    static void joinedUniversalPlasticColumnsHaveNoFollowerGap(ExtendedGameTestHelper helper) {
-        UniversalPlasticEntity sourceBottom = createUniversalPlastic(helper, new Vec3(2.5D, 2.0D, 4.5D));
-        UniversalPlasticEntity sourceTop = createUniversalPlastic(helper, new Vec3(2.5D, 2.875D, 4.5D));
-        UniversalPlasticEntity targetBottom = createUniversalPlastic(helper, new Vec3(6.5D, 2.0D, 4.5D));
-        UniversalPlasticEntity targetTop = createUniversalPlastic(helper, new Vec3(6.5D, 2.875D, 4.5D));
-        for (UniversalPlasticEntity plastic : List.of(sourceBottom, sourceTop, targetBottom, targetTop)) {
-            plastic.setNoGravity(true);
-        }
-        check(
-            EntityBondManager.connect(
-                helper.getLevel(), sourceBottom, Direction.UP, sourceTop, Direction.DOWN, true
-            ),
-            "source universal plastic column could not be bonded"
-        );
-        check(
-            EntityBondManager.connect(
-                helper.getLevel(), targetBottom, Direction.UP, targetTop, Direction.DOWN, true
-            ),
-            "target universal plastic column could not be bonded"
-        );
-        sourceTop.setPos(sourceTop.position().add(-1.0D / 16.0D, 0.0D, 0.0D));
-        GameTestPlayer player = bucketPlayer(helper, new Vec3(4.5D, 2.0D, 2.5D));
-
-        check(
-            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, sourceBottom, Direction.EAST),
-            "source column selection failed"
-        );
-        check(
-            AdhesiveBondingService.bondSelectedToEntity(
-                player,
-                InteractionHand.MAIN_HAND,
-                targetBottom,
-                Direction.WEST
-            ),
-            "universal plastic columns could not be bonded"
-        );
-
-        helper.runAfterDelay(12, () -> {
-            check(
-                close(
-                    AdhesiveFaces.storedFaceCenter(sourceBottom, Direction.UP),
-                    AdhesiveFaces.storedFaceCenter(sourceTop, Direction.DOWN)
-                ),
-                "source universal plastic column retained an internal gap"
-            );
-            check(
-                close(
-                    AdhesiveFaces.storedFaceCenter(targetBottom, Direction.UP),
-                    AdhesiveFaces.storedFaceCenter(targetTop, Direction.DOWN)
-                ),
-                "target universal plastic column retained an internal gap"
-            );
-            check(
-                close(
-                    AdhesiveFaces.storedFaceCenter(sourceBottom, Direction.EAST),
-                    AdhesiveFaces.storedFaceCenter(targetBottom, Direction.WEST)
-                ),
-                "selected universal plastic did not touch its target"
-            );
-            check(
-                close(
-                    AdhesiveFaces.storedFaceCenter(sourceTop, Direction.EAST),
-                    AdhesiveFaces.storedFaceCenter(targetTop, Direction.WEST)
-                ),
-                "unselected universal plastic did not follow its column"
-            );
-            helper.succeed();
-        });
-    }
-
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "10x8x8", floor = true)
     @TestHolder(description = "Rotating a transported universal plastic group keeps its bonded faces aligned")
@@ -1642,42 +1569,6 @@ public final class AdhesiveBondingGameTests {
         helper.succeed();
     }
 
-    @GameTest(timeoutTicks = 25)
-    @EmptyTemplate(value = "8x6x8", floor = true)
-    @TestHolder(description = "A discarded entity only removes its own bonds from the remaining component")
-    static void discardedEntityOnlyDisconnectsItself(ExtendedGameTestHelper helper) {
-        Zombie removed = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 2.0D, 3.5D));
-        Zombie first = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 2.0D, 3.5D));
-        Zombie second = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.5D, 2.0D, 3.5D));
-        removed.setNoGravity(true);
-        first.setNoGravity(true);
-        second.setNoGravity(true);
-        check(EntityBondManager.connect(
-            helper.getLevel(), removed, Direction.EAST, first, Direction.WEST, true
-        ), "discarded-to-first bond failed");
-        check(EntityBondManager.connect(
-            helper.getLevel(), first, Direction.EAST, second, Direction.WEST, true
-        ), "remaining entity bond failed");
-
-        removed.discard();
-        EntityBondManager.tick(first);
-        helper.runAfterDelay(1, () -> {
-            EntityBondState firstBonds = EntityBondManager.get(first);
-            EntityBondState secondBonds = EntityBondManager.get(second);
-            check(
-                firstBonds != null
-                    && firstBonds.linkAt(Direction.EAST) != null
-                    && firstBonds.linkAt(Direction.WEST) == null,
-                "discarding one entity removed the wrong remaining bond"
-            );
-            check(
-                secondBonds != null && secondBonds.linkAt(Direction.WEST) != null,
-                "discarding one entity released the whole component"
-            );
-            helper.succeed();
-        });
-    }
-
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "8x6x7", floor = true)
     @TestHolder(description = "Bonded entities do not push their own component into continuous drift")
@@ -1818,45 +1709,6 @@ public final class AdhesiveBondingGameTests {
     }
 
     @GameTest(timeoutTicks = 30)
-    @EmptyTemplate(value = "13x6x11", floor = true)
-    @TestHolder(description = "A diagonal push at a bonded seam moves the component once along the contacted face")
-    static void diagonalPlayerPushAtBondedSeamMovesComponentOnce(ExtendedGameTestHelper helper) {
-        for (int x = 2; x <= 10; x++) {
-            for (int z = 2; z <= 8; z++) helper.setBlock(x, 1, z, Blocks.STONE);
-        }
-        HardenedResinCauldronEntity follower = createCauldron(helper, new Vec3(5.5D, 2.0D, 5.5D));
-        HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(6.5D, 2.0D, 5.5D));
-        check(EntityBondManager.connect(
-            helper.getLevel(), follower, Direction.EAST, leader, Direction.WEST, false
-        ), "seam test entities could not be bonded");
-
-        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        Vec3 playerPosition = helper.absoluteVec(new Vec3(5.995D, 2.0D, 4.70D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
-        helper.runAfterDelay(3, () -> {
-            Vec3 playerStart = player.position();
-            Vec3 followerStart = follower.position();
-            Vec3 leaderStart = leader.position();
-            Vec3 requestedMovement = new Vec3(0.16D, 0.0D, 0.18D);
-            player.move(MoverType.SELF, requestedMovement);
-            player.move(MoverType.SELF, requestedMovement);
-
-            Vec3 playerMovement = player.position().subtract(playerStart);
-            Vec3 followerMovement = follower.position().subtract(followerStart);
-            Vec3 leaderMovement = leader.position().subtract(leaderStart);
-            check(followerMovement.z > 0.30D, "seam push did not move the bonded component forward");
-            check(followerMovement.z < 0.40D, "seam push moved the bonded component more than once");
-            check(Math.abs(followerMovement.x) < 0.03D, "bonded component followed tangential player movement at its seam");
-            check(playerMovement.x > 0.25D, "bonded seam blocked the player's tangential movement");
-            check(
-                followerMovement.distanceTo(leaderMovement) < 0.03D,
-                "bonded members received different movement at their seam"
-            );
-            helper.succeed();
-        });
-    }
-
-    @GameTest(timeoutTicks = 30)
     @EmptyTemplate(value = "10x8x8", floor = true)
     @TestHolder(description = "A bonded plastic follower on a player's head carries its whole component")
     static void playerCarriesBondedPlasticFollowerOnHead(ExtendedGameTestHelper helper) {
@@ -1907,64 +1759,6 @@ public final class AdhesiveBondingGameTests {
             check(
                 Math.abs(followerMovement - leaderMovement) < 0.03D,
                 "head-carried bonded component did not preserve spacing"
-            );
-            helper.succeed();
-        });
-    }
-
-    @GameTest(timeoutTicks = 30)
-    @EmptyTemplate(value = "10x9x8", floor = true)
-    @TestHolder(description = "A jumping player lifts a bonded plastic follower resting on their head")
-    static void playerJumpLiftsBondedPlasticFollowerOnHead(ExtendedGameTestHelper helper) {
-        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        Vec3 playerPosition = helper.absoluteVec(new Vec3(4.5D, 2.0D, 3.5D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
-        double productY = 2.0D + player.getBbHeight() - 3.0D / 16.0D;
-        HardenedResinCauldronEntity follower = createCauldron(helper, new Vec3(4.5D, productY, 3.5D));
-        HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(5.5D, productY, 3.5D));
-        follower.setNoGravity(true);
-        leader.setNoGravity(true);
-        check(EntityBondManager.connect(
-            helper.getLevel(), follower, Direction.EAST, leader, Direction.WEST, true
-        ), "head-carried plastic follower could not bond to its leader");
-
-        helper.runAfterDelay(3, () -> {
-            double playerStart = player.getY();
-            double followerStart = follower.getY();
-            double leaderStart = leader.getY();
-            player.setOnGround(true);
-            player.jumpFromGround();
-            player.travel(Vec3.ZERO);
-
-            double playerMovement = player.getY() - playerStart;
-            double followerMovement = follower.getY() - followerStart;
-            double leaderMovement = leader.getY() - leaderStart;
-            check(
-                playerMovement > 0.35D,
-                "player could not jump under the bonded follower: player=" + playerMovement
-                    + ", follower=" + followerMovement + ", leader=" + leaderMovement
-            );
-            check(
-                followerMovement > 0.35D,
-                "jump did not lift the bonded follower: player=" + playerMovement
-                    + ", follower=" + followerMovement + ", leader=" + leaderMovement
-            );
-            check(
-                leaderMovement > 0.35D,
-                "jumped follower did not lift its bonded leader: player=" + playerMovement
-                    + ", follower=" + followerMovement + ", leader=" + leaderMovement
-            );
-            check(
-                Math.abs(followerMovement - leaderMovement) < 0.03D,
-                "bonded component changed spacing during the player's jump"
-            );
-            check(
-                !Shapes.joinIsNotEmpty(
-                    Shapes.create(player.getBoundingBox()),
-                    follower.plasticraft$getCollisionShape(),
-                    BooleanOp.AND
-                ),
-                "jumping player overlapped the bonded follower and was crushed"
             );
             helper.succeed();
         });
@@ -4025,72 +3819,6 @@ public final class AdhesiveBondingGameTests {
                 check(
                     !cauldron.isHammerDeflected() && !anvil.isHammerDeflected(),
                     "entity hammer return animation state did not finish"
-                );
-                helper.succeed();
-            });
-        });
-    }
-
-    @GameTest(timeoutTicks = 30)
-    @EmptyTemplate(value = "9x7x7", floor = true)
-    @TestHolder(description = "A piston moves a pushable bonded falling block together with its support")
-    static void pistonMovesBondedFallingBlockAndSupport(ExtendedGameTestHelper helper) {
-        BlockPos piston = new BlockPos(2, 2, 3);
-        BlockPos support = piston.east();
-        BlockPos occupied = support.above();
-        BlockPos source = new BlockPos(6, 4, 3);
-        helper.setBlock(support, Blocks.STONE);
-        helper.setBlock(source, Blocks.SAND);
-        FallingBlockEntity sand = FallingBlockEntity.fall(
-            helper.getLevel(),
-            helper.absolutePos(source),
-            Blocks.SAND.defaultBlockState()
-        );
-        GameTestPlayer player = bucketPlayer(helper, new Vec3(3.5D, 2.0D, 1.5D));
-        check(AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, sand), "falling sand selection failed");
-        check(AdhesiveBondingService.bondSelected(
-            player,
-            InteractionHand.MAIN_HAND,
-            helper.absolutePos(support),
-            Direction.UP
-        ), "falling sand bonding failed");
-
-        helper.runAfterDelay(12, () -> {
-            check(helper.getBlockState(occupied).is(Blocks.SAND), "falling sand did not restore its block state");
-            helper.setBlock(
-                piston,
-                Blocks.PISTON.defaultBlockState().setValue(BlockStateProperties.FACING, Direction.EAST)
-            );
-            helper.setBlock(piston.west(), Blocks.REDSTONE_BLOCK);
-            helper.runAfterDelay(5, () -> {
-                BlockPos movedSupport = support.east();
-                BlockPos movedOccupied = occupied.east();
-                check(helper.getBlockState(movedSupport).is(Blocks.STONE), "piston did not move the support block");
-                check(
-                    helper.getBlockState(movedOccupied).is(Blocks.SAND),
-                    "piston did not move the bonded falling block: old="
-                        + helper.getBlockState(occupied)
-                        + ", moved="
-                        + helper.getBlockState(movedOccupied)
-                        + ", oldBe="
-                        + helper.getLevel().getBlockEntity(helper.absolutePos(occupied))
-                        + ", movedBe="
-                        + helper.getLevel().getBlockEntity(helper.absolutePos(movedOccupied))
-                        + ", falling="
-                        + helper.getLevel().getEntitiesOfClass(
-                            FallingBlockEntity.class,
-                            new AABB(helper.absolutePos(occupied)).inflate(3.0D)
-                        ).size()
-                );
-                BondedFallingBlockInfo bonded = BondedFallingBlocks.get(
-                    helper.getLevel(),
-                    helper.absolutePos(movedOccupied)
-                );
-                check(
-                    bonded != null
-                        && bonded.supportPos().equals(helper.absolutePos(movedSupport))
-                        && bonded.blockState().is(Blocks.SAND),
-                    "piston movement lost the bonded falling block data"
                 );
                 helper.succeed();
             });

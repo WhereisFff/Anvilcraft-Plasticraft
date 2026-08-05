@@ -46,6 +46,10 @@
   "jei.anvilcraftplasticraft.gas.gaseous_experience": "ǝɔuǝᴉɹǝdxǝ snoǝsɐ⅁",
   "jei.anvilcraftplasticraft.gas.gaseous_oil": "ꞁᴉo snoǝsɐ⅁",
   "jei.anvilcraftplasticraft.gas.gaseous_water": "ɹǝʇɐʍ snoǝsɐ⅁",
+  "jei.anvilcraftplasticraft.plastic_molding_chamber.forming": "˙ǝɔɐɟɹns ʇnɔ ʇɐꞁɟ ǝɥʇ ʍoꞁǝq snonuᴉʇuoɔ uᴉɐɯǝɹ sǝɔɐɟ pǝdoꞁs puɐ sǝqnɔ sʇᴉ ⸵ꞁǝpoɯ ǝɔɹnos ǝɥʇ ssoɹɔɐ ʇɥᵷᴉǝɥ ʇnɔ ꞁɐʇuozᴉɹoɥ ǝuo sʇǝs uoᴉʇɹodoɹd pᴉɐd ǝɥʇ 'ʇɹoɥs sᴉ ꞁɐᴉɹǝʇɐɯ ɟI ˙sꞁꞁǝɔ ǝɯnꞁoʌ pǝʞɐq ߈ oʇ dn ɹoɟ sʎɐd ᗺɯ ⥝ ɥɔɐƎ ˙ɥɔʇɐq ᵷuᴉɯɹoɟ ǝɥʇ uᴉ ᗺɯ 0ϛᘔ ʇsɐǝꞁ ʇɐ puɐ 'ɹǝʍod 'pꞁoɯ ʎɐꞁɔ ǝʇǝꞁdɯoɔ ɐ spǝǝu ǝʞᴉɹʇs pᴉꞁɐʌ Ɐ",
+  "jei.anvilcraftplasticraft.plastic_molding_chamber.modes": "˙ǝʞᴉɹʇs ꞁᴉʌuⱯ ʇuɐᴉ⅁ pᴉꞁɐʌ ɐ spǝǝu ꞁꞁᴉʇs ǝꞁɔʎɔ ʎɹǝʌƎ ˙ǝꞁɔʎɔ ꞁnɟssǝɔɔns ǝuo ɹǝʇɟɐ ᵷuᴉʇᴉpǝ oʇ suɹnʇǝɹ ǝꞁᵷuᴉS ⸵ǝᵷpǝ ᵷuᴉsᴉɹ ɹǝd ǝɔuo spuodsǝɹ ǝuoʇspǝᴚ ⸵sɹɐǝꞁɔ uoᴉᵷǝɹ ǝɥʇ ɹǝʇɟɐ pꞁoɯ ɹǝɥʇouɐ sǝɹɐdǝɹd snonuᴉʇuoƆ",
+  "jei.anvilcraftplasticraft.plastic_molding_chamber.outputs": "˙uoᴉᵷǝɹ ᵷuᴉɯɹoɟ ǝɥʇ oʇuᴉ ʞɔɐq sdoɹp pꞁoɯ ǝɥʇ ɹoɟ pǝsn ꞁꞁɐq ʎɐꞁɔ ʎɹǝʌǝ puɐ 'pǝᵷuɐɥɔun sʎɐʇs ʞuɐʇ ᵷuᴉᵷɐʇs ᗺ 8 ǝɥ⟘ ˙pǝɯnsuoɔ sᴉ ɥɔʇɐq ᵷuᴉɯɹoɟ ǝɥʇ ʎꞁuO",
+  "jei.anvilcraftplasticraft.plastic_molding_chamber.structure": "˙ʇɔnpoɹd ɯǝʇᴉ uɐ ɹoɟ ɹossǝɹdɯoɔɹǝʌO ǝɔɐdS ɐ ɥʇᴉʍ ǝꞁqɐʇ ɹǝʇuǝɔ ǝɥʇ ǝɔɐꞁdǝɹ ɹo 'ʇɔnpoɹd ʎʇᴉʇuǝ uɐ ɹoɟ sǝꞁqɐ⟘ ᵷuᴉʇɟɐɹƆ ǝuᴉu ǝs∩ ˙uoᴉᵷǝɹ ᵷuᴉɯɹoɟ ǝɥʇ ǝʌoqɐ ʎꞁʇɔǝɹᴉp ɯɹoɟʇɐꞁd ƐxƐ ɐ pꞁᴉnᗺ",
   "jei.anvilcraftplasticraft.vaporization_rate": "ʇᵷ/ᗺɯ %s :ǝʇɐɹ uoᴉʇɐzᴉɹodɐɅ",
   "message.anvilcraftplasticraft.adhesive.out_of_range": "ʎɐʍɐ ɹɐɟ oo⟘",
   "message.anvilcraftplasticraft.adhesive.too_far_disconnected": "pǝʇɔǝuuoɔsᴉp uoᴉʇɔǝꞁǝs ⸵ʎɐʍɐ ɹɐɟ oo⟘",
@@ -94,6 +98,7 @@
   "message.anvilcraftplasticraft.molding.library_full": "ꞁꞁnɟ sᴉ ʎɹɐɹqᴉꞁ ꞁǝpoɯ pǝɹɐɥs ǝɥ⟘",
   "message.anvilcraftplasticraft.molding.library_read_failed": "ʎɹɐɹqᴉꞁ ꞁǝpoɯ pǝɹɐɥs ǝɥʇ pɐǝɹ oʇ ǝꞁqɐu∩",
   "message.anvilcraftplasticraft.molding.missing_disk": "ʇoꞁs ʞsᴉp ǝɥʇ uᴉ ʞsᴉp ʇɟɐɹƆꞁᴉʌuⱯ uɐ ǝɔɐꞁԀ",
+  "message.anvilcraftplasticraft.molding.model_too_complex": "ʎꞁǝɟɐs ǝɹnʇɔɐɟnuɐɯ oʇ xǝꞁdɯoɔ ooʇ sᴉ uoᴉsᴉꞁꞁoɔ ɹo ǝɔɐɟɹns ꞁǝpoɯ ǝɥ⟘",
   "message.anvilcraftplasticraft.molding.not_editable": "ǝꞁqɐʇᴉpǝ ʇou sᴉ ɹǝqɯɐɥƆ",
   "message.anvilcraftplasticraft.molding.not_locked": "pǝʞɔoꞁ ʇou sᴉ ꞁǝpoW",
   "message.anvilcraftplasticraft.molding.nothing_to_redo": "opǝɹ oʇ ᵷuᴉɥʇoN",
@@ -232,7 +237,7 @@
   "tooltip.anvilcraftplasticraft.item.resin_anvil.shift": "sǝdᴉɔǝɹ ssǝɔoɹd uɐɔ ǝɔɐɟ ɯoʇʇoq sʇᴉ uo sʇɔɐdɯᴉ ʎꞁuo ⸵uoᴉʇɔǝɹᴉp ʎuɐ uᴉ pǝɔɐꞁd ǝq uɐƆ\nʇᴉ ǝzᴉʇǝuᵷɐɯ oʇ ʇǝuᵷɐɯ ɐ ǝsn-ʇɟᴉɥS uɐɔ sɹǝʎɐꞁd ǝʌᴉʇɐǝɹƆ\nʇᴉ suǝpɹɐɥ ᵷuᴉʞooɔ ʇsɐɟ ʎɹᗡ\nɹoᴉʌɐɥǝq dɹɐʍ-ǝɯᴉʇ puɐ ǝɹnʇdɐɔ ʞɔoꞁᗺ uᴉsǝᴚ suᴉɐʇǝᴚ\nʎꞁʇɔǝɹᴉp ʇᴉ ǝʌǝᴉɹʇǝɹ oʇ ɹǝɯɯɐH ꞁᴉʌuⱯ ʎuɐ ɥʇᴉʍ ǝsn-ʇɟᴉɥS\nsǝᴉʇᴉʇuǝ puɐ sʞɔoꞁq ɯoɹɟ spunoqǝɹ ⸵ǝꞁqɐɥsnd puɐ ɔᴉʇsɐꞁƎ",
   "tooltip.anvilcraftplasticraft.item.resin_anvil_hammer": "ꞁᴉʌuɐ uᴉsǝɹ ɔᴉʇsɐꞁǝ uɐ ɯoɹɟ ǝpɐɯ ɹǝɯɯɐɥ ꞁᴉʌuɐ ʇɥᵷᴉǝʍʇɥᵷᴉꞁ Ɐ",
   "tooltip.anvilcraftplasticraft.item.resin_anvil_hammer.shift": "ʎʇꞁɐuǝd ʞɹoʍ-ɹoᴉɹd ou ppɐ puɐ ǝɔuǝᴉɹǝdxǝ ou ʇsoɔ ꞁᴉʌuⱯ uᴉsǝᴚ pǝuǝpɹɐH ɐ uᴉ sɹᴉɐdǝᴚ\nuᴉsǝɹ ɥʇᴉʍ pǝɹᴉɐdǝɹ ǝq uɐɔ puɐ ʎʇᴉꞁᴉqɐɹnp ϛƐ sɐH\nɅ ʞɔɐqʞɔouꞰ ɥʇᴉʍ uoᴉʇɔǝɹᴉp ʍǝᴉʌ ꞁꞁnɟ ɹnoʎ ǝʇᴉsoddo noʎ sǝɥɔunɐꞁ ʞɔoꞁq ɐ ᵷuᴉʞɔᴉꞁɔ-ʇɟǝꞀ\nɅ ʞɔɐqʞɔouꞰ sǝᴉꞁddɐ puɐ ǝᵷɐɯɐp ou sꞁɐǝp ʎʇᴉʇuǝ ʎuɐ ᵷuᴉʞɔᴉꞁɔ-ʇɟǝꞀ\nnuǝɯ ꞁᴉʌuɐ ǝꞁqɐʇɹod ǝɥʇ ʇdǝɔxǝ uoᴉʇɔunɟ ɹǝɯɯɐH ꞁᴉʌuⱯ pɹɐpuɐʇs ʎɹǝʌǝ suᴉɐʇǝᴚ",
-  "tooltip.anvilcraftplasticraft.item.universal_plastic": "sǝᴉɟᴉpᴉꞁos ʇꞁǝɯ ɔᴉʇsɐꞁd ꞁɐsɹǝʌᴉun pǝɔɐꞁd-pꞁɹoʍ ɹǝʌǝuǝɥʍ pǝɯɹoɟ ʇɔnpoɹd ssǝꞁuoᴉʇɔunɟ 'ǝꞁqɐʌoɯ Ɐ",
+  "tooltip.anvilcraftplasticraft.item.universal_plastic": "ɔᴉʇsɐꞁd ɟo ǝɔǝᴉd ʎɹɐuᴉpɹo uⱯ",
   "tooltip.anvilcraftplasticraft.jade.color": "%s :ɹnoꞁoɔ ꞁɐᴉɹǝʇɐW",
   "tooltip.anvilcraftplasticraft.jade.empty": "ʎʇdɯƎ",
   "tooltip.anvilcraftplasticraft.jade.fluid": "%3$s / %2$s %1$s",
@@ -245,5 +250,6 @@
   "tooltip.anvilcraftplasticraft.molding.fluids": "%4$s / %3$s ɥɔʇɐq '%2$s / %1$s ᵷuᴉᵷɐʇS",
   "tooltip.anvilcraftplasticraft.molding.state": "%s :ǝʇɐʇS",
   "tooltip.anvilcraftplasticraft.plastic_molding_chamber": "uoᴉʇɐɯoʇnɐ ǝuoʇspǝɹ puɐ 'sɔᴉʇsᴉᵷoꞁ 'sǝdᴉd 'ɹǝʍod ᵷuᴉsn ʇꞁǝɯ ɔᴉʇsɐꞁd puɐ spꞁoɯ ʎɐꞁɔ ɥʇᴉʍ sʇuᴉɹdǝnꞁq sɯɹoℲ",
-  "tooltip.anvilcraftplasticraft.resin_anvil.captured": "%s :suᴉɐʇuoƆ"
+  "tooltip.anvilcraftplasticraft.resin_anvil.captured": "%s :suᴉɐʇuoƆ",
+  "tooltip.anvilcraftplasticraft.size": "sʞɔoꞁq %3$s x %2$s x %1$s :ǝzᴉS"
 }

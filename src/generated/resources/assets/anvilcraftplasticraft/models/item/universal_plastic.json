@@ -1,5 +1,5 @@
 {
-  "parent": "anvilcraftplasticraft:block/universal_plastic_white",
+  "parent": "minecraft:builtin/entity",
   "display": {
     "firstperson_lefthand": {
       "rotation": [
@@ -90,97 +90,5 @@
         0
       ]
     }
-  },
-  "overrides": [
-    {
-      "model": "anvilcraftplasticraft:item/universal_plastic_orange",
-      "predicate": {
-        "anvilcraftplasticraft:plastic_color": 1.0
-      }
-    },
-    {
-      "model": "anvilcraftplasticraft:item/universal_plastic_magenta",
-      "predicate": {
-        "anvilcraftplasticraft:plastic_color": 2.0
-      }
-    },
-    {
-      "model": "anvilcraftplasticraft:item/universal_plastic_light_blue",
-      "predicate": {
-        "anvilcraftplasticraft:plastic_color": 3.0
-      }
-    },
-    {
-      "model": "anvilcraftplasticraft:item/universal_plastic_yellow",
-      "predicate": {
-        "anvilcraftplasticraft:plastic_color": 4.0
-      }
-    },
-    {
-      "model": "anvilcraftplasticraft:item/universal_plastic_lime",
-      "predicate": {
-        "anvilcraftplasticraft:plastic_color": 5.0
-      }
-    },
-    {
-      "model": "anvilcraftplasticraft:item/universal_plastic_pink",
-      "predicate": {
-        "anvilcraftplasticraft:plastic_color": 6.0
-      }
-    },
-    {
-      "model": "anvilcraftplasticraft:item/universal_plastic_gray",
-      "predicate": {
-        "anvilcraftplasticraft:plastic_color": 7.0
-      }
-    },
-    {
-      "model": "anvilcraftplasticraft:item/universal_plastic_light_gray",
-      "predicate": {
-        "anvilcraftplasticraft:plastic_color": 8.0
-      }
-    },
-    {
-      "model": "anvilcraftplasticraft:item/universal_plastic_cyan",
-      "predicate": {
-        "anvilcraftplasticraft:plastic_color": 9.0
-      }
-    },
-    {
-      "model": "anvilcraftplasticraft:item/universal_plastic_purple",
-      "predicate": {
-        "anvilcraftplasticraft:plastic_color": 10.0
-      }
-    },
-    {
-      "model": "anvilcraftplasticraft:item/universal_plastic_blue",
-      "predicate": {
-        "anvilcraftplasticraft:plastic_color": 11.0
-      }
-    },
-    {
-      "model": "anvilcraftplasticraft:item/universal_plastic_brown",
-      "predicate": {
-        "anvilcraftplasticraft:plastic_color": 12.0
-      }
-    },
-    {
-      "model": "anvilcraftplasticraft:item/universal_plastic_green",
-      "predicate": {
-        "anvilcraftplasticraft:plastic_color": 13.0
-      }
-    },
-    {
-      "model": "anvilcraftplasticraft:item/universal_plastic_red",
-      "predicate": {
-        "anvilcraftplasticraft:plastic_color": 14.0
-      }
-    },
-    {
-      "model": "anvilcraftplasticraft:item/universal_plastic_black",
-      "predicate": {
-        "anvilcraftplasticraft:plastic_color": 15.0
-      }
-    }
-  ]
+  }
 }

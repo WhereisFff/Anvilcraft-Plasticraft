@@ -4,7 +4,7 @@ import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import net.neoforged.neoforge.fluids.FluidStack;
 
-/** TODO-05 提交加工前使用的不可变服务器快照。 */
+/** 巨型铁砧提交加工前使用的不可变服务器快照。 */
 public record MoldingProcessSnapshot(
     long modelRevision,
     EditableMoldingModel model,

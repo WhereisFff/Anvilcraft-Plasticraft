@@ -46,6 +46,10 @@
   "jei.anvilcraftplasticraft.gas.gaseous_experience": "Gaseous experience",
   "jei.anvilcraftplasticraft.gas.gaseous_oil": "Gaseous oil",
   "jei.anvilcraftplasticraft.gas.gaseous_water": "Gaseous water",
+  "jei.anvilcraftplasticraft.plastic_molding_chamber.forming": "A valid strike needs a complete clay mold, power, and at least 250 mB in the forming batch. Each 1 mB pays for up to 4 baked volume cells. If material is short, the paid proportion sets one horizontal cut height across the source model; its cubes and sloped faces remain continuous below the flat cut surface.",
+  "jei.anvilcraftplasticraft.plastic_molding_chamber.modes": "Continuous prepares another mold after the region clears; Redstone responds once per rising edge; Single returns to editing after one successful cycle. Every cycle still needs a valid Giant Anvil strike.",
+  "jei.anvilcraftplasticraft.plastic_molding_chamber.outputs": "Only the forming batch is consumed. The 8 B staging tank stays unchanged, and every clay ball used for the mold drops back into the forming region.",
+  "jei.anvilcraftplasticraft.plastic_molding_chamber.structure": "Build a 3x3 platform directly above the forming region. Use nine Crafting Tables for an entity product, or replace the center table with a Space Overcompressor for an item product.",
   "jei.anvilcraftplasticraft.vaporization_rate": "Vaporization rate: %s mB/gt",
   "message.anvilcraftplasticraft.adhesive.out_of_range": "Too far away",
   "message.anvilcraftplasticraft.adhesive.too_far_disconnected": "Too far away; selection disconnected",
@@ -94,6 +98,7 @@
   "message.anvilcraftplasticraft.molding.library_full": "The shared model library is full",
   "message.anvilcraftplasticraft.molding.library_read_failed": "Unable to read the shared model library",
   "message.anvilcraftplasticraft.molding.missing_disk": "Place an AnvilCraft disk in the disk slot",
+  "message.anvilcraftplasticraft.molding.model_too_complex": "The model surface or collision is too complex to manufacture safely",
   "message.anvilcraftplasticraft.molding.not_editable": "Chamber is not editable",
   "message.anvilcraftplasticraft.molding.not_locked": "Model is not locked",
   "message.anvilcraftplasticraft.molding.nothing_to_redo": "Nothing to redo",
@@ -232,7 +237,7 @@
   "tooltip.anvilcraftplasticraft.item.resin_anvil.shift": "Elastic and pushable; rebounds from blocks and entities\nShift-use with any Anvil Hammer to retrieve it directly\nRetains Resin Block capture and time-warp behavior\nDry fast cooking hardens it\nCreative players can Shift-use a magnet to magnetize it\nCan be placed in any direction; only impacts on its bottom face can process recipes",
   "tooltip.anvilcraftplasticraft.item.resin_anvil_hammer": "A lightweight anvil hammer made from an elastic resin anvil",
   "tooltip.anvilcraftplasticraft.item.resin_anvil_hammer.shift": "Retains every standard Anvil Hammer function except the portable anvil menu\nLeft-clicking any entity deals no damage and applies Knockback V\nLeft-clicking a block launches you opposite your full view direction with Knockback V\nHas 35 durability and can be repaired with resin\nRepairs in a Hardened Resin Anvil cost no experience and add no prior-work penalty",
-  "tooltip.anvilcraftplasticraft.item.universal_plastic": "A movable, functionless product formed whenever world-placed universal plastic melt solidifies",
+  "tooltip.anvilcraftplasticraft.item.universal_plastic": "An ordinary piece of plastic",
   "tooltip.anvilcraftplasticraft.jade.color": "Material colour: %s",
   "tooltip.anvilcraftplasticraft.jade.empty": "Empty",
   "tooltip.anvilcraftplasticraft.jade.fluid": "%1$s %2$s / %3$s",
@@ -245,5 +250,6 @@
   "tooltip.anvilcraftplasticraft.molding.fluids": "Staging %1$s / %2$s, batch %3$s / %4$s",
   "tooltip.anvilcraftplasticraft.molding.state": "State: %s",
   "tooltip.anvilcraftplasticraft.plastic_molding_chamber": "Forms blueprints with clay molds and plastic melt using power, pipes, logistics, and redstone automation",
-  "tooltip.anvilcraftplasticraft.resin_anvil.captured": "Contains: %s"
+  "tooltip.anvilcraftplasticraft.resin_anvil.captured": "Contains: %s",
+  "tooltip.anvilcraftplasticraft.size": "Size: %1$s x %2$s x %3$s blocks"
 }

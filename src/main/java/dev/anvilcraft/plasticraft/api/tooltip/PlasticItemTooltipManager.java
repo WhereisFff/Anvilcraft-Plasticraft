@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.api.tooltip;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.entity.collision.BuiltInPlasticEntityModels;
 import dev.anvilcraft.plasticraft.item.AbstractPlasticEntityItem;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
@@ -8,6 +9,7 @@ import dev.anvilcraft.plasticraft.item.ResinAnvilItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticBlockItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticGranuleItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticMeltBucketItem;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
 import dev.dubhe.anvilcraft.util.ResentmentUtil;
@@ -21,7 +23,10 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.AABB;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -79,7 +84,7 @@ public final class PlasticItemTooltipManager {
         );
         registerNormal(
             AnvilcraftPlasticraft.of("universal_plastic"),
-            "A movable, functionless product formed whenever world-placed universal plastic melt solidifies"
+            "An ordinary piece of plastic"
         );
         register(
             AnvilcraftPlasticraft.of("catalytic_press_lid"),
@@ -194,6 +199,9 @@ public final class PlasticItemTooltipManager {
             || stack.getItem() instanceof UniversalPlasticMeltBucketItem
             || stack.getItem() instanceof UniversalPlasticBlockItem
         ) {
+            if (stack.getItem() instanceof UniversalPlasticBlockItem) {
+                addPlasticSizeTooltip(stack, dynamicTooltip);
+            }
             dynamicTooltip.add(Component.translatable(
                 "tooltip.anvilcraftplasticraft.color",
                 Component.translatable("color.minecraft." + PlasticMeltColor.get(stack).getName())
@@ -203,6 +211,25 @@ public final class PlasticItemTooltipManager {
             addCapturedEntityTooltip(stack, context, dynamicTooltip);
         }
         tooltip.addAll(Math.min(insertionIndex, tooltip.size()), dynamicTooltip);
+    }
+
+    private static void addPlasticSizeTooltip(ItemStack stack, List<Component> tooltip) {
+        AABB bounds = MoldedPlasticData.get(stack)
+            .map(MoldedPlasticData::surfaceBounds)
+            .orElseGet(() -> BuiltInPlasticEntityModels.UNIVERSAL_PLASTIC.geometry().localBounds());
+        tooltip.add(Component.translatable(
+            "tooltip.anvilcraftplasticraft.size",
+            formatSize(bounds.getXsize()),
+            formatSize(bounds.getYsize()),
+            formatSize(bounds.getZsize())
+        ).withStyle(ChatFormatting.GRAY));
+    }
+
+    private static String formatSize(double size) {
+        return BigDecimal.valueOf(size)
+            .setScale(4, RoundingMode.HALF_UP)
+            .stripTrailingZeros()
+            .toPlainString();
     }
 
     private static void addCapturedEntityTooltip(

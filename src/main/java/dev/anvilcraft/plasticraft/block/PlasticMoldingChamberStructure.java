@@ -148,6 +148,21 @@ public final class PlasticMoldingChamberStructure {
         return complete;
     }
 
+    /** 只读核对全部区域部件，不在巨型铁砧预检中隐式修复结构。 */
+    public static boolean isComplete(Level level, BlockPos controller, Direction front) {
+        for (MoldingRegionPart part : MoldingRegionPart.values()) {
+            BlockPos region = regionPos(controller, front, part);
+            if (!level.isInWorldBounds(region) || !level.isLoaded(region)) return false;
+            BlockState state = level.getBlockState(region);
+            if (!state.is(PlasticraftBlocks.PLASTIC_MOLDING_REGION.get())
+                || state.getValue(PlasticMoldingRegionBlock.FACING) != front
+                || state.getValue(PlasticMoldingRegionBlock.PART) != part) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public static void removeParts(Level level, BlockPos controller, Direction front) {
         for (MoldingRegionPart part : MoldingRegionPart.values()) {
             BlockPos region = regionPos(controller, front, part);

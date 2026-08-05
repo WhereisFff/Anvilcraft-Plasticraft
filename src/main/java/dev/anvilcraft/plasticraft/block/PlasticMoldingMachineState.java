@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.block;
 
 import net.minecraft.util.StringRepresentable;
 
-/** 成型舱的持久化阶段；TODO-01 只会进入 EDITABLE。 */
+/** 成型舱生产流程中需要持久化的阶段。 */
 public enum PlasticMoldingMachineState implements StringRepresentable {
     EDITABLE("editable"),
     WAITING_TO_LOCK("waiting_to_lock"),

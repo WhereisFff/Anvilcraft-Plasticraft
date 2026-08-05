@@ -11,6 +11,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 /** 塑料实体专用的不可变组合碰撞体。 */
 public final class PlasticEntityCollisionBox {
@@ -18,11 +19,18 @@ public final class PlasticEntityCollisionBox {
 
     private final VoxelShape shape;
     private final List<AABB> components;
+    private final List<PlasticConvexShape> convexComponents;
     private final AABB bounds;
+    private volatile List<PlasticConvexCollisionOutline.Segment> convexOutline;
 
-    private PlasticEntityCollisionBox(VoxelShape shape, AABB bounds) {
+    private PlasticEntityCollisionBox(
+        VoxelShape shape,
+        AABB bounds,
+        List<PlasticConvexShape> convexComponents
+    ) {
         this.shape = Objects.requireNonNull(shape, "shape").optimize();
         this.components = List.copyOf(this.shape.toAabbs());
+        this.convexComponents = List.copyOf(convexComponents);
         this.bounds = Objects.requireNonNull(bounds, "bounds");
     }
 
@@ -31,6 +39,7 @@ public final class PlasticEntityCollisionBox {
         return atEntityPosition(
             relativeShape,
             relativeShape,
+            List.of(),
             entityPosition,
             PlasticEntityGeometry.UNIT_CUBE_ENTITY_ORIGIN
         );
@@ -43,8 +52,26 @@ public final class PlasticEntityCollisionBox {
         Vec3 entityPosition,
         Vec3 entityOrigin
     ) {
+        return atEntityPosition(
+            relativeShape,
+            relativeBoundsShape,
+            List.of(),
+            entityPosition,
+            entityOrigin
+        );
+    }
+
+    /** 将连续凸体和方块 API 使用的粗略轮廓锚定到同一个实体位置。 */
+    public static PlasticEntityCollisionBox atEntityPosition(
+        VoxelShape relativeShape,
+        VoxelShape relativeBoundsShape,
+        List<PlasticConvexShape> relativeConvexShapes,
+        Vec3 entityPosition,
+        Vec3 entityOrigin
+    ) {
         Objects.requireNonNull(relativeShape, "relativeShape");
         Objects.requireNonNull(relativeBoundsShape, "relativeBoundsShape");
+        Objects.requireNonNull(relativeConvexShapes, "relativeConvexShapes");
         Objects.requireNonNull(entityPosition, "entityPosition");
         Objects.requireNonNull(entityOrigin, "entityOrigin");
         if (relativeBoundsShape.isEmpty()) {
@@ -53,7 +80,8 @@ public final class PlasticEntityCollisionBox {
         Vec3 movement = entityPosition.subtract(entityOrigin);
         return new PlasticEntityCollisionBox(
             relativeShape.move(movement.x, movement.y, movement.z),
-            relativeBoundsShape.bounds().move(movement)
+            relativeBoundsShape.bounds().move(movement),
+            relativeConvexShapes.stream().map(shape -> shape.move(movement)).toList()
         );
     }
 
@@ -63,6 +91,24 @@ public final class PlasticEntityCollisionBox {
 
     public List<AABB> components() {
         return this.components;
+    }
+
+    public List<PlasticConvexShape> convexComponents() {
+        return this.convexComponents;
+    }
+
+    public boolean hasConvexComponents() {
+        return !this.convexComponents.isEmpty();
+    }
+
+    /** 返回当前凸碰撞并集的调试轮廓；结果随不可变碰撞箱实例缓存。 */
+    public List<PlasticConvexCollisionOutline.Segment> convexOutline() {
+        if (this.convexComponents.isEmpty()) return List.of();
+        List<PlasticConvexCollisionOutline.Segment> cached = this.convexOutline;
+        if (cached != null) return cached;
+        cached = PlasticConvexCollisionOutline.build(this.convexComponents);
+        this.convexOutline = cached;
+        return cached;
     }
 
     /** 返回仅用于宽阶段检索的最小外包围盒。 */
@@ -75,7 +121,8 @@ public final class PlasticEntityCollisionBox {
         if (movement.equals(Vec3.ZERO)) return this;
         return new PlasticEntityCollisionBox(
             this.shape.move(movement.x, movement.y, movement.z),
-            this.bounds.move(movement)
+            this.bounds.move(movement),
+            this.convexComponents.stream().map(shape -> shape.move(movement)).toList()
         );
     }
 
@@ -89,12 +136,34 @@ public final class PlasticEntityCollisionBox {
         Level level,
         List<VoxelShape> entityCollisions
     ) {
+        return this.collide(entity, requestedMovement, level, entityCollisions, ignored -> true);
+    }
+
+    public Vec3 collide(
+        Entity entity,
+        Vec3 requestedMovement,
+        Level level,
+        List<VoxelShape> entityCollisions,
+        Predicate<Entity> exactObstacleFilter
+    ) {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(requestedMovement, "requestedMovement");
         Objects.requireNonNull(level, "level");
         Objects.requireNonNull(entityCollisions, "entityCollisions");
+        Objects.requireNonNull(exactObstacleFilter, "exactObstacleFilter");
         if (requestedMovement.lengthSqr() == 0.0D) return requestedMovement;
         if (this.components.isEmpty()) return requestedMovement;
+        if (!this.convexComponents.isEmpty()) {
+            return PlasticConvexCollisionResolver.collide(
+                entity,
+                requestedMovement,
+                this.bounds,
+                this.convexComponents,
+                level,
+                entityCollisions,
+                exactObstacleFilter
+            );
+        }
 
         AABB sweptBounds = this.bounds.expandTowards(requestedMovement);
         List<VoxelShape> colliders = new ArrayList<>(entityCollisions.size() + 8);

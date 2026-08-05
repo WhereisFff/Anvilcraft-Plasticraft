@@ -1,0 +1,136 @@
+package dev.anvilcraft.plasticraft.entity.collision;
+
+import net.minecraft.world.phys.Vec3;
+
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.Objects;
+
+/** 按移动顺序保留尚未获服务端确认的客户端承载位移。 */
+public final class PlasticCarrierPrediction {
+    private static final double MOVEMENT_EPSILON = 1.0E-5D;
+
+    private final AxisPrediction x = new AxisPrediction();
+    private final AxisPrediction y = new AxisPrediction();
+    private final AxisPrediction z = new AxisPrediction();
+
+    public void add(Vec3 movement) {
+        Vec3 value = requireFinite(movement, "movement");
+        this.x.add(value.x);
+        this.y.add(value.y);
+        this.z.add(value.z);
+    }
+
+    /**
+     * 用一次服务端位置增量消费预测路径的最早前缀。
+     * 返回值表示至少一个非零分量确认了仍在等待的预测。
+     */
+    public boolean reconcile(Vec3 serverMovement) {
+        Vec3 value = requireFinite(serverMovement, "serverMovement");
+        boolean confirmed = this.x.reconcile(value.x);
+        confirmed |= this.y.reconcile(value.y);
+        confirmed |= this.z.reconcile(value.z);
+        return confirmed;
+    }
+
+    public Vec3 pendingMovement() {
+        return new Vec3(this.x.pending(), this.y.pending(), this.z.pending());
+    }
+
+    /** 返回仍待确认路径在三轴上的绝对行程之和。 */
+    public double remainingTravel() {
+        return this.x.travel() + this.y.travel() + this.z.travel();
+    }
+
+    public boolean isEmpty() {
+        return this.x.isEmpty() && this.y.isEmpty() && this.z.isEmpty();
+    }
+
+    public void clear() {
+        this.x.clear();
+        this.y.clear();
+        this.z.clear();
+    }
+
+    private static Vec3 requireFinite(Vec3 vector, String name) {
+        Vec3 value = Objects.requireNonNull(vector, name);
+        if (!Double.isFinite(value.x) || !Double.isFinite(value.y) || !Double.isFinite(value.z)) {
+            throw new IllegalArgumentException(name + " must be finite");
+        }
+        return value;
+    }
+
+    private static final class AxisPrediction {
+        private final Deque<Double> segments = new ArrayDeque<>();
+        private double pending;
+        private double travel;
+
+        private void add(double movement) {
+            if (Math.abs(movement) <= MOVEMENT_EPSILON) return;
+            if (!this.segments.isEmpty()
+                && Math.signum(this.segments.getLast()) == Math.signum(movement)) {
+                double previous = this.segments.removeLast();
+                this.pending -= previous;
+                this.travel -= Math.abs(previous);
+                movement += previous;
+            }
+            this.segments.addLast(movement);
+            this.pending += movement;
+            this.travel += Math.abs(movement);
+        }
+
+        private boolean reconcile(double serverMovement) {
+            if (Math.abs(serverMovement) <= MOVEMENT_EPSILON || this.segments.isEmpty()) {
+                return false;
+            }
+            double traversed = 0.0D;
+            while (!this.segments.isEmpty()) {
+                double segment = this.segments.removeFirst();
+                this.pending -= segment;
+                this.travel -= Math.abs(segment);
+                double next = traversed + segment;
+                if (between(serverMovement, traversed, next)) {
+                    double remaining = next - serverMovement;
+                    if (Math.abs(remaining) > MOVEMENT_EPSILON) {
+                        this.segments.addFirst(remaining);
+                        this.pending += remaining;
+                        this.travel += Math.abs(remaining);
+                    }
+                    this.normalize();
+                    return true;
+                }
+                traversed = next;
+            }
+            this.normalize();
+            return false;
+        }
+
+        private static boolean between(double value, double first, double second) {
+            return value >= Math.min(first, second) - MOVEMENT_EPSILON
+                && value <= Math.max(first, second) + MOVEMENT_EPSILON;
+        }
+
+        private double pending() {
+            return Math.abs(this.pending) <= MOVEMENT_EPSILON ? 0.0D : this.pending;
+        }
+
+        private double travel() {
+            return Math.max(0.0D, this.travel);
+        }
+
+        private boolean isEmpty() {
+            return this.segments.isEmpty();
+        }
+
+        private void clear() {
+            this.segments.clear();
+            this.pending = 0.0D;
+            this.travel = 0.0D;
+        }
+
+        private void normalize() {
+            if (Math.abs(this.pending) <= MOVEMENT_EPSILON) this.pending = 0.0D;
+            if (this.travel <= MOVEMENT_EPSILON) this.travel = 0.0D;
+        }
+    }
+}

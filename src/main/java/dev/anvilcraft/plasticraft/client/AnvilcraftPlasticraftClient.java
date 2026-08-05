@@ -10,8 +10,10 @@ import dev.anvilcraft.plasticraft.client.particle.ExperienceVaporParticle;
 import dev.anvilcraft.plasticraft.client.particle.FluidVaporParticle;
 import dev.anvilcraft.plasticraft.client.particle.GaseousOilFlameParticle;
 import dev.anvilcraft.plasticraft.client.renderer.AdhesivePatchRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.DynamicPlasticTextureManager;
 import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticTextureSpriteSource;
+import dev.anvilcraft.plasticraft.client.renderer.UniversalPlasticItemRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingViewportResources;
 import dev.anvilcraft.plasticraft.client.renderer.entity.CatalyticPressLidRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinCauldronRenderer;
@@ -21,6 +23,7 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.dubhe.anvilcraft.api.tooltip.HudTooltipManager;
+import net.minecraft.client.renderer.BlockEntityWithoutLevelRenderer;
 import net.minecraft.client.renderer.ItemBlockRenderTypes;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.item.ItemProperties;
@@ -35,6 +38,8 @@ import net.neoforged.neoforge.client.event.RegisterColorHandlersEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import net.neoforged.neoforge.client.event.RegisterParticleProvidersEvent;
+import net.neoforged.neoforge.client.extensions.common.IClientItemExtensions;
+import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsEvent;
 import net.neoforged.neoforge.common.NeoForge;
 
 /** 为今后注册支持调色板的材料而保留的客户端入口点。 */
@@ -49,6 +54,7 @@ public final class AnvilcraftPlasticraftClient {
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerReloadListeners);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerBlockColors);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerItemColors);
+        modEventBus.addListener(AnvilcraftPlasticraftClient::registerClientExtensions);
         modEventBus.addListener(PlasticTextureSpriteSource::registerType);
         NeoForge.EVENT_BUS.addListener(AnvilcraftPlasticraftClient::clearPlasticTextureCache);
         // 硬化树脂和树脂均为固定颜色材料，不注册方块或物品着色处理器。
@@ -57,6 +63,7 @@ public final class AnvilcraftPlasticraftClient {
 
     private static void clearPlasticTextureCache(ClientPlayerNetworkEvent.LoggingOut event) {
         PlasticTextureCache.clear();
+        DynamicPlasticTextureManager.INSTANCE.clear();
         MoldingViewportResources.INSTANCE.closeAll();
     }
 
@@ -110,6 +117,15 @@ public final class AnvilcraftPlasticraftClient {
         );
     }
 
+    private static void registerClientExtensions(RegisterClientExtensionsEvent event) {
+        event.registerItem(new IClientItemExtensions() {
+            @Override
+            public BlockEntityWithoutLevelRenderer getCustomRenderer() {
+                return UniversalPlasticItemRenderer.getInstance();
+            }
+        }, PlasticraftBlocks.UNIVERSAL_PLASTIC.asItem());
+    }
+
     private static void registerAdditionalModels(ModelEvent.RegisterAdditional event) {
         event.register(HardenedResinCauldronRenderer.OUTLET_MODEL);
         event.register(CatalyticPressLidRenderer.ARM_MODEL);
@@ -132,5 +148,6 @@ public final class AnvilcraftPlasticraftClient {
 
     private static void registerReloadListeners(RegisterClientReloadListenersEvent event) {
         event.registerReloadListener(MoldingViewportResources.INSTANCE);
+        event.registerReloadListener(DynamicPlasticTextureManager.INSTANCE);
     }
 }

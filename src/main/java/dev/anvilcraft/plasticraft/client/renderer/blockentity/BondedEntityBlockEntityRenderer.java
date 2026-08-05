@@ -85,6 +85,9 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
     @Override
     public AABB getRenderBoundingBox(BondedEntityBlockEntity blockEntity) {
         AABB bounds = new AABB(blockEntity.getBlockPos());
+        if (blockEntity.getOrCreateRenderEntity() instanceof AbstractPlasticEntity plasticEntity) {
+            return bounds.minmax(plasticEntity.getBoundingBox());
+        }
         if (blockEntity.getDisplayState().is(PlasticraftBlocks.CATALYTIC_PRESS_LID.get())) {
             return bounds.inflate(CatalyticPressLidEntity.RENDER_BOUNDS_EXPANSION);
         }

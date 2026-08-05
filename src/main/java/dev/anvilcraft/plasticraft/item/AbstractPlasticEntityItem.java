@@ -101,7 +101,7 @@ public abstract class AbstractPlasticEntityItem<E extends AbstractPlasticEntity>
         BlockPos occupiedPos = level.getBlockState(clickedPos).canBeReplaced()
             ? clickedPos
             : clickedPos.relative(attachmentFace);
-        PlasticEntityOrientation orientation = this.placementOrientation(attachmentFace, player);
+        PlasticEntityOrientation orientation = this.placementOrientation(stack, attachmentFace, player);
 
         EntityType<? extends E> type = this.entityType.get();
         if (type == null) {
@@ -109,7 +109,7 @@ public abstract class AbstractPlasticEntityItem<E extends AbstractPlasticEntity>
         }
         Vec3 provisionalPosition = Vec3.atBottomCenterOf(occupiedPos);
 
-        ItemStack entityStack = stack.copyWithCount(1);
+        ItemStack entityStack = this.prepareEntityStack(stack.copyWithCount(1), orientation);
         PlasticItemData.setMaterial(entityStack, this.materialKey());
         if (!this.supportsDyeing()) {
             PlasticItemData.clearColor(entityStack);
@@ -171,6 +171,19 @@ public abstract class AbstractPlasticEntityItem<E extends AbstractPlasticEntity>
     /** 允许尺寸不是完整立方体的制品约束放置朝向，确保实体包围盒和局部碰撞保持一致。 */
     protected PlasticEntityOrientation placementOrientation(Direction attachmentFace, Player player) {
         return PlasticEntityOrientation.forPlacement(attachmentFace, player);
+    }
+
+    /** 允许带姿态组件的制品在选择放置面后保留面内旋转。 */
+    protected PlasticEntityOrientation placementOrientation(
+        ItemStack stack,
+        Direction attachmentFace,
+        Player player
+    ) {
+        return this.placementOrientation(attachmentFace, player);
+    }
+
+    protected ItemStack prepareEntityStack(ItemStack stack, PlasticEntityOrientation orientation) {
+        return stack;
     }
 
     /** 仅含旧颜色数据的物品堆转换为实体时写入的稳定材料键。 */

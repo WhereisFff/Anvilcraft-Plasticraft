@@ -59,7 +59,17 @@ After the mold is complete, the structure is valid, and power is available, up t
 
 The two capacities do not overlap. A maximum solid model holds 27648 mB in its batch while staging still holds 8000 mB, for 35648 mB total. The first melt entering a batch fixes its fluid, material, colour, and component identity until the batch is empty. Extraction from either vertical face drains the unprocessed batch before staging.
 
-Anvil processing requires at least 250 mB already inside the forming batch. Staging melt does not satisfy this threshold and is never moved into the batch instantly by an anvil strike. Product output, partial forming, and recovered clay become active when their production structure is connected.
+Anvil processing requires at least 250 mB already inside the forming batch. Staging melt does not satisfy this threshold and is never moved into the batch instantly by an anvil strike.
+
+## Giant Anvil processing and clay recovery
+
+Build a 3x3 platform directly above the top layer of the forming region and land a Giant Anvil on that structure. Nine Crafting Tables perform a conversion and create a shape-preserving plastic entity inside the original 3x3x3 region. Eight outer Crafting Tables with a Space Overcompressor in the centre perform crafting and create a plastic item drop in the same region. A complete product retains each source cube, endpoint, and rotation instead of displaying the manufacturing cells as a stepped outline. The platform is derived from the chamber orientation and region anchor, so all four horizontal chamber directions use the same rule. Crafting Tables, the Space Overcompressor, the chamber, and its region blocks are never consumed.
+
+A strike succeeds only when the structure is correct, the clay mold is complete, the chamber can maintain its 256 kW working level, and the forming batch contains at least 250 mB. The server first freezes and validates the model, batch melt, material, colour, output, and target region, then commits the product, clay recovery, and machine state together. A failed preflight consumes no melt or clay and creates no partial output. Duplicate delivery of one landing event cannot produce a second result.
+
+The manufacturing conversion is fixed at `1 mB = 4` forming cells, so 250 mB pays for at most 1000 cells and 251 mB for at most 1004. The machine divides the paid cell count by the model's total cell count, then places one horizontal cut at that percentage between the model's lowest and highest Y coordinates. Source cubes below the cut retain their endpoints, rotations, and continuous slopes; cubes crossing it are clipped at the same height and receive a flat upper surface, while everything above it is removed. Cell order is stable accounting data and is never rendered as scattered pieces. A model of at most 1000 cells becomes complete at the 250 mB minimum. A purely zero-thickness model retains all surfaces after meeting that minimum; zero-thickness cubes in a mixed model follow the same height cut without creating caps.
+
+A successful strike clears only the forming batch. The fluid identity, components, and exact mB amount in the 8 B staging tank stay unchanged. Products are created in the forming region rather than stored by the machine. Every clay ball actually committed to the mold drops back into that same region, merged into stacks of at most 64 where possible: batches that used 1, 64, or 108 clay balls return exactly 1, 64, or 108. Clay-breaking particles are visual and do not alter the recovered count.
 
 ## Production modes
 

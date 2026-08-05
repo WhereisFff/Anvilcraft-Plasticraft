@@ -12,6 +12,7 @@ import dev.anvilcraft.plasticraft.event.HighViscosityResinEvents;
 import dev.anvilcraft.plasticraft.event.PlasticVillagerTrades;
 import dev.anvilcraft.plasticraft.fluid.UniversalPlasticMeltBucketWrapper;
 import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftDataComponents;
 import dev.anvilcraft.plasticraft.init.PlasticraftMenuTypes;
 import dev.anvilcraft.plasticraft.init.PlasticraftParticles;
 import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
@@ -49,6 +50,7 @@ public final class AnvilcraftPlasticraft {
 
     public AnvilcraftPlasticraft(IEventBus modEventBus, ModContainer ignored) {
         PlasticraftAttachments.register(modEventBus);
+        PlasticraftDataComponents.register(modEventBus);
         PlasticraftItemGroups.register(modEventBus);
         PlasticraftFluids.register(modEventBus);
         PlasticraftBlocks.register();

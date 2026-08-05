@@ -8,6 +8,7 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.inventory.PlasticMoldingChamberMenu;
 import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
+import dev.anvilcraft.plasticraft.molding.bake.ManufacturedMoldingGeometry;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprint;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintDisk;
@@ -16,6 +17,7 @@ import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProcessSnapshot;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProductionMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingWaitReason;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticSurfaceAdapter;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingCommand;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelPersistence;
@@ -152,6 +154,8 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     private int moldFillProgress;
     private int energy;
     @Nullable
+    private MoldingProcessSnapshot processingSnapshot;
+    @Nullable
     private PowerGrid grid;
     @Nullable
     private UUID writerPlayerId;
@@ -199,6 +203,14 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     public void onLoad() {
         super.onLoad();
         if (this.level != null && !this.level.isClientSide) {
+            if (this.machineState == PlasticMoldingMachineState.PROCESSING) {
+                this.energy = Math.min(
+                    MoldingPowerBridge.capacity(),
+                    this.energy + MoldingPowerBridge.energyPerWorkingTick()
+                );
+                this.updateReadyState();
+                return;
+            }
             this.syncProductionState(this.hasMoldCollision());
         }
     }
@@ -221,6 +233,10 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
 
     public MoldingProductionMode selectedMode() {
         return this.selectedMode;
+    }
+
+    public MoldingProductionMode cycleMode() {
+        return this.cycleMode;
     }
 
     public MoldingWaitReason waitReason() {
@@ -420,6 +436,20 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             return MachineOutcome.rejected("already_locked");
         }
         if (this.bakedModel.analysis().empty()) return MachineOutcome.rejected("empty_model");
+        try {
+            ManufacturedMoldingGeometry fullShape = MoldingModelBaker.createManufacturedGeometry(
+                this.model,
+                1.0D
+            );
+            MoldedPlasticSurfaceAdapter.adapt(fullShape.surfaceMesh());
+        } catch (RuntimeException exception) {
+            AnvilcraftPlasticraft.LOGGER.debug(
+                "Rejected over-complex molding model at {}",
+                this.worldPosition,
+                exception
+            );
+            return MachineOutcome.rejected("model_too_complex");
+        }
         this.requiredClayBalls = this.bakedModel.analysis().clayBallRequirement();
         this.moldedClayBalls = 0;
         this.moldFillProgress = 0;
@@ -563,13 +593,15 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             this.moldedClayBalls,
             this.cycleMode
         );
+        this.processingSnapshot = snapshot;
         this.setMachineState(PlasticMoldingMachineState.PROCESSING);
         this.setWaitReason(MoldingWaitReason.PROCESSING);
         return Optional.of(snapshot);
     }
 
     public boolean finishProcessing(MoldingProcessSnapshot snapshot, boolean success) {
-        if (this.machineState != PlasticMoldingMachineState.PROCESSING
+        if (!success) return this.abortProcessing(snapshot);
+        if (!this.isActiveProcessingSnapshot(snapshot)
             || snapshot.modelRevision() != this.revision
             || !snapshot.bakedModel().modelHash().equals(this.bakedModel.modelHash())
             || snapshot.moldedClayBalls() != this.moldedClayBalls
@@ -577,14 +609,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             || !sameFluidAndAmount(snapshot.batchFluid(), this.batchTank.getFluid())) {
             return false;
         }
-        if (!success) {
-            this.energy = Math.min(
-                MoldingPowerBridge.capacity(),
-                this.energy + MoldingPowerBridge.energyPerWorkingTick()
-            );
-            this.updateReadyState();
-            return true;
-        }
+        this.processingSnapshot = null;
         this.batchTank.setFluid(FluidStack.EMPTY);
         this.moldedClayBalls = 0;
         this.requiredClayBalls = 0;
@@ -598,6 +623,33 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             ? MoldingWaitReason.WAITING_FOR_CLEAR_REGION
             : MoldingWaitReason.NONE);
         return true;
+    }
+
+    /** 事务提交失败时恢复冻结批次；暂存罐和加工期间的外部输入不受影响。 */
+    public boolean abortProcessing(MoldingProcessSnapshot snapshot) {
+        if (!this.isActiveProcessingSnapshot(snapshot)) return false;
+        this.batchTank.setFluid(snapshot.batchFluid());
+        this.moldedClayBalls = snapshot.moldedClayBalls();
+        this.requiredClayBalls = Math.max(this.requiredClayBalls, this.moldedClayBalls);
+        this.cycleMode = snapshot.cycleMode();
+        this.energy = Math.min(
+            MoldingPowerBridge.capacity(),
+            this.energy + MoldingPowerBridge.energyPerWorkingTick()
+        );
+        this.processingSnapshot = null;
+        this.updateReadyState();
+        return true;
+    }
+
+    private boolean isActiveProcessingSnapshot(MoldingProcessSnapshot snapshot) {
+        MoldingProcessSnapshot active = this.processingSnapshot;
+        return this.machineState == PlasticMoldingMachineState.PROCESSING
+            && active != null
+            && snapshot.modelRevision() == active.modelRevision()
+            && snapshot.bakedModel().modelHash().equals(active.bakedModel().modelHash())
+            && snapshot.moldedClayBalls() == active.moldedClayBalls()
+            && snapshot.cycleMode() == active.cycleMode()
+            && sameFluidAndAmount(snapshot.batchFluid(), active.batchFluid());
     }
 
     public void applyClientSnapshot(long newRevision, EditableMoldingModel newModel) {
@@ -1042,8 +1094,8 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
 
     private static boolean hasMoldCollision(PlasticMoldingMachineState state) {
         return switch (state) {
-            case MOLD_FILLING, MOLD_READY, PROCESS_READY, PROCESSING -> true;
-            case EDITABLE, WAITING_TO_LOCK, WAITING_NEXT_CYCLE -> false;
+            case MOLD_FILLING, MOLD_READY, PROCESS_READY -> true;
+            case EDITABLE, WAITING_TO_LOCK, PROCESSING, WAITING_NEXT_CYCLE -> false;
         };
     }
 
@@ -1164,6 +1216,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     }
 
     private void loadProduction(CompoundTag tag, HolderLookup.Provider provider) {
+        this.processingSnapshot = null;
         this.machineState = PlasticMoldingMachineState.fromSerializedName(tag.getString(TAG_MACHINE_STATE));
         this.structureComplete = tag.getBoolean(TAG_STRUCTURE_COMPLETE);
         this.clayLimit = tag.contains(TAG_CLAY_LIMIT)

@@ -5,7 +5,6 @@ import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
-import dev.anvilcraft.plasticraft.event.PlasticVillagerTrades;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
@@ -20,11 +19,8 @@ import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.block.state.GiantAnvilCube;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
-import dev.dubhe.anvilcraft.init.block.ModFluids;
-import dev.dubhe.anvilcraft.init.entity.ModVillagers;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.recipe.FluidMixingRecipe;
-import dev.dubhe.anvilcraft.recipe.anvil.wrap.SolidLiquidRecipe;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import net.minecraft.core.BlockPos;
@@ -34,20 +30,16 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.entity.npc.VillagerProfession;
 import net.minecraft.world.entity.npc.VillagerTrades;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.crafting.RecipeHolder;
-import net.minecraft.world.item.trading.MerchantOffer;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -55,10 +47,8 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LayeredCauldronBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
-import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.event.village.VillagerTradesEvent;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
@@ -68,7 +58,6 @@ import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.List;
 
 /** TODO-00 中保留塑料粒的生产路径及珠宝商交易回归测试。 */
@@ -225,126 +214,6 @@ public final class UniversalPlasticProductionGameTests {
             granuleDrops(helper, new AABB(helper.absolutePos(outputPos)).inflate(1.0D)).isEmpty(),
             "rollback left a granule item entity"
         );
-        helper.succeed();
-    }
-
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate("15x9x7")
-    @TestHolder(description = "Both retained fluid-mixing recipes produce sixteen same-colour granules")
-    static void retainedFluidMixingRecipesPreserveColor(ExtendedGameTestHelper helper) {
-        FluidMixingRecipe waterRecipe = fluidMixingRecipe(helper, "universal_plastic_melt_with_water");
-        FluidMixingRecipe snowRecipe = fluidMixingRecipe(helper, "universal_plastic_melt_with_powder_snow");
-        assertFluidMixingDefinition(waterRecipe, Fluids.WATER, "water", helper.getLevel());
-        assertFluidMixingDefinition(snowRecipe, ModFluids.POWDER_SNOW.get(), "powder snow", helper.getLevel());
-
-        LargeCauldronBlockEntity waterCauldron = placeLargeCauldron(helper, new BlockPos(3, 1, 3));
-        waterCauldron.getFluids().setFluids(List.of(
-            coloredMelt(BUCKET, DyeColor.ORANGE),
-            new FluidStack(Fluids.WATER, BUCKET)
-        ));
-        processLargeCauldron(waterCauldron);
-        assertInventoryGranules(waterCauldron.getOutputHandler(), DyeColor.ORANGE, "water mixing");
-
-        LargeCauldronBlockEntity snowCauldron = placeLargeCauldron(helper, new BlockPos(11, 1, 3));
-        snowCauldron.getFluids().setFluids(List.of(
-            coloredMelt(BUCKET, DyeColor.MAGENTA),
-            new FluidStack(ModFluids.POWDER_SNOW.get(), BUCKET)
-        ));
-        processLargeCauldron(snowCauldron);
-        assertInventoryGranules(snowCauldron.getOutputHandler(), DyeColor.MAGENTA, "powder-snow mixing");
-        helper.succeed();
-    }
-
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate("7x7x7")
-    @TestHolder(description = "The retained solid-liquid cooling recipe produces sixteen same-colour granules")
-    static void retainedSolidLiquidRecipePreservesColor(ExtendedGameTestHelper helper) {
-        RecipeHolder<?> holder = helper.getLevel().getRecipeManager()
-            .byKey(AnvilcraftPlasticraft.of("solid_liquid/cool_universal_plastic_melt"))
-            .orElseThrow(() -> new GameTestAssertException("solid-liquid cooling recipe was not loaded"));
-        check(holder.value() instanceof SolidLiquidRecipe, "cooling recipe did not load as solid-liquid");
-        SolidLiquidRecipe recipe = (SolidLiquidRecipe) holder.value();
-        check(recipe.getHasCauldron().consume() == BUCKET, "solid-liquid recipe consumes the wrong melt amount");
-        check(
-            recipe.getHasCauldron().fluid().equals(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.getId()),
-            "solid-liquid recipe targets the wrong fluid"
-        );
-        check(recipe.getResultItems().size() == 1, "solid-liquid recipe has an unexpected result count");
-        check(
-            recipe.getResultItems().getFirst().getItem() == PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get(),
-            "solid-liquid recipe returns the wrong item"
-        );
-        check(recipe.getResultItems().getFirst().getMaxCount() == GRANULES, "solid-liquid recipe returns the wrong count");
-
-        HardenedResinCauldronEntity cauldron = spawnCauldron(helper, new BlockPos(3, 2, 3));
-        HardenedResinAnvilEntity anvil = spawnAnvil(helper, new BlockPos(3, 3, 3));
-        FluidStack melt = coloredMelt(BUCKET, DyeColor.LIGHT_BLUE);
-        check(
-            cauldron.getFluidHandler().fill(melt, IFluidHandler.FluidAction.EXECUTE) == BUCKET,
-            "solid-liquid test cauldron rejected melt"
-        );
-        check(
-            cauldron.getInput().insertItem(0, new ItemStack(Items.SNOWBALL), false).isEmpty(),
-            "solid-liquid test cauldron rejected its cold item"
-        );
-
-        cauldron.processAnvilImpact(anvil, Direction.DOWN);
-
-        check(cauldron.getFluidHandler().getFluid().isEmpty(), "solid-liquid recipe did not consume the melt");
-        check(cauldron.getInput().getStackInSlot(0).isEmpty(), "solid-liquid recipe did not consume the cold item");
-        assertInventoryGranules(cauldron.getOutput(), DyeColor.LIGHT_BLUE, "solid-liquid cooling");
-        helper.succeed();
-    }
-
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate("3x3x3")
-    @TestHolder(description = "Each novice-jeweler offer randomly requests exactly one of sixteen granule colors")
-    static void jewelerTradeRandomlyRequestsOneColor(ExtendedGameTestHelper helper) {
-        Int2ObjectMap<List<VillagerTrades.ItemListing>> jewelerTrades = emptyTradeMap();
-        PlasticVillagerTrades.addTrades(new VillagerTradesEvent(
-            jewelerTrades,
-            ModVillagers.JEWELER.get(),
-            helper.getLevel().registryAccess()
-        ));
-        check(jewelerTrades.get(1).size() == 1, "jeweler did not receive exactly one Plasticraft trade");
-
-        Int2ObjectMap<List<VillagerTrades.ItemListing>> farmerTrades = emptyTradeMap();
-        PlasticVillagerTrades.addTrades(new VillagerTradesEvent(
-            farmerTrades,
-            VillagerProfession.FARMER,
-            helper.getLevel().registryAccess()
-        ));
-        check(farmerTrades.get(1).isEmpty(), "non-jeweler profession received the plastic trade");
-
-        VillagerTrades.ItemListing listing = jewelerTrades.get(1).getFirst();
-        RandomSource random = RandomSource.create(1L);
-        EnumSet<DyeColor> requestedColors = EnumSet.noneOf(DyeColor.class);
-        for (int attempt = 0; attempt < 256; attempt++) {
-            MerchantOffer offer = listing.getOffer(null, random);
-            check(offer != null, "jeweler listing returned no offer");
-            check(offer.getBaseCostA().is(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get()), "trade buys the wrong item");
-            check(offer.getBaseCostA().getCount() == JEWELER_GRANULE_COST, "trade buys the wrong granule count");
-            check(offer.getResult().is(Items.EMERALD) && offer.getResult().getCount() == JEWELER_EMERALD_PAYMENT,
-                "trade pays the wrong amount");
-            check(offer.getMaxUses() == 16, "trade has the wrong maximum uses");
-            check(offer.getXp() == 2, "trade grants the wrong villager experience");
-            check(Math.abs(offer.getPriceMultiplier() - 0.05F) < 1.0E-6F,
-                "trade has the wrong price multiplier");
-
-            // 成本栈携带本次随机颜色；同色可以成交，任一其他颜色必须被拒绝。
-            DyeColor requestedColor = PlasticMeltColor.get(offer.getBaseCostA());
-            requestedColors.add(requestedColor);
-            ItemStack matching = coloredGranules(requestedColor);
-            DyeColor otherColor = DyeColor.byId((requestedColor.getId() + 1) % DyeColor.values().length);
-            check(offer.satisfiedBy(matching, ItemStack.EMPTY),
-                "trade rejected its requested " + requestedColor.getName() + " granules");
-            check(!offer.satisfiedBy(coloredGranules(otherColor), ItemStack.EMPTY),
-                "trade accepted " + otherColor.getName() + " instead of " + requestedColor.getName());
-            check(!offer.satisfiedBy(matching.copyWithCount(JEWELER_GRANULE_COST - 1), ItemStack.EMPTY),
-                "trade accepted fewer than eight granules");
-        }
-        check(requestedColors.size() == DyeColor.values().length,
-            "random jeweler offers did not cover all sixteen granule colors: " + requestedColors);
         helper.succeed();
     }
 

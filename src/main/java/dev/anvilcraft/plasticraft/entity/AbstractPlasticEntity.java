@@ -10,7 +10,9 @@ import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionBox;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityContactResolver;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticCarrierPrediction;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticPushChain;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFallingBlockSupport;
@@ -91,7 +93,6 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     implements PlasticGravityTypeProvider, CarrierMovableEntity, ShapedCollisionEntity {
     public static final float COLLISION_SIZE = 1.0F;
 
-    private static final PlasticEntityGeometry DEFAULT_GEOMETRY = PlasticEntityGeometry.of(Shapes.block());
     private static final double AIR_DRAG = 0.98D;
     private static final double FLUID_VERTICAL_DRAG = 0.82D;
     private static final double FLUID_HORIZONTAL_DRAG = 0.86D;
@@ -128,6 +129,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     private static final double HAMMER_ROTATION_COLLISION_EPSILON = 1.0E-6D;
     private static final double CLIENT_HARD_CORRECTION_DISTANCE = 16.0D;
     private static final double CLIENT_MAX_PREDICTION_DISTANCE_SQR = 4.0D;
+    private static final double CLIENT_MAX_PREDICTION_TRAVEL = 4.0D;
     private static final long CLIENT_PREDICTION_TIMEOUT_TICKS = 10L;
     public static final int HAMMER_RETURN_ANIMATION_TICKS = 5;
 
@@ -149,6 +151,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     private int impactSoundMask;
     private UUID lastSidePushCarrierId;
     private long lastSidePushCarrierGameTime = Long.MIN_VALUE;
+    private boolean sideEntityPushInProgress;
     private final PlasticSlidingRailPhysics.State slidingRailState = new PlasticSlidingRailPhysics.State();
     private Set<BlockPos> supportedFallingBlocks = Set.of();
     private boolean clientSnapshotPending;
@@ -160,7 +163,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     private double clientServerY;
     private double clientServerZ;
     private Vec3 clientPendingServerMovement = Vec3.ZERO;
-    private Vec3 clientPredictedCarrierMovement = Vec3.ZERO;
+    private final PlasticCarrierPrediction clientCarrierPrediction = new PlasticCarrierPrediction();
     private boolean clientSnapshotHardCorrection;
     private long clientLastPredictionConfirmationGameTime = Long.MIN_VALUE;
     private long clientCarrierMoveGameTime = Long.MIN_VALUE;
@@ -267,7 +270,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         this.clientServerY = this.getY();
         this.clientServerZ = this.getZ();
         this.clientPendingServerMovement = Vec3.ZERO;
-        this.clientPredictedCarrierMovement = Vec3.ZERO;
+        this.clientCarrierPrediction.clear();
         this.clientSnapshotHardCorrection = false;
         this.clientLastPredictionConfirmationGameTime = Long.MIN_VALUE;
     }
@@ -288,13 +291,13 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         if (!Double.isFinite(serverMovement.lengthSqr())
             || serverMovement.lengthSqr()
                 > CLIENT_HARD_CORRECTION_DISTANCE * CLIENT_HARD_CORRECTION_DISTANCE) {
-            this.clientPredictedCarrierMovement = Vec3.ZERO;
+            this.clientCarrierPrediction.clear();
             this.clientPendingServerMovement = Vec3.ZERO;
             this.clientLastPredictionConfirmationGameTime = Long.MIN_VALUE;
             this.clientSnapshotHardCorrection = true;
         } else if (positionUnchanged && !rotationChanged) {
             // 未伴随旋转的原地快照表示服务端没有接受本地推动，立即撤销预测以避免继续穿入碰撞体。
-            this.clientPredictedCarrierMovement = Vec3.ZERO;
+            this.clientCarrierPrediction.clear();
             this.clientPendingServerMovement = Vec3.ZERO;
             this.clientLastPredictionConfirmationGameTime = Long.MIN_VALUE;
         } else {
@@ -339,34 +342,14 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             : this.getXRot();
     }
 
-    /** 用服务端已前进的距离逐轴确认本地推动，迟到快照只消费已经确认的部分。 */
-    private static Vec3 reconcileClientPrediction(Vec3 predicted, Vec3 serverMovement) {
-        return new Vec3(
-            reconcileClientPrediction(predicted.x, serverMovement.x),
-            reconcileClientPrediction(predicted.y, serverMovement.y),
-            reconcileClientPrediction(predicted.z, serverMovement.z)
-        );
-    }
-
-    private static double reconcileClientPrediction(double predicted, double serverMovement) {
-        if (Math.abs(predicted) <= PlasticEntityPhysics.FACE_EPSILON) return 0.0D;
-        if (Math.abs(serverMovement) <= PlasticEntityPhysics.FACE_EPSILON) return predicted;
-        if (Math.signum(predicted) != Math.signum(serverMovement)) return 0.0D;
-        double remaining = Math.abs(predicted) - Math.abs(serverMovement);
-        return remaining <= PlasticEntityPhysics.FACE_EPSILON
-            ? 0.0D
-            : Math.copySign(remaining, predicted);
-    }
-
     private boolean clearExpiredClientPrediction() {
-        if (this.clientPredictedCarrierMovement.lengthSqr()
-            <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON
+        if (this.clientCarrierPrediction.isEmpty()
             || !this.clientServerPositionInitialized
             || this.level().getGameTime() - this.clientLastPredictionConfirmationGameTime
                 <= CLIENT_PREDICTION_TIMEOUT_TICKS) {
             return false;
         }
-        this.clientPredictedCarrierMovement = Vec3.ZERO;
+        this.clientCarrierPrediction.clear();
         this.clientLastPredictionConfirmationGameTime = Long.MIN_VALUE;
         return true;
     }
@@ -465,7 +448,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         PlasticItemData.setMaterial(copy, this.materialKey());
         if (!this.supportsDyeing()) PlasticItemData.clearColor(copy);
         PlasticItemData.setMagnetized(copy, this.isMagnetized());
-        return copy;
+        return this.prepareDropStack(copy);
     }
 
     public final void setDropStack(ItemStack stack) {
@@ -477,6 +460,16 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             PlasticItemData.setMaterial(this.dropStack, this.materialKey());
             if (!this.supportsDyeing()) PlasticItemData.clearColor(this.dropStack);
         }
+        this.onDropStackChanged(this.dropStack.copy());
+    }
+
+    /** 子类可在回收前把当前实体状态写回物品组件。 */
+    protected ItemStack prepareDropStack(ItemStack stack) {
+        return stack;
+    }
+
+    /** 子类可把物品携带的动态数据同步给客户端，但不得依赖渲染状态。 */
+    protected void onDropStackChanged(ItemStack stack) {
     }
 
     protected abstract ItemStack createDefaultDropStack();
@@ -589,14 +582,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             }
             boolean receivedSnapshot = this.clientSnapshotPending;
             if (receivedSnapshot) {
-                Vec3 previousPrediction = this.clientPredictedCarrierMovement;
-                this.clientPredictedCarrierMovement = reconcileClientPrediction(
-                    previousPrediction,
-                    this.clientPendingServerMovement
-                );
-                if (this.clientPredictedCarrierMovement.lengthSqr()
-                    + PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON
-                    < previousPrediction.lengthSqr()) {
+                if (this.clientCarrierPrediction.reconcile(this.clientPendingServerMovement)) {
                     this.clientLastPredictionConfirmationGameTime = this.level().getGameTime();
                 }
                 this.clientPendingServerMovement = Vec3.ZERO;
@@ -613,7 +599,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
                     this.clientServerX,
                     this.clientServerY,
                     this.clientServerZ
-                ).add(this.clientPredictedCarrierMovement);
+                ).add(this.clientCarrierPrediction.pendingMovement());
                 if (this.clientSnapshotHardCorrection || this.shouldHardCorrectClientSnapshot(snapshotPosition)) {
                     this.setPos(snapshotPosition);
                     this.setRot(this.clientSnapshotYRot, this.clientSnapshotXRot);
@@ -874,11 +860,20 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             this.hurtMarked = true;
         }
 
-        PlasticEntityPhysics.pushSideEntities(
-            this,
-            gravityDirection,
-            this.supportObservation == null ? null : this.supportObservation.entityId()
-        );
+        Direction pushGravityDirection = gravityDirection == null ? Direction.DOWN : gravityDirection;
+        if (PlasticEntityPhysics.tangentialMovement(requestedMovement, pushGravityDirection).lengthSqr()
+            > PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
+            this.sideEntityPushInProgress = true;
+            try {
+                PlasticEntityPhysics.pushSideEntities(
+                    this,
+                    gravityDirection,
+                    this.supportObservation == null ? null : this.supportObservation.entityId()
+                );
+            } finally {
+                this.sideEntityPushInProgress = false;
+            }
+        }
         if (postMoveFluid.isPresent() || !actualMovement.equals(requestedMovement)) {
             this.hasImpulse = true;
             this.hurtMarked = true;
@@ -1179,23 +1174,12 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     @Override
     public boolean plasticraft$canMoveWithCarrier(Entity carrier, Vec3 requestedMovement) {
-        // 塑料实体的侧推由 PlasticPushChain 规划；实际支撑关系的切向移动由承载钩子处理。
-        // 法向移动不在这里放行，使砧和釜仍能产生真实冲击。
         if (this.carrierMoveInProgress) return false;
-        if (carrier instanceof AbstractPlasticEntity) {
-            Direction gravityDirection = this.currentPushGravityDirection();
-            Vec3 gravityNormal = Vec3.atLowerCornerOf(gravityDirection.getNormal());
-            return Math.abs(requestedMovement.dot(gravityNormal)) <= PlasticEntityPhysics.FACE_EPSILON
-                && PlasticEntityPhysics.hasImmediateEntityContact(this, carrier, gravityDirection);
-        }
-        Vec3 transferredMovement = this.carrierMovement(
+        return this.carrierTransfer(
             carrier,
             carrier.getBoundingBox(),
             requestedMovement
-        );
-        Direction carrierSupportDirection = this.carrierSupportDirection(carrier);
-        return transferredMovement != null
-            && (carrierSupportDirection != null || this.transfersSidePushWithCarrier(carrier));
+        ) != null;
     }
 
     @Override
@@ -1204,17 +1188,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             || !PlasticEntityPhysics.isWithinCarryDistance(actualMovement)) return;
 
         AABB previousCarrierBox = carrier.getBoundingBox().move(actualMovement.scale(-1.0D));
-        Direction carrierSupportDirection = this.carrierSupportDirection(carrier, previousCarrierBox);
-        boolean supportedCarrier = carrierSupportDirection != null;
-        Vec3 transferredMovement;
-        if (supportedCarrier) {
-            Vec3 normal = Vec3.atLowerCornerOf(carrierSupportDirection.getNormal());
-            if (actualMovement.dot(normal) > PlasticEntityPhysics.FACE_EPSILON) return;
-            transferredMovement = actualMovement;
-        } else {
-            transferredMovement = this.carrierMovement(carrier, previousCarrierBox, actualMovement);
-            if (transferredMovement == null) return;
-        }
+        CarrierTransfer transfer = this.carrierTransfer(carrier, previousCarrierBox, actualMovement);
+        if (transfer == null) return;
+        Vec3 transferredMovement = transfer.targetMovement();
 
         PlasticPushChain.ClippedPlan clipped = PlasticPushChain.clip(this, carrier, transferredMovement);
         transferredMovement = clipped.movement();
@@ -1224,9 +1200,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
         if (EntityBondManager.hasBonds(this)) {
             Vec3 moved = this.moveBondedComponentWithCarrier(carrier, transferredMovement);
-            if (supportedCarrier) {
+            if (transfer.isCarried()) {
                 this.supportObservation = PlasticEntityPhysics.SupportObservation.capture(carrier);
-                this.supportDirection = carrierSupportDirection;
+                this.supportDirection = transfer.supportDirection();
             } else {
                 Entity leader = EntityBondManager.resolveLeader(this.level(), this);
                 if (leader instanceof AbstractPlasticEntity plasticLeader) {
@@ -1237,9 +1213,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         }
 
         Vec3 moved = this.moveWithCarrierDisplacement(carrier, transferredMovement);
-        if (supportedCarrier) {
+        if (transfer.isCarried()) {
             this.supportObservation = PlasticEntityPhysics.SupportObservation.capture(carrier);
-            this.supportDirection = carrierSupportDirection;
+            this.supportDirection = transfer.supportDirection();
             return;
         }
         this.finishTransferredSidePush(carrier, moved);
@@ -1247,14 +1223,18 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     @Override
     public Vec3 plasticraft$clampCarrierMovement(Entity carrier, Vec3 requestedMovement) {
-        Vec3 targetMovement = this.carrierMovement(carrier, carrier.getBoundingBox(), requestedMovement);
-        if (this.carrierMoveInProgress || targetMovement == null) return requestedMovement;
-        Vec3 allowedTargetMovement = PlasticPushChain.clip(this, carrier, targetMovement).movement();
-        return PlasticEntityPhysics.clampCarrierMovement(
-            requestedMovement,
-            targetMovement,
-            allowedTargetMovement
+        CarrierTransfer transfer = this.carrierTransfer(
+            carrier,
+            carrier.getBoundingBox(),
+            requestedMovement
         );
+        if (this.carrierMoveInProgress || transfer == null) return requestedMovement;
+        Vec3 allowedTargetMovement = PlasticPushChain.clip(
+            this,
+            carrier,
+            transfer.targetMovement()
+        ).movement();
+        return transfer.clampCarrierMovement(requestedMovement, allowedTargetMovement);
     }
 
     private Vec3 moveBondedComponentWithCarrier(Entity ignored, Vec3 movement) {
@@ -1284,9 +1264,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         this.hurtMarked = true;
     }
 
-    private Vec3 carrierMovement(Entity carrier, AABB carrierBox, Vec3 requestedMovement) {
+    private CarrierTransfer carrierTransfer(Entity carrier, AABB carrierBox, Vec3 requestedMovement) {
         if (!PlasticEntityPhysics.isWithinCarryDistance(requestedMovement)) return null;
-        if (carrier instanceof Player && this.playerStandsOnBondedComponent(carrier, carrierBox)) {
+        if (this.carrierStandsOnBondedComponent(carrier, carrierBox)) {
             return null;
         }
         Direction carrierSupportDirection = this.carrierSupportDirection(carrier, carrierBox);
@@ -1298,28 +1278,68 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
                 carrierSupportDirection,
                 requestedMovement
             )) {
-            return requestedMovement;
+            return CarrierTransfer.carried(
+                PlasticEntityPhysics.carriedMovement(requestedMovement, carrierSupportDirection),
+                carrierSupportDirection
+            );
         }
+        if (!this.transfersSidePushWithCarrier(carrier)) return null;
         Direction gravityDirection = this.currentPushGravityDirection();
-        return PlasticEntityPhysics.sidePushMovement(
+        PlasticEntityContactResolver.PushContact sidePush = PlasticEntityPhysics.sidePushContact(
             this,
             carrier,
             carrierBox,
             gravityDirection,
             requestedMovement
         );
+        return sidePush == null ? null : CarrierTransfer.pushed(sidePush);
     }
 
-    private boolean playerStandsOnBondedComponent(Entity player, AABB playerBox) {
+    private boolean carrierStandsOnBondedComponent(Entity carrier, AABB carrierBox) {
         if (!EntityBondManager.hasBonds(this)) return false;
         Entity leader = EntityBondManager.resolveLeader(this.level(), this);
         if (leader == null || !leader.isAlive()) return false;
+        Direction gravityDirection = PlasticEntityPhysics.gravityDirection(carrier);
         for (Entity member : EntityBondManager.component(this.level(), leader)) {
-            if (PlasticEntityPhysics.hasSurfaceSupport(player, playerBox, member, Direction.DOWN)) {
+            if (PlasticEntityPhysics.hasSurfaceSupport(
+                carrier,
+                carrierBox,
+                member,
+                gravityDirection
+            )) {
                 return true;
             }
         }
         return false;
+    }
+
+    private record CarrierTransfer(
+        Vec3 targetMovement,
+        Direction supportDirection,
+        PlasticEntityContactResolver.PushContact sidePush
+    ) {
+        private static CarrierTransfer carried(Vec3 movement, Direction supportDirection) {
+            return new CarrierTransfer(movement, supportDirection, null);
+        }
+
+        private static CarrierTransfer pushed(PlasticEntityContactResolver.PushContact sidePush) {
+            return new CarrierTransfer(sidePush.targetMovement(), null, sidePush);
+        }
+
+        private boolean isCarried() {
+            return this.supportDirection != null;
+        }
+
+        private Vec3 clampCarrierMovement(Vec3 carrierMovement, Vec3 allowedTargetMovement) {
+            if (this.sidePush != null) {
+                return this.sidePush.clampCarrierMovement(carrierMovement, allowedTargetMovement);
+            }
+            return PlasticEntityPhysics.clampCarrierMovement(
+                carrierMovement,
+                this.targetMovement,
+                allowedTargetMovement
+            );
+        }
     }
 
     private boolean isCurrentSupport(Entity carrier, AABB carrierBox) {
@@ -1334,10 +1354,6 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
                 carrierBox,
                 observedDirection
             );
-    }
-
-    private Direction carrierSupportDirection(Entity carrier) {
-        return this.carrierSupportDirection(carrier, carrier.getBoundingBox());
     }
 
     private Direction carrierSupportDirection(Entity carrier, AABB carrierBox) {
@@ -1400,11 +1416,13 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
                 this.clientCarrierMoveStartY = start.y;
                 this.clientCarrierMoveStartZ = start.z;
             }
-            Vec3 previousPrediction = this.clientPredictedCarrierMovement;
-            Vec3 predictedMovement = previousPrediction.add(actualMovement);
+            boolean predictionWasEmpty = this.clientCarrierPrediction.isEmpty();
+            this.clientCarrierPrediction.add(actualMovement);
+            Vec3 predictedMovement = this.clientCarrierPrediction.pendingMovement();
             if (!Double.isFinite(predictedMovement.lengthSqr())
-                || predictedMovement.lengthSqr() > CLIENT_MAX_PREDICTION_DISTANCE_SQR) {
-                this.clientPredictedCarrierMovement = Vec3.ZERO;
+                || predictedMovement.lengthSqr() > CLIENT_MAX_PREDICTION_DISTANCE_SQR
+                || this.clientCarrierPrediction.remainingTravel() > CLIENT_MAX_PREDICTION_TRAVEL) {
+                this.clientCarrierPrediction.clear();
                 this.clientLastPredictionConfirmationGameTime = Long.MIN_VALUE;
                 if (this.clientServerPositionInitialized) {
                     this.clientSnapshotSteps = 1;
@@ -1413,9 +1431,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
                 }
                 return actualMovement;
             }
-            this.clientPredictedCarrierMovement = predictedMovement;
-            if (previousPrediction.lengthSqr()
-                <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
+            if (predictionWasEmpty) {
                 this.clientLastPredictionConfirmationGameTime = this.level().getGameTime();
             }
         }
@@ -1424,21 +1440,21 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     @Override
     public void push(Entity entity) {
-        // 玩家碰撞位移由承载预检直接传递。原版相互冲量会降低玩家速度，
-        // 并在该位移之上再叠加一次小得多的推动。
-        if (entity instanceof Player) return;
         // 相接的塑料实体静止时保持稳定。其主动位移由 PlasticPushChain 传播一次；
-        // 原版相互冲量会在玩家开始推动前制造间隙。
+        // 原版相互冲量会在下一次连续推动前制造间隙。
         if (entity instanceof AbstractPlasticEntity) return;
         if (this.wasRecentlyMovedBySidePushCarrier(entity)) return;
         if (this.isCurrentSupport(entity, entity.getBoundingBox())) {
             return;
         }
         Direction gravityDirection = this.currentPushGravityDirection();
-        if (!PlasticEntityPhysics.isSupportCandidate(this, entity, gravityDirection)
-            && PlasticEntityPhysics.isSideContact(this, entity, gravityDirection)) {
-            super.push(entity);
-        }
+        if (PlasticEntityPhysics.isSupportCandidate(this, entity, gravityDirection)
+            || !PlasticEntityPhysics.isSideContact(this, entity, gravityDirection)) return;
+        // 玩家与其他受支撑实体的主动移动均由同一连续侧推接管，避免静止接触产生额外冲量。
+        if (!this.sideEntityPushInProgress
+            && this.transfersSidePushWithCarrier(entity)
+            && PlasticEntityPhysics.isContinuousSidePushCarrier(this, entity, entity.getBoundingBox())) return;
+        super.push(entity);
     }
 
     private boolean wasRecentlyMovedBySidePushCarrier(Entity entity) {
@@ -1533,9 +1549,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     }
 
     /** 子类返回不可变几何；动态模型数据变化后必须调用 {@link #invalidatePlasticGeometry()}。 */
-    protected PlasticEntityGeometry getLocalGeometry() {
-        return DEFAULT_GEOMETRY;
-    }
+    protected abstract PlasticEntityGeometry getLocalGeometry();
 
     public final PlasticEntityGeometry plasticraft$getGeometry() {
         return this.currentGeometry();

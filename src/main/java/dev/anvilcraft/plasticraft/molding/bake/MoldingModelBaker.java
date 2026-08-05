@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
@@ -22,6 +23,11 @@ public final class MoldingModelBaker {
     public static final int MAX_COLLISION_BOXES = 4096;
     private static final double EPSILON = 1.0E-7D;
     private static final int PADDED_SIZE = MoldingVolumeMask.SIZE + 2;
+    private static final int[][] CUBE_FACES = {
+        {0, 4, 6, 2}, {1, 3, 7, 5},
+        {0, 1, 5, 4}, {2, 6, 7, 3},
+        {0, 2, 3, 1}, {4, 5, 7, 6}
+    };
     private static final MoldingFaceDirection[] DIRECTIONS = MoldingFaceDirection.values();
 
     private MoldingModelBaker() {
@@ -78,6 +84,84 @@ public final class MoldingModelBaker {
         );
     }
 
+    /** 构造仅供计量和分析使用的已支付体素掩码，不得把它用作制品表面或动态碰撞。 */
+    public static MoldingVolumeMask createPaidVolumeMask(BakedMoldingModel baked, int maximumCells) {
+        if (maximumCells < 0) throw new IllegalArgumentException("Manufactured cell count must not be negative");
+        int[] fillOrder = baked.fillOrder();
+        int cellCount = Math.min(fillOrder.length, maximumCells);
+        MoldingVolumeMask volume = new MoldingVolumeMask();
+        for (int index = 0; index < cellCount; index++) {
+            int cell = fillOrder[index];
+            volume.set(MoldingVolumeMask.x(cell), MoldingVolumeMask.y(cell), MoldingVolumeMask.z(cell));
+        }
+        return volume;
+    }
+
+    /** 生成旧式体素分析快照；实际制品改用按源 Cube 水平裁切的连续几何。 */
+    public static ManufacturedMoldingShape manufacture(BakedMoldingModel baked, int maximumCells) {
+        int[] fillOrder = baked.fillOrder();
+        MoldingVolumeMask volume = createPaidVolumeMask(baked, maximumCells);
+        int cellCount = volume.volume();
+
+        List<MoldingQuad> allZeroThickness = baked.surfaceMesh().stream()
+            .filter(MoldingQuad::doubleSided)
+            .toList();
+        List<MoldingQuad> selectedZeroThickness;
+        if (fillOrder.length == 0) {
+            selectedZeroThickness = allZeroThickness;
+        } else if (cellCount == fillOrder.length) {
+            selectedZeroThickness = allZeroThickness;
+        } else {
+            selectedZeroThickness = allZeroThickness.stream()
+                .filter(quad -> touchesFormedVolume(quad, volume))
+                .toList();
+        }
+        return manufacture(volume, selectedZeroThickness);
+    }
+
+    /** 从持久化的实际形状重新建立派生网格与碰撞。 */
+    public static ManufacturedMoldingShape manufacture(
+        MoldingVolumeMask volume,
+        List<MoldingQuad> zeroThicknessQuads
+    ) {
+        MoldingVolumeMask copiedVolume = volume.copy();
+        List<MoldingQuad> copiedQuads = List.copyOf(zeroThicknessQuads);
+        if (copiedQuads.stream().anyMatch(quad -> !quad.doubleSided())) {
+            throw new IllegalArgumentException("Manufactured zero-thickness surfaces must be double-sided");
+        }
+        List<MoldingQuad> surface = createSurfaceMesh(copiedVolume);
+        surface.addAll(copiedQuads);
+        CollisionResult collision = createCollisionShape(copiedVolume);
+        return new ManufacturedMoldingShape(
+            copiedVolume,
+            copiedQuads,
+            surface,
+            collision.boxes(),
+            collision.complexityExceeded()
+        );
+    }
+
+    private static boolean touchesFormedVolume(MoldingQuad quad, MoldingVolumeMask volume) {
+        List<MoldingVec3> vertices = List.of(quad.first(), quad.second(), quad.third(), quad.fourth());
+        Bounds bounds = Bounds.of(vertices);
+        Set<MoldingBarrierFace> barriers = new HashSet<>();
+        scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.X);
+        scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.Y);
+        scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.Z);
+        return barriers.stream().anyMatch(barrier -> hasFormedCellBeside(barrier, volume));
+    }
+
+    private static boolean hasFormedCellBeside(MoldingBarrierFace barrier, MoldingVolumeMask volume) {
+        int plane = barrier.plane();
+        int u = barrier.u();
+        int v = barrier.v();
+        return switch (barrier.axis()) {
+            case X -> volume.get(plane - 1, u, v) || volume.get(plane, u, v);
+            case Y -> volume.get(u, plane - 1, v) || volume.get(u, plane, v);
+            case Z -> volume.get(u, v, plane - 1) || volume.get(u, v, plane);
+        };
+    }
+
     public static List<MoldingVec3> transformedVertices(
         EditableMoldingModel model,
         MoldingElement element
@@ -99,6 +183,203 @@ public final class MoldingModelBaker {
         MoldingVec3 point
     ) {
         return inverseTransforms(point, element.transform(), hierarchy(element, model.groupMap()));
+    }
+
+    /** 保留每个可见源 Cube 的连续表面，完整成型制品不得显示制造体素的拟合轮廓。 */
+    public static List<MoldingQuad> createExactSurfaceMesh(EditableMoldingModel model) {
+        return createManufacturedGeometry(model, 1.0D).surfaceMesh();
+    }
+
+    /** 按熔体成型比例从模型底部向上水平裁切，并为每个被切开的源 Cube 生成平整封顶。 */
+    public static ManufacturedMoldingGeometry createManufacturedGeometry(
+        EditableMoldingModel model,
+        double formedProportion
+    ) {
+        if (!Double.isFinite(formedProportion) || formedProportion < 0.0D || formedProportion > 1.0D) {
+            throw new IllegalArgumentException("Manufactured proportion must be between zero and one");
+        }
+        Map<UUID, MoldingGroup> groups = model.groupMap();
+        List<ElementGeometry> elements = new ArrayList<>();
+        double minimumY = Double.POSITIVE_INFINITY;
+        double maximumY = Double.NEGATIVE_INFINITY;
+        for (MoldingElement element : model.elements()) {
+            List<MoldingGroup> hierarchy = hierarchy(element, groups);
+            if (!element.visible() || hierarchy.stream().anyMatch(group -> !group.visible())) continue;
+            List<MoldingVec3> vertices = transformedVertices(element, hierarchy);
+            validateWorkspace(vertices);
+            elements.add(new ElementGeometry(element.hasVolume(), vertices));
+            for (MoldingVec3 vertex : vertices) {
+                minimumY = Math.min(minimumY, vertex.y());
+                maximumY = Math.max(maximumY, vertex.y());
+            }
+        }
+        if (elements.isEmpty()) return new ManufacturedMoldingGeometry(List.of(), List.of());
+
+        double cutY = formedProportion >= 1.0D
+            ? maximumY
+            : minimumY + (maximumY - minimumY) * formedProportion;
+        List<MoldingQuad> surface = new ArrayList<>();
+        List<MoldingConvexHull> hulls = new ArrayList<>();
+        for (ElementGeometry element : elements) {
+            if (element.hasVolume()) {
+                List<FacePolygon> faces = clipCube(element.vertices(), cutY);
+                if (faces.isEmpty()) continue;
+                for (FacePolygon face : faces) addPolygonSurfaces(surface, face, false);
+                hulls.add(createConvexHull(faces));
+            } else {
+                MoldingVec3 normal = unitNormal(
+                    element.vertices().get(0),
+                    element.vertices().get(1),
+                    element.vertices().get(2)
+                );
+                List<MoldingVec3> clipped = clipBelow(element.vertices(), cutY);
+                if (clipped.size() >= 3) {
+                    addPolygonSurfaces(surface, new FacePolygon(clipped, normal), true);
+                }
+            }
+        }
+        return new ManufacturedMoldingGeometry(surface, hulls);
+    }
+
+    private static List<FacePolygon> orientedCubeFaces(List<MoldingVec3> vertices) {
+        MoldingVec3 center = MoldingVec3.ZERO;
+        for (MoldingVec3 vertex : vertices) center = center.add(vertex);
+        center = center.scale(1.0D / vertices.size());
+        List<FacePolygon> faces = new ArrayList<>(CUBE_FACES.length);
+        for (int[] face : CUBE_FACES) {
+            MoldingVec3 first = vertices.get(face[0]);
+            MoldingVec3 second = vertices.get(face[1]);
+            MoldingVec3 third = vertices.get(face[2]);
+            MoldingVec3 fourth = vertices.get(face[3]);
+            MoldingVec3 normal = unitNormal(first, second, third);
+            MoldingVec3 faceCenter = first.add(second).add(third).add(fourth).scale(0.25D);
+            if (normal.dot(faceCenter.subtract(center)) < 0.0D) {
+                MoldingVec3 swap = first;
+                first = fourth;
+                fourth = swap;
+                swap = second;
+                second = third;
+                third = swap;
+                normal = normal.scale(-1.0D);
+            }
+            faces.add(new FacePolygon(List.of(first, second, third, fourth), normal));
+        }
+        return faces;
+    }
+
+    private static List<FacePolygon> clipCube(List<MoldingVec3> vertices, double cutY) {
+        Bounds bounds = Bounds.of(vertices);
+        if (cutY <= bounds.min().y() + EPSILON) return List.of();
+        List<FacePolygon> original = orientedCubeFaces(vertices);
+        if (cutY >= bounds.max().y() - EPSILON) return original;
+
+        List<FacePolygon> clippedFaces = new ArrayList<>(7);
+        List<MoldingVec3> capVertices = new ArrayList<>(6);
+        for (FacePolygon face : original) {
+            List<MoldingVec3> clipped = clipBelow(face.vertices(), cutY);
+            if (clipped.size() < 3) continue;
+            clippedFaces.add(new FacePolygon(clipped, face.normal()));
+            for (MoldingVec3 vertex : clipped) {
+                if (Math.abs(vertex.y() - cutY) <= EPSILON) addDistinct(capVertices, vertex);
+            }
+        }
+        if (capVertices.size() >= 3) {
+            MoldingVec3 center = MoldingVec3.ZERO;
+            for (MoldingVec3 vertex : capVertices) center = center.add(vertex);
+            center = center.scale(1.0D / capVertices.size());
+            MoldingVec3 capCenter = center;
+            capVertices.sort(Comparator.comparingDouble((MoldingVec3 vertex) ->
+                Math.atan2(vertex.z() - capCenter.z(), vertex.x() - capCenter.x())
+            ).reversed());
+            clippedFaces.add(new FacePolygon(capVertices, new MoldingVec3(0.0D, 1.0D, 0.0D)));
+        }
+        return List.copyOf(clippedFaces);
+    }
+
+    private static List<MoldingVec3> clipBelow(List<MoldingVec3> polygon, double cutY) {
+        List<MoldingVec3> result = new ArrayList<>(polygon.size() + 1);
+        MoldingVec3 previous = polygon.getLast();
+        boolean previousInside = previous.y() <= cutY + EPSILON;
+        for (MoldingVec3 current : polygon) {
+            boolean currentInside = current.y() <= cutY + EPSILON;
+            if (previousInside != currentInside) {
+                double denominator = current.y() - previous.y();
+                double progress = Math.clamp((cutY - previous.y()) / denominator, 0.0D, 1.0D);
+                addDistinct(result, previous.add(current.subtract(previous).scale(progress)));
+            }
+            if (currentInside) addDistinct(result, current);
+            previous = current;
+            previousInside = currentInside;
+        }
+        if (result.size() > 1 && samePoint(result.getFirst(), result.getLast())) {
+            result.removeLast();
+        }
+        return List.copyOf(result);
+    }
+
+    private static void addPolygonSurfaces(
+        List<MoldingQuad> output,
+        FacePolygon polygon,
+        boolean doubleSided
+    ) {
+        List<MoldingVec3> vertices = polygon.vertices();
+        if (vertices.size() == 4) {
+            output.add(new MoldingQuad(
+                vertices.get(0),
+                vertices.get(1),
+                vertices.get(2),
+                vertices.get(3),
+                polygon.normal(),
+                doubleSided
+            ));
+            return;
+        }
+        for (int index = 1; index < vertices.size() - 1; index++) {
+            MoldingVec3 first = vertices.getFirst();
+            MoldingVec3 second = vertices.get(index);
+            MoldingVec3 third = vertices.get(index + 1);
+            output.add(new MoldingQuad(
+                first,
+                second,
+                third,
+                first.add(third).scale(0.5D),
+                polygon.normal(),
+                doubleSided
+            ));
+        }
+    }
+
+    private static MoldingConvexHull createConvexHull(List<FacePolygon> polygons) {
+        List<MoldingVec3> vertices = new ArrayList<>(MoldingConvexHull.MAX_VERTICES);
+        List<MoldingConvexFace> faces = new ArrayList<>(polygons.size());
+        for (FacePolygon polygon : polygons) {
+            List<Integer> indices = new ArrayList<>(polygon.vertices().size());
+            for (MoldingVec3 vertex : polygon.vertices()) {
+                int index = indexOf(vertices, vertex);
+                if (index < 0) {
+                    index = vertices.size();
+                    vertices.add(vertex);
+                }
+                indices.add(index);
+            }
+            faces.add(new MoldingConvexFace(indices, polygon.normal()));
+        }
+        return new MoldingConvexHull(vertices, faces);
+    }
+
+    private static int indexOf(List<MoldingVec3> vertices, MoldingVec3 target) {
+        for (int index = 0; index < vertices.size(); index++) {
+            if (samePoint(vertices.get(index), target)) return index;
+        }
+        return -1;
+    }
+
+    private static void addDistinct(List<MoldingVec3> vertices, MoldingVec3 candidate) {
+        if (vertices.stream().noneMatch(vertex -> samePoint(vertex, candidate))) vertices.add(candidate);
+    }
+
+    private static boolean samePoint(MoldingVec3 first, MoldingVec3 second) {
+        return first.subtract(second).lengthSquared() <= EPSILON * EPSILON;
     }
 
     private static List<MoldingGroup> hierarchy(
@@ -242,23 +523,30 @@ public final class MoldingModelBaker {
         List<MoldingQuad> surface,
         List<MoldingVec3> vertices
     ) {
-        MoldingVec3 normal = vertices.get(1).subtract(vertices.get(0))
-            .cross(vertices.get(2).subtract(vertices.get(0)));
-        double length = Math.sqrt(normal.lengthSquared());
-        if (length <= EPSILON) throw new IllegalArgumentException("Degenerate zero-thickness cube");
-        surface.add(new MoldingQuad(
-            vertices.get(0),
-            vertices.get(1),
-            vertices.get(2),
-            vertices.get(3),
-            normal.scale(1.0D / length),
-            true
-        ));
+        surface.add(createZeroThicknessQuad(vertices));
 
         Bounds bounds = Bounds.of(vertices);
         scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.X);
         scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.Y);
         scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.Z);
+    }
+
+    private static MoldingQuad createZeroThicknessQuad(List<MoldingVec3> vertices) {
+        return new MoldingQuad(
+            vertices.get(0),
+            vertices.get(1),
+            vertices.get(2),
+            vertices.get(3),
+            unitNormal(vertices.get(0), vertices.get(1), vertices.get(2)),
+            true
+        );
+    }
+
+    private static MoldingVec3 unitNormal(MoldingVec3 first, MoldingVec3 second, MoldingVec3 third) {
+        MoldingVec3 normal = second.subtract(first).cross(third.subtract(first));
+        double length = Math.sqrt(normal.lengthSquared());
+        if (length <= EPSILON) throw new IllegalArgumentException("Degenerate molding surface");
+        return normal.scale(1.0D / length);
     }
 
     private static void scanZeroThicknessAxis(
@@ -684,6 +972,18 @@ public final class MoldingModelBaker {
 
     private static int paddedIndex(int x, int y, int z) {
         return ((y + 1) * PADDED_SIZE + x + 1) * PADDED_SIZE + z + 1;
+    }
+
+    private record ElementGeometry(boolean hasVolume, List<MoldingVec3> vertices) {
+        private ElementGeometry {
+            vertices = List.copyOf(vertices);
+        }
+    }
+
+    private record FacePolygon(List<MoldingVec3> vertices, MoldingVec3 normal) {
+        private FacePolygon {
+            vertices = List.copyOf(vertices);
+        }
     }
 
     private record Bounds(MoldingVec3 min, MoldingVec3 max) {

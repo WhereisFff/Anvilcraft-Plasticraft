@@ -1,5 +1,7 @@
 package dev.anvilcraft.plasticraft.entity;
 
+import dev.anvilcraft.plasticraft.entity.collision.BuiltInPlasticEntityModels;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.recipe.CatalyticPressProcess;
 import net.minecraft.core.Direction;
@@ -87,6 +89,11 @@ public final class CatalyticPressLidEntity extends AbstractPlasticEntity {
     protected ItemStack createDefaultDropStack() {
         ItemStack stack = defaultDropSupplier.get();
         return stack == null ? ItemStack.EMPTY : stack.copy();
+    }
+
+    @Override
+    protected PlasticEntityGeometry getLocalGeometry() {
+        return BuiltInPlasticEntityModels.CATALYTIC_PRESS_LID.geometry();
     }
 
     @Override

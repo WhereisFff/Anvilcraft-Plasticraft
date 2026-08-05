@@ -38,6 +38,7 @@ import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.util.DataGenUtil;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.DyeColor;
@@ -320,23 +321,11 @@ public final class PlasticraftBlocks {
         ))
         .tag(PlasticraftItemTags.PLASTIC_PRODUCTS, PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS)
         .model((context, provider) -> {
-            // 物品模型继承同色方块几何，但独立提供缩小后的掉落、手持和三面 GUI 视角。
+            // 物品交给同一运行时网格渲染器；显示变换继续沿用既定的掉落、手持和 GUI 规格。
             var base = provider.getBuilder(context.getName()).parent(new ModelFile.UncheckedModelFile(
-                provider.modLoc("block/" + context.getName() + "_white")
+                ResourceLocation.withDefaultNamespace("builtin/entity")
             ));
             addUniversalPlasticItemTransforms(base);
-            for (DyeColor color : DyeColor.values()) {
-                if (color == DyeColor.WHITE) continue;
-                var variant = provider.getBuilder(context.getName() + "_" + color.getName())
-                    .parent(new ModelFile.UncheckedModelFile(
-                        provider.modLoc("block/" + context.getName() + "_" + color.getName())
-                    ));
-                addUniversalPlasticItemTransforms(variant);
-                base.override()
-                    .predicate(AnvilcraftPlasticraft.of("plastic_color"), color.getId())
-                    .model(variant)
-                    .end();
-            }
         })
         .build()
         .register();

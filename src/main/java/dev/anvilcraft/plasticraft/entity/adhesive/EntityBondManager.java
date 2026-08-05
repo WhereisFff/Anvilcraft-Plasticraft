@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.entity.adhesive;
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexCollisionResolver;
 import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import net.minecraft.core.Direction;
 import net.minecraft.core.BlockPos;
@@ -261,7 +262,7 @@ public final class EntityBondManager {
         Vec3 allowed = movement;
         for (Entity member : component(leader.level(), leader)) {
             if (member == leader || allowed.lengthSqr() <= 1.0E-12D) continue;
-            List<VoxelShape> entityCollisions = leader.level().getEntities(
+            List<Entity> obstacles = leader.level().getEntities(
                 member,
                 ShapedCollisionEntity.collisionBounds(member).expandTowards(allowed),
                 other -> !other.isRemoved()
@@ -269,13 +270,18 @@ public final class EntityBondManager {
                     && !other.isPassengerOfSameVehicle(member)
                     && !areInSameComponent(member, other)
                     && member.canCollideWith(other)
-            ).stream().map(ShapedCollisionEntity::collisionShape).toList();
+            );
+            List<VoxelShape> entityCollisions = obstacles.stream()
+                .filter(other -> !PlasticConvexCollisionResolver.hasConvexCollision(other))
+                .map(ShapedCollisionEntity::collisionShape)
+                .toList();
             allowed = ShapedCollisionEntity.collideBoundingBox(
                 member,
                 allowed,
                 member.getBoundingBox(),
                 leader.level(),
-                entityCollisions
+                entityCollisions,
+                obstacles::contains
             );
         }
         return allowed;
@@ -311,7 +317,7 @@ public final class EntityBondManager {
         Vec3 allowed = movement;
         for (Entity componentMember : component(member.level(), leader)) {
             if (allowed.lengthSqr() <= 1.0E-12D) break;
-            List<VoxelShape> entityCollisions = member.level().getEntities(
+            List<Entity> obstacles = member.level().getEntities(
                 componentMember,
                 ShapedCollisionEntity.collisionBounds(componentMember).expandTowards(allowed),
                 other -> !other.isRemoved()
@@ -320,13 +326,18 @@ public final class EntityBondManager {
                     && !other.isPassengerOfSameVehicle(ignored)
                     && !areInSameComponent(componentMember, other)
                     && componentMember.canCollideWith(other)
-            ).stream().map(ShapedCollisionEntity::collisionShape).toList();
+            );
+            List<VoxelShape> entityCollisions = obstacles.stream()
+                .filter(other -> !PlasticConvexCollisionResolver.hasConvexCollision(other))
+                .map(ShapedCollisionEntity::collisionShape)
+                .toList();
             allowed = ShapedCollisionEntity.collideBoundingBox(
                 componentMember,
                 allowed,
                 componentMember.getBoundingBox(),
                 member.level(),
-                entityCollisions
+                entityCollisions,
+                obstacles::contains
             );
         }
         return allowed;

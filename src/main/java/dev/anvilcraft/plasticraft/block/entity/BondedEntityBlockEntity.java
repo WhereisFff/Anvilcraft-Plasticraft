@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.collision.BondedPlasticShapeIndex;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.dubhe.anvilcraft.api.fluid.IFluidHandlerHolder;
@@ -105,6 +106,18 @@ public class BondedEntityBlockEntity extends BlockEntity
         BlockState state
     ) {
         super(type, pos, state);
+    }
+
+    @Override
+    public void onLoad() {
+        super.onLoad();
+        BondedPlasticShapeIndex.refresh(this);
+    }
+
+    @Override
+    public void setRemoved() {
+        if (this.level != null) BondedPlasticShapeIndex.remove(this.level, this.worldPosition);
+        super.setRemoved();
     }
 
     public boolean initialize(
@@ -255,6 +268,12 @@ public class BondedEntityBlockEntity extends BlockEntity
         }
         this.positionCachedEntity(this.renderEntity);
         return this.renderEntity;
+    }
+
+    public ItemStack getStoredDropStack() {
+        return this.getOrCreateRenderEntity() instanceof AbstractPlasticEntity plasticEntity
+            ? plasticEntity.getDropStack()
+            : ItemStack.EMPTY;
     }
 
     public InteractionResult interact(Player player, InteractionHand hand, BlockHitResult hit) {
@@ -489,6 +508,7 @@ public class BondedEntityBlockEntity extends BlockEntity
             ? tag.getLong(TAG_HAMMER_RETURN_STARTED)
             : -1L;
         this.renderEntity = null;
+        BondedPlasticShapeIndex.refresh(this);
     }
 
     @Override
@@ -554,6 +574,7 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     private void setChangedAndSync() {
         this.setChanged();
+        BondedPlasticShapeIndex.refresh(this);
         Level currentLevel = this.level;
         if (currentLevel == null) return;
         currentLevel.invalidateCapabilities(this.worldPosition);

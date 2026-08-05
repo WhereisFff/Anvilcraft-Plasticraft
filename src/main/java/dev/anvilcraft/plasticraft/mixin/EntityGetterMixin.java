@@ -52,7 +52,9 @@ interface EntityGetterMixin {
             // 原版步进会复用首次水平查询的形状，承载重试必须保留当前仅接触的目标。
             if (context != null) {
                 requestedMovement = context.requestedMovement();
-                if (context.collidesDuringRetry(movable)) return shaped.plasticraft$getCollisionShape();
+                if (context.collidesDuringRetry(movable)) {
+                    return shaped.plasticraft$getCollisionShape(mover, requestedMovement);
+                }
             }
         } else if (mover instanceof CarrierMoveContextHolder holder) {
             CarrierMoveContext context = holder.plasticraft$getCarrierMoveContext();

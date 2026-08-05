@@ -17,7 +17,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.phys.HitResult;
@@ -51,20 +53,33 @@ public class UniversalPlasticBlock extends AbstractPlasticEntityBlock<UniversalP
     @Override
     public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
         if (!state.getValue(BONDED)) return UniversalPlasticShape.COLLISION;
-        PlasticEntityOrientation orientation = level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
+        if (level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
             && bonded.isInitialized()
             && bonded.isPlastic()
-            ? bonded.getPlasticOrientation()
-            : PlasticEntityOrientation.fromLegacyState(state);
+            && bonded.getOrCreateRenderEntity() instanceof UniversalPlasticEntity entity) {
+            return entity.plasticraft$getGeometry().placedInteractionShape(bonded.getPlasticOrientation());
+        }
+        PlasticEntityOrientation orientation = PlasticEntityOrientation.fromLegacyState(state);
         return BONDED_SHAPES.computeIfAbsent(
             orientation,
-            UniversalPlasticShape.GEOMETRY::placedCollisionShape
+            UniversalPlasticShape.GEOMETRY::placedInteractionShape
         );
     }
 
     @Override
     public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
-        return this.getShape(state, level, pos, context);
+        if (!state.getValue(BONDED)) return UniversalPlasticShape.COLLISION;
+        if (level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
+            && bonded.isInitialized()
+            && bonded.isPlastic()
+            && bonded.getOrCreateRenderEntity() instanceof UniversalPlasticEntity entity) {
+            return entity.plasticraft$getGeometry().placedCollisionShape(bonded.getPlasticOrientation());
+        }
+        PlasticEntityOrientation orientation = PlasticEntityOrientation.fromLegacyState(state);
+        return BONDED_SHAPES.computeIfAbsent(
+            orientation,
+            UniversalPlasticShape.GEOMETRY::placedCollisionShape
+        );
     }
 
     @Override
@@ -85,6 +100,9 @@ public class UniversalPlasticBlock extends AbstractPlasticEntityBlock<UniversalP
 
     @Override
     protected List<ItemStack> getDrops(BlockState state, LootParams.Builder params) {
+        BlockEntity blockEntity = params.getOptionalParameter(LootContextParams.BLOCK_ENTITY);
+        ItemStack bondedDrop = this.getBondedDrop(blockEntity);
+        if (!bondedDrop.isEmpty()) return List.of(bondedDrop);
         return List.of(this.createDropStack(state));
     }
 
@@ -96,7 +114,18 @@ public class UniversalPlasticBlock extends AbstractPlasticEntityBlock<UniversalP
         BlockPos pos,
         Player player
     ) {
+        ItemStack bondedDrop = this.getBondedDrop(level.getBlockEntity(pos));
+        if (!bondedDrop.isEmpty()) return bondedDrop;
         return this.createDropStack(state);
+    }
+
+    private ItemStack getBondedDrop(BlockEntity blockEntity) {
+        if (!(blockEntity instanceof BondedEntityBlockEntity bonded)
+            || !bonded.isInitialized()
+            || !bonded.isPlastic()) {
+            return ItemStack.EMPTY;
+        }
+        return bonded.getStoredDropStack();
     }
 
     @Override

@@ -1,11 +1,12 @@
 package dev.anvilcraft.plasticraft.entity;
 
 import dev.anvilcraft.lib.v2.recipe.cache.IItemHandlerCache;
-import dev.anvilcraft.plasticraft.block.HardenedResinCauldronBlock;
 import dev.anvilcraft.plasticraft.block.IgnitedFluidEffects;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
+import dev.anvilcraft.plasticraft.entity.collision.BuiltInPlasticEntityModels;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionBox;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
@@ -66,8 +67,6 @@ import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.phys.shapes.BooleanOp;
-import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidUtil;
@@ -88,9 +87,9 @@ import javax.annotation.Nullable;
 /** 带有兼容鱼缸的物品和流体存储能力的可移动六向釜。 */
 public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     implements IItemHandlerCache, IItemHandlerHolder, IEntityCauldron {
-    private static final PlasticEntityGeometry GEOMETRY = PlasticEntityGeometry.of(
-        HardenedResinCauldronBlock.COLLISION_SHAPE
-    );
+    private static final PlasticEntityGeometry GEOMETRY = BuiltInPlasticEntityModels
+        .HARDENED_RESIN_CAULDRON
+        .geometry();
     public static final int CAPACITY = 1000;
     public static final float COLLISION_SIZE = 1.0F;
     private static final double FLUID_INNER_INSET = 0.126D;
@@ -105,14 +104,9 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
     private static final VoxelShape RESIN_ENTRY_OPENING = Block.box(
         2.0D, 0.0D, 2.0D, 14.0D, 16.0D, 14.0D
     );
-    private static final VoxelShape RESIN_ENTRY_COLLISION = Shapes.join(
-        HardenedResinCauldronBlock.COLLISION_SHAPE,
-        Block.box(0.0D, 0.0D, 0.0D, 16.0D, 4.0D, 16.0D),
-        BooleanOp.AND
-    ).optimize();
+    private static final PlasticEntityGeometry RESIN_ENTRY_GEOMETRY = BuiltInPlasticEntityModels
+        .HARDENED_RESIN_CAULDRON_ENTRY;
     private static final Map<PlasticEntityOrientation, VoxelShape> RESIN_ENTRY_OPENINGS =
-        new ConcurrentHashMap<>();
-    private static final Map<PlasticEntityOrientation, VoxelShape> RESIN_ENTRY_COLLISIONS =
         new ConcurrentHashMap<>();
 
     private static final EntityDataAccessor<Integer> FLUID_ID = SynchedEntityData.defineId(
@@ -356,15 +350,16 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
 
     @Override
     public VoxelShape plasticraft$getCollisionShape(Entity mover, Vec3 requestedMovement) {
-        if (!(mover instanceof ResinAnvilEntity anvil)
-            || !this.allowsResinAnvilToCrossOpening(anvil, requestedMovement)) {
-            return this.plasticraft$getCollisionShape();
+        return this.plasticraft$getCollisionBox(mover, requestedMovement).shape();
+    }
+
+    @Override
+    public PlasticEntityCollisionBox plasticraft$getCollisionBox(Entity mover, Vec3 requestedMovement) {
+        if (mover instanceof ResinAnvilEntity anvil
+            && this.allowsResinAnvilToCrossOpening(anvil, requestedMovement)) {
+            return RESIN_ENTRY_GEOMETRY.collisionBoxAt(this.position(), this.getOrientation());
         }
-        VoxelShape relative = RESIN_ENTRY_COLLISIONS.computeIfAbsent(
-            this.getOrientation(),
-            orientation -> PlasticEntityCollisionShapes.rotate(RESIN_ENTRY_COLLISION, orientation)
-        );
-        return relative.move(this.getX() - 0.5D, this.getY(), this.getZ() - 0.5D);
+        return this.plasticraft$getCollisionBox();
     }
 
     /** 仅在树脂砧底座从开口外跨入时移除锅壁；锅底始终保留。 */

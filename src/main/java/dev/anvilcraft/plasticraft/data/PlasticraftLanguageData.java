@@ -127,6 +127,29 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.molding.mode.continuous", "Continuous processing");
         provider.add("screen.anvilcraftplasticraft.molding.mode.redstone", "Redstone control");
         provider.add("screen.anvilcraftplasticraft.molding.mode.single", "Single processing");
+        provider.add(
+            "jei.anvilcraftplasticraft.plastic_molding_chamber.structure",
+            "Build a 3x3 platform directly above the forming region. Use nine Crafting Tables for an entity "
+                + "product, or replace the center table with a Space Overcompressor for an item product."
+        );
+        provider.add(
+            "jei.anvilcraftplasticraft.plastic_molding_chamber.forming",
+            "A valid strike needs a complete clay mold, power, and at least 250 mB in the forming batch. "
+                + "Each 1 mB pays for up to 4 baked volume cells. If material is short, the paid proportion "
+                + "sets one horizontal cut height across the source model; its cubes and sloped faces remain "
+                + "continuous below the flat cut surface."
+        );
+        provider.add(
+            "jei.anvilcraftplasticraft.plastic_molding_chamber.outputs",
+            "Only the forming batch is consumed. The 8 B staging tank stays unchanged, and every clay ball "
+                + "used for the mold drops back into the forming region."
+        );
+        provider.add(
+            "jei.anvilcraftplasticraft.plastic_molding_chamber.modes",
+            "Continuous prepares another mold after the region clears; Redstone responds once per rising edge; "
+                + "Single returns to editing after one successful cycle. Every cycle still needs a valid Giant "
+                + "Anvil strike."
+        );
         provider.add("screen.anvilcraftplasticraft.molding.fluid_staging", "Staging: %1$s / %2$s mB");
         provider.add("screen.anvilcraftplasticraft.molding.fluid_batch", "Batch: %1$s / %2$s mB");
         provider.add("screen.anvilcraftplasticraft.molding.pump_rate", "Pump rate: %s mB/gt");
@@ -169,6 +192,10 @@ public final class PlasticraftLanguageData {
         provider.add("message.anvilcraftplasticraft.molding.invalid_machine_action", "Invalid machine action");
         provider.add("message.anvilcraftplasticraft.molding.reserved_clay", "Return reserved clay first");
         provider.add("message.anvilcraftplasticraft.molding.invalid_model", "Invalid molding model");
+        provider.add(
+            "message.anvilcraftplasticraft.molding.model_too_complex",
+            "The model surface or collision is too complex to manufacture safely"
+        );
 
         // 磁盘事务、共享蓝图库和模型文件导入结果语言文件生成。
         provider.add("message.anvilcraftplasticraft.molding.blueprint_uploaded", "Model imported into the shared library");
@@ -255,6 +282,7 @@ public final class PlasticraftLanguageData {
         provider.add("tooltip.anvilcraftplasticraft.magnetized", "Magnetized");
         provider.add("tooltip.anvilcraftplasticraft.resin_anvil.captured", "Contains: %s");
         provider.add("tooltip.anvilcraftplasticraft.color", "Color: %s");
+        provider.add("tooltip.anvilcraftplasticraft.size", "Size: %1$s x %2$s x %3$s blocks");
         provider.add("tooltip.anvilcraftplasticraft.bonded", "Bonded in place");
 
         // Jade 插件配置项及其方块、实体状态文本。

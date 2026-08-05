@@ -78,9 +78,19 @@ public final class CarrierMoveContext {
     }
 
     public boolean collidesDuringRetry(CarrierMovableEntity target) {
-        return this.retryingCollision
-            && this.retryCollisionTargets != null
-            && this.retryCollisionTargets.contains(target);
+        if (!this.retryingCollision || this.retryCollisionTargets == null) return false;
+        for (CarrierMovableEntity blockedTarget : this.retryCollisionTargets) {
+            if (movesWith(blockedTarget, target)) return true;
+        }
+        return false;
+    }
+
+    public boolean movesWithRecordedTarget(CarrierMovableEntity target) {
+        if (this.targets == null) return false;
+        for (CarrierMovableEntity recordedTarget : this.targets) {
+            if (movesWith(recordedTarget, target)) return true;
+        }
+        return false;
     }
 
     public void beginCollisionRetry(List<CarrierMovableEntity> blockedTargets) {
@@ -108,5 +118,14 @@ public final class CarrierMoveContext {
     @Nullable
     public List<ElasticCollisionEntity> elasticCollisionTargets() {
         return this.elasticCollisionTargets;
+    }
+
+    private static boolean movesWith(CarrierMovableEntity carrier, CarrierMovableEntity target) {
+        if (carrier == target) return true;
+        if (!(carrier instanceof Entity carrierEntity) || !(target instanceof Entity targetEntity)) {
+            return false;
+        }
+        return EntityBondManager.areInSameComponent(carrierEntity, targetEntity)
+            || target.plasticraft$canMoveWithCarrier(carrierEntity, Vec3.ZERO);
     }
 }

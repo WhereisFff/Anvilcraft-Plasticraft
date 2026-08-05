@@ -1161,7 +1161,7 @@ public final class AdhesivePathPlanner {
         }
         Vec3 allowed = fromCollisionBox == null
             ? Entity.collideBoundingBox(entity, movement, fromBox, level, List.of())
-            : fromCollisionBox.collide(entity, movement, level, List.of());
+            : fromCollisionBox.collide(entity, movement, level, List.of(), ignored -> false);
         boolean result = sameMovement(allowed, movement);
         checks.sweptResults.put(key, result);
         return result;

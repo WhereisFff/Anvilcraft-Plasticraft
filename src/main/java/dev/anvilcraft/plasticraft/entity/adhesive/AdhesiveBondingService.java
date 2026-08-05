@@ -22,6 +22,7 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -65,6 +66,7 @@ public final class AdhesiveBondingService {
     private static final double ELASTIC_SPRING = 0.42D;
     private static final double ELASTIC_DAMPING = 0.76D;
     private static final double ELASTIC_MAX_SPEED = 2.5D;
+    private static final double PLACEMENT_COLLISION_EPSILON = 1.0E-5D;
     public static final double MIN_ELASTIC_KNOCKBACK = 0.5D;
     private static final Map<Entity, TransitValidation> TRANSIT_VALIDATIONS = new WeakHashMap<>();
 
@@ -468,7 +470,9 @@ public final class AdhesiveBondingService {
         Direction anchorWorldFace,
         AdhesivePathPlanner.Plan plan
     ) {
-        if (!plan.valid() || !AdhesiveGroupTransform.isPlanClear(level, movingEntity, plan, player)) return false;
+        if (!plan.valid() || !AdhesiveGroupTransform.isPlanClear(level, movingEntity, plan, player)) {
+            return false;
+        }
         EntityBondManager.prepareAlignedLeader(level, movingEntity);
         boolean plastic = movingEntity instanceof AbstractPlasticEntity;
         byte startOrientation = plastic
@@ -1188,7 +1192,11 @@ public final class AdhesiveBondingService {
         for (Entity member : EntityBondManager.component(level, entity)) {
             ignoredEntities.add(member.getUUID());
         }
-        if (!isPlacementUnobstructed(level, occupiedPos, fixedState, ignoredEntities)) return false;
+        Vec3 targetPosition = entity.plasticraft$placementPosition(occupiedPos, orientation);
+        VoxelShape targetCollision = entity.plasticraft$getGeometry()
+            .collisionBoxAt(targetPosition, orientation)
+            .shape();
+        if (!isPlasticPlacementUnobstructed(level, targetCollision, ignoredEntities)) return false;
         if (!level.setBlock(occupiedPos, fixedState, Block.UPDATE_ALL)) return false;
         if (!(level.getBlockEntity(occupiedPos) instanceof BondedEntityBlockEntity bonded)
             || !bonded.initialize(entity, displayState, attachmentFace, orientation, originalNoGravity)) {
@@ -1455,6 +1463,46 @@ public final class AdhesiveBondingService {
                     && !ignoredEntities.contains(candidate.getUUID())
             ).isEmpty()) {
                 return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isPlasticPlacementUnobstructed(
+        ServerLevel level,
+        VoxelShape collision,
+        Set<UUID> ignoredEntities
+    ) {
+        if (collision.isEmpty()) return true;
+        if (!level.getWorldBorder().isWithinBounds(collision.bounds())) return false;
+        for (AABB component : collision.toAabbs()) {
+            AABB probe = component.deflate(Math.min(
+                PLACEMENT_COLLISION_EPSILON,
+                Math.min(component.getXsize(), Math.min(component.getYsize(), component.getZsize())) * 0.25D
+            ));
+            if (!hasLoadedPlacementBlocks(level, probe) || !level.noBlockCollision(null, probe)) return false;
+            if (!level.getEntities(
+                (Entity) null,
+                probe,
+                candidate -> candidate.isAlive()
+                    && candidate.blocksBuilding
+                    && !ignoredEntities.contains(candidate.getUUID())
+            ).isEmpty()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean hasLoadedPlacementBlocks(ServerLevel level, AABB bounds) {
+        int minX = Mth.floor(bounds.minX);
+        int maxX = Mth.floor(bounds.maxX - PLACEMENT_COLLISION_EPSILON);
+        int minZ = Mth.floor(bounds.minZ);
+        int maxZ = Mth.floor(bounds.maxZ - PLACEMENT_COLLISION_EPSILON);
+        int y = Mth.floor(bounds.minY);
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                if (!level.hasChunkAt(new BlockPos(x, y, z))) return false;
             }
         }
         return true;

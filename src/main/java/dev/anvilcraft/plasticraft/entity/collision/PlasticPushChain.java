@@ -6,7 +6,6 @@ import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
@@ -28,7 +27,7 @@ public final class PlasticPushChain {
     private PlasticPushChain() {
     }
 
-    /** Returns the greatest prefix of {@code rootMovement} that the complete push chain can perform. */
+    /** 返回整条推动链都能完成的最大 {@code rootMovement} 前缀。 */
     public static ClippedPlan clip(AbstractPlasticEntity root, Entity pusher, Vec3 rootMovement) {
         Plan fullPlan = create(root, pusher, rootMovement);
         if (fullPlan != null) {
@@ -68,13 +67,10 @@ public final class PlasticPushChain {
         MovementUnit rootUnit = MovementUnit.resolve(root);
         Map<UUID, Entry> movements = new HashMap<>();
         Set<UUID> visiting = new HashSet<>();
+        List<Entry> movementOrder = new ArrayList<>();
         movements.put(rootUnit.key(), new Entry(rootUnit, rootMovement));
-        if (!collect(rootUnit, pusher, rootMovement, movements, visiting)) return null;
-
-        List<Entry> entries = movements.values().stream()
-            .sorted(Comparator.comparingDouble(entry -> -entry.unit().projection(rootMovement)))
-            .toList();
-        return new Plan(entries);
+        if (!collect(rootUnit, pusher, rootMovement, movements, visiting, movementOrder)) return null;
+        return new Plan(List.copyOf(movementOrder));
     }
 
     private static boolean collect(
@@ -82,7 +78,8 @@ public final class PlasticPushChain {
         Entity pusher,
         Vec3 movement,
         Map<UUID, Entry> movements,
-        Set<UUID> visiting
+        Set<UUID> visiting,
+        List<Entry> movementOrder
     ) {
         if (!visiting.add(unit.key())) return false;
         try {
@@ -100,6 +97,7 @@ public final class PlasticPushChain {
                         && !unit.contains(other)
                         && member.canCollideWith(other)
                 );
+                candidates.sort(Comparator.comparingInt(Entity::getId));
                 for (Entity other : candidates) {
                     Entry planned = movementContaining(movements, other);
                     if (planned != null) continue;
@@ -135,12 +133,24 @@ public final class PlasticPushChain {
                     }
                     if (existing == null) {
                         movements.put(targetUnit.key(), new Entry(targetUnit, nextMovement));
-                        if (!collect(targetUnit, plasticPusher, nextMovement, movements, visiting)) return false;
+                        if (!collect(
+                            targetUnit,
+                            plasticPusher,
+                            nextMovement,
+                            movements,
+                            visiting,
+                            movementOrder
+                        )) {
+                            return false;
+                        }
                     }
                 }
 
-                List<VoxelShape> blockingShapes = blockingCandidates.stream()
+                List<Entity> remainingBlockers = blockingCandidates.stream()
                     .filter(other -> movementContaining(movements, other) == null)
+                    .toList();
+                List<VoxelShape> blockingShapes = remainingBlockers.stream()
+                    .filter(other -> !PlasticConvexCollisionResolver.hasConvexCollision(other))
                     .map(ShapedCollisionEntity::collisionShape)
                     .toList();
                 Vec3 allowed = ShapedCollisionEntity.collideBoundingBox(
@@ -148,13 +158,15 @@ public final class PlasticPushChain {
                     movement,
                     member.getBoundingBox(),
                     member.level(),
-                    blockingShapes
+                    blockingShapes,
+                    remainingBlockers::contains
                 );
                 if (allowed.distanceToSqr(movement)
                     > PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
                     return false;
                 }
             }
+            movementOrder.add(movements.get(unit.key()));
             return true;
         } finally {
             visiting.remove(unit.key());
@@ -168,8 +180,9 @@ public final class PlasticPushChain {
     ) {
         Direction gravityDirection = carried.plasticraft$currentPushGravityDirection();
         Vec3 gravityNormal = Vec3.atLowerCornerOf(gravityDirection.getNormal());
-        return Math.abs(movement.dot(gravityNormal)) <= PlasticEntityPhysics.FACE_EPSILON
-            && PlasticEntityPhysics.hasImmediateEntityContact(carried, carrier, gravityDirection);
+        boolean tangential = Math.abs(movement.dot(gravityNormal)) <= PlasticEntityPhysics.FACE_EPSILON;
+        boolean contact = PlasticEntityPhysics.hasImmediateEntityContact(carried, carrier, gravityDirection);
+        return tangential && contact;
     }
 
     @Nullable
@@ -182,7 +195,6 @@ public final class PlasticPushChain {
 
     private record MovementUnit(
         UUID key,
-        Entity leader,
         List<Entity> members,
         AbstractPlasticEntity representative
     ) {
@@ -192,7 +204,7 @@ public final class PlasticPushChain {
             List<Entity> members = EntityBondManager.hasBonds(entity)
                 ? List.copyOf(EntityBondManager.component(entity.level(), leader))
                 : List.of(entity);
-            return new MovementUnit(leader.getUUID(), leader, members, entity);
+            return new MovementUnit(leader.getUUID(), members, entity);
         }
 
         private boolean contains(Entity entity) {
@@ -202,21 +214,6 @@ public final class PlasticPushChain {
             return false;
         }
 
-        private double projection(Vec3 direction) {
-            double projection = Double.NEGATIVE_INFINITY;
-            for (Entity member : this.members) {
-                for (AABB component : ShapedCollisionEntity.collisionComponents(
-                    member,
-                    member.getBoundingBox()
-                )) {
-                    double x = direction.x >= 0.0D ? component.maxX : component.minX;
-                    double y = direction.y >= 0.0D ? component.maxY : component.minY;
-                    double z = direction.z >= 0.0D ? component.maxZ : component.minZ;
-                    projection = Math.max(projection, x * direction.x + y * direction.y + z * direction.z);
-                }
-            }
-            return Double.isFinite(projection) ? projection : this.leader.position().dot(direction);
-        }
     }
 
     private record Entry(MovementUnit unit, Vec3 movement) {

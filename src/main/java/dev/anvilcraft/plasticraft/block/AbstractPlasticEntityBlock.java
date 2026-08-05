@@ -4,6 +4,7 @@ import dev.anvilcraft.lib.v2.piston.IMoveableEntityBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.collision.BuiltInPlasticEntityModels;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
@@ -28,7 +29,6 @@ import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
-import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.Nullable;
 
@@ -48,11 +48,8 @@ public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity
     public static final BooleanProperty MAGNETIZED = BooleanProperty.create("magnetized");
     public static final BooleanProperty BONDED = BooleanProperty.create("bonded");
     /** 皇家铁砧在方块局部坐标中的组合碰撞形状，供方块态与实体态共同使用。 */
-    public static final VoxelShape ROYAL_ANVIL_COLLISION_SHAPE = Shapes.or(
-        Block.box(2.0D, 0.0D, 2.0D, 14.0D, 4.0D, 14.0D),
-        Block.box(5.0D, 4.0D, 4.0D, 11.0D, 10.0D, 12.0D),
-        Block.box(3.0D, 10.0D, 0.0D, 13.0D, 16.0D, 16.0D)
-    );
+    public static final VoxelShape ROYAL_ANVIL_COLLISION_SHAPE = BuiltInPlasticEntityModels
+        .ROYAL_ANVIL_COMPATIBILITY;
     private static final Map<PlasticEntityOrientation, VoxelShape> BONDED_ANVIL_SHAPES =
         new ConcurrentHashMap<>();
 

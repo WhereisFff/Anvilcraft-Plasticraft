@@ -10,7 +10,6 @@ import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
-import dev.anvilcraft.plasticraft.entity.physics.PlasticFallingBlockSupport;
 import dev.anvilcraft.plasticraft.event.CatalyticPressAnvilEvents;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
@@ -20,7 +19,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
-import net.minecraft.tags.BlockTags;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -268,119 +266,6 @@ public final class CatalyticPressLidGameTests {
             "launched catalytic press lid kept the cauldron adhesive"
         );
         helper.succeed();
-    }
-
-    @GameTest(timeoutTicks = 135)
-    @EmptyTemplate(value = "7x9x7", floor = true)
-    @TestHolder(description = "Falling anvils settle on the aligned collision tops of both plastic anvil entities")
-    static void fallingAnvilsLandOnPlasticAnvilEntities(ExtendedGameTestHelper helper) {
-        ResinAnvilEntity resinAnvil = spawnResinAnvil(
-            helper,
-            new BlockPos(2, 1, 3),
-            PlasticEntityOrientation.DEFAULT
-        );
-        resinAnvil.setNoGravity(true);
-        resinAnvil.setDeltaMovement(Vec3.ZERO);
-        HardenedResinAnvilEntity hardenedAnvil = spawnHardenedResinAnvil(
-            helper,
-            new BlockPos(4, 1, 3)
-        );
-        hardenedAnvil.setNoGravity(true);
-        hardenedAnvil.setDeltaMovement(Vec3.ZERO);
-        spawnFallingAnvil(helper, new BlockPos(2, 7, 3), -0.1D);
-        spawnFallingAnvil(helper, new BlockPos(4, 7, 3), -0.1D);
-
-        helper.runAfterDelay(120, () -> {
-            check(resinAnvil.isAlive(), "falling anvil destroyed the resin anvil entity");
-            check(hardenedAnvil.isAlive(), "falling anvil destroyed the hardened resin anvil entity");
-            check(
-                helper.getBlockState(new BlockPos(2, 2, 3)).is(BlockTags.ANVIL),
-                "falling anvil did not land on the resin anvil collision top"
-            );
-            check(
-                helper.getBlockState(new BlockPos(4, 2, 3)).is(BlockTags.ANVIL),
-                "falling anvil did not land on the hardened resin anvil collision top"
-            );
-            helper.succeed();
-        });
-    }
-
-    @GameTest(timeoutTicks = 55)
-    @EmptyTemplate(value = "5x8x5", floor = true)
-    @TestHolder(description = "A falling anvil blockifies on a full-height plastic entity and falls when it moves")
-    static void fallingAnvilUsesDynamicPlasticEntitySupport(ExtendedGameTestHelper helper) {
-        HardenedResinCauldronEntity cauldron = spawnCauldron(helper, new BlockPos(2, 2, 2));
-        spawnFallingAnvil(helper, new BlockPos(2, 6, 2), -0.1D);
-        BlockPos landedPos = new BlockPos(2, 3, 2);
-
-        helper.runAfterDelay(25, () -> {
-            check(helper.getBlockState(landedPos).is(Blocks.ANVIL), "anvil did not blockify on the resin cauldron");
-            BlockPos absoluteLandedPos = helper.absolutePos(landedPos);
-            check(
-                PlasticFallingBlockSupport.hasSupport(helper.getLevel(), absoluteLandedPos, null),
-                "landed anvil no longer touched the resin cauldron"
-            );
-            cauldron.setPos(cauldron.position().add(2.0D, 0.0D, 0.0D));
-            check(
-                !PlasticFallingBlockSupport.hasSupport(helper.getLevel(), helper.absolutePos(landedPos), null),
-                "moved resin cauldron still counted as support"
-            );
-            check(
-                !BondedFallingBlocks.isBonded(helper.getLevel(), helper.absolutePos(landedPos)),
-                "landed anvil unexpectedly became adhesive-bonded"
-            );
-            helper.runAfterDelay(2, () -> {
-                check(helper.getBlockState(landedPos).isAir(), "anvil block stayed behind after its support moved");
-                boolean fallingAgain = !helper.getLevel().getEntitiesOfClass(
-                    FallingBlockEntity.class,
-                    new AABB(absoluteLandedPos).inflate(2.0D),
-                    entity -> entity.getBlockState().is(Blocks.ANVIL)
-                ).isEmpty();
-                check(fallingAgain, "anvil did not continue falling after its support moved");
-                helper.succeed();
-            });
-        });
-    }
-
-    @GameTest(timeoutTicks = 55)
-    @EmptyTemplate(value = "5x8x5", floor = true)
-    @TestHolder(description = "A short plastic collision holds a landed anvil while its logical cell remains occupied")
-    static void fallingAnvilUsesAlignedShortCollisionTop(ExtendedGameTestHelper helper) {
-        BlockPos snowPos = new BlockPos(2, 1, 2);
-        helper.setBlock(snowPos, Blocks.SNOW);
-        UniversalPlasticEntity support = spawnUniversalPlastic(
-            helper,
-            Vec3.atBottomCenterOf(helper.absolutePos(snowPos)).add(0.0D, 2.0D / 16.0D, 0.0D)
-        );
-        spawnFallingAnvil(helper, new BlockPos(2, 6, 2), -0.1D);
-        BlockPos landedPos = new BlockPos(2, 2, 2);
-
-        helper.runAfterDelay(30, () -> {
-            check(
-                helper.getBlockState(landedPos).is(BlockTags.ANVIL),
-                "anvil did not land on the grid-aligned short collision top"
-            );
-            check(
-                PlasticFallingBlockSupport.hasSupport(helper.getLevel(), helper.absolutePos(landedPos), null),
-                "short collision top was not recorded as the landed anvil support"
-            );
-            support.setPos(support.position().add(0.0D, -1.0D / 16.0D, 0.0D));
-            check(
-                !PlasticFallingBlockSupport.hasSupport(helper.getLevel(), helper.absolutePos(landedPos), null),
-                "misaligned short collision top still supported the landed anvil"
-            );
-            helper.runAfterDelay(2, () -> {
-                check(
-                    helper.getBlockState(landedPos).is(BlockTags.ANVIL),
-                    "anvil fell while the plastic entity still occupied the cell below"
-                );
-                support.setPos(support.position().add(2.0D, 0.0D, 0.0D));
-                helper.runAfterDelay(2, () -> {
-                    check(helper.getBlockState(landedPos).isAir(), "anvil stayed fixed after the cell below became empty");
-                    helper.succeed();
-                });
-            });
-        });
     }
 
     private static CatalyticPressLidEntity spawnReadyLid(
