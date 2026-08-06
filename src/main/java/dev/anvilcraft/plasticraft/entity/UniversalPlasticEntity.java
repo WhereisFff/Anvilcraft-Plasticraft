@@ -7,6 +7,7 @@ import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -27,6 +28,9 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity {
         EntityDataSerializers.ITEM_STACK
     );
     private static Supplier<ItemStack> defaultDropSupplier = () -> ItemStack.EMPTY;
+    private Optional<MoldedPlasticData> cachedMoldedData = Optional.empty();
+    private PlasticEntityGeometry cachedMoldedGeometry;
+    private boolean moldedDataCached;
 
     public static void configureDefaultDrop(Supplier<ItemStack> supplier) {
         defaultDropSupplier = Objects.requireNonNull(supplier, "supplier");
@@ -46,6 +50,8 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity {
         PlasticEntityOrientation orientation
     ) {
         super(entityType, level, position, displayState, dropStack, orientation);
+        // 父类构造期间不能依赖动态回调同步子类数据，初始化完成后再写入一次同步槽
+        this.onDropStackChanged(this.getDropStack());
     }
 
     @Override
@@ -57,22 +63,47 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity {
     @Override
     public void onSyncedDataUpdated(EntityDataAccessor<?> key) {
         super.onSyncedDataUpdated(key);
-        if (MOLDED_STACK.equals(key)) this.invalidatePlasticGeometry();
+        if (MOLDED_STACK.equals(key)) {
+            this.moldedDataCached = false;
+            this.cachedMoldedGeometry = null;
+            this.invalidatePlasticGeometry();
+        }
     }
 
     @Override
     protected PlasticEntityGeometry getLocalGeometry() {
-        return this.getMoldedData()
-            .map(MoldedPlasticData::geometry)
-            .orElse(BuiltInPlasticEntityModels.UNIVERSAL_PLASTIC.geometry());
+        Optional<MoldedPlasticData> data = this.getMoldedData();
+        if (data.isEmpty()) return BuiltInPlasticEntityModels.UNIVERSAL_PLASTIC.geometry();
+        if (this.cachedMoldedGeometry == null) {
+            this.cachedMoldedGeometry = data.orElseThrow().geometry();
+        }
+        return this.cachedMoldedGeometry;
     }
 
     public Optional<MoldedPlasticData> getMoldedData() {
-        return MoldedPlasticData.get(this.entityData.get(MOLDED_STACK));
+        if (!this.moldedDataCached) {
+            Optional<MoldedPlasticData> synchronizedData = MoldedPlasticData.get(this.entityData.get(MOLDED_STACK));
+            this.cachedMoldedData = synchronizedData.isPresent()
+                ? synchronizedData
+                : MoldedPlasticData.get(this.getDropStack());
+            this.moldedDataCached = true;
+        }
+        return this.cachedMoldedData;
+    }
+
+    @Override
+    protected Component getTypeName() {
+        return this.getMoldedData()
+            .<Component>map(data -> Component.literal(data.name()))
+            .orElseGet(super::getTypeName);
     }
 
     @Override
     protected void onDropStackChanged(ItemStack stack) {
+        this.synchronizeMoldedStack(stack);
+    }
+
+    private void synchronizeMoldedStack(ItemStack stack) {
         ItemStack synchronizedStack = MoldedPlasticData.get(stack)
             .map(data -> {
                 ItemStack copy = stack.copyWithCount(1);
@@ -81,6 +112,8 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity {
             })
             .orElse(ItemStack.EMPTY);
         this.entityData.set(MOLDED_STACK, synchronizedStack);
+        this.moldedDataCached = false;
+        this.cachedMoldedGeometry = null;
         this.invalidatePlasticGeometry();
     }
 

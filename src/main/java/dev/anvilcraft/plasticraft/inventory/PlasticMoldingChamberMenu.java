@@ -4,6 +4,7 @@ import dev.anvilcraft.plasticraft.block.PlasticMoldingMachineState;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
 import dev.anvilcraft.plasticraft.init.PlasticraftMenuTypes;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintDisk;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintSummary;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProductionMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingWaitReason;
@@ -12,7 +13,6 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingCommand;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelStreams;
 import dev.anvilcraft.plasticraft.molding.session.MoldingSessionSnapshot;
 import dev.anvilcraft.plasticraft.network.MoldingSessionStatusPacket;
-import dev.dubhe.anvilcraft.item.DiskItem;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -36,7 +36,7 @@ import java.util.function.IntSupplier;
 
 /** 成型舱界面菜单；模型编辑本身通过带修订号的语义命令同步。 */
 public class PlasticMoldingChamberMenu extends AbstractContainerMenu {
-    public static final int MACHINE_SLOT_COUNT = 2;
+    public static final int MACHINE_SLOT_COUNT = 3;
     public static final int PLAYER_SLOT_START = MACHINE_SLOT_COUNT;
     public static final int PLAYER_SLOT_END = PLAYER_SLOT_START + 36;
     private final BlockPos chamberPos;
@@ -280,6 +280,10 @@ public class PlasticMoldingChamberMenu extends AbstractContainerMenu {
             && player.distanceToSqr(this.chamberPos.getCenter()) <= 64.0D;
     }
 
+    public boolean isForChamber(BlockPos pos) {
+        return this.chamberPos.equals(pos);
+    }
+
     @Override
     public ItemStack quickMoveStack(Player player, int index) {
         Slot slot = this.slots.get(index);
@@ -292,8 +296,17 @@ public class PlasticMoldingChamberMenu extends AbstractContainerMenu {
             if (!this.moveItemStackTo(stack, PlasticMoldingChamberBlockEntity.CLAY_SLOT, 1, false)) {
                 return ItemStack.EMPTY;
             }
-        } else if (stack.getItem() instanceof DiskItem) {
+        } else if (MoldingBlueprintDisk.isStructureDisk(stack)) {
             if (!this.moveItemStackTo(stack, PlasticMoldingChamberBlockEntity.DISK_SLOT, 2, false)) {
+                return ItemStack.EMPTY;
+            }
+        } else if (PlasticMoldingChamberBlockEntity.isResourceInput(stack)) {
+            if (!this.moveItemStackTo(
+                stack,
+                PlasticMoldingChamberBlockEntity.RESOURCE_SLOT,
+                PlasticMoldingChamberBlockEntity.RESOURCE_SLOT + 1,
+                false
+            )) {
                 return ItemStack.EMPTY;
             }
         } else {
@@ -331,6 +344,12 @@ public class PlasticMoldingChamberMenu extends AbstractContainerMenu {
             Filter.DISK,
             () -> 1
         ));
+        this.addSlot(new ResourceSlot(
+            machine,
+            PlasticMoldingChamberBlockEntity.RESOURCE_SLOT,
+            63,
+            178
+        ));
         for (int row = 0; row < 3; row++) {
             for (int column = 0; column < 9; column++) {
                 this.addSlot(new Slot(inventory, column + row * 9 + 9, 94 + column * 18, 144 + row * 18));
@@ -367,7 +386,7 @@ public class PlasticMoldingChamberMenu extends AbstractContainerMenu {
         public boolean mayPlace(ItemStack stack) {
             return switch (this.filter) {
                 case CLAY -> stack.is(Items.CLAY_BALL);
-                case DISK -> stack.getItem() instanceof DiskItem;
+                case DISK -> MoldingBlueprintDisk.isStructureDisk(stack);
             };
         }
 
@@ -379,6 +398,17 @@ public class PlasticMoldingChamberMenu extends AbstractContainerMenu {
         @Override
         public int getMaxStackSize(ItemStack stack) {
             return this.limit.getAsInt();
+        }
+    }
+
+    private static final class ResourceSlot extends Slot {
+        private ResourceSlot(Container container, int slot, int x, int y) {
+            super(container, slot, x, y);
+        }
+
+        @Override
+        public boolean mayPlace(ItemStack stack) {
+            return PlasticMoldingChamberBlockEntity.isResourceInput(stack);
         }
     }
 }

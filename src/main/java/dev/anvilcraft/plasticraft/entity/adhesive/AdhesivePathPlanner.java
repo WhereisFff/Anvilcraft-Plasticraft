@@ -1180,23 +1180,29 @@ public final class AdhesivePathPlanner {
         Boolean cached = checks.positionResults.get(key);
         if (cached != null) return cached;
         AABB moved = movedBox(originalBox, originalPosition, position);
-        PlasticEntityCollisionBox movedCollisionBox = movedPlasticCollisionBox(
-            entity,
-            originalPosition,
-            position
-        );
-        AABB collisionBounds = movedCollisionBox == null ? moved : movedCollisionBox.bounds();
+        PlasticEntityCollisionBox collisionBox = entity instanceof ShapedCollisionEntity shaped
+            ? shaped.plasticraft$getCollisionBox()
+            : null;
+        Vec3 collisionMovement = position.subtract(originalPosition);
+        AABB collisionBounds = collisionBox == null
+            ? moved
+            : collisionBox.bounds().move(collisionMovement);
         if (!level.getWorldBorder().isWithinBounds(collisionBounds)) {
             checks.positionResults.put(key, false);
             return false;
         }
-        boolean collisionFree = movedCollisionBox == null
+        boolean collisionFree = collisionBox == null
             ? level.noBlockCollision(entity, moved)
                 || allowFinalContact
                 && level.noBlockCollision(entity, moved.deflate(0.002D))
-            : noBlockCollision(level, entity, movedCollisionBox, 0.0D)
-                || allowFinalContact
-                && noBlockCollision(level, entity, movedCollisionBox, 0.002D);
+            : noBlockCollision(
+                level,
+                entity,
+                collisionBox,
+                collisionMovement,
+                collisionBounds,
+                allowFinalContact
+            );
         boolean result = collisionFree && !isDangerousPosition(level, collisionBounds, checks);
         checks.positionResults.put(key, result);
         return result;
@@ -1213,8 +1219,9 @@ public final class AdhesivePathPlanner {
         Vec3 originalPosition,
         Vec3 position
     ) {
-        PlasticEntityCollisionBox collisionBox = movedPlasticCollisionBox(entity, originalPosition, position);
-        return collisionBox == null ? movedBox(originalBox, originalPosition, position) : collisionBox.bounds();
+        return entity instanceof ShapedCollisionEntity shaped
+            ? shaped.plasticraft$getCollisionBox().bounds().move(position.subtract(originalPosition))
+            : movedBox(originalBox, originalPosition, position);
     }
 
     @Nullable
@@ -1232,11 +1239,32 @@ public final class AdhesivePathPlanner {
         Level level,
         Entity entity,
         PlasticEntityCollisionBox collisionBox,
-        double deflation
+        Vec3 movement,
+        AABB movedBounds,
+        boolean allowFinalContact
     ) {
-        for (AABB component : collisionBox.components()) {
-            AABB query = deflation == 0.0D ? component : component.deflate(deflation);
-            if (!level.noBlockCollision(entity, query)) return false;
+        List<AABB> blockCollisions = new ArrayList<>();
+        for (VoxelShape blockCollision : level.getBlockCollisions(entity, movedBounds)) {
+            blockCollisions.addAll(blockCollision.toAabbs());
+        }
+        if (noBlockCollision(collisionBox.components(), movement, 0.0D, blockCollisions)) return true;
+        return allowFinalContact
+            && noBlockCollision(collisionBox.components(), movement, 0.002D, blockCollisions);
+    }
+
+    private static boolean noBlockCollision(
+        List<AABB> components,
+        Vec3 movement,
+        double deflation,
+        List<AABB> blockCollisions
+    ) {
+        if (blockCollisions.isEmpty()) return true;
+        for (AABB component : components) {
+            AABB query = component.move(movement);
+            if (deflation != 0.0D) query = query.deflate(deflation);
+            for (AABB blockCollision : blockCollisions) {
+                if (query.intersects(blockCollision)) return false;
+            }
         }
         return true;
     }

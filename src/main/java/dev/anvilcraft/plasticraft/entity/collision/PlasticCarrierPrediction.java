@@ -9,6 +9,8 @@ import java.util.Objects;
 /** 按移动顺序保留尚未获服务端确认的客户端承载位移。 */
 public final class PlasticCarrierPrediction {
     private static final double MOVEMENT_EPSILON = 1.0E-5D;
+    // 原版 VecDeltaCodec 将实体坐标量化到 1/4096 格，两端舍入后的位移误差最多为一个量化步长。
+    private static final double RECONCILIATION_EPSILON = 1.0D / 4096.0D + MOVEMENT_EPSILON;
 
     private final AxisPrediction x = new AxisPrediction();
     private final AxisPrediction y = new AxisPrediction();
@@ -31,6 +33,21 @@ public final class PlasticCarrierPrediction {
         confirmed |= this.y.reconcile(value.y);
         confirmed |= this.z.reconcile(value.z);
         return confirmed;
+    }
+
+    /** 仅在服务端位置发生非有限或超出正常同步范围的跳变时丢弃预测。 */
+    public boolean resetIfDiscontinuous(Vec3 serverMovement, double maximumDistance) {
+        Vec3 value = Objects.requireNonNull(serverMovement, "serverMovement");
+        if (!Double.isFinite(maximumDistance) || maximumDistance <= 0.0D) {
+            throw new IllegalArgumentException("maximumDistance must be finite and positive");
+        }
+        double movementLengthSqr = value.lengthSqr();
+        if (Double.isFinite(movementLengthSqr)
+            && movementLengthSqr <= maximumDistance * maximumDistance) {
+            return false;
+        }
+        this.clear();
+        return true;
     }
 
     public Vec3 pendingMovement() {
@@ -90,7 +107,12 @@ public final class PlasticCarrierPrediction {
                 this.travel -= Math.abs(segment);
                 double next = traversed + segment;
                 if (between(serverMovement, traversed, next)) {
-                    double remaining = next - serverMovement;
+                    double confirmedPosition = Math.clamp(
+                        serverMovement,
+                        Math.min(traversed, next),
+                        Math.max(traversed, next)
+                    );
+                    double remaining = next - confirmedPosition;
                     if (Math.abs(remaining) > MOVEMENT_EPSILON) {
                         this.segments.addFirst(remaining);
                         this.pending += remaining;
@@ -106,8 +128,8 @@ public final class PlasticCarrierPrediction {
         }
 
         private static boolean between(double value, double first, double second) {
-            return value >= Math.min(first, second) - MOVEMENT_EPSILON
-                && value <= Math.max(first, second) + MOVEMENT_EPSILON;
+            return value >= Math.min(first, second) - RECONCILIATION_EPSILON
+                && value <= Math.max(first, second) + RECONCILIATION_EPSILON;
         }
 
         private double pending() {

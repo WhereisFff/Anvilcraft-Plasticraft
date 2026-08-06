@@ -80,20 +80,29 @@ public final class AdhesiveFallingBlockBehavior {
         EntityBondState state = EntityBondManager.get(fallingBlock);
         if (state == null) return;
 
-        Map<UUID, Entity> neighbors = new LinkedHashMap<>();
+        Map<UUID, Neighbor> neighbors = new LinkedHashMap<>();
         for (EntityBondLink link : state.links()) {
             Entity neighbor = EntityBondManager.resolve(level, link);
-            if (neighbor != null && neighbor.isAlive()) neighbors.put(neighbor.getUUID(), neighbor);
+            if (neighbor != null && neighbor.isAlive()) {
+                neighbors.put(neighbor.getUUID(), new Neighbor(neighbor, link.invisible()));
+            }
         }
         EntityBondManager.disconnectEntity(level, fallingBlock);
 
-        Map<UUID, Entity> anchors = new LinkedHashMap<>();
-        for (Entity neighbor : neighbors.values()) {
+        Map<UUID, Neighbor> anchors = new LinkedHashMap<>();
+        for (Neighbor entry : neighbors.values()) {
+            Entity neighbor = entry.entity();
             Entity leader = EntityBondManager.resolveLeader(level, neighbor);
             if (leader == null || !leader.isAlive()) leader = neighbor;
-            anchors.put(leader.getUUID(), leader);
+            Neighbor candidate = new Neighbor(leader, entry.invisible());
+            anchors.merge(
+                leader.getUUID(),
+                candidate,
+                (first, second) -> new Neighbor(first.entity(), first.invisible() || second.invisible())
+            );
         }
-        for (Entity anchor : anchors.values()) {
+        for (Neighbor entry : anchors.values()) {
+            Entity anchor = entry.entity();
             Direction face = Direction.getNearest(
                 anchor.getBoundingBox().getCenter().subtract(placedPos.getCenter())
             );
@@ -105,13 +114,18 @@ public final class AdhesiveFallingBlockBehavior {
                     level.getBlockState(placedPos).getBlock()
                 ),
                 anchor.position(),
-                anchor.isNoGravity()
+                anchor.isNoGravity(),
+                entry.invisible()
             );
             anchor.setData(PlasticraftAttachments.ENTITY_ADHESION, adhesion);
+            if (entry.invisible()) BondedFallingBlocks.setInvisible(level, placedPos, face);
             anchor.setDeltaMovement(Vec3.ZERO);
             anchor.fallDistance = 0.0F;
             anchor.hasImpulse = true;
             anchor.hurtMarked = true;
         }
+    }
+
+    private record Neighbor(Entity entity, boolean invisible) {
     }
 }

@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.BlockAdhesionState;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlockInfo;
+import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.block.BondedFallingChunkData;
 import dev.anvilcraft.plasticraft.block.CatalyticPressLidBlock;
 import dev.anvilcraft.plasticraft.block.HardenedResinCauldronBlock;
@@ -173,6 +174,7 @@ public final class AdhesivePatchRenderer {
             BlockPos ownerPos = origin.offset(part.relativePos());
             BlockAdhesionState state = part.state();
             for (Direction face : Direction.values()) {
+                if (state.isInvisible(face)) continue;
                 boolean shouldRender = state.hasPatch(face);
                 if (state.hasBlockBond(face)) {
                     shouldRender = ownerPos.asLong() <= ownerPos.relative(face).asLong();
@@ -211,6 +213,7 @@ public final class AdhesivePatchRenderer {
                     BlockPos ownerPos = entry.getKey();
                     BlockAdhesionState state = entry.getValue();
                     for (Direction face : Direction.values()) {
+                        if (state.isInvisible(face)) continue;
                         boolean hiddenSeal = state.hasBlockBond(face)
                             && shouldHideBlockSeal(level, ownerPos, face);
                         if (state.hasBlockBond(face) || state.hasEntityBond(face)) {
@@ -308,7 +311,7 @@ public final class AdhesivePatchRenderer {
         float partialTick,
         Vec3 movementOffset
     ) {
-        if (shouldHideEntityBlockSeal(level, entity, adhesion)) return;
+        if (isEntityAdhesiveInvisible(level, adhesion) || shouldHideEntityBlockSeal(level, entity, adhesion)) return;
         Vec3 anchor = adhesionAnchor(entity, adhesion).add(movementOffset);
         Vec3 currentPosition = entity.getPosition(partialTick);
         Vec3 attachedPoint = anchor.add(currentPosition.subtract(adhesion.fixedPosition()));
@@ -352,7 +355,7 @@ public final class AdhesivePatchRenderer {
         Entity other,
         float partialTick
     ) {
-        if (shouldHideEntitySeal(entity, link.face(), other, link.otherFace())) return;
+        if (link.invisible() || shouldHideEntitySeal(entity, link.face(), other, link.otherFace())) return;
         Vec3 firstPoint = entityBondSurfacePoint(entity, link.face(), partialTick);
         Vec3 secondPoint = entityBondSurfacePoint(other, link.otherFace(), partialTick);
         if (firstPoint.distanceToSqr(secondPoint) <= STRETCH_EPSILON * STRETCH_EPSILON) {
@@ -497,6 +500,8 @@ public final class AdhesivePatchRenderer {
         float partialTick
     ) {
         BlockPos blockPos = blockEntity.getBlockPos();
+        BlockAdhesionState adhesion = BondedFallingBlocks.getAdhesion(level, blockEntity.getSupportPos());
+        if (adhesion != null && adhesion.isInvisible(blockEntity.getAttachmentFace())) return;
         if (shouldHideBlockSeal(level, blockPos, blockEntity.getAttachmentFace().getOpposite())) return;
         if (!(blockEntity.getOrCreateRenderEntity() instanceof AbstractPlasticEntity entity)
             || !blockEntity.isHammerDeflected()) {
@@ -556,6 +561,12 @@ public final class AdhesivePatchRenderer {
             && isContainerOpening(level, adhesion.supportPos(), adhesion.attachmentFace()))
             || (isHardenedCauldronOpening(entity, entityFace)
             && isCatalyticLidFace(level, adhesion.supportPos(), adhesion.attachmentFace()));
+    }
+
+    private static boolean isEntityAdhesiveInvisible(ClientLevel level, EntityAdhesion adhesion) {
+        if (adhesion.invisible()) return true;
+        BlockAdhesionState state = BondedFallingBlocks.getAdhesion(level, adhesion.supportPos());
+        return state != null && state.isInvisible(adhesion.attachmentFace());
     }
 
     private static boolean shouldHideEntitySeal(
@@ -661,11 +672,13 @@ public final class AdhesivePatchRenderer {
             if (!entity.isAlive()) continue;
             Set<Direction> faces = new HashSet<>();
             EntityAdhesion adhesion = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
-            if (adhesion != null) faces.add(adhesion.attachmentFace().getOpposite());
+            if (adhesion != null && !isEntityAdhesiveInvisible(level, adhesion)) {
+                faces.add(adhesion.attachmentFace().getOpposite());
+            }
             EntityBondState bonds = EntityBondManager.get(entity);
             if (bonds != null) {
                 for (EntityBondLink link : bonds.links()) {
-                    faces.add(AdhesiveFaces.worldFace(entity, link.face()));
+                    if (!link.invisible()) faces.add(AdhesiveFaces.worldFace(entity, link.face()));
                 }
             }
             if (faces.isEmpty()) continue;

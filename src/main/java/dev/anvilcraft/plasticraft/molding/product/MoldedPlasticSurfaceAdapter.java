@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.molding.product;
 
 import dev.anvilcraft.plasticraft.api.texture.PlasticSurface;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureGenerator;
+import dev.anvilcraft.plasticraft.api.texture.PlasticTextureLayout;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 
@@ -16,6 +17,10 @@ public final class MoldedPlasticSurfaceAdapter {
     }
 
     public static List<PlasticSurface> adapt(List<MoldingQuad> quads) {
+        return adaptWithLayout(quads).surfaces();
+    }
+
+    public static AdaptedSurfaces adaptWithLayout(List<MoldingQuad> quads) {
         if (quads.isEmpty() || quads.size() > MAX_SURFACES) {
             throw new IllegalArgumentException("Invalid manufactured surface count: " + quads.size());
         }
@@ -39,8 +44,7 @@ public final class MoldedPlasticSurfaceAdapter {
             ));
         }
         List<PlasticSurface> result = List.copyOf(surfaces);
-        PlasticTextureGenerator.layout(result);
-        return result;
+        return new AdaptedSurfaces(result, PlasticTextureGenerator.layout(result));
     }
 
     private static int pixelLength(MoldingVec3 first, MoldingVec3 second) {
@@ -50,5 +54,11 @@ public final class MoldedPlasticSurfaceAdapter {
 
     private static PlasticSurface.Point point(MoldingVec3 value) {
         return new PlasticSurface.Point(value.x(), value.y(), value.z());
+    }
+
+    public record AdaptedSurfaces(List<PlasticSurface> surfaces, PlasticTextureLayout textureLayout) {
+        public AdaptedSurfaces {
+            surfaces = List.copyOf(surfaces);
+        }
     }
 }

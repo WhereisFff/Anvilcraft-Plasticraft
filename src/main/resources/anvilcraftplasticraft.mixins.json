@@ -45,7 +45,8 @@
     "FishTankBlockEntityRendererMixin",
     "LargeCauldronBlockEntityRendererMixin",
     "PlasmaJetsBlockEntityClientMixin",
-    "RecipeUtilMixin"
+    "RecipeUtilMixin",
+    "StructureDiskPreviewSupportMixin"
   ],
   "injectors": {
     "defaultRequire": 1

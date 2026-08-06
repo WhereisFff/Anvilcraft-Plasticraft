@@ -12,6 +12,8 @@ import java.util.BitSet;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -21,6 +23,8 @@ import java.util.UUID;
 public final class MoldingModelBaker {
     public static final int BAKE_VERSION = 1;
     public static final int MAX_COLLISION_BOXES = 4096;
+    private static final int BAKED_CACHE_LIMIT = 128;
+    private static final int MANUFACTURED_CACHE_LIMIT = 256;
     private static final double EPSILON = 1.0E-7D;
     private static final int PADDED_SIZE = MoldingVolumeMask.SIZE + 2;
     private static final int[][] CUBE_FACES = {
@@ -29,11 +33,40 @@ public final class MoldingModelBaker {
         {0, 2, 3, 1}, {4, 5, 7, 6}
     };
     private static final MoldingFaceDirection[] DIRECTIONS = MoldingFaceDirection.values();
+    private static final Map<EditableMoldingModel, BakedMoldingModel> IDENTITY_BAKED_CACHE =
+        new IdentityHashMap<>();
+    private static final Deque<EditableMoldingModel> BAKED_IDENTITY_ORDER = new ArrayDeque<>();
+    private static final Map<String, BakedMoldingModel> BAKED_CACHE = boundedCache(BAKED_CACHE_LIMIT);
+    private static final Map<ManufacturedKey, ManufacturedMoldingGeometry> MANUFACTURED_CACHE =
+        boundedCache(MANUFACTURED_CACHE_LIMIT);
 
     private MoldingModelBaker() {
     }
 
     public static BakedMoldingModel bake(EditableMoldingModel model) {
+        synchronized (IDENTITY_BAKED_CACHE) {
+            BakedMoldingModel cached = IDENTITY_BAKED_CACHE.get(model);
+            if (cached != null) return cached;
+        }
+        String modelHash = MoldingModelHasher.hash(model, BAKE_VERSION);
+        synchronized (BAKED_CACHE) {
+            BakedMoldingModel cached = BAKED_CACHE.get(modelHash);
+            if (cached != null) {
+                cacheIdentity(model, cached);
+                return cached;
+            }
+        }
+        BakedMoldingModel baked = bakeUncached(model, modelHash);
+        synchronized (BAKED_CACHE) {
+            BakedMoldingModel cached = BAKED_CACHE.get(modelHash);
+            if (cached != null) baked = cached;
+            else BAKED_CACHE.put(modelHash, baked);
+        }
+        cacheIdentity(model, baked);
+        return baked;
+    }
+
+    private static BakedMoldingModel bakeUncached(EditableMoldingModel model, String modelHash) {
         Map<UUID, MoldingGroup> groups = model.groupMap();
         MoldingVolumeMask volume = new MoldingVolumeMask();
         Set<MoldingBarrierFace> barriers = new HashSet<>();
@@ -80,7 +113,7 @@ public final class MoldingModelBaker {
             collision.boxes(),
             cavities,
             analysis,
-            MoldingModelHasher.hash(model, BAKE_VERSION)
+            modelHash
         );
     }
 
@@ -198,6 +231,27 @@ public final class MoldingModelBaker {
         if (!Double.isFinite(formedProportion) || formedProportion < 0.0D || formedProportion > 1.0D) {
             throw new IllegalArgumentException("Manufactured proportion must be between zero and one");
         }
+        ManufacturedKey key = new ManufacturedKey(
+            bake(model).modelHash(),
+            Double.doubleToLongBits(formedProportion)
+        );
+        synchronized (MANUFACTURED_CACHE) {
+            ManufacturedMoldingGeometry cached = MANUFACTURED_CACHE.get(key);
+            if (cached != null) return cached;
+        }
+        ManufacturedMoldingGeometry manufactured = createManufacturedGeometryUncached(model, formedProportion);
+        synchronized (MANUFACTURED_CACHE) {
+            ManufacturedMoldingGeometry cached = MANUFACTURED_CACHE.get(key);
+            if (cached != null) return cached;
+            MANUFACTURED_CACHE.put(key, manufactured);
+        }
+        return manufactured;
+    }
+
+    private static ManufacturedMoldingGeometry createManufacturedGeometryUncached(
+        EditableMoldingModel model,
+        double formedProportion
+    ) {
         Map<UUID, MoldingGroup> groups = model.groupMap();
         List<ElementGeometry> elements = new ArrayList<>();
         double minimumY = Double.POSITIVE_INFINITY;
@@ -239,6 +293,29 @@ public final class MoldingModelBaker {
             }
         }
         return new ManufacturedMoldingGeometry(surface, hulls);
+    }
+
+    private static <K, V> Map<K, V> boundedCache(int maximumSize) {
+        return new LinkedHashMap<>(maximumSize, 0.75F, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
+                return this.size() > maximumSize;
+            }
+        };
+    }
+
+    private static void cacheIdentity(EditableMoldingModel model, BakedMoldingModel baked) {
+        synchronized (IDENTITY_BAKED_CACHE) {
+            if (IDENTITY_BAKED_CACHE.containsKey(model)) return;
+            while (IDENTITY_BAKED_CACHE.size() >= BAKED_CACHE_LIMIT) {
+                IDENTITY_BAKED_CACHE.remove(BAKED_IDENTITY_ORDER.removeFirst());
+            }
+            IDENTITY_BAKED_CACHE.put(model, baked);
+            BAKED_IDENTITY_ORDER.addLast(model);
+        }
+    }
+
+    private record ManufacturedKey(String modelHash, long formedProportionBits) {
     }
 
     private static List<FacePolygon> orientedCubeFaces(List<MoldingVec3> vertices) {

@@ -10,7 +10,6 @@ import dev.anvilcraft.plasticraft.inventory.PlasticMoldingChamberMenu;
 import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
 import dev.anvilcraft.plasticraft.molding.bake.ManufacturedMoldingGeometry;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
-import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprint;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintDisk;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingMachineAction;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
@@ -24,10 +23,11 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingModelPersistence;
 import dev.anvilcraft.plasticraft.molding.session.MoldingSessionSnapshot;
 import dev.anvilcraft.plasticraft.network.MoldingSessionStatusPacket;
 import dev.dubhe.anvilcraft.api.injection.tooltip.ITooltipProviderExtension;
-import dev.dubhe.anvilcraft.api.item.IDiskCloneable;
+import dev.dubhe.anvilcraft.api.item.IChargerDischargeable;
 import dev.dubhe.anvilcraft.api.power.IPowerConsumer;
 import dev.dubhe.anvilcraft.api.power.PowerGrid;
-import dev.dubhe.anvilcraft.item.DiskItem;
+import dev.dubhe.anvilcraft.item.CapacitorItem;
+import dev.dubhe.anvilcraft.item.SuperCapacitorItem;
 import dev.dubhe.anvilcraft.util.UnitUtil;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
@@ -61,6 +61,7 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.fluids.FluidUtil;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import net.neoforged.neoforge.fluids.capability.IFluidHandlerItem;
 import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
 import net.neoforged.neoforge.items.IItemHandler;
 import org.jetbrains.annotations.Nullable;
@@ -74,10 +75,11 @@ import java.util.UUID;
 
 /** 保存成型舱模型、生产资源、自动化状态和单写者编辑租约。 */
 public class PlasticMoldingChamberBlockEntity extends BlockEntity
-    implements IPowerConsumer, ITooltipProviderExtension, IDiskCloneable {
+    implements IPowerConsumer, ITooltipProviderExtension {
     public static final int CLAY_SLOT = 0;
     public static final int DISK_SLOT = 1;
-    public static final int INVENTORY_SIZE = 2;
+    public static final int RESOURCE_SLOT = 2;
+    public static final int INVENTORY_SIZE = 3;
     public static final int HISTORY_LIMIT = 10;
     public static final long LEASE_TICKS = 200L;
     public static final int CLAY_LIMIT_MIN = 1;
@@ -87,7 +89,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     public static final int MOLD_FILL_LAYER_TICKS = 4;
     public static final int MOLD_FILL_TICKS = MOLD_FILL_LAYERS * MOLD_FILL_LAYER_TICKS;
     public static final int STAGING_TANK_CAPACITY = 8 * FluidType.BUCKET_VOLUME;
-    public static final int MOLDING_PUMP_RATE = 2 * FluidType.BUCKET_VOLUME;
+    public static final int MOLDING_PUMP_RATE = FluidType.BUCKET_VOLUME / 4;
     public static final int MINIMUM_PROCESS_MELT = 250;
     public static final int MENU_DATA_COUNT = 13;
     private static final int REPAIR_INTERVAL = 20;
@@ -195,6 +197,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             }
         }
         chamber.tickRedstone(level);
+        chamber.tickResourceSlot();
         chamber.tickGridCharging();
         chamber.tickMachine();
     }
@@ -265,6 +268,10 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
 
     public static SimpleContainer createInventory() {
         return new MoldingInventory();
+    }
+
+    public static boolean isResourceInput(ItemStack stack) {
+        return capacitorEnergy(stack) > 0 || isPlasticMeltContainer(stack);
     }
 
     public int clayLimit() {
@@ -687,21 +694,6 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     }
 
     @Override
-    public void storeDiskData(CompoundTag tag) {
-        UUID ownerId = this.writerPlayerId == null ? new UUID(0L, 0L) : this.writerPlayerId;
-        String ownerName = this.writerName.isBlank() ? "Unknown" : this.writerName;
-        MoldingBlueprintDisk.writeToTag(
-            tag,
-            MoldingBlueprint.create(this.model, ownerId, ownerName, System.currentTimeMillis())
-        );
-    }
-
-    @Override
-    public void applyDiskData(CompoundTag data) {
-        MoldingBlueprintDisk.readTag(data).ifPresent(blueprint -> this.replaceEditableModel(blueprint.model(), this.revision));
-    }
-
-    @Override
     public int getInputPower() {
         return this.energy < MoldingPowerBridge.capacity() ? MoldingPowerBridge.RATED_POWER_KW : 0;
     }
@@ -778,6 +770,78 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         if (accepted <= 0) return;
         this.energy += accepted;
         this.setChanged();
+    }
+
+    private void tickResourceSlot() {
+        ItemStack input = this.inventory.getItem(RESOURCE_SLOT);
+        if (input.isEmpty()) return;
+        if (this.tryEmptyResourceFluidContainer(input)) return;
+
+        int capacitorEnergy = capacitorEnergy(input);
+        if (capacitorEnergy <= 0 || MoldingPowerBridge.capacity() - this.energy < capacitorEnergy) return;
+        if (!(input.getItem() instanceof IChargerDischargeable dischargeable)) return;
+        ItemStack emptyCapacitor = dischargeable.discharge(input.copyWithCount(1));
+        this.energy += capacitorEnergy;
+        this.finishResourceInput(emptyCapacitor);
+    }
+
+    private boolean tryEmptyResourceFluidContainer(ItemStack input) {
+        IFluidHandlerItem container = FluidUtil.getFluidHandler(input.copyWithCount(1)).orElse(null);
+        if (container == null) return false;
+        FluidStack contained = container.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.SIMULATE);
+        if (!isPlasticMelt(contained)
+            || this.stagingTank.fill(contained, IFluidHandler.FluidAction.SIMULATE) != contained.getAmount()) {
+            return false;
+        }
+        FluidStack stagingBefore = this.stagingTank.getFluid().copy();
+        FluidStack drained = container.drain(contained, IFluidHandler.FluidAction.EXECUTE);
+        if (drained.getAmount() != contained.getAmount()
+            || this.stagingTank.fill(drained, IFluidHandler.FluidAction.EXECUTE) != drained.getAmount()) {
+            this.stagingTank.setFluid(stagingBefore);
+            this.inventory.setItem(RESOURCE_SLOT, input.copy());
+            AnvilcraftPlasticraft.LOGGER.error("Failed molding resource-slot fluid transfer at {}", this.worldPosition);
+            return false;
+        }
+        this.finishResourceInput(container.getContainer());
+        return true;
+    }
+
+    private void finishResourceInput(ItemStack output) {
+        ItemStack remainingInput = this.inventory.getItem(RESOURCE_SLOT);
+        remainingInput.shrink(1);
+        if (remainingInput.isEmpty()) {
+            this.inventory.setItem(RESOURCE_SLOT, output);
+            return;
+        }
+        this.inventory.setChanged();
+        if (output.isEmpty()) return;
+        ServerPlayer player = this.findResourceReturnPlayer();
+        if (player != null) {
+            player.getInventory().placeItemBackInInventory(output);
+        } else if (this.level != null) {
+            Containers.dropItemStack(
+                this.level,
+                this.worldPosition.getX() + 0.5D,
+                this.worldPosition.getY() + 0.5D,
+                this.worldPosition.getZ() + 0.5D,
+                output
+            );
+        }
+    }
+
+    @Nullable
+    private ServerPlayer findResourceReturnPlayer() {
+        if (!(this.level instanceof ServerLevel serverLevel)) return null;
+        ServerPlayer fallback = null;
+        for (ServerPlayer player : serverLevel.players()) {
+            if (!(player.containerMenu instanceof PlasticMoldingChamberMenu menu)
+                || !menu.isForChamber(this.worldPosition)) {
+                continue;
+            }
+            if (player.getUUID().equals(this.writerPlayerId)) return player;
+            fallback = player;
+        }
+        return fallback;
     }
 
     private void tickMachine() {
@@ -1083,6 +1147,18 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         return !stack.isEmpty() && stack.getFluid().getFluidType() == PlasticraftFluids.UNIVERSAL_PLASTIC_MELT_TYPE.get();
     }
 
+    private static boolean isPlasticMeltContainer(ItemStack stack) {
+        IFluidHandlerItem container = FluidUtil.getFluidHandler(stack.copyWithCount(1)).orElse(null);
+        if (container == null) return false;
+        return isPlasticMelt(container.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.SIMULATE));
+    }
+
+    private static int capacitorEnergy(ItemStack stack) {
+        if (stack.getItem() instanceof SuperCapacitorItem) return SuperCapacitorItem.ENERGY;
+        if (stack.getItem() instanceof CapacitorItem) return CapacitorItem.ENERGY;
+        return 0;
+    }
+
     private static boolean sameFluidAndAmount(FluidStack first, FluidStack second) {
         return first.getAmount() == second.getAmount()
             && (first.isEmpty() && second.isEmpty() || FluidStack.isSameFluidSameComponents(first, second));
@@ -1292,7 +1368,8 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         public boolean canPlaceItem(int slot, ItemStack stack) {
             return switch (slot) {
                 case CLAY_SLOT -> stack.is(Items.CLAY_BALL);
-                case DISK_SLOT -> stack.getItem() instanceof DiskItem;
+                case DISK_SLOT -> MoldingBlueprintDisk.isStructureDisk(stack);
+                case RESOURCE_SLOT -> isResourceInput(stack);
                 default -> false;
             };
         }

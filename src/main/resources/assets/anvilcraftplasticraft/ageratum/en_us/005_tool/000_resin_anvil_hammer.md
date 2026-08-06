@@ -20,7 +20,7 @@ The Resin Anvil Hammer is crafted vertically from a Resin Anvil, a Lightning Rod
 - Left-clicking a block still performs a corresponding Resin Anvil impact and launches the player opposite the full view direction with the strength of Knockback V; looking down launches upward and looking up launches downward.
 - Wear it as goggles to inspect power grids, or use it as a durability-consuming headbutt while flying with an elytra.
 - With the hammer in the main hand, use an offhand firework rocket on the block below to rocket jump.
-- Every movable Plasticraft product keeps its own quick-use action and can be rotated in place with the held-use orientation wheel. If the target collision shape overlaps a block, the world border, or another entity, the preview turns pale red and releasing use does not rotate it.
+- Every movable Plasticraft product keeps its own quick-use action and can be rotated in place with the held-use orientation wheel. Molded universal plastic uses its actual synchronized model in the wheel and world preview, with the world-aligned axes centred on its rotation pivot. A valid orientation uses the standard pale-blue plastic overlay; if the target collision shape overlaps a block, the world border, or another entity, the preview turns pale red and releasing use does not rotate it.
 - A Resin Anvil has no portable interface, so holding use in the air never opens an anvil menu.
 
 ## Lightweight knockback

@@ -12,6 +12,7 @@ import dev.anvilcraft.plasticraft.client.particle.GaseousOilFlameParticle;
 import dev.anvilcraft.plasticraft.client.renderer.AdhesivePatchRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.DynamicPlasticTextureManager;
 import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticPreviewRenderTypes;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticTextureSpriteSource;
 import dev.anvilcraft.plasticraft.client.renderer.UniversalPlasticItemRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingViewportResources;
@@ -55,6 +56,7 @@ public final class AnvilcraftPlasticraftClient {
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerBlockColors);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerItemColors);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerClientExtensions);
+        modEventBus.addListener(PlasticPreviewRenderTypes::registerShader);
         modEventBus.addListener(PlasticTextureSpriteSource::registerType);
         NeoForge.EVENT_BUS.addListener(AnvilcraftPlasticraftClient::clearPlasticTextureCache);
         // 硬化树脂和树脂均为固定颜色材料，不注册方块或物品着色处理器。

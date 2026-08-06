@@ -70,14 +70,15 @@ import net.minecraft.world.level.material.PushReaction;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.phys.shapes.BooleanOp;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.common.NeoForge;
 
 import java.util.List;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -284,23 +285,15 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         Vec3 serverMovement = this.clientServerPositionInitialized
             ? new Vec3(x - this.clientServerX, y - this.clientServerY, z - this.clientServerZ)
             : Vec3.ZERO;
-        boolean positionUnchanged = serverMovement.lengthSqr()
-            <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON;
-        boolean rotationChanged = Math.abs(Mth.wrapDegrees(yRot - this.clientSnapshotYRot)) > 1.0E-3F
-            || Math.abs(Mth.wrapDegrees(xRot - this.clientSnapshotXRot)) > 1.0E-3F;
-        if (!Double.isFinite(serverMovement.lengthSqr())
-            || serverMovement.lengthSqr()
-                > CLIENT_HARD_CORRECTION_DISTANCE * CLIENT_HARD_CORRECTION_DISTANCE) {
-            this.clientCarrierPrediction.clear();
+        if (this.clientCarrierPrediction.resetIfDiscontinuous(
+            serverMovement,
+            CLIENT_HARD_CORRECTION_DISTANCE
+        )) {
             this.clientPendingServerMovement = Vec3.ZERO;
             this.clientLastPredictionConfirmationGameTime = Long.MIN_VALUE;
             this.clientSnapshotHardCorrection = true;
-        } else if (positionUnchanged && !rotationChanged) {
-            // 未伴随旋转的原地快照表示服务端没有接受本地推动，立即撤销预测以避免继续穿入碰撞体。
-            this.clientCarrierPrediction.clear();
-            this.clientPendingServerMovement = Vec3.ZERO;
-            this.clientLastPredictionConfirmationGameTime = Long.MIN_VALUE;
         } else {
+            // 零位移快照可能只是服务端尚未处理本地推动；交给有序路径和超时逻辑决定是否回正。
             this.clientPendingServerMovement = this.clientPendingServerMovement.add(serverMovement);
         }
         this.clientServerPositionInitialized = true;
@@ -1777,9 +1770,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     ) {
         PlasticEntityCollisionBox targetBox = this.currentGeometry().collisionBoxAt(position, target);
         if (!this.hasUnobstructedBlocks(targetBox, ignoredBlocks)) return false;
-        List<VoxelShape> probes = targetBox.components().stream()
+        List<AABB> probes = targetBox.components().stream()
             .map(AbstractPlasticEntity::hammerRotationProbe)
-            .map(Shapes::create)
             .toList();
 
         if (probes.isEmpty()) return true;
@@ -1789,36 +1781,62 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             other -> EntitySelector.NO_SPECTATORS.test(other) && this.canCollideWith(other)
         );
         for (Entity candidate : candidates) {
-            VoxelShape candidateShape = ShapedCollisionEntity.collisionShape(candidate);
-            for (VoxelShape probe : probes) {
-                if (Shapes.joinIsNotEmpty(probe, candidateShape, BooleanOp.AND)) return false;
-            }
+            List<AABB> candidateComponents = candidate instanceof ShapedCollisionEntity shaped
+                ? shaped.plasticraft$getCollisionBox().components()
+                : List.of(candidate.getBoundingBox());
+            if (intersectsAny(probes, candidateComponents)) return false;
         }
         return true;
     }
 
     private boolean hasUnobstructedBlocks(PlasticEntityCollisionBox targetBox, Set<BlockPos> ignoredBlocks) {
-        List<VoxelShape> probes = targetBox.components().stream()
+        List<AABB> probes = targetBox.components().stream()
             .map(AbstractPlasticEntity::hammerRotationProbe)
-            .map(Shapes::create)
             .toList();
         if (!this.level().getWorldBorder().isWithinBounds(targetBox.bounds())) return false;
 
         CollisionContext context = CollisionContext.of(this);
-        for (VoxelShape probe : probes) {
-            AABB bounds = probe.bounds();
-            BlockPos min = BlockPos.containing(bounds.minX, bounds.minY, bounds.minZ);
-            BlockPos max = BlockPos.containing(bounds.maxX, bounds.maxY, bounds.maxZ);
-            for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
-                if (ignoredBlocks.contains(pos)) continue;
-                if (!this.level().hasChunkAt(pos)) return false;
-                VoxelShape blockShape = this.level().getBlockState(pos)
-                    .getCollisionShape(this.level(), pos, context)
-                    .move(pos.getX(), pos.getY(), pos.getZ());
-                if (Shapes.joinIsNotEmpty(probe, blockShape, BooleanOp.AND)) return false;
+        Map<Long, List<AABB>> blockCollisions = new HashMap<>();
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        for (AABB probe : probes) {
+            int minX = Mth.floor(probe.minX);
+            int minY = Mth.floor(probe.minY);
+            int minZ = Mth.floor(probe.minZ);
+            int maxX = Mth.floor(probe.maxX);
+            int maxY = Mth.floor(probe.maxY);
+            int maxZ = Mth.floor(probe.maxZ);
+            for (int x = minX; x <= maxX; x++) {
+                for (int y = minY; y <= maxY; y++) {
+                    for (int z = minZ; z <= maxZ; z++) {
+                        cursor.set(x, y, z);
+                        if (ignoredBlocks.contains(cursor)) continue;
+                        if (!this.level().hasChunkAt(cursor)) return false;
+                        long key = cursor.asLong();
+                        List<AABB> collision = blockCollisions.get(key);
+                        if (collision == null) {
+                            collision = this.level().getBlockState(cursor)
+                                .getCollisionShape(this.level(), cursor, context)
+                                .move(x, y, z)
+                                .toAabbs();
+                            blockCollisions.put(key, collision);
+                        }
+                        for (AABB box : collision) {
+                            if (probe.intersects(box)) return false;
+                        }
+                    }
+                }
             }
         }
         return true;
+    }
+
+    private static boolean intersectsAny(List<AABB> first, List<AABB> second) {
+        for (AABB firstBox : first) {
+            for (AABB secondBox : second) {
+                if (firstBox.intersects(secondBox)) return true;
+            }
+        }
+        return false;
     }
 
     private static AABB hammerRotationProbe(AABB component) {

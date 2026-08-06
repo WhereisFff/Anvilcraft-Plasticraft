@@ -539,6 +539,8 @@ public final class PlasticConvexCollisionGameTests {
             cauldron.getY() + playerBox.maxY - innerCeilingMinY,
             cauldron.getZ()
         );
+        assertPredictionReversal(new Vec3(0.12D, 0.0D, 0.0D));
+        assertPredictionReversal(new Vec3(0.0D, 0.0D, 0.12D));
         runUpsideDownCauldronReversalTest(helper, player, cauldron, "inner ceiling");
     }
 
@@ -1191,6 +1193,21 @@ public final class PlasticConvexCollisionGameTests {
         PlasticCarrierPrediction prediction = new PlasticCarrierPrediction();
         Vec3 reverse = forward.scale(-1.0D);
         prediction.add(forward);
+        Vec3 pendingBeforeStationarySnapshot = prediction.pendingMovement();
+        double travelBeforeStationarySnapshot = prediction.remainingTravel();
+        check(
+            !prediction.resetIfDiscontinuous(Vec3.ZERO, 16.0D),
+            "stationary server snapshot requested a hard carrier correction"
+        );
+        check(
+            !prediction.reconcile(Vec3.ZERO),
+            "stationary server snapshot was treated as a carrier confirmation"
+        );
+        check(
+            prediction.pendingMovement().distanceToSqr(pendingBeforeStationarySnapshot) <= EPSILON * EPSILON
+                && Math.abs(prediction.remainingTravel() - travelBeforeStationarySnapshot) <= EPSILON,
+            "stationary server snapshot discarded the unconfirmed carrier path"
+        );
         prediction.add(reverse);
         check(
             prediction.pendingMovement().lengthSqr() <= EPSILON * EPSILON,
@@ -1210,6 +1227,24 @@ public final class PlasticConvexCollisionGameTests {
         );
         check(prediction.reconcile(reverse), "reverse carrier step was not confirmed");
         check(prediction.isEmpty(), "prediction retained a step after both directions were confirmed");
+
+        PlasticCarrierPrediction quantizedPrediction = new PlasticCarrierPrediction();
+        quantizedPrediction.add(forward);
+        quantizedPrediction.add(reverse);
+        Vec3 quantizedForward = forward.add(forward.normalize().scale(1.0D / 4096.0D));
+        check(
+            quantizedPrediction.reconcile(quantizedForward),
+            "quantized forward snapshot did not confirm the predicted carrier step"
+        );
+        check(
+            quantizedPrediction.pendingMovement().distanceToSqr(reverse) <= EPSILON * EPSILON,
+            "quantized forward snapshot discarded or distorted the pending reverse step: "
+                + quantizedPrediction.pendingMovement()
+        );
+        check(
+            Math.abs(quantizedPrediction.remainingTravel() - reverse.length()) <= EPSILON,
+            "quantized forward snapshot changed the remaining reverse travel"
+        );
     }
 
     private static void check(boolean condition, String message) {

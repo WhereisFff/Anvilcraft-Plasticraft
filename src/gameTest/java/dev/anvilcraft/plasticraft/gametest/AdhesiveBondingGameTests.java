@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
+import dev.anvilcraft.plasticraft.block.BlockAdhesionState;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlockInfo;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
@@ -13,6 +14,7 @@ import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveGroupTransform;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveInvisibilityService;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesivePathPlanner;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesivePreviewService;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveSelectionManager;
@@ -50,10 +52,13 @@ import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.monster.Zombie;
+import net.minecraft.world.entity.projectile.ThrownPotion;
 import net.minecraft.world.inventory.AnvilMenu;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.alchemy.PotionContents;
+import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.piston.PistonMovingBlockEntity;
@@ -70,6 +75,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.common.CommonHooks;
 import net.neoforged.neoforge.common.util.BlockSnapshot;
 import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
@@ -83,6 +89,106 @@ public final class AdhesiveBondingGameTests {
     private static final double EPSILON = 1.0E-5D;
 
     private AdhesiveBondingGameTests() {
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "8x6x8", floor = true)
+    @TestHolder(description = "Splash and lingering invisibility potions permanently hide adhesive patches")
+    static void invisibilityPotionsHideBlockAdhesive(ExtendedGameTestHelper helper) {
+        BlockPos splashSupport = new BlockPos(2, 1, 3);
+        BlockPos lingeringSupport = new BlockPos(5, 1, 3);
+        helper.setBlock(splashSupport, Blocks.STONE);
+        helper.setBlock(lingeringSupport, Blocks.STONE);
+        BlockPos absoluteSplash = helper.absolutePos(splashSupport);
+        BlockPos absoluteLingering = helper.absolutePos(lingeringSupport);
+        check(BondedFallingBlocks.putPatch(helper.getLevel(), absoluteSplash, Direction.UP), "splash patch failed");
+        check(BondedFallingBlocks.putPatch(helper.getLevel(), absoluteLingering, Direction.UP), "lingering patch failed");
+
+        throwInvisibilityPotion(helper, absoluteSplash, Items.SPLASH_POTION);
+        throwInvisibilityPotion(helper, absoluteLingering, Items.LINGERING_POTION);
+
+        BlockAdhesionState splashState = BondedFallingBlocks.getAdhesion(helper.getLevel(), absoluteSplash);
+        BlockAdhesionState lingeringState = BondedFallingBlocks.getAdhesion(helper.getLevel(), absoluteLingering);
+        check(
+            splashState != null && splashState.hasPatch(Direction.UP) && splashState.isInvisible(Direction.UP),
+            "splash invisibility potion did not hide its patch"
+        );
+        check(
+            lingeringState != null && lingeringState.hasPatch(Direction.UP) && lingeringState.isInvisible(Direction.UP),
+            "lingering invisibility potion did not hide its patch"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "8x6x8", floor = true)
+    @TestHolder(description = "Invisibility hides stretched entity adhesive without breaking the bond")
+    static void invisibilityHidesStretchedEntityAdhesive(ExtendedGameTestHelper helper) {
+        Zombie first = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 2.0D, 3.5D));
+        Zombie second = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(5.5D, 2.0D, 3.5D));
+        check(
+            EntityBondManager.connect(helper.getLevel(), first, Direction.EAST, second, Direction.WEST, false),
+            "entity bond failed"
+        );
+        Vec3 firstPoint = AdhesiveFaces.storedFaceAlignmentPoint(first, Direction.EAST);
+        Vec3 secondPoint = AdhesiveFaces.storedFaceAlignmentPoint(second, Direction.WEST);
+        Vec3 impact = firstPoint.add(secondPoint).scale(0.5D);
+
+        check(
+            AdhesiveInvisibilityService.makeInvisible(helper.getLevel(), impact) == 1,
+            "invisibility did not find the stretched adhesive"
+        );
+        EntityBondLink firstLink = EntityBondManager.get(first).linkAt(Direction.EAST);
+        EntityBondLink secondLink = EntityBondManager.get(second).linkAt(Direction.WEST);
+        check(firstLink != null && firstLink.invisible(), "first entity did not retain the invisible bond");
+        check(secondLink != null && secondLink.invisible(), "second entity did not retain the invisible bond");
+        check(EntityBondManager.hasBonds(first) && EntityBondManager.hasBonds(second), "invisibility broke the bond");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "8x6x8", floor = true)
+    @TestHolder(description = "Invisibility hides block-anchored entity adhesive without releasing the entity")
+    static void invisibilityHidesBlockAnchoredEntityAdhesive(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(3, 1, 3);
+        helper.setBlock(support, Blocks.STONE);
+        BlockPos absoluteSupport = helper.absolutePos(support);
+        Zombie entity = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 2.0D, 3.5D));
+        EntityAdhesion adhesion = new EntityAdhesion(
+            absoluteSupport,
+            Direction.UP,
+            BuiltInRegistries.BLOCK.getKey(Blocks.STONE),
+            entity.position(),
+            false
+        );
+        entity.setData(PlasticraftAttachments.ENTITY_ADHESION, adhesion);
+        check(
+            BondedFallingBlocks.setEntityBond(helper.getLevel(), absoluteSupport, Direction.UP, true),
+            "block entity bond failed"
+        );
+
+        Vec3 impact = Vec3.atCenterOf(absoluteSupport).add(0.0D, 0.5D, 0.0D);
+        AdhesiveInvisibilityService.makeInvisible(helper.getLevel(), impact);
+
+        EntityAdhesion hidden = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
+        BlockAdhesionState blockState = BondedFallingBlocks.getAdhesion(helper.getLevel(), absoluteSupport);
+        check(hidden != null && hidden.invisible(), "entity-side adhesive state stayed visible");
+        check(
+            blockState != null && blockState.hasEntityBond(Direction.UP) && blockState.isInvisible(Direction.UP),
+            "block-side adhesive state stayed visible"
+        );
+        check(entity.hasData(PlasticraftAttachments.ENTITY_ADHESION), "invisibility released the entity");
+        helper.succeed();
+    }
+
+    private static void throwInvisibilityPotion(ExtendedGameTestHelper helper, BlockPos supportPos, Item item) {
+        Vec3 impact = Vec3.atCenterOf(supportPos).add(0.0D, 0.5D, 0.0D);
+        ThrownPotion potion = new ThrownPotion(helper.getLevel(), impact.x, impact.y, impact.z);
+        potion.setItem(PotionContents.createItemStack(item, Potions.INVISIBILITY));
+        AdhesiveInvisibilityService.projectileImpact(new ProjectileImpactEvent(
+            potion,
+            new BlockHitResult(impact, Direction.UP, supportPos, false)
+        ));
     }
 
     @GameTest(timeoutTicks = 20)

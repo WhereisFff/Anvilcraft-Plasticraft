@@ -13,12 +13,14 @@ public record BlockAdhesionState(
     ResourceLocation blockId,
     int patchMask,
     int blockBondMask,
-    int entityBondMask
+    int entityBondMask,
+    int invisibleMask
 ) {
     private static final String TAG_BLOCK = "Block";
     private static final String TAG_PATCHES = "Patches";
     private static final String TAG_BLOCK_BONDS = "BlockBonds";
     private static final String TAG_ENTITY_BONDS = "EntityBonds";
+    private static final String TAG_INVISIBLE = "Invisible";
     private static final int FACE_MASK = 0x3F;
 
     public BlockAdhesionState {
@@ -28,10 +30,15 @@ public record BlockAdhesionState(
         entityBondMask &= FACE_MASK;
         patchMask &= ~blockBondMask;
         entityBondMask &= ~blockBondMask;
+        invisibleMask &= patchMask | blockBondMask | entityBondMask;
+    }
+
+    public BlockAdhesionState(ResourceLocation blockId, int patchMask, int blockBondMask, int entityBondMask) {
+        this(blockId, patchMask, blockBondMask, entityBondMask, 0);
     }
 
     public static BlockAdhesionState empty(BlockState state) {
-        return new BlockAdhesionState(BuiltInRegistries.BLOCK.getKey(state.getBlock()), 0, 0, 0);
+        return new BlockAdhesionState(BuiltInRegistries.BLOCK.getKey(state.getBlock()), 0, 0, 0, 0);
     }
 
     public boolean matches(BlockState state) {
@@ -50,6 +57,14 @@ public record BlockAdhesionState(
         return (this.entityBondMask & bit(face)) != 0;
     }
 
+    public boolean hasAdhesive(Direction face) {
+        return ((this.patchMask | this.blockBondMask | this.entityBondMask) & bit(face)) != 0;
+    }
+
+    public boolean isInvisible(Direction face) {
+        return (this.invisibleMask & bit(face)) != 0;
+    }
+
     public boolean hasAnyBond() {
         return (this.blockBondMask | this.entityBondMask) != 0;
     }
@@ -61,7 +76,13 @@ public record BlockAdhesionState(
     public BlockAdhesionState withPatch(Direction face) {
         int bit = bit(face);
         if ((this.blockBondMask & bit) != 0) return this;
-        return new BlockAdhesionState(this.blockId, this.patchMask | bit, this.blockBondMask, this.entityBondMask);
+        return new BlockAdhesionState(
+            this.blockId,
+            this.patchMask | bit,
+            this.blockBondMask,
+            this.entityBondMask,
+            this.invisibleMask
+        );
     }
 
     public BlockAdhesionState withoutPatch(Direction face) {
@@ -69,7 +90,8 @@ public record BlockAdhesionState(
             this.blockId,
             this.patchMask & ~bit(face),
             this.blockBondMask,
-            this.entityBondMask
+            this.entityBondMask,
+            this.invisibleMask
         );
     }
 
@@ -79,7 +101,8 @@ public record BlockAdhesionState(
             this.blockId,
             this.patchMask & ~bit,
             this.blockBondMask | bit,
-            this.entityBondMask & ~bit
+            this.entityBondMask & ~bit,
+            this.invisibleMask
         );
     }
 
@@ -88,7 +111,8 @@ public record BlockAdhesionState(
             this.blockId,
             this.patchMask,
             this.blockBondMask & ~bit(face),
-            this.entityBondMask
+            this.entityBondMask,
+            this.invisibleMask
         );
     }
 
@@ -98,7 +122,8 @@ public record BlockAdhesionState(
             this.blockId,
             this.patchMask,
             this.blockBondMask & ~bit,
-            this.entityBondMask | bit
+            this.entityBondMask | bit,
+            this.invisibleMask
         );
     }
 
@@ -107,7 +132,19 @@ public record BlockAdhesionState(
             this.blockId,
             this.patchMask,
             this.blockBondMask,
-            this.entityBondMask & ~bit(face)
+            this.entityBondMask & ~bit(face),
+            this.invisibleMask
+        );
+    }
+
+    public BlockAdhesionState withInvisible(Direction face) {
+        if (!this.hasAdhesive(face)) return this;
+        return new BlockAdhesionState(
+            this.blockId,
+            this.patchMask,
+            this.blockBondMask,
+            this.entityBondMask,
+            this.invisibleMask | bit(face)
         );
     }
 
@@ -117,6 +154,7 @@ public record BlockAdhesionState(
         tag.putByte(TAG_PATCHES, (byte) this.patchMask);
         tag.putByte(TAG_BLOCK_BONDS, (byte) this.blockBondMask);
         tag.putByte(TAG_ENTITY_BONDS, (byte) this.entityBondMask);
+        tag.putByte(TAG_INVISIBLE, (byte) this.invisibleMask);
         return tag;
     }
 
@@ -127,7 +165,8 @@ public record BlockAdhesionState(
             blockId,
             tag.getByte(TAG_PATCHES),
             tag.getByte(TAG_BLOCK_BONDS),
-            tag.getByte(TAG_ENTITY_BONDS)
+            tag.getByte(TAG_ENTITY_BONDS),
+            tag.getByte(TAG_INVISIBLE)
         );
     }
 

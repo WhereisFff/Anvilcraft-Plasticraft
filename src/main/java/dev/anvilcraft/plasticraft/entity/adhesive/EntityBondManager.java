@@ -127,7 +127,8 @@ public final class EntityBondManager {
                         targetOrientation,
                         other,
                         link.otherFace()
-                    )
+                    ),
+                    link.invisible()
                 ));
             }
             changed.put(member.getUUID(), links);
@@ -379,6 +380,23 @@ public final class EntityBondManager {
             remaining.add(other);
         }
         rebaseRemainingComponents(level, remaining);
+        return true;
+    }
+
+    public static boolean setBondInvisible(ServerLevel level, Entity entity, Direction storedFace) {
+        EntityBondState state = get(entity);
+        EntityBondLink link = state == null ? null : state.linkAt(storedFace);
+        if (link == null || link.invisible()) return false;
+        entity.setData(PlasticraftAttachments.ENTITY_BONDS, state.withLink(link.withInvisible()));
+
+        Entity other = resolve(level, link);
+        EntityBondState otherState = other == null ? null : get(other);
+        EntityBondLink reverse = otherState == null ? null : otherState.linkAt(link.otherFace());
+        if (other != null
+            && reverse != null
+            && reverse.otherEntityUuid().equals(entity.getUUID())) {
+            other.setData(PlasticraftAttachments.ENTITY_BONDS, otherState.withLink(reverse.withInvisible()));
+        }
         return true;
     }
 

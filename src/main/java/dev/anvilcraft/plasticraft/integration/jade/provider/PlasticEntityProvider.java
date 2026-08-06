@@ -39,6 +39,17 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
     }
 
     @Override
+    public IElement getIcon(
+        EntityAccessor accessor,
+        IPluginConfig config,
+        IElement currentIcon
+    ) {
+        if (!(accessor.getEntity() instanceof AbstractPlasticEntity plastic)) return currentIcon;
+        ItemStack picked = plastic.getPickResult();
+        return picked.isEmpty() ? currentIcon : IElementHelper.get().item(picked);
+    }
+
+    @Override
     public void appendTooltip(ITooltip tooltip, EntityAccessor accessor, IPluginConfig config) {
         if (!(accessor.getEntity() instanceof AbstractPlasticEntity)) {
             return;

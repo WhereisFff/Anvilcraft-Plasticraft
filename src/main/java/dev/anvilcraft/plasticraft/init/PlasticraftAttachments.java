@@ -35,6 +35,7 @@ public final class PlasticraftAttachments {
                 Direction.UP,
                 ResourceLocation.fromNamespaceAndPath("minecraft", "air"),
                 Vec3.ZERO,
+                false,
                 false
             ))
             .serialize(EntityAdhesion.CODEC)

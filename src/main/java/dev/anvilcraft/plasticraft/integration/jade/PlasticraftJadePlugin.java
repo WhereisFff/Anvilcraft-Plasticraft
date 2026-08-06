@@ -32,6 +32,7 @@ public final class PlasticraftJadePlugin implements IWailaPlugin {
 
     @Override
     public void registerClient(IWailaClientRegistration registration) {
+        registration.registerEntityIcon(PlasticEntityProvider.INSTANCE, AbstractPlasticEntity.class);
         registration.registerEntityComponent(PlasticEntityProvider.INSTANCE, AbstractPlasticEntity.class);
         registration.registerEntityComponent(BondedEntityProvider.INSTANCE, Entity.class);
         registration.registerBlockComponent(BondedBlockProvider.INSTANCE, Block.class);

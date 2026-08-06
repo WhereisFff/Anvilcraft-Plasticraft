@@ -57,6 +57,7 @@ public final class MoldingViewportBackend1211 implements MoldingViewportBackend 
                 target.destroyBuffers();
             }
         });
+    private EditorSceneMesh uploadedMesh;
     private boolean closed;
 
     public MoldingViewportBackend1211() {
@@ -74,6 +75,7 @@ public final class MoldingViewportBackend1211 implements MoldingViewportBackend 
     public void updateMesh(EditorSceneMesh mesh) {
         requireOpen();
         RenderSystem.assertOnRenderThread();
+        if (this.uploadedMesh == mesh) return;
         Map<EditorDrawPhase, EditorScenePart> replacements = new EnumMap<>(EditorDrawPhase.class);
         for (EditorScenePart part : mesh.parts()) replacements.put(part.phase(), part);
         this.buffers.entrySet().removeIf(entry -> {
@@ -82,12 +84,18 @@ public final class MoldingViewportBackend1211 implements MoldingViewportBackend 
             return true;
         });
         for (Map.Entry<EditorDrawPhase, EditorScenePart> entry : replacements.entrySet()) {
-            long fingerprint = fingerprint(entry.getValue());
             CachedBuffer current = this.buffers.get(entry.getKey());
-            if (current != null && current.fingerprint == fingerprint) continue;
+            EditorScenePart replacement = entry.getValue();
+            if (current != null && current.part == replacement) continue;
+            long fingerprint = fingerprint(replacement);
+            if (current != null && current.fingerprint == fingerprint) {
+                current.part = replacement;
+                continue;
+            }
             if (current != null) current.close();
-            this.buffers.put(entry.getKey(), upload(entry.getValue(), fingerprint));
+            this.buffers.put(entry.getKey(), upload(replacement, fingerprint));
         }
+        this.uploadedMesh = mesh;
     }
 
     @Override
@@ -170,6 +178,7 @@ public final class MoldingViewportBackend1211 implements MoldingViewportBackend 
     private void releaseBuffers() {
         this.buffers.values().forEach(CachedBuffer::close);
         this.buffers.clear();
+        this.uploadedMesh = null;
     }
 
     private void requireOpen() {
@@ -209,7 +218,7 @@ public final class MoldingViewportBackend1211 implements MoldingViewportBackend 
     }
 
     private static CachedBuffer upload(EditorScenePart part, long fingerprint) {
-        return new CachedBuffer(fingerprint, upload(part, part.indices()));
+        return new CachedBuffer(part, fingerprint, upload(part, part.indices()));
     }
 
     private static VertexBuffer upload(EditorScenePart part, int[] indices) {
@@ -274,10 +283,12 @@ public final class MoldingViewportBackend1211 implements MoldingViewportBackend 
     }
 
     private static final class CachedBuffer implements AutoCloseable {
+        private EditorScenePart part;
         private final long fingerprint;
         private final VertexBuffer buffer;
 
-        private CachedBuffer(long fingerprint, VertexBuffer buffer) {
+        private CachedBuffer(EditorScenePart part, long fingerprint, VertexBuffer buffer) {
+            this.part = part;
             this.fingerprint = fingerprint;
             this.buffer = buffer;
         }

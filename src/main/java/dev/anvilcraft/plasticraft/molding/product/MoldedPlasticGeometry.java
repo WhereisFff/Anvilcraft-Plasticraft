@@ -6,25 +6,36 @@ import dev.anvilcraft.plasticraft.molding.bake.MoldingConvexHull;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.BooleanOp;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.WeakHashMap;
 
 /** 从持久化制造形状创建真实物理轮廓和独立交互轮廓。 */
 public final class MoldedPlasticGeometry {
     private static final double PIXELS_PER_BLOCK = 16.0D;
     private static final double INTERACTION_EPSILON_PIXELS = 1.0D / 64.0D;
-    private static final Map<MoldedPlasticData, PlasticEntityGeometry> CACHE = new WeakHashMap<>();
+    private static final int CACHE_LIMIT = 128;
+    private static final Map<MoldedPlasticData.ShapeKey, PlasticEntityGeometry> CACHE = new LinkedHashMap<>(
+        CACHE_LIMIT,
+        0.75F,
+        true
+    ) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<MoldedPlasticData.ShapeKey, PlasticEntityGeometry> eldest) {
+            return this.size() > CACHE_LIMIT;
+        }
+    };
 
     private MoldedPlasticGeometry() {
     }
 
     public static PlasticEntityGeometry get(MoldedPlasticData data) {
         synchronized (CACHE) {
-            return CACHE.computeIfAbsent(data, MoldedPlasticGeometry::create);
+            return CACHE.computeIfAbsent(data.shapeKey(), ignored -> create(data));
         }
     }
 
@@ -38,18 +49,18 @@ public final class MoldedPlasticGeometry {
         VoxelShape collision = Shapes.empty();
         for (MoldingConvexHull hull : data.collisionHulls()) {
             MoldingConvexHull.Bounds box = hull.bounds();
-            collision = Shapes.or(collision, Shapes.box(
+            collision = Shapes.joinUnoptimized(collision, Shapes.box(
                 box.minimum().x() / PIXELS_PER_BLOCK,
                 box.minimum().y() / PIXELS_PER_BLOCK,
                 box.minimum().z() / PIXELS_PER_BLOCK,
                 box.maximum().x() / PIXELS_PER_BLOCK,
                 box.maximum().y() / PIXELS_PER_BLOCK,
                 box.maximum().z() / PIXELS_PER_BLOCK
-            ));
+            ), BooleanOp.OR);
         }
         VoxelShape interaction = collision;
         for (MoldingQuad quad : data.zeroThicknessQuads()) {
-            interaction = Shapes.or(interaction, interactionShape(quad));
+            interaction = Shapes.joinUnoptimized(interaction, interactionShape(quad), BooleanOp.OR);
         }
         List<PlasticConvexShape> convexShapes = data.collisionHulls().stream()
             .map(hull -> PlasticConvexShape.fromMolding(hull, 1.0D / PIXELS_PER_BLOCK))

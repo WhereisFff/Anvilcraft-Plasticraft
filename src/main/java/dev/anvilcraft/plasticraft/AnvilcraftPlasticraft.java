@@ -8,6 +8,7 @@ import dev.anvilcraft.lib.v2.yukkuri.api.vapor.YukkuriCapabilities;
 import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
 import dev.anvilcraft.plasticraft.data.PlasticraftDatagen;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveInvisibilityService;
 import dev.anvilcraft.plasticraft.event.HighViscosityResinEvents;
 import dev.anvilcraft.plasticraft.event.PlasticVillagerTrades;
 import dev.anvilcraft.plasticraft.fluid.UniversalPlasticMeltBucketWrapper;
@@ -65,6 +66,7 @@ public final class AnvilcraftPlasticraft {
         VaporizationSources.register(PlasmaJetVaporizationSource.INSTANCE);
         NeoForge.EVENT_BUS.addListener(AnvilcraftPlasticraft::addItemTooltips);
         NeoForge.EVENT_BUS.addListener(HighViscosityResinEvents::useEntity);
+        NeoForge.EVENT_BUS.addListener(AdhesiveInvisibilityService::projectileImpact);
         NeoForge.EVENT_BUS.addListener(CondenserTowerProcess::onLargeCauldronProcess);
         NeoForge.EVENT_BUS.addListener(EscapingVaporEffects::rightClickBlock);
         NeoForge.EVENT_BUS.addListener(PlasticOilCatalysis::onChunkSent);

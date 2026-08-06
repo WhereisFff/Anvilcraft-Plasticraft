@@ -43,7 +43,7 @@ public record MoldingBlueprint(
         }
         String expectedHash = MoldingModelHasher.hash(model, bakeVersion);
         if (!expectedHash.equals(modelHash)) throw new IllegalArgumentException("Blueprint model hash mismatch");
-        MoldingModelBaker.bake(model);
+        // 蓝图库允许保存超出成型舱工作区的模型，工作区约束只在载入编辑时检查。
     }
 
     public static MoldingBlueprint create(

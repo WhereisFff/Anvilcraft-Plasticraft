@@ -9,6 +9,9 @@ import dev.anvilcraft.plasticraft.item.ResinAnvilItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticBlockItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticGranuleItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticMeltBucketItem;
+import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintDisk;
+import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
+import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
@@ -25,8 +28,6 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -53,7 +54,9 @@ public final class PlasticItemTooltipManager {
                 Unanchored bonded groups move together under knockback; block-anchored groups rebound together
                 A moving white dashed line means the server is still searching
                 The colored solid line shows the server result; bondable routes match the later white transit trail
-                Green and yellow can bond; red cannot"""
+                Green and yellow can bond; red cannot
+                Valid endpoint models use the standard pale-blue overlay; rejected endpoints use pale red
+                Splash or lingering Invisibility potions permanently hide adhesive without weakening its bond"""
         );
         register(
             AnvilcraftPlasticraft.of("condenser_tower"),
@@ -191,6 +194,27 @@ public final class PlasticItemTooltipManager {
         int insertionIndex
     ) {
         List<Component> dynamicTooltip = new ArrayList<>();
+        MoldingBlueprintDisk.read(stack).ifPresent(blueprint -> {
+            MoldingModelBounds visibleBounds = MoldingModelBounds.visible(blueprint.model())
+                .orElseGet(MoldingModelBounds::empty);
+            MoldingVec3 size = visibleBounds.sizeBlocks();
+            dynamicTooltip.add(Component.translatable(
+                "item.anvilcraft.structure_disk.structure",
+                blueprint.name()
+            ));
+            dynamicTooltip.add(Component.translatable(
+                "item.anvilcraft.structure_disk.size",
+                formatDimensions(size)
+            ));
+            boolean fitsChamber = MoldingModelBounds.all(blueprint.model())
+                .map(MoldingModelBounds::fitsWorkspace)
+                .orElse(true);
+            dynamicTooltip.add(Component.translatable(
+                fitsChamber
+                    ? "tooltip.anvilcraftplasticraft.molding.structure_disk.fit_chamber"
+                    : "tooltip.anvilcraftplasticraft.molding.structure_disk.too_large_for_chamber"
+            ).withStyle(fitsChamber ? ChatFormatting.GREEN : ChatFormatting.RED));
+        });
         if (stack.getItem() instanceof AbstractPlasticEntityItem<?> && PlasticItemData.isMagnetized(stack)) {
             dynamicTooltip.add(Component.translatable("tooltip.anvilcraftplasticraft.magnetized")
                 .withStyle(ChatFormatting.AQUA));
@@ -219,17 +243,16 @@ public final class PlasticItemTooltipManager {
             .orElseGet(() -> BuiltInPlasticEntityModels.UNIVERSAL_PLASTIC.geometry().localBounds());
         tooltip.add(Component.translatable(
             "tooltip.anvilcraftplasticraft.size",
-            formatSize(bounds.getXsize()),
-            formatSize(bounds.getYsize()),
-            formatSize(bounds.getZsize())
+            MoldingModelBounds.formatBlocks(bounds.getXsize()),
+            MoldingModelBounds.formatBlocks(bounds.getYsize()),
+            MoldingModelBounds.formatBlocks(bounds.getZsize())
         ).withStyle(ChatFormatting.GRAY));
     }
 
-    private static String formatSize(double size) {
-        return BigDecimal.valueOf(size)
-            .setScale(4, RoundingMode.HALF_UP)
-            .stripTrailingZeros()
-            .toPlainString();
+    private static String formatDimensions(MoldingVec3 size) {
+        return MoldingModelBounds.formatBlocks(size.x()) + " x "
+            + MoldingModelBounds.formatBlocks(size.y()) + " x "
+            + MoldingModelBounds.formatBlocks(size.z());
     }
 
     private static void addCapturedEntityTooltip(

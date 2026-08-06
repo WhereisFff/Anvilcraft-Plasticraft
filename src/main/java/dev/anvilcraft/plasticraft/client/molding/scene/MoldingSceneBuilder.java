@@ -145,6 +145,42 @@ public final class MoldingSceneBuilder {
         @Nullable MoldingAxis hoveredGizmoAxis,
         @Nullable ViewportTransform viewportTransform
     ) {
+        return buildEditorScene(
+            revision,
+            dynamicRevision,
+            model,
+            selection,
+            tool,
+            gizmoOrigin,
+            gizmoWorldUnitsPerPixel,
+            cameraDirection,
+            invalidPreview,
+            showGrid,
+            showAxes,
+            hoveredElement,
+            hoveredGizmoAxis,
+            viewportTransform,
+            true
+        );
+    }
+
+    private static EditorSceneMesh buildEditorScene(
+        long revision,
+        long dynamicRevision,
+        EditableMoldingModel model,
+        MoldingSelection selection,
+        MoldingTool tool,
+        Vector3d gizmoOrigin,
+        double gizmoWorldUnitsPerPixel,
+        Vector3d cameraDirection,
+        boolean invalidPreview,
+        boolean showGrid,
+        boolean showAxes,
+        @Nullable UUID hoveredElement,
+        @Nullable MoldingAxis hoveredGizmoAxis,
+        @Nullable ViewportTransform viewportTransform,
+        boolean includeSourceSurfaces
+    ) {
         SceneAccumulators scene = new SceneAccumulators(
             cameraDirection,
             gizmoWorldUnitsPerPixel,
@@ -164,7 +200,7 @@ public final class MoldingSceneBuilder {
             );
         }
         if (showAxes) addGroundAxes(scene.accumulator(EditorDrawPhase.MAIN_GRID), gizmoWorldUnitsPerPixel);
-        addSourceSurfaces(scene, model);
+        if (includeSourceSurfaces) addSourceSurfaces(scene, model);
         addSourceOutlines(
             scene.accumulator(EditorDrawPhase.SOURCE_OUTLINE),
             model,
@@ -201,6 +237,55 @@ public final class MoldingSceneBuilder {
             );
         }
         return scene.build(revision, dynamicRevision);
+    }
+
+    public static EditorSceneMesh replaceViewDependent(
+        EditorSceneMesh previous,
+        long dynamicRevision,
+        EditableMoldingModel model,
+        MoldingSelection selection,
+        MoldingTool tool,
+        Vector3d gizmoOrigin,
+        double gizmoWorldUnitsPerPixel,
+        Vector3d cameraDirection,
+        boolean invalidPreview,
+        boolean showGrid,
+        boolean showAxes,
+        @Nullable UUID hoveredElement,
+        @Nullable MoldingAxis hoveredGizmoAxis,
+        @Nullable ViewportTransform viewportTransform
+    ) {
+        EditorSceneMesh dynamic = buildEditorScene(
+            previous.staticRevision(),
+            dynamicRevision,
+            model,
+            selection,
+            tool,
+            gizmoOrigin,
+            gizmoWorldUnitsPerPixel,
+            cameraDirection,
+            invalidPreview,
+            showGrid,
+            showAxes,
+            hoveredElement,
+            hoveredGizmoAxis,
+            viewportTransform,
+            false
+        );
+        Map<EditorDrawPhase, EditorScenePart> partsByPhase = new EnumMap<>(EditorDrawPhase.class);
+        for (EditorScenePart part : previous.parts()) {
+            if (part.phase() == EditorDrawPhase.MANUFACTURING_SURFACE
+                || part.phase() == EditorDrawPhase.ZERO_THICKNESS_SURFACE) {
+                partsByPhase.put(part.phase(), part);
+            }
+        }
+        for (EditorScenePart part : dynamic.parts()) partsByPhase.put(part.phase(), part);
+        List<EditorScenePart> parts = new ArrayList<>(partsByPhase.size());
+        for (EditorDrawPhase phase : EditorDrawPhase.values()) {
+            EditorScenePart part = partsByPhase.get(phase);
+            if (part != null) parts.add(part);
+        }
+        return new EditorSceneMesh(previous.staticRevision(), dynamicRevision, parts);
     }
 
     public static EditorSceneMesh buildWorldProjection(long revision, EditableMoldingModel model) {

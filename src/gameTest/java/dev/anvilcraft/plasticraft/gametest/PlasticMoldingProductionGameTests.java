@@ -10,6 +10,7 @@ import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
@@ -57,7 +58,9 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.BooleanOp;
 import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.Shapes;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.testframework.annotation.TestHolder;
@@ -69,6 +72,76 @@ public final class PlasticMoldingProductionGameTests {
     private static final int STAGING_RESERVE = 137;
 
     private PlasticMoldingProductionGameTests() {
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "5x5x5", floor = true)
+    @TestHolder(description = "A molded 16x16x14 cuboid uses the cooled universal plastic entity and geometry contract")
+    static void standardMoldMatchesCooledPlastic(ExtendedGameTestHelper helper) {
+        EditableMoldingModel model = model(
+            "Standard Universal Plastic",
+            cube("Body", 16.0, 0.0, 16.0, 32.0, 14.0, 32.0)
+        );
+        MoldedPlasticData data = fullData(model, DyeColor.WHITE);
+        BlockState displayState = PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState();
+        ItemStack cooledStack = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        ItemStack moldedStack = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        MoldedPlasticData.set(moldedStack, data);
+        UniversalPlasticEntity cooled = new UniversalPlasticEntity(
+            PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
+            helper.getLevel(),
+            Vec3.ZERO,
+            displayState,
+            cooledStack,
+            PlasticEntityOrientation.DEFAULT
+        );
+        UniversalPlasticEntity molded = new UniversalPlasticEntity(
+            PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
+            helper.getLevel(),
+            Vec3.ZERO,
+            displayState,
+            moldedStack,
+            PlasticEntityOrientation.DEFAULT
+        );
+        check(cooled.getClass() == molded.getClass(), "standard molded product used a different entity class");
+        check(cooled.getType() == molded.getType(), "standard molded product used a different entity type");
+        check(
+            molded.getName().getString().equals(model.name()),
+            "molded entity did not expose its real model name"
+        );
+        check(
+            moldedStack.getHoverName().getString().equals(model.name()),
+            "molded item did not expose its real model name"
+        );
+        PlasticEntityGeometry cooledGeometry = cooled.plasticraft$getGeometry();
+        PlasticEntityGeometry moldedGeometry = molded.plasticraft$getGeometry();
+        for (Direction face : Direction.values()) {
+            for (int turn = 0; turn < 4; turn++) {
+                PlasticEntityOrientation orientation = new PlasticEntityOrientation(face, turn);
+                check(
+                    !Shapes.joinIsNotEmpty(
+                        cooledGeometry.collisionBoxAt(Vec3.ZERO, orientation).shape(),
+                        moldedGeometry.collisionBoxAt(Vec3.ZERO, orientation).shape(),
+                        BooleanOp.NOT_SAME
+                    ),
+                    "standard molded product collision differed at " + face + "/" + turn
+                );
+                check(
+                    !Shapes.joinIsNotEmpty(
+                        cooledGeometry.interactionShapeAt(Vec3.ZERO, orientation),
+                        moldedGeometry.interactionShapeAt(Vec3.ZERO, orientation),
+                        BooleanOp.NOT_SAME
+                    ),
+                    "standard molded product interaction shape differed at " + face + "/" + turn
+                );
+                check(
+                    cooledGeometry.rotationCenterAt(Vec3.ZERO)
+                        .distanceToSqr(moldedGeometry.rotationCenterAt(Vec3.ZERO)) <= EPSILON,
+                    "standard molded product rotation center differed at " + face + "/" + turn
+                );
+            }
+        }
+        helper.succeed();
     }
 
     @GameTest(timeoutTicks = 20)

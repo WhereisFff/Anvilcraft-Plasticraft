@@ -22,7 +22,7 @@ public final class PlasticEntityGeometry {
 
     private final VoxelShape collisionShape;
     private final VoxelShape interactionShape;
-    private final VoxelShape localBoundsShape;
+    private final AABB localBounds;
     private final List<PlasticConvexShape> convexShapes;
     private final Vec3 rotationPivot;
     private final Vec3 entityOrigin;
@@ -42,12 +42,8 @@ public final class PlasticEntityGeometry {
             ? this.collisionShape.toAabbs().stream().map(PlasticConvexShape::box).toList()
             : convexShapes;
         this.convexShapes = PlasticConvexShapeOptimizer.optimize(physicalShapes);
-        this.localBoundsShape = Shapes.or(
-            this.collisionShape,
-            this.interactionShape,
-            convexBoundsShape(this.convexShapes)
-        ).optimize();
-        if (this.localBoundsShape.isEmpty()) {
+        this.localBounds = combinedBounds(this.collisionShape, this.interactionShape, this.convexShapes);
+        if (this.localBounds == null) {
             throw new IllegalArgumentException("Plastic entity geometry requires a collision or interaction shape");
         }
         this.rotationPivot = requireFinite(rotationPivot, "rotationPivot");
@@ -111,7 +107,7 @@ public final class PlasticEntityGeometry {
 
     /** 返回物理形状与交互轮廓共同占据的局部范围。 */
     public AABB localBounds() {
-        return this.localBoundsShape.bounds();
+        return this.localBounds;
     }
 
     public Vec3 rotationPivot() {
@@ -180,7 +176,8 @@ public final class PlasticEntityGeometry {
         Oriented oriented = this.oriented(orientation);
         return PlasticEntityCollisionBox.atEntityPosition(
             oriented.collisionShape(),
-            oriented.boundsShape(),
+            oriented.collisionComponents(),
+            oriented.bounds(),
             oriented.convexShapes(),
             entityPosition,
             this.entityOrigin
@@ -267,16 +264,15 @@ public final class PlasticEntityGeometry {
         List<PlasticConvexShape> rotatedConvexShapes = this.convexShapes.stream()
             .map(shape -> shape.rotate(orientation, this.rotationPivot))
             .toList();
-        VoxelShape boundsShape = Shapes.or(
-            rotatedCollision,
-            rotatedInteraction,
-            convexBoundsShape(rotatedConvexShapes)
-        ).optimize();
+        AABB bounds = Objects.requireNonNull(
+            combinedBounds(rotatedCollision, rotatedInteraction, rotatedConvexShapes),
+            "oriented bounds"
+        );
         return new Oriented(
             rotatedCollision,
+            rotatedCollision.toAabbs(),
             rotatedInteraction,
-            boundsShape,
-            boundsShape.bounds(),
+            bounds,
             rotatedConvexShapes
         );
     }
@@ -328,12 +324,19 @@ public final class PlasticEntityGeometry {
         };
     }
 
-    private static VoxelShape convexBoundsShape(List<PlasticConvexShape> shapes) {
-        VoxelShape result = Shapes.empty();
-        for (PlasticConvexShape shape : shapes) {
-            result = Shapes.or(result, Shapes.create(shape.bounds()));
+    private static AABB combinedBounds(
+        VoxelShape collisionShape,
+        VoxelShape interactionShape,
+        List<PlasticConvexShape> convexShapes
+    ) {
+        AABB result = collisionShape.isEmpty() ? null : collisionShape.bounds();
+        if (!interactionShape.isEmpty()) {
+            result = result == null ? interactionShape.bounds() : result.minmax(interactionShape.bounds());
         }
-        return result.optimize();
+        for (PlasticConvexShape shape : convexShapes) {
+            result = result == null ? shape.bounds() : result.minmax(shape.bounds());
+        }
+        return result;
     }
 
     private Vec3 worldTranslation(Vec3 entityPosition) {
@@ -365,15 +368,15 @@ public final class PlasticEntityGeometry {
 
     public record Oriented(
         VoxelShape collisionShape,
+        List<AABB> collisionComponents,
         VoxelShape interactionShape,
-        VoxelShape boundsShape,
         AABB bounds,
         List<PlasticConvexShape> convexShapes
     ) {
         public Oriented {
             Objects.requireNonNull(collisionShape, "collisionShape");
+            collisionComponents = List.copyOf(collisionComponents);
             Objects.requireNonNull(interactionShape, "interactionShape");
-            Objects.requireNonNull(boundsShape, "boundsShape");
             Objects.requireNonNull(bounds, "bounds");
             convexShapes = List.copyOf(convexShapes);
         }

@@ -2,10 +2,12 @@ package dev.anvilcraft.plasticraft.client.renderer.entity;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import dev.dubhe.anvilcraft.AnvilCraft;
+import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
+import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.dubhe.anvilcraft.AnvilCraft;
 import dev.dubhe.anvilcraft.client.init.ModRenderTypes;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
@@ -58,6 +60,29 @@ public final class PlasticEntityRenderHelper {
         );
     }
 
+    /** 实体、轮盘缩略图和终点预览必须从同一份同步模型数据选择外观。 */
+    public static void renderModel(
+        AbstractPlasticEntity entity,
+        BlockRenderDispatcher dispatcher,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        int packedLight
+    ) {
+        if (entity instanceof UniversalPlasticEntity universal
+            && universal.getMoldedData().isPresent()) {
+            MoldedPlasticMeshRenderer.render(
+                universal.getMoldedData().orElseThrow(),
+                pose,
+                buffers,
+                packedLight,
+                0xFFFFFFFF,
+                false
+            );
+            return;
+        }
+        renderBlock(entity, dispatcher, pose, buffers, packedLight);
+    }
+
     /** 使用本体铁砧锤的蓝色半透明材质渲染方向预览。 */
     public static void renderHammerPreviewModel(
         AbstractPlasticEntity entity,
@@ -75,6 +100,16 @@ public final class PlasticEntityRenderHelper {
         MultiBufferSource buffers,
         boolean valid
     ) {
+        if (entity instanceof UniversalPlasticEntity universal
+            && universal.getMoldedData().isPresent()) {
+            MoldedPlasticMeshRenderer.renderPreview(
+                universal.getMoldedData().orElseThrow(),
+                pose,
+                buffers,
+                valid
+            );
+            return;
+        }
         BlockState state = PlasticEntityRenderTransforms.canonicalize(entity.getDisplayState());
         BakedModel model = dispatcher.getBlockModel(state);
         renderHammerPreviewModel(state, model, dispatcher, pose, buffers, valid);
@@ -116,9 +151,20 @@ public final class PlasticEntityRenderHelper {
         PoseStack pose,
         MultiBufferSource buffers
     ) {
+        renderFallingPreviewModel(entity, dispatcher, pose, buffers, true);
+    }
+
+    public static void renderFallingPreviewModel(
+        FallingBlockEntity entity,
+        BlockRenderDispatcher dispatcher,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        boolean valid
+    ) {
         BlockState state = entity.getBlockState();
         BakedModel model = dispatcher.getBlockModel(state);
-        VertexConsumer consumer = buffers.getBuffer(ModRenderTypes.TRANSLUCENT_COLORED_OVERLAY);
+        VertexConsumer source = buffers.getBuffer(ModRenderTypes.TRANSLUCENT_COLORED_OVERLAY);
+        VertexConsumer consumer = valid ? source : new PreviewColorVertexConsumer(source, 255, 26, 26);
         dispatcher.getModelRenderer().renderModel(
             pose.last(),
             consumer,

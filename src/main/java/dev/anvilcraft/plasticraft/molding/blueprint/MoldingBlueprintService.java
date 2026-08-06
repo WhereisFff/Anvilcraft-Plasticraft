@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.molding.blueprint;
 
 import dev.anvilcraft.plasticraft.block.PlasticMoldingMachineState;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
-import dev.dubhe.anvilcraft.item.DiskItem;
+import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
@@ -86,6 +86,11 @@ public final class MoldingBlueprintService {
         if (!MoldingBlueprintDisk.stateToken(currentDisk).equals(expectedDiskToken)) {
             throw failure("stale_disk", "The disk changed before the operation completed");
         }
+        MoldingBlueprint blueprint = MoldingBlueprintDisk.read(currentDisk)
+            .orElseThrow(() -> failure("invalid_disk_blueprint", "The structure disk has no valid molding blueprint"));
+        if (MoldingModelBounds.all(blueprint.model()).filter(bounds -> !bounds.fitsWorkspace()).isPresent()) {
+            throw failure("model_too_large", "The model exceeds the chamber's 3x3x3 workspace");
+        }
         if (chamber.machineState() != PlasticMoldingMachineState.EDITABLE) {
             throw failure("not_editable", "Unlock the chamber before loading a disk");
         }
@@ -93,8 +98,6 @@ public final class MoldingBlueprintService {
         if (chamber.batchFluidAmount() != 0) {
             throw failure("drain_batch_first", "Drain the molding region before loading a disk");
         }
-        MoldingBlueprint blueprint = MoldingBlueprintDisk.read(currentDisk)
-            .orElseThrow(() -> failure("invalid_disk_blueprint", "The disk does not contain a valid molding blueprint"));
         boolean hasDraft = !chamber.model().isEmpty();
         if (hasDraft && !draftOverwriteConfirmed) {
             throw failure("confirm_model_overwrite", "Loading this disk will replace the current draft");
@@ -123,7 +126,9 @@ public final class MoldingBlueprintService {
 
     private static ItemStack requireDisk(PlasticMoldingChamberBlockEntity chamber) throws BlueprintException {
         ItemStack disk = chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.DISK_SLOT);
-        if (!(disk.getItem() instanceof DiskItem)) throw failure("missing_disk", "Place an AnvilCraft disk in the slot");
+        if (!MoldingBlueprintDisk.isStructureDisk(disk)) {
+            throw failure("missing_disk", "Place an AnvilCraft structure disk in the slot");
+        }
         return disk;
     }
 

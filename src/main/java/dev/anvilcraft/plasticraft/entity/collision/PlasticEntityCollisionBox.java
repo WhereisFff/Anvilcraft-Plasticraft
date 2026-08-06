@@ -25,11 +25,12 @@ public final class PlasticEntityCollisionBox {
 
     private PlasticEntityCollisionBox(
         VoxelShape shape,
+        List<AABB> components,
         AABB bounds,
         List<PlasticConvexShape> convexComponents
     ) {
-        this.shape = Objects.requireNonNull(shape, "shape").optimize();
-        this.components = List.copyOf(this.shape.toAabbs());
+        this.shape = Objects.requireNonNull(shape, "shape");
+        this.components = List.copyOf(components);
         this.convexComponents = List.copyOf(convexComponents);
         this.bounds = Objects.requireNonNull(bounds, "bounds");
     }
@@ -77,10 +78,36 @@ public final class PlasticEntityCollisionBox {
         if (relativeBoundsShape.isEmpty()) {
             throw new IllegalArgumentException("Plastic entity bounds shape must not be empty");
         }
+        VoxelShape preparedShape = relativeShape.optimize();
+        return atEntityPosition(
+            preparedShape,
+            preparedShape.toAabbs(),
+            relativeBoundsShape.bounds(),
+            relativeConvexShapes,
+            entityPosition,
+            entityOrigin
+        );
+    }
+
+    static PlasticEntityCollisionBox atEntityPosition(
+        VoxelShape relativeShape,
+        List<AABB> relativeComponents,
+        AABB relativeBounds,
+        List<PlasticConvexShape> relativeConvexShapes,
+        Vec3 entityPosition,
+        Vec3 entityOrigin
+    ) {
+        Objects.requireNonNull(relativeShape, "relativeShape");
+        Objects.requireNonNull(relativeComponents, "relativeComponents");
+        Objects.requireNonNull(relativeBounds, "relativeBounds");
+        Objects.requireNonNull(relativeConvexShapes, "relativeConvexShapes");
+        Objects.requireNonNull(entityPosition, "entityPosition");
+        Objects.requireNonNull(entityOrigin, "entityOrigin");
         Vec3 movement = entityPosition.subtract(entityOrigin);
         return new PlasticEntityCollisionBox(
             relativeShape.move(movement.x, movement.y, movement.z),
-            relativeBoundsShape.bounds().move(movement),
+            relativeComponents.stream().map(component -> component.move(movement)).toList(),
+            relativeBounds.move(movement),
             relativeConvexShapes.stream().map(shape -> shape.move(movement)).toList()
         );
     }
@@ -121,6 +148,7 @@ public final class PlasticEntityCollisionBox {
         if (movement.equals(Vec3.ZERO)) return this;
         return new PlasticEntityCollisionBox(
             this.shape.move(movement.x, movement.y, movement.z),
+            this.components.stream().map(component -> component.move(movement)).toList(),
             this.bounds.move(movement),
             this.convexComponents.stream().map(shape -> shape.move(movement)).toList()
         );

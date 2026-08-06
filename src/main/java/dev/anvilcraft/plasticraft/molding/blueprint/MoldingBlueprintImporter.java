@@ -80,6 +80,7 @@ public final class MoldingBlueprintImporter {
         EditableMoldingModel result = applied.equals(MoldingVec3.ZERO)
             ? preview.model()
             : translate(preview.model(), applied);
+        if (!preview.fitsChamber()) return result;
         try {
             MoldingModelBaker.bake(result);
             return result;
@@ -370,19 +371,18 @@ public final class MoldingBlueprintImporter {
             throw new BlueprintException("empty_import", "Imported model contains no geometry");
         }
         MoldingVec3 span = maximum.subtract(minimum);
-        if (span.x() > 48.0D + EPSILON || span.y() > 48.0D + EPSILON || span.z() > 48.0D + EPSILON) {
-            throw new BlueprintException(
-                "import_too_large",
-                "Imported bounds are " + format(span.x()) + " x " + format(span.y()) + " x " + format(span.z())
-            );
-        }
-        MoldingVec3 suggestion = new MoldingVec3(
-            suggestedAxis(minimum.x(), maximum.x()),
-            suggestedAxis(minimum.y(), maximum.y()),
-            suggestedAxis(minimum.z(), maximum.z())
-        );
+        boolean fitsChamber = span.x() <= 48.0D + EPSILON
+            && span.y() <= 48.0D + EPSILON
+            && span.z() <= 48.0D + EPSILON;
+        MoldingVec3 suggestion = fitsChamber
+            ? new MoldingVec3(
+                suggestedAxis(minimum.x(), maximum.x()),
+                suggestedAxis(minimum.y(), maximum.y()),
+                suggestedAxis(minimum.z(), maximum.z())
+            )
+            : MoldingVec3.ZERO;
         boolean required = !suggestion.equals(MoldingVec3.ZERO);
-        return new ImportPreview(model, sourceFormat, minimum, maximum, required, suggestion);
+        return new ImportPreview(model, sourceFormat, minimum, maximum, required, suggestion, fitsChamber);
     }
 
     private static EditableMoldingModel translate(EditableMoldingModel model, MoldingVec3 offset) {
@@ -552,7 +552,8 @@ public final class MoldingBlueprintImporter {
         MoldingVec3 minimum,
         MoldingVec3 maximum,
         boolean translationRequired,
-        MoldingVec3 suggestedTranslation
+        MoldingVec3 suggestedTranslation,
+        boolean fitsChamber
     ) {
     }
 }

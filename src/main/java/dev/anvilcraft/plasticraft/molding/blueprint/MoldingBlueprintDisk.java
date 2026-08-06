@@ -6,8 +6,9 @@ import dev.anvilcraft.plasticraft.molding.bake.MoldingModelHasher;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelPersistence;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
-import dev.dubhe.anvilcraft.item.DiskItem;
+import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.item.property.component.DiskData;
+import dev.dubhe.anvilcraft.item.property.component.StructureDiskData;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.ItemStack;
 
@@ -36,11 +37,34 @@ public final class MoldingBlueprintDisk {
     private MoldingBlueprintDisk() {
     }
 
+    public static boolean isStructureDisk(ItemStack stack) {
+        return stack.is(ModItems.STRUCTURE_DISK.get());
+    }
+
+    public static boolean hasBlueprintData(ItemStack stack) {
+        if (!isStructureDisk(stack)) return false;
+        DiskData data = stack.get(ModComponents.DISK_DATA);
+        return data != null && data.tag().contains(TAG_BLUEPRINT, CompoundTag.TAG_COMPOUND);
+    }
+
+    public static String previewToken(ItemStack stack) {
+        if (!isStructureDisk(stack)) return "";
+        DiskData data = stack.get(ModComponents.DISK_DATA);
+        if (data == null || !data.tag().contains(TAG_BLUEPRINT, CompoundTag.TAG_COMPOUND)) return "";
+        CompoundTag encoded = data.tag().getCompound(TAG_BLUEPRINT);
+        if (!encoded.contains(TAG_SCHEMA, CompoundTag.TAG_INT)
+            || !encoded.contains(TAG_MODEL_HASH, CompoundTag.TAG_STRING)) {
+            return "";
+        }
+        return encoded.getInt(TAG_SCHEMA) + ":" + encoded.getString(TAG_MODEL_HASH);
+    }
+
     public static ItemStack writeCopy(ItemStack source, MoldingBlueprint blueprint) {
-        if (!(source.getItem() instanceof DiskItem)) throw new IllegalArgumentException("Item is not an AnvilCraft disk");
+        if (!isStructureDisk(source)) throw new IllegalArgumentException("Item is not an AnvilCraft structure disk");
         ItemStack replacement = source.copy();
         CompoundTag data = new CompoundTag();
         writeToTag(data, blueprint);
+        replacement.remove(ModComponents.STRUCTURE_DISK_DATA);
         replacement.set(ModComponents.DISK_DATA, new DiskData(data));
         return replacement;
     }
@@ -66,8 +90,9 @@ public final class MoldingBlueprintDisk {
     }
 
     public static Optional<MoldingBlueprint> read(ItemStack stack) {
-        if (!(stack.getItem() instanceof DiskItem) || !DiskItem.hasDataStored(stack)) return Optional.empty();
-        return readTag(DiskItem.getData(stack));
+        if (!isStructureDisk(stack)) return Optional.empty();
+        DiskData data = stack.get(ModComponents.DISK_DATA);
+        return data == null ? Optional.empty() : readTag(data.tag());
     }
 
     public static Optional<MoldingBlueprint> readTag(CompoundTag data) {
@@ -112,8 +137,14 @@ public final class MoldingBlueprintDisk {
     }
 
     public static String stateToken(ItemStack stack) {
-        if (!(stack.getItem() instanceof DiskItem) || !DiskItem.hasDataStored(stack)) return "";
-        return "data:" + sha256(DiskItem.getData(stack).toString());
+        if (!isStructureDisk(stack)) return "";
+        DiskData moldingData = stack.get(ModComponents.DISK_DATA);
+        StructureDiskData structureData = stack.get(ModComponents.STRUCTURE_DISK_DATA);
+        if (moldingData == null && structureData == null) return "";
+        String state = (moldingData == null ? "" : moldingData.tag().toString())
+            + '|'
+            + (structureData == null ? "" : structureData.toString());
+        return "data:" + sha256(state);
     }
 
     private static String sha256(String value) {

@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.item;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -30,6 +31,13 @@ public class UniversalPlasticBlockItem extends AbstractPlasticEntityItem<Univers
                 .map(data -> PlasticMeltColor.get(data.material()))
                 .orElseGet(() -> PlasticMeltColor.get(stack))
         );
+    }
+
+    @Override
+    public Component getName(ItemStack stack) {
+        return MoldedPlasticData.get(stack)
+            .<Component>map(data -> Component.literal(data.name()))
+            .orElseGet(() -> super.getName(stack));
     }
 
     @Override

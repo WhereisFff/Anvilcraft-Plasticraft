@@ -104,8 +104,11 @@ public final class BondedFallingBlocks {
         BlockAdhesionState firstState = currentAdhesion(level, first, firstBlock);
         BlockAdhesionState secondState = currentAdhesion(level, second, secondBlock);
         if (firstState.hasEntityBond(direction) || secondState.hasEntityBond(opposite)) return false;
-        putAdhesion(level, first, firstState.withBlockBond(direction));
-        putAdhesion(level, second, secondState.withBlockBond(opposite));
+        boolean invisible = firstState.isInvisible(direction) || secondState.isInvisible(opposite);
+        BlockAdhesionState firstBond = firstState.withBlockBond(direction);
+        BlockAdhesionState secondBond = secondState.withBlockBond(opposite);
+        putAdhesion(level, first, invisible ? firstBond.withInvisible(direction) : firstBond);
+        putAdhesion(level, second, invisible ? secondBond.withInvisible(opposite) : secondBond);
         return true;
     }
 
@@ -134,6 +137,20 @@ public final class BondedFallingBlocks {
         if (state == null || !state.matches(blockState)) state = BlockAdhesionState.empty(blockState);
         if (state.hasBlockBond(face)) return false;
         putAdhesion(level, pos, state.withEntityBond(face));
+        return true;
+    }
+
+    public static boolean setInvisible(ServerLevel level, BlockPos pos, Direction face) {
+        BlockAdhesionState state = getAdhesion(level, pos);
+        if (state == null || !state.hasAdhesive(face) || state.isInvisible(face)) return false;
+        putAdhesion(level, pos, state.withInvisible(face));
+        if (!state.hasBlockBond(face)) return true;
+
+        BlockPos otherPos = pos.relative(face);
+        BlockAdhesionState other = getAdhesion(level, otherPos);
+        if (other != null && other.hasBlockBond(face.getOpposite())) {
+            putAdhesion(level, otherPos, other.withInvisible(face.getOpposite()));
+        }
         return true;
     }
 

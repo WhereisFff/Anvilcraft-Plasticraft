@@ -78,6 +78,14 @@ public final class BondedPlasticShapeIndex {
             && bonded.isPlastic();
     }
 
+    public static @Nullable Entry entryAt(BlockGetter getter, BlockPos anchor) {
+        if (!(getter instanceof Level level)) return null;
+        synchronized (LEVELS) {
+            LevelIndex index = LEVELS.get(level);
+            return index == null ? null : index.get(anchor);
+        }
+    }
+
     private static List<Entry> entries(BlockGetter getter, AABB bounds, QueryKind kind) {
         if (!(getter instanceof Level level)) return List.of();
         synchronized (LEVELS) {
@@ -107,6 +115,7 @@ public final class BondedPlasticShapeIndex {
         if (collisionBounds == null && interactionBounds == null) return null;
         return new Entry(
             anchor,
+            collisionBox,
             collision,
             interaction,
             convexShapes,
@@ -140,6 +149,7 @@ public final class BondedPlasticShapeIndex {
 
     public record Entry(
         BlockPos anchor,
+        PlasticEntityCollisionBox collisionBox,
         VoxelShape collisionShape,
         VoxelShape interactionShape,
         List<PlasticConvexShape> convexShapes,
@@ -150,6 +160,7 @@ public final class BondedPlasticShapeIndex {
     ) {
         public Entry {
             Objects.requireNonNull(anchor, "anchor");
+            Objects.requireNonNull(collisionBox, "collisionBox");
             Objects.requireNonNull(collisionShape, "collisionShape");
             Objects.requireNonNull(interactionShape, "interactionShape");
             convexShapes = List.copyOf(convexShapes);
@@ -176,6 +187,11 @@ public final class BondedPlasticShapeIndex {
             if (entries == null) return;
             entries.remove(anchor.asLong());
             if (entries.isEmpty()) this.entriesByChunk.remove(chunkKey);
+        }
+
+        private @Nullable Entry get(BlockPos anchor) {
+            Map<Long, Entry> entries = this.entriesByChunk.get(chunkKey(anchor));
+            return entries == null ? null : entries.get(anchor.asLong());
         }
 
         private boolean isEmpty() {

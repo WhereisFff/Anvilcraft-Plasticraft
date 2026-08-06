@@ -3,9 +3,7 @@ package dev.anvilcraft.plasticraft.client.renderer.entity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
 import dev.anvilcraft.plasticraft.client.renderer.DynamicPlasticTextureManager;
-import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
-import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.entity.EntityRenderer;
@@ -38,29 +36,17 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
         MultiBufferSource buffers,
         int packedLight
     ) {
-        MoldedPlasticData molded = entity.getMoldedData().orElse(null);
         PlasticHammerScreen.HammerPreview preview = PlasticHammerScreen.getPreview(entity);
         if (preview != null) {
             pose.pushPose();
             PlasticEntityRenderTransforms.applyPreview(pose, entity, preview.orientation());
-            if (molded == null) {
-                PlasticEntityRenderHelper.renderHammerPreviewModel(
-                    entity,
-                    this.dispatcher,
-                    pose,
-                    buffers,
-                    preview.valid()
-                );
-            } else {
-                MoldedPlasticMeshRenderer.render(
-                    molded,
-                    pose,
-                    buffers,
-                    packedLight,
-                    preview.valid() ? 0x8833FF66 : 0x88FF3344,
-                    true
-                );
-            }
+            PlasticEntityRenderHelper.renderHammerPreviewModel(
+                entity,
+                this.dispatcher,
+                pose,
+                buffers,
+                preview.valid()
+            );
             pose.popPose();
             pose.pushPose();
             PlasticEntityRenderTransforms.applyWorldAlignedPreview(pose, entity);
@@ -71,11 +57,7 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
         }
         pose.pushPose();
         PlasticEntityRenderTransforms.apply(pose, entity, partialTick);
-        if (molded == null) {
-            PlasticEntityRenderHelper.renderBlock(entity, this.dispatcher, pose, buffers, packedLight);
-        } else {
-            MoldedPlasticMeshRenderer.render(molded, pose, buffers, packedLight, 0xFFFFFFFF, false);
-        }
+        PlasticEntityRenderHelper.renderModel(entity, this.dispatcher, pose, buffers, packedLight);
         pose.popPose();
         super.render(entity, yaw, partialTick, pose, buffers, packedLight);
     }

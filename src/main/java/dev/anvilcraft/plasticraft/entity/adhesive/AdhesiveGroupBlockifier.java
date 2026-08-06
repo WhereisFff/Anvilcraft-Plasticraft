@@ -244,6 +244,8 @@ public final class AdhesiveGroupBlockifier {
                     return false;
                 }
             }
+            boolean invisible = supportUuid != null
+                && isInvisibleBond(member, layout.entities.get(supportUuid));
             boolean originalNoGravity = originalNoGravity(member, source, sourceOriginalNoGravity);
             if (member instanceof AbstractPlasticEntity plastic) {
                 if (!(level.getBlockEntity(ownerPos) instanceof BondedEntityBlockEntity bonded)
@@ -273,6 +275,10 @@ public final class AdhesiveGroupBlockifier {
                 rollback(level, placed, replacedStates);
                 return false;
             }
+            if (invisible) {
+                Direction supportFace = directionFromTo(ownerPos, supportPos);
+                if (supportFace != null) BondedFallingBlocks.setInvisible(level, ownerPos, supportFace);
+            }
         }
 
         for (Entity member : layout.entities.values()) {
@@ -280,6 +286,16 @@ public final class AdhesiveGroupBlockifier {
             AdhesiveBondingService.markBlockificationHandoff(member);
         }
         return true;
+    }
+
+    private static boolean isInvisibleBond(Entity entity, Entity other) {
+        if (other == null) return false;
+        EntityBondState state = EntityBondManager.get(entity);
+        if (state == null) return false;
+        for (EntityBondLink link : state.links()) {
+            if (link.otherEntityUuid().equals(other.getUUID())) return link.invisible();
+        }
+        return false;
     }
 
     private static boolean originalNoGravity(

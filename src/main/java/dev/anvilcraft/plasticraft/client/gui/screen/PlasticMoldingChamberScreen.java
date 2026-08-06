@@ -1,7 +1,6 @@
 package dev.anvilcraft.plasticraft.client.gui.screen;
 
 import com.mojang.blaze3d.platform.InputConstants;
-import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberStructure;
@@ -23,6 +22,8 @@ import dev.anvilcraft.plasticraft.client.molding.editor.ViewportTransform;
 import dev.anvilcraft.plasticraft.client.molding.scene.EditorSceneMesh;
 import dev.anvilcraft.plasticraft.client.molding.scene.MoldingSceneBuilder;
 import dev.anvilcraft.plasticraft.client.molding.scene.ViewportFrame;
+import dev.anvilcraft.plasticraft.client.renderer.AntialiasedGuiLineRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingOrientationCubeRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingViewportBackend;
 import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingViewportBackend1211;
 import dev.anvilcraft.plasticraft.inventory.PlasticMoldingChamberMenu;
@@ -41,6 +42,7 @@ import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingCommand;
 import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
 import dev.anvilcraft.plasticraft.molding.model.MoldingGroup;
+import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import dev.anvilcraft.plasticraft.network.MoldingBlueprintDiskPacket;
 import dev.anvilcraft.plasticraft.network.MoldingBlueprintLibraryPacket;
 import dev.anvilcraft.plasticraft.network.MoldingBlueprintListRequestPacket;
@@ -50,7 +52,6 @@ import dev.anvilcraft.plasticraft.network.MoldingMachinePacket;
 import dev.anvilcraft.plasticraft.network.MoldingReleasePacket;
 import dev.anvilcraft.plasticraft.network.MoldingTakeoverPacket;
 import dev.dubhe.anvilcraft.client.support.RenderSupport;
-import dev.dubhe.anvilcraft.item.DiskItem;
 import net.minecraft.ChatFormatting;
 import net.minecraft.Util;
 import net.minecraft.client.gui.Font;
@@ -60,8 +61,6 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.LightTexture;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
@@ -80,7 +79,6 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector2d;
 import org.joml.Vector3d;
-import org.joml.Vector3f;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -103,10 +101,11 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private static final int OVERLAY_WIDTH = 73;
     private static final int OVERLAY_HEIGHT = 131;
     private static final int OVERLAY_Y = 72;
-    private static final int FULL_LAYOUT_MIN_X = -72;
-    private static final int FULL_LAYOUT_MAX_X = 421;
+    private static final int LAYOUT_PADDING = 4;
+    private static final int FULL_LAYOUT_WIDTH = LOGICAL_WIDTH + (OVERLAY_WIDTH - 1) * 2;
     private static final int HEARTBEAT_INTERVAL = 40;
     private static final int TITLE_MESSAGE_TICKS = 100;
+    private static final int TITLE_BAR_HEIGHT = 13;
     private static final int CONTEXT_WIDTH = 92;
     private static final int CONTEXT_ROW_HEIGHT = 11;
     private static final int ELEMENT_VISIBLE_ROWS = 2;
@@ -129,6 +128,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private static final int BLUEPRINT_SCROLL_HANDLE_WIDTH = 4;
     private static final int BLUEPRINT_SCROLL_HANDLE_HEIGHT = 12;
     private static final int BLUEPRINT_SCROLL_HANDLE_TEXTURE_WIDTH = 8;
+    private static final GuiRect CATEGORY_LIST_RECT = new GuiRect(-68, 90, 52, 105);
+    private static final int CATEGORY_ENTRY_HEIGHT = 15;
     private static final double CAMERA_DRAG_THRESHOLD_SQUARED = 4.0D;
     private static final int VIEWPORT_SUPERSAMPLING = 2;
     private static final int DIRECTION_COMPASS_X = VIEWPORT_WIDTH - 18;
@@ -158,6 +159,13 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         ReleaseControl.CUT,
         ReleaseControl.PASTE
     };
+    private static final ChamberControl[] MAIN_CHAMBER_CONTROLS = {
+        ChamberControl.OPERATE,
+        ChamberControl.CATEGORY,
+        ChamberControl.MODEL,
+        ChamberControl.DISK_LOAD,
+        ChamberControl.DISK_STORE
+    };
     private static final String[] TOOL_NAMES = {"move", "scale", "rotate", "pivot", "mirror"};
     private static final ResourceLocation BACKGROUND = texture(
         "textures/gui/background/plastic_molding_chamber.png"
@@ -168,22 +176,29 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private static final ResourceLocation RIGHT_OVERLAY = texture(
         "textures/gui/background/plastic_molding_chamber_right.png"
     );
-    private static final ResourceLocation BUTTON_16_3 = widget("button_16x16_3.png");
     private static final ResourceLocation BUTTON_32_23_2 = widget("button_32x23_2.png");
     private static final ResourceLocation CUBE_BUTTON = widget("cube.png");
     private static final ResourceLocation NEW_CUBE_BUTTON = widget("new_cube.png");
-    private static final ResourceLocation JSON_BUTTON = widget("json.png");
+    private static final ResourceLocation MODEL_ENTRY_BUTTON = widget("model_entry.png");
     private static final ResourceLocation ELEMENT_SCROLL_HANDLE = widget("slider.png");
     private static final ResourceLocation UNDO_BUTTON = widget("undo.png");
     private static final ResourceLocation COPY_BUTTON = widget("copy.png");
     private static final ResourceLocation CUT_BUTTON = widget("cut.png");
     private static final ResourceLocation PASTE_BUTTON = widget("paste.png");
     private static final ResourceLocation BLUEPRINT_SCROLL_HANDLE = widget("overlay_slider.png");
-    private static final ResourceLocation BUTTON_10_3 = widget("button_10x10_3.png");
-    private static final ResourceLocation BUTTON_34_16_4 = widget("button_34x16_4.png");
-    private static final ResourceLocation BUTTON_13_3 = widget("button_13x13_3.png");
-    private static final ResourceLocation BUTTON_13_4 = widget("button_13x13_4.png");
-    private static final ResourceLocation BUTTON_52_15_2 = widget("button_52x15_2.png");
+    private static final ResourceLocation CYCLE_MODE_BUTTON = widget("cycle.png");
+    private static final ResourceLocation REDSTONE_MODE_BUTTON = widget("redstone.png");
+    private static final ResourceLocation ONCE_MODE_BUTTON = widget("once.png");
+    private static final ResourceLocation OPERATE_BUTTON = widget("operate.png");
+    private static final ResourceLocation LOAD_BUTTON = widget("load.png");
+    private static final ResourceLocation SAVE_BUTTON = widget("save.png");
+    private static final ResourceLocation CATEGORY_BUTTON = widget("category.png");
+    private static final ResourceLocation MODEL_BUTTON = widget("model.png");
+    private static final ResourceLocation CATEGORY_ENTRY_BUTTON = widget("category_entry.png");
+    private static final ResourceLocation PIN_TO_TOP_BUTTON = widget("pin_to_top.png");
+    private static final ResourceLocation COPY_SMALL_BUTTON = widget("copy_small.png");
+    private static final ResourceLocation FILE_BUTTON = widget("file.png");
+    private static final ResourceLocation DELETE_BUTTON = widget("delete.png");
     private static final ResourceLocation MOVE_TOOL = widget("move.png");
     private static final ResourceLocation SCALE_TOOL = widget("resize.png");
     private static final ResourceLocation ROTATE_TOOL = widget("rotate.png");
@@ -201,6 +216,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private String seenWriterName;
     private boolean leftOverlayOpen;
     private boolean rightOverlayOpen;
+    private boolean rightOverlayOpenedLast;
     private boolean showGrid = true;
     private boolean showAxes = true;
     private MoldingGuiTransform layoutTransform = new MoldingGuiTransform(1.0D, 0.0D, 0.0D);
@@ -244,9 +260,12 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private boolean blueprintScrollbarDragging;
     @Nullable
     private ReleaseControl pressedReleaseControl;
+    @Nullable
+    private ChamberControl pressedChamberControl;
+    @Nullable
+    private MoldingBlueprintSummary pressedBlueprint;
     private boolean lockConfirmation;
     private int lockClayRequirement;
-    private boolean deleteBlueprintConfirmation;
     @Nullable
     private DiskConfirmation diskConfirmation;
     private double elementScrollbarGrabOffset;
@@ -335,7 +354,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             graphics.pose().popPose();
         }
         super.renderTooltip(graphics, mouseX, mouseY);
-        if (this.hoveredControlTooltip != null && this.hoveredSlot == null) {
+        boolean emptyResourceSlotHovered = this.hoveredSlot
+            == this.menu.getSlot(PlasticMoldingChamberBlockEntity.RESOURCE_SLOT)
+            && !this.hoveredSlot.hasItem();
+        if (this.hoveredControlTooltip != null && (this.hoveredSlot == null || emptyResourceSlotHovered)) {
             graphics.renderTooltip(
                 this.font,
                 wrapTooltip(this.hoveredControlTooltip, graphics.guiWidth(), mouseX),
@@ -400,9 +422,11 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     @Override
     protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY) {
         boolean showingMessage = this.titleMessageTicks > 0 && !this.menu.titleMessage().getString().isEmpty();
-        Component label = showingMessage ? this.menu.titleMessage() : this.title;
-        drawTitleLabel(graphics, label, showingMessage ? 0xFFE34B4B : 0xFF202020);
-        if (new GuiRect(0, 0, LOGICAL_WIDTH, 13).contains(this.leftPos, this.topPos, mouseX, mouseY)) {
+        Component label = showingMessage
+            ? this.menu.titleMessage().copy().withStyle(ChatFormatting.BOLD)
+            : this.title;
+        drawTitleLabel(graphics, label, showingMessage ? 0xFFE34B4B : 0xFF404040);
+        if (new GuiRect(0, 0, LOGICAL_WIDTH, TITLE_BAR_HEIGHT).contains(this.leftPos, this.topPos, mouseX, mouseY)) {
             this.hoveredControlTooltip = showingMessage ? List.of(label) : titleStatusTooltip();
         }
     }
@@ -427,11 +451,23 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private void drawTitleLabel(GuiGraphics graphics, Component label, int color) {
         int textWidth = Math.max(1, this.font.width(label));
         float scale = Math.min(1.0F, (LOGICAL_WIDTH - 8.0F) / textWidth);
+        float x = (LOGICAL_WIDTH - textWidth * scale) * 0.5F;
+        float y = (TITLE_BAR_HEIGHT - this.font.lineHeight * scale) * 0.5F;
+        drawScaledTitleLabel(graphics, label, color, scale, x, y);
+    }
+
+    private void drawScaledTitleLabel(
+        GuiGraphics graphics,
+        Component label,
+        int color,
+        float scale,
+        float x,
+        float y
+    ) {
         graphics.pose().pushPose();
+        graphics.pose().translate(x, y, 0.0F);
         graphics.pose().scale(scale, scale, 1.0F);
-        int x = Math.round(LOGICAL_WIDTH * 0.5F / scale - textWidth * 0.5F);
-        int y = Math.round(this.titleLabelY / scale);
-        graphics.drawString(this.font, label, x, y, color, false);
+        graphics.drawString(this.font, label, 0, 0, color, false);
         graphics.pose().popPose();
     }
 
@@ -477,10 +513,6 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             && !new GuiRect(47, 143, 34, 16).contains(this.leftPos, this.topPos, logicalX, logicalY)) {
             this.lockConfirmation = false;
             this.lockClayRequirement = 0;
-        }
-        GuiRect deleteBlueprint = new GuiRect(403, 184, 13, 13);
-        if (button == 0 && !deleteBlueprint.contains(this.leftPos, this.topPos, logicalX, logicalY)) {
-            this.deleteBlueprintConfirmation = false;
         }
         if (button == 0 && !isDiskConfirmationControl(logicalX, logicalY)) this.diskConfirmation = null;
         if (!isOverSearchField(logicalX, logicalY)) clearSearchFocus();
@@ -567,6 +599,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             refreshNumericFields();
             return true;
         }
+        if (button == 0 && releaseChamberControl(logicalX, logicalY)) return true;
         if (button == 0 && releasePressedControl(logicalX, logicalY)) return true;
         if (button == 0 && releaseToolButton(logicalX, logicalY)) return true;
         if (this.cameraDragButton == button) {
@@ -935,150 +968,16 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         double endY,
         int color
     ) {
-        double deltaX = endX - startX;
-        double deltaY = endY - startY;
-        double length = Math.hypot(deltaX, deltaY);
-        if (length < 1.0E-6D) return;
-        double normalX = -deltaY / length;
-        double normalY = deltaX / length;
-        double inner = DIRECTION_COMPASS_LINE_WIDTH * 0.5D;
-        double outer = inner + DIRECTION_COMPASS_FEATHER;
-        MultiBufferSource.BufferSource buffers = graphics.bufferSource();
-        addGuiLineQuad(graphics, buffers, startX, startY, endX, endY, normalX, normalY, inner, color);
-        int transparent = color & 0x00FFFFFF;
-        addGuiLineFeather(
+        AntialiasedGuiLineRenderer.render(
             graphics,
-            buffers,
             startX,
             startY,
             endX,
             endY,
-            normalX,
-            normalY,
-            inner,
-            outer,
             color,
-            transparent,
-            false
+            DIRECTION_COMPASS_LINE_WIDTH,
+            DIRECTION_COMPASS_FEATHER
         );
-        addGuiLineFeather(
-            graphics,
-            buffers,
-            startX,
-            startY,
-            endX,
-            endY,
-            normalX,
-            normalY,
-            inner,
-            outer,
-            color,
-            transparent,
-            true
-        );
-        graphics.flush();
-    }
-
-    private static void addGuiLineQuad(
-        GuiGraphics graphics,
-        MultiBufferSource.BufferSource buffers,
-        double startX,
-        double startY,
-        double endX,
-        double endY,
-        double normalX,
-        double normalY,
-        double width,
-        int color
-    ) {
-        addGuiQuad(
-            graphics,
-            buffers,
-            startX - normalX * width,
-            startY - normalY * width,
-            endX - normalX * width,
-            endY - normalY * width,
-            endX + normalX * width,
-            endY + normalY * width,
-            startX + normalX * width,
-            startY + normalY * width,
-            color,
-            color
-        );
-    }
-
-    private static void addGuiLineFeather(
-        GuiGraphics graphics,
-        MultiBufferSource.BufferSource buffers,
-        double startX,
-        double startY,
-        double endX,
-        double endY,
-        double normalX,
-        double normalY,
-        double inner,
-        double outer,
-        int color,
-        int transparent,
-        boolean positive
-    ) {
-        double sign = positive ? 1.0D : -1.0D;
-        if (!positive) {
-            addGuiQuad(
-                graphics,
-                buffers,
-                startX + normalX * outer * sign,
-                startY + normalY * outer * sign,
-                endX + normalX * outer * sign,
-                endY + normalY * outer * sign,
-                endX + normalX * inner * sign,
-                endY + normalY * inner * sign,
-                startX + normalX * inner * sign,
-                startY + normalY * inner * sign,
-                transparent,
-                color
-            );
-            return;
-        }
-        addGuiQuad(
-            graphics,
-            buffers,
-            startX + normalX * inner * sign,
-            startY + normalY * inner * sign,
-            endX + normalX * inner * sign,
-            endY + normalY * inner * sign,
-            endX + normalX * outer * sign,
-            endY + normalY * outer * sign,
-            startX + normalX * outer * sign,
-            startY + normalY * outer * sign,
-            color,
-            transparent
-        );
-    }
-
-    private static void addGuiQuad(
-        GuiGraphics graphics,
-        MultiBufferSource.BufferSource buffers,
-        double firstX,
-        double firstY,
-        double secondX,
-        double secondY,
-        double thirdX,
-        double thirdY,
-        double fourthX,
-        double fourthY,
-        int innerColor,
-        int outerColor
-    ) {
-        Vector3f first = graphics.pose().last().pose().transformPosition((float) firstX, (float) firstY, 0.0F, new Vector3f());
-        Vector3f second = graphics.pose().last().pose().transformPosition((float) secondX, (float) secondY, 0.0F, new Vector3f());
-        Vector3f third = graphics.pose().last().pose().transformPosition((float) thirdX, (float) thirdY, 0.0F, new Vector3f());
-        Vector3f fourth = graphics.pose().last().pose().transformPosition((float) fourthX, (float) fourthY, 0.0F, new Vector3f());
-        VertexConsumer consumer = buffers.getBuffer(RenderType.guiOverlay());
-        consumer.addVertex(fourth.x, fourth.y, fourth.z).setColor(outerColor);
-        consumer.addVertex(third.x, third.y, third.z).setColor(outerColor);
-        consumer.addVertex(second.x, second.y, second.z).setColor(innerColor);
-        consumer.addVertex(first.x, first.y, first.z).setColor(innerColor);
     }
 
     private List<Component> titleStatusTooltip() {
@@ -1236,7 +1135,15 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
 
     private void renderMainControls(GuiGraphics graphics, int mouseX, int mouseY) {
         GuiRect type = new GuiRect(9, 114, 16, 16);
-        drawThreeFrame(graphics, type, this.leftOverlayOpen, true, mouseX, mouseY);
+        renderPanelControl(
+            graphics,
+            ChamberControl.CATEGORY,
+            type,
+            CATEGORY_BUTTON,
+            this.leftOverlayOpen,
+            mouseX,
+            mouseY
+        );
         tooltip(type, mouseX, mouseY, "screen.anvilcraftplasticraft.molding.type");
 
         GuiRect undo = new GuiRect(269, 136, 16, 16);
@@ -1257,44 +1164,36 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         renderModeControl(graphics, new GuiRect(59, 162, 10, 10), MoldingProductionMode.REDSTONE, mouseX, mouseY);
         renderModeControl(graphics, new GuiRect(71, 162, 10, 10), MoldingProductionMode.SINGLE, mouseX, mouseY);
         renderResourceBars(graphics, mouseX, mouseY);
+        tooltip(
+            new GuiRect(63, 178, 16, 16),
+            mouseX,
+            mouseY,
+            "screen.anvilcraftplasticraft.molding.resource_slot"
+        );
         renderDiskControls(graphics, mouseX, mouseY);
 
-        GuiRect json = new GuiRect(324, 171, 16, 16);
-        drawThreeFrame(graphics, json, this.rightOverlayOpen, true, mouseX, mouseY);
-        tooltip(json, mouseX, mouseY, "screen.anvilcraftplasticraft.molding.json");
+        GuiRect model = new GuiRect(324, 171, 16, 16);
+        renderModelControl(graphics, model, mouseX, mouseY);
     }
 
     private void renderLockControl(GuiGraphics graphics, int mouseX, int mouseY) {
         GuiRect rect = new GuiRect(47, 143, 34, 16);
         boolean hovered = rect.contains(this.leftPos, this.topPos, mouseX, mouseY);
-        boolean enabled = this.menu.writable() && !this.editor.pending();
-        drawAtlas(graphics, rect, BUTTON_34_16_4, 4, 0);
-        int indicator = this.menu.machineState() != PlasticMoldingMachineState.EDITABLE
-            ? 0xFF4CBF65
-            : this.lockConfirmation ? 0xFFE3B341 : 0xFF777777;
-        graphics.fill(
-            this.leftPos + rect.x + 3,
-            this.topPos + rect.y + rect.height - 3,
-            this.leftPos + rect.x + rect.width - 3,
-            this.topPos + rect.y + rect.height - 2,
-            indicator
-        );
-        if (hovered && enabled) {
-            graphics.renderOutline(
-                this.leftPos + rect.x,
-                this.topPos + rect.y,
-                rect.width,
-                rect.height,
-                0xFFFFFFFF
-            );
-        }
+        boolean enabled = chamberControlEnabled(ChamberControl.OPERATE, null);
+        boolean pressed = enabled && isChamberControlPressed(ChamberControl.OPERATE, rect, mouseX, mouseY);
+        boolean editable = this.menu.machineState() == PlasticMoldingMachineState.EDITABLE;
+        int stateFrame = !editable ? 2 : this.lockConfirmation ? 1 : 0;
+        int interactionFrame = pressed ? 2 : hovered && enabled ? 1 : 0;
+        drawAtlas(graphics, rect, OPERATE_BUTTON, 9, stateFrame * 3 + interactionFrame);
         if (!enabled) drawDisabledOverlay(graphics, rect);
         if (hovered) {
             List<Component> lines = new ArrayList<>();
-            boolean editable = this.menu.machineState() == PlasticMoldingMachineState.EDITABLE;
-            lines.add(Component.translatable(editable
-                ? "screen.anvilcraftplasticraft.molding.lock"
-                : "screen.anvilcraftplasticraft.molding.unlock"));
+            String tooltipKey = !editable
+                ? "screen.anvilcraftplasticraft.molding.unlock"
+                : this.lockConfirmation
+                    ? "screen.anvilcraftplasticraft.molding.lock_confirm"
+                    : "screen.anvilcraftplasticraft.molding.lock";
+            lines.add(Component.translatable(tooltipKey));
             if (editable && this.lockConfirmation) {
                 lines.add(Component.translatable(
                     "screen.anvilcraftplasticraft.molding.clay_lock_status",
@@ -1313,9 +1212,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         int mouseX,
         int mouseY
     ) {
-        drawThreeFrame(
+        drawThreeFrameAtlas(
             graphics,
             rect,
+            modeButtonTexture(mode),
             this.menu.productionMode() == mode,
             this.menu.writable(),
             mouseX,
@@ -1327,6 +1227,14 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             mouseY,
             "screen.anvilcraftplasticraft.molding.mode." + mode.getSerializedName()
         );
+    }
+
+    private static ResourceLocation modeButtonTexture(MoldingProductionMode mode) {
+        return switch (mode) {
+            case CONTINUOUS -> CYCLE_MODE_BUTTON;
+            case REDSTONE -> REDSTONE_MODE_BUTTON;
+            case SINGLE -> ONCE_MODE_BUTTON;
+        };
     }
 
     private void renderResourceBars(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -1347,23 +1255,23 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             renderFluidTexture(graphics, fluidContents, fluidHeight, staging);
         }
 
-        GuiRect energyFrame = new GuiRect(30, 190, 52, 8);
-        int energyX = 32;
-        int energyY = 191;
-        int energyWidthLimit = 49;
-        int energyHeight = 6;
-        int energyWidth = this.menu.energyStored() == 0 ? 0 : Math.max(
+        GuiRect energyFrame = new GuiRect(31, 161, 13, 37);
+        int energyX = 34;
+        int energyY = 164;
+        int energyWidth = 7;
+        int energyHeightLimit = 30;
+        int energyHeight = this.menu.energyStored() == 0 ? 0 : Math.max(
             1,
-            (int) ((long) Math.clamp(this.menu.energyStored(), 0, MoldingPowerBridge.capacity()) * energyWidthLimit
+            (int) ((long) Math.clamp(this.menu.energyStored(), 0, MoldingPowerBridge.capacity()) * energyHeightLimit
                 / MoldingPowerBridge.capacity())
         );
-        renderSegmentedEnergy(
+        renderVerticalSegmentedEnergy(
             graphics,
             this.leftPos + energyX,
             this.topPos + energyY,
-            energyWidthLimit,
-            energyHeight,
-            energyWidth
+            energyWidth,
+            energyHeightLimit,
+            energyHeight
         );
 
         if (fluidFrame.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
@@ -1422,72 +1330,80 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         float blue = (tint & 0xFF) / 255.0F;
         float alpha = (tint >>> 24) / 255.0F;
         if (alpha == 0.0F) alpha = 1.0F;
-        int logicalLeft = this.leftPos + contents.x;
-        int logicalTop = this.topPos + contents.y;
-        int logicalBottom = logicalTop + contents.height;
-        int left = screenX(logicalLeft);
-        int right = Math.max(left + 1, screenX(logicalLeft + contents.width));
-        int bottom = screenY(logicalBottom);
-        int top = Math.min(bottom - 1, screenY(logicalBottom - fluidHeight));
-        int tileSize = Math.max(1, (int) Math.round(16.0D * this.layoutTransform.scale()));
+        int left = this.leftPos + contents.x;
+        int right = left + contents.width;
+        int bottom = this.topPos + contents.y + contents.height;
+        int top = bottom - fluidHeight;
+        int spriteWidth = sprite.contents().width();
+        int spriteHeight = sprite.contents().height();
+        int atlasWidth = Math.max(1, Math.round(spriteWidth / (sprite.getU1() - sprite.getU0())));
+        int atlasHeight = Math.max(1, Math.round(spriteHeight / (sprite.getV1() - sprite.getV0())));
 
-        graphics.pose().pushPose();
-        cancelLayoutTransform(graphics);
-        graphics.enableScissor(left, top, right, bottom);
+        // 手工裁切边缘纹理块，避免先换算到屏幕整数坐标后再裁剪造成像素偏移
+        graphics.setColor(red, green, blue, alpha);
         try {
-            for (int y = bottom - tileSize; y > top - tileSize; y -= tileSize) {
-                for (int x = left; x < right; x += tileSize) {
-                    graphics.blit(x, y, 0, tileSize, tileSize, sprite, red, green, blue, alpha);
+            for (int tileY = bottom - 16; tileY > top - 16; tileY -= 16) {
+                int drawTop = Math.max(tileY, top);
+                int drawBottom = Math.min(tileY + 16, bottom);
+                int sourceTop = Math.round((drawTop - tileY) * spriteHeight / 16.0F);
+                int sourceBottom = Math.round((drawBottom - tileY) * spriteHeight / 16.0F);
+                for (int tileX = left; tileX < right; tileX += 16) {
+                    int drawRight = Math.min(tileX + 16, right);
+                    int sourceRight = Math.round((drawRight - tileX) * spriteWidth / 16.0F);
+                    graphics.blit(
+                        sprite.atlasLocation(),
+                        tileX,
+                        drawTop,
+                        drawRight - tileX,
+                        drawBottom - drawTop,
+                        sprite.getX(),
+                        sprite.getY() + sourceTop,
+                        sourceRight,
+                        sourceBottom - sourceTop,
+                        atlasWidth,
+                        atlasHeight
+                    );
                 }
             }
         } finally {
-            graphics.disableScissor();
-            graphics.pose().popPose();
+            graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
         }
     }
 
-    private void renderSegmentedEnergy(
+    private void renderVerticalSegmentedEnergy(
         GuiGraphics graphics,
         int x,
         int y,
         int width,
         int height,
-        int filledWidth
+        int filledHeight
     ) {
-        int left = screenX(x);
-        int right = Math.max(left + 1, screenX(x + width));
-        int top = screenY(y);
-        int bottom = Math.max(top + 1, screenY(y + height));
-        int filledRight = Math.clamp(screenX(x + Math.clamp(filledWidth, 0, width)), left, right);
-
-        graphics.pose().pushPose();
-        cancelLayoutTransform(graphics);
-        try {
-            renderEnergySegments(
-                graphics,
-                left,
-                top,
-                right,
-                bottom,
-                ENERGY_EMPTY_DARK,
-                ENERGY_EMPTY_TOP,
-                ENERGY_EMPTY_CENTER,
-                ENERGY_EMPTY_BOTTOM
-            );
-            renderEnergySegments(
-                graphics,
-                left,
-                top,
-                filledRight,
-                bottom,
-                ENERGY_FILLED_DARK,
-                ENERGY_FILLED_TOP,
-                ENERGY_FILLED_CENTER,
-                ENERGY_FILLED_BOTTOM
-            );
-        } finally {
-            graphics.pose().popPose();
-        }
+        int right = x + width;
+        int bottom = y + height;
+        renderEnergySegments(
+            graphics,
+            x,
+            y,
+            right,
+            bottom,
+            ENERGY_EMPTY_DARK,
+            ENERGY_EMPTY_TOP,
+            ENERGY_EMPTY_CENTER,
+            ENERGY_EMPTY_BOTTOM
+        );
+        int clampedHeight = Math.clamp(filledHeight, 0, height);
+        if (clampedHeight == 0) return;
+        renderEnergySegments(
+            graphics,
+            x,
+            bottom - clampedHeight,
+            right,
+            bottom,
+            ENERGY_FILLED_DARK,
+            ENERGY_FILLED_TOP,
+            ENERGY_FILLED_CENTER,
+            ENERGY_FILLED_BOTTOM
+        );
     }
 
     private static void renderEnergySegments(
@@ -1501,34 +1417,37 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         int centerColor,
         int bottomColor
     ) {
-        int center = top + (bottom - top) / 2;
-        for (int stripeX = left; stripeX < right; stripeX++) {
-            if (((stripeX - left) & 1) == 0) {
-                graphics.fill(stripeX, top, stripeX + 1, bottom, darkColor);
+        int center = left + (right - left) / 2;
+        for (int stripeY = bottom - 1; stripeY >= top; stripeY--) {
+            if (((bottom - stripeY - 1) & 1) == 0) {
+                graphics.fill(left, stripeY, right, stripeY + 1, darkColor);
                 continue;
             }
-            if (center == top || center == bottom) {
-                graphics.fill(stripeX, top, stripeX + 1, bottom, centerColor);
-                continue;
+            for (int pixelX = left; pixelX < right; pixelX++) {
+                int color = pixelX <= center
+                    ? interpolateColor(topColor, centerColor, pixelX - left, Math.max(1, center - left))
+                    : interpolateColor(
+                        centerColor,
+                        bottomColor,
+                        pixelX - center,
+                        Math.max(1, right - center - 1)
+                    );
+                graphics.fill(pixelX, stripeY, pixelX + 1, stripeY + 1, color);
             }
-            graphics.fillGradient(stripeX, top, stripeX + 1, center, topColor, centerColor);
-            graphics.fillGradient(stripeX, center, stripeX + 1, bottom, centerColor, bottomColor);
         }
     }
 
-    private int screenX(double logicalX) {
-        return (int) Math.round(this.layoutTransform.toScreenX(logicalX));
+    private static int interpolateColor(int from, int to, int numerator, int denominator) {
+        int clampedNumerator = Math.clamp(numerator, 0, denominator);
+        int alpha = interpolateChannel(from >>> 24, to >>> 24, clampedNumerator, denominator);
+        int red = interpolateChannel(from >> 16 & 0xFF, to >> 16 & 0xFF, clampedNumerator, denominator);
+        int green = interpolateChannel(from >> 8 & 0xFF, to >> 8 & 0xFF, clampedNumerator, denominator);
+        int blue = interpolateChannel(from & 0xFF, to & 0xFF, clampedNumerator, denominator);
+        return alpha << 24 | red << 16 | green << 8 | blue;
     }
 
-    private int screenY(double logicalY) {
-        return (int) Math.round(this.layoutTransform.toScreenY(logicalY));
-    }
-
-    private void cancelLayoutTransform(GuiGraphics graphics) {
-        // 裁剪框和像素分格不读取 PoseStack，先抵消布局变换以统一到屏幕坐标
-        float inverseScale = (float) (1.0D / this.layoutTransform.scale());
-        graphics.pose().scale(inverseScale, inverseScale, 1.0F);
-        graphics.pose().translate(-this.layoutTransform.originX(), -this.layoutTransform.originY(), 0.0D);
+    private static int interpolateChannel(int from, int to, int numerator, int denominator) {
+        return (from * (denominator - numerator) + to * numerator + denominator / 2) / denominator;
     }
 
     private @Nullable PlasticMoldingChamberBlockEntity clientChamber() {
@@ -1545,8 +1464,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
 
     private void renderOverlays(GuiGraphics graphics, int mouseX, int mouseY) {
         if (this.leftOverlayOpen) {
-            GuiRect normal = new GuiRect(-68, 90, 52, 15);
-            drawAtlas(graphics, normal, BUTTON_52_15_2, 2, 1);
+            GuiRect normal = categoryEntryRect(0);
+            drawThreeFrameAtlas(graphics, normal, CATEGORY_ENTRY_BUTTON, true, true, mouseX, mouseY);
             graphics.drawString(
                 this.font,
                 Component.translatable("screen.anvilcraftplasticraft.molding.type.normal"),
@@ -1562,14 +1481,41 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         }
     }
 
+    private static GuiRect categoryEntryRect(int row) {
+        int visibleRows = CATEGORY_LIST_RECT.height / CATEGORY_ENTRY_HEIGHT;
+        if (row < 0 || row >= visibleRows) throw new IllegalArgumentException("Category row is outside the list");
+        return new GuiRect(
+            CATEGORY_LIST_RECT.x,
+            CATEGORY_LIST_RECT.y + row * CATEGORY_ENTRY_HEIGHT,
+            CATEGORY_LIST_RECT.width,
+            CATEGORY_ENTRY_HEIGHT
+        );
+    }
+
     private void renderDiskControls(GuiGraphics graphics, int mouseX, int mouseY) {
         GuiRect load = new GuiRect(265, 162, 16, 16);
         GuiRect store = new GuiRect(265, 180, 16, 16);
         ItemStack disk = diskStack();
-        boolean hasDisk = disk.getItem() instanceof DiskItem;
+        boolean hasDisk = MoldingBlueprintDisk.isStructureDisk(disk);
         boolean hasBlueprint = MoldingBlueprintDisk.read(disk).isPresent();
-        drawThreeFrame(graphics, load, false, hasBlueprint, mouseX, mouseY);
-        drawThreeFrame(graphics, store, false, hasDisk, mouseX, mouseY);
+        drawThreeFrameAtlas(
+            graphics,
+            load,
+            LOAD_BUTTON,
+            isChamberControlPressed(ChamberControl.DISK_LOAD, load, mouseX, mouseY),
+            hasBlueprint,
+            mouseX,
+            mouseY
+        );
+        drawThreeFrameAtlas(
+            graphics,
+            store,
+            SAVE_BUTTON,
+            isChamberControlPressed(ChamberControl.DISK_STORE, store, mouseX, mouseY),
+            hasDisk,
+            mouseX,
+            mouseY
+        );
         if (load.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
             this.hoveredControlTooltip = List.of(Component.translatable(
                 !hasDisk
@@ -1587,6 +1533,50 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         }
     }
 
+    private void renderModelControl(GuiGraphics graphics, GuiRect rect, int mouseX, int mouseY) {
+        boolean pressed = renderPanelControl(
+            graphics,
+            ChamberControl.MODEL,
+            rect,
+            MODEL_BUTTON,
+            this.rightOverlayOpen,
+            mouseX,
+            mouseY
+        );
+        MoldingOrientationCubeRenderer.render(
+            graphics,
+            viewportTransform(),
+            this.leftPos + rect.x + 2,
+            this.topPos + rect.y + 2 + (pressed ? 1 : 0),
+            12,
+            10
+        );
+        tooltip(rect, mouseX, mouseY, "screen.anvilcraftplasticraft.molding.json");
+    }
+
+    private boolean renderPanelControl(
+        GuiGraphics graphics,
+        ChamberControl control,
+        GuiRect rect,
+        ResourceLocation texture,
+        boolean open,
+        int mouseX,
+        int mouseY
+    ) {
+        boolean hovered = rect.contains(this.leftPos, this.topPos, mouseX, mouseY);
+        boolean pressed = isChamberControlPressed(control, rect, mouseX, mouseY);
+        int frame;
+        if (pressed) {
+            frame = 2;
+        } else if (open && !hovered) {
+            frame = 3;
+        } else {
+            frame = hovered ? 1 : 0;
+        }
+        drawAtlas(graphics, rect, texture, 4, frame);
+        return pressed;
+    }
+
     private void renderBlueprintOverlay(GuiGraphics graphics, int mouseX, int mouseY) {
         List<MoldingBlueprintSummary> filtered = filteredBlueprints();
         clampBlueprintScroll(filtered.size());
@@ -1599,7 +1589,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             int index = this.blueprintScrollRow + row;
             MoldingBlueprintSummary summary = filtered.get(index);
             boolean selected = summary.fileId().equals(this.selectedBlueprintFileId);
-            drawThreeFrameAtlas(graphics, entry, JSON_BUTTON, selected, true, mouseX, mouseY);
+            drawThreeFrameAtlas(graphics, entry, MODEL_ENTRY_BUTTON, selected, true, mouseX, mouseY);
             String label = marqueeLabel(summary.name(), 48);
             graphics.drawString(
                 this.font,
@@ -1661,35 +1651,39 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         drawThreeFrameAtlas(
             graphics,
             pin,
-            BUTTON_13_3,
-            selected.map(MoldingBlueprintSummary::pinned).orElse(false),
+            PIN_TO_TOP_BUTTON,
+            isChamberControlPressed(ChamberControl.BLUEPRINT_PIN, pin, mouseX, mouseY),
             enabled,
             mouseX,
             mouseY
         );
-        drawThreeFrameAtlas(graphics, copy, BUTTON_13_3, false, enabled, mouseX, mouseY);
-        drawThreeFrameAtlas(graphics, open, BUTTON_13_3, false, true, mouseX, mouseY);
-
-        drawAtlas(graphics, delete, BUTTON_13_4, 4, 0);
-        if (this.deleteBlueprintConfirmation) {
-            graphics.fill(
-                this.leftPos + delete.x + 2,
-                this.topPos + delete.y + delete.height - 3,
-                this.leftPos + delete.x + delete.width - 2,
-                this.topPos + delete.y + delete.height - 2,
-                0xFFE34F4F
-            );
-        }
-        if (!enabled) drawDisabledOverlay(graphics, delete);
-        else if (delete.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
-            graphics.renderOutline(
-                this.leftPos + delete.x,
-                this.topPos + delete.y,
-                delete.width,
-                delete.height,
-                0xFFFFFFFF
-            );
-        }
+        drawThreeFrameAtlas(
+            graphics,
+            copy,
+            COPY_SMALL_BUTTON,
+            isChamberControlPressed(ChamberControl.BLUEPRINT_COPY, copy, mouseX, mouseY),
+            enabled,
+            mouseX,
+            mouseY
+        );
+        drawShiftThreeFrameAtlas(
+            graphics,
+            open,
+            FILE_BUTTON,
+            isChamberControlPressed(ChamberControl.BLUEPRINT_FILE, open, mouseX, mouseY),
+            true,
+            mouseX,
+            mouseY
+        );
+        drawShiftThreeFrameAtlas(
+            graphics,
+            delete,
+            DELETE_BUTTON,
+            isChamberControlPressed(ChamberControl.BLUEPRINT_DELETE, delete, mouseX, mouseY),
+            enabled,
+            mouseX,
+            mouseY
+        );
         tooltip(pin, mouseX, mouseY, "screen.anvilcraftplasticraft.molding.blueprint.pin");
         tooltip(copy, mouseX, mouseY, "screen.anvilcraftplasticraft.molding.blueprint.copy");
         tooltip(
@@ -1704,9 +1698,9 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             delete,
             mouseX,
             mouseY,
-            this.deleteBlueprintConfirmation
-                ? "screen.anvilcraftplasticraft.molding.blueprint.delete_confirm"
-                : "screen.anvilcraftplasticraft.molding.blueprint.delete"
+            Screen.hasShiftDown()
+                ? "screen.anvilcraftplasticraft.molding.blueprint.delete"
+                : "screen.anvilcraftplasticraft.molding.blueprint.delete_confirm"
         );
     }
 
@@ -1757,8 +1751,9 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         boolean sceneViewChanged = Math.abs(gizmoWorldUnitsPerPixel - this.cachedGizmoWorldUnitsPerPixel) > 1.0E-9D
             || gizmoCameraDirection.distanceSquared(this.cachedGizmoCameraDirection) > 1.0E-12D;
         boolean gizmoViewChanged = hasSelection && sceneViewChanged;
-        boolean rebuildScene = this.cachedScene == null
-            || this.cachedSceneModel != this.editor.model()
+        boolean rebuildStaticScene = this.cachedScene == null
+            || this.cachedSceneModel != this.editor.model();
+        boolean rebuildViewDependent = rebuildStaticScene
             || !this.cachedSelection.equals(this.editor.selection())
             || this.cachedInvalid != this.editor.invalidPreview()
             || this.cachedShowGrid != this.showGrid
@@ -1766,12 +1761,12 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             || !Objects.equals(this.cachedHoveredElement, hover.elementId())
             || sceneViewChanged;
         boolean rebuildGizmo = hasSelection
-            && (rebuildScene
+            && (rebuildViewDependent
             || this.cachedTool != this.editor.tool()
             || gizmoViewChanged
             || this.cachedHoveredGizmoAxis != hover.gizmoAxis());
-        if (!rebuildScene && !rebuildGizmo) return;
-        if (rebuildScene) {
+        if (!rebuildViewDependent && !rebuildGizmo) return;
+        if (rebuildStaticScene) {
             BakedMoldingModel baked = null;
             try {
                 baked = MoldingModelBaker.bake(this.editor.model());
@@ -1783,6 +1778,23 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 ++this.dynamicSceneRevision,
                 this.editor.model(),
                 baked,
+                this.editor.selection(),
+                this.editor.tool(),
+                gizmoOrigin,
+                gizmoWorldUnitsPerPixel,
+                gizmoCameraDirection,
+                this.editor.invalidPreview(),
+                this.showGrid,
+                this.showAxes,
+                hover.elementId(),
+                hover.gizmoAxis(),
+                transform
+            );
+        } else if (rebuildViewDependent) {
+            this.cachedScene = MoldingSceneBuilder.replaceViewDependent(
+                this.cachedScene,
+                ++this.dynamicSceneRevision,
+                this.editor.model(),
                 this.editor.selection(),
                 this.editor.tool(),
                 gizmoOrigin,
@@ -1958,25 +1970,13 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         if (handleBlueprintOverlayClick(mouseX, mouseY, button)) return true;
         if (handleElementListClick(mouseX, mouseY, button)) return true;
         if (handleReleaseControlClick(mouseX, mouseY, button)) return true;
+        if (handleChamberControlClick(mouseX, mouseY, button)) return true;
         GuiRect fluidBar = new GuiRect(5, 161, 24, 37);
         if (button == 1 && fluidBar.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
             if (this.menu.writable()) sendMachineAction(MoldingMachineAction.INTERACT_STAGING_FLUID, 0);
             return true;
         }
         if (button != 0) return false;
-        GuiRect lock = new GuiRect(47, 143, 34, 16);
-        if (lock.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
-            if (!this.menu.writable() || this.editor.pending()) return true;
-            if (this.menu.machineState() == PlasticMoldingMachineState.EDITABLE && !this.lockConfirmation) {
-                this.lockConfirmation = true;
-                this.lockClayRequirement = currentClayRequirement();
-            } else {
-                this.lockConfirmation = false;
-                this.lockClayRequirement = 0;
-                sendMachineAction(MoldingMachineAction.TOGGLE_LOCK, 0);
-            }
-            return true;
-        }
         for (MoldingProductionMode mode : MoldingProductionMode.values()) {
             GuiRect modeRect = new GuiRect(47 + mode.protocolId() * 12, 162, 10, 10);
             if (!modeRect.contains(this.leftPos, this.topPos, mouseX, mouseY)) continue;
@@ -1988,30 +1988,6 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             if (!rect.contains(this.leftPos, this.topPos, mouseX, mouseY)) continue;
             if (!this.editor.writable()) return true;
             return this.toolButtons.press(TOOL_BUTTONS[index]);
-        }
-        if (new GuiRect(9, 114, 16, 16).contains(this.leftPos, this.topPos, mouseX, mouseY)) {
-            this.leftOverlayOpen = !this.leftOverlayOpen;
-            updateLayout();
-            return true;
-        }
-        if (new GuiRect(324, 171, 16, 16).contains(this.leftPos, this.topPos, mouseX, mouseY)) {
-            this.rightOverlayOpen = !this.rightOverlayOpen;
-            if (this.rightOverlayOpen) {
-                PacketDistributor.sendToServer(new MoldingBlueprintListRequestPacket(
-                    this.menu.chamberPos(),
-                    this.menu.sessionId()
-                ));
-            }
-            updateLayout();
-            return true;
-        }
-        if (new GuiRect(265, 162, 16, 16).contains(this.leftPos, this.topPos, mouseX, mouseY)) {
-            loadDiskModel();
-            return true;
-        }
-        if (new GuiRect(265, 180, 16, 16).contains(this.leftPos, this.topPos, mouseX, mouseY)) {
-            storeDiskModel();
-            return true;
         }
         return false;
     }
@@ -2026,7 +2002,6 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             if (index >= filtered.size()) return true;
             MoldingBlueprintSummary summary = filtered.get(index);
             this.selectedBlueprintFileId = summary.fileId();
-            this.deleteBlueprintConfirmation = false;
             writeSelectedBlueprintToDisk(summary);
             return true;
         }
@@ -2036,35 +2011,21 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         GuiRect copy = new GuiRect(373, 184, 13, 13);
         GuiRect open = new GuiRect(388, 184, 13, 13);
         GuiRect delete = new GuiRect(403, 184, 13, 13);
+        @Nullable MoldingBlueprintSummary summary = selected.orElse(null);
         if (open.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
-            if (Screen.hasShiftDown()) sendOpenFolder(selected.orElse(null));
-            else sendRefreshFolder();
+            pressChamberControl(ChamberControl.BLUEPRINT_FILE, summary);
             return true;
         }
-        if (selected.isEmpty()) {
-            return pin.contains(this.leftPos, this.topPos, mouseX, mouseY)
-                || copy.contains(this.leftPos, this.topPos, mouseX, mouseY)
-                || delete.contains(this.leftPos, this.topPos, mouseX, mouseY);
-        }
-        MoldingBlueprintSummary summary = selected.orElseThrow();
         if (pin.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
-            sendLibraryAction(MoldingBlueprintLibraryAction.PIN, summary);
+            pressChamberControl(ChamberControl.BLUEPRINT_PIN, summary);
             return true;
         }
         if (copy.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
-            sendLibraryAction(MoldingBlueprintLibraryAction.COPY, summary);
+            pressChamberControl(ChamberControl.BLUEPRINT_COPY, summary);
             return true;
         }
         if (delete.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
-            if (!this.deleteBlueprintConfirmation) {
-                this.deleteBlueprintConfirmation = true;
-                displayBlueprintMessage("confirm_blueprint_delete");
-            } else if (Screen.hasShiftDown()) {
-                this.deleteBlueprintConfirmation = false;
-                sendLibraryAction(MoldingBlueprintLibraryAction.DELETE, summary);
-            } else {
-                displayBlueprintMessage("confirm_blueprint_delete");
-            }
+            pressChamberControl(ChamberControl.BLUEPRINT_DELETE, summary);
             return true;
         }
         return false;
@@ -2074,6 +2035,12 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         ItemStack disk = diskStack();
         Optional<MoldingBlueprint> blueprint = MoldingBlueprintDisk.read(disk);
         if (blueprint.isEmpty()) return;
+        if (MoldingModelBounds.all(blueprint.orElseThrow().model())
+            .filter(bounds -> !bounds.fitsWorkspace())
+            .isPresent()) {
+            displayBlueprintMessage("model_too_large");
+            return;
+        }
         String token = MoldingBlueprintDisk.stateToken(disk);
         if (this.menu.machineState() != PlasticMoldingMachineState.EDITABLE
             || this.menu.batchFluidAmount() != 0
@@ -2097,7 +2064,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
 
     private void storeDiskModel() {
         ItemStack disk = diskStack();
-        if (!(disk.getItem() instanceof DiskItem)) return;
+        if (!MoldingBlueprintDisk.isStructureDisk(disk)) return;
         String token = MoldingBlueprintDisk.stateToken(disk);
         boolean occupied = !token.isEmpty();
         if (occupied && !confirmationMatches(MoldingBlueprintDiskAction.STORE, "", token)) {
@@ -2115,7 +2082,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
 
     private void writeSelectedBlueprintToDisk(MoldingBlueprintSummary summary) {
         ItemStack disk = diskStack();
-        if (!(disk.getItem() instanceof DiskItem)) {
+        if (!MoldingBlueprintDisk.isStructureDisk(disk)) {
             displayBlueprintMessage("missing_disk");
             return;
         }
@@ -2205,6 +2172,124 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             "",
             0L
         ));
+    }
+
+    private boolean handleChamberControlClick(double mouseX, double mouseY, int button) {
+        if (button != 0) return false;
+        for (ChamberControl control : MAIN_CHAMBER_CONTROLS) {
+            GuiRect rect = chamberControlRect(control);
+            if (!rect.contains(this.leftPos, this.topPos, mouseX, mouseY)) continue;
+            pressChamberControl(control, null);
+            return true;
+        }
+        return false;
+    }
+
+    private void pressChamberControl(ChamberControl control, @Nullable MoldingBlueprintSummary summary) {
+        this.pressedChamberControl = null;
+        this.pressedBlueprint = null;
+        if (!chamberControlEnabled(control, summary)) return;
+        this.pressedChamberControl = control;
+        this.pressedBlueprint = summary;
+    }
+
+    private boolean releaseChamberControl(double mouseX, double mouseY) {
+        ChamberControl control = this.pressedChamberControl;
+        if (control == null) return false;
+        @Nullable MoldingBlueprintSummary summary = this.pressedBlueprint;
+        this.pressedChamberControl = null;
+        this.pressedBlueprint = null;
+        GuiRect rect = chamberControlRect(control);
+        if (rect.contains(this.leftPos, this.topPos, mouseX, mouseY)
+            && chamberControlEnabled(control, summary)) {
+            executeChamberControl(control, summary);
+        }
+        return true;
+    }
+
+    private boolean isChamberControlPressed(ChamberControl control, GuiRect rect, int mouseX, int mouseY) {
+        return this.pressedChamberControl == control
+            && rect.contains(this.leftPos, this.topPos, mouseX, mouseY);
+    }
+
+    private boolean chamberControlEnabled(ChamberControl control, @Nullable MoldingBlueprintSummary summary) {
+        return switch (control) {
+            case CATEGORY, MODEL, BLUEPRINT_FILE -> true;
+            case OPERATE -> this.menu.writable() && !this.editor.pending();
+            case DISK_LOAD -> MoldingBlueprintDisk.read(diskStack()).isPresent();
+            case DISK_STORE -> MoldingBlueprintDisk.isStructureDisk(diskStack());
+            case BLUEPRINT_PIN, BLUEPRINT_COPY, BLUEPRINT_DELETE -> summary != null;
+        };
+    }
+
+    private static GuiRect chamberControlRect(ChamberControl control) {
+        return switch (control) {
+            case OPERATE -> new GuiRect(47, 143, 34, 16);
+            case CATEGORY -> new GuiRect(9, 114, 16, 16);
+            case MODEL -> new GuiRect(324, 171, 16, 16);
+            case DISK_LOAD -> new GuiRect(265, 162, 16, 16);
+            case DISK_STORE -> new GuiRect(265, 180, 16, 16);
+            case BLUEPRINT_PIN -> new GuiRect(358, 184, 13, 13);
+            case BLUEPRINT_COPY -> new GuiRect(373, 184, 13, 13);
+            case BLUEPRINT_FILE -> new GuiRect(388, 184, 13, 13);
+            case BLUEPRINT_DELETE -> new GuiRect(403, 184, 13, 13);
+        };
+    }
+
+    private void executeChamberControl(ChamberControl control, @Nullable MoldingBlueprintSummary summary) {
+        switch (control) {
+            case OPERATE -> {
+                if (this.menu.machineState() == PlasticMoldingMachineState.EDITABLE
+                    && !this.lockConfirmation) {
+                    this.lockConfirmation = true;
+                    this.lockClayRequirement = currentClayRequirement();
+                } else {
+                    this.lockConfirmation = false;
+                    this.lockClayRequirement = 0;
+                    sendMachineAction(MoldingMachineAction.TOGGLE_LOCK, 0);
+                }
+            }
+            case CATEGORY -> {
+                this.leftOverlayOpen = !this.leftOverlayOpen;
+                if (this.leftOverlayOpen) {
+                    this.rightOverlayOpenedLast = false;
+                    if (this.rightOverlayOpen && !canDisplayBothOverlays()) this.rightOverlayOpen = false;
+                }
+                updateLayout();
+            }
+            case MODEL -> {
+                this.rightOverlayOpen = !this.rightOverlayOpen;
+                if (this.rightOverlayOpen) {
+                    this.rightOverlayOpenedLast = true;
+                    if (this.leftOverlayOpen && !canDisplayBothOverlays()) this.leftOverlayOpen = false;
+                    PacketDistributor.sendToServer(new MoldingBlueprintListRequestPacket(
+                        this.menu.chamberPos(),
+                        this.menu.sessionId()
+                    ));
+                }
+                updateLayout();
+            }
+            case DISK_LOAD -> loadDiskModel();
+            case DISK_STORE -> storeDiskModel();
+            case BLUEPRINT_PIN -> {
+                if (summary != null) sendLibraryAction(MoldingBlueprintLibraryAction.PIN, summary);
+            }
+            case BLUEPRINT_COPY -> {
+                if (summary != null) sendLibraryAction(MoldingBlueprintLibraryAction.COPY, summary);
+            }
+            case BLUEPRINT_FILE -> {
+                if (Screen.hasShiftDown()) sendOpenFolder(summary);
+                else sendRefreshFolder();
+            }
+            case BLUEPRINT_DELETE -> {
+                if (summary == null) return;
+                if (Screen.hasShiftDown()) {
+                    sendLibraryAction(MoldingBlueprintLibraryAction.DELETE, summary);
+                } else {
+                    displayBlueprintMessage("confirm_blueprint_delete");
+                }
+            }
+        }
     }
 
     private boolean releaseToolButton(double mouseX, double mouseY) {
@@ -2636,15 +2721,22 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private void updateLayout() {
-        int visibleWidth = FULL_LAYOUT_MAX_X - FULL_LAYOUT_MIN_X;
+        if (this.leftOverlayOpen && this.rightOverlayOpen && !canDisplayBothOverlays()) {
+            if (this.rightOverlayOpenedLast) this.leftOverlayOpen = false;
+            else this.rightOverlayOpen = false;
+        }
+        int visibleMinX = this.leftOverlayOpen ? -(OVERLAY_WIDTH - 1) : 0;
+        int visibleMaxX = this.rightOverlayOpen ? LOGICAL_WIDTH + OVERLAY_WIDTH - 1 : LOGICAL_WIDTH;
+        int visibleWidth = visibleMaxX - visibleMinX;
         this.layoutTransform = MoldingGuiTransform.fit(
             this.width,
             this.height,
             visibleWidth,
             LOGICAL_HEIGHT,
-            4
+            LAYOUT_PADDING,
+            this.minecraft.getWindow().getGuiScale()
         );
-        this.leftPos = -FULL_LAYOUT_MIN_X;
+        this.leftPos = -visibleMinX;
         this.topPos = 0;
         for (int index = 0; index < this.numericFields.size(); index++) {
             NumericField field = this.numericFields.get(index);
@@ -2666,6 +2758,14 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             if (!this.rightOverlayOpen) this.rightSearch.setFocused(false);
         }
         if (this.renameField != null && this.renameField.isVisible()) positionRenameField();
+    }
+
+    private boolean canDisplayBothOverlays() {
+        double guiScale = this.minecraft.getWindow().getGuiScale();
+        int availableWidth = Math.max(1, this.width - LAYOUT_PADDING * 2);
+        int availableHeight = Math.max(1, this.height - LAYOUT_PADDING * 2);
+        return availableWidth * guiScale >= FULL_LAYOUT_WIDTH
+            && availableHeight * guiScale >= LOGICAL_HEIGHT;
     }
 
     private void refreshNumericFields() {
@@ -2755,7 +2855,6 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         boolean selectionStillExists = this.menu.blueprints().stream()
             .anyMatch(summary -> summary.fileId().equals(this.selectedBlueprintFileId));
         if (!selectionStillExists) this.selectedBlueprintFileId = "";
-        this.deleteBlueprintConfirmation = false;
         this.diskConfirmation = null;
         List<MoldingBlueprintSummary> filtered = filteredBlueprints();
         clampBlueprintScroll(filtered.size());
@@ -2914,21 +3013,6 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         return this.font.plainSubstrByWidth(rotated, width);
     }
 
-    private void drawThreeFrame(
-        GuiGraphics graphics,
-        GuiRect rect,
-        boolean pressed,
-        boolean enabled,
-        int mouseX,
-        int mouseY
-    ) {
-        int frame = pressed
-            ? 2
-            : enabled && rect.contains(this.leftPos, this.topPos, mouseX, mouseY) ? 1 : 0;
-        drawAtlas(graphics, rect, BUTTON_16_3, 3, frame);
-        if (!enabled) drawDisabledOverlay(graphics, rect);
-    }
-
     private void drawThreeFrameAtlas(
         GuiGraphics graphics,
         GuiRect rect,
@@ -2942,6 +3026,23 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             ? 2
             : enabled && rect.contains(this.leftPos, this.topPos, mouseX, mouseY) ? 1 : 0;
         drawAtlas(graphics, rect, atlas, 3, frame);
+        if (!enabled) drawDisabledOverlay(graphics, rect);
+    }
+
+    private void drawShiftThreeFrameAtlas(
+        GuiGraphics graphics,
+        GuiRect rect,
+        ResourceLocation atlas,
+        boolean pressed,
+        boolean enabled,
+        int mouseX,
+        int mouseY
+    ) {
+        int frame = pressed
+            ? 2
+            : enabled && rect.contains(this.leftPos, this.topPos, mouseX, mouseY) ? 1 : 0;
+        if (Screen.hasShiftDown()) frame += 3;
+        drawAtlas(graphics, rect, atlas, 6, frame);
         if (!enabled) drawDisabledOverlay(graphics, rect);
     }
 
@@ -3162,6 +3263,18 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         COPY,
         CUT,
         PASTE
+    }
+
+    private enum ChamberControl {
+        OPERATE,
+        CATEGORY,
+        MODEL,
+        DISK_LOAD,
+        DISK_STORE,
+        BLUEPRINT_PIN,
+        BLUEPRINT_COPY,
+        BLUEPRINT_FILE,
+        BLUEPRINT_DELETE
     }
 
     private enum ContextActionKind {

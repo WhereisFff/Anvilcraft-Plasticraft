@@ -713,6 +713,7 @@ public final class AdhesiveSelectionClientHandler {
                 buffers,
                 previewMovingEntity,
                 preview,
+                previewPathReady,
                 previewClear,
                 previewSupport,
                 previewSupportPos,
@@ -1142,6 +1143,7 @@ public final class AdhesiveSelectionClientHandler {
         MultiBufferSource.BufferSource buffers,
         Entity selected,
         AdhesivePathPlanner.Plan preview,
+        boolean previewReady,
         boolean previewClear,
         @Nullable Entity supportEntity,
         @Nullable BlockPos supportPos,
@@ -1160,7 +1162,9 @@ public final class AdhesiveSelectionClientHandler {
         } else if (supportPos != null) {
             renderFaceGrid(pose, buffers, new AABB(supportPos), supportFace);
         }
-        if (previewClear) renderPreviewGroup(pose, buffers, previewProjection(selected, preview));
+        if (previewReady) {
+            renderPreviewGroup(pose, buffers, previewProjection(selected, preview), previewClear);
+        }
     }
 
     private static AdhesiveGroupTransform.Projection previewProjection(
@@ -1203,20 +1207,22 @@ public final class AdhesiveSelectionClientHandler {
         renderPreviewGroup(
             pose,
             buffers,
-            AdhesiveGroupTransform.project(movingEntity, transit.targetPosition(supportEntity), orientation)
+            AdhesiveGroupTransform.project(movingEntity, transit.targetPosition(supportEntity), orientation),
+            true
         );
     }
 
     private static void renderPreviewGroup(
         PoseStack pose,
         MultiBufferSource.BufferSource buffers,
-        AdhesiveGroupTransform.Projection projection
+        AdhesiveGroupTransform.Projection projection,
+        boolean valid
     ) {
         if (!projection.valid()) return;
         for (AdhesiveGroupTransform.Member member : projection.members()) {
             Entity entity = member.entity();
             if (entity instanceof FallingBlockEntity fallingBlock) {
-                renderTargetGhost(pose, buffers, fallingBlock, member.position(), member.orientation());
+                renderTargetGhost(pose, buffers, fallingBlock, member.position(), member.orientation(), valid);
             } else {
                 renderAnimatedBox(pose, buffers, member.collisionBounds().inflate(0.006D), 1.0F);
             }
@@ -1228,7 +1234,8 @@ public final class AdhesiveSelectionClientHandler {
         MultiBufferSource.BufferSource buffers,
         FallingBlockEntity entity,
         Vec3 targetPosition,
-        @Nullable PlasticEntityOrientation orientation
+        @Nullable PlasticEntityOrientation orientation,
+        boolean valid
     ) {
         pose.pushPose();
         pose.translate(targetPosition.x, targetPosition.y, targetPosition.z);
@@ -1238,7 +1245,8 @@ public final class AdhesiveSelectionClientHandler {
                 plastic,
                 Minecraft.getInstance().getBlockRenderer(),
                 pose,
-                buffers
+                buffers,
+                valid
             );
         } else {
             pose.translate(-0.5D, 0.0D, -0.5D);
@@ -1246,7 +1254,8 @@ public final class AdhesiveSelectionClientHandler {
                 entity,
                 Minecraft.getInstance().getBlockRenderer(),
                 pose,
-                buffers
+                buffers,
+                valid
             );
         }
         pose.popPose();

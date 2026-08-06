@@ -28,25 +28,30 @@ import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingCommand;
 import dev.anvilcraft.plasticraft.molding.model.MoldingCoordinateSystem;
 import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
+import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.session.MoldingSessionSnapshot;
+import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItems;
+import dev.dubhe.anvilcraft.item.property.component.StructureDiskData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.testframework.annotation.TestHolder;
@@ -275,7 +280,7 @@ public final class PlasticMoldingChamberGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "9x7x9", floor = true)
-    @TestHolder(description = "Clay filling settles three complete layers across refills and pumps exactly 2 B per tick")
+    @TestHolder(description = "Clay filling settles three complete layers across refills and pumps exactly 250 mB per tick")
     static void clayRefillAndFixedRatePump(ExtendedGameTestHelper helper) {
         PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
         EditableMoldingModel model = cubeModel(20.0D);
@@ -324,11 +329,11 @@ public final class PlasticMoldingChamberGameTests {
         check(fluids.fill(melt, IFluidHandler.FluidAction.EXECUTE) == 8000,
             "staging tank did not accept 8 B of plastic melt");
         tick(chamber, 1);
-        check(chamber.batchFluidAmount() == 2000 && chamber.stagingFluidAmount() == 6000,
-            "melt pump did not transfer exactly 2 B in one tick");
-        check(fluids.fill(melt.copyWithAmount(2000), IFluidHandler.FluidAction.EXECUTE) == 2000,
+        check(chamber.batchFluidAmount() == 250 && chamber.stagingFluidAmount() == 7750,
+            "melt pump did not transfer exactly 250 mB in one tick");
+        check(fluids.fill(melt.copyWithAmount(250), IFluidHandler.FluidAction.EXECUTE) == 250,
             "released staging capacity could not be refilled");
-        check(chamber.stagingFluidAmount() == 8000 && chamber.batchFluidAmount() == 2000,
+        check(chamber.stagingFluidAmount() == 8000 && chamber.batchFluidAmount() == 250,
             "staging and batch tanks did not retain independent capacities");
 
         FluidStack redMelt = melt.copyWithAmount(1000);
@@ -367,20 +372,20 @@ public final class PlasticMoldingChamberGameTests {
         check(fluids.fill(melt, IFluidHandler.FluidAction.EXECUTE) == 8000,
             "batch return staging tank did not fill");
         tick(chamber, 1);
-        check(chamber.batchFluidAmount() == 2000 && chamber.stagingFluidAmount() == 6000,
-            "batch return setup did not pump 2 B");
+        check(chamber.batchFluidAmount() == 250 && chamber.stagingFluidAmount() == 7750,
+            "batch return setup did not pump 250 mB");
         check(chamber.unlock().accepted(), "batch melt did not return to available staging space");
         check(chamber.batchFluidAmount() == 0 && chamber.stagingFluidAmount() == 8000,
             "successful unlock did not atomically restore the full 8 B staging amount");
 
         check(chamber.requestLock().accepted(), "second batch return cycle did not lock");
         tick(chamber, PlasticMoldingChamberBlockEntity.MOLD_FILL_TICKS + 1);
-        check(fluids.fill(melt.copyWithAmount(2000), IFluidHandler.FluidAction.EXECUTE) == 2000,
+        check(fluids.fill(melt.copyWithAmount(250), IFluidHandler.FluidAction.EXECUTE) == 250,
             "batch return setup could not refill released staging space");
         PlasticMoldingChamberBlockEntity.MachineOutcome rejected = chamber.unlock();
         check(!rejected.accepted() && rejected.reason().equals("drain_batch_first"),
             "unlock accepted a batch that could not fully return to staging");
-        check(chamber.batchFluidAmount() == 2000 && chamber.stagingFluidAmount() == 8000,
+        check(chamber.batchFluidAmount() == 250 && chamber.stagingFluidAmount() == 8000,
             "rejected unlock partially moved or discarded batch melt");
         helper.succeed();
     }
@@ -446,7 +451,7 @@ public final class PlasticMoldingChamberGameTests {
             "maximum model staging tank did not fill");
         int previousBatch = 0;
         int guard = 0;
-        while (chamber.batchFluidAmount() < chamber.batchFluidCapacity() && guard++ < 20) {
+        while (chamber.batchFluidAmount() < chamber.batchFluidCapacity() && guard++ < 128) {
             tick(chamber, 1);
             int transferred = chamber.batchFluidAmount() - previousBatch;
             check(transferred > 0 && transferred <= PlasticMoldingChamberBlockEntity.MOLDING_PUMP_RATE,
@@ -539,22 +544,29 @@ public final class PlasticMoldingChamberGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "9x7x9", floor = true)
-    @TestHolder(description = "Editable blueprints save atomically to AnvilCraft disks and reload without their JSON copy")
+    @TestHolder(description = "Editable blueprints use structure disks and reject oversized models only when loaded")
     static void blueprintDiskAtomicStoreAndOfflineLoad(ExtendedGameTestHelper helper) throws BlueprintException {
         PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
         ServerPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         player.setPos(chamber.getBlockPos().getCenter());
         MoldingSessionSnapshot session = chamber.openSession(player, true);
-        chamber.inventory().setItem(
+        check(!chamber.inventory().canPlaceItem(
             PlasticMoldingChamberBlockEntity.DISK_SLOT,
             new ItemStack(ModItems.DISK.get())
+        ), "ordinary AnvilCraft disk was accepted by the molding chamber");
+        ItemStack emptyStructureDisk = new ItemStack(ModItems.STRUCTURE_DISK.get());
+        check(!MoldingBlueprintDisk.hasBlueprintData(emptyStructureDisk),
+            "empty structure disk was marked as containing a molding blueprint");
+        check(chamber.inventory().canPlaceItem(
+            PlasticMoldingChamberBlockEntity.DISK_SLOT,
+            emptyStructureDisk
+        ), "AnvilCraft structure disk was rejected by the molding chamber");
+        chamber.inventory().setItem(
+            PlasticMoldingChamberBlockEntity.DISK_SLOT,
+            emptyStructureDisk
         );
         EditableMoldingModel storedModel = cubeModel(8.0D).withName("Disk Atomic Model");
         check(chamber.replaceEditableModel(storedModel, chamber.revision()).accepted(), "disk model was rejected");
-        CompoundTag directDiskTag = new CompoundTag();
-        chamber.storeDiskData(directDiskTag);
-        check(MoldingBlueprintDisk.readTag(directDiskTag).isPresent(),
-            "editable model was rejected by the generic disk interface");
         MoldingBlueprintService.OperationResult stored = MoldingBlueprintService.storeModel(
             player,
             chamber,
@@ -567,6 +579,11 @@ public final class PlasticMoldingChamberGameTests {
         MoldingBlueprint embedded = MoldingBlueprintDisk.read(disk).orElseThrow(
             () -> new GameTestAssertException("stored disk did not contain a valid embedded blueprint")
         );
+        check(MoldingBlueprintDisk.hasBlueprintData(disk),
+            "stored structure disk was missing the lightweight molding blueprint marker");
+        check(MoldingBlueprintDisk.previewToken(disk).equals(
+                MoldingBlueprintDisk.SCHEMA_VERSION + ":" + embedded.modelHash()
+            ), "stored structure disk preview token did not track its model hash");
         check(embedded.ownerId().equals(player.getUUID()), "disk owner was not the player who clicked store");
         check(embedded.modelHash().equals(chamber.bakedModel().modelHash()), "disk hash did not match the locked model");
         MoldingBlueprint shared = MoldingBlueprintLibrary.read(
@@ -648,7 +665,127 @@ public final class PlasticMoldingChamberGameTests {
         check(chamber.machineState() == PlasticMoldingMachineState.EDITABLE, "disk load unexpectedly locked the model");
         check(chamber.bakedModel().modelHash().equals(embedded.modelHash()), "disk load lost its embedded geometry");
         check(chamber.stagingFluidAmount() == 500, "disk load changed the independent staging tank");
+
+        EditableMoldingModel oversizedModel = cubeModel(49.0D).withName("Oversized Disk Model");
+        MoldingBlueprint oversizedBlueprint = MoldingBlueprint.create(
+            oversizedModel,
+            player.getUUID(),
+            player.getGameProfile().getName(),
+            System.currentTimeMillis()
+        );
+        ItemStack blockStructureDisk = new ItemStack(ModItems.STRUCTURE_DISK.get());
+        blockStructureDisk.set(ModComponents.STRUCTURE_DISK_DATA, new StructureDiskData(
+            "test_structure.nbt",
+            "Test Block Structure",
+            player.getUUID(),
+            Direction.NORTH,
+            5,
+            5,
+            5
+        ));
+        ItemStack oversizedDisk = MoldingBlueprintDisk.writeCopy(
+            blockStructureDisk,
+            oversizedBlueprint
+        );
+        check(!oversizedDisk.has(ModComponents.STRUCTURE_DISK_DATA),
+            "molding blueprint disk retained the replaced block structure data");
+        check(MoldingBlueprintDisk.read(oversizedDisk).isPresent(),
+            "oversized model could not be stored on a structure disk");
+        check(MoldingModelBounds.visible(oversizedModel)
+                .orElseThrow()
+                .sizeBlocks()
+                .equals(new MoldingVec3(3.0625D, 3.0625D, 3.0625D)),
+            "oversized disk model dimensions did not preserve the manufactured size");
+        chamber.inventory().setItem(PlasticMoldingChamberBlockEntity.DISK_SLOT, oversizedDisk);
+        String modelBeforeRejectedLoad = chamber.bakedModel().modelHash();
+        BlueprintException oversizedLoad = expectBlueprintFailure(() -> MoldingBlueprintService.loadDiskModel(
+            player,
+            chamber,
+            session.sessionId(),
+            chamber.revision(),
+            MoldingBlueprintDisk.stateToken(oversizedDisk),
+            true
+        ));
+        check(oversizedLoad.reason().equals("model_too_large"),
+            "oversized structure disk model did not return the chamber size error");
+        check(chamber.bakedModel().modelHash().equals(modelBeforeRejectedLoad),
+            "rejected oversized structure disk load changed the chamber model");
         player.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x7x9", floor = true)
+    @TestHolder(description = "Resource slot empties melt buckets and consumes at most one capacitor per tick")
+    static void resourceSlotAcceptsMeltAndCapacitors(ExtendedGameTestHelper helper) {
+        PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
+        check(chamber.inventory().canPlaceItem(
+            PlasticMoldingChamberBlockEntity.RESOURCE_SLOT,
+            PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.asStack()
+        ), "resource slot rejected a plastic melt bucket");
+        check(chamber.inventory().canPlaceItem(
+            PlasticMoldingChamberBlockEntity.RESOURCE_SLOT,
+            ModItems.CAPACITOR.asStack()
+        ), "resource slot rejected a charged capacitor");
+        check(!chamber.inventory().canPlaceItem(
+            PlasticMoldingChamberBlockEntity.RESOURCE_SLOT,
+            ModItems.CAPACITOR_EMPTY.asStack()
+        ), "resource slot accepted an empty capacitor");
+
+        ItemStack meltBucket = PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.asStack();
+        PlasticMeltColor.set(meltBucket, DyeColor.RED);
+        chamber.inventory().setItem(PlasticMoldingChamberBlockEntity.RESOURCE_SLOT, meltBucket);
+        tick(chamber, 1);
+        check(chamber.stagingFluidAmount() == FluidType.BUCKET_VOLUME,
+            "resource-slot melt bucket did not fill staging");
+        check(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.RESOURCE_SLOT).is(Items.BUCKET),
+            "resource-slot melt bucket did not leave an empty bucket");
+        check(PlasticMeltColor.get(chamber.stagingFluid()) == DyeColor.RED,
+            "resource-slot melt bucket lost its colour");
+
+        ServerPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        player.setPos(chamber.getBlockPos().getCenter());
+        chamber.openMenu(player);
+        chamber.inventory().setItem(
+            PlasticMoldingChamberBlockEntity.RESOURCE_SLOT,
+            ModItems.CAPACITOR.asStack(2)
+        );
+        tick(chamber, 1);
+        check(chamber.energyStored() == 8_000_000,
+            "resource slot did not apply one normal-capacitor charge");
+        check(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.RESOURCE_SLOT).is(ModItems.CAPACITOR)
+                && chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.RESOURCE_SLOT).getCount() == 1,
+            "resource slot consumed more than one capacitor in one tick");
+        check(player.getInventory().countItem(ModItems.CAPACITOR_EMPTY.get()) == 1,
+            "blocked empty capacitor did not return to the active player");
+
+        tick(chamber, 1);
+        check(chamber.energyStored() == 16_000_000,
+            "second game tick did not consume the second capacitor");
+        check(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.RESOURCE_SLOT)
+                .is(ModItems.CAPACITOR_EMPTY),
+            "final empty capacitor did not remain in the resource slot");
+        player.discard();
+
+        ServerPlayer fullPlayer = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        fullPlayer.setPos(chamber.getBlockPos().getCenter());
+        chamber.openMenu(fullPlayer);
+        for (int slot = 0; slot < fullPlayer.getInventory().getContainerSize(); slot++) {
+            fullPlayer.getInventory().setItem(slot, new ItemStack(Items.STONE, 64));
+        }
+        chamber.inventory().setItem(
+            PlasticMoldingChamberBlockEntity.RESOURCE_SLOT,
+            ModItems.CAPACITOR.asStack(2)
+        );
+        tick(chamber, 1);
+        List<ItemEntity> dropped = helper.getLevel().getEntitiesOfClass(
+            ItemEntity.class,
+            new AABB(chamber.getBlockPos()).inflate(3.0D),
+            item -> item.getItem().is(ModItems.CAPACITOR_EMPTY)
+        );
+        check(dropped.stream().mapToInt(item -> item.getItem().getCount()).sum() == 1,
+            "full player inventory did not drop the empty capacitor");
+        fullPlayer.discard();
         helper.succeed();
     }
 
@@ -949,11 +1086,13 @@ public final class PlasticMoldingChamberGameTests {
             "{}"
         ));
         check(filename.reason().equals("unsafe_filename"), "upload path traversal was not rejected");
-        BlueprintException tooLarge = expectBlueprintFailure(() -> MoldingBlueprintImporter.inspect(
+        MoldingBlueprintImporter.ImportPreview tooLarge = MoldingBlueprintImporter.inspect(
             "large.json",
             "{\"elements\":[{\"from\":[0,0,0],\"to\":[49,1,1]}]}"
-        ));
-        check(tooLarge.reason().equals("import_too_large"), "oversized import did not return a bounds error");
+        );
+        check(!tooLarge.fitsChamber(), "oversized import was incorrectly marked as chamber-compatible");
+        check(!MoldingBlueprintImporter.finish(tooLarge, false, MoldingVec3.ZERO).isEmpty(),
+            "oversized model was not importable into the shared library");
         BlueprintException oversizedText = expectBlueprintFailure(() -> MoldingBlueprintCodec.validateText(
             "x".repeat(MoldingBlueprintCodec.MAX_TEXT_BYTES + 1)
         ));

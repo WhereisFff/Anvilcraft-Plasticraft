@@ -4,7 +4,6 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import dev.anvilcraft.plasticraft.api.texture.PlasticSurface;
-import dev.anvilcraft.plasticraft.api.texture.PlasticTextureGenerator;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureInput;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureLayout;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
@@ -27,11 +26,11 @@ import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.fluids.FluidStack;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.WeakHashMap;
 
 /** 单一动态制品 ID 携带的版本化制造结果。 */
 public record MoldedPlasticData(
@@ -51,6 +50,7 @@ public record MoldedPlasticData(
     public static final int CURRENT_FORMAT_VERSION = 2;
     public static final int MAX_SURFACE_QUADS = MoldedPlasticSurfaceAdapter.MAX_SURFACES;
     public static final int MAX_COLLISION_HULLS = EditableMoldingModel.MAX_ELEMENTS;
+    private static final int DERIVED_CACHE_LIMIT = 128;
     private static final int MAX_TEXT_LENGTH = 64;
     private static final double PIXELS_PER_BLOCK = 16.0D;
     private static final Codec<List<MoldingQuad>> SURFACE_MESH_CODEC = MoldingQuad.CODEC.listOf()
@@ -65,7 +65,16 @@ public record MoldedPlasticData(
         .validate(hulls -> hulls.size() <= MAX_COLLISION_HULLS
             ? DataResult.success(hulls)
             : DataResult.error(() -> "Invalid molded plastic collision hull count"));
-    private static final Map<MoldedPlasticData, DerivedData> DERIVED_CACHE = new WeakHashMap<>();
+    private static final Map<ShapeKey, DerivedData> DERIVED_CACHE = new LinkedHashMap<>(
+        DERIVED_CACHE_LIMIT,
+        0.75F,
+        true
+    ) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<ShapeKey, DerivedData> eldest) {
+            return this.size() > DERIVED_CACHE_LIMIT;
+        }
+    };
     public static final Codec<MoldedPlasticData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
         Codec.INT.fieldOf("format_version").forGetter(MoldedPlasticData::formatVersion),
         Codec.STRING.fieldOf("model_hash").forGetter(MoldedPlasticData::modelHash),
@@ -120,7 +129,7 @@ public record MoldedPlasticData(
         for (MoldingConvexHull hull : collisionHulls) {
             for (MoldingVec3 vertex : hull.vertices()) requireWorkspacePoint(vertex, "collision vertex");
         }
-        MoldedPlasticSurfaceAdapter.adapt(surfaceMesh);
+        derivedData(new ShapeKey(modelHash, volumeMask.volume()), surfaceMesh);
     }
 
     public static MoldedPlasticData manufacture(
@@ -225,9 +234,17 @@ public record MoldedPlasticData(
     }
 
     private DerivedData derivedData() {
+        return derivedData(this.shapeKey(), this.surfaceMesh);
+    }
+
+    private static DerivedData derivedData(ShapeKey key, List<MoldingQuad> surfaceMesh) {
         synchronized (DERIVED_CACHE) {
-            return DERIVED_CACHE.computeIfAbsent(this, DerivedData::create);
+            return DERIVED_CACHE.computeIfAbsent(key, ignored -> DerivedData.create(surfaceMesh));
         }
+    }
+
+    ShapeKey shapeKey() {
+        return new ShapeKey(this.modelHash, this.volumeMask.volume());
     }
 
     private static void encode(RegistryFriendlyByteBuf buffer, MoldedPlasticData data) {
@@ -428,13 +445,15 @@ public record MoldedPlasticData(
         String shapeHash,
         AABB surfaceBounds
     ) {
-        private static DerivedData create(MoldedPlasticData data) {
-            List<PlasticSurface> surfaces = MoldedPlasticSurfaceAdapter.adapt(data.surfaceMesh);
+        private static DerivedData create(List<MoldingQuad> surfaceMesh) {
+            MoldedPlasticSurfaceAdapter.AdaptedSurfaces adapted =
+                MoldedPlasticSurfaceAdapter.adaptWithLayout(surfaceMesh);
+            List<PlasticSurface> surfaces = adapted.surfaces();
             return new DerivedData(
                 surfaces,
-                PlasticTextureGenerator.layout(surfaces),
+                adapted.textureLayout(),
                 PlasticTextureInput.computeShapeHash(surfaces),
-                createSurfaceBounds(data.surfaceMesh)
+                createSurfaceBounds(surfaceMesh)
             );
         }
 
@@ -461,5 +480,8 @@ public record MoldedPlasticData(
                 maximum.z() / PIXELS_PER_BLOCK
             );
         }
+    }
+
+    record ShapeKey(String modelHash, int formedCells) {
     }
 }

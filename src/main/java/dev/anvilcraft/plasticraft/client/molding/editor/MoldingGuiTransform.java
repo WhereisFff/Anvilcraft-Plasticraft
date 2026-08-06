@@ -14,18 +14,25 @@ public record MoldingGuiTransform(double scale, double originX, double originY) 
         int screenHeight,
         int visibleWidth,
         int logicalHeight,
-        int padding
+        int padding,
+        double guiScale
     ) {
+        if (!Double.isFinite(guiScale) || guiScale <= 0.0D) {
+            throw new IllegalArgumentException("Invalid GUI scale");
+        }
         int availableWidth = Math.max(1, screenWidth - padding * 2);
         int availableHeight = Math.max(1, screenHeight - padding * 2);
-        double scale = Math.min(
+        double maximumScale = Math.min(
             1.0D,
             Math.min((double) availableWidth / visibleWidth, (double) availableHeight / logicalHeight)
         );
+        // 每个逻辑像素必须覆盖整数个 framebuffer 像素，避免不同绘制路径各自取整后错位
+        int framebufferScale = Math.max(1, (int) Math.floor(maximumScale * guiScale + 1.0E-9D));
+        double scale = Math.min(1.0D, framebufferScale / guiScale);
         return new MoldingGuiTransform(
             scale,
-            (screenWidth - visibleWidth * scale) * 0.5D,
-            (screenHeight - logicalHeight * scale) * 0.5D
+            Math.floor((screenWidth - visibleWidth * scale) * 0.5D),
+            Math.floor((screenHeight - logicalHeight * scale) * 0.5D)
         );
     }
 
@@ -49,6 +56,6 @@ public record MoldingGuiTransform(double scale, double originX, double originY) 
         if (logicalPixels < 0 || !Double.isFinite(guiScale) || guiScale <= 0.0D) {
             throw new IllegalArgumentException("Invalid framebuffer scale");
         }
-        return Math.max(1, (int) Math.ceil(logicalPixels * this.scale * guiScale));
+        return Math.max(1, (int) Math.round(logicalPixels * this.scale * guiScale));
     }
 }

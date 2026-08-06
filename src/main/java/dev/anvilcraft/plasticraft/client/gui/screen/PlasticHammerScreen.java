@@ -149,7 +149,7 @@ public final class PlasticHammerScreen extends Screen {
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         BlockRenderDispatcher dispatcher = minecraft.getBlockRenderer();
         MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
-        PlasticEntityRenderHelper.renderBlock(
+        PlasticEntityRenderHelper.renderModel(
             this.target,
             dispatcher,
             pose,

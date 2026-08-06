@@ -40,7 +40,7 @@ public final class PlasticraftLanguageData {
         // 塑料成型舱物品说明、容器标题和建模器界面语言文件生成。
         provider.add(
             "tooltip.anvilcraftplasticraft.plastic_molding_chamber",
-            "Forms blueprints with clay molds and plastic melt using power, pipes, logistics, and redstone automation"
+            "Forms blueprints with clay molds and plastic melt; accepts melt buckets and charged capacitors"
         );
         provider.add(
             "container.anvilcraftplasticraft.plastic_molding_chamber",
@@ -73,7 +73,7 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.molding.copy", "Copy");
         provider.add("screen.anvilcraftplasticraft.molding.cut", "Cut");
         provider.add("screen.anvilcraftplasticraft.molding.paste", "Paste");
-        provider.add("screen.anvilcraftplasticraft.molding.json", "JSON management");
+        provider.add("screen.anvilcraftplasticraft.molding.json", "Model management");
         provider.add("screen.anvilcraftplasticraft.molding.takeover", "Take over editing");
         provider.add("screen.anvilcraftplasticraft.molding.element.tooltip", "%1$s - %2$s");
         provider.add("screen.anvilcraftplasticraft.molding.element.cube", "Cube");
@@ -90,11 +90,11 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.molding.context.reset_camera", "Frame workspace");
 
         // 塑料成型舱磁盘控件和共享蓝图库叠加层语言文件生成。
-        provider.add("screen.anvilcraftplasticraft.molding.disk.missing", "Place an AnvilCraft disk in the disk slot");
-        provider.add("screen.anvilcraftplasticraft.molding.disk.load", "Load the disk blueprint into the editable chamber");
-        provider.add("screen.anvilcraftplasticraft.molding.disk.invalid", "This disk has no valid molding blueprint");
-        provider.add("screen.anvilcraftplasticraft.molding.disk.store", "Store the current model on disk and in the shared library");
-        provider.add("screen.anvilcraftplasticraft.molding.disk.other_data", "Other disk data");
+        provider.add("screen.anvilcraftplasticraft.molding.disk.missing", "Place a Structure Disk in the disk slot");
+        provider.add("screen.anvilcraftplasticraft.molding.disk.load", "Load the Structure Disk model for editing");
+        provider.add("screen.anvilcraftplasticraft.molding.disk.invalid", "This Structure Disk has no valid molding model");
+        provider.add("screen.anvilcraftplasticraft.molding.disk.store", "Store the current model on the Structure Disk and in the shared library");
+        provider.add("screen.anvilcraftplasticraft.molding.disk.other_data", "Other Structure Disk data");
         provider.add("screen.anvilcraftplasticraft.molding.blueprint.owner", "Owner: %s");
         provider.add("screen.anvilcraftplasticraft.molding.blueprint.hash", "Hash: %s");
         provider.add("screen.anvilcraftplasticraft.molding.blueprint.pin", "Pin or unpin the selected model");
@@ -107,7 +107,7 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.molding.blueprint.delete", "Delete the selected model");
         provider.add(
             "screen.anvilcraftplasticraft.molding.blueprint.delete_confirm",
-            "Hold Shift and click again to delete the selected model"
+            "Hold Shift while clicking to delete the selected model"
         );
 
         // 塑料成型舱生产状态、资源条、模式和暂停原因语言文件生成。
@@ -120,9 +120,9 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.molding.state.processing", "Processing");
         provider.add("screen.anvilcraftplasticraft.molding.state.waiting_next_cycle", "Waiting for next cycle");
         provider.add("screen.anvilcraftplasticraft.molding.clay_status", "Clay: %1$s / %2$s / %3$s");
-        provider.add("screen.anvilcraftplasticraft.molding.clay_lock_status", "Clay: in slot %1$s / required %2$s");
+        provider.add("screen.anvilcraftplasticraft.molding.clay_lock_status", "Clay: %1$s / %2$s");
         provider.add("screen.anvilcraftplasticraft.molding.lock", "Lock and start");
-        provider.add("screen.anvilcraftplasticraft.molding.lock_confirm", "Click again to confirm locking");
+        provider.add("screen.anvilcraftplasticraft.molding.lock_confirm", "Confirm and start processing");
         provider.add("screen.anvilcraftplasticraft.molding.unlock", "Unlock and return reserved clay");
         provider.add("screen.anvilcraftplasticraft.molding.mode.continuous", "Continuous processing");
         provider.add("screen.anvilcraftplasticraft.molding.mode.redstone", "Redstone control");
@@ -154,7 +154,8 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.molding.fluid_batch", "Batch: %1$s / %2$s mB");
         provider.add("screen.anvilcraftplasticraft.molding.pump_rate", "Pump rate: %s mB/gt");
         provider.add("screen.anvilcraftplasticraft.molding.energy", "Energy: %1$s / %2$s FE");
-        provider.add("screen.anvilcraftplasticraft.molding.rated_power", "Working level: %s kW");
+        provider.add("screen.anvilcraftplasticraft.molding.rated_power", "Charging power: %s kW");
+        provider.add("screen.anvilcraftplasticraft.molding.resource_slot", "Accepts batteries or plastic melt");
         provider.add("screen.anvilcraftplasticraft.molding.wait.none", "Standing by");
         provider.add("screen.anvilcraftplasticraft.molding.wait.invalid_model", "Invalid or empty model");
         provider.add("screen.anvilcraftplasticraft.molding.wait.structure_incomplete", "Chamber structure incomplete");
@@ -163,7 +164,7 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.molding.wait.missing_power", "Waiting for 256 kW power");
         provider.add("screen.anvilcraftplasticraft.molding.wait.mold_filling", "Filling clay mold");
         provider.add("screen.anvilcraftplasticraft.molding.wait.mold_ready", "Waiting for plastic melt");
-        provider.add("screen.anvilcraftplasticraft.molding.wait.pumping", "Pumping at 2 B/gt");
+        provider.add("screen.anvilcraftplasticraft.molding.wait.pumping", "Pumping at 250 mB/gt");
         provider.add("screen.anvilcraftplasticraft.molding.wait.batch_full", "Batch capacity reached");
         provider.add("screen.anvilcraftplasticraft.molding.wait.process_ready", "Ready to process");
         provider.add("screen.anvilcraftplasticraft.molding.wait.processing", "Processing transaction active");
@@ -203,12 +204,12 @@ public final class PlasticraftLanguageData {
         provider.add("message.anvilcraftplasticraft.molding.blueprint_unpinned", "Model unpinned");
         provider.add("message.anvilcraftplasticraft.molding.blueprint_copied", "Model copied");
         provider.add("message.anvilcraftplasticraft.molding.blueprint_deleted", "Model deleted");
-        provider.add("message.anvilcraftplasticraft.molding.blueprint_loaded", "Disk blueprint loaded for editing");
-        provider.add("message.anvilcraftplasticraft.molding.blueprint_saved", "Blueprint stored on disk and in the shared library");
-        provider.add("message.anvilcraftplasticraft.molding.blueprint_disk_written", "Shared blueprint written to disk");
+        provider.add("message.anvilcraftplasticraft.molding.blueprint_loaded", "Structure Disk model loaded for editing");
+        provider.add("message.anvilcraftplasticraft.molding.blueprint_saved", "Model stored on the Structure Disk and in the shared library");
+        provider.add("message.anvilcraftplasticraft.molding.blueprint_disk_written", "Shared model written to the Structure Disk");
         provider.add(
             "message.anvilcraftplasticraft.molding.confirm_blueprint_delete",
-            "Hold Shift and click delete again to confirm"
+            "Hold Shift while clicking delete to confirm"
         );
         provider.add(
             "message.anvilcraftplasticraft.molding.confirm_blueprint_overwrite",
@@ -224,18 +225,19 @@ public final class PlasticraftLanguageData {
             "message.anvilcraftplasticraft.molding.import_translation_prompt",
             "%1$s needs translation (%2$s, %3$s, %4$s); refresh again to confirm import"
         );
-        provider.add("message.anvilcraftplasticraft.molding.missing_disk", "Place an AnvilCraft disk in the disk slot");
-        provider.add("message.anvilcraftplasticraft.molding.stale_disk", "The disk changed before the operation completed");
-        provider.add("message.anvilcraftplasticraft.molding.invalid_disk_blueprint", "The disk has no valid molding blueprint");
+        provider.add("message.anvilcraftplasticraft.molding.missing_disk", "Place a Structure Disk in the disk slot");
+        provider.add("message.anvilcraftplasticraft.molding.stale_disk", "The Structure Disk changed before the operation completed");
+        provider.add("message.anvilcraftplasticraft.molding.invalid_disk_blueprint", "The Structure Disk has no valid molding model");
         provider.add(
             "message.anvilcraftplasticraft.molding.confirm_disk_overwrite",
-            "Disk contains data; click again to confirm storing"
+            "Structure Disk contains data; click again to confirm storing"
         );
         provider.add(
             "message.anvilcraftplasticraft.molding.confirm_model_overwrite",
             "A model is being edited; click again to confirm loading"
         );
-        provider.add("message.anvilcraftplasticraft.molding.disk_write_failed", "Unable to update the disk");
+        provider.add("message.anvilcraftplasticraft.molding.model_too_large", "This model is too large for the Plastic Molding Chamber (max 3x3x3)");
+        provider.add("message.anvilcraftplasticraft.molding.disk_write_failed", "Unable to update the Structure Disk");
         provider.add("message.anvilcraftplasticraft.molding.server_unavailable", "Server is unavailable");
         provider.add("message.anvilcraftplasticraft.molding.blueprint_missing", "The shared model no longer exists");
         provider.add("message.anvilcraftplasticraft.molding.stale_file_revision", "The shared model changed; refresh the list");
@@ -283,6 +285,14 @@ public final class PlasticraftLanguageData {
         provider.add("tooltip.anvilcraftplasticraft.resin_anvil.captured", "Contains: %s");
         provider.add("tooltip.anvilcraftplasticraft.color", "Color: %s");
         provider.add("tooltip.anvilcraftplasticraft.size", "Size: %1$s x %2$s x %3$s blocks");
+        provider.add(
+            "tooltip.anvilcraftplasticraft.molding.structure_disk.fit_chamber",
+            "✓ Can be processed by Plastic Molding Chamber"
+        );
+        provider.add(
+            "tooltip.anvilcraftplasticraft.molding.structure_disk.too_large_for_chamber",
+            "✗ Too large for Plastic Molding Chamber (max 3x3x3)"
+        );
         provider.add("tooltip.anvilcraftplasticraft.bonded", "Bonded in place");
 
         // Jade 插件配置项及其方块、实体状态文本。

@@ -18,6 +18,7 @@ public final class MoldingVolumeMask {
             : DataResult.error(() -> "Molding volume mask is too large"))
         .xmap(MoldingVolumeMask::fromLongList, MoldingVolumeMask::toLongList);
     private final BitSet cells;
+    private int volume;
 
     public MoldingVolumeMask() {
         this.cells = new BitSet(CELL_COUNT);
@@ -25,6 +26,7 @@ public final class MoldingVolumeMask {
 
     private MoldingVolumeMask(BitSet cells) {
         this.cells = cells;
+        this.volume = cells.cardinality();
     }
 
     public boolean get(int x, int y, int z) {
@@ -33,7 +35,11 @@ public final class MoldingVolumeMask {
 
     public void set(int x, int y, int z) {
         if (!inBounds(x, y, z)) throw new IndexOutOfBoundsException("Molding cell is outside the workspace");
-        this.cells.set(index(x, y, z));
+        int index = index(x, y, z);
+        if (!this.cells.get(index)) {
+            this.cells.set(index);
+            this.volume++;
+        }
     }
 
     public boolean isEmpty() {
@@ -41,7 +47,7 @@ public final class MoldingVolumeMask {
     }
 
     public int volume() {
-        return this.cells.cardinality();
+        return this.volume;
     }
 
     public BitSet copyBits() {

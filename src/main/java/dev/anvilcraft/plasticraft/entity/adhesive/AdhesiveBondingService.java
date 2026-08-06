@@ -1291,6 +1291,8 @@ public final class AdhesiveBondingService {
             || !SurfaceAdhesiveService.hasUncoveredContact(level, target, supportPos, attachmentFace)) {
             return false;
         }
+        BlockAdhesionState patchState = BondedFallingBlocks.getAdhesion(level, supportPos);
+        boolean invisible = patchState != null && patchState.isInvisible(attachmentFace);
 
         boolean bonded;
         switch (target) {
@@ -1311,7 +1313,8 @@ public final class AdhesiveBondingService {
                     attachmentFace,
                     BuiltInRegistries.BLOCK.getKey(level.getBlockState(supportPos).getBlock()),
                     fixedPosition,
-                    target.isNoGravity()
+                    target.isNoGravity(),
+                    invisible
                 );
                 target.setData(PlasticraftAttachments.ENTITY_ADHESION, adhesion);
                 bonded = BondedFallingBlocks.setEntityBond(level, supportPos, attachmentFace, true);

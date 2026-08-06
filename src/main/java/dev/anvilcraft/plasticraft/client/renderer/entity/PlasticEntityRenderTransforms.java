@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveTransit;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.state.BlockState;
@@ -94,12 +95,18 @@ public final class PlasticEntityRenderTransforms {
         apply(pose, entity, orientation);
     }
 
-    /** 将未旋转模型的声明原点放到实体位置。 */
+    /** 保持三轴与世界坐标对齐，并把轴模型中心放到实体的真实旋转枢轴。 */
     public static void applyWorldAlignedPreview(PoseStack pose, AbstractPlasticEntity entity) {
         Objects.requireNonNull(pose, "pose");
         Objects.requireNonNull(entity, "entity");
+        Vec3 pivot = entity.plasticraft$getGeometry().rotationPivot();
         Vec3 origin = entity.plasticraft$getGeometry().entityOrigin();
-        pose.translate(-origin.x, -origin.y, -origin.z);
+        Vec3 axisCenter = PlasticEntityGeometry.UNIT_CUBE_PIVOT;
+        pose.translate(
+            pivot.x - origin.x - axisCenter.x,
+            pivot.y - origin.y - axisCenter.y,
+            pivot.z - origin.z - axisCenter.z
+        );
     }
 
     /** 在已经移动到方块中心的 PoseStack 上应用实体的离散朝向。 */

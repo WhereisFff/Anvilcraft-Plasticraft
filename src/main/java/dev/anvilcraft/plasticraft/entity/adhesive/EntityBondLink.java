@@ -15,17 +15,20 @@ public record EntityBondLink(
     Direction face,
     UUID otherEntityUuid,
     int otherEntityId,
-    Direction otherFace
+    Direction otherFace,
+    boolean invisible
 ) {
     public static final Codec<EntityBondLink> CODEC = RecordCodecBuilder.create(instance -> instance.group(
         Direction.CODEC.fieldOf("face").forGetter(EntityBondLink::face),
         UUIDUtil.CODEC.fieldOf("other_entity").forGetter(EntityBondLink::otherEntityUuid),
-        Direction.CODEC.fieldOf("other_face").forGetter(EntityBondLink::otherFace)
-    ).apply(instance, (face, otherEntityUuid, otherFace) -> new EntityBondLink(
+        Direction.CODEC.fieldOf("other_face").forGetter(EntityBondLink::otherFace),
+        Codec.BOOL.optionalFieldOf("invisible", false).forGetter(EntityBondLink::invisible)
+    ).apply(instance, (face, otherEntityUuid, otherFace, invisible) -> new EntityBondLink(
         face,
         otherEntityUuid,
         -1,
-        otherFace
+        otherFace,
+        invisible
     )));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, EntityBondLink> STREAM_CODEC = StreamCodec.of(
@@ -34,12 +37,14 @@ public record EntityBondLink(
             buffer.writeUUID(link.otherEntityUuid);
             buffer.writeVarInt(link.otherEntityId);
             buffer.writeByte(link.otherFace.get3DDataValue());
+            buffer.writeBoolean(link.invisible);
         },
         buffer -> new EntityBondLink(
             Direction.from3DDataValue(buffer.readUnsignedByte()),
             buffer.readUUID(),
             buffer.readVarInt(),
-            Direction.from3DDataValue(buffer.readUnsignedByte())
+            Direction.from3DDataValue(buffer.readUnsignedByte()),
+            buffer.readBoolean()
         )
     );
 
@@ -49,7 +54,21 @@ public record EntityBondLink(
         Objects.requireNonNull(otherFace, "otherFace");
     }
 
+    public EntityBondLink(
+        Direction face,
+        UUID otherEntityUuid,
+        int otherEntityId,
+        Direction otherFace
+    ) {
+        this(face, otherEntityUuid, otherEntityId, otherFace, false);
+    }
+
     public EntityBondLink withOtherEntityId(int entityId) {
-        return new EntityBondLink(this.face, this.otherEntityUuid, entityId, this.otherFace);
+        return new EntityBondLink(this.face, this.otherEntityUuid, entityId, this.otherFace, this.invisible);
+    }
+
+    public EntityBondLink withInvisible() {
+        if (this.invisible) return this;
+        return new EntityBondLink(this.face, this.otherEntityUuid, this.otherEntityId, this.otherFace, true);
     }
 }
