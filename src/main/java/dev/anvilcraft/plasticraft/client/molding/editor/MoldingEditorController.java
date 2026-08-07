@@ -8,6 +8,7 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
 import dev.anvilcraft.plasticraft.molding.model.MoldingGroup;
 import dev.anvilcraft.plasticraft.molding.model.MoldingTransform;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
+import net.minecraft.resources.ResourceLocation;
 import org.joml.Vector3d;
 import org.jetbrains.annotations.Nullable;
 
@@ -22,6 +23,7 @@ import java.util.UUID;
 
 /** 客户端编辑状态只产生语义命令，服务端快照始终可以覆盖并重建它。 */
 public final class MoldingEditorController {
+    private static final double PIVOT_EPSILON = 1.0E-7D;
     private final CommandSink commandSink;
     private EditableMoldingModel model;
     private long authoritativeRevision;
@@ -34,6 +36,8 @@ public final class MoldingEditorController {
     private List<MoldingGroup> clipboardGroups = List.of();
     @Nullable
     private MoldingDragTransaction dragTransaction;
+    @Nullable
+    private Vector3d dragGizmoOrigin;
 
     public MoldingEditorController(
         EditableMoldingModel model,
@@ -79,6 +83,10 @@ public final class MoldingEditorController {
         return !this.clipboardElements.isEmpty();
     }
 
+    public boolean setRequestedType(ResourceLocation type) {
+        return this.submit(new MoldingCommand.SetRequestedType(type));
+    }
+
     public MoldingTool tool() {
         return this.tool;
     }
@@ -95,6 +103,7 @@ public final class MoldingEditorController {
         this.pending = false;
         this.invalidPreview = false;
         this.dragTransaction = null;
+        this.dragGizmoOrigin = null;
         Set<UUID> available = new HashSet<>();
         authoritativeModel.elements().forEach(element -> available.add(element.id()));
         authoritativeModel.groups().forEach(group -> available.add(group.id()));
@@ -103,6 +112,10 @@ public final class MoldingEditorController {
 
     public void select(UUID id, boolean additive) {
         this.selection = this.selection.select(id, additive);
+    }
+
+    public void selectRange(List<UUID> orderedIds, UUID anchor, UUID target, boolean additive) {
+        this.selection = this.selection.selectRange(orderedIds, anchor, target, additive);
     }
 
     public void clearSelection() {
@@ -151,15 +164,11 @@ public final class MoldingEditorController {
     }
 
     public Vector3d gizmoOrigin() {
+        if (this.dragGizmoOrigin != null) return new Vector3d(this.dragGizmoOrigin);
+        List<MoldingElement> selected = selectedElements();
         if (this.tool != MoldingTool.ROTATE && this.tool != MoldingTool.PIVOT) return selectionCenter();
-        Optional<MoldingElement> primary = primaryElement();
-        if (primary.isEmpty()) return selectionCenter();
-        MoldingVec3 pivot = MoldingModelBaker.transformedPoint(
-            this.model,
-            primary.get(),
-            primary.get().transform().pivot()
-        );
-        return new Vector3d(pivot.x(), pivot.y(), pivot.z());
+        if (selected.size() == 1) return vector(MoldingDragTransaction.worldPivot(this.model, selected.getFirst()));
+        return sharedPivot(selected).map(MoldingEditorController::vector).orElseGet(this::selectionCenter);
     }
 
     public double selectionExtent() {
@@ -387,13 +396,12 @@ public final class MoldingEditorController {
     }
 
     public boolean centerPivot() {
-        return replaceSelected(element -> {
-            MoldingVec3 pivot = element.from().add(element.to()).scale(0.5D);
-            MoldingTransform old = element.transform();
-            return MoldingDragTransaction.replaceTransform(element, new MoldingTransform(
-                old.translation(), old.rotation(), old.scale(), pivot
-            ));
-        }, false);
+        Vector3d center = this.selectionCenter();
+        MoldingVec3 pivot = new MoldingVec3(center.x(), center.y(), center.z());
+        return replaceSelected(
+            element -> MoldingDragTransaction.withWorldPivot(this.model, element, pivot),
+            false
+        );
     }
 
     public boolean align(MoldingAxis axis) {
@@ -451,6 +459,7 @@ public final class MoldingEditorController {
             || this.tool == MoldingTool.MIRROR) {
             return false;
         }
+        Vector3d gizmoOrigin = this.gizmoOrigin();
         this.dragTransaction = new MoldingDragTransaction(
             this.model,
             this.selection,
@@ -458,6 +467,7 @@ public final class MoldingEditorController {
             axis,
             axisDirection
         );
+        this.dragGizmoOrigin = this.tool == MoldingTool.ROTATE ? gizmoOrigin : null;
         return true;
     }
 
@@ -476,6 +486,7 @@ public final class MoldingEditorController {
         if (this.dragTransaction == null) return false;
         MoldingDragTransaction transaction = this.dragTransaction;
         this.dragTransaction = null;
+        this.dragGizmoOrigin = null;
         this.model = transaction.originalModel();
         if (!transaction.changed() || this.invalidPreview) {
             this.invalidPreview = false;
@@ -488,6 +499,7 @@ public final class MoldingEditorController {
     public void cancelDrag() {
         if (this.dragTransaction != null) this.model = this.dragTransaction.originalModel();
         this.dragTransaction = null;
+        this.dragGizmoOrigin = null;
         this.invalidPreview = false;
     }
 
@@ -582,6 +594,26 @@ public final class MoldingEditorController {
             }
         } while (changed);
         return result;
+    }
+
+    private Optional<MoldingVec3> sharedPivot(List<MoldingElement> selected) {
+        if (selected.isEmpty()) return Optional.empty();
+        MoldingVec3 pivot = MoldingDragTransaction.worldPivot(this.model, selected.getFirst());
+        for (int index = 1; index < selected.size(); index++) {
+            MoldingVec3 candidate = MoldingDragTransaction.worldPivot(this.model, selected.get(index));
+            if (!close(pivot, candidate)) return Optional.empty();
+        }
+        return Optional.of(pivot);
+    }
+
+    private static boolean close(MoldingVec3 first, MoldingVec3 second) {
+        return Math.abs(first.x() - second.x()) <= PIVOT_EPSILON
+            && Math.abs(first.y() - second.y()) <= PIVOT_EPSILON
+            && Math.abs(first.z() - second.z()) <= PIVOT_EPSILON;
+    }
+
+    private static Vector3d vector(MoldingVec3 value) {
+        return new Vector3d(value.x(), value.y(), value.z());
     }
 
     private static void addGroupAncestors(

@@ -24,8 +24,8 @@ public final class PlasticCarrierPrediction {
     }
 
     /**
-     * 用一次服务端位置增量消费预测路径的最早前缀。
-     * 返回值表示至少一个非零分量确认了仍在等待的预测。
+     * 用一次服务端位置增量消费预测路径中最后一次到达该位置的前缀。
+     * 返回值表示至少一个分量确认了仍在等待的非零行程。
      */
     public boolean reconcile(Vec3 serverMovement) {
         Vec3 value = requireFinite(serverMovement, "serverMovement");
@@ -97,14 +97,23 @@ public final class PlasticCarrierPrediction {
         }
 
         private boolean reconcile(double serverMovement) {
-            if (Math.abs(serverMovement) <= MOVEMENT_EPSILON || this.segments.isEmpty()) {
-                return false;
-            }
+            if (this.segments.isEmpty()) return false;
+            Reconciliation reconciliation = this.findReconciliation(serverMovement);
+            if (reconciliation == null) return false;
+            this.apply(reconciliation);
+            return true;
+        }
+
+        private Reconciliation findReconciliation(double serverMovement) {
             double traversed = 0.0D;
-            while (!this.segments.isEmpty()) {
-                double segment = this.segments.removeFirst();
-                this.pending -= segment;
-                this.travel -= Math.abs(segment);
+            double traversedTravel = 0.0D;
+            double maximum = 0.0D;
+            double minimum = 0.0D;
+            Reconciliation match = null;
+            Reconciliation positiveExtreme = null;
+            Reconciliation negativeExtreme = null;
+            int index = 0;
+            for (double segment : this.segments) {
                 double next = traversed + segment;
                 if (between(serverMovement, traversed, next)) {
                     double confirmedPosition = Math.clamp(
@@ -112,19 +121,48 @@ public final class PlasticCarrierPrediction {
                         Math.min(traversed, next),
                         Math.max(traversed, next)
                     );
-                    double remaining = next - confirmedPosition;
-                    if (Math.abs(remaining) > MOVEMENT_EPSILON) {
-                        this.segments.addFirst(remaining);
-                        this.pending += remaining;
-                        this.travel += Math.abs(remaining);
+                    double confirmedTravel = traversedTravel + Math.abs(confirmedPosition - traversed);
+                    if (confirmedTravel > MOVEMENT_EPSILON) {
+                        match = new Reconciliation(index, next, confirmedPosition);
                     }
-                    this.normalize();
-                    return true;
+                }
+                traversedTravel += Math.abs(segment);
+                if (next > maximum + MOVEMENT_EPSILON
+                    || (maximum > MOVEMENT_EPSILON && Math.abs(next - maximum) <= MOVEMENT_EPSILON)) {
+                    maximum = Math.max(maximum, next);
+                    positiveExtreme = new Reconciliation(index, next, next);
+                }
+                if (next < minimum - MOVEMENT_EPSILON
+                    || (minimum < -MOVEMENT_EPSILON && Math.abs(next - minimum) <= MOVEMENT_EPSILON)) {
+                    minimum = Math.min(minimum, next);
+                    negativeExtreme = new Reconciliation(index, next, next);
                 }
                 traversed = next;
+                index++;
+            }
+            if (match != null) return match;
+            // 同向快照越过预测极值时只确认到极值；完全反向的快照不得破坏待确认路径。
+            if (serverMovement > maximum + RECONCILIATION_EPSILON) return positiveExtreme;
+            if (serverMovement < minimum - RECONCILIATION_EPSILON) return negativeExtreme;
+            return null;
+        }
+
+        private void apply(Reconciliation reconciliation) {
+            for (int index = 0; index < reconciliation.segmentIndex(); index++) {
+                double segment = this.segments.removeFirst();
+                this.pending -= segment;
+                this.travel -= Math.abs(segment);
+            }
+            double segment = this.segments.removeFirst();
+            this.pending -= segment;
+            this.travel -= Math.abs(segment);
+            double remaining = reconciliation.segmentEnd() - reconciliation.confirmedPosition();
+            if (Math.abs(remaining) > MOVEMENT_EPSILON) {
+                this.segments.addFirst(remaining);
+                this.pending += remaining;
+                this.travel += Math.abs(remaining);
             }
             this.normalize();
-            return false;
         }
 
         private static boolean between(double value, double first, double second) {
@@ -153,6 +191,9 @@ public final class PlasticCarrierPrediction {
         private void normalize() {
             if (Math.abs(this.pending) <= MOVEMENT_EPSILON) this.pending = 0.0D;
             if (this.travel <= MOVEMENT_EPSILON) this.travel = 0.0D;
+        }
+
+        private record Reconciliation(int segmentIndex, double segmentEnd, double confirmedPosition) {
         }
     }
 }

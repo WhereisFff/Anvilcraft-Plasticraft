@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.item;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticNames;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.ItemStack;
@@ -36,8 +37,15 @@ public class UniversalPlasticBlockItem extends AbstractPlasticEntityItem<Univers
     @Override
     public Component getName(ItemStack stack) {
         return MoldedPlasticData.get(stack)
-            .<Component>map(data -> Component.literal(data.name()))
+            .map(data -> MoldedPlasticNames.create(stack, data))
             .orElseGet(() -> super.getName(stack));
+    }
+
+    @Override
+    public int getMaxStackSize(ItemStack stack) {
+        return MoldedPlasticData.get(stack).filter(data -> !data.contents().isEmpty()).isPresent()
+            ? 1
+            : super.getMaxStackSize(stack);
     }
 
     @Override

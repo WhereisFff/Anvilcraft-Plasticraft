@@ -20,12 +20,23 @@ public enum PlasticMoldingChamberProvider implements IBlockComponentProvider, IS
 
     private static final String STATE = "state";
     private static final String WAIT_REASON = "wait_reason";
+    private static final String PARTIAL_DOWNGRADE = "partial_downgrade";
+    private static final String FORMING_MODE = "forming_mode";
+    private static final String PRINTING_PROGRESS = "printing_progress";
+    private static final String PRINTING_TOTAL = "printing_total";
 
     @Override
     public void appendServerData(CompoundTag tag, BlockAccessor accessor) {
         if (!(accessor.getBlockEntity() instanceof PlasticMoldingChamberBlockEntity chamber)) return;
         tag.putString(STATE, chamber.machineState().getSerializedName());
         tag.putString(WAIT_REASON, chamber.waitReason().name().toLowerCase(Locale.ROOT));
+        tag.putBoolean(PARTIAL_DOWNGRADE, chamber.willCurrentResultDowngrade());
+        tag.putString(
+            FORMING_MODE,
+            (chamber.isLocked() ? chamber.cycleFormingMode() : chamber.formingMode()).getSerializedName()
+        );
+        tag.putInt(PRINTING_PROGRESS, chamber.printingProgress());
+        tag.putInt(PRINTING_TOTAL, chamber.printingTotal());
     }
 
     @Override
@@ -40,6 +51,26 @@ public enum PlasticMoldingChamberProvider implements IBlockComponentProvider, IS
             "tooltip.anvilcraftplasticraft.molding.state",
             Component.translatable(statusKey)
         ).withStyle(ChatFormatting.BLUE));
+        String formingMode = tag.getString(FORMING_MODE);
+        if (!formingMode.isEmpty()) {
+            tooltip.add(Component.translatable(
+                "screen.anvilcraftplasticraft.molding.forming",
+                Component.translatable("screen.anvilcraftplasticraft.molding.forming." + formingMode)
+            ).withStyle(ChatFormatting.GRAY));
+        }
+        int printingTotal = tag.getInt(PRINTING_TOTAL);
+        if (formingMode.equals("printing") && printingTotal > 0) {
+            tooltip.add(Component.translatable(
+                "screen.anvilcraftplasticraft.molding.printing_progress",
+                tag.getInt(PRINTING_PROGRESS),
+                printingTotal
+            ).withStyle(ChatFormatting.GRAY));
+        }
+        if (tag.getBoolean(PARTIAL_DOWNGRADE)) {
+            tooltip.add(Component.translatable(
+                "tooltip.anvilcraftplasticraft.molding.partial_downgrade"
+            ).withStyle(ChatFormatting.RED));
+        }
     }
 
     @Override

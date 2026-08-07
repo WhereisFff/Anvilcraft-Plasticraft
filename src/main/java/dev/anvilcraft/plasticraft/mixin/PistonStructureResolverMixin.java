@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.block.BondedFallingBlockInfo;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.piston.HighViscosityPistonBudget;
+import dev.anvilcraft.plasticraft.block.piston.PlasticPistonOccupancy;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -46,6 +47,19 @@ abstract class PistonStructureResolverMixin {
 
     @Shadow
     protected abstract boolean addBranchingBlocks(BlockPos fromPos);
+
+    @Redirect(
+        method = {"resolve", "addBlockLine", "addBranchingBlocks"},
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/world/level/Level;getBlockState("
+                     + "Lnet/minecraft/core/BlockPos;"
+                     + ")Lnet/minecraft/world/level/block/state/BlockState;"
+        )
+    )
+    private BlockState plasticraft$includePlasticEntityOccupancy(Level level, BlockPos pos) {
+        return PlasticPistonOccupancy.blockState(level, pos, level.getBlockState(pos));
+    }
 
     @Redirect(
         method = "addBlockLine",

@@ -24,6 +24,8 @@ import java.util.UUID;
 /** 管理服务端权威的树脂牵引预览，使预览与确认共用同一条异步搜索路径。 */
 public final class AdhesivePreviewService {
     private static final double POSITION_EPSILON_SQR = 1.0E-6D;
+    private static final double MAX_SNAPSHOT_DISPLACEMENT_SQR = 4.0D;
+    private static final long MAX_PENDING_SNAPSHOT_AGE_TICKS = 40L;
     private static final Map<UUID, PendingPreview> PREVIEWS = new LinkedHashMap<>();
 
     private AdhesivePreviewService() {
@@ -48,6 +50,7 @@ public final class AdhesivePreviewService {
             selectedEntityId,
             supportPos,
             attachmentFace,
+            true,
             true
         );
         replace(serverPlayer, replacement);
@@ -73,6 +76,7 @@ public final class AdhesivePreviewService {
             selectedEntityId,
             targetEntityId,
             targetFace,
+            true,
             true
         );
         replace(serverPlayer, replacement);
@@ -103,7 +107,8 @@ public final class AdhesivePreviewService {
                 selected.getId(),
                 supportPos,
                 attachmentFace,
-                false
+                false,
+                true
             );
             replace(serverPlayer, pending);
         }
@@ -130,7 +135,8 @@ public final class AdhesivePreviewService {
                 selected.getId(),
                 target.getId(),
                 targetFace,
-                false
+                false,
+                true
             );
             replace(serverPlayer, pending);
         }
@@ -149,6 +155,10 @@ public final class AdhesivePreviewService {
                 continue;
             }
             if (pending.result == null) {
+                if (pending.shouldRecreateTask()) {
+                    recreate(pending);
+                    continue;
+                }
                 pending.task.advance();
                 if (pending.task.isComplete()) finish(pending);
             }
@@ -162,15 +172,7 @@ public final class AdhesivePreviewService {
 
     private static boolean prepareConfirmation(PendingPreview pending) {
         if (!pending.contextUnchanged()) {
-            PendingPreview replacement = pending.recreate();
-            if (replacement == null) {
-                reject(pending);
-                remove(pending);
-                return false;
-            }
-            replacement.confirmation = pending.confirmation;
-            replace(pending.player, replacement);
-            return true;
+            return recreate(pending);
         }
         return pending.result == null || executeConfirmation(pending);
     }
@@ -183,15 +185,8 @@ public final class AdhesivePreviewService {
             remove(pending);
             return;
         }
-        if (pending.confirmation != null && !pending.contextUnchanged()) {
-            PendingPreview replacement = pending.recreate();
-            if (replacement == null) {
-                reject(pending);
-                remove(pending);
-                return;
-            }
-            replacement.confirmation = pending.confirmation;
-            replace(pending.player, replacement);
+        if (!pending.contextUnchanged()) {
+            recreate(pending);
             return;
         }
 
@@ -221,7 +216,8 @@ public final class AdhesivePreviewService {
                 confirmation.hand,
                 pending.supportPos,
                 pending.targetFace,
-                result
+                result,
+                pending.movingStart
             );
         } else {
             Entity target = pending.resolveTargetEntity();
@@ -230,7 +226,9 @@ public final class AdhesivePreviewService {
                 confirmation.hand,
                 target,
                 pending.targetFace,
-                result
+                result,
+                pending.movingStart,
+                pending.anchorStart
             );
         }
         remove(pending);
@@ -257,13 +255,26 @@ public final class AdhesivePreviewService {
         }
     }
 
+    private static boolean recreate(PendingPreview pending) {
+        PendingPreview replacement = pending.recreate();
+        if (replacement == null) {
+            reject(pending);
+            remove(pending);
+            return false;
+        }
+        replacement.confirmation = pending.confirmation;
+        replace(pending.player, replacement);
+        return true;
+    }
+
     private static @Nullable PendingPreview createBlock(
         ServerPlayer player,
         int requestId,
         int selectedEntityId,
         BlockPos supportPos,
         Direction attachmentFace,
-        boolean sendResult
+        boolean sendResult,
+        boolean useSelectionSnapshot
     ) {
         if (!(player.level() instanceof ServerLevel level)) return null;
         Entity selected = AdhesiveSelectionManager.resolveServerSelection(player);
@@ -275,13 +286,18 @@ public final class AdhesivePreviewService {
             return null;
         }
         Direction selectedFace = AdhesiveSelectionManager.getSelectedFace(player);
+        Vec3 movingStart = previewStart(
+            selected,
+            useSelectionSnapshot ? AdhesiveSelectionManager.getSelectedPosition(player) : null
+        );
         AdhesivePathPlanner.PreviewTask task = AdhesivePathPlanner.beginPreview(
             level,
             selected,
             player,
             supportPos,
             attachmentFace,
-            selectedFace
+            selectedFace,
+            movingStart
         );
         return new PendingPreview(
             player,
@@ -299,7 +315,7 @@ public final class AdhesivePreviewService {
             player.getDirection(),
             selected.getUUID(),
             null,
-            selected.position(),
+            movingStart,
             Vec3.ZERO,
             task
         );
@@ -311,7 +327,8 @@ public final class AdhesivePreviewService {
         int selectedEntityId,
         int targetEntityId,
         Direction targetFace,
-        boolean sendResult
+        boolean sendResult,
+        boolean useSelectionSnapshot
     ) {
         if (!(player.level() instanceof ServerLevel level)) return null;
         Entity selected = AdhesiveSelectionManager.resolveServerSelection(player);
@@ -333,13 +350,21 @@ public final class AdhesivePreviewService {
         Entity anchorEntity = reverse ? selected : target;
         Direction anchorFace = reverse ? AdhesiveFaces.worldFace(selected, selectedFace) : targetFace;
         Direction movingFace = reverse ? AdhesiveFaces.storedFace(target, targetFace) : selectedFace;
+        Vec3 selectedStart = previewStart(
+            selected,
+            useSelectionSnapshot ? AdhesiveSelectionManager.getSelectedPosition(player) : null
+        );
+        Vec3 movingStart = movingEntity == selected ? selectedStart : movingEntity.position();
+        Vec3 anchorStart = anchorEntity == selected ? selectedStart : anchorEntity.position();
         AdhesivePathPlanner.PreviewTask task = AdhesivePathPlanner.beginPreviewToEntity(
             level,
             movingEntity,
             player,
             anchorEntity,
             anchorFace,
-            movingFace
+            movingFace,
+            movingStart,
+            anchorStart
         );
         return new PendingPreview(
             player,
@@ -357,10 +382,18 @@ public final class AdhesivePreviewService {
             player.getDirection(),
             movingEntity.getUUID(),
             anchorEntity.getUUID(),
-            movingEntity.position(),
-            anchorEntity.position(),
+            movingStart,
+            anchorStart,
             task
         );
+    }
+
+    private static Vec3 previewStart(Entity entity, @Nullable Vec3 selectedPosition) {
+        if (selectedPosition != null
+            && entity.position().distanceToSqr(selectedPosition) <= MAX_SNAPSHOT_DISPLACEMENT_SQR) {
+            return selectedPosition;
+        }
+        return entity.position();
     }
 
     private enum TargetType {
@@ -389,6 +422,7 @@ public final class AdhesivePreviewService {
         private final @Nullable UUID anchorUuid;
         private final Vec3 movingStart;
         private final Vec3 anchorStart;
+        private final long createdGameTime;
         private final AdhesivePathPlanner.PreviewTask task;
         private @Nullable AdhesivePathPlanner.Plan result;
         private @Nullable Confirmation confirmation;
@@ -430,6 +464,7 @@ public final class AdhesivePreviewService {
             this.anchorUuid = anchorUuid;
             this.movingStart = movingStart;
             this.anchorStart = anchorStart;
+            this.createdGameTime = level.getGameTime();
             this.task = task;
         }
 
@@ -460,10 +495,27 @@ public final class AdhesivePreviewService {
             Entity moving = this.resolveMovingEntity();
             Entity anchor = this.resolveAnchorEntity();
             return moving != null
-                && moving.position().distanceToSqr(this.movingStart) <= POSITION_EPSILON_SQR
+                && moving.position().distanceToSqr(this.movingStart) <= MAX_SNAPSHOT_DISPLACEMENT_SQR
                 && (anchor == null || anchor.position().distanceToSqr(this.anchorStart) <= POSITION_EPSILON_SQR)
                 && this.player.getDirection() == this.playerDirection
                 && AdhesiveSelectionManager.getSelectedFace(this.player) == this.selectedFace;
+        }
+
+        private boolean shouldRecreateTask() {
+            Entity moving = this.resolveMovingEntity();
+            Entity anchor = this.resolveAnchorEntity();
+            if (moving == null) return true;
+            if (moving.position().distanceToSqr(this.movingStart) > MAX_SNAPSHOT_DISPLACEMENT_SQR) return true;
+            if (anchor != null && anchor.position().distanceToSqr(this.anchorStart) > POSITION_EPSILON_SQR) {
+                return true;
+            }
+            if (this.player.getDirection() != this.playerDirection
+                || AdhesiveSelectionManager.getSelectedFace(this.player) != this.selectedFace) {
+                return true;
+            }
+            long age = this.level.getGameTime() - this.createdGameTime;
+            return age >= MAX_PENDING_SNAPSHOT_AGE_TICKS
+                && moving.position().distanceToSqr(this.movingStart) > POSITION_EPSILON_SQR;
         }
 
         private boolean matchesBlock(Entity selected, BlockPos supportPos, Direction attachmentFace) {
@@ -504,7 +556,8 @@ public final class AdhesivePreviewService {
                     this.selectedEntityId,
                     this.supportPos,
                     this.targetFace,
-                    this.sendResult
+                    this.sendResult,
+                    false
                 )
                 : createEntity(
                     this.player,
@@ -512,7 +565,8 @@ public final class AdhesivePreviewService {
                     this.selectedEntityId,
                     this.targetEntityId,
                     this.targetFace,
-                    this.sendResult
+                    this.sendResult,
+                    false
                 );
         }
     }

@@ -7,6 +7,7 @@ import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
@@ -40,6 +41,18 @@ import java.util.Optional;
 /** 把成型舱动态快照接入 AnvilCraft 巨型铁砧落地流程。 */
 public final class PlasticMoldingAnvilProcessor {
     private PlasticMoldingAnvilProcessor() {
+    }
+
+    public static void tickPrinting(ServerLevel level, PlasticMoldingChamberBlockEntity chamber) {
+        if (!chamber.isPrintingProcess()) return;
+        Optional<MoldingProcessSnapshot> active = chamber.activeProcessingSnapshot();
+        if (active.isEmpty()) return;
+        if (chamber.printingProgress() < chamber.printingTotal()
+            && !chamber.advancePrintingTick()) {
+            return;
+        }
+        if (chamber.printingProgress() < chamber.printingTotal()) return;
+        finishPrinting(level, chamber, active.orElseThrow());
     }
 
     /** 返回是否识别到成型舱专用结构；识别后始终阻止静态多方块配方重复处理。 */
@@ -108,13 +121,19 @@ public final class PlasticMoldingAnvilProcessor {
 
     private static void process(ServerLevel level, ChamberMatch match, OutputMode outputMode) {
         PlasticMoldingChamberBlockEntity chamber = match.chamber;
+        if (chamber.cycleFormingMode() == MoldingFormingMode.PRINTING) return;
         MoldingProcessSnapshot preview = new MoldingProcessSnapshot(
             chamber.revision(),
             chamber.model(),
             chamber.bakedModel(),
             chamber.batchFluid(),
             chamber.moldedClayBalls(),
-            chamber.cycleMode()
+            chamber.cycleMode(),
+            chamber.cycleFormingMode(),
+            chamber.typeOverrideCommitted(),
+            chamber.creativeOverrideLocked(),
+            chamber.printingProgress(),
+            chamber.printingTotal()
         );
         PreparedOutput prepared;
         try {
@@ -134,13 +153,9 @@ public final class PlasticMoldingAnvilProcessor {
             chamber.abortProcessing(snapshot);
             return;
         }
-
-        for (Entity entity : prepared.entities) {
-            if (entity instanceof UniversalPlasticEntity plastic
-                && !plastic.plasticraft$canOccupyBlocks(plastic.getOrientation(), plastic.position())) {
-                rollback(chamber, snapshot, List.of());
-                return;
-            }
+        if (!canOccupyPreparedOutput(prepared, snapshot.creativeOverride())) {
+            chamber.abortProcessing(snapshot);
+            return;
         }
 
         List<Entity> spawned = new ArrayList<>(prepared.entities.size());
@@ -156,7 +171,57 @@ public final class PlasticMoldingAnvilProcessor {
             rollback(chamber, snapshot, spawned);
             return;
         }
-        playEffects(level, prepared.bounds, prepared.displayState);
+        playEffects(level, prepared.bounds, prepared.displayState, snapshot.formingMode());
+    }
+
+    private static void finishPrinting(
+        ServerLevel level,
+        PlasticMoldingChamberBlockEntity chamber,
+        MoldingProcessSnapshot snapshot
+    ) {
+        Direction front = chamber.getBlockState().getValue(PlasticMoldingChamberBlock.FACING);
+        ChamberMatch match = new ChamberMatch(chamber.getBlockPos(), front, chamber);
+        PreparedOutput prepared;
+        try {
+            prepared = prepare(level, match, OutputMode.ENTITY, snapshot);
+        } catch (RuntimeException exception) {
+            chamber.waitForPrintingOutput();
+            return;
+        }
+        if (!canOccupyPreparedOutput(prepared, snapshot.creativeOverride())) {
+            chamber.waitForPrintingOutput();
+            return;
+        }
+
+        List<Entity> spawned = new ArrayList<>(prepared.entities.size());
+        for (Entity entity : prepared.entities) {
+            if (!level.addFreshEntity(entity)) {
+                spawned.forEach(Entity::discard);
+                chamber.waitForPrintingOutput();
+                return;
+            }
+            spawned.add(entity);
+        }
+        if (!chamber.finishProcessing(snapshot, true)) {
+            spawned.forEach(Entity::discard);
+            AnvilcraftPlasticraft.LOGGER.error(
+                "Unable to commit completed plastic printing transaction at {}",
+                chamber.getBlockPos()
+            );
+            return;
+        }
+        playEffects(level, prepared.bounds, prepared.displayState, snapshot.formingMode());
+    }
+
+    private static boolean canOccupyPreparedOutput(PreparedOutput prepared, boolean creativeOverride) {
+        for (Entity entity : prepared.entities) {
+            if (entity instanceof UniversalPlasticEntity plastic
+                && !creativeOverride
+                && !plastic.plasticraft$canOccupyBlocks(plastic.getOrientation(), plastic.position())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static PreparedOutput prepare(
@@ -165,8 +230,11 @@ public final class PlasticMoldingAnvilProcessor {
         OutputMode outputMode,
         MoldingProcessSnapshot snapshot
     ) {
-        if (snapshot.batchFluid().getAmount() < PlasticMoldingChamberBlockEntity.MINIMUM_PROCESS_MELT
-            || snapshot.moldedClayBalls() <= 0) {
+        int requiredMelt = snapshot.formingMode() == MoldingFormingMode.PRINTING
+            ? snapshot.bakedModel().analysis().minimumMeltMillibuckets()
+            : PlasticMoldingChamberBlockEntity.MINIMUM_PROCESS_MELT;
+        if (!snapshot.creativeOverride()
+            && snapshot.batchFluid().getAmount() < requiredMelt) {
             throw new IllegalArgumentException("Molding snapshot is not processable");
         }
         AABB bounds = PlasticMoldingChamberStructure.regionBounds(match.controller, match.front);
@@ -178,18 +246,23 @@ public final class PlasticMoldingAnvilProcessor {
         ).isEmpty()) {
             throw new IllegalArgumentException("Molding output region is occupied");
         }
+        FluidStack material = snapshot.batchFluid().isEmpty()
+            ? new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 1)
+            : snapshot.batchFluid();
         MoldedPlasticData data = MoldedPlasticData.manufacture(
             snapshot.model(),
             snapshot.bakedModel(),
-            snapshot.batchFluid(),
-            snapshot.batchFluid().getAmount()
+            material,
+            snapshot.batchFluid().getAmount(),
+            snapshot.typeOverride(),
+            snapshot.creativeOverride()
         );
         ItemStack product = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
         MoldedPlasticData.set(product, data);
-        PlasticMeltColor.set(product, PlasticMeltColor.get(snapshot.batchFluid()));
+        PlasticMeltColor.set(product, PlasticMeltColor.get(material));
         PlasticItemData.setMaterial(product, "universal_plastic");
         BlockState displayState = PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState()
-            .setValue(DyeableMaterial.COLOR, PlasticMeltColor.get(snapshot.batchFluid()));
+            .setValue(DyeableMaterial.COLOR, PlasticMeltColor.get(material));
 
         List<Entity> entities = new ArrayList<>();
         if (outputMode == OutputMode.ITEM) {
@@ -272,6 +345,11 @@ public final class PlasticMoldingAnvilProcessor {
             && first.bakedModel().modelHash().equals(second.bakedModel().modelHash())
             && first.moldedClayBalls() == second.moldedClayBalls()
             && first.cycleMode() == second.cycleMode()
+            && first.formingMode() == second.formingMode()
+            && first.typeOverride() == second.typeOverride()
+            && first.creativeOverride() == second.creativeOverride()
+            && first.printingProgress() == second.printingProgress()
+            && first.printingTotal() == second.printingTotal()
             && FluidStack.matches(first.batchFluid(), second.batchFluid());
     }
 
@@ -289,19 +367,26 @@ public final class PlasticMoldingAnvilProcessor {
         }
     }
 
-    private static void playEffects(ServerLevel level, AABB bounds, BlockState displayState) {
+    private static void playEffects(
+        ServerLevel level,
+        AABB bounds,
+        BlockState displayState,
+        MoldingFormingMode formingMode
+    ) {
         Vec3 center = bounds.getCenter();
-        level.sendParticles(
-            new BlockParticleOption(ParticleTypes.BLOCK, Blocks.CLAY.defaultBlockState()),
-            center.x,
-            center.y,
-            center.z,
-            48,
-            1.25D,
-            1.25D,
-            1.25D,
-            0.08D
-        );
+        if (formingMode == MoldingFormingMode.CASTING) {
+            level.sendParticles(
+                new BlockParticleOption(ParticleTypes.BLOCK, Blocks.CLAY.defaultBlockState()),
+                center.x,
+                center.y,
+                center.z,
+                48,
+                1.25D,
+                1.25D,
+                1.25D,
+                0.08D
+            );
+        }
         level.sendParticles(
             new BlockParticleOption(ParticleTypes.BLOCK, displayState),
             center.x,

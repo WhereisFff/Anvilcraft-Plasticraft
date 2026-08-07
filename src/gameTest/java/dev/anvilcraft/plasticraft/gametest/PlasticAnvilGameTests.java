@@ -87,6 +87,7 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.animal.Cow;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Ravager;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.entity.player.Player;
@@ -180,43 +181,55 @@ public final class PlasticAnvilGameTests {
 
     @GameTest(timeoutTicks = 30)
     @EmptyTemplate("7x7x7")
-    @TestHolder(description = "The actual item path aligns a full-block entity to each clicked face")
+    @TestHolder(description = "The actual item path exposes all four in-plane directions on every clicked face")
     static void itemPlacesOnAllSixFaces(ExtendedGameTestHelper helper) {
         BlockPos clicked = new BlockPos(3, 3, 3);
         helper.setBlock(clicked, Blocks.STONE);
+        BlockPos absoluteClicked = helper.absolutePos(clicked);
         for (Direction face : Direction.values()) {
-            ItemStack stack = PlasticraftBlocks.HARDEND_RESIN_ANVIL.asStack();
-            Player player = helper.makeMockPlayer(GameType.SURVIVAL);
-            player.setYRot(0.0F);
-            BlockHitResult hit = new BlockHitResult(
-                helper.absolutePos(clicked).getCenter(),
-                face,
-                helper.absolutePos(clicked),
-                false
-            );
-            InteractionResult result = stack.useOn(new UseOnContext(
-                helper.getLevel(),
-                player,
-                InteractionHand.MAIN_HAND,
-                stack,
-                hit
-            ));
-            check(result.consumesAction(), "item placement failed on " + face);
+            Vec3 faceCenter = absoluteClicked.getCenter()
+                .add(Vec3.atLowerCornerOf(face.getNormal()).scale(0.5D));
+            for (Direction longAxis : Direction.values()) {
+                if (longAxis.getAxis() == face.getAxis()) continue;
+                ItemStack stack = PlasticraftBlocks.HARDEND_RESIN_ANVIL.asStack();
+                Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+                BlockHitResult hit = new BlockHitResult(
+                    faceCenter.add(Vec3.atLowerCornerOf(longAxis.getNormal()).scale(0.3D)),
+                    face,
+                    absoluteClicked,
+                    false
+                );
+                InteractionResult result = stack.useOn(new UseOnContext(
+                    helper.getLevel(),
+                    player,
+                    InteractionHand.MAIN_HAND,
+                    stack,
+                    hit
+                ));
+                check(result.consumesAction(), "item placement failed on " + face + " toward " + longAxis);
 
-            Vec3 expectedCenter = PlasticEntityOrientation.forPlacement(face, player)
-                .collisionCenter(helper.absolutePos(clicked.relative(face)));
-            HardenedResinAnvilEntity placed = helper.getLevel()
-                .getEntitiesOfClass(
-                    HardenedResinAnvilEntity.class,
-                    new AABB(expectedCenter, expectedCenter).inflate(0.6D)
-                )
-                .stream()
-                .findFirst()
-                .orElseThrow(() -> new GameTestAssertException("item did not create an entity on " + face));
-            check(close(placed.getBoundingBox().getCenter(), expectedCenter), "collision box was offset on " + face);
-            check(Math.abs(placed.getBbWidth() - 1.0F) <= EPSILON, "entity width changed on " + face);
-            check(Math.abs(placed.getBbHeight() - 1.0F) <= EPSILON, "entity height changed on " + face);
-            placed.discard();
+                PlasticEntityOrientation expected = PlasticEntityOrientation.fromLongAxis(face, longAxis);
+                Vec3 expectedCenter = expected.collisionCenter(absoluteClicked.relative(face));
+                HardenedResinAnvilEntity placed = helper.getLevel()
+                    .getEntitiesOfClass(
+                        HardenedResinAnvilEntity.class,
+                        new AABB(expectedCenter, expectedCenter).inflate(0.6D)
+                    )
+                    .stream()
+                    .findFirst()
+                    .orElseThrow(() -> new GameTestAssertException(
+                        "item did not create an entity on " + face + " toward " + longAxis
+                    ));
+                check(placed.getOrientation().equals(expected), "item selected the wrong in-plane direction");
+                check(
+                    close(placed.getBoundingBox().getCenter(), expectedCenter),
+                    "collision box was offset on " + face + " toward " + longAxis
+                );
+                check(Math.abs(placed.getBbWidth() - 1.0F) <= EPSILON, "entity width changed on " + face);
+                check(Math.abs(placed.getBbHeight() - 1.0F) <= EPSILON, "entity height changed on " + face);
+                placed.discard();
+                player.discard();
+            }
         }
         helper.succeed();
     }
@@ -1617,7 +1630,7 @@ public final class PlasticAnvilGameTests {
             PlasticraftBlocks.RESIN_ANVIL.asStack()
         );
         anvil.setNoGravity(true);
-        Zombie target = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(4.35D, 2.0D, 3.5D));
+        Creeper target = helper.spawnWithNoFreeWill(EntityType.CREEPER, new Vec3(4.35D, 2.0D, 3.5D));
         target.setNoGravity(true);
         float healthBefore = target.getHealth();
         anvil.setDeltaMovement(0.32D, 0.0D, 0.0D);

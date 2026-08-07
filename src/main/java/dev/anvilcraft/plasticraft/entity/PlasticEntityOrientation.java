@@ -5,6 +5,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.Objects;
@@ -25,6 +26,7 @@ public record PlasticEntityOrientation(Direction attachmentFace, int quarterTurn
     private static final int TURN_SHIFT = 3;
     private static final int TURN_MASK = 0b11;
     private static final int PACKED_MASK = FACE_MASK | (TURN_MASK << TURN_SHIFT);
+    private static final double HIT_CENTER_EPSILON = 1.0E-7D;
 
     public PlasticEntityOrientation {
         Objects.requireNonNull(attachmentFace, "attachmentFace");
@@ -56,6 +58,30 @@ public record PlasticEntityOrientation(Direction attachmentFace, int quarterTurn
             preferredLongAxis = Direction.UP;
         }
         return fromLongAxis(attachmentFace, preferredLongAxis);
+    }
+
+    /**
+     * 以被点击面的两条对角线划分四个面内朝向，命中点靠近哪条边，模型长轴就朝向哪条边。
+     * 正中心没有唯一分区，因此沿用玩家朝向作为稳定回退。
+     */
+    public static PlasticEntityOrientation forPlacement(BlockHitResult hit, Player player) {
+        Objects.requireNonNull(hit, "hit");
+        Direction attachmentFace = hit.getDirection();
+        Vec3 faceOffset = hit.getLocation().subtract(Vec3.atCenterOf(hit.getBlockPos()));
+        Direction zeroTurnAxis = zeroTurnLongAxis(attachmentFace);
+        Direction quarterTurnAxis = rotateClockwise(attachmentFace, zeroTurnAxis);
+        double zeroTurnOffset = componentAlong(faceOffset, zeroTurnAxis);
+        double quarterTurnOffset = componentAlong(faceOffset, quarterTurnAxis);
+        double zeroTurnDistance = Math.abs(zeroTurnOffset);
+        double quarterTurnDistance = Math.abs(quarterTurnOffset);
+        if (Math.max(zeroTurnDistance, quarterTurnDistance) <= HIT_CENTER_EPSILON) {
+            return forPlacement(attachmentFace, player);
+        }
+
+        Direction longAxis = zeroTurnDistance >= quarterTurnDistance
+            ? directionForOffset(zeroTurnAxis, zeroTurnOffset)
+            : directionForOffset(quarterTurnAxis, quarterTurnOffset);
+        return fromLongAxis(attachmentFace, longAxis);
     }
 
     /** 根据期望长轴创建四种有效平面内旋转之一。 */
@@ -205,6 +231,16 @@ public record PlasticEntityOrientation(Direction attachmentFace, int quarterTurn
 
     private static Direction rotateClockwise(Direction axis, Direction direction) {
         return cross(direction, axis);
+    }
+
+    private static double componentAlong(Vec3 offset, Direction direction) {
+        return offset.x * direction.getStepX()
+            + offset.y * direction.getStepY()
+            + offset.z * direction.getStepZ();
+    }
+
+    private static Direction directionForOffset(Direction positiveDirection, double offset) {
+        return offset >= 0.0D ? positiveDirection : positiveDirection.getOpposite();
     }
 
     private static Direction cross(Direction first, Direction second) {

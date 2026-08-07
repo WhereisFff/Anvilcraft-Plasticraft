@@ -11,8 +11,61 @@ public record MoldingProcessSnapshot(
     BakedMoldingModel bakedModel,
     FluidStack batchFluid,
     int moldedClayBalls,
-    MoldingProductionMode cycleMode
+    MoldingProductionMode cycleMode,
+    MoldingFormingMode formingMode,
+    boolean typeOverride,
+    boolean creativeOverride,
+    int printingProgress,
+    int printingTotal
 ) {
+    public MoldingProcessSnapshot(
+        long modelRevision,
+        EditableMoldingModel model,
+        BakedMoldingModel bakedModel,
+        FluidStack batchFluid,
+        int moldedClayBalls,
+        MoldingProductionMode cycleMode
+    ) {
+        this(
+            modelRevision,
+            model,
+            bakedModel,
+            batchFluid,
+            moldedClayBalls,
+            cycleMode,
+            MoldingFormingMode.CASTING,
+            false,
+            false,
+            0,
+            0
+        );
+    }
+
+    public MoldingProcessSnapshot(
+        long modelRevision,
+        EditableMoldingModel model,
+        BakedMoldingModel bakedModel,
+        FluidStack batchFluid,
+        int moldedClayBalls,
+        MoldingProductionMode cycleMode,
+        boolean typeOverride,
+        boolean creativeOverride
+    ) {
+        this(
+            modelRevision,
+            model,
+            bakedModel,
+            batchFluid,
+            moldedClayBalls,
+            cycleMode,
+            MoldingFormingMode.CASTING,
+            typeOverride,
+            creativeOverride,
+            0,
+            0
+        );
+    }
+
     public MoldingProcessSnapshot {
         batchFluid = batchFluid.copy();
     }

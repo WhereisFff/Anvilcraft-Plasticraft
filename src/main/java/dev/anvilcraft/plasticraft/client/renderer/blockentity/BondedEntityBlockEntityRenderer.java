@@ -42,7 +42,6 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
                 packedLight,
                 OverlayTexture.NO_OVERLAY
             );
-            renderAdhesivePatch(blockEntity, pose, buffers, packedLight);
             return;
         }
 
@@ -79,7 +78,9 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
                 pose.popPose();
             }
         }
-        renderAdhesivePatch(blockEntity, pose, buffers, packedLight, partialTick);
+        if (blockEntity.isHammerDeflected()) {
+            renderAdhesivePatch(blockEntity, pose, buffers, packedLight, partialTick);
+        }
     }
 
     @Override
@@ -92,15 +93,6 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
             return bounds.inflate(CatalyticPressLidEntity.RENDER_BOUNDS_EXPANSION);
         }
         return bounds;
-    }
-
-    private static void renderAdhesivePatch(
-        BondedEntityBlockEntity blockEntity,
-        PoseStack pose,
-        MultiBufferSource buffers,
-        int packedLight
-    ) {
-        renderAdhesivePatch(blockEntity, pose, buffers, packedLight, 1.0F);
     }
 
     private static void renderAdhesivePatch(

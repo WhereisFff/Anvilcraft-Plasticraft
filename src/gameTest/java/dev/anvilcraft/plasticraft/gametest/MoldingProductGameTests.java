@@ -1,0 +1,840 @@
+package dev.anvilcraft.plasticraft.gametest;
+
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingBarrierFace;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingAnvilShapeAnalysis;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingAnvilShapeAnalyzer;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingFaceDirection;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingFunctionalAnalysis;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingShellAnalyzer;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
+import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
+import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
+import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
+import dev.anvilcraft.plasticraft.molding.model.MoldingTransform;
+import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticFluidHandler;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticItemHandler;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContents;
+import dev.anvilcraft.plasticraft.molding.product.MoldedTankFluidGeometry;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductPreview;
+import dev.anvilcraft.plasticraft.molding.type.MoldingPropellerIconModel;
+import dev.anvilcraft.plasticraft.molding.type.MoldingTypeValidation;
+import net.minecraft.gametest.framework.GameTest;
+import net.minecraft.gametest.framework.GameTestAssertException;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.material.Fluids;
+import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import net.neoforged.testframework.annotation.TestHolder;
+import net.neoforged.testframework.gametest.EmptyTemplate;
+import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+
+/** TODO-06 功能类型、容量派生和无菜单能力的服务端回归测试。 */
+public final class MoldingProductGameTests {
+    private MoldingProductGameTests() {
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Chest and tank capacity boundaries remain exact")
+    static void capacityBoundaries(ExtendedGameTestHelper helper) {
+        checkCapacity(helper, MoldingProductTypes.CHEST_ID, 1728, 27, true);
+        checkCapacity(helper, MoldingProductTypes.CHEST_ID, 64, 1, true);
+        checkCapacity(helper, MoldingProductTypes.CHEST_ID, 63, 0, false);
+        checkCapacity(helper, MoldingProductTypes.TANK_ID, 2744, 16, true);
+        checkCapacity(helper, MoldingProductTypes.TANK_ID, 171, 1, true);
+        checkCapacity(helper, MoldingProductTypes.TANK_ID, 170, 0, false);
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Anvil type accepts the required three-section profile")
+    static void anvilShapeValidation(ExtendedGameTestHelper helper) {
+        MoldingAnvilShapeAnalysis valid = MoldingAnvilShapeAnalyzer.analyze(anvilMask(
+            3,
+            3,
+            5,
+            16,
+            10,
+            18
+        ));
+        check(valid.valid(), "valid anvil profile was rejected: " + valid);
+        check(MoldingAnvilShapeAnalyzer.analyze(expandedBottomUpperLayers()).valid(),
+            "valid bottom-section profile with an expanded upper layer was rejected");
+        MoldingFunctionalAnalysis functional = new MoldingFunctionalAnalysis(
+            new MoldingVolumeMask(),
+            0,
+            0,
+            0,
+            false,
+            valid
+        );
+        check(MoldingProductTypes.validate(MoldingProductTypes.ANVIL_ID, functional).valid(),
+            "anvil product type rejected a valid shape");
+
+        EditableMoldingModel anvilModel = anvilModel(MoldingProductTypes.ANVIL_ID);
+        var baked = MoldingModelBaker.bake(anvilModel);
+        check(baked.functionalAnalysis().anvilShape().valid(),
+            "baked anvil model did not retain its shape analysis: " + baked.functionalAnalysis().anvilShape());
+        MoldingProductPreview preview = MoldingProductPreview.evaluate(
+            anvilModel,
+            baked,
+            baked.analysis().minimumMeltMillibuckets()
+        );
+        check(!preview.downgraded() && MoldingProductTypes.ANVIL_ID.equals(preview.finalType()),
+            "complete baked anvil model was downgraded: " + preview);
+
+        check(!MoldingAnvilShapeAnalyzer.analyze(anvilMask(3, 3, 5, 13, 10, 18)).valid(),
+            "13 px bottom passed the 14 x 14 rule");
+        check(!MoldingAnvilShapeAnalyzer.analyze(anvilMask(3, 2, 5, 16, 10, 18)).valid(),
+            "2 px middle passed the thickness rule");
+        check(!MoldingAnvilShapeAnalyzer.analyze(anvilMask(3, 3, 5, 16, 16, 18)).valid(),
+            "middle projection with an equal face passed");
+        check(MoldingAnvilShapeAnalyzer.analyze(anvilMask(3, 3, 5, 16, 10, 16)).valid(),
+            "top projection with equal area was rejected");
+        check(!MoldingAnvilShapeAnalyzer.analyze(anvilMask(4, 3, 4, 16, 10, 18)).valid(),
+            "top segment no thicker than bottom passed");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Anvil top-area tolerance and giant-bottom boundaries remain inclusive")
+    static void anvilProjectionAndGiantBoundaries(ExtendedGameTestHelper helper) {
+        check(MoldingAnvilShapeAnalyzer.analyze(anvilRectMask(15, 15, 9, 9, 11, 19)).valid(),
+            "top projection exactly 16 square pixels smaller than the bottom was rejected");
+        check(!MoldingAnvilShapeAnalyzer.analyze(anvilRectMask(15, 15, 9, 9, 13, 16)).valid(),
+            "top projection 17 square pixels smaller than the bottom was accepted");
+
+        MoldingAnvilShapeAnalysis belowBoundary = MoldingAnvilShapeAnalyzer.analyze(
+            anvilRectMask(39, 40, 30, 30, 41, 42)
+        );
+        check(belowBoundary.valid(), "39 x 40 anvil profile was rejected");
+        check(!belowBoundary.giant(), "39 x 40 bottom gained giant-anvil ability");
+        MoldingAnvilShapeAnalysis boundary = MoldingAnvilShapeAnalyzer.analyze(
+            anvilRectMask(40, 40, 32, 32, 42, 42)
+        );
+        check(boundary.valid(), "40 x 40 anvil profile was rejected");
+        check(boundary.giant(), "40 x 40 bottom did not gain giant-anvil ability");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Propellers accept narrow zero-thickness blades and the inclusive two-pixel thickness limit")
+    static void propellerSurfaceAndThicknessBoundaries(ExtendedGameTestHelper helper) {
+        checkPropellerValid(twoBladePropeller(), "two-blade zero-thickness propeller");
+        checkPropellerValid(MoldingPropellerIconModel.model(), "bundled four-blade propeller icon");
+        checkPropellerValid(sixBladePropeller(), "six-blade zero-thickness propeller");
+        checkPropellerValid(thickPropeller(2.0D), "two-pixel-thick propeller");
+        checkPropellerReason(thickPropeller(2.001D), "propeller_too_thick");
+
+        EditableMoldingModel icon = MoldingPropellerIconModel.model();
+        MoldingModelBounds bounds = MoldingModelBounds.visible(icon).orElseThrow();
+        check(bounds.minimum().y() == 20.0D && bounds.maximum().y() == 21.0D,
+            "bundled propeller icon was not moved upward as one model: " + bounds);
+        check(icon.elements().size() == 3, "bundled propeller icon no longer has three cubes");
+        checkIconElement(icon, icon.elements().get(0), vec(23, 21, 18), vec(25, 21, 30));
+        checkIconElement(icon, icon.elements().get(1), vec(23, 20, 23), vec(25, 21, 25));
+        checkIconElement(icon, icon.elements().get(2), vec(18, 21, 23), vec(30, 21, 25));
+        for (MoldingElement element : icon.elements()) {
+            MoldingVec3 pivot = MoldingModelBaker.transformedPoint(
+                icon,
+                element,
+                element.transform().pivot()
+            );
+            check(pivot.equals(vec(24, 21, 24)),
+                "bundled propeller icon element has a different common pivot: " + pivot);
+        }
+        helper.succeed();
+    }
+
+    private static void checkIconElement(
+        EditableMoldingModel model,
+        MoldingElement element,
+        MoldingVec3 expectedFrom,
+        MoldingVec3 expectedTo
+    ) {
+        MoldingVec3 actualFrom = MoldingModelBaker.transformedPoint(model, element, element.from());
+        MoldingVec3 actualTo = MoldingModelBaker.transformedPoint(model, element, element.to());
+        check(actualFrom.equals(expectedFrom) && actualTo.equals(expectedTo),
+            "bundled propeller icon cube was not moved upward with the complete model: "
+                + element.name() + " " + actualFrom + " -> " + actualTo);
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "A reversed lowest outline accepts the imported Ember Anvil footprint")
+    static void negativeAnvilBottomOutline(ExtendedGameTestHelper helper) {
+        EditableMoldingModel emberAnvil = emberAnvilModel(true);
+        var baked = MoldingModelBaker.bake(emberAnvil);
+        check(baked.functionalAnalysis().anvilShape().valid(),
+            "ember-anvil reversed bottom outline was rejected: " + baked.functionalAnalysis().anvilShape());
+        check(MoldingProductTypes.validate(MoldingProductTypes.ANVIL_ID, emberAnvil, baked).valid(),
+            "ember-anvil could not be assigned the anvil type");
+
+        EditableMoldingModel withoutNegativeOutline = emberAnvilModel(false);
+        check(!MoldingModelBaker.bake(withoutNegativeOutline).functionalAnalysis().anvilShape().valid(),
+            "ordinary 12 x 12 bottom passed without a reversed outer outline");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Partial molding revalidates functional types before manufacture")
+    static void partialTypeDowngrade(ExtendedGameTestHelper helper) {
+        EditableMoldingModel model = largeModel(MoldingProductTypes.CHEST_ID);
+        var baked = MoldingModelBaker.bake(model);
+        MoldingProductPreview complete = MoldingProductPreview.evaluate(
+            model,
+            baked,
+            baked.analysis().minimumMeltMillibuckets()
+        );
+        check(!complete.downgraded() && complete.capacity() == 64,
+            "complete shell did not retain chest type: " + complete);
+        MoldingProductPreview partial = MoldingProductPreview.evaluate(model, baked, 250);
+        check(partial.downgraded(), "partial open shell retained chest type");
+        MoldedPlasticData result = MoldedPlasticData.manufacture(
+            model,
+            baked,
+            new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 250),
+            250
+        );
+        check(MoldingProductTypes.NORMAL_ID.equals(result.finalType()) && result.capacity() == 0,
+            "manufactured partial result was not downgraded");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Creative override derives forced storage capacity from the complete outer bounds")
+    static void creativeOverrideUsesCompleteBoundingVolume(ExtendedGameTestHelper helper) {
+        EditableMoldingModel model = new EditableMoldingModel(
+            EditableMoldingModel.CURRENT_FORMAT_VERSION,
+            "Creative oversized chest",
+            MoldingProductTypes.CHEST_ID,
+            List.of(MoldingElement.cube("Solid", vec(0, 0, 0), vec(100, 100, 100))),
+            List.of()
+        );
+        var baked = MoldingModelBaker.bake(model);
+        check(baked.volumeMask().sizeX() == 100
+                && baked.volumeMask().sizeY() == 100
+                && baked.volumeMask().sizeZ() == 100,
+            "oversized model did not preserve its 100 px manufacturing bounds");
+        check(!MoldingProductTypes.validate(MoldingProductTypes.CHEST_ID, baked.functionalAnalysis()).valid(),
+            "solid oversized cube unexpectedly passed ordinary chest validation");
+
+        MoldingProductPreview preview = MoldingProductPreview.evaluate(model, baked, 0, false, true);
+        check(MoldingProductTypes.CHEST_ID.equals(preview.finalType()),
+            "creative override did not retain the forced chest type");
+        check(preview.capacity() == 15_625,
+            "creative override did not derive 1,000,000 / 64 chest slots: " + preview.capacity());
+        check(preview.analysis().cavityVolume() == 1_000_000,
+            "creative override did not treat the complete outer bounds as usable space");
+        check(preview.formedVolume().volume() == 1_000_000,
+            "creative override did not manufacture the complete model without melt");
+
+        MoldedPlasticData product = MoldedPlasticData.manufacture(
+            model,
+            baked,
+            FluidStack.EMPTY,
+            0,
+            false,
+            true
+        );
+        check(MoldingProductTypes.CHEST_ID.equals(product.finalType()) && product.capacity() == 15_625,
+            "manufactured creative chest lost its forced type or maximum capacity");
+        check(product.limitOverride(), "manufactured creative chest lost its limit-override marker");
+        check(product.volumeMask().sizeX() == 100
+                && product.volumeMask().sizeY() == 100
+                && product.volumeMask().sizeZ() == 100,
+            "manufactured creative chest lost its oversized dimensions");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Forced tanks retain fluid storage without rendering internal fluid geometry")
+    static void forcedTankStoresFluidWithoutRendering(ExtendedGameTestHelper helper) {
+        EditableMoldingModel model = new EditableMoldingModel(
+            EditableMoldingModel.CURRENT_FORMAT_VERSION,
+            "Forced solid tank",
+            MoldingProductTypes.TANK_ID,
+            List.of(MoldingElement.cube("Solid", vec(0, 0, 0), vec(8, 8, 8))),
+            List.of()
+        );
+        var baked = MoldingModelBaker.bake(model);
+        check(!MoldingProductTypes.validate(MoldingProductTypes.TANK_ID, baked.functionalAnalysis()).valid(),
+            "solid tank unexpectedly passed ordinary validation");
+
+        MoldedPlasticData forcedTank = MoldedPlasticData.manufacture(
+            model,
+            baked,
+            new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 250),
+            250,
+            true,
+            false
+        );
+        check(forcedTank.limitOverride(), "type-overridden tank lost its limit-override marker");
+        check(forcedTank.capacity() == 2, "forced tank did not derive 512 / 171 buckets of capacity");
+        final MoldedPlasticData[] stored = {forcedTank};
+        MoldedPlasticFluidHandler fluids = new MoldedPlasticFluidHandler(
+            () -> Optional.of(stored[0]),
+            replacement -> stored[0] = replacement
+        );
+        check(fluids.fill(new FluidStack(Fluids.WATER, 1500), IFluidHandler.FluidAction.EXECUTE) == 1500,
+            "forced tank did not retain its fluid capability");
+        check(stored[0].limitOverride(), "updating forced tank contents cleared its limit-override marker");
+        check(stored[0].contents().fluids().getFirst().getAmount() == 1500,
+            "forced tank did not persist the inserted fluid");
+        check(MoldedTankFluidGeometry.solve(stored[0], new Vec3(0.0D, 1.0D, 0.0D)).isEmpty(),
+            "forced tank generated internal fluid or free-surface geometry");
+        var ops = helper.getLevel().registryAccess().createSerializationContext(NbtOps.INSTANCE);
+        var encoded = MoldedPlasticData.CODEC.encodeStart(ops, stored[0]).getOrThrow();
+        MoldedPlasticData decoded = MoldedPlasticData.CODEC.parse(ops, encoded).getOrThrow();
+        check(decoded.limitOverride(), "forced tank codec round trip cleared its limit-override marker");
+        check(decoded.contents().fluids().getFirst().getAmount() == 1500,
+            "forced tank codec round trip changed its stored fluid");
+        check(MoldedTankFluidGeometry.solve(decoded, new Vec3(0.0D, 1.0D, 0.0D)).isEmpty(),
+            "decoded forced tank generated internal fluid or free-surface geometry");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Padding flood scan accepts sealed zero-thickness shells and rejects decorations")
+    static void shellAndDecorationBoundaries(ExtendedGameTestHelper helper) {
+        MoldingVolumeMask shell = hollowCube(10);
+        MoldingFunctionalAnalysis analysis = MoldingShellAnalyzer.analyze(shell, Set.of());
+        check(analysis.cavityVolume() == 512,
+            "10 cube shell did not expose an 8 cube cavity: " + analysis.cavityVolume()
+                + ", shell=" + analysis.shellVolume() + ", cavities=" + analysis.cavityCount());
+        check(!analysis.internalDecoration(), "ordinary shell was marked as decorated");
+        MoldingVolumeMask decorated = shell.copy();
+        decorated.set(4, 4, 4);
+        MoldingFunctionalAnalysis decoratedAnalysis = MoldingShellAnalyzer.analyze(decorated, Set.of());
+        check(decoratedAnalysis.internalDecoration(), "isolated cavity decoration was accepted");
+        MoldingVolumeMask protruding = shell.copy();
+        for (int y = 4; y < 6; y++) {
+            for (int z = 4; z < 6; z++) protruding.set(1, y, z);
+        }
+        MoldingFunctionalAnalysis protrudingAnalysis = MoldingShellAnalyzer.analyze(protruding, Set.of());
+        check(protrudingAnalysis.internalDecoration(), "cavity-facing protrusion was accepted as shell");
+
+        Set<MoldingBarrierFace> barriers = new HashSet<>();
+        barriers.add(new MoldingBarrierFace(MoldingFaceDirection.Axis.X, 0, 0, 0));
+        barriers.add(new MoldingBarrierFace(MoldingFaceDirection.Axis.X, 1, 0, 0));
+        barriers.add(new MoldingBarrierFace(MoldingFaceDirection.Axis.Y, 0, 0, 0));
+        barriers.add(new MoldingBarrierFace(MoldingFaceDirection.Axis.Y, 1, 0, 0));
+        barriers.add(new MoldingBarrierFace(MoldingFaceDirection.Axis.Z, 0, 0, 0));
+        barriers.add(new MoldingBarrierFace(MoldingFaceDirection.Axis.Z, 1, 0, 0));
+        MoldingFunctionalAnalysis flat = MoldingShellAnalyzer.analyze(new MoldingVolumeMask(), barriers);
+        check(flat.cavityVolume() == 1 && flat.shellVolume() == 0, "zero-thickness shell was not sealed");
+
+        EditableMoldingModel zeroSealed = zeroThicknessSealedModel(MoldingProductTypes.TANK_ID);
+        var zeroBaked = MoldingModelBaker.bake(zeroSealed);
+        check(!zeroBaked.barrierFaces().isEmpty(), "zero-thickness seal produced no barriers");
+        check(zeroBaked.functionalAnalysis().cavityVolume() == 512,
+            "zero-thickness seal exposed the wrong cavity volume: "
+                + zeroBaked.functionalAnalysis().cavityVolume());
+        Set<MoldingBarrierFace> reconstructed = MoldingModelBaker.barrierFacesFromZeroThickness(
+            zeroBaked.surfaceMesh().stream().filter(MoldingQuad::doubleSided).toList()
+        );
+        check(reconstructed.equals(zeroBaked.barrierFaces()), "persisted zero-thickness barriers changed on rebuild");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Chest and tank contents survive capability round trips")
+    static void capabilityRoundTrips(ExtendedGameTestHelper helper) {
+        EditableMoldingModel chestModel = model(MoldingProductTypes.CHEST_ID);
+        MoldedPlasticData chestData = fullData(chestModel);
+        final MoldedPlasticData[] chest = {chestData};
+        MoldedPlasticItemHandler items = new MoldedPlasticItemHandler(
+            () -> Optional.of(chest[0]),
+            replacement -> chest[0] = replacement
+        );
+        check(items.getSlots() == 8,
+            "chest capability did not expose derived slots: type=" + chestData.finalType()
+                + ", capacity=" + chestData.capacity());
+        check(items.insertItem(0, new ItemStack(Items.DIAMOND, 3), false).isEmpty(),
+            "chest capability rejected a valid item");
+        check(items.getStackInSlot(0).getCount() == 3, "chest item was not retained");
+
+        EditableMoldingModel tankModel = model(MoldingProductTypes.TANK_ID);
+        MoldedPlasticData tankData = fullData(tankModel);
+        check(!tankData.limitOverride(), "ordinary tank was marked as limit-overridden");
+        final MoldedPlasticData[] tank = {tankData};
+        MoldedPlasticFluidHandler fluids = new MoldedPlasticFluidHandler(
+            () -> Optional.of(tank[0]),
+            replacement -> tank[0] = replacement
+        );
+        check(fluids.fill(new FluidStack(Fluids.WATER, 1500), IFluidHandler.FluidAction.EXECUTE) == 1500,
+            "tank did not accept the first fluid");
+        check(fluids.fill(new FluidStack(Fluids.LAVA, 600), IFluidHandler.FluidAction.EXECUTE) == 500,
+            "tank did not enforce shared capacity");
+        check(tank[0].contents().fluids().size() == 2, "tank did not preserve fluid order");
+        check(fluids.getTanks() == 2, "tank capability did not expose every fluid layer");
+        check(fluids.getFluidInTank(0).is(Fluids.WATER)
+            && fluids.getFluidInTank(1).is(Fluids.LAVA), "tank capability changed fluid layer order");
+        check(fluids.drain(250, IFluidHandler.FluidAction.SIMULATE).is(Fluids.LAVA),
+            "tank amount drain did not start at the top layer");
+        check(fluids.drain(new FluidStack(Fluids.WATER, 500), IFluidHandler.FluidAction.EXECUTE)
+                .getAmount() == 500,
+            "tank did not drain by fluid identity");
+        MoldedPlasticData filledTank = tank[0].withContents(new MoldedPlasticContents(
+            tank[0].contents().items(),
+            List.of(new FluidStack(Fluids.WATER, 1000))
+        ));
+        for (Vec3 up : List.of(
+            new Vec3(0.0D, 1.0D, 0.0D),
+            new Vec3(0.0D, 0.8660254D, 0.5D),
+            new Vec3(0.7071067D, 0.7071067D, 0.0D),
+            new Vec3(1.0D, 0.0D, 0.0D)
+        )) {
+            check(!MoldedTankFluidGeometry.solve(filledTank, up).isEmpty(),
+                "tank liquid solver produced no geometry for gravity " + up);
+        }
+        MoldedPlasticData partialTank = tank[0].withContents(new MoldedPlasticContents(
+            tank[0].contents().items(),
+            List.of(new FluidStack(Fluids.WATER, 700))
+        ));
+        List<MoldedTankFluidGeometry.Layer> partialLayers = MoldedTankFluidGeometry.solve(
+            partialTank,
+            new Vec3(0.0D, 1.0D, 0.0D)
+        );
+        List<Vec3> freeSurface = partialLayers.getFirst().polygons().stream()
+            .filter(polygon -> polygon.normal().y() > 0.99D)
+            .flatMap(polygon -> polygon.vertices().stream())
+            .toList();
+        check(!freeSurface.isEmpty(), "tank liquid solver did not create a free surface");
+        double surfaceY = freeSurface.stream().mapToDouble(Vec3::y).average().orElseThrow();
+        check(Math.abs(surfaceY - 3.8D) < 1.0E-5D,
+            "axis-aligned liquid volume used the wrong slice integral: " + surfaceY);
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Only empty molded storage products can stack")
+    static void storageContentsPreventStacking(ExtendedGameTestHelper helper) {
+        MoldedPlasticData chestData = fullData(model(MoldingProductTypes.CHEST_ID));
+        ItemStack chest = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        MoldedPlasticData.set(chest, chestData);
+        check(chest.getMaxStackSize() > 1, "empty molded chest could not stack");
+        MoldedPlasticData.set(chest, chestData.withContents(new MoldedPlasticContents(
+            List.of(new MoldedPlasticContents.StoredItem(0, new ItemStack(Items.DIAMOND))),
+            List.of()
+        )));
+        check(chest.getMaxStackSize() == 1, "non-empty molded chest remained stackable");
+
+        MoldedPlasticData tankData = fullData(model(MoldingProductTypes.TANK_ID));
+        ItemStack tank = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        MoldedPlasticData.set(tank, tankData);
+        check(tank.getMaxStackSize() > 1, "empty molded tank could not stack");
+        MoldedPlasticData.set(tank, tankData.withContents(new MoldedPlasticContents(
+            List.of(),
+            List.of(new FluidStack(Fluids.WATER, 1000))
+        )));
+        check(tank.getMaxStackSize() == 1, "non-empty molded tank remained stackable");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Molded product names combine plastic material and final functional type")
+    static void productNamesUseMaterialAndFinalType(ExtendedGameTestHelper helper) {
+        checkProductName(MoldingProductTypes.NORMAL_ID, "item.anvilcraftplasticraft.molded_product_suffix.block");
+        checkProductName(MoldingProductTypes.CHEST_ID, "screen.anvilcraftplasticraft.molding.type.chest");
+        checkProductName(MoldingProductTypes.TANK_ID, "screen.anvilcraftplasticraft.molding.type.tank");
+        checkProductName(MoldingProductTypes.ANVIL_ID, "screen.anvilcraftplasticraft.molding.type.anvil");
+        checkProductName(MoldingProductTypes.TRAY_ID, "screen.anvilcraftplasticraft.molding.type.tray");
+        helper.succeed();
+    }
+
+    private static void checkProductName(
+        ResourceLocation type,
+        String suffixKey
+    ) {
+        EditableMoldingModel selectedModel = MoldingProductTypes.ANVIL_ID.equals(type)
+            ? anvilModel(type)
+            : MoldingProductTypes.TRAY_ID.equals(type) ? trayModel(type) : model(type);
+        var baked = MoldingModelBaker.bake(selectedModel);
+        int melt = baked.analysis().minimumMeltMillibuckets();
+        MoldedPlasticData data = MoldedPlasticData.manufacture(
+            selectedModel,
+            baked,
+            new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), melt),
+            melt
+        );
+        ItemStack stack = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        MoldedPlasticData.set(stack, data);
+        Component expected = Component.translatable(
+            "item.anvilcraftplasticraft.molded_product_name",
+            Component.translatable("material.anvilcraftplasticraft.universal_plastic"),
+            Component.translatable(suffixKey)
+        );
+        check(stack.getHoverName().equals(expected),
+            "molded product name did not combine material and final type: " + stack.getHoverName());
+    }
+
+    private static void checkCapacity(
+        ExtendedGameTestHelper helper,
+        ResourceLocation type,
+        int cavity,
+        int expectedCapacity,
+        boolean expectedValid
+    ) {
+        MoldingFunctionalAnalysis analysis = new MoldingFunctionalAnalysis(
+            new MoldingVolumeMask(),
+            1,
+            cavity,
+            cavity,
+            false
+        );
+        MoldingTypeValidation result = MoldingProductTypes.validate(type, analysis);
+        check(result.valid() == expectedValid, "unexpected type validation at cavity " + cavity);
+        check(result.capacity() == expectedCapacity, "unexpected capacity at cavity " + cavity);
+    }
+
+    private static MoldingVolumeMask hollowCube(int size) {
+        MoldingVolumeMask mask = new MoldingVolumeMask();
+        for (int x = 0; x < size; x++) {
+            for (int y = 0; y < size; y++) {
+                for (int z = 0; z < size; z++) {
+                    if (x == 0 || x == size - 1 || y == 0 || y == size - 1 || z == 0 || z == size - 1) {
+                        mask.set(x, y, z);
+                    }
+                }
+            }
+        }
+        return mask;
+    }
+
+    private static MoldingVolumeMask anvilMask(
+        int bottomThickness,
+        int middleThickness,
+        int topThickness,
+        int bottomWidth,
+        int middleWidth,
+        int topWidth
+    ) {
+        MoldingVolumeMask mask = new MoldingVolumeMask();
+        int bottomMin = (48 - bottomWidth) / 2;
+        int middleMin = (48 - middleWidth) / 2;
+        int topMin = (48 - topWidth) / 2;
+        int y = 0;
+        fillBox(mask, bottomMin, y, bottomMin, bottomMin + bottomWidth, y + bottomThickness, bottomMin + bottomWidth);
+        y += bottomThickness;
+        fillBox(mask, middleMin, y, middleMin, middleMin + middleWidth, y + middleThickness, middleMin + middleWidth);
+        y += middleThickness;
+        fillBox(mask, topMin, y, topMin, topMin + topWidth, y + topThickness, topMin + topWidth);
+        return mask;
+    }
+
+    private static MoldingVolumeMask anvilRectMask(
+        int bottomWidth,
+        int bottomDepth,
+        int middleWidth,
+        int middleDepth,
+        int topWidth,
+        int topDepth
+    ) {
+        MoldingVolumeMask mask = new MoldingVolumeMask();
+        int bottomMinX = (48 - bottomWidth) / 2;
+        int bottomMinZ = (48 - bottomDepth) / 2;
+        int middleMinX = (48 - middleWidth) / 2;
+        int middleMinZ = (48 - middleDepth) / 2;
+        int topMinX = (48 - topWidth) / 2;
+        int topMinZ = (48 - topDepth) / 2;
+        fillBox(mask, bottomMinX, 0, bottomMinZ, bottomMinX + bottomWidth, 3, bottomMinZ + bottomDepth);
+        fillBox(mask, middleMinX, 3, middleMinZ, middleMinX + middleWidth, 6, middleMinZ + middleDepth);
+        fillBox(mask, topMinX, 6, topMinZ, topMinX + topWidth, 11, topMinZ + topDepth);
+        return mask;
+    }
+
+    private static MoldingVolumeMask expandedBottomUpperLayers() {
+        MoldingVolumeMask mask = anvilMask(3, 3, 5, 16, 10, 18);
+        fillBox(mask, 15, 1, 15, 33, 3, 33);
+        return mask;
+    }
+
+    private static void fillBox(
+        MoldingVolumeMask mask,
+        int minX,
+        int minY,
+        int minZ,
+        int maxX,
+        int maxY,
+        int maxZ
+    ) {
+        for (int y = minY; y < maxY; y++) {
+            for (int x = minX; x < maxX; x++) {
+                for (int z = minZ; z < maxZ; z++) mask.set(x, y, z);
+            }
+        }
+    }
+
+    private static EditableMoldingModel twoBladePropeller() {
+        return propellerModel(List.of(
+            transformedElement(
+                1,
+                "North south blade",
+                vec(23, 16, 18),
+                vec(25, 16, 30),
+                vec(0, 1, 0),
+                MoldingVec3.ZERO,
+                vec(24, 16, 24)
+            ),
+            transformedElement(
+                2,
+                "Core",
+                vec(16, 16, 16),
+                vec(18, 17, 18),
+                vec(7, 0, 7),
+                MoldingVec3.ZERO,
+                vec(17, 16.5D, 17)
+            )
+        ));
+    }
+
+    private static EditableMoldingModel sixBladePropeller() {
+        return propellerModel(List.of(
+            transformedElement(
+                3,
+                "North south blade",
+                vec(23, 16, 18),
+                vec(25, 16, 30),
+                vec(0, 1, 0),
+                MoldingVec3.ZERO,
+                vec(24, 16, 24)
+            ),
+            transformedElement(
+                4,
+                "Positive blade",
+                vec(16, 16, 16),
+                vec(28, 16, 18),
+                vec(2, 1, 7),
+                vec(0, 30, 0),
+                vec(22, 16, 17)
+            ),
+            transformedElement(
+                5,
+                "Core",
+                vec(16, 16, 16),
+                vec(18, 17, 18),
+                vec(7, 0, 7),
+                MoldingVec3.ZERO,
+                vec(17, 16.5D, 17)
+            ),
+            transformedElement(
+                6,
+                "Negative blade",
+                vec(11, 16, 16),
+                vec(23, 16, 18),
+                vec(7, 1, 7),
+                vec(0, -30, 0),
+                vec(17, 16, 17)
+            )
+        ));
+    }
+
+    private static EditableMoldingModel thickPropeller(double thickness) {
+        return propellerModel(List.of(
+            MoldingElement.cube("Core", vec(23, 20, 23), vec(25, 20 + thickness, 25)),
+            MoldingElement.cube("West", vec(16, 20, 23), vec(23, 20 + thickness, 25)),
+            MoldingElement.cube("East", vec(25, 20, 23), vec(32, 20 + thickness, 25)),
+            MoldingElement.cube("North", vec(23, 20, 16), vec(25, 20 + thickness, 23)),
+            MoldingElement.cube("South", vec(23, 20, 25), vec(25, 20 + thickness, 32))
+        ));
+    }
+
+    private static EditableMoldingModel propellerModel(List<MoldingElement> elements) {
+        return new EditableMoldingModel(
+            EditableMoldingModel.CURRENT_FORMAT_VERSION,
+            "Propeller shape test",
+            MoldingProductTypes.PROPELLER_ID,
+            elements,
+            List.of()
+        );
+    }
+
+    private static MoldingElement transformedElement(
+        long id,
+        String name,
+        MoldingVec3 from,
+        MoldingVec3 to,
+        MoldingVec3 translation,
+        MoldingVec3 rotation,
+        MoldingVec3 pivot
+    ) {
+        return new MoldingElement(
+            new UUID(0L, id),
+            name,
+            Optional.empty(),
+            from,
+            to,
+            new MoldingTransform(translation, rotation, MoldingVec3.ONE, pivot),
+            true,
+            false
+        );
+    }
+
+    private static void checkPropellerValid(EditableMoldingModel model, String description) {
+        var baked = MoldingModelBaker.bake(model);
+        MoldingTypeValidation validation = MoldingProductTypes.validate(
+            MoldingProductTypes.PROPELLER_ID,
+            model,
+            baked
+        );
+        check(validation.valid(), description + " was rejected: " + validation.reason());
+    }
+
+    private static void checkPropellerReason(EditableMoldingModel model, String reason) {
+        var baked = MoldingModelBaker.bake(model);
+        MoldingTypeValidation validation = MoldingProductTypes.validate(
+            MoldingProductTypes.PROPELLER_ID,
+            model,
+            baked
+        );
+        check(!validation.valid() && reason.equals(validation.reason()),
+            "expected " + reason + " but received " + validation);
+    }
+
+    private static EditableMoldingModel model(ResourceLocation type) {
+        return new EditableMoldingModel(
+            EditableMoldingModel.CURRENT_FORMAT_VERSION,
+            "Functional product test",
+            type,
+            List.of(
+                MoldingElement.cube("West", vec(0, 0, 0), vec(1, 10, 10)),
+                MoldingElement.cube("East", vec(9, 0, 0), vec(10, 10, 10)),
+                MoldingElement.cube("Down", vec(1, 0, 1), vec(9, 1, 9)),
+                MoldingElement.cube("Up", vec(1, 9, 1), vec(9, 10, 9)),
+                MoldingElement.cube("North", vec(1, 1, 0), vec(9, 9, 1)),
+                MoldingElement.cube("South", vec(1, 1, 9), vec(9, 9, 10)
+                )
+            ),
+            List.of()
+        );
+    }
+
+    private static EditableMoldingModel largeModel(ResourceLocation type) {
+        return new EditableMoldingModel(
+            EditableMoldingModel.CURRENT_FORMAT_VERSION,
+            "Large functional product test",
+            type,
+            List.of(
+                MoldingElement.cube("West", vec(0, 0, 0), vec(1, 18, 18)),
+                MoldingElement.cube("East", vec(17, 0, 0), vec(18, 18, 18)),
+                MoldingElement.cube("Down", vec(1, 0, 1), vec(17, 1, 17)),
+                MoldingElement.cube("Up", vec(1, 17, 1), vec(17, 18, 17)),
+                MoldingElement.cube("North", vec(1, 1, 0), vec(17, 17, 1)),
+                MoldingElement.cube("South", vec(1, 1, 17), vec(17, 17, 18)
+                )
+            ),
+            List.of()
+        );
+    }
+
+    private static EditableMoldingModel anvilModel(ResourceLocation type) {
+        return new EditableMoldingModel(
+            EditableMoldingModel.CURRENT_FORMAT_VERSION,
+            "Anvil shape test",
+            type,
+            List.of(
+                MoldingElement.cube("Bottom", vec(16, 0, 16), vec(32, 3, 32)),
+                MoldingElement.cube("Middle", vec(19, 3, 19), vec(29, 6, 29)),
+                MoldingElement.cube("Top", vec(15, 6, 15), vec(33, 11, 33))
+            ),
+            List.of()
+        );
+    }
+
+    private static EditableMoldingModel emberAnvilModel(boolean includeNegativeOutline) {
+        List<MoldingElement> elements = new ArrayList<>(List.of(
+            MoldingElement.cube("Anvil base", vec(18.5, 16.5, 18.5), vec(29.5, 19.5, 29.5)),
+            MoldingElement.cube("Middle", vec(21.5, 19.5, 20.5), vec(26.5, 26.5, 27.5)),
+            MoldingElement.cube("Anvil top", vec(19.5, 26.5, 16.5), vec(28.5, 31.5, 31.5))
+        ));
+        if (includeNegativeOutline) {
+            elements.add(MoldingElement.cube(
+                "Anvil base_outline",
+                vec(29.975, 19.975, 29.975),
+                vec(18.025, 16.025, 18.025)
+            ));
+        }
+        return new EditableMoldingModel(
+            EditableMoldingModel.CURRENT_FORMAT_VERSION,
+            "ember_anvil",
+            MoldingProductTypes.ANVIL_ID,
+            elements,
+            List.of()
+        );
+    }
+
+    private static EditableMoldingModel trayModel(ResourceLocation type) {
+        return new EditableMoldingModel(
+            EditableMoldingModel.CURRENT_FORMAT_VERSION,
+            "Tray shape test",
+            type,
+            List.of(MoldingElement.cube("Body", vec(16, 0, 16), vec(32, 4, 32))),
+            List.of()
+        );
+    }
+
+    private static EditableMoldingModel zeroThicknessSealedModel(ResourceLocation type) {
+        return new EditableMoldingModel(
+            EditableMoldingModel.CURRENT_FORMAT_VERSION,
+            "Zero thickness seal test",
+            type,
+            List.of(
+                MoldingElement.cube("East", vec(9, 0, 0), vec(10, 10, 10)),
+                MoldingElement.cube("Down", vec(1, 0, 1), vec(9, 1, 9)),
+                MoldingElement.cube("Up", vec(1, 9, 1), vec(9, 10, 9)),
+                MoldingElement.cube("North", vec(1, 1, 0), vec(9, 9, 1)),
+                MoldingElement.cube("South", vec(1, 1, 9), vec(9, 9, 10)),
+                MoldingElement.cube("West seal", vec(1, 1, 1), vec(1, 9, 9))
+            ),
+            List.of()
+        );
+    }
+
+    private static MoldingVec3 vec(double x, double y, double z) {
+        return new MoldingVec3(x, y, z);
+    }
+
+    private static MoldedPlasticData fullData(EditableMoldingModel model) {
+        var baked = MoldingModelBaker.bake(model);
+        return MoldedPlasticData.manufacture(
+            model,
+            baked,
+            new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 250),
+            250
+        );
+    }
+
+    private static void check(boolean condition, String message) {
+        if (!condition) throw new GameTestAssertException(message);
+    }
+}

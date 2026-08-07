@@ -2,7 +2,6 @@ package dev.anvilcraft.plasticraft.molding.blueprint;
 
 import dev.anvilcraft.plasticraft.block.PlasticMoldingMachineState;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
-import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
@@ -88,9 +87,6 @@ public final class MoldingBlueprintService {
         }
         MoldingBlueprint blueprint = MoldingBlueprintDisk.read(currentDisk)
             .orElseThrow(() -> failure("invalid_disk_blueprint", "The structure disk has no valid molding blueprint"));
-        if (MoldingModelBounds.all(blueprint.model()).filter(bounds -> !bounds.fitsWorkspace()).isPresent()) {
-            throw failure("model_too_large", "The model exceeds the chamber's 3x3x3 workspace");
-        }
         if (chamber.machineState() != PlasticMoldingMachineState.EDITABLE) {
             throw failure("not_editable", "Unlock the chamber before loading a disk");
         }

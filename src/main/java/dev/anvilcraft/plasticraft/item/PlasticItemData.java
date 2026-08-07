@@ -29,14 +29,17 @@ public final class PlasticItemData {
     public static String getMaterial(ItemStack stack) {
         CustomData data = stack.get(DataComponents.CUSTOM_DATA);
         if (data == null || !data.contains(MATERIAL_KEY)) {
-            // 普通有序配方产出的新树脂砧物品堆有意不含自定义数据，
-            // 因此从物品 ID 推断其材料。
-            return stack.getItem() instanceof ResinAnvilItem ? "resin" : "hardened_resin";
+            return defaultMaterial(stack);
         }
         String value = data.copyTag().getString(MATERIAL_KEY);
-        return value.isBlank()
-            ? (stack.getItem() instanceof ResinAnvilItem ? "resin" : "hardened_resin")
-            : value;
+        return value.isBlank() ? defaultMaterial(stack) : value;
+    }
+
+    private static String defaultMaterial(ItemStack stack) {
+        // 普通有序配方产出的新制品物品堆有意不含自定义数据，因此从物品 ID 推断材料。
+        if (stack.getItem() instanceof ResinAnvilItem) return "resin";
+        if (stack.getItem() instanceof UniversalPlasticBlockItem) return "universal_plastic";
+        return "hardened_resin";
     }
 
     public static void setMaterial(ItemStack stack, String materialKey) {

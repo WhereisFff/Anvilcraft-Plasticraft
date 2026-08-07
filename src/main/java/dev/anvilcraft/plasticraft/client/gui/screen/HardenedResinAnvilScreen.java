@@ -1,7 +1,12 @@
 package dev.anvilcraft.plasticraft.client.gui.screen;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
+import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.dubhe.anvilcraft.constant.Constant;
 import dev.dubhe.anvilcraft.constant.SharedTextures;
 import net.minecraft.client.Minecraft;
@@ -12,16 +17,24 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ServerboundRenameItemPacket;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 
 /** 使用浅色塑料背景的 AnvilCraft 风格界面。 */
 public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAnvilMenu> {
     private static final ResourceLocation BACKGROUND = AnvilcraftPlasticraft.of(
         "textures/gui/background/hardend_resin_anvil.png"
+    );
+    private static final ResourceLocation UNIVERSAL_BACKGROUND_BASE = AnvilcraftPlasticraft.of(
+        "textures/gui/background/universal_plastic_anvil_base.png"
+    );
+    private static final ResourceLocation UNIVERSAL_BACKGROUND_OVERLAY = AnvilcraftPlasticraft.of(
+        "textures/gui/background/universal_plastic_anvil_overlay.png"
     );
     private EditBox name;
     private final Player player;
@@ -111,11 +124,66 @@ public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAn
 
     @Override
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
-        super.renderBg(graphics, partialTick, mouseX, mouseY);
+        if (this.menu.isPlasticAnvilTarget()) {
+            int tint = PlasticMeltColor.tint(this.targetColor());
+            graphics.setColor(
+                (tint >> 16 & 0xFF) / 255.0F,
+                (tint >> 8 & 0xFF) / 255.0F,
+                (tint & 0xFF) / 255.0F,
+                1.0F
+            );
+            graphics.blit(
+                UNIVERSAL_BACKGROUND_BASE,
+                this.leftPos,
+                this.topPos,
+                0,
+                0,
+                this.imageWidth,
+                this.imageHeight,
+                this.imageWidth,
+                this.imageHeight
+            );
+            graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
+            graphics.blit(
+                UNIVERSAL_BACKGROUND_OVERLAY,
+                this.leftPos,
+                this.topPos,
+                0,
+                0,
+                this.imageWidth,
+                this.imageHeight,
+                this.imageWidth,
+                this.imageHeight
+            );
+        } else {
+            super.renderBg(graphics, partialTick, mouseX, mouseY);
+        }
         ResourceLocation texture = this.menu.getSlot(0).getItem().isEmpty()
             ? SharedTextures.TEXT_FIELD_DISABLE
             : SharedTextures.TEXT_FIELD;
         graphics.blit(texture, this.leftPos + 59, this.topPos + 20, 0, 0, 110, 16, 110, 16);
+    }
+
+    private DyeColor targetColor() {
+        if (this.menu.bondedBlockPos() != null
+            && this.player.level().getBlockEntity(this.menu.bondedBlockPos())
+                instanceof BondedEntityBlockEntity bonded) {
+            return colorOf(bonded.getStoredDropStack());
+        }
+        Entity entity = this.player.level().getEntity(this.menu.entityId());
+        if (entity instanceof UniversalPlasticEntity universal) {
+            return universal.getMoldedData()
+                .map(data -> PlasticMeltColor.get(data.material()))
+                .orElse(DyeColor.WHITE);
+        }
+        if (entity instanceof AbstractPlasticEntity plastic) return colorOf(plastic.getDropStack());
+        return DyeColor.WHITE;
+    }
+
+    private static DyeColor colorOf(ItemStack stack) {
+        return MoldedPlasticData.get(stack)
+            .map(data -> PlasticMeltColor.get(data.material()))
+            .orElseGet(() -> PlasticMeltColor.get(stack));
     }
 
     @Override

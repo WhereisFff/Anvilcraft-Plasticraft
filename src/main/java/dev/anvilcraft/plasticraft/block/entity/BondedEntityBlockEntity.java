@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.collision.BondedPlasticShapeIndex;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
@@ -116,6 +117,9 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     @Override
     public void setRemoved() {
+        if (this.renderEntity instanceof UniversalPlasticEntity universal) {
+            universal.plasticraft$removeVirtualRedstone();
+        }
         if (this.level != null) BondedPlasticShapeIndex.remove(this.level, this.worldPosition);
         super.setRemoved();
     }
@@ -179,6 +183,15 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     public boolean isHardenedResinAnvil() {
         return this.displayState.is(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get());
+    }
+
+    public boolean isMoldedAnvil() {
+        return this.getOrCreateRenderEntity() instanceof UniversalPlasticEntity universal
+            && universal.isMoldedAnvil();
+    }
+
+    public boolean isAnvil() {
+        return this.isHardenedResinAnvil() || this.isMoldedAnvil();
     }
 
     public boolean isPistonMovable() {
@@ -266,6 +279,9 @@ public class BondedEntityBlockEntity extends BlockEntity
         if (this.renderEntity == null) {
             this.renderEntity = EntityType.loadEntityRecursive(this.entityTag.copy(), this.level, entity -> entity);
         }
+        if (this.renderEntity instanceof UniversalPlasticEntity universal) {
+            universal.setMoldedContentsChangedListener(() -> this.captureCachedEntity(true));
+        }
         this.positionCachedEntity(this.renderEntity);
         return this.renderEntity;
     }
@@ -288,11 +304,9 @@ public class BondedEntityBlockEntity extends BlockEntity
         Vec3 relativeHit = hit.getLocation().subtract(plasticEntity.position());
         InteractionResult result = plasticEntity.interactAt(player, relativeHit, hand);
         if (result == InteractionResult.PASS) {
-            // Keep shift-click semantics identical to the live entity.  The bonded menu
-            // provider is only needed for the normal (non-shift) anvil interaction;
-            // otherwise a shift-click with an empty hand would unexpectedly open a GUI.
+            // 粘合态只在非潜行的普通铁砧交互中补充菜单，否则潜行空手会意外打开界面。
             if (!player.isShiftKeyDown()
-                && plasticEntity instanceof HardenedResinAnvilEntity
+                && hasAnvilMenu(plasticEntity)
                 && player instanceof ServerPlayer serverPlayer) {
                 HardenedResinAnvilMenu.open(serverPlayer, this);
                 player.awardStat(Stats.INTERACT_WITH_ANVIL);
@@ -313,7 +327,7 @@ public class BondedEntityBlockEntity extends BlockEntity
             return InteractionResult.PASS;
         }
         InteractionResult result;
-        if (plasticEntity instanceof HardenedResinAnvilEntity && player instanceof ServerPlayer serverPlayer) {
+        if (hasAnvilMenu(plasticEntity) && player instanceof ServerPlayer serverPlayer) {
             HardenedResinAnvilMenu.open(serverPlayer, this);
             player.awardStat(Stats.INTERACT_WITH_ANVIL);
             player.gameEvent(GameEvent.ENTITY_INTERACT);
@@ -325,6 +339,11 @@ public class BondedEntityBlockEntity extends BlockEntity
         return result;
     }
 
+    private static boolean hasAnvilMenu(AbstractPlasticEntity entity) {
+        return entity instanceof HardenedResinAnvilEntity
+            || entity instanceof UniversalPlasticEntity universal && universal.isMoldedAnvil();
+    }
+
     public void tickFunctionalEntity() {
         if (!(this.level instanceof ServerLevel serverLevel)) return;
         this.tickHammerDeflection(serverLevel);
@@ -333,6 +352,13 @@ public class BondedEntityBlockEntity extends BlockEntity
             lid.plasticraft$tickBonded();
             if (lid.plasticraft$consumeBondedDataDirty()) this.captureCachedEntity(true);
             return;
+        }
+        if (functionalEntity instanceof UniversalPlasticEntity universal) {
+            universal.plasticraft$tickRedstoneConductor();
+            if (universal.isMoldedTray()) {
+                universal.plasticraft$tickBondedTray();
+                return;
+            }
         }
         if (!(functionalEntity instanceof HardenedResinCauldronEntity cauldron)) return;
         cauldron.plasticraft$tickBonded();
@@ -362,15 +388,19 @@ public class BondedEntityBlockEntity extends BlockEntity
     }
 
     public @Nullable IFluidHandler getCapabilityFluidHandler() {
-        return this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron
-            ? cauldron.getFluidHandler()
-            : null;
+        Entity entity = this.getOrCreateRenderEntity();
+        if (entity instanceof HardenedResinCauldronEntity cauldron) return cauldron.getFluidHandler();
+        if (entity instanceof UniversalPlasticEntity universal
+            && universal.getMoldedFluidHandler().getTanks() > 0) return universal.getMoldedFluidHandler();
+        return null;
     }
 
     public @Nullable IItemHandler getItemHandler() {
-        return this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron
-            ? cauldron.getItemHandler()
-            : null;
+        Entity entity = this.getOrCreateRenderEntity();
+        if (entity instanceof HardenedResinCauldronEntity cauldron) return cauldron.getItemHandler();
+        if (entity instanceof UniversalPlasticEntity universal
+            && universal.getMoldedItemHandler().getSlots() > 0) return universal.getMoldedItemHandler();
+        return null;
     }
 
     public boolean clearCauldronOutletFacing(Direction direction) {
@@ -456,6 +486,9 @@ public class BondedEntityBlockEntity extends BlockEntity
     }
 
     public void moved() {
+        if (this.renderEntity instanceof UniversalPlasticEntity universal) {
+            universal.plasticraft$removeVirtualRedstone();
+        }
         this.renderEntity = null;
         this.setChangedAndSync();
         if (this.level != null) {
@@ -472,6 +505,9 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     @Override
     public void loadAdditional(CompoundTag tag, HolderLookup.Provider provider) {
+        if (this.renderEntity instanceof UniversalPlasticEntity universal) {
+            universal.plasticraft$removeVirtualRedstone();
+        }
         super.loadAdditional(tag, provider);
         this.initialized = tag.getBoolean(TAG_INITIALIZED);
         this.entityTag = tag.contains(TAG_ENTITY, Tag.TAG_COMPOUND)

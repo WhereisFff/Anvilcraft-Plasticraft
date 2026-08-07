@@ -36,6 +36,7 @@ public final class PlasticraftItemGroups {
                 output.accept(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem());
                 output.accept(PlasticraftBlocks.CONDENSER_TOWER.asItem());
                 output.accept(PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.asItem());
+                output.accept(PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.asItem());
             })
             .title(Component.translatable(TITLE_KEY))
             // NeoForge 的排序图将 withTabsBefore(X) 记录为 X -> this，

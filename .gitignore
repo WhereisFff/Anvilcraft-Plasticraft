@@ -12,7 +12,8 @@ runs/
 **/build/
 **/.cache/
 local-mods/
-net/
+/net/
+/dev/
 
 # Gradle 包装器必须纳入版本控制。
 !gradle/wrapper/gradle-wrapper.jar

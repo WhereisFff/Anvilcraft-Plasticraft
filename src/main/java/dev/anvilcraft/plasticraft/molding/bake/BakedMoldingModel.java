@@ -12,6 +12,7 @@ public record BakedMoldingModel(
     List<MoldingQuad> surfaceMesh,
     List<MoldingCollisionBox> collisionShape,
     List<MoldingCavity> cavities,
+    MoldingFunctionalAnalysis functionalAnalysis,
     MoldingAnalysis analysis,
     String modelHash
 ) {

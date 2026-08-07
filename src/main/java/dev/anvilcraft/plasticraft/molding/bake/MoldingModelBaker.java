@@ -26,7 +26,6 @@ public final class MoldingModelBaker {
     private static final int BAKED_CACHE_LIMIT = 128;
     private static final int MANUFACTURED_CACHE_LIMIT = 256;
     private static final double EPSILON = 1.0E-7D;
-    private static final int PADDED_SIZE = MoldingVolumeMask.SIZE + 2;
     private static final int[][] CUBE_FACES = {
         {0, 4, 6, 2}, {1, 3, 7, 5},
         {0, 1, 5, 4}, {2, 6, 7, 3},
@@ -68,19 +67,20 @@ public final class MoldingModelBaker {
 
     private static BakedMoldingModel bakeUncached(EditableMoldingModel model, String modelHash) {
         Map<UUID, MoldingGroup> groups = model.groupMap();
-        MoldingVolumeMask volume = new MoldingVolumeMask();
+        BakeSpace space = spaceFor(model);
+        MoldingVolumeMask volume = new MoldingVolumeMask(space.sizeX(), space.sizeY(), space.sizeZ());
         Set<MoldingBarrierFace> barriers = new HashSet<>();
         List<MoldingQuad> zeroThicknessQuads = new ArrayList<>();
 
         for (MoldingElement element : model.elements()) {
             List<MoldingGroup> hierarchy = hierarchy(element, groups);
             if (!element.visible() || hierarchy.stream().anyMatch(group -> !group.visible())) continue;
-            List<MoldingVec3> vertices = transformedVertices(element, hierarchy);
-            validateWorkspace(vertices);
+            List<MoldingVec3> vertices = translatedVertices(element, hierarchy, space.offset());
+            validateWorkspace(vertices, space);
             if (element.hasVolume()) {
-                rasterizeCube(volume, element, hierarchy, vertices);
+                rasterizeCube(volume, element, hierarchy, vertices, space);
             } else {
-                rasterizeZeroThicknessCube(barriers, zeroThicknessQuads, vertices);
+                rasterizeZeroThicknessCube(barriers, zeroThicknessQuads, vertices, space);
             }
         }
 
@@ -89,10 +89,13 @@ public final class MoldingModelBaker {
         surface.addAll(zeroThicknessQuads);
         CollisionResult collision = createCollisionShape(volume);
         List<MoldingCavity> cavities = findCavities(volume, barriers);
+        MoldingFunctionalAnalysis functionalAnalysis = MoldingShellAnalyzer.analyze(volume, barriers)
+            .withAnvilShape(MoldingAnvilShapeAnalyzer.analyze(model, volume))
+            .withTrayShape(MoldingTrayShapeAnalyzer.analyze(volume, surface));
         int cavityVolume = cavities.stream().mapToInt(MoldingCavity::volume).sum();
         boolean hasShape = !volume.isEmpty() || !barriers.isEmpty();
         int minimumMelt = hasShape ? Math.max((volume.volume() + 3) / 4, 250) : 0;
-        int clayBalls = (MoldingVolumeMask.CELL_COUNT - volume.volume() + 1023) / 1024;
+        int clayBalls = (volume.cellCount() - volume.volume() + 1023) / 1024;
         MoldingAnalysis analysis = new MoldingAnalysis(
             volume.volume(),
             barriers.size(),
@@ -112,6 +115,7 @@ public final class MoldingModelBaker {
             surface,
             collision.boxes(),
             cavities,
+            functionalAnalysis,
             analysis,
             modelHash
         );
@@ -119,13 +123,20 @@ public final class MoldingModelBaker {
 
     /** 构造仅供计量和分析使用的已支付体素掩码，不得把它用作制品表面或动态碰撞。 */
     public static MoldingVolumeMask createPaidVolumeMask(BakedMoldingModel baked, int maximumCells) {
+        return createPaidVolumeMask(baked.volumeMask(), baked.fillOrder(), maximumCells);
+    }
+
+    public static MoldingVolumeMask createPaidVolumeMask(
+        MoldingVolumeMask source,
+        int[] fillOrder,
+        int maximumCells
+    ) {
         if (maximumCells < 0) throw new IllegalArgumentException("Manufactured cell count must not be negative");
-        int[] fillOrder = baked.fillOrder();
         int cellCount = Math.min(fillOrder.length, maximumCells);
-        MoldingVolumeMask volume = new MoldingVolumeMask();
+        MoldingVolumeMask volume = new MoldingVolumeMask(source.sizeX(), source.sizeY(), source.sizeZ());
         for (int index = 0; index < cellCount; index++) {
             int cell = fillOrder[index];
-            volume.set(MoldingVolumeMask.x(cell), MoldingVolumeMask.y(cell), MoldingVolumeMask.z(cell));
+            volume.set(source.xOf(cell), source.yOf(cell), source.zOf(cell));
         }
         return volume;
     }
@@ -174,13 +185,86 @@ public final class MoldingModelBaker {
         );
     }
 
+    /** 从持久化的零厚度表面恢复六邻接阻隔面，供内腔与液面算法共用。 */
+    public static Set<MoldingBarrierFace> barrierFacesFromZeroThickness(
+        List<MoldingQuad> zeroThicknessQuads
+    ) {
+        int sizeX = MoldingVolumeMask.SIZE;
+        int sizeY = MoldingVolumeMask.SIZE;
+        int sizeZ = MoldingVolumeMask.SIZE;
+        for (MoldingQuad quad : zeroThicknessQuads) {
+            for (MoldingVec3 point : List.of(quad.first(), quad.second(), quad.third(), quad.fourth())) {
+                sizeX = Math.max(sizeX, (int) Math.ceil(point.x()));
+                sizeY = Math.max(sizeY, (int) Math.ceil(point.y()));
+                sizeZ = Math.max(sizeZ, (int) Math.ceil(point.z()));
+            }
+        }
+        return barrierFacesFromZeroThickness(zeroThicknessQuads, sizeX, sizeY, sizeZ);
+    }
+
+    public static Set<MoldingBarrierFace> barrierFacesFromZeroThickness(
+        List<MoldingQuad> zeroThicknessQuads,
+        MoldingVolumeMask dimensions
+    ) {
+        return barrierFacesFromZeroThickness(
+            zeroThicknessQuads,
+            dimensions.sizeX(),
+            dimensions.sizeY(),
+            dimensions.sizeZ()
+        );
+    }
+
+    private static Set<MoldingBarrierFace> barrierFacesFromZeroThickness(
+        List<MoldingQuad> zeroThicknessQuads,
+        int sizeX,
+        int sizeY,
+        int sizeZ
+    ) {
+        Set<MoldingBarrierFace> barriers = new HashSet<>();
+        for (MoldingQuad quad : zeroThicknessQuads) {
+            if (!quad.doubleSided()) {
+                throw new IllegalArgumentException("Manufactured zero-thickness surfaces must be double-sided");
+            }
+            List<MoldingVec3> vertices = List.of(quad.first(), quad.second(), quad.third(), quad.fourth());
+            Bounds bounds = Bounds.of(vertices);
+            scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.X, sizeX, sizeY, sizeZ);
+            scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.Y, sizeX, sizeY, sizeZ);
+            scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.Z, sizeX, sizeY, sizeZ);
+        }
+        return Set.copyOf(barriers);
+    }
+
     private static boolean touchesFormedVolume(MoldingQuad quad, MoldingVolumeMask volume) {
         List<MoldingVec3> vertices = List.of(quad.first(), quad.second(), quad.third(), quad.fourth());
         Bounds bounds = Bounds.of(vertices);
         Set<MoldingBarrierFace> barriers = new HashSet<>();
-        scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.X);
-        scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.Y);
-        scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.Z);
+        scanZeroThicknessAxis(
+            barriers,
+            vertices,
+            bounds,
+            MoldingFaceDirection.Axis.X,
+            volume.sizeX(),
+            volume.sizeY(),
+            volume.sizeZ()
+        );
+        scanZeroThicknessAxis(
+            barriers,
+            vertices,
+            bounds,
+            MoldingFaceDirection.Axis.Y,
+            volume.sizeX(),
+            volume.sizeY(),
+            volume.sizeZ()
+        );
+        scanZeroThicknessAxis(
+            barriers,
+            vertices,
+            bounds,
+            MoldingFaceDirection.Axis.Z,
+            volume.sizeX(),
+            volume.sizeY(),
+            volume.sizeZ()
+        );
         return barriers.stream().anyMatch(barrier -> hasFormedCellBeside(barrier, volume));
     }
 
@@ -252,6 +336,7 @@ public final class MoldingModelBaker {
         EditableMoldingModel model,
         double formedProportion
     ) {
+        BakeSpace space = spaceFor(model);
         Map<UUID, MoldingGroup> groups = model.groupMap();
         List<ElementGeometry> elements = new ArrayList<>();
         double minimumY = Double.POSITIVE_INFINITY;
@@ -259,8 +344,8 @@ public final class MoldingModelBaker {
         for (MoldingElement element : model.elements()) {
             List<MoldingGroup> hierarchy = hierarchy(element, groups);
             if (!element.visible() || hierarchy.stream().anyMatch(group -> !group.visible())) continue;
-            List<MoldingVec3> vertices = transformedVertices(element, hierarchy);
-            validateWorkspace(vertices);
+            List<MoldingVec3> vertices = translatedVertices(element, hierarchy, space.offset());
+            validateWorkspace(vertices, space);
             elements.add(new ElementGeometry(element.hasVolume(), vertices));
             for (MoldingVec3 vertex : vertices) {
                 minimumY = Math.min(minimumY, vertex.y());
@@ -517,6 +602,49 @@ public final class MoldingModelBaker {
             .toList();
     }
 
+    private static List<MoldingVec3> translatedVertices(
+        MoldingElement element,
+        List<MoldingGroup> hierarchy,
+        MoldingVec3 offset
+    ) {
+        return transformedVertices(element, hierarchy).stream().map(vertex -> vertex.add(offset)).toList();
+    }
+
+    /** 根据模型外接范围选择兼容的烘焙坐标空间，超限模型平移到局部原点。 */
+    private static BakeSpace spaceFor(EditableMoldingModel model) {
+        Map<UUID, MoldingGroup> groups = model.groupMap();
+        MoldingVec3 minimum = null;
+        MoldingVec3 maximum = null;
+        for (MoldingElement element : model.elements()) {
+            List<MoldingGroup> hierarchy = hierarchy(element, groups);
+            for (MoldingVec3 vertex : transformedVertices(element, hierarchy)) {
+                minimum = minimum == null ? vertex : minimum.min(vertex);
+                maximum = maximum == null ? vertex : maximum.max(vertex);
+            }
+        }
+        if (minimum == null) return new BakeSpace(48, 48, 48, MoldingVec3.ZERO);
+        MoldingVec3 size = maximum.subtract(minimum);
+        if (minimum.x() >= -EPSILON && minimum.y() >= -EPSILON && minimum.z() >= -EPSILON
+            && maximum.x() <= 48.0D + EPSILON && maximum.y() <= 48.0D + EPSILON
+            && maximum.z() <= 48.0D + EPSILON) {
+            return new BakeSpace(48, 48, 48, MoldingVec3.ZERO);
+        }
+        int minX = (int) Math.floor(minimum.x());
+        int minY = (int) Math.floor(minimum.y());
+        int minZ = (int) Math.floor(minimum.z());
+        int maxX = (int) Math.ceil(maximum.x());
+        int maxY = (int) Math.ceil(maximum.y());
+        int maxZ = (int) Math.ceil(maximum.z());
+        int sizeX = Math.max(1, maxX - minX);
+        int sizeY = Math.max(1, maxY - minY);
+        int sizeZ = Math.max(1, maxZ - minZ);
+        if (sizeX > MoldingVolumeMask.MAX_SIZE || sizeY > MoldingVolumeMask.MAX_SIZE
+            || sizeZ > MoldingVolumeMask.MAX_SIZE) {
+            throw new IllegalArgumentException("Molding model exceeds the supported dynamic workspace");
+        }
+        return new BakeSpace(sizeX, sizeY, sizeZ, new MoldingVec3(-minX, -minY, -minZ));
+    }
+
     private static MoldingVec3 applyTransforms(
         MoldingVec3 point,
         MoldingTransform elementTransform,
@@ -539,12 +667,12 @@ public final class MoldingModelBaker {
         return elementTransform.inverse(result);
     }
 
-    private static void validateWorkspace(List<MoldingVec3> vertices) {
+    private static void validateWorkspace(List<MoldingVec3> vertices, BakeSpace space) {
         for (MoldingVec3 vertex : vertices) {
-            if (vertex.x() < -EPSILON || vertex.x() > MoldingVolumeMask.SIZE + EPSILON
-                || vertex.y() < -EPSILON || vertex.y() > MoldingVolumeMask.SIZE + EPSILON
-                || vertex.z() < -EPSILON || vertex.z() > MoldingVolumeMask.SIZE + EPSILON) {
-                throw new IllegalArgumentException("Molding element extends outside the 48x48x48 workspace");
+            if (vertex.x() < -EPSILON || vertex.x() > space.sizeX() + EPSILON
+                || vertex.y() < -EPSILON || vertex.y() > space.sizeY() + EPSILON
+                || vertex.z() < -EPSILON || vertex.z() > space.sizeZ() + EPSILON) {
+                throw new IllegalArgumentException("Molding element exceeds the supported molding workspace");
             }
         }
     }
@@ -553,20 +681,21 @@ public final class MoldingModelBaker {
         MoldingVolumeMask volume,
         MoldingElement element,
         List<MoldingGroup> hierarchy,
-        List<MoldingVec3> vertices
+        List<MoldingVec3> vertices,
+        BakeSpace space
     ) {
         Bounds bounds = Bounds.of(vertices);
-        int minX = cellMinimum(bounds.min().x());
-        int minY = cellMinimum(bounds.min().y());
-        int minZ = cellMinimum(bounds.min().z());
-        int maxX = cellMaximum(bounds.max().x());
-        int maxY = cellMaximum(bounds.max().y());
-        int maxZ = cellMaximum(bounds.max().z());
+        int minX = cellMinimum(bounds.min().x(), space.sizeX());
+        int minY = cellMinimum(bounds.min().y(), space.sizeY());
+        int minZ = cellMinimum(bounds.min().z(), space.sizeZ());
+        int maxX = cellMaximum(bounds.max().x(), space.sizeX());
+        int maxY = cellMaximum(bounds.max().y(), space.sizeY());
+        int maxZ = cellMaximum(bounds.max().z(), space.sizeZ());
         for (int y = minY; y <= maxY; y++) {
             for (int x = minX; x <= maxX; x++) {
                 for (int z = minZ; z <= maxZ; z++) {
                     MoldingVec3 local = inverseTransforms(
-                        new MoldingVec3(x + 0.5D, y + 0.5D, z + 0.5D),
+                        new MoldingVec3(x + 0.5D, y + 0.5D, z + 0.5D).subtract(space.offset()),
                         element.transform(),
                         hierarchy
                     );
@@ -587,25 +716,29 @@ public final class MoldingModelBaker {
             && value <= Math.max(first, second) + EPSILON;
     }
 
-    private static int cellMinimum(double coordinate) {
-        return Math.clamp((int) Math.floor(coordinate), 0, MoldingVolumeMask.SIZE - 1);
+    private static int cellMinimum(double coordinate, int size) {
+        return Math.clamp((int) Math.floor(coordinate), 0, size - 1);
     }
 
-    private static int cellMaximum(double coordinate) {
-        return Math.clamp((int) Math.ceil(coordinate) - 1, 0, MoldingVolumeMask.SIZE - 1);
+    private static int cellMaximum(double coordinate, int size) {
+        return Math.clamp((int) Math.ceil(coordinate) - 1, 0, size - 1);
     }
 
     private static void rasterizeZeroThicknessCube(
         Set<MoldingBarrierFace> barriers,
         List<MoldingQuad> surface,
-        List<MoldingVec3> vertices
+        List<MoldingVec3> vertices,
+        BakeSpace space
     ) {
         surface.add(createZeroThicknessQuad(vertices));
 
         Bounds bounds = Bounds.of(vertices);
-        scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.X);
-        scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.Y);
-        scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.Z);
+        scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.X,
+            space.sizeX(), space.sizeY(), space.sizeZ());
+        scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.Y,
+            space.sizeX(), space.sizeY(), space.sizeZ());
+        scanZeroThicknessAxis(barriers, vertices, bounds, MoldingFaceDirection.Axis.Z,
+            space.sizeX(), space.sizeY(), space.sizeZ());
     }
 
     private static MoldingQuad createZeroThicknessQuad(List<MoldingVec3> vertices) {
@@ -630,7 +763,10 @@ public final class MoldingModelBaker {
         Set<MoldingBarrierFace> barriers,
         List<MoldingVec3> vertices,
         Bounds bounds,
-        MoldingFaceDirection.Axis axis
+        MoldingFaceDirection.Axis axis,
+        int sizeX,
+        int sizeY,
+        int sizeZ
     ) {
         double axialMin = component(bounds.min(), axis);
         double axialMax = component(bounds.max(), axis);
@@ -640,12 +776,18 @@ public final class MoldingModelBaker {
         MoldingFaceDirection.Axis vAxis = axis == MoldingFaceDirection.Axis.Z
             ? MoldingFaceDirection.Axis.Y
             : MoldingFaceDirection.Axis.Z;
-        int minPlane = Math.clamp((int) Math.ceil(axialMin - 0.5D - EPSILON), 0, MoldingVolumeMask.SIZE);
-        int maxPlane = Math.clamp((int) Math.floor(axialMax + 0.5D + EPSILON), 0, MoldingVolumeMask.SIZE);
-        int minU = transverseMinimum(component(bounds.min(), uAxis));
-        int maxU = transverseMaximum(component(bounds.max(), uAxis));
-        int minV = transverseMinimum(component(bounds.min(), vAxis));
-        int maxV = transverseMaximum(component(bounds.max(), vAxis));
+        int axialSize = axis == MoldingFaceDirection.Axis.X ? sizeX
+            : axis == MoldingFaceDirection.Axis.Y ? sizeY : sizeZ;
+        int uSize = uAxis == MoldingFaceDirection.Axis.X ? sizeX
+            : uAxis == MoldingFaceDirection.Axis.Y ? sizeY : sizeZ;
+        int vSize = vAxis == MoldingFaceDirection.Axis.X ? sizeX
+            : vAxis == MoldingFaceDirection.Axis.Y ? sizeY : sizeZ;
+        int minPlane = Math.clamp((int) Math.ceil(axialMin - 0.5D - EPSILON), 0, axialSize);
+        int maxPlane = Math.clamp((int) Math.floor(axialMax + 0.5D + EPSILON), 0, axialSize);
+        int minU = transverseMinimum(component(bounds.min(), uAxis), uSize);
+        int maxU = transverseMaximum(component(bounds.max(), uAxis), uSize);
+        int minV = transverseMinimum(component(bounds.min(), vAxis), vSize);
+        int maxV = transverseMaximum(component(bounds.max(), vAxis), vSize);
 
         for (int plane = minPlane; plane <= maxPlane; plane++) {
             for (int u = minU; u <= maxU; u++) {
@@ -660,12 +802,12 @@ public final class MoldingModelBaker {
         }
     }
 
-    private static int transverseMinimum(double coordinate) {
-        return Math.clamp((int) Math.ceil(coordinate - 0.5D - EPSILON) - 1, 0, MoldingVolumeMask.SIZE - 1);
+    private static int transverseMinimum(double coordinate, int size) {
+        return Math.clamp((int) Math.ceil(coordinate - 0.5D - EPSILON) - 1, 0, size - 1);
     }
 
-    private static int transverseMaximum(double coordinate) {
-        return Math.clamp((int) Math.floor(coordinate - 0.5D + EPSILON) + 1, 0, MoldingVolumeMask.SIZE - 1);
+    private static int transverseMaximum(double coordinate, int size) {
+        return Math.clamp((int) Math.floor(coordinate - 0.5D + EPSILON) + 1, 0, size - 1);
     }
 
     private static double component(MoldingVec3 value, MoldingFaceDirection.Axis axis) {
@@ -725,10 +867,10 @@ public final class MoldingModelBaker {
     private static int[] createFillOrder(MoldingVolumeMask volume) {
         int[] result = new int[volume.volume()];
         int output = 0;
-        for (int y = 0; y < MoldingVolumeMask.SIZE; y++) {
-            for (int x = 0; x < MoldingVolumeMask.SIZE; x++) {
-                for (int z = 0; z < MoldingVolumeMask.SIZE; z++) {
-                    if (volume.get(x, y, z)) result[output++] = MoldingVolumeMask.index(x, y, z);
+        for (int y = 0; y < volume.sizeY(); y++) {
+            for (int x = 0; x < volume.sizeX(); x++) {
+                for (int z = 0; z < volume.sizeZ(); z++) {
+                    if (volume.get(x, y, z)) result[output++] = volume.indexOf(x, y, z);
                 }
             }
         }
@@ -746,15 +888,38 @@ public final class MoldingModelBaker {
         MoldingFaceDirection direction,
         List<MoldingQuad> output
     ) {
-        for (int plane = 0; plane <= MoldingVolumeMask.SIZE; plane++) {
-            boolean[][] active = new boolean[MoldingVolumeMask.SIZE][MoldingVolumeMask.SIZE];
-            for (int u = 0; u < MoldingVolumeMask.SIZE; u++) {
-                for (int v = 0; v < MoldingVolumeMask.SIZE; v++) {
+        int planeSize = axisSize(volume, direction.axis());
+        int uSize = transverseSize(volume, direction.axis(), false);
+        int vSize = transverseSize(volume, direction.axis(), true);
+        for (int plane = 0; plane <= planeSize; plane++) {
+            boolean[][] active = new boolean[uSize][vSize];
+            for (int u = 0; u < uSize; u++) {
+                for (int v = 0; v < vSize; v++) {
                     active[u][v] = hasExposedFace(volume, direction, plane, u, v);
                 }
             }
-            mergeSurfacePlane(active, direction, plane, output);
+            mergeSurfacePlane(active, direction, plane, uSize, vSize, output);
         }
+    }
+
+    private static int axisSize(MoldingVolumeMask volume, MoldingFaceDirection.Axis axis) {
+        return switch (axis) {
+            case X -> volume.sizeX();
+            case Y -> volume.sizeY();
+            case Z -> volume.sizeZ();
+        };
+    }
+
+    private static int transverseSize(
+        MoldingVolumeMask volume,
+        MoldingFaceDirection.Axis axis,
+        boolean second
+    ) {
+        return switch (axis) {
+            case X -> second ? volume.sizeZ() : volume.sizeY();
+            case Y -> second ? volume.sizeZ() : volume.sizeX();
+            case Z -> second ? volume.sizeY() : volume.sizeX();
+        };
     }
 
     private static boolean hasExposedFace(
@@ -778,15 +943,17 @@ public final class MoldingModelBaker {
         boolean[][] active,
         MoldingFaceDirection direction,
         int plane,
+        int uSize,
+        int vSize,
         List<MoldingQuad> output
     ) {
-        for (int u = 0; u < MoldingVolumeMask.SIZE; u++) {
-            for (int v = 0; v < MoldingVolumeMask.SIZE; v++) {
+        for (int u = 0; u < uSize; u++) {
+            for (int v = 0; v < vSize; v++) {
                 if (!active[u][v]) continue;
                 int vLength = 1;
-                while (v + vLength < MoldingVolumeMask.SIZE && active[u][v + vLength]) vLength++;
+                while (v + vLength < vSize && active[u][v + vLength]) vLength++;
                 int uLength = 1;
-                while (u + uLength < MoldingVolumeMask.SIZE
+                while (u + uLength < uSize
                     && rowActive(active, u + uLength, v, vLength)) {
                     uLength++;
                 }
@@ -850,12 +1017,12 @@ public final class MoldingModelBaker {
     }
 
     private static CollisionResult createCollisionShape(MoldingVolumeMask volume) {
-        BitSet consumed = new BitSet(MoldingVolumeMask.CELL_COUNT);
+        BitSet consumed = new BitSet(volume.cellCount());
         List<MoldingCollisionBox> boxes = new ArrayList<>();
-        for (int y = 0; y < MoldingVolumeMask.SIZE; y++) {
-            for (int x = 0; x < MoldingVolumeMask.SIZE; x++) {
-                for (int z = 0; z < MoldingVolumeMask.SIZE; z++) {
-                    int index = MoldingVolumeMask.index(x, y, z);
+        for (int y = 0; y < volume.sizeY(); y++) {
+            for (int x = 0; x < volume.sizeX(); x++) {
+                for (int z = 0; z < volume.sizeZ(); z++) {
+                    int index = volume.indexOf(x, y, z);
                     if (!volume.get(x, y, z) || consumed.get(index)) continue;
                     if (boxes.size() >= MAX_COLLISION_BOXES) {
                         return new CollisionResult(boxes, true);
@@ -863,7 +1030,7 @@ public final class MoldingModelBaker {
                     int maxX = extendX(volume, consumed, x, y, z);
                     int maxZ = extendZ(volume, consumed, x, maxX, y, z);
                     int maxY = extendY(volume, consumed, x, maxX, y, z, maxZ);
-                    markConsumed(consumed, x, maxX, y, maxY, z, maxZ);
+                    markConsumed(volume, consumed, x, maxX, y, maxY, z, maxZ);
                     boxes.add(new MoldingCollisionBox(x, y, z, maxX, maxY, maxZ));
                 }
             }
@@ -873,7 +1040,7 @@ public final class MoldingModelBaker {
 
     private static int extendX(MoldingVolumeMask volume, BitSet consumed, int x, int y, int z) {
         int result = x + 1;
-        while (result < MoldingVolumeMask.SIZE
+        while (result < volume.sizeX()
             && available(volume, consumed, result, y, z)) {
             result++;
         }
@@ -889,7 +1056,7 @@ public final class MoldingModelBaker {
         int z
     ) {
         int result = z + 1;
-        while (result < MoldingVolumeMask.SIZE
+        while (result < volume.sizeZ()
             && layerAvailable(volume, consumed, minX, maxX, y, result, result + 1)) {
             result++;
         }
@@ -906,7 +1073,7 @@ public final class MoldingModelBaker {
         int maxZ
     ) {
         int result = y + 1;
-        while (result < MoldingVolumeMask.SIZE
+        while (result < volume.sizeY()
             && layerAvailable(volume, consumed, minX, maxX, result, minZ, maxZ)) {
             result++;
         }
@@ -937,10 +1104,11 @@ public final class MoldingModelBaker {
         int y,
         int z
     ) {
-        return volume.get(x, y, z) && !consumed.get(MoldingVolumeMask.index(x, y, z));
+        return volume.get(x, y, z) && !consumed.get(volume.indexOf(x, y, z));
     }
 
     private static void markConsumed(
+        MoldingVolumeMask volume,
         BitSet consumed,
         int minX,
         int maxX,
@@ -952,7 +1120,7 @@ public final class MoldingModelBaker {
         for (int y = minY; y < maxY; y++) {
             for (int x = minX; x < maxX; x++) {
                 for (int z = minZ; z < maxZ; z++) {
-                    consumed.set(MoldingVolumeMask.index(x, y, z));
+                    consumed.set(volume.indexOf(x, y, z));
                 }
             }
         }
@@ -962,21 +1130,24 @@ public final class MoldingModelBaker {
         MoldingVolumeMask volume,
         Set<MoldingBarrierFace> barriers
     ) {
-        BitSet exterior = new BitSet(PADDED_SIZE * PADDED_SIZE * PADDED_SIZE);
+        int paddedX = volume.sizeX() + 2;
+        int paddedY = volume.sizeY() + 2;
+        int paddedZ = volume.sizeZ() + 2;
+        BitSet exterior = new BitSet(paddedX * paddedY * paddedZ);
         flood(volume, barriers, -1, -1, -1, exterior, null);
-        BitSet assigned = new BitSet(MoldingVolumeMask.CELL_COUNT);
+        BitSet assigned = new BitSet(volume.cellCount());
         List<MoldingCavity> cavities = new ArrayList<>();
-        for (int y = 0; y < MoldingVolumeMask.SIZE; y++) {
-            for (int x = 0; x < MoldingVolumeMask.SIZE; x++) {
-                for (int z = 0; z < MoldingVolumeMask.SIZE; z++) {
-                    int volumeIndex = MoldingVolumeMask.index(x, y, z);
+        for (int y = 0; y < volume.sizeY(); y++) {
+            for (int x = 0; x < volume.sizeX(); x++) {
+                for (int z = 0; z < volume.sizeZ(); z++) {
+                    int volumeIndex = volume.indexOf(x, y, z);
                     if (volume.get(x, y, z)
-                        || exterior.get(paddedIndex(x, y, z))
+                        || exterior.get(paddedIndex(volume, x, y, z))
                         || assigned.get(volumeIndex)) {
                         continue;
                     }
-                    BitSet component = new BitSet(MoldingVolumeMask.CELL_COUNT);
-                    BoundsAccumulator bounds = new BoundsAccumulator();
+                    BitSet component = new BitSet(volume.cellCount());
+                    BoundsAccumulator bounds = new BoundsAccumulator(volume);
                     flood(volume, barriers, x, y, z, assigned, new CavityOutput(component, bounds));
                     cavities.add(bounds.toCavity(component));
                 }
@@ -998,10 +1169,11 @@ public final class MoldingModelBaker {
         queue.add(new GridCell(startX, startY, startZ));
         while (!queue.isEmpty()) {
             GridCell cell = queue.removeFirst();
-            if (!inPaddedBounds(cell.x(), cell.y(), cell.z()) || volume.get(cell.x(), cell.y(), cell.z())) continue;
+            if (!inPaddedBounds(volume, cell.x(), cell.y(), cell.z())
+                || volume.get(cell.x(), cell.y(), cell.z())) continue;
             int visitIndex = cavity == null
-                ? paddedIndex(cell.x(), cell.y(), cell.z())
-                : MoldingVolumeMask.index(cell.x(), cell.y(), cell.z());
+                ? paddedIndex(volume, cell.x(), cell.y(), cell.z())
+                : volume.indexOf(cell.x(), cell.y(), cell.z());
             if (visited.get(visitIndex)) continue;
             visited.set(visitIndex);
             if (cavity != null) {
@@ -1014,8 +1186,8 @@ public final class MoldingModelBaker {
                     cell.y() + direction.stepY(),
                     cell.z() + direction.stepZ()
                 );
-                if (!inPaddedBounds(next.x(), next.y(), next.z())
-                    || blocked(barriers, cell, direction)) {
+                if (!inPaddedBounds(volume, next.x(), next.y(), next.z())
+                    || blocked(volume, barriers, cell, direction)) {
                     continue;
                 }
                 queue.addLast(next);
@@ -1024,6 +1196,7 @@ public final class MoldingModelBaker {
     }
 
     private static boolean blocked(
+        MoldingVolumeMask volume,
         Set<MoldingBarrierFace> barriers,
         GridCell cell,
         MoldingFaceDirection direction
@@ -1032,29 +1205,43 @@ public final class MoldingModelBaker {
         int y = cell.y();
         int z = cell.z();
         return switch (direction.axis()) {
-            case X -> y >= 0 && y < MoldingVolumeMask.SIZE && z >= 0 && z < MoldingVolumeMask.SIZE
+            case X -> transitionCoordinate(x, direction.stepX(), volume.sizeX())
+                && y >= 0 && y < volume.sizeY() && z >= 0 && z < volume.sizeZ()
                 && barriers.contains(MoldingBarrierFace.between(x, y, z, direction));
-            case Y -> x >= 0 && x < MoldingVolumeMask.SIZE && z >= 0 && z < MoldingVolumeMask.SIZE
+            case Y -> transitionCoordinate(y, direction.stepY(), volume.sizeY())
+                && x >= 0 && x < volume.sizeX() && z >= 0 && z < volume.sizeZ()
                 && barriers.contains(MoldingBarrierFace.between(x, y, z, direction));
-            case Z -> x >= 0 && x < MoldingVolumeMask.SIZE && y >= 0 && y < MoldingVolumeMask.SIZE
+            case Z -> transitionCoordinate(z, direction.stepZ(), volume.sizeZ())
+                && x >= 0 && x < volume.sizeX() && y >= 0 && y < volume.sizeY()
                 && barriers.contains(MoldingBarrierFace.between(x, y, z, direction));
         };
     }
 
-    private static boolean inPaddedBounds(int x, int y, int z) {
-        return x >= -1 && x <= MoldingVolumeMask.SIZE
-            && y >= -1 && y <= MoldingVolumeMask.SIZE
-            && z >= -1 && z <= MoldingVolumeMask.SIZE;
+    private static boolean transitionCoordinate(int coordinate, int step, int size) {
+        return coordinate >= 0 && coordinate < size
+            || coordinate == -1 && step > 0
+            || coordinate == size && step < 0;
     }
 
-    private static int paddedIndex(int x, int y, int z) {
-        return ((y + 1) * PADDED_SIZE + x + 1) * PADDED_SIZE + z + 1;
+    private static boolean inPaddedBounds(MoldingVolumeMask volume, int x, int y, int z) {
+        return x >= -1 && x <= volume.sizeX()
+            && y >= -1 && y <= volume.sizeY()
+            && z >= -1 && z <= volume.sizeZ();
+    }
+
+    private static int paddedIndex(MoldingVolumeMask volume, int x, int y, int z) {
+        int paddedX = volume.sizeX() + 2;
+        int paddedZ = volume.sizeZ() + 2;
+        return ((y + 1) * paddedX + x + 1) * paddedZ + z + 1;
     }
 
     private record ElementGeometry(boolean hasVolume, List<MoldingVec3> vertices) {
         private ElementGeometry {
             vertices = List.copyOf(vertices);
         }
+    }
+
+    private record BakeSpace(int sizeX, int sizeY, int sizeZ, MoldingVec3 offset) {
     }
 
     private record FacePolygon(List<MoldingVec3> vertices, MoldingVec3 normal) {
@@ -1085,12 +1272,18 @@ public final class MoldingModelBaker {
     }
 
     private static final class BoundsAccumulator {
-        private int minX = MoldingVolumeMask.SIZE;
-        private int minY = MoldingVolumeMask.SIZE;
-        private int minZ = MoldingVolumeMask.SIZE;
+        private int minX;
+        private int minY;
+        private int minZ;
         private int maxX;
         private int maxY;
         private int maxZ;
+
+        private BoundsAccumulator(MoldingVolumeMask volume) {
+            this.minX = volume.sizeX();
+            this.minY = volume.sizeY();
+            this.minZ = volume.sizeZ();
+        }
 
         private void include(int x, int y, int z) {
             this.minX = Math.min(this.minX, x);

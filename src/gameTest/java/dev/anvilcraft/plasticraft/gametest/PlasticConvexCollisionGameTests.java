@@ -539,9 +539,18 @@ public final class PlasticConvexCollisionGameTests {
             cauldron.getY() + playerBox.maxY - innerCeilingMinY,
             cauldron.getZ()
         );
+        runUpsideDownCauldronReversalTest(helper, player, cauldron, "inner ceiling");
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("5x5x5")
+    @TestHolder(description = "Carrier prediction reconciles coalesced server movement without drift")
+    static void carrierPredictionReconcilesCoalescedMovement(ExtendedGameTestHelper helper) {
         assertPredictionReversal(new Vec3(0.12D, 0.0D, 0.0D));
         assertPredictionReversal(new Vec3(0.0D, 0.0D, 0.12D));
-        runUpsideDownCauldronReversalTest(helper, player, cauldron, "inner ceiling");
+        assertPredictionCoalescing(new Vec3(0.12D, 0.0D, 0.0D));
+        assertPredictionCoalescing(new Vec3(0.0D, 0.0D, 0.12D));
+        helper.succeed();
     }
 
     private static void assertAxisCandidatePruning(Direction.Axis axis, double requestedMovement) {
@@ -1245,6 +1254,66 @@ public final class PlasticConvexCollisionGameTests {
             Math.abs(quantizedPrediction.remainingTravel() - reverse.length()) <= EPSILON,
             "quantized forward snapshot changed the remaining reverse travel"
         );
+    }
+
+    private static void assertPredictionCoalescing(Vec3 forward) {
+        Vec3 reverse = forward.scale(-1.0D);
+        PlasticCarrierPrediction coalescedPrediction = new PlasticCarrierPrediction();
+        coalescedPrediction.add(forward);
+        coalescedPrediction.add(reverse);
+        coalescedPrediction.add(forward);
+        Vec3 localEndpoint = coalescedPrediction.pendingMovement();
+        check(coalescedPrediction.reconcile(forward), "coalesced carrier path was not confirmed");
+        check(coalescedPrediction.isEmpty(), "coalesced carrier path retained a closed reversal");
+        check(
+            forward.add(coalescedPrediction.pendingMovement()).distanceToSqr(localEndpoint)
+                <= EPSILON * EPSILON,
+            "coalesced carrier snapshot changed the local endpoint"
+        );
+
+        PlasticCarrierPrediction closedPrediction = new PlasticCarrierPrediction();
+        closedPrediction.add(forward);
+        closedPrediction.add(reverse);
+        check(closedPrediction.reconcile(Vec3.ZERO), "zero-net carrier path was not confirmed");
+        check(closedPrediction.isEmpty(), "zero-net carrier path retained stale travel");
+
+        PlasticCarrierPrediction shortPrediction = new PlasticCarrierPrediction();
+        shortPrediction.add(forward);
+        Vec3 shortServerMovement = forward.scale(0.997D);
+        check(shortPrediction.reconcile(shortServerMovement), "short carrier snapshot was not confirmed");
+        check(
+            shortServerMovement.add(shortPrediction.pendingMovement()).distanceToSqr(forward)
+                <= EPSILON * EPSILON,
+            "short carrier snapshot changed the local endpoint"
+        );
+
+        PlasticCarrierPrediction overshootPrediction = new PlasticCarrierPrediction();
+        overshootPrediction.add(forward);
+        Vec3 overshoot = forward.add(forward.normalize().scale(1.0E-3D));
+        check(overshootPrediction.reconcile(overshoot), "carrier snapshot overshoot was not confirmed");
+        check(overshootPrediction.isEmpty(), "carrier snapshot overshoot retained confirmed travel");
+
+        PlasticCarrierPrediction unmatchedPrediction = new PlasticCarrierPrediction();
+        unmatchedPrediction.add(forward);
+        double unmatchedTravel = unmatchedPrediction.remainingTravel();
+        check(!unmatchedPrediction.reconcile(reverse), "opposite server movement confirmed the carrier path");
+        check(
+            unmatchedPrediction.pendingMovement().distanceToSqr(forward) <= EPSILON * EPSILON
+                && Math.abs(unmatchedPrediction.remainingTravel() - unmatchedTravel) <= EPSILON,
+            "opposite server movement discarded the carrier path"
+        );
+
+        PlasticCarrierPrediction continuousPrediction = new PlasticCarrierPrediction();
+        Vec3 serverBatch = forward.scale(3.0D).add(forward.normalize().scale(1.0E-3D));
+        for (int batch = 0; batch < 64; batch++) {
+            continuousPrediction.add(forward);
+            continuousPrediction.add(forward);
+            continuousPrediction.add(forward);
+            check(continuousPrediction.reconcile(serverBatch),
+                "continuous carrier batch " + batch + " was not confirmed");
+            check(continuousPrediction.isEmpty(),
+                "continuous carrier batch " + batch + " retained confirmed travel");
+        }
     }
 
     private static void check(boolean condition, String message) {

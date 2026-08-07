@@ -139,6 +139,10 @@ public final class MoldingModelStreams {
             }
             case MoldingCommand.Undo ignored -> buffer.writeByte(8);
             case MoldingCommand.Redo ignored -> buffer.writeByte(9);
+            case MoldingCommand.SetRequestedType setType -> {
+                buffer.writeByte(10);
+                ResourceLocation.STREAM_CODEC.encode(buffer, setType.type());
+            }
         }
     }
 
@@ -169,6 +173,7 @@ public final class MoldingModelStreams {
             }
             case 8 -> new MoldingCommand.Undo();
             case 9 -> new MoldingCommand.Redo();
+            case 10 -> new MoldingCommand.SetRequestedType(ResourceLocation.STREAM_CODEC.decode(buffer));
             default -> throw new IllegalArgumentException("Invalid molding command type");
         };
     }

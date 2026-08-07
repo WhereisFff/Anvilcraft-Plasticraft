@@ -5,7 +5,9 @@ public enum MoldingMachineAction {
     TOGGLE_LOCK(0),
     SET_MODE(1),
     SET_CLAY_LIMIT(2),
-    INTERACT_STAGING_FLUID(3);
+    INTERACT_STAGING_FLUID(3),
+    // 保留协议 ID，成型方式现由顶部是否安装打印组件自动判定。
+    SET_FORMING_MODE(4);
 
     private final int protocolId;
 

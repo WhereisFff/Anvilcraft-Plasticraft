@@ -12,6 +12,10 @@ import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveInvisibilityService;
 import dev.anvilcraft.plasticraft.event.HighViscosityResinEvents;
 import dev.anvilcraft.plasticraft.event.PlasticVillagerTrades;
 import dev.anvilcraft.plasticraft.fluid.UniversalPlasticMeltBucketWrapper;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticFluidHandler;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticItemHandler;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import dev.anvilcraft.plasticraft.init.PlasticraftDataComponents;
 import dev.anvilcraft.plasticraft.init.PlasticraftMenuTypes;
@@ -102,6 +106,24 @@ public final class AnvilcraftPlasticraft {
             PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
             (cauldron, side) -> cauldron.getFluidHandler()
         );
+        event.registerEntity(
+            Capabilities.ItemHandler.ENTITY,
+            PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
+            (plastic, side) -> plastic.getMoldedItemHandler().getSlots() > 0
+                ? plastic.getMoldedItemHandler() : null
+        );
+        event.registerEntity(
+            Capabilities.ItemHandler.ENTITY_AUTOMATION,
+            PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
+            (plastic, side) -> plastic.getMoldedItemHandler().getSlots() > 0
+                ? plastic.getMoldedItemHandler() : null
+        );
+        event.registerEntity(
+            Capabilities.FluidHandler.ENTITY,
+            PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
+            (plastic, side) -> plastic.getMoldedFluidHandler().getTanks() > 0
+                ? plastic.getMoldedFluidHandler() : null
+        );
         event.registerBlockEntity(
             Capabilities.FluidHandler.BLOCK,
             PlasticraftBlockEntities.BONDED_ENTITY.get(),
@@ -143,6 +165,29 @@ public final class AnvilcraftPlasticraft {
             Capabilities.FluidHandler.ITEM,
             (stack, ignored) -> new UniversalPlasticMeltBucketWrapper(stack),
             PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.get()
+        );
+        event.registerItem(
+            Capabilities.ItemHandler.ITEM,
+            (stack, ignored) -> MoldedPlasticData.get(stack)
+                .filter(data -> stack.getCount() == 1 && MoldingProductTypes.isChest(data.finalType()))
+                .map(data -> new MoldedPlasticItemHandler(
+                    () -> MoldedPlasticData.get(stack),
+                    replacement -> MoldedPlasticData.set(stack, replacement)
+                ))
+                .orElse(null),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.asItem()
+        );
+        event.registerItem(
+            Capabilities.FluidHandler.ITEM,
+            (stack, ignored) -> MoldedPlasticData.get(stack)
+                .filter(data -> stack.getCount() == 1 && MoldingProductTypes.isTank(data.finalType()))
+                .map(data -> new MoldedPlasticFluidHandler(
+                    () -> MoldedPlasticData.get(stack),
+                    replacement -> MoldedPlasticData.set(stack, replacement),
+                    () -> stack
+                ))
+                .orElse(null),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.asItem()
         );
     }
 

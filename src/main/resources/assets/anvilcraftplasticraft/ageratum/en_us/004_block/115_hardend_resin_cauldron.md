@@ -12,7 +12,7 @@ items:
 
 <recipe id="anvilcraftplasticraft:magnetic_hardend_resin_cauldron"/>
 
-The hardened resin cauldron is a movable entity affected by gravity and buoyancy, and it can attach to all six faces. It stores items and up to one bucket of fluid, participates in AnvilCraft cauldron recipes, and exposes its contents to Jade.
+The hardened resin cauldron is a movable entity affected by gravity and buoyancy, and it can attach to all six faces. When placing it, the clicked face is split into four regions by its diagonals; the edge nearest the targeted region selects the in-plane direction, exposing all 24 orientations directly. While a product is held, thick white lines mark the targeted face and both diagonals, and the full face uses alternating translucent-white and transparent grid cells. The active region's three edges and white cells turn green. The green selection slides smoothly when its region changes, while the complete preview slides into place when another block face is targeted. It stores items and up to one bucket of fluid, participates in AnvilCraft cauldron recipes, and exposes its contents to Jade.
 
 - The ordinary recipe follows the vanilla cauldron shape with all seven iron ingots replaced by hardened resin.
 - Hardened resin cauldrons cannot withstand lava. Filling one with lava burns the cauldron and its other contents without drops, leaving a lava source in its place. Moving one into world lava also burns it.

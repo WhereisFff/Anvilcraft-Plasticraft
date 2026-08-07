@@ -1,11 +1,14 @@
 package dev.anvilcraft.plasticraft.client.gui.screen;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.blaze3d.systems.RenderSystem;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberStructure;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingMachineState;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
+import dev.anvilcraft.plasticraft.client.gui.MoldingPropellerTypeIcon;
+import dev.anvilcraft.plasticraft.client.gui.MoldingTrayTypeIcon;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingAxis;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingCamera;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingEditorController;
@@ -26,6 +29,7 @@ import dev.anvilcraft.plasticraft.client.renderer.AntialiasedGuiLineRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingOrientationCubeRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingViewportBackend;
 import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingViewportBackend1211;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.inventory.PlasticMoldingChamberMenu;
 import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
@@ -35,6 +39,7 @@ import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintDiskAction;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintLibraryAction;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintSummary;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingMachineAction;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingFormingMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProductionMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingWaitReason;
@@ -43,6 +48,10 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingCommand;
 import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
 import dev.anvilcraft.plasticraft.molding.model.MoldingGroup;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductType;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductPreview;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
+import dev.anvilcraft.plasticraft.molding.type.MoldingTypeValidation;
 import dev.anvilcraft.plasticraft.network.MoldingBlueprintDiskPacket;
 import dev.anvilcraft.plasticraft.network.MoldingBlueprintLibraryPacket;
 import dev.anvilcraft.plasticraft.network.MoldingBlueprintListRequestPacket;
@@ -52,6 +61,7 @@ import dev.anvilcraft.plasticraft.network.MoldingMachinePacket;
 import dev.anvilcraft.plasticraft.network.MoldingReleasePacket;
 import dev.anvilcraft.plasticraft.network.MoldingTakeoverPacket;
 import dev.dubhe.anvilcraft.client.support.RenderSupport;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import net.minecraft.ChatFormatting;
 import net.minecraft.Util;
 import net.minecraft.client.gui.Font;
@@ -83,6 +93,7 @@ import org.joml.Vector3d;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -130,6 +141,16 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private static final int BLUEPRINT_SCROLL_HANDLE_TEXTURE_WIDTH = 8;
     private static final GuiRect CATEGORY_LIST_RECT = new GuiRect(-68, 90, 52, 105);
     private static final int CATEGORY_ENTRY_HEIGHT = 15;
+    private static final int CATEGORY_VISIBLE_ROWS = 7;
+    private static final int CATEGORY_SCROLLBAR_X = -13;
+    private static final int CATEGORY_SCROLLBAR_Y = 89;
+    private static final int CATEGORY_SCROLLBAR_WIDTH = 6;
+    private static final int CATEGORY_SCROLLBAR_HEIGHT = 110;
+    private static final int CATEGORY_SCROLL_TRACK_X = -12;
+    private static final int CATEGORY_SCROLL_TRACK_Y = 90;
+    private static final int CATEGORY_SCROLL_TRACK_HEIGHT = 108;
+    private static final int CATEGORY_SCROLL_HANDLE_WIDTH = 4;
+    private static final int CATEGORY_SCROLL_HANDLE_HEIGHT = 12;
     private static final double CAMERA_DRAG_THRESHOLD_SQUARED = 4.0D;
     private static final int VIEWPORT_SUPERSAMPLING = 2;
     private static final int DIRECTION_COMPASS_X = VIEWPORT_WIDTH - 18;
@@ -146,6 +167,16 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private static final int ENERGY_FILLED_TOP = 0xFF7D0000;
     private static final int ENERGY_FILLED_CENTER = 0xFFA90000;
     private static final int ENERGY_FILLED_BOTTOM = 0xFF830000;
+    private static final int OVERRIDE_ENERGY_EMPTY_DARK = 0xFF20002E;
+    private static final int OVERRIDE_ENERGY_EMPTY_TOP = 0xFF310044;
+    private static final int OVERRIDE_ENERGY_EMPTY_CENTER = 0xFF50006D;
+    private static final int OVERRIDE_ENERGY_EMPTY_BOTTOM = 0xFF3A0054;
+    private static final int OVERRIDE_ENERGY_FILLED_DARK = 0xFF5B007D;
+    private static final int OVERRIDE_ENERGY_FILLED_TOP = 0xFF7800A5;
+    private static final int OVERRIDE_ENERGY_FILLED_CENTER = 0xFFB52CFF;
+    private static final int OVERRIDE_ENERGY_FILLED_BOTTOM = 0xFF8615BE;
+    private static final int OVERRIDE_BORDER = 0xFFE94CFF;
+    private static final int OVERRIDE_BORDER_HOVERED = 0xFFFFB0FF;
     private static final MoldingTool[] TOOL_BUTTONS = {
         MoldingTool.MOVE,
         MoldingTool.SCALE,
@@ -185,7 +216,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private static final ResourceLocation COPY_BUTTON = widget("copy.png");
     private static final ResourceLocation CUT_BUTTON = widget("cut.png");
     private static final ResourceLocation PASTE_BUTTON = widget("paste.png");
-    private static final ResourceLocation BLUEPRINT_SCROLL_HANDLE = widget("overlay_slider.png");
+    private static final ResourceLocation BLUEPRINT_SCROLL_HANDLE = widget("slider.png");
     private static final ResourceLocation CYCLE_MODE_BUTTON = widget("cycle.png");
     private static final ResourceLocation REDSTONE_MODE_BUTTON = widget("redstone.png");
     private static final ResourceLocation ONCE_MODE_BUTTON = widget("once.png");
@@ -222,6 +253,9 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private MoldingGuiTransform layoutTransform = new MoldingGuiTransform(1.0D, 0.0D, 0.0D);
     private int heartbeatCountdown = HEARTBEAT_INTERVAL;
     private int elementScrollRow;
+    @Nullable
+    private UUID elementSelectionAnchor;
+    private int typeScrollRow;
     private int blueprintScrollRow;
     private long seenBlueprintListGeneration = -1L;
     private String selectedBlueprintFileId = "";
@@ -232,6 +266,16 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private BakedMoldingModel cachedBaked;
     @Nullable
     private EditableMoldingModel cachedSceneModel;
+    @Nullable
+    private EditableMoldingModel cachedTypeValidationModel;
+    private Optional<MoldingTypeValidation> cachedTypeValidation = Optional.empty();
+    @Nullable
+    private EditableMoldingModel cachedWorkspaceBoundsModel;
+    private boolean cachedModelFitsWorkspace = true;
+    @Nullable
+    private EditableMoldingModel cachedDowngradeModel;
+    private int cachedDowngradeMelt = -1;
+    private boolean cachedDowngrade;
     private MoldingSelection cachedSelection = MoldingSelection.EMPTY;
     private MoldingTool cachedTool = MoldingTool.MOVE;
     private boolean cachedInvalid;
@@ -257,6 +301,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private int cameraDragButton = -1;
     private boolean cameraDragged;
     private boolean elementScrollbarDragging;
+    private boolean typeScrollbarDragging;
     private boolean blueprintScrollbarDragging;
     @Nullable
     private ReleaseControl pressedReleaseControl;
@@ -269,6 +314,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     @Nullable
     private DiskConfirmation diskConfirmation;
     private double elementScrollbarGrabOffset;
+    private double typeScrollbarGrabOffset;
     private double blueprintScrollbarGrabOffset;
     private double cameraDragStartX;
     private double cameraDragStartY;
@@ -316,6 +362,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         this.inventoryLabelY = -1000;
         createNumericFields();
         this.leftSearch = createSearchBox("screen.anvilcraftplasticraft.molding.search_type");
+        this.leftSearch.setResponder(ignored -> this.typeScrollRow = 0);
         this.rightSearch = createSearchBox("screen.anvilcraftplasticraft.molding.search_json");
         this.rightSearch.setResponder(ignored -> this.blueprintScrollRow = 0);
         this.renameField = new EditBox(
@@ -414,7 +461,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         renderViewport(graphics, mouseX, mouseY);
         renderToolButtons(graphics, mouseX, mouseY);
         renderElementList(graphics, mouseX, mouseY);
-        renderMainControls(graphics, mouseX, mouseY);
+        renderMainControls(graphics, mouseX, mouseY, partialTick);
         renderOverlays(graphics, mouseX, mouseY);
         if (this.contextMenuOpen) renderContextMenu(graphics, mouseX, mouseY);
     }
@@ -422,12 +469,24 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     @Override
     protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY) {
         boolean showingMessage = this.titleMessageTicks > 0 && !this.menu.titleMessage().getString().isEmpty();
+        Optional<MoldingTypeValidation> typeValidation = currentTypeValidation();
+        boolean invalidType = typeValidation.filter(validation -> !validation.valid()).isPresent()
+            && !typeOverrideActive();
+        boolean oversized = !modelFitsStandardWorkspace() && !creativeOverrideActive();
         Component label = showingMessage
             ? this.menu.titleMessage().copy().withStyle(ChatFormatting.BOLD)
-            : this.title;
-        drawTitleLabel(graphics, label, showingMessage ? 0xFFE34B4B : 0xFF404040);
+            : oversized
+                ? Component.translatable("screen.anvilcraftplasticraft.molding.model_too_large")
+                    .withStyle(ChatFormatting.BOLD)
+                : invalidType
+                ? Component.translatable("screen.anvilcraftplasticraft.molding.type_invalid")
+                    .withStyle(ChatFormatting.BOLD)
+                : this.title;
+        drawTitleLabel(graphics, label, showingMessage || invalidType || oversized ? 0xFFE34B4B : 0xFF404040);
         if (new GuiRect(0, 0, LOGICAL_WIDTH, TITLE_BAR_HEIGHT).contains(this.leftPos, this.topPos, mouseX, mouseY)) {
-            this.hoveredControlTooltip = showingMessage ? List.of(label) : titleStatusTooltip();
+            this.hoveredControlTooltip = showingMessage
+                ? List.of(label)
+                : titleStatusTooltip(typeValidation);
         }
     }
 
@@ -545,6 +604,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             updateElementScrollFromPointer(logicalY, elementEntryCount());
             return true;
         }
+        if (this.typeScrollbarDragging && button == 0) {
+            updateTypeScrollFromPointer(logicalY);
+            return true;
+        }
         if (this.blueprintScrollbarDragging && button == 0) {
             updateBlueprintScrollFromPointer(logicalY);
             return true;
@@ -584,6 +647,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         double logicalY = toLogicalY(mouseY);
         if (this.elementScrollbarDragging && button == 0) {
             this.elementScrollbarDragging = false;
+            return true;
+        }
+        if (this.typeScrollbarDragging && button == 0) {
+            this.typeScrollbarDragging = false;
             return true;
         }
         if (this.blueprintScrollbarDragging && button == 0) {
@@ -641,6 +708,15 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 this.blueprintScrollRow - (int) Math.signum(scrollY),
                 0,
                 max
+            );
+            return true;
+        }
+        if (this.leftOverlayOpen && CATEGORY_LIST_RECT.contains(this.leftPos, this.topPos, logicalX, logicalY)) {
+            List<MoldingProductType> types = filteredProductTypes();
+            this.typeScrollRow = Math.clamp(
+                this.typeScrollRow - (int) Math.signum(scrollY),
+                0,
+                typeMaxScroll(types.size())
             );
             return true;
         }
@@ -730,7 +806,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 return true;
             }
             if (keyCode == InputConstants.KEY_G) {
-                this.editor.groupSelection();
+                if (this.editor.groupSelection()) syncElementSelectionAnchor();
                 return true;
             }
         }
@@ -980,7 +1056,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         );
     }
 
-    private List<Component> titleStatusTooltip() {
+    private List<Component> titleStatusTooltip(Optional<MoldingTypeValidation> typeValidation) {
         Component writer = this.menu.writerName().isEmpty()
             ? Component.translatable("screen.anvilcraftplasticraft.molding.no_writer")
             : Component.translatable("screen.anvilcraftplasticraft.molding.writer", this.menu.writerName());
@@ -993,11 +1069,26 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             )
         ));
         lines.add(Component.translatable(
-            "screen.anvilcraftplasticraft.molding.clay_status",
-            this.menu.getSlot(PlasticMoldingChamberBlockEntity.CLAY_SLOT).getItem().getCount(),
-            this.menu.moldedClayBalls(),
-            this.menu.requiredClayBalls()
+            "screen.anvilcraftplasticraft.molding.forming",
+            Component.translatable(
+                "screen.anvilcraftplasticraft.molding.forming."
+                    + displayedFormingMode().getSerializedName()
+            )
         ));
+        if (displayedFormingMode() == MoldingFormingMode.CASTING) {
+            lines.add(Component.translatable(
+                "screen.anvilcraftplasticraft.molding.clay_status",
+                this.menu.getSlot(PlasticMoldingChamberBlockEntity.CLAY_SLOT).getItem().getCount(),
+                this.menu.moldedClayBalls(),
+                this.menu.requiredClayBalls()
+            ));
+        } else if (this.menu.printingTotal() > 0) {
+            lines.add(Component.translatable(
+                "screen.anvilcraftplasticraft.molding.printing_progress",
+                this.menu.printingProgress(),
+                this.menu.printingTotal()
+            ));
+        }
         if (this.menu.waitReason() != MoldingWaitReason.NONE
             && this.menu.waitReason() != MoldingWaitReason.PROCESS_READY) {
             lines.add(waitReasonText(this.menu.waitReason()).copy().withStyle(ChatFormatting.YELLOW));
@@ -1007,8 +1098,27 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 "screen.anvilcraftplasticraft.molding.analysis",
                 this.cachedBaked.analysis().volume(),
                 this.cachedBaked.analysis().minimumMeltMillibuckets(),
-                this.cachedBaked.analysis().clayBallRequirement()
+                displayedFormingMode() == MoldingFormingMode.PRINTING
+                    ? 0
+                    : this.cachedBaked.analysis().clayBallRequirement()
             ));
+        }
+        if (this.willCurrentResultDowngrade()) {
+            lines.add(Component.translatable("screen.anvilcraftplasticraft.molding.partial_downgrade")
+                .withStyle(ChatFormatting.RED));
+        }
+        if (!modelFitsStandardWorkspace() && !creativeOverrideActive()) {
+            lines.add(Component.translatable("message.anvilcraftplasticraft.molding.model_too_large")
+                .withStyle(ChatFormatting.RED));
+        }
+        typeValidation.filter(validation -> !validation.valid() && !typeOverrideActive())
+            .ifPresent(validation -> lines.addAll(typeValidationTooltip(validation)));
+        if (creativeOverrideActive()) {
+            lines.add(Component.translatable("screen.anvilcraftplasticraft.molding.creative_override_active")
+                .withStyle(ChatFormatting.LIGHT_PURPLE));
+        } else if (typeOverrideActive()) {
+            lines.add(Component.translatable("screen.anvilcraftplasticraft.molding.type_override_active")
+                .withStyle(ChatFormatting.LIGHT_PURPLE));
         }
         if (this.editor.invalidPreview()) {
             lines.add(Component.translatable("screen.anvilcraftplasticraft.molding.out_of_bounds")
@@ -1077,7 +1187,19 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             }
             if (hovered) {
                 this.hoveredControlTooltip = object.element()
-                    ? List.of(Component.literal(object.name()))
+                    ? List.of(
+                        Component.literal(object.name()),
+                        Component.translatable(
+                            object.visible()
+                                ? "screen.anvilcraftplasticraft.molding.element.visible"
+                                : "screen.anvilcraftplasticraft.molding.element.hidden"
+                        ),
+                        Component.translatable(
+                            object.locked()
+                                ? "screen.anvilcraftplasticraft.molding.element.locked"
+                                : "screen.anvilcraftplasticraft.molding.element.unlocked"
+                        )
+                    )
                     : List.of(Component.translatable(
                         "screen.anvilcraftplasticraft.molding.element.tooltip",
                         object.name(),
@@ -1133,18 +1255,18 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         drawThreeFrameAtlas(graphics, rect, texture, pressed, enabled, mouseX, mouseY);
     }
 
-    private void renderMainControls(GuiGraphics graphics, int mouseX, int mouseY) {
+    private void renderMainControls(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         GuiRect type = new GuiRect(9, 114, 16, 16);
-        renderPanelControl(
-            graphics,
-            ChamberControl.CATEGORY,
-            type,
-            CATEGORY_BUTTON,
-            this.leftOverlayOpen,
-            mouseX,
-            mouseY
-        );
-        tooltip(type, mouseX, mouseY, "screen.anvilcraftplasticraft.molding.type");
+        renderCategoryControl(graphics, type, mouseX, mouseY);
+        if (type.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
+            List<Component> lines = new ArrayList<>();
+            lines.add(Component.translatable("screen.anvilcraftplasticraft.molding.type"));
+            MoldingProductTypes.get(this.editor.model().requestedType())
+                .ifPresent(productType -> lines.add(Component.translatable(productType.translationKey())));
+            currentTypeValidation().filter(validation -> !validation.valid() && !typeOverrideActive())
+                .ifPresent(validation -> lines.addAll(typeValidationTooltip(validation)));
+            this.hoveredControlTooltip = List.copyOf(lines);
+        }
 
         GuiRect undo = new GuiRect(269, 136, 16, 16);
         GuiRect copy = new GuiRect(287, 136, 16, 16);
@@ -1159,7 +1281,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         tooltip(cut, mouseX, mouseY, "screen.anvilcraftplasticraft.molding.cut");
         tooltip(paste, mouseX, mouseY, "screen.anvilcraftplasticraft.molding.paste");
 
-        renderLockControl(graphics, mouseX, mouseY);
+        renderLockControl(graphics, mouseX, mouseY, partialTick);
         renderModeControl(graphics, new GuiRect(47, 162, 10, 10), MoldingProductionMode.CONTINUOUS, mouseX, mouseY);
         renderModeControl(graphics, new GuiRect(59, 162, 10, 10), MoldingProductionMode.REDSTONE, mouseX, mouseY);
         renderModeControl(graphics, new GuiRect(71, 162, 10, 10), MoldingProductionMode.SINGLE, mouseX, mouseY);
@@ -1170,13 +1292,21 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             mouseY,
             "screen.anvilcraftplasticraft.molding.resource_slot"
         );
+        GuiRect resourceRect = new GuiRect(63, 178, 16, 16);
+        if (resourceRect.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
+            this.hoveredControlTooltip = List.of(
+                Component.translatable("screen.anvilcraftplasticraft.molding.resource_slot"),
+                Component.translatable("screen.anvilcraftplasticraft.molding.resource_slot.fluid"),
+                Component.translatable("screen.anvilcraftplasticraft.molding.resource_slot.type_override")
+            );
+        }
         renderDiskControls(graphics, mouseX, mouseY);
 
         GuiRect model = new GuiRect(324, 171, 16, 16);
         renderModelControl(graphics, model, mouseX, mouseY);
     }
 
-    private void renderLockControl(GuiGraphics graphics, int mouseX, int mouseY) {
+    private void renderLockControl(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         GuiRect rect = new GuiRect(47, 143, 34, 16);
         boolean hovered = rect.contains(this.leftPos, this.topPos, mouseX, mouseY);
         boolean enabled = chamberControlEnabled(ChamberControl.OPERATE, null);
@@ -1185,16 +1315,35 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         int stateFrame = !editable ? 2 : this.lockConfirmation ? 1 : 0;
         int interactionFrame = pressed ? 2 : hovered && enabled ? 1 : 0;
         drawAtlas(graphics, rect, OPERATE_BUTTON, 9, stateFrame * 3 + interactionFrame);
+        if (overrideVisualActive()) {
+            renderOverrideParticles(graphics, rect, partialTick);
+            renderOverrideBorder(graphics, rect, enabled && hovered, pressed);
+        }
         if (!enabled) drawDisabledOverlay(graphics, rect);
         if (hovered) {
             List<Component> lines = new ArrayList<>();
-            String tooltipKey = !editable
-                ? "screen.anvilcraftplasticraft.molding.unlock"
-                : this.lockConfirmation
-                    ? "screen.anvilcraftplasticraft.molding.lock_confirm"
-                    : "screen.anvilcraftplasticraft.molding.lock";
-            lines.add(Component.translatable(tooltipKey));
-            if (editable && this.lockConfirmation) {
+            Optional<MoldingTypeValidation> typeValidation = currentTypeValidation()
+                .filter(validation -> !validation.valid() && !typeOverrideActive());
+            if (editable && missingPrintingComponent()) {
+                lines.add(Component.translatable(
+                    "screen.anvilcraftplasticraft.molding.high_precision_requires_component"
+                ).withStyle(ChatFormatting.RED));
+            } else if (editable && !modelFitsStandardWorkspace() && !creativeOverrideActive()) {
+                lines.add(Component.translatable("message.anvilcraftplasticraft.molding.model_too_large")
+                    .withStyle(ChatFormatting.RED));
+            } else if (editable && typeValidation.isPresent()) {
+                lines.addAll(typeValidationTooltip(typeValidation.orElseThrow()));
+            } else {
+                String tooltipKey = !editable
+                    ? "screen.anvilcraftplasticraft.molding.unlock"
+                    : this.lockConfirmation
+                        ? "screen.anvilcraftplasticraft.molding.lock_confirm"
+                        : "screen.anvilcraftplasticraft.molding.lock";
+                lines.add(Component.translatable(tooltipKey));
+            }
+            if (editable && this.lockConfirmation && typeValidation.isEmpty()
+                && modelFitsStandardWorkspace()
+                && this.menu.formingMode() == MoldingFormingMode.CASTING) {
                 lines.add(Component.translatable(
                     "screen.anvilcraftplasticraft.molding.clay_lock_status",
                     this.menu.getSlot(PlasticMoldingChamberBlockEntity.CLAY_SLOT).getItem().getCount(),
@@ -1271,7 +1420,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             this.topPos + energyY,
             energyWidth,
             energyHeightLimit,
-            energyHeight
+            energyHeight,
+            creativeOverrideActive()
         );
 
         if (fluidFrame.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
@@ -1281,15 +1431,30 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 fluidAmount,
                 PlasticMoldingChamberBlockEntity.STAGING_TANK_CAPACITY
             ));
+            boolean printing = displayedFormingMode() == MoldingFormingMode.PRINTING;
             lines.add(Component.translatable(
-                "screen.anvilcraftplasticraft.molding.fluid_batch",
+                printing
+                    ? "screen.anvilcraftplasticraft.molding.fluid_printing_component"
+                    : "screen.anvilcraftplasticraft.molding.fluid_batch",
                 this.menu.batchFluidAmount(),
                 this.menu.batchFluidCapacity()
             ));
             lines.add(Component.translatable(
-                "screen.anvilcraftplasticraft.molding.pump_rate",
-                PlasticMoldingChamberBlockEntity.MOLDING_PUMP_RATE
+                printing
+                    ? "screen.anvilcraftplasticraft.molding.printing_transfer_rate"
+                    : "screen.anvilcraftplasticraft.molding.pump_rate",
+                printing
+                    ? PlasticMoldingChamberBlockEntity.PRINTING_PUMP_RATE
+                    : PlasticMoldingChamberBlockEntity.MOLDING_PUMP_RATE
             ));
+            if (printing) lines.add(Component.translatable(
+                "screen.anvilcraftplasticraft.molding.printing_consumption_rate",
+                PlasticMoldingChamberBlockEntity.PRINTING_CONSUMPTION_RATE
+            ));
+            if (this.willCurrentResultDowngrade()) {
+                lines.add(Component.translatable("screen.anvilcraftplasticraft.molding.partial_downgrade")
+                    .withStyle(ChatFormatting.RED));
+            }
             appendResourceWaitReason(lines);
             this.hoveredControlTooltip = List.copyOf(lines);
         } else if (energyFrame.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
@@ -1312,6 +1477,42 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         MoldingWaitReason reason = this.menu.waitReason();
         if (reason == MoldingWaitReason.NONE || reason == MoldingWaitReason.PROCESS_READY) return;
         lines.add(waitReasonText(reason).copy().withStyle(ChatFormatting.YELLOW));
+    }
+
+    private boolean willCurrentResultDowngrade() {
+        if (displayedFormingMode() == MoldingFormingMode.PRINTING
+            || this.menu.batchFluidAmount() < PlasticMoldingChamberBlockEntity.MINIMUM_PROCESS_MELT
+            || MoldingProductTypes.NORMAL_ID.equals(this.editor.model().requestedType())
+            || typeOverrideActive()) {
+            return false;
+        }
+        EditableMoldingModel model = this.editor.model();
+        int melt = this.menu.batchFluidAmount();
+        if (this.cachedDowngradeModel == model && this.cachedDowngradeMelt == melt) {
+            return this.cachedDowngrade;
+        }
+        BakedMoldingModel baked = this.cachedSceneModel == model ? this.cachedBaked : null;
+        if (baked == null) {
+            try {
+                baked = MoldingModelBaker.bake(model);
+            } catch (RuntimeException ignored) {
+                return false;
+            }
+        }
+        boolean downgraded;
+        try {
+            downgraded = MoldingProductPreview.evaluate(
+                model,
+                baked,
+                melt
+            ).downgraded();
+        } catch (RuntimeException ignored) {
+            downgraded = false;
+        }
+        this.cachedDowngradeModel = model;
+        this.cachedDowngradeMelt = melt;
+        this.cachedDowngrade = downgraded;
+        return downgraded;
     }
 
     private void renderFluidTexture(
@@ -1376,7 +1577,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         int y,
         int width,
         int height,
-        int filledHeight
+        int filledHeight,
+        boolean creativeOverride
     ) {
         int right = x + width;
         int bottom = y + height;
@@ -1386,10 +1588,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             y,
             right,
             bottom,
-            ENERGY_EMPTY_DARK,
-            ENERGY_EMPTY_TOP,
-            ENERGY_EMPTY_CENTER,
-            ENERGY_EMPTY_BOTTOM
+            creativeOverride ? OVERRIDE_ENERGY_EMPTY_DARK : ENERGY_EMPTY_DARK,
+            creativeOverride ? OVERRIDE_ENERGY_EMPTY_TOP : ENERGY_EMPTY_TOP,
+            creativeOverride ? OVERRIDE_ENERGY_EMPTY_CENTER : ENERGY_EMPTY_CENTER,
+            creativeOverride ? OVERRIDE_ENERGY_EMPTY_BOTTOM : ENERGY_EMPTY_BOTTOM
         );
         int clampedHeight = Math.clamp(filledHeight, 0, height);
         if (clampedHeight == 0) return;
@@ -1399,10 +1601,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             bottom - clampedHeight,
             right,
             bottom,
-            ENERGY_FILLED_DARK,
-            ENERGY_FILLED_TOP,
-            ENERGY_FILLED_CENTER,
-            ENERGY_FILLED_BOTTOM
+            creativeOverride ? OVERRIDE_ENERGY_FILLED_DARK : ENERGY_FILLED_DARK,
+            creativeOverride ? OVERRIDE_ENERGY_FILLED_TOP : ENERGY_FILLED_TOP,
+            creativeOverride ? OVERRIDE_ENERGY_FILLED_CENTER : ENERGY_FILLED_CENTER,
+            creativeOverride ? OVERRIDE_ENERGY_FILLED_BOTTOM : ENERGY_FILLED_BOTTOM
         );
     }
 
@@ -1456,7 +1658,17 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             instanceof PlasticMoldingChamberBlockEntity chamber ? chamber : null;
     }
 
-    private static Component waitReasonText(MoldingWaitReason reason) {
+    private Component waitReasonText(MoldingWaitReason reason) {
+        if (reason == MoldingWaitReason.PUMPING) {
+            return Component.translatable(
+                displayedFormingMode() == MoldingFormingMode.PRINTING
+                    ? "screen.anvilcraftplasticraft.molding.wait.pumping_printing_component"
+                    : "screen.anvilcraftplasticraft.molding.wait.pumping",
+                displayedFormingMode() == MoldingFormingMode.PRINTING
+                    ? PlasticMoldingChamberBlockEntity.PRINTING_PUMP_RATE
+                    : PlasticMoldingChamberBlockEntity.MOLDING_PUMP_RATE
+            );
+        }
         return Component.translatable(
             "screen.anvilcraftplasticraft.molding.wait." + reason.name().toLowerCase(Locale.ROOT)
         );
@@ -1464,17 +1676,45 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
 
     private void renderOverlays(GuiGraphics graphics, int mouseX, int mouseY) {
         if (this.leftOverlayOpen) {
-            GuiRect normal = categoryEntryRect(0);
-            drawThreeFrameAtlas(graphics, normal, CATEGORY_ENTRY_BUTTON, true, true, mouseX, mouseY);
-            graphics.drawString(
-                this.font,
-                Component.translatable("screen.anvilcraftplasticraft.molding.type.normal"),
-                this.leftPos - 66,
-                this.topPos + 94,
-                0xFFF0F0F0,
-                false
-            );
-            tooltip(normal, mouseX, mouseY, "screen.anvilcraftplasticraft.molding.type.normal");
+            List<MoldingProductType> types = filteredProductTypes();
+            clampTypeScroll(types.size());
+            for (int row = 0; row < CATEGORY_VISIBLE_ROWS; row++) {
+                int index = this.typeScrollRow + row;
+                if (index >= types.size()) break;
+                MoldingProductType type = types.get(index);
+                GuiRect entry = categoryEntryRect(row);
+                boolean selected = type.id().equals(this.editor.model().requestedType());
+                drawThreeFrameAtlas(
+                    graphics,
+                    entry,
+                    CATEGORY_ENTRY_BUTTON,
+                    selected,
+                    this.editor.writable(),
+                    mouseX,
+                    mouseY
+                );
+                renderItemIcon(
+                    graphics,
+                    typeIcon(type.id()),
+                    entry.x + 2,
+                    entry.y + 2,
+                    10
+                );
+                String label = this.font.plainSubstrByWidth(
+                    Component.translatable(type.translationKey()).getString(),
+                    35
+                );
+                graphics.drawString(
+                    this.font,
+                    label,
+                    this.leftPos + entry.x + 15,
+                    this.topPos + entry.y + 3,
+                    selected ? 0xFFFFFFFF : 0xFFF0F0F0,
+                    false
+                );
+                tooltip(entry, mouseX, mouseY, type.translationKey());
+            }
+            renderTypeScrollbar(graphics, types.size(), mouseX, mouseY);
         }
         if (this.rightOverlayOpen) {
             renderBlueprintOverlay(graphics, mouseX, mouseY);
@@ -1482,13 +1722,46 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private static GuiRect categoryEntryRect(int row) {
-        int visibleRows = CATEGORY_LIST_RECT.height / CATEGORY_ENTRY_HEIGHT;
-        if (row < 0 || row >= visibleRows) throw new IllegalArgumentException("Category row is outside the list");
+        if (row < 0 || row >= CATEGORY_VISIBLE_ROWS) {
+            throw new IllegalArgumentException("Category row is outside the list");
+        }
         return new GuiRect(
             CATEGORY_LIST_RECT.x,
             CATEGORY_LIST_RECT.y + row * CATEGORY_ENTRY_HEIGHT,
             CATEGORY_LIST_RECT.width,
             CATEGORY_ENTRY_HEIGHT
+        );
+    }
+
+    private List<MoldingProductType> filteredProductTypes() {
+        String query = this.leftSearch == null ? "" : this.leftSearch.getValue().trim().toLowerCase(Locale.ROOT);
+        return MoldingProductTypes.values().stream()
+            .filter(type -> query.isEmpty()
+                || Component.translatable(type.translationKey()).getString().toLowerCase(Locale.ROOT).contains(query)
+                || type.id().toString().toLowerCase(Locale.ROOT).contains(query))
+            .toList();
+    }
+
+    private void renderTypeScrollbar(GuiGraphics graphics, int itemCount, int mouseX, int mouseY) {
+        int handleY = typeScrollbarHandleY(itemCount);
+        GuiRect handle = new GuiRect(
+            CATEGORY_SCROLL_TRACK_X,
+            handleY,
+            CATEGORY_SCROLL_HANDLE_WIDTH,
+            CATEGORY_SCROLL_HANDLE_HEIGHT
+        );
+        boolean hovered = typeMaxScroll(itemCount) > 0
+            && handle.contains(this.leftPos, this.topPos, mouseX, mouseY);
+        graphics.blit(
+            BLUEPRINT_SCROLL_HANDLE,
+            this.leftPos + handle.x,
+            this.topPos + handle.y,
+            hovered ? CATEGORY_SCROLL_HANDLE_WIDTH : 0,
+            0,
+            CATEGORY_SCROLL_HANDLE_WIDTH,
+            CATEGORY_SCROLL_HANDLE_HEIGHT,
+            BLUEPRINT_SCROLL_HANDLE_TEXTURE_WIDTH,
+            CATEGORY_SCROLL_HANDLE_HEIGHT
         );
     }
 
@@ -1534,7 +1807,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private void renderModelControl(GuiGraphics graphics, GuiRect rect, int mouseX, int mouseY) {
-        boolean pressed = renderPanelControl(
+        GuiRect contents = renderPanelControl(
             graphics,
             ChamberControl.MODEL,
             rect,
@@ -1546,15 +1819,15 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         MoldingOrientationCubeRenderer.render(
             graphics,
             viewportTransform(),
-            this.leftPos + rect.x + 2,
-            this.topPos + rect.y + 2 + (pressed ? 1 : 0),
-            12,
-            10
+            this.leftPos + contents.x,
+            this.topPos + contents.y,
+            contents.width,
+            contents.height
         );
         tooltip(rect, mouseX, mouseY, "screen.anvilcraftplasticraft.molding.json");
     }
 
-    private boolean renderPanelControl(
+    private GuiRect renderPanelControl(
         GuiGraphics graphics,
         ChamberControl control,
         GuiRect rect,
@@ -1574,7 +1847,79 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             frame = hovered ? 1 : 0;
         }
         drawAtlas(graphics, rect, texture, 4, frame);
-        return pressed;
+        return new GuiRect(rect.x + 2, rect.y + 2 + (pressed ? 1 : 0), 12, 10);
+    }
+
+    private void renderCategoryControl(GuiGraphics graphics, GuiRect rect, int mouseX, int mouseY) {
+        GuiRect contents = renderPanelControl(
+            graphics,
+            ChamberControl.CATEGORY,
+            rect,
+            CATEGORY_BUTTON,
+            this.leftOverlayOpen,
+            mouseX,
+            mouseY
+        );
+        GuiRect icon = new GuiRect(contents.x + 1, contents.y, 10, 10);
+        renderClippedItemIcon(graphics, typeIcon(this.editor.model().requestedType()), icon, 10);
+    }
+
+    private void renderClippedItemIcon(
+        GuiGraphics graphics,
+        ItemStack icon,
+        GuiRect clip,
+        int size
+    ) {
+        graphics.flush();
+        enableLogicalScissor(clip);
+        try {
+            renderItemIcon(graphics, icon, clip.x, clip.y, size);
+            graphics.flush();
+        } finally {
+            RenderSystem.disableScissor();
+        }
+    }
+
+    private void renderItemIcon(
+        GuiGraphics graphics,
+        ItemStack icon,
+        int x,
+        int y,
+        int size
+    ) {
+        float scale = size / 16.0F;
+        graphics.pose().pushPose();
+        graphics.pose().translate(this.leftPos + x, this.topPos + y, 0.0F);
+        graphics.pose().scale(scale, scale, 1.0F);
+        graphics.renderFakeItem(icon, 0, 0);
+        graphics.pose().popPose();
+    }
+
+    private void enableLogicalScissor(GuiRect rect) {
+        double guiScale = this.minecraft.getWindow().getGuiScale();
+        int left = (int) Math.round(this.layoutTransform.toScreenX(this.leftPos + rect.x) * guiScale);
+        int top = (int) Math.round(this.layoutTransform.toScreenY(this.topPos + rect.y) * guiScale);
+        int right = (int) Math.round(
+            this.layoutTransform.toScreenX(this.leftPos + rect.x + rect.width) * guiScale
+        );
+        int bottom = (int) Math.round(
+            this.layoutTransform.toScreenY(this.topPos + rect.y + rect.height) * guiScale
+        );
+        RenderSystem.enableScissor(
+            left,
+            this.minecraft.getWindow().getHeight() - bottom,
+            Math.max(1, right - left),
+            Math.max(1, bottom - top)
+        );
+    }
+
+    private static ItemStack typeIcon(ResourceLocation type) {
+        if (MoldingProductTypes.CHEST_ID.equals(type)) return Items.CHEST.getDefaultInstance();
+        if (MoldingProductTypes.TANK_ID.equals(type)) return ModBlocks.FLUID_TANK.asStack();
+        if (MoldingProductTypes.ANVIL_ID.equals(type)) return Items.ANVIL.getDefaultInstance();
+        if (MoldingProductTypes.TRAY_ID.equals(type)) return MoldingTrayTypeIcon.stack();
+        if (MoldingProductTypes.PROPELLER_ID.equals(type)) return MoldingPropellerTypeIcon.stack();
+        return PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
     }
 
     private void renderBlueprintOverlay(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -1912,10 +2257,13 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         );
         Optional<MoldingHitTester.ElementHit> hit = MoldingHitTester.hitElement(this.editor.model(), ray);
         if (hit.isPresent()) {
-            this.editor.select(hit.get().id(), Screen.hasShiftDown());
+            UUID id = hit.get().id();
+            this.editor.select(id, Screen.hasShiftDown());
+            this.elementSelectionAnchor = id;
             ensurePrimaryVisible();
         } else if (!Screen.hasShiftDown()) {
             this.editor.clearSelection();
+            this.elementSelectionAnchor = null;
         }
         refreshNumericFields();
     }
@@ -1927,6 +2275,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             mouseY - this.topPos - VIEWPORT_Y
         );
         MoldingHitTester.hitElement(this.editor.model(), ray).ifPresent(hit -> {
+            this.elementSelectionAnchor = hit.id();
             if (this.editor.selection().contains(hit.id())) return;
             this.editor.select(hit.id(), false);
             ensurePrimaryVisible();
@@ -1966,8 +2315,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private boolean handleFixedControlClick(double mouseX, double mouseY, int button) {
+        if (handleTypeScrollbarClick(mouseX, mouseY, button)) return true;
         if (handleBlueprintScrollbarClick(mouseX, mouseY, button)) return true;
         if (handleBlueprintOverlayClick(mouseX, mouseY, button)) return true;
+        if (handleTypeOverlayClick(mouseX, mouseY, button)) return true;
         if (handleElementListClick(mouseX, mouseY, button)) return true;
         if (handleReleaseControlClick(mouseX, mouseY, button)) return true;
         if (handleChamberControlClick(mouseX, mouseY, button)) return true;
@@ -1988,6 +2339,20 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             if (!rect.contains(this.leftPos, this.topPos, mouseX, mouseY)) continue;
             if (!this.editor.writable()) return true;
             return this.toolButtons.press(TOOL_BUTTONS[index]);
+        }
+        return false;
+    }
+
+    private boolean handleTypeOverlayClick(double mouseX, double mouseY, int button) {
+        if (!this.leftOverlayOpen || button != 0) return false;
+        List<MoldingProductType> types = filteredProductTypes();
+        for (int row = 0; row < CATEGORY_VISIBLE_ROWS; row++) {
+            GuiRect entry = categoryEntryRect(row);
+            if (!entry.contains(this.leftPos, this.topPos, mouseX, mouseY)) continue;
+            int index = this.typeScrollRow + row;
+            if (index >= types.size() || !this.editor.writable()) return true;
+            this.editor.setRequestedType(types.get(index).id());
+            return true;
         }
         return false;
     }
@@ -2035,12 +2400,6 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         ItemStack disk = diskStack();
         Optional<MoldingBlueprint> blueprint = MoldingBlueprintDisk.read(disk);
         if (blueprint.isEmpty()) return;
-        if (MoldingModelBounds.all(blueprint.orElseThrow().model())
-            .filter(bounds -> !bounds.fitsWorkspace())
-            .isPresent()) {
-            displayBlueprintMessage("model_too_large");
-            return;
-        }
         String token = MoldingBlueprintDisk.stateToken(disk);
         if (this.menu.machineState() != PlasticMoldingMachineState.EDITABLE
             || this.menu.batchFluidAmount() != 0
@@ -2215,7 +2574,11 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private boolean chamberControlEnabled(ChamberControl control, @Nullable MoldingBlueprintSummary summary) {
         return switch (control) {
             case CATEGORY, MODEL, BLUEPRINT_FILE -> true;
-            case OPERATE -> this.menu.writable() && !this.editor.pending();
+            case OPERATE -> this.menu.writable()
+                && !this.editor.pending()
+                && !this.editor.invalidPreview()
+                && (this.menu.machineState() != PlasticMoldingMachineState.EDITABLE
+                || lockConstraintsSatisfied());
             case DISK_LOAD -> MoldingBlueprintDisk.read(diskStack()).isPresent();
             case DISK_STORE -> MoldingBlueprintDisk.isStructureDisk(diskStack());
             case BLUEPRINT_PIN, BLUEPRINT_COPY, BLUEPRINT_DELETE -> summary != null;
@@ -2254,6 +2617,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 if (this.leftOverlayOpen) {
                     this.rightOverlayOpenedLast = false;
                     if (this.rightOverlayOpen && !canDisplayBothOverlays()) this.rightOverlayOpen = false;
+                    ensureSelectedTypeVisible();
                 }
                 updateLayout();
             }
@@ -2356,16 +2720,32 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             if (button == 1) {
                 if (!object.element()) return false;
                 this.editor.select(object.id(), false);
+                this.elementSelectionAnchor = object.id();
                 ensurePrimaryVisible();
                 refreshNumericFields();
                 openContextMenu(mouseX, mouseY);
                 return true;
             }
-            this.editor.select(object.id(), Screen.hasShiftDown());
+            selectElementListObject(objects, object);
             refreshNumericFields();
             return true;
         }
         return false;
+    }
+
+    private void selectElementListObject(List<SceneObject> objects, SceneObject object) {
+        if (!Screen.hasShiftDown()) {
+            this.editor.select(object.id(), Screen.hasControlDown());
+            this.elementSelectionAnchor = object.id();
+            return;
+        }
+        List<UUID> orderedIds = objects.stream().map(SceneObject::id).toList();
+        UUID anchor = this.elementSelectionAnchor;
+        if (anchor == null || !orderedIds.contains(anchor)) {
+            anchor = this.editor.selection().primary().filter(orderedIds::contains).orElse(object.id());
+            this.elementSelectionAnchor = anchor;
+        }
+        this.editor.selectRange(orderedIds, anchor, object.id(), Screen.hasControlDown());
     }
 
     private boolean handleReleaseControlClick(double mouseX, double mouseY, int button) {
@@ -2424,10 +2804,14 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             case UNDO -> this.editor.undo();
             case COPY -> this.editor.copySelection();
             case CUT -> {
-                if (this.editor.cutSelection()) refreshNumericFields();
+                if (this.editor.cutSelection()) {
+                    syncElementSelectionAnchor();
+                    refreshNumericFields();
+                }
             }
             case PASTE -> {
                 if (this.editor.paste()) {
+                    syncElementSelectionAnchor();
                     ensurePrimaryVisible();
                     refreshNumericFields();
                 }
@@ -2509,6 +2893,48 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         return true;
     }
 
+    private boolean handleTypeScrollbarClick(double mouseX, double mouseY, int button) {
+        if (!this.leftOverlayOpen || button != 0) return false;
+        GuiRect scrollbar = new GuiRect(
+            CATEGORY_SCROLLBAR_X,
+            CATEGORY_SCROLLBAR_Y,
+            CATEGORY_SCROLLBAR_WIDTH,
+            CATEGORY_SCROLLBAR_HEIGHT
+        );
+        if (!scrollbar.contains(this.leftPos, this.topPos, mouseX, mouseY)) return false;
+        List<MoldingProductType> types = filteredProductTypes();
+        clampTypeScroll(types.size());
+        if (typeMaxScroll(types.size()) == 0) return true;
+        int handleY = typeScrollbarHandleY(types.size());
+        double localY = mouseY - this.topPos;
+        GuiRect handle = new GuiRect(
+            CATEGORY_SCROLL_TRACK_X,
+            handleY,
+            CATEGORY_SCROLL_HANDLE_WIDTH,
+            CATEGORY_SCROLL_HANDLE_HEIGHT
+        );
+        if (handle.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
+            this.typeScrollbarGrabOffset = localY - handleY;
+        } else {
+            this.typeScrollbarGrabOffset = CATEGORY_SCROLL_HANDLE_HEIGHT * 0.5D;
+            updateTypeScrollFromPointer(mouseY);
+        }
+        this.typeScrollbarDragging = true;
+        return true;
+    }
+
+    private void updateTypeScrollFromPointer(double mouseY) {
+        int itemCount = filteredProductTypes().size();
+        int maximum = typeMaxScroll(itemCount);
+        if (maximum == 0) {
+            this.typeScrollRow = 0;
+            return;
+        }
+        int travel = CATEGORY_SCROLL_TRACK_HEIGHT - CATEGORY_SCROLL_HANDLE_HEIGHT;
+        double offset = mouseY - this.topPos - this.typeScrollbarGrabOffset - CATEGORY_SCROLL_TRACK_Y;
+        this.typeScrollRow = Math.clamp((int) Math.round(offset * maximum / travel), 0, maximum);
+    }
+
     private void updateBlueprintScrollFromPointer(double mouseY) {
         int itemCount = filteredBlueprints().size();
         int maximum = blueprintMaxScroll(itemCount);
@@ -2559,6 +2985,21 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         this.blueprintScrollRow = Math.clamp(this.blueprintScrollRow, 0, blueprintMaxScroll(itemCount));
     }
 
+    private void clampTypeScroll(int itemCount) {
+        this.typeScrollRow = Math.clamp(this.typeScrollRow, 0, typeMaxScroll(itemCount));
+    }
+
+    private int typeScrollbarHandleY(int itemCount) {
+        int maximum = typeMaxScroll(itemCount);
+        if (maximum == 0) return CATEGORY_SCROLL_TRACK_Y;
+        int travel = CATEGORY_SCROLL_TRACK_HEIGHT - CATEGORY_SCROLL_HANDLE_HEIGHT;
+        return CATEGORY_SCROLL_TRACK_Y + travel * this.typeScrollRow / maximum;
+    }
+
+    private static int typeMaxScroll(int itemCount) {
+        return Math.max(0, itemCount - CATEGORY_VISIBLE_ROWS);
+    }
+
     private int blueprintScrollbarHandleY(int itemCount) {
         int maximum = blueprintMaxScroll(itemCount);
         if (maximum == 0) return BLUEPRINT_SCROLL_TRACK_Y;
@@ -2595,11 +3036,17 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             ));
             case CREATE_CUBE -> createCubeAtViewportOrigin();
             case RENAME -> openRename();
-            case DELETE -> this.editor.deleteSelection();
-            case DELETE_ALL -> this.editor.deleteAllElements();
+            case DELETE -> {
+                if (this.editor.deleteSelection()) syncElementSelectionAnchor();
+            }
+            case DELETE_ALL -> {
+                if (this.editor.deleteAllElements()) syncElementSelectionAnchor();
+            }
             case HIDE -> this.editor.toggleHidden();
             case LOCK -> this.editor.toggleLocked();
-            case GROUP -> this.editor.groupSelection();
+            case GROUP -> {
+                if (this.editor.groupSelection()) syncElementSelectionAnchor();
+            }
             case CENTER_PIVOT -> this.editor.centerPivot();
             case FOCUS -> focusSelection();
             case RESET_CAMERA -> this.camera.reset();
@@ -2669,9 +3116,14 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
 
     private boolean createCubeAtViewportOrigin() {
         if (!this.editor.createCube()) return false;
+        syncElementSelectionAnchor();
         ensurePrimaryVisible();
         refreshNumericFields();
         return true;
+    }
+
+    private void syncElementSelectionAnchor() {
+        this.elementSelectionAnchor = this.editor.selection().primary().orElse(null);
     }
 
     private void createNumericFields() {
@@ -2838,6 +3290,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         }
         refreshNumericFields();
         ensurePrimaryVisible();
+        if (this.leftOverlayOpen) ensureSelectedTypeVisible();
     }
 
     private void synchronizeTitleMessage() {
@@ -2888,6 +3341,25 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         }
     }
 
+    private void ensureSelectedTypeVisible() {
+        List<MoldingProductType> filtered = filteredProductTypes();
+        ResourceLocation selectedType = this.editor.model().requestedType();
+        boolean selectedVisible = filtered.stream().anyMatch(type -> type.id().equals(selectedType));
+        if (!selectedVisible && this.leftSearch != null && !this.leftSearch.getValue().isEmpty()) {
+            this.leftSearch.setValue("");
+            filtered = filteredProductTypes();
+        }
+        clampTypeScroll(filtered.size());
+        for (int index = 0; index < filtered.size(); index++) {
+            if (!filtered.get(index).id().equals(selectedType)) continue;
+            if (index < this.typeScrollRow) this.typeScrollRow = index;
+            else if (index >= this.typeScrollRow + CATEGORY_VISIBLE_ROWS) {
+                this.typeScrollRow = index - CATEGORY_VISIBLE_ROWS + 1;
+            }
+            return;
+        }
+    }
+
     private void ensurePrimaryVisible() {
         Optional<UUID> primary = this.editor.selection().primary();
         if (primary.isEmpty()) return;
@@ -2904,17 +3376,20 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private List<SceneObject> sceneObjects() {
         List<SceneObject> objects = new ArrayList<>();
         List<MoldingElement> elements = this.editor.model().elements();
+        Map<UUID, MoldingGroup> groups = this.editor.model().groupMap();
         for (MoldingGroup group : this.editor.model().groups()) {
             objects.add(new SceneObject(
                 group.id(),
                 group.name(),
                 "G",
                 "screen.anvilcraftplasticraft.molding.element.group",
-                false
+                false,
+                group.visible(),
+                group.locked()
             ));
         }
         for (MoldingElement element : elements) {
-            objects.add(sceneObject(element));
+            objects.add(sceneObject(element, groups));
         }
         return objects;
     }
@@ -2923,13 +3398,23 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         return sceneObjects().size() + 1;
     }
 
-    private static SceneObject sceneObject(MoldingElement element) {
+    private static SceneObject sceneObject(MoldingElement element, Map<UUID, MoldingGroup> groups) {
+        boolean visible = element.visible();
+        boolean locked = element.locked();
+        MoldingGroup group = element.groupId().map(groups::get).orElse(null);
+        while (group != null) {
+            visible &= group.visible();
+            locked |= group.locked();
+            group = group.parentId().map(groups::get).orElse(null);
+        }
         return new SceneObject(
             element.id(),
             element.name(),
             "C",
             "screen.anvilcraftplasticraft.molding.element.cube",
-            true
+            true,
+            visible,
+            locked
         );
     }
 
@@ -2953,12 +3438,125 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private int currentClayRequirement() {
+        if (this.menu.formingMode() == MoldingFormingMode.PRINTING) return 0;
         try {
             BakedMoldingModel baked = MoldingModelBaker.bake(this.editor.model());
             return baked.analysis().empty() ? 0 : baked.analysis().clayBallRequirement();
         } catch (RuntimeException exception) {
             return 0;
         }
+    }
+
+    private Optional<MoldingTypeValidation> currentTypeValidation() {
+        EditableMoldingModel model = this.editor.model();
+        if (this.cachedTypeValidationModel == model) return this.cachedTypeValidation;
+        BakedMoldingModel baked = this.cachedSceneModel == model ? this.cachedBaked : null;
+        if (baked == null) {
+            try {
+                baked = MoldingModelBaker.bake(model);
+            } catch (RuntimeException exception) {
+                this.cachedTypeValidationModel = model;
+                this.cachedTypeValidation = Optional.empty();
+                return Optional.empty();
+            }
+        }
+        this.cachedTypeValidationModel = model;
+        this.cachedTypeValidation = Optional.of(MoldingProductTypes.validate(
+            model.requestedType(),
+            model,
+            baked
+        ));
+        return this.cachedTypeValidation;
+    }
+
+    private boolean modelFitsStandardWorkspace() {
+        EditableMoldingModel model = this.editor.model();
+        if (this.cachedWorkspaceBoundsModel == model) return this.cachedModelFitsWorkspace;
+        this.cachedWorkspaceBoundsModel = model;
+        this.cachedModelFitsWorkspace = MoldingModelBounds.all(model)
+            .map(MoldingModelBounds::fitsWorkspaceSize)
+            .orElse(true);
+        return this.cachedModelFitsWorkspace;
+    }
+
+    private ItemStack resourceStack() {
+        return this.menu.getSlot(PlasticMoldingChamberBlockEntity.RESOURCE_SLOT).getItem();
+    }
+
+    private boolean creativeOverrideActive() {
+        return this.menu.creativeOverrideLocked()
+            || PlasticMoldingChamberBlockEntity.isCreativeGenerator(this.resourceStack());
+    }
+
+    private boolean typeOverrideActive() {
+        return this.menu.typeOverrideCommitted()
+            || PlasticMoldingChamberBlockEntity.isCreativeGenerator(this.resourceStack())
+            || PlasticMoldingChamberBlockEntity.isMultiphaseTranscendium(this.resourceStack());
+    }
+
+    private boolean overrideVisualActive() {
+        return creativeOverrideActive() || typeOverrideActive();
+    }
+
+    private boolean lockConstraintsSatisfied() {
+        if (missingPrintingComponent()) return false;
+        if (!modelFitsStandardWorkspace() && !creativeOverrideActive()) return false;
+        return currentTypeValidation()
+            .map(validation -> validation.valid() || typeOverrideActive())
+            .orElse(false);
+    }
+
+    private boolean missingPrintingComponent() {
+        return MoldingProductTypes.requiresPrinting(this.editor.model().requestedType())
+            && !this.menu.printingComponentPresent();
+    }
+
+    private MoldingFormingMode displayedFormingMode() {
+        return this.menu.machineState() == PlasticMoldingMachineState.EDITABLE
+            ? this.menu.formingMode()
+            : this.menu.cycleFormingMode();
+    }
+
+    private void renderOverrideBorder(GuiGraphics graphics, GuiRect rect, boolean hovered, boolean pressed) {
+        int color = hovered ? OVERRIDE_BORDER_HOVERED : OVERRIDE_BORDER;
+        int left = this.leftPos + rect.x + 1;
+        int right = this.leftPos + rect.x + rect.width - 1;
+        int top = this.topPos + rect.y + 1 + (pressed ? 1 : 0);
+        int bottom = this.topPos + rect.y + rect.height - 1;
+        graphics.fill(left, top, right, top + 1, color);
+        graphics.fill(left, top, left + 1, bottom, color);
+        graphics.fill(right - 1, top, right, bottom, color);
+        graphics.fill(left, bottom - 1, right, bottom, color);
+    }
+
+    private void renderOverrideParticles(GuiGraphics graphics, GuiRect rect, float partialTick) {
+        double clock = (this.minecraft.level == null
+            ? Util.getMillis() / 50.0D
+            : this.minecraft.level.getGameTime() + partialTick);
+        int left = this.leftPos + rect.x + 3;
+        int right = this.leftPos + rect.x + rect.width - 3;
+        int bottom = this.topPos + rect.y + rect.height - 3;
+        for (int index = 0; index < 5; index++) {
+            double phase = (clock * 0.045D + index * 0.197D) % 1.0D;
+            if (phase < 0.0D) phase += 1.0D;
+            int x = left + Math.floorMod(index * 11 + (int) Math.floor(clock * 0.25D), Math.max(1, right - left));
+            x += (int) Math.round(Math.sin(clock * 0.08D + index) * 1.2D);
+            x = Math.clamp(x, left, right - 1);
+            int y = bottom - 1 - (int) Math.round(phase * Math.max(1, rect.height - 6));
+            int alpha = 90 + (int) Math.round(90.0D * (1.0D - Math.abs(phase - 0.5D) * 2.0D));
+            int color = alpha << 24 | 0xD85AFF;
+            graphics.fill(x, y, x + 1, y + 1, color);
+            if ((index & 1) == 0) graphics.fill(x + 1, y, x + 2, y + 1, color);
+        }
+    }
+
+    private static List<Component> typeValidationTooltip(MoldingTypeValidation validation) {
+        return List.of(
+            Component.translatable("screen.anvilcraftplasticraft.molding.type_invalid")
+                .withStyle(ChatFormatting.RED),
+            Component.translatable("message.anvilcraftplasticraft.molding.type_" + validation.reason())
+                .withStyle(ChatFormatting.RED)
+        );
     }
 
     private ItemStack diskStack() {
@@ -3238,7 +3836,15 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         private static final ViewportHover NONE = new ViewportHover(null, null);
     }
 
-    private record SceneObject(UUID id, String name, String kind, String typeKey, boolean element) {
+    private record SceneObject(
+        UUID id,
+        String name,
+        String kind,
+        String typeKey,
+        boolean element,
+        boolean visible,
+        boolean locked
+    ) {
     }
 
     private record GuiRect(int x, int y, int width, int height) {

@@ -83,6 +83,7 @@ import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 import net.neoforged.testframework.gametest.GameTestPlayer;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 /** 高粘性树脂桶固定实体的服务端行为测试。 */
 public final class AdhesiveBondingGameTests {
@@ -3087,6 +3088,100 @@ public final class AdhesiveBondingGameTests {
         });
     }
 
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "10x7x7", floor = true)
+    @TestHolder(description = "Async adhesive preview keeps the selection snapshot within two blocks of movement")
+    static void adhesiveAsyncPreviewKeepsNearbySelectionSnapshot(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(7, 1, 3);
+        helper.setBlock(support, Blocks.STONE);
+        Zombie moving = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 2.0D, 3.5D));
+        moving.setNoGravity(true);
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(3.5D, 2.0D, 1.5D));
+        Vec3 selectedPosition = moving.position();
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, moving, Direction.EAST),
+            "moving-preview source could not be selected"
+        );
+        Vec3 supportPlayerPosition = helper.absoluteVec(new Vec3(6.5D, 2.0D, 1.5D));
+        player.moveTo(supportPlayerPosition.x, supportPlayerPosition.y, supportPlayerPosition.z);
+        AdhesivePreviewService.requestBlock(
+            player,
+            2,
+            moving.getId(),
+            helper.absolutePos(support),
+            Direction.UP
+        );
+        Vec3 displacedPosition = selectedPosition.add(1.0D, 0.0D, 0.0D);
+        moving.setPos(displacedPosition);
+        check(
+            AdhesivePreviewService.confirmBlock(
+                player,
+                InteractionHand.MAIN_HAND,
+                helper.absolutePos(support),
+                Direction.UP
+            ),
+            "moving-preview confirmation was not queued"
+        );
+
+        awaitTransit(helper, moving, 15, transit -> {
+            check(
+                close(transit.path().getFirst(), selectedPosition),
+                "nearby movement replaced the selection snapshot: " + transit.path()
+            );
+            check(
+                !close(transit.path().getFirst(), displacedPosition),
+                "nearby movement unexpectedly became the transit start"
+            );
+        });
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "12x7x7", floor = true)
+    @TestHolder(description = "Async adhesive preview refreshes after more than two blocks of movement")
+    static void adhesiveAsyncPreviewRefreshesAfterMovementLimit(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(9, 1, 3);
+        helper.setBlock(support, Blocks.STONE);
+        Zombie moving = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(2.5D, 2.0D, 3.5D));
+        moving.setNoGravity(true);
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(3.5D, 2.0D, 1.5D));
+        Vec3 selectedPosition = moving.position();
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, moving, Direction.EAST),
+            "refresh-preview source could not be selected"
+        );
+        Vec3 supportPlayerPosition = helper.absoluteVec(new Vec3(8.5D, 2.0D, 1.5D));
+        player.moveTo(supportPlayerPosition.x, supportPlayerPosition.y, supportPlayerPosition.z);
+        AdhesivePreviewService.requestBlock(
+            player,
+            3,
+            moving.getId(),
+            helper.absolutePos(support),
+            Direction.UP
+        );
+        Vec3 displacedPosition = selectedPosition.add(2.25D, 0.0D, 0.0D);
+        moving.setPos(displacedPosition);
+        check(
+            AdhesivePreviewService.confirmBlock(
+                player,
+                InteractionHand.MAIN_HAND,
+                helper.absolutePos(support),
+                Direction.UP
+            ),
+            "refresh-preview confirmation was not queued"
+        );
+
+        awaitTransit(helper, moving, 15, transit -> {
+            check(
+                close(transit.path().getFirst(), displacedPosition),
+                "movement beyond two blocks did not refresh the transit start: " + transit.path()
+            );
+            check(
+                !close(transit.path().getFirst(), selectedPosition),
+                "expired selection snapshot was reused after excessive movement"
+            );
+        });
+    }
+
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "18x11x15", floor = true)
     @TestHolder(description = "Adhesive path planning can spend its detour budget beyond the old four-block margin")
@@ -3940,6 +4035,30 @@ public final class AdhesiveBondingGameTests {
             PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack()
         );
         return player;
+    }
+
+    private static void awaitTransit(
+        ExtendedGameTestHelper helper,
+        Entity entity,
+        int maximumAttempts,
+        Consumer<AdhesiveTransit> assertion
+    ) {
+        int[] attempts = {0};
+        Runnable[] poll = new Runnable[1];
+        poll[0] = () -> {
+            AdhesiveTransit transit = entity.getExistingDataOrNull(PlasticraftAttachments.ADHESIVE_TRANSIT.get());
+            if (transit != null) {
+                assertion.accept(transit);
+                helper.succeed();
+                return;
+            }
+            if (++attempts[0] >= maximumAttempts) {
+                check(false, "adhesive preview confirmation never started transit");
+                return;
+            }
+            helper.runAfterDelay(1, poll[0]);
+        };
+        poll[0].run();
     }
 
     private static HardenedResinAnvilEntity createAnvil(ExtendedGameTestHelper helper, Vec3 relativePosition) {

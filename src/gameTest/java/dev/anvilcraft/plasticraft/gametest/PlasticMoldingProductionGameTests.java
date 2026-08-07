@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.redstone.MoldedPlasticRedstoneConductor;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
@@ -20,6 +21,7 @@ import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingFormingMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProcessSnapshot;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProductionMode;
@@ -38,6 +40,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -53,7 +56,9 @@ import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.piston.PistonStructureResolver;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -105,13 +110,18 @@ public final class PlasticMoldingProductionGameTests {
         );
         check(cooled.getClass() == molded.getClass(), "standard molded product used a different entity class");
         check(cooled.getType() == molded.getType(), "standard molded product used a different entity type");
-        check(
-            molded.getName().getString().equals(model.name()),
-            "molded entity did not expose its real model name"
+        Component expectedName = Component.translatable(
+            "item.anvilcraftplasticraft.molded_product_name",
+            Component.translatable("material.anvilcraftplasticraft.universal_plastic"),
+            Component.translatable("item.anvilcraftplasticraft.molded_product_suffix.block")
         );
         check(
-            moldedStack.getHoverName().getString().equals(model.name()),
-            "molded item did not expose its real model name"
+            molded.getName().equals(expectedName),
+            "molded entity name depended on its model name: " + molded.getName()
+        );
+        check(
+            moldedStack.getHoverName().equals(expectedName),
+            "molded item name depended on its model name: " + moldedStack.getHoverName()
         );
         PlasticEntityGeometry cooledGeometry = cooled.plasticraft$getGeometry();
         PlasticEntityGeometry moldedGeometry = molded.plasticraft$getGeometry();
@@ -142,6 +152,233 @@ public final class PlasticMoldingProductionGameTests {
             }
         }
         helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "9x6x5", floor = true)
+    @TestHolder(description = "A plastic entity occupies a piston position and relays the push into the block ahead")
+    static void plasticEntityRelaysPistonPush(ExtendedGameTestHelper helper) {
+        BlockPos piston = new BlockPos(1, 2, 2);
+        BlockPos occupied = piston.east();
+        BlockPos ahead = occupied.east();
+        helper.setBlock(
+            piston,
+            Blocks.PISTON.defaultBlockState().setValue(BlockStateProperties.FACING, Direction.EAST)
+        );
+        MoldedPlasticData data = fullData(model(
+            "Piston Cube",
+            cube("Body", 16.0D, 0.0D, 16.0D, 32.0D, 16.0D, 32.0D)
+        ), DyeColor.WHITE);
+        UniversalPlasticEntity plastic = createMoldedProduct(helper, occupied, data);
+
+        helper.setBlock(ahead, Blocks.OBSIDIAN);
+        PistonStructureResolver blocked = new PistonStructureResolver(
+            helper.getLevel(),
+            helper.absolutePos(piston),
+            Direction.EAST,
+            true
+        );
+        check(!blocked.resolve(), "plastic occupancy did not relay the immovable block obstruction");
+
+        helper.setBlock(ahead, Blocks.STONE);
+        PistonStructureResolver movable = new PistonStructureResolver(
+            helper.getLevel(),
+            helper.absolutePos(piston),
+            Direction.EAST,
+            true
+        );
+        check(movable.resolve(), "plastic occupancy rejected a movable block ahead");
+        check(movable.getToPush().contains(helper.absolutePos(occupied)),
+            "plastic anchor was absent from the piston push list");
+        check(movable.getToPush().contains(helper.absolutePos(ahead)),
+            "block ahead of the plastic entity was absent from the piston push list");
+
+        helper.getLevel().setBlockAndUpdate(
+            helper.absolutePos(piston.north()),
+            Blocks.REDSTONE_BLOCK.defaultBlockState()
+        );
+        helper.runAfterDelay(6, () -> {
+            check(helper.getBlockState(ahead.east()).is(Blocks.STONE),
+                "piston did not move the block ahead of the plastic entity");
+            check(plastic.plasticraft$getAnchorBlockPos().equals(helper.absolutePos(occupied.east())),
+                "plastic entity did not move normally with the piston");
+            check(helper.getBlockState(ahead).isAir(), "temporary plastic occupancy remained after the push");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 45)
+    @EmptyTemplate(value = "9x6x5", floor = true)
+    @TestHolder(description = "A sticky piston retracts a plastic entity touching its extended head")
+    static void stickyPistonRetractsPlasticEntity(ExtendedGameTestHelper helper) {
+        BlockPos piston = new BlockPos(1, 2, 2);
+        BlockPos power = piston.north();
+        BlockPos occupied = piston.relative(Direction.EAST, 2);
+        helper.setBlock(
+            piston,
+            Blocks.STICKY_PISTON.defaultBlockState().setValue(BlockStateProperties.FACING, Direction.EAST)
+        );
+        helper.setBlock(power, Blocks.REDSTONE_BLOCK);
+        helper.runAfterDelay(5, () -> {
+            check(helper.getBlockState(piston).getValue(BlockStateProperties.EXTENDED),
+                "sticky piston did not extend before the plastic entity was placed");
+            MoldedPlasticData data = fullData(model(
+                "Sticky Piston Cube",
+                cube("Body", 16.0D, 0.0D, 16.0D, 32.0D, 16.0D, 32.0D)
+            ), DyeColor.WHITE);
+            UniversalPlasticEntity plastic = createMoldedProduct(helper, occupied, data);
+            Vec3 startPosition = plastic.position();
+
+            helper.setBlock(power, Blocks.AIR);
+            helper.runAfterDelay(2, () -> {
+                check(plastic.getX() < startPosition.x - 0.05D,
+                    "plastic entity did not follow the retracting sticky piston");
+                helper.runAfterDelay(4, () -> {
+                    check(plastic.plasticraft$getAnchorBlockPos().equals(helper.absolutePos(occupied.west())),
+                        "sticky piston did not finish pulling the plastic entity back");
+                    check(helper.getBlockState(occupied.west()).isAir(),
+                        "sticky piston left the temporary plastic occupancy behind");
+                    helper.succeed();
+                });
+            });
+        });
+    }
+
+    @GameTest(timeoutTicks = 55)
+    @EmptyTemplate(value = "10x6x15", floor = true)
+    @TestHolder(description = "Slime, honey, and high-viscosity resin move adjacent plastic entities both ways")
+    static void stickyBlocksMoveAdjacentPlasticEntitiesBothWays(ExtendedGameTestHelper helper) {
+        BlockState[] stickyStates = {
+            Blocks.SLIME_BLOCK.defaultBlockState(),
+            Blocks.HONEY_BLOCK.defaultBlockState(),
+            PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get().defaultBlockState()
+        };
+        String[] labels = {"slime block", "honey block", "high-viscosity resin block"};
+        BlockPos[] pistons = new BlockPos[stickyStates.length];
+        BlockPos[] carriers = new BlockPos[stickyStates.length];
+        BlockPos[] occupied = new BlockPos[stickyStates.length];
+        UniversalPlasticEntity[] plastics = new UniversalPlasticEntity[stickyStates.length];
+        Vec3[] startPositions = new Vec3[stickyStates.length];
+        MoldedPlasticData data = fullData(model(
+            "Sticky Block Cube",
+            cube("Body", 16.0D, 0.0D, 16.0D, 32.0D, 16.0D, 32.0D)
+        ), DyeColor.WHITE);
+
+        for (int index = 0; index < stickyStates.length; index++) {
+            BlockPos piston = new BlockPos(2, 3, 2 + index * 4);
+            BlockPos carrier = piston.east();
+            BlockPos plasticPos = carrier.south();
+            pistons[index] = piston;
+            carriers[index] = carrier;
+            occupied[index] = plasticPos;
+            helper.setBlock(
+                piston,
+                Blocks.STICKY_PISTON.defaultBlockState().setValue(BlockStateProperties.FACING, Direction.EAST)
+            );
+            helper.setBlock(carrier, stickyStates[index]);
+            plastics[index] = createMoldedProduct(helper, plasticPos, data);
+            startPositions[index] = plastics[index].position();
+            PistonStructureResolver resolver = new PistonStructureResolver(
+                helper.getLevel(),
+                helper.absolutePos(piston),
+                Direction.EAST,
+                true
+            );
+            check(resolver.resolve(), labels[index] + " rejected its adjacent plastic entity");
+            check(resolver.getToPush().contains(helper.absolutePos(plasticPos)),
+                labels[index] + " did not add its adjacent plastic entity to the push list");
+            helper.setBlock(piston.west(), Blocks.REDSTONE_BLOCK);
+        }
+
+        helper.runAfterDelay(3, () -> {
+            for (int index = 0; index < stickyStates.length; index++) {
+                check(plastics[index].getX() > startPositions[index].x + 0.05D,
+                    labels[index] + " did not move its adjacent plastic entity while extending");
+            }
+            helper.runAfterDelay(3, () -> {
+                for (int index = 0; index < stickyStates.length; index++) {
+                    check(helper.getBlockState(carriers[index].east()).is(stickyStates[index].getBlock()),
+                        labels[index] + " did not finish extending");
+                    check(plastics[index].plasticraft$getAnchorBlockPos().equals(
+                        helper.absolutePos(occupied[index].east())
+                    ), labels[index] + " did not move its adjacent plastic entity one block");
+                    helper.setBlock(pistons[index].west(), Blocks.AIR);
+                }
+                helper.runAfterDelay(3, () -> {
+                    for (int index = 0; index < stickyStates.length; index++) {
+                        check(plastics[index].getX() < startPositions[index].x + 0.95D,
+                            labels[index] + " did not pull its adjacent plastic entity while retracting");
+                    }
+                    helper.runAfterDelay(3, () -> {
+                        for (int index = 0; index < stickyStates.length; index++) {
+                            check(helper.getBlockState(carriers[index]).is(stickyStates[index].getBlock()),
+                                labels[index] + " did not return with the sticky piston");
+                            check(plastics[index].plasticraft$getAnchorBlockPos().equals(
+                                helper.absolutePos(occupied[index])
+                            ), labels[index] + " did not return its adjacent plastic entity");
+                        }
+                        helper.succeed();
+                    });
+                });
+            });
+        });
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "11x6x8", floor = true)
+    @TestHolder(description = "Only an exact 16x16x16 molded entity conducts redstone power through six faces")
+    static void fullBlockSizedProductConductsRedstone(ExtendedGameTestHelper helper) {
+        BlockPos fullAnchor = new BlockPos(3, 2, 2);
+        BlockPos shortAnchor = new BlockPos(7, 2, 5);
+        MoldedPlasticData fullProductData = fullData(model(
+            "Redstone Cube",
+            cube("Body", 16.0D, 0.0D, 16.0D, 32.0D, 16.0D, 32.0D)
+        ), DyeColor.RED);
+        UniversalPlasticEntity full = createMoldedProduct(helper, fullAnchor, fullProductData);
+        createMoldedProduct(helper, fullAnchor.south(), fullProductData);
+        createMoldedProduct(helper, shortAnchor, fullData(model(
+            "Short Redstone Cube",
+            cube("Body", 16.0D, 0.0D, 16.0D, 32.0D, 15.0D, 32.0D)
+        ), DyeColor.RED));
+
+        helper.setBlock(fullAnchor.west(), Blocks.REDSTONE_BLOCK);
+        helper.setBlock(fullAnchor.east(), Blocks.REDSTONE_LAMP);
+        helper.setBlock(shortAnchor.west(), Blocks.REDSTONE_BLOCK);
+        helper.setBlock(shortAnchor.east(), Blocks.REDSTONE_LAMP);
+        helper.runAfterDelay(3, () -> {
+            BlockPos absoluteFullAnchor = helper.absolutePos(fullAnchor);
+            int conductedSignal = helper.getLevel().getSignal(absoluteFullAnchor, Direction.WEST);
+            check(conductedSignal == 15,
+                "full block-sized plastic did not conduct its input; conducted=" + conductedSignal
+                    + ", virtual=" + MoldedPlasticRedstoneConductor.weakSignal(
+                        helper.getLevel(),
+                        absoluteFullAnchor,
+                        Direction.WEST
+                    )
+                    + ", source=" + helper.getLevel().getSignal(
+                        absoluteFullAnchor.west(),
+                        Direction.WEST
+                    )
+                    + ", sourceState=" + helper.getLevel().getBlockState(absoluteFullAnchor.west())
+                    + ", bounds=" + full.getBoundingBox()
+                    + ", surface=" + fullProductData.surfaceBounds()
+                    + ", ticks=" + full.tickCount);
+            check(helper.getBlockState(fullAnchor.east()).getValue(BlockStateProperties.LIT),
+                "full block-sized plastic did not power the receiver across it");
+            check(helper.getLevel().getSignal(helper.absolutePos(shortAnchor), Direction.WEST) == 0,
+                "15 px-tall plastic incorrectly conducted redstone");
+            check(!helper.getBlockState(shortAnchor.east()).getValue(BlockStateProperties.LIT),
+                "15 px-tall plastic powered the receiver across it");
+
+            helper.setBlock(fullAnchor.west(), Blocks.AIR);
+            helper.runAfterDelay(6, () -> {
+                check(helper.getLevel().getSignal(helper.absolutePos(fullAnchor), Direction.WEST) == 0,
+                    "adjacent full block-sized plastic conductors retained a removed redstone input");
+                check(!helper.getBlockState(fullAnchor.east()).getValue(BlockStateProperties.LIT),
+                    "receiver remained powered after the conducted input was removed");
+                helper.succeed();
+            });
+        });
     }
 
     @GameTest(timeoutTicks = 20)
@@ -352,7 +589,11 @@ public final class PlasticMoldingProductionGameTests {
         blocker.discard();
         fireGiantAnvil(helper, ready.topCenter());
         List<UniversalPlasticEntity> products = productEntities(helper.getLevel(), ready.bounds());
-        check(products.size() == 1, "crafting-table structure did not produce exactly one entity product");
+        check(products.size() == 1,
+            "crafting-table structure produced " + products.size()
+                + " entity products; state=" + ready.chamber().machineState()
+                + ", batch=" + ready.chamber().batchFluidAmount()
+                + ", clay=" + ready.chamber().moldedClayBalls());
         UniversalPlasticEntity product = products.getFirst();
         product.setNoGravity(true);
         MoldedPlasticData data = product.getMoldedData().orElseThrow();
@@ -416,10 +657,141 @@ public final class PlasticMoldingProductionGameTests {
         helper.succeed();
     }
 
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "31x8x13", floor = true)
+    @TestHolder(description = "Automatic 3D printing preserves continuous, redstone, and single production modes")
+    static void automaticPrintingPreservesProductionModes(ExtendedGameTestHelper helper) {
+        PlasticMoldingChamberBlockEntity continuous = prepareAutomaticPrinter(
+            helper,
+            new BlockPos(5, 2, 3),
+            MoldingProductionMode.CONTINUOUS,
+            500
+        );
+        check(continuous.requestLock().accepted(), "continuous printer did not lock");
+        completeOneVoxelPrint(continuous);
+        AABB continuousBounds = PlasticMoldingChamberStructure.regionBounds(
+            continuous.getBlockPos(),
+            Direction.NORTH
+        );
+        check(productEntities(helper.getLevel(), continuousBounds).size() == 1,
+            "continuous printing did not directly create one plastic entity");
+        check(continuous.machineState() == PlasticMoldingMachineState.WAITING_NEXT_CYCLE,
+            "continuous printing did not wait for its next cycle");
+        check(clayCount(helper.getLevel(), continuousBounds) == 0,
+            "continuous printing created clay recovery drops");
+        entitiesIn(helper.getLevel(), continuousBounds).forEach(Entity::discard);
+        tick(continuous, 1);
+        check(continuous.machineState() == PlasticMoldingMachineState.WAITING_TO_LOCK,
+            "continuous printing did not prepare its next cycle after the region cleared");
+        tick(continuous, 1);
+        check(continuous.batchFluidAmount() == 250,
+            "continuous printing did not begin pumping the next batch automatically");
+
+        PlasticMoldingChamberBlockEntity redstone = prepareAutomaticPrinter(
+            helper,
+            new BlockPos(15, 2, 3),
+            MoldingProductionMode.REDSTONE,
+            500
+        );
+        BlockPos redstoneSignal = redstone.getBlockPos().west();
+        helper.getLevel().setBlockAndUpdate(redstoneSignal, Blocks.REDSTONE_BLOCK.defaultBlockState());
+        tick(redstone, 1);
+        check(redstone.isLocked() && redstone.batchFluidAmount() == 250,
+            "redstone rising edge did not start the first printing batch");
+        tick(redstone, 249);
+        tick(redstone, 2);
+        AABB redstoneBounds = PlasticMoldingChamberStructure.regionBounds(redstone.getBlockPos(), Direction.NORTH);
+        check(redstone.machineState() == PlasticMoldingMachineState.EDITABLE,
+            "redstone printing did not return to the unlocked state");
+        entitiesIn(helper.getLevel(), redstoneBounds).forEach(Entity::discard);
+        tick(redstone, 1);
+        check(!redstone.isLocked(), "steady redstone signal retriggered printing");
+        helper.getLevel().setBlockAndUpdate(redstoneSignal, Blocks.AIR.defaultBlockState());
+        tick(redstone, 1);
+        helper.getLevel().setBlockAndUpdate(redstoneSignal, Blocks.REDSTONE_BLOCK.defaultBlockState());
+        tick(redstone, 1);
+        check(redstone.isLocked(), "a new redstone rising edge did not start the next print");
+
+        PlasticMoldingChamberBlockEntity single = prepareAutomaticPrinter(
+            helper,
+            new BlockPos(25, 2, 3),
+            MoldingProductionMode.SINGLE,
+            250
+        );
+        check(single.requestLock().accepted(), "single printer did not lock manually");
+        completeOneVoxelPrint(single);
+        AABB singleBounds = PlasticMoldingChamberStructure.regionBounds(single.getBlockPos(), Direction.NORTH);
+        check(single.machineState() == PlasticMoldingMachineState.EDITABLE,
+            "single printing did not return to editing");
+        entitiesIn(helper.getLevel(), singleBounds).forEach(Entity::discard);
+        helper.getLevel().setBlockAndUpdate(single.getBlockPos().west(), Blocks.REDSTONE_BLOCK.defaultBlockState());
+        tick(single, 1);
+        check(!single.isLocked(), "single printing accepted a redstone lock request");
+        helper.succeed();
+    }
+
     private static MoldedPlasticData fullData(EditableMoldingModel model, DyeColor color) {
         BakedMoldingModel baked = MoldingModelBaker.bake(model);
         int amount = Math.max(250, (baked.analysis().volume() + 3) / 4);
         return MoldedPlasticData.manufacture(model, baked, melt(amount, color), amount);
+    }
+
+    private static UniversalPlasticEntity createMoldedProduct(
+        ExtendedGameTestHelper helper,
+        BlockPos occupiedPos,
+        MoldedPlasticData data
+    ) {
+        ItemStack stack = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        MoldedPlasticData.set(stack, data);
+        BlockPos absolutePos = helper.absolutePos(occupiedPos);
+        UniversalPlasticEntity entity = new UniversalPlasticEntity(
+            PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
+            helper.getLevel(),
+            data.geometry().placementPosition(absolutePos, PlasticEntityOrientation.DEFAULT),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            stack,
+            PlasticEntityOrientation.DEFAULT
+        );
+        entity.setNoGravity(true);
+        check(helper.getLevel().addFreshEntity(entity), "failed to add molded plastic product");
+        return entity;
+    }
+
+    private static PlasticMoldingChamberBlockEntity prepareAutomaticPrinter(
+        ExtendedGameTestHelper helper,
+        BlockPos relativeController,
+        MoldingProductionMode mode,
+        int meltAmount
+    ) {
+        PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, relativeController, Direction.NORTH);
+        check(chamber.replaceEditableModel(
+            model("Printed Cell", cube("Cell", 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)),
+            chamber.revision()
+        ).accepted(), "automatic printing model was rejected");
+        check(chamber.setProductionMode(mode, chamber.revision()).accepted(),
+            "automatic printing production mode was rejected");
+        helper.getLevel().setBlockAndUpdate(
+            chamber.getBlockPos().above(),
+            PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get().defaultBlockState()
+        );
+        check(chamber.formingMode() == MoldingFormingMode.PRINTING,
+            "printing component did not select automatic printing");
+        chamber.energyStorage().receiveEnergy(MoldingPowerBridge.capacity(), false);
+        check(chamber.fluidHandler().fill(
+            melt(meltAmount, DyeColor.WHITE),
+            IFluidHandler.FluidAction.EXECUTE
+        ) == meltAmount, "automatic printer rejected its staged melt");
+        return chamber;
+    }
+
+    private static void completeOneVoxelPrint(PlasticMoldingChamberBlockEntity chamber) {
+        tick(chamber, 1);
+        check(chamber.machineState() == PlasticMoldingMachineState.PROCESS_READY,
+            "automatic printer did not fill its component at 250 mB per tick");
+        tick(chamber, 1);
+        check(chamber.machineState() == PlasticMoldingMachineState.PROCESSING,
+            "automatic printer waited for a giant anvil");
+        tick(chamber, chamber.batchFluidCapacity());
     }
 
     private static EditableMoldingModel almostFullModel() {

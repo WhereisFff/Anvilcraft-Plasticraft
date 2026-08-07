@@ -34,6 +34,25 @@ public record MoldingSelection(List<UUID> ids) {
         return new MoldingSelection(result);
     }
 
+    public MoldingSelection selectRange(List<UUID> orderedIds, UUID anchor, UUID target, boolean additive) {
+        int targetIndex = orderedIds.indexOf(target);
+        if (targetIndex < 0) return this;
+        List<UUID> result = additive ? new ArrayList<>(this.ids) : new ArrayList<>();
+        int anchorIndex = orderedIds.indexOf(anchor);
+        if (anchorIndex < 0) {
+            result.remove(target);
+            result.add(target);
+            return new MoldingSelection(result);
+        }
+        int step = targetIndex >= anchorIndex ? 1 : -1;
+        for (int index = anchorIndex; ; index += step) {
+            UUID id = orderedIds.get(index);
+            result.remove(id);
+            result.add(id);
+            if (index == targetIndex) return new MoldingSelection(result);
+        }
+    }
+
     public MoldingSelection retain(Set<UUID> available) {
         return new MoldingSelection(this.ids.stream().filter(available::contains).toList());
     }

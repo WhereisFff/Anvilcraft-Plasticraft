@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberStructure;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingMachineState;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingRegionBlock;
+import dev.anvilcraft.plasticraft.block.entity.Plastic3DPrintingComponentBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
@@ -19,9 +20,13 @@ import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintImporter;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintLibrary;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintService;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintSummary;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingFormingMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingMachineAction;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProcessSnapshot;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingPlan;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingVoxel;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProductionMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingWaitReason;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
@@ -31,6 +36,8 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.session.MoldingSessionSnapshot;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.item.property.component.StructureDiskData;
@@ -544,7 +551,132 @@ public final class PlasticMoldingChamberGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "9x7x9", floor = true)
-    @TestHolder(description = "Editable blueprints use structure disks and reject oversized models only when loaded")
+    @TestHolder(description = "The chamber fills its printing component at 250 mB per tick, then the component consumes one mB per printing tick")
+    static void printingSkipsClayAndStartsAutomatically(ExtendedGameTestHelper helper) {
+        PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
+        check(chamber.replaceEditableModel(cubeModel(11.0D), chamber.revision()).accepted(),
+            "printing model was rejected");
+        check(chamber.formingMode() == MoldingFormingMode.CASTING,
+            "chamber without a printing component did not select casting");
+
+        helper.getLevel().setBlockAndUpdate(
+            chamber.getBlockPos().above(),
+            PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get().defaultBlockState()
+        );
+        check(helper.getLevel().getBlockEntity(chamber.getBlockPos().above())
+                instanceof Plastic3DPrintingComponentBlockEntity,
+            "printing component did not create its internal melt storage");
+        check(chamber.formingMode() == MoldingFormingMode.PRINTING,
+            "installing the printing component did not select printing");
+        helper.getLevel().setBlockAndUpdate(chamber.getBlockPos().above(), Blocks.AIR.defaultBlockState());
+        check(chamber.formingMode() == MoldingFormingMode.CASTING,
+            "removing the printing component did not restore casting");
+        helper.getLevel().setBlockAndUpdate(
+            chamber.getBlockPos().above(),
+            PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get().defaultBlockState()
+        );
+        chamber.inventory().setItem(
+            PlasticMoldingChamberBlockEntity.CLAY_SLOT,
+            new ItemStack(Items.CLAY_BALL, 64)
+        );
+        chamber.energyStorage().receiveEnergy(MoldingPowerBridge.capacity(), false);
+        check(chamber.requestLock().accepted(), "printing model did not lock with its component");
+        check(chamber.requiredClayBalls() == 0 && chamber.moldedClayBalls() == 0,
+            "printing reserved clay");
+        check(chamber.batchFluidCapacity() == 333, "printing model did not calculate its full 333 mB batch");
+        check(chamber.fluidHandler().fill(
+            new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 333),
+            IFluidHandler.FluidAction.EXECUTE
+        ) == 333, "printing staging tank rejected its melt");
+
+        tick(chamber, 1);
+        check(chamber.batchFluidAmount() == 250 && chamber.stagingFluidAmount() == 83,
+            "chamber did not pump exactly 250 mB into the printing component");
+        check(chamber.machineState() == PlasticMoldingMachineState.MOLD_READY
+                && chamber.moldFillProgress() == 0
+                && !chamber.hasMoldCollision(),
+            "printing entered the clay animation or mold collision state");
+        check(chamber.beginProcessing().isEmpty(), "a giant-anvil transaction started printing");
+        tick(chamber, 1);
+        check(chamber.batchFluidAmount() == chamber.batchFluidCapacity()
+                && chamber.stagingFluidAmount() == 0
+                && chamber.machineState() == PlasticMoldingMachineState.PROCESS_READY,
+            "printing component did not receive the complete model batch");
+        tick(chamber, 1);
+        check(chamber.batchFluidAmount() == chamber.batchFluidCapacity()
+                && chamber.machineState() == PlasticMoldingMachineState.PROCESSING
+                && chamber.printingProgress() == 0,
+            "full printing component did not start automatically without consuming melt early");
+        tick(chamber, 1);
+        check(chamber.batchFluidAmount() == chamber.batchFluidCapacity() - 1,
+            "printing component did not consume exactly 1 mB in one printing tick");
+        check(chamber.printingProgress() > 0
+                && chamber.machineState() == PlasticMoldingMachineState.PROCESSING,
+            "printing consumption did not reveal its proportional voxel prefix");
+        check(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.CLAY_SLOT).getCount() == 64
+                && chamber.moldedClayBalls() == 0,
+            "printing consumed clay after it started");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x7x9", floor = true)
+    @TestHolder(description = "High-precision products require the printing component and need no forming-mode action")
+    static void highPrecisionTypeUsesInstalledPrintingComponent(ExtendedGameTestHelper helper) {
+        PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
+        EditableMoldingModel propeller = EditableMoldingModel.empty().withElements(List.of(
+            MoldingElement.cube("Core", new MoldingVec3(23, 24, 23), new MoldingVec3(25, 25, 25)),
+            MoldingElement.cube("West", new MoldingVec3(16, 24, 23), new MoldingVec3(23, 25, 25)),
+            MoldingElement.cube("East", new MoldingVec3(25, 24, 23), new MoldingVec3(32, 25, 25)),
+            MoldingElement.cube("North", new MoldingVec3(23, 24, 16), new MoldingVec3(25, 25, 23)),
+            MoldingElement.cube("South", new MoldingVec3(23, 24, 25), new MoldingVec3(25, 25, 32))
+        )).withRequestedType(MoldingProductTypes.PROPELLER_ID);
+        check(chamber.replaceEditableModel(propeller, chamber.revision()).accepted(),
+            "valid propeller model was rejected");
+        PlasticMoldingChamberBlockEntity.MachineOutcome missingComponent = chamber.requestLock();
+        check(!missingComponent.accepted() && missingComponent.reason().equals("missing_printing_component"),
+            "high-precision product locked without a printing component");
+
+        helper.getLevel().setBlockAndUpdate(
+            chamber.getBlockPos().above(),
+            PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get().defaultBlockState()
+        );
+        PlasticMoldingChamberBlockEntity.MachineOutcome installedComponent = chamber.requestLock();
+        check(installedComponent.accepted(),
+            "installed printing component did not unlock high-precision processing: "
+                + installedComponent.reason());
+        check(chamber.cycleFormingMode() == MoldingFormingMode.PRINTING
+                && chamber.requiredClayBalls() == 0,
+            "high-precision cycle did not automatically lock as clay-free printing");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Printing voxels scan Y layers, then Z rows, then X from negative to positive")
+    static void printingPlanUsesYzxOrder(ExtendedGameTestHelper helper) {
+        EditableMoldingModel model = EditableMoldingModel.empty().withElements(List.of(
+            MoldingElement.cube("Later X", new MoldingVec3(30, 20, 20), new MoldingVec3(31, 21, 21)),
+            MoldingElement.cube("First", new MoldingVec3(18, 20, 20), new MoldingVec3(19, 21, 21)),
+            MoldingElement.cube("Later Z", new MoldingVec3(18, 20, 22), new MoldingVec3(19, 21, 23)),
+            MoldingElement.cube("Later Y", new MoldingVec3(18, 22, 20), new MoldingVec3(19, 23, 21))
+        ));
+        MoldingPrintingPlan plan = MoldingPrintingPlan.create(MoldingModelBaker.bake(model));
+        check(plan.size() == 4, "printing plan added cells outside the model");
+        check(plan.voxelAt(0).equals(new MoldingPrintingVoxel(18, 20, 20)),
+            "printing plan did not begin at the lowest X in its first row");
+        check(plan.voxelAt(1).equals(new MoldingPrintingVoxel(30, 20, 20)),
+            "printing plan did not advance from -X to +X");
+        check(plan.voxelAt(2).equals(new MoldingPrintingVoxel(18, 20, 22)),
+            "printing plan did not advance to the next Z row");
+        check(plan.voxelAt(3).equals(new MoldingPrintingVoxel(18, 22, 20)),
+            "printing plan did not advance to the next Y layer last");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x7x9", floor = true)
+    @TestHolder(description = "Editable blueprints use structure disks and load oversized models as editable drafts")
     static void blueprintDiskAtomicStoreAndOfflineLoad(ExtendedGameTestHelper helper) throws BlueprintException {
         PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
         ServerPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
@@ -697,26 +829,27 @@ public final class PlasticMoldingChamberGameTests {
                 .equals(new MoldingVec3(3.0625D, 3.0625D, 3.0625D)),
             "oversized disk model dimensions did not preserve the manufactured size");
         chamber.inventory().setItem(PlasticMoldingChamberBlockEntity.DISK_SLOT, oversizedDisk);
-        String modelBeforeRejectedLoad = chamber.bakedModel().modelHash();
-        BlueprintException oversizedLoad = expectBlueprintFailure(() -> MoldingBlueprintService.loadDiskModel(
+        MoldingBlueprintService.loadDiskModel(
             player,
             chamber,
             session.sessionId(),
             chamber.revision(),
             MoldingBlueprintDisk.stateToken(oversizedDisk),
             true
-        ));
-        check(oversizedLoad.reason().equals("model_too_large"),
-            "oversized structure disk model did not return the chamber size error");
-        check(chamber.bakedModel().modelHash().equals(modelBeforeRejectedLoad),
-            "rejected oversized structure disk load changed the chamber model");
+        );
+        check(chamber.machineState() == PlasticMoldingMachineState.EDITABLE,
+            "oversized structure disk model did not remain editable after loading");
+        check(chamber.bakedModel().modelHash().equals(oversizedBlueprint.modelHash()),
+            "oversized structure disk model did not replace the current draft");
+        check(chamber.stagingFluidAmount() == 500,
+            "oversized structure disk load changed the independent staging tank");
         player.discard();
         helper.succeed();
     }
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "9x7x9", floor = true)
-    @TestHolder(description = "Resource slot empties melt buckets and consumes at most one capacitor per tick")
+    @TestHolder(description = "Resource slot accepts every supported input and consumes at most one capacitor per tick")
     static void resourceSlotAcceptsMeltAndCapacitors(ExtendedGameTestHelper helper) {
         PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
         check(chamber.inventory().canPlaceItem(
@@ -731,6 +864,14 @@ public final class PlasticMoldingChamberGameTests {
             PlasticMoldingChamberBlockEntity.RESOURCE_SLOT,
             ModItems.CAPACITOR_EMPTY.asStack()
         ), "resource slot accepted an empty capacitor");
+        check(chamber.inventory().canPlaceItem(
+            PlasticMoldingChamberBlockEntity.RESOURCE_SLOT,
+            ModItems.MULTIPHASE_TRANSCENDIUM.asStack()
+        ), "resource slot rejected Multiphase Transcendium");
+        check(chamber.inventory().canPlaceItem(
+            PlasticMoldingChamberBlockEntity.RESOURCE_SLOT,
+            ModBlocks.CREATIVE_GENERATOR.asStack()
+        ), "resource slot rejected a Creative Generator");
 
         ItemStack meltBucket = PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.asStack();
         PlasticMeltColor.set(meltBucket, DyeColor.RED);
@@ -786,6 +927,85 @@ public final class PlasticMoldingChamberGameTests {
         check(dropped.stream().mapToInt(item -> item.getItem().getCount()).sum() == 1,
             "full player inventory did not drop the empty capacitor");
         fullPlayer.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x7x9", floor = true)
+    @TestHolder(description = "Multiphase Transcendium bypasses type validation but never the chamber size limit")
+    static void multiphaseTranscendiumOnlyOverridesType(ExtendedGameTestHelper helper) {
+        PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
+        EditableMoldingModel invalidChest = cubeModel(8.0D).withRequestedType(MoldingProductTypes.CHEST_ID);
+        check(chamber.replaceEditableModel(invalidChest, chamber.revision()).accepted(),
+            "invalid chest model could not be staged for override testing");
+        PlasticMoldingChamberBlockEntity.MachineOutcome missingOverride = chamber.requestLock();
+        check(!missingOverride.accepted() && missingOverride.reason().equals("type_cavity_too_small"),
+            "invalid chest locked without a type override");
+
+        chamber.inventory().setItem(
+            PlasticMoldingChamberBlockEntity.RESOURCE_SLOT,
+            ModItems.MULTIPHASE_TRANSCENDIUM.asStack(2)
+        );
+        check(chamber.requestLock().accepted(), "Multiphase Transcendium did not bypass type validation");
+        check(chamber.typeOverrideCommitted() && !chamber.creativeOverrideLocked(),
+            "Multiphase Transcendium committed the wrong override mode");
+        check(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.RESOURCE_SLOT).getCount() == 1,
+            "confirmed type override did not consume exactly one Multiphase Transcendium");
+        check(chamber.unlock().accepted(), "type-overridden model could not be unlocked");
+        check(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.RESOURCE_SLOT).getCount() == 1,
+            "unlock refunded the committed Multiphase Transcendium");
+
+        EditableMoldingModel oversizedChest = cubeModel(49.0D).withRequestedType(MoldingProductTypes.CHEST_ID);
+        check(chamber.replaceEditableModel(oversizedChest, chamber.revision()).accepted(),
+            "oversized chest model could not be staged for limit testing");
+        PlasticMoldingChamberBlockEntity.MachineOutcome oversized = chamber.requestLock();
+        check(!oversized.accepted() && oversized.reason().equals("model_too_large"),
+            "Multiphase Transcendium bypassed the chamber size limit");
+        check(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.RESOURCE_SLOT).getCount() == 1,
+            "rejected oversized lock consumed Multiphase Transcendium");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x7x9", floor = true)
+    @TestHolder(description = "Creative Generator bypasses size, type, and melt limits and is consumed when processing starts")
+    static void creativeGeneratorIsConsumedAtProcessingStart(ExtendedGameTestHelper helper) {
+        PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
+        EditableMoldingModel oversizedChest = cubeModel(49.0D).withRequestedType(MoldingProductTypes.CHEST_ID);
+        check(chamber.replaceEditableModel(oversizedChest, chamber.revision()).accepted(),
+            "oversized creative model could not be staged");
+        PlasticMoldingChamberBlockEntity.MachineOutcome ordinaryLock = chamber.requestLock();
+        check(!ordinaryLock.accepted() && ordinaryLock.reason().equals("model_too_large"),
+            "oversized model locked without a Creative Generator");
+
+        chamber.inventory().setItem(
+            PlasticMoldingChamberBlockEntity.RESOURCE_SLOT,
+            ModBlocks.CREATIVE_GENERATOR.asStack(2)
+        );
+        check(chamber.requestLock().accepted(), "Creative Generator did not bypass size and type validation");
+        check(chamber.creativeOverrideLocked() && chamber.typeOverrideCommitted(),
+            "Creative Generator did not commit both overrides");
+        check(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.RESOURCE_SLOT).getCount() == 2,
+            "Creative Generator was consumed before processing began");
+        check(chamber.energyStorage().receiveEnergy(MoldingPowerBridge.capacity(), false)
+                == MoldingPowerBridge.capacity(),
+            "creative processing test could not charge the chamber");
+
+        tick(chamber, PlasticMoldingChamberBlockEntity.MOLD_FILL_TICKS + 1);
+        check(chamber.machineState() == PlasticMoldingMachineState.PROCESS_READY,
+            "creative override without melt did not reach process-ready state");
+        check(chamber.batchFluidAmount() == 0, "creative override unexpectedly filled the forming batch");
+        MoldingProcessSnapshot snapshot = chamber.beginProcessing().orElseThrow(
+            () -> new GameTestAssertException("creative override refused a processing snapshot without melt")
+        );
+        check(snapshot.creativeOverride() && snapshot.typeOverride(),
+            "creative processing snapshot lost its overrides");
+        check(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.RESOURCE_SLOT).getCount() == 1,
+            "processing start did not consume exactly one Creative Generator");
+        check(chamber.abortProcessing(snapshot), "creative processing snapshot could not be aborted");
+        check(chamber.unlock().accepted(), "aborted creative process could not be unlocked");
+        check(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.RESOURCE_SLOT).getCount() == 1,
+            "abort or unlock refunded the consumed Creative Generator");
         helper.succeed();
     }
 

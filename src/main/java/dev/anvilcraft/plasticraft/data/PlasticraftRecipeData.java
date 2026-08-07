@@ -176,6 +176,22 @@ public final class PlasticraftRecipeData {
             .unlockedBy("has_hardend_resin", RegistrumRecipeProvider.has(ModItems.HARDEND_RESIN))
             .save(provider, AnvilcraftPlasticraft.of("catalytic_press_lid"));
 
+        // 有序合成：以储罐、结构扫描仪和大电容构成成型核心，用管道和磨制重质铁块围护，产出塑料成型舱
+        ShapedRecipeBuilder.shaped(RecipeCategory.MISC, PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.asItem())
+            .pattern(" P ")
+            .pattern("TSC")
+            .pattern("IPI")
+            .define('P', Ingredient.of(ModItems.PIPE.get()))
+            .define('T', Ingredient.of(ModBlocks.FLUID_TANK.asItem()))
+            .define('S', Ingredient.of(ModBlocks.STRUCTURE_SCANNER.asItem()))
+            .define('C', Ingredient.of(ModItems.SUPER_CAPACITOR.get()))
+            .define('I', Ingredient.of(ModBlocks.POLISHED_HEAVY_IRON_BLOCK.asItem()))
+            .unlockedBy("has_fluid_tank", RegistrumRecipeProvider.has(ModBlocks.FLUID_TANK))
+            .unlockedBy("has_structure_scanner", RegistrumRecipeProvider.has(ModBlocks.STRUCTURE_SCANNER))
+            .unlockedBy("has_supercapacitor", RegistrumRecipeProvider.has(ModItems.SUPER_CAPACITOR))
+            .unlockedBy("has_polished_heavy_iron_block", RegistrumRecipeProvider.has(ModBlocks.POLISHED_HEAVY_IRON_BLOCK))
+            .save(provider, AnvilcraftPlasticraft.of("plastic_molding_chamber"));
+
         // 有序合成：在硬化树脂釜两侧加入磁铁锭，直接产出带磁化数据的硬化树脂釜。
         ItemStack magneticCauldron = PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack();
         PlasticItemData.setMaterial(magneticCauldron, "hardened_resin");

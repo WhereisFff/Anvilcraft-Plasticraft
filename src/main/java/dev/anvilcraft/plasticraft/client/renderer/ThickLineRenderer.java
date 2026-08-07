@@ -37,11 +37,32 @@ public final class ThickLineRenderer {
         int color,
         double width
     ) {
+        renderSegments(pose, buffers, segments, color, width, 0.0D);
+    }
+
+    /** 独立线段可向两端延长，用于消除多段粗线在转角处的内凹端帽。 */
+    public static void renderSegments(
+        PoseStack pose,
+        MultiBufferSource.BufferSource buffers,
+        List<Segment> segments,
+        int color,
+        double width,
+        double endpointExtension
+    ) {
         if (segments.isEmpty()) return;
         RenderType renderType = RenderType.debugQuads();
         VertexConsumer consumer = buffers.getBuffer(renderType);
         for (Segment segment : segments) {
-            renderSegment(pose, consumer, segment.from(), segment.to(), color, width);
+            Vec3 from = segment.from();
+            Vec3 to = segment.to();
+            Vec3 delta = to.subtract(from);
+            double length = delta.length();
+            if (endpointExtension > 0.0D && length > LENGTH_EPSILON) {
+                Vec3 extension = delta.scale(endpointExtension / length);
+                from = from.subtract(extension);
+                to = to.add(extension);
+            }
+            renderSegment(pose, consumer, from, to, color, width);
         }
         buffers.endBatch(renderType);
     }

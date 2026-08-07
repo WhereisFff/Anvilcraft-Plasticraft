@@ -11,6 +11,7 @@ import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
+import dev.anvilcraft.plasticraft.block.Plastic3DPrintingComponentBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingRegionBlock;
 import dev.anvilcraft.plasticraft.block.PlasticOilCauldronBlock;
@@ -41,6 +42,7 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemDisplayContext;
@@ -96,6 +98,37 @@ public final class PlasticraftBlocks {
         ))
         .build()
         .register();
+
+    public static final BlockEntry<Plastic3DPrintingComponentBlock> PLASTIC_3D_PRINTING_COMPONENT =
+        AnvilcraftPlasticraft.REGISTRUM
+            .block("plastic_3d_printing_component", Plastic3DPrintingComponentBlock::new)
+            .initialProperties(() -> Blocks.IRON_BLOCK)
+            .properties(properties -> properties
+                .noOcclusion()
+                .strength(5.0F, 1200.0F)
+                .sound(SoundType.METAL)
+                .pushReaction(PushReaction.BLOCK))
+            .lang("Plastic 3D Printing Component")
+            .tag(BlockTags.MINEABLE_WITH_PICKAXE)
+            .loot((tables, block) -> tables.dropSelf(block))
+            .blockstate((context, provider) -> {
+                // 3D 打印组件占位模型由底座、机身和横向接口组成，统一复用原版铁块材质。
+                ModelBuilder<?> model = provider.models()
+                    .getBuilder(context.getName())
+                    .texture("particle", provider.mcLoc("block/iron_block"))
+                    .texture("all", provider.mcLoc("block/iron_block"));
+                addTexturedBox(model, 2.0F, 0.0F, 2.0F, 14.0F, 3.0F, 14.0F);
+                addTexturedBox(model, 4.0F, 3.0F, 4.0F, 12.0F, 11.0F, 12.0F);
+                addTexturedBox(model, 1.0F, 11.0F, 5.0F, 15.0F, 15.0F, 11.0F);
+                provider.simpleBlock(context.get(), model);
+            })
+            .item(BlockItem::new)
+            .model((context, provider) -> provider.withExistingParent(
+                context.getName(),
+                provider.modLoc("block/" + context.getName())
+            ))
+            .build()
+            .register();
 
     public static final BlockEntry<PlasticMoldingRegionBlock> PLASTIC_MOLDING_REGION = AnvilcraftPlasticraft.REGISTRUM
         .block("plastic_molding_region", PlasticMoldingRegionBlock::new)
@@ -541,6 +574,24 @@ public final class PlasticraftBlocks {
                 .renderType(renderType);
         }
         return models;
+    }
+
+    private static void addTexturedBox(
+        ModelBuilder<?> model,
+        float fromX,
+        float fromY,
+        float fromZ,
+        float toX,
+        float toY,
+        float toZ
+    ) {
+        ModelBuilder<?>.ElementBuilder element = model.element()
+            .from(fromX, fromY, fromZ)
+            .to(toX, toY, toZ);
+        for (Direction direction : Direction.values()) {
+            element.face(direction).texture("#all").end();
+        }
+        element.end();
     }
 
     public static void register() {

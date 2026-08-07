@@ -4,9 +4,9 @@ package dev.anvilcraft.plasticraft.molding.bake;
 public record MoldingCollisionBox(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
     public MoldingCollisionBox {
         if (minX < 0 || minY < 0 || minZ < 0
-            || maxX > MoldingVolumeMask.SIZE
-            || maxY > MoldingVolumeMask.SIZE
-            || maxZ > MoldingVolumeMask.SIZE
+            || maxX > MoldingVolumeMask.MAX_SIZE
+            || maxY > MoldingVolumeMask.MAX_SIZE
+            || maxZ > MoldingVolumeMask.MAX_SIZE
             || minX >= maxX || minY >= maxY || minZ >= maxZ) {
             throw new IllegalArgumentException("Invalid molding collision box");
         }

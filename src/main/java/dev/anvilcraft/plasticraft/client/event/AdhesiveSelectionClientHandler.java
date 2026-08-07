@@ -66,8 +66,9 @@ import java.util.UUID;
 public final class AdhesiveSelectionClientHandler {
     private static final long BOX_ENTER_MILLIS = 180L;
     private static final long BOX_EXIT_MILLIS = 220L;
-    private static final long PREVIEW_REQUEST_TIMEOUT_MILLIS = 3_000L;
-    private static final double PREVIEW_RESTART_DISTANCE_SQR = 0.0625D;
+    private static final long PREVIEW_REQUEST_TIMEOUT_MILLIS = 2_000L;
+    private static final double PREVIEW_RESTART_DISTANCE_SQR = 4.0D;
+    private static final double PREVIEW_MOVEMENT_EPSILON_SQR = 1.0E-6D;
     private static final double PATH_TUBE_WIDTH = 0.045D;
     private static final double SEARCH_DASH_LENGTH = 0.28D;
     private static final double SEARCH_DASH_GAP = 0.18D;
@@ -324,24 +325,65 @@ public final class AdhesiveSelectionClientHandler {
         Entity selected,
         @Nullable Entity supportEntity
     ) {
+        boolean selectedIsAnchor = supportEntity != null
+            && selected.hasData(PlasticraftAttachments.ENTITY_ADHESION);
         if (key.equals(previewTaskKey)) {
-            return previewMoved(selected, cachedPreviewStart, supportEntity, cachedPreviewSupportStart)
+            return previewContextMoved(
+                selected,
+                cachedPreviewStart,
+                supportEntity,
+                cachedPreviewSupportStart,
+                selectedIsAnchor
+            )
                 || activePreviewRequestId >= 0
-                && Util.getMillis() - previewRequestStartedAt >= PREVIEW_REQUEST_TIMEOUT_MILLIS;
+                && Util.getMillis() - previewRequestStartedAt >= PREVIEW_REQUEST_TIMEOUT_MILLIS
+                && movingEntityMoved(
+                    selected,
+                    cachedPreviewStart,
+                    supportEntity,
+                    cachedPreviewSupportStart,
+                    selectedIsAnchor
+                );
         }
         if (!key.equals(cachedPreviewKey)) return true;
-        return previewMoved(selected, cachedPreviewStart, supportEntity, cachedPreviewSupportStart);
+        return previewContextMoved(
+            selected,
+            cachedPreviewStart,
+            supportEntity,
+            cachedPreviewSupportStart,
+            selectedIsAnchor
+        );
     }
 
-    private static boolean previewMoved(
+    private static boolean previewContextMoved(
         Entity selected,
         Vec3 selectedStart,
         @Nullable Entity supportEntity,
-        Vec3 supportStart
+        Vec3 supportStart,
+        boolean selectedIsAnchor
     ) {
-        return selected.position().distanceToSqr(selectedStart) > PREVIEW_RESTART_DISTANCE_SQR
+        double selectedLimit = selectedIsAnchor
+            ? PREVIEW_MOVEMENT_EPSILON_SQR
+            : PREVIEW_RESTART_DISTANCE_SQR;
+        double supportLimit = selectedIsAnchor
+            ? PREVIEW_RESTART_DISTANCE_SQR
+            : PREVIEW_MOVEMENT_EPSILON_SQR;
+        return selected.position().distanceToSqr(selectedStart) > selectedLimit
             || supportEntity != null
-            && supportEntity.position().distanceToSqr(supportStart) > PREVIEW_RESTART_DISTANCE_SQR;
+            && supportEntity.position().distanceToSqr(supportStart) > supportLimit;
+    }
+
+    private static boolean movingEntityMoved(
+        Entity selected,
+        Vec3 selectedStart,
+        @Nullable Entity supportEntity,
+        Vec3 supportStart,
+        boolean selectedIsAnchor
+    ) {
+        return selectedIsAnchor
+            ? supportEntity != null
+                && supportEntity.position().distanceToSqr(supportStart) > PREVIEW_MOVEMENT_EPSILON_SQR
+            : selected.position().distanceToSqr(selectedStart) > PREVIEW_MOVEMENT_EPSILON_SQR;
     }
 
     private static void startBlockPreviewRequest(
@@ -351,15 +393,17 @@ public final class AdhesiveSelectionClientHandler {
         LocalPlayer player,
         BlockHitResult hit
     ) {
+        Vec3 selectedStart = selectedPreviewStart(selected, player);
         AdhesivePathPlanner.Plan direct = AdhesivePathPlanner.beginPreview(
             level,
             selected,
             player,
             hit.getBlockPos(),
             hit.getDirection(),
-            AdhesiveSelectionManager.getSelectedFace(player)
+            AdhesiveSelectionManager.getSelectedFace(player),
+            selectedStart
         ).displayPlan();
-        startPreviewRequest(key, selected, null, direct);
+        startPreviewRequest(key, selectedStart, Vec3.ZERO, direct);
         PacketDistributor.sendToServer(new AdhesivePreviewRequestPacket(
             nextPreviewRequestId(),
             AdhesivePreviewRequestPacket.Mode.BLOCK,
@@ -382,15 +426,21 @@ public final class AdhesiveSelectionClientHandler {
         Direction movingFace,
         Direction supportFace
     ) {
+        Vec3 selectedStart = selectedPreviewStart(selected, player);
+        Vec3 supportStart = supportEntity.position();
+        Vec3 movingStart = movingEntity == selected ? selectedStart : supportStart;
+        Vec3 anchorStart = anchorEntity == selected ? selectedStart : supportStart;
         AdhesivePathPlanner.Plan direct = AdhesivePathPlanner.beginPreviewToEntity(
             level,
             movingEntity,
             player,
             anchorEntity,
             anchorFace,
-            movingFace
+            movingFace,
+            movingStart,
+            anchorStart
         ).displayPlan();
-        startPreviewRequest(key, selected, supportEntity, direct);
+        startPreviewRequest(key, selectedStart, supportStart, direct);
         PacketDistributor.sendToServer(new AdhesivePreviewRequestPacket(
             nextPreviewRequestId(),
             AdhesivePreviewRequestPacket.Mode.ENTITY,
@@ -403,8 +453,8 @@ public final class AdhesiveSelectionClientHandler {
 
     private static void startPreviewRequest(
         PreviewKey key,
-        Entity selected,
-        @Nullable Entity supportEntity,
+        Vec3 selectedStart,
+        Vec3 supportStart,
         AdhesivePathPlanner.Plan direct
     ) {
         clearPreviewTask(false);
@@ -413,8 +463,8 @@ public final class AdhesiveSelectionClientHandler {
         cachedPreviewKey = null;
         cachedPreview = null;
         cachedPreviewGroupClear = false;
-        cachedPreviewStart = selected.position();
-        cachedPreviewSupportStart = supportEntity == null ? Vec3.ZERO : supportEntity.position();
+        cachedPreviewStart = selectedStart;
+        cachedPreviewSupportStart = supportStart;
         sampledPreviewInput = null;
         sampledPreviewPath = List.of();
         clearPreviewProjection();
@@ -1393,6 +1443,14 @@ public final class AdhesiveSelectionClientHandler {
         return selected != null && selectedUuid.equals(selected.getUUID()) && selected.isAlive()
             ? selected
             : null;
+    }
+
+    private static Vec3 selectedPreviewStart(Entity selected, Player player) {
+        Vec3 snapshot = AdhesiveSelectionManager.getSelectedPosition(player);
+        return snapshot != null
+            && selected.position().distanceToSqr(snapshot) <= PREVIEW_RESTART_DISTANCE_SQR
+            ? snapshot
+            : selected.position();
     }
 
     private static Vec3 faceCenter(BlockPos pos, Direction face) {

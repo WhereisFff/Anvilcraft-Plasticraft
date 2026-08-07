@@ -213,13 +213,14 @@ public final class AdhesivePatchRenderer {
                     BlockPos ownerPos = entry.getKey();
                     BlockAdhesionState state = entry.getValue();
                     for (Direction face : Direction.values()) {
-                        if (state.isInvisible(face)) continue;
-                        boolean hiddenSeal = state.hasBlockBond(face)
-                            && shouldHideBlockSeal(level, ownerPos, face);
                         if (state.hasBlockBond(face) || state.hasEntityBond(face)) {
                             bondedFaces.add(new BondedFace(ownerPos, face));
                         }
-                        if (state.hasPatch(face) && !hiddenSeal) {
+                        if (state.isInvisible(face)) continue;
+                        boolean suppressStaticSeal = state.hasBlockBond(face)
+                            && (shouldHideBlockSeal(level, ownerPos, face)
+                                || isDeflectedBlockSeal(level, ownerPos, face));
+                        if (state.hasPatch(face) && !suppressStaticSeal) {
                             patches.add(new Patch(
                                 ownerPos,
                                 face,
@@ -230,7 +231,7 @@ public final class AdhesivePatchRenderer {
                         if (!state.hasBlockBond(face)) continue;
                         BlockPos otherPos = ownerPos.relative(face);
                         if (ownerPos.asLong() > otherPos.asLong()) continue;
-                        if (!hiddenSeal) {
+                        if (!suppressStaticSeal) {
                             patches.add(new Patch(
                                 ownerPos,
                                 face,
@@ -588,6 +589,20 @@ public final class AdhesivePatchRenderer {
             && isContainerOpening(level, firstPos, firstFace));
     }
 
+    private static boolean isDeflectedBlockSeal(ClientLevel level, BlockPos firstPos, Direction firstFace) {
+        BlockPos secondPos = firstPos.relative(firstFace);
+        return isDeflectedBlockEntity(level, firstPos, secondPos)
+            || isDeflectedBlockEntity(level, secondPos, firstPos);
+    }
+
+    private static boolean isDeflectedBlockEntity(ClientLevel level, BlockPos entityPos, BlockPos supportPos) {
+        return level.getBlockEntity(entityPos) instanceof BondedEntityBlockEntity bonded
+            && bonded.isInitialized()
+            && bonded.isPlastic()
+            && bonded.isHammerDeflected()
+            && bonded.getSupportPos().equals(supportPos);
+    }
+
     private static boolean isCatalyticLidFace(Entity entity, Direction localFace) {
         return entity instanceof CatalyticPressLidEntity
             && (localFace == Direction.UP || localFace == Direction.DOWN);
@@ -672,13 +687,13 @@ public final class AdhesivePatchRenderer {
             if (!entity.isAlive()) continue;
             Set<Direction> faces = new HashSet<>();
             EntityAdhesion adhesion = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
-            if (adhesion != null && !isEntityAdhesiveInvisible(level, adhesion)) {
+            if (adhesion != null) {
                 faces.add(adhesion.attachmentFace().getOpposite());
             }
             EntityBondState bonds = EntityBondManager.get(entity);
             if (bonds != null) {
                 for (EntityBondLink link : bonds.links()) {
-                    if (!link.invisible()) faces.add(AdhesiveFaces.worldFace(entity, link.face()));
+                    faces.add(AdhesiveFaces.worldFace(entity, link.face()));
                 }
             }
             if (faces.isEmpty()) continue;

@@ -8,6 +8,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -105,6 +106,26 @@ public final class PlasticEntityGeometry {
         return this.convexShapes;
     }
 
+    public PlasticEntityGeometry include(
+        VoxelShape additionalCollision,
+        VoxelShape additionalInteraction
+    ) {
+        Objects.requireNonNull(additionalCollision, "additionalCollision");
+        Objects.requireNonNull(additionalInteraction, "additionalInteraction");
+        if (additionalCollision.isEmpty() && additionalInteraction.isEmpty()) return this;
+        ArrayList<PlasticConvexShape> combinedConvexShapes = new ArrayList<>(this.convexShapes);
+        additionalCollision.toAabbs().stream()
+            .map(PlasticConvexShape::box)
+            .forEach(combinedConvexShapes::add);
+        return of(
+            Shapes.or(this.collisionShape, additionalCollision).optimize(),
+            Shapes.or(this.interactionShape, additionalInteraction).optimize(),
+            combinedConvexShapes,
+            this.rotationPivot,
+            this.entityOrigin
+        );
+    }
+
     /** 返回物理形状与交互轮廓共同占据的局部范围。 */
     public AABB localBounds() {
         return this.localBounds;
@@ -136,7 +157,18 @@ public final class PlasticEntityGeometry {
         PlasticEntityOrientation orientation,
         Direction localFace
     ) {
-        return requireFinite(entityPosition, "entityPosition").add(this.surfaceOffset(orientation, localFace));
+        return this.worldPointAt(entityPosition, orientation, this.surfaceCenter(localFace));
+    }
+
+    /** 将模型局部点按实体姿态转换为世界坐标。 */
+    public Vec3 worldPointAt(
+        Vec3 entityPosition,
+        PlasticEntityOrientation orientation,
+        Vec3 localPoint
+    ) {
+        Objects.requireNonNull(orientation, "orientation");
+        Vec3 rotated = rotatePoint(requireFinite(localPoint, "localPoint"), orientation, this.rotationPivot);
+        return requireFinite(entityPosition, "entityPosition").add(rotated.subtract(this.entityOrigin));
     }
 
     /** 返回真实外层平面与旋转枢轴中心线的交点，供胶合时在切向上对齐整个实体。 */

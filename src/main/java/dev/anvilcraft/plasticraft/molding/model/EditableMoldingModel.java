@@ -3,7 +3,7 @@ package dev.anvilcraft.plasticraft.molding.model;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.ArrayList;
@@ -25,7 +25,7 @@ public record EditableMoldingModel(
     public static final int CURRENT_FORMAT_VERSION = 3;
     public static final int MAX_ELEMENTS = 256;
     public static final int MAX_GROUPS = 128;
-    public static final ResourceLocation NORMAL_TYPE = AnvilcraftPlasticraft.of("normal");
+    public static final ResourceLocation NORMAL_TYPE = MoldingProductTypes.NORMAL_ID;
     private static final Codec<List<MoldingElement>> ELEMENTS_CODEC = MoldingElement.CODEC.listOf()
         .validate(elements -> elements.size() <= MAX_ELEMENTS
             ? DataResult.success(elements)
@@ -45,6 +45,9 @@ public record EditableMoldingModel(
     ).apply(instance, EditableMoldingModel::new)).validate(EditableMoldingModel::validateCodec);
 
     public EditableMoldingModel {
+        if (!MoldingProductTypes.isRegistered(requestedType)) {
+            throw new IllegalArgumentException("Unknown molding product type " + requestedType);
+        }
         elements = List.copyOf(elements);
         groups = List.copyOf(groups);
         validate(formatVersion, name, elements, groups);
@@ -79,6 +82,16 @@ public record EditableMoldingModel(
             this.formatVersion,
             replacement,
             this.requestedType,
+            this.elements,
+            this.groups
+        );
+    }
+
+    public EditableMoldingModel withRequestedType(ResourceLocation replacement) {
+        return new EditableMoldingModel(
+            this.formatVersion,
+            this.name,
+            replacement,
             this.elements,
             this.groups
         );

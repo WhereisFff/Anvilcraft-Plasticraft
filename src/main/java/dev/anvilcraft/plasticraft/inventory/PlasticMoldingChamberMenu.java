@@ -7,6 +7,7 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintDisk;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintSummary;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProductionMode;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingFormingMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingWaitReason;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingCommand;
@@ -32,6 +33,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 import java.util.function.IntSupplier;
 
 /** 成型舱界面菜单；模型编辑本身通过带修订号的语义命令同步。 */
@@ -197,6 +199,28 @@ public class PlasticMoldingChamberMenu extends AbstractContainerMenu {
         return values[Math.clamp(this.machineData.get(1), 0, values.length - 1)];
     }
 
+    public MoldingFormingMode formingMode() {
+        MoldingFormingMode[] values = MoldingFormingMode.values();
+        return values[Math.clamp(this.machineData.get(15), 0, values.length - 1)];
+    }
+
+    public MoldingFormingMode cycleFormingMode() {
+        MoldingFormingMode[] values = MoldingFormingMode.values();
+        return values[Math.clamp(this.machineData.get(16), 0, values.length - 1)];
+    }
+
+    public int printingProgress() {
+        return this.machineData.get(18);
+    }
+
+    public int printingTotal() {
+        return this.machineData.get(19);
+    }
+
+    public boolean printingComponentPresent() {
+        return this.machineData.get(17) != 0;
+    }
+
     public MoldingWaitReason waitReason() {
         MoldingWaitReason[] values = MoldingWaitReason.values();
         return values[Math.clamp(this.machineData.get(2), 0, values.length - 1)];
@@ -246,6 +270,14 @@ public class PlasticMoldingChamberMenu extends AbstractContainerMenu {
         return this.machineData.get(12) != 0;
     }
 
+    public boolean typeOverrideCommitted() {
+        return this.machineData.get(13) != 0;
+    }
+
+    public boolean creativeOverrideLocked() {
+        return this.machineData.get(14) != 0;
+    }
+
     public boolean modelEditable() {
         return this.writable && this.machineState() == PlasticMoldingMachineState.EDITABLE;
     }
@@ -291,6 +323,9 @@ public class PlasticMoldingChamberMenu extends AbstractContainerMenu {
         ItemStack stack = slot.getItem();
         ItemStack copy = stack.copy();
         if (index < MACHINE_SLOT_COUNT) {
+            if (index == PlasticMoldingChamberBlockEntity.RESOURCE_SLOT && this.creativeOverrideLocked()) {
+                return ItemStack.EMPTY;
+            }
             if (!this.moveItemStackTo(stack, PLAYER_SLOT_START, PLAYER_SLOT_END, true)) return ItemStack.EMPTY;
         } else if (stack.is(Items.CLAY_BALL)) {
             if (!this.moveItemStackTo(stack, PlasticMoldingChamberBlockEntity.CLAY_SLOT, 1, false)) {
@@ -348,7 +383,8 @@ public class PlasticMoldingChamberMenu extends AbstractContainerMenu {
             machine,
             PlasticMoldingChamberBlockEntity.RESOURCE_SLOT,
             63,
-            178
+            178,
+            () -> !this.creativeOverrideLocked()
         ));
         for (int row = 0; row < 3; row++) {
             for (int column = 0; column < 9; column++) {
@@ -402,13 +438,21 @@ public class PlasticMoldingChamberMenu extends AbstractContainerMenu {
     }
 
     private static final class ResourceSlot extends Slot {
-        private ResourceSlot(Container container, int slot, int x, int y) {
+        private final BooleanSupplier mayPickup;
+
+        private ResourceSlot(Container container, int slot, int x, int y, BooleanSupplier mayPickup) {
             super(container, slot, x, y);
+            this.mayPickup = mayPickup;
         }
 
         @Override
         public boolean mayPlace(ItemStack stack) {
             return PlasticMoldingChamberBlockEntity.isResourceInput(stack);
+        }
+
+        @Override
+        public boolean mayPickup(Player player) {
+            return this.mayPickup.getAsBoolean();
         }
     }
 }

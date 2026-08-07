@@ -49,7 +49,7 @@ public final class UniversalPlasticItemRenderer extends BlockEntityWithoutLevelR
             );
             return;
         }
-        AABB bounds = data.surfaceBounds();
+        AABB bounds = MoldedTrayComponentRenderer.renderBounds(data);
         double largestSize = Math.max(bounds.getXsize(), Math.max(bounds.getYsize(), bounds.getZsize()));
         if (!Double.isFinite(largestSize) || largestSize <= 0.0D) return;
         Vec3 center = bounds.getCenter();
@@ -59,6 +59,14 @@ public final class UniversalPlasticItemRenderer extends BlockEntityWithoutLevelR
         pose.scale(scale, scale, scale);
         pose.translate(-center.x, -center.y, -center.z);
         MoldedPlasticMeshRenderer.render(data, pose, buffers, packedLight, 0xFFFFFFFF, false);
+        MoldedTrayComponentRenderer.render(
+            data,
+            Minecraft.getInstance().getBlockRenderer(),
+            pose,
+            buffers,
+            packedLight,
+            packedOverlay
+        );
         pose.popPose();
     }
 }

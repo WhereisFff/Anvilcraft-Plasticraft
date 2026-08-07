@@ -6,6 +6,7 @@ import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.api.item.EntityFacePlaceableItem;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.block.piston.PlasticPistonOccupancy;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
@@ -56,6 +57,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.item.FallingBlockEntity;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.vehicle.Boat;
 import net.minecraft.world.item.ItemStack;
@@ -75,9 +77,10 @@ import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.common.NeoForge;
 
-import java.util.List;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -503,6 +506,15 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         return Math.abs(gravity.y) * 2.0D * contact.submergedFraction();
     }
 
+    /** 渲染器读取当前实体的有效重力，不把液面逻辑写入物理或渲染状态。 */
+    public final Vec3 plasticraft$getEffectiveGravityVector() {
+        if (this.isNoGravity() || AccelerateManager.isControlledByRing(this)) return Vec3.ZERO;
+        Vec3 gravity = GravityManager.getNetGravityVectorForFallingBlock(this);
+        if (!this.isBuoyantInFluids()) return gravity;
+        PlasticFluidPhysics.FluidContact contact = PlasticFluidPhysics.sample(this);
+        return gravity.add(0.0D, this.getFluidBuoyancyAcceleration(contact, gravity), 0.0D);
+    }
+
     /**
      * AnvilCraft 的落地配方约定以世界向下为方向：使用方会检查
      * {@code event.pos.below()}。其他冲击方向仍是有效的物理接触，
@@ -518,6 +530,11 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     /** 后续塑料类型可用自身的损坏状态或耐久模型替代销毁行为。 */
     protected void handleAnvilCraftLandingDamage(AnvilEvent.OnLand event) {
         this.applyAnvilCraftRecipeDamage(event.getPos());
+    }
+
+    /** 功能类型可在普通落砧配方发布前执行并消费专用落地流程。 */
+    protected boolean handleAdditionalAnvilCraftLanding(AnvilEvent.OnLand event) {
+        return false;
     }
 
     /** 不伪造落地事件，直接应用 DamageAnvil 配方结果。 */
@@ -565,6 +582,11 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     @Override
     public void tick() {
+        Vec3 pistonTarget = PlasticPistonOccupancy.movementTarget(this);
+        if (pistonTarget != null) {
+            this.tickPistonMovement(pistonTarget);
+            return;
+        }
         if (this.level().isClientSide) {
             // ClientLevel 会在每个实体执行刻逻辑前记录旧坐标。本地玩家可能在同一轮实体处理中更早推动该实体，
             // 因此保留推动前位置，让原版局部刻渲染器绘制这段位移，而不是将其隐藏。
@@ -1023,6 +1045,23 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         }
     }
 
+    private void tickPistonMovement(Vec3 targetPosition) {
+        this.xOld = this.xo = this.getX();
+        this.yOld = this.yo = this.getY();
+        this.zOld = this.zo = this.getZ();
+        this.setPos(targetPosition);
+        this.setDeltaMovement(Vec3.ZERO);
+        this.supportObservation = null;
+        this.supportDirection = null;
+        this.blockContactMask = 0;
+        this.previousImpactContactMask = 0;
+        this.impactContactMask = 0;
+        this.hasImpulse = true;
+        this.hurtMarked = true;
+        this.firstTick = false;
+        if (this.time < Integer.MAX_VALUE) this.time++;
+    }
+
     private void handleNewCollisionContacts(Vec3 requested, Vec3 actual) {
         int contacts = PlasticEntityPhysics.clippedDirectionMask(requested, actual, 0.04D);
         int newContacts = contacts & ~this.previousImpactContactMask & ~this.impactContactMask;
@@ -1154,7 +1193,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             this,
             this.directionalFallDistance
         );
-        NeoForge.EVENT_BUS.post(event);
+        if (!this.handleAdditionalAnvilCraftLanding(event)) {
+            NeoForge.EVENT_BUS.post(event);
+        }
         if (event.isAnvilDamage()) {
             this.handleAnvilCraftLandingDamage(event);
         }
@@ -1970,13 +2011,47 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         }
         if (!this.level().isClientSide) {
             if (this.level().getGameRules().getBoolean(GameRules.RULE_DOENTITYDROPS)) {
-                this.spawnAtLocation(this.getDropStack());
+                this.spawnDropAtGeometry(this.getDropStack());
             }
             this.discard();
         } else {
             this.markHurt();
         }
         return true;
+    }
+
+    /** 偏置模型的实体原点可能位于真实几何之外，破坏掉落必须改用几何中心并避开支撑面。 */
+    private void spawnDropAtGeometry(ItemStack stack) {
+        if (stack.isEmpty()) return;
+        AABB geometryBounds = this.getBoundingBox();
+        Vec3 itemCenter = geometryBounds.getCenter();
+        ItemEntity item = new ItemEntity(
+            this.level(),
+            itemCenter.x,
+            itemCenter.y,
+            itemCenter.z,
+            stack
+        );
+        Direction awayFromSupport = this.getOrientation().attachmentFace();
+        Vec3 outward = Vec3.atLowerCornerOf(awayFromSupport.getNormal());
+        double halfExtent = awayFromSupport.getAxis() == Direction.Axis.Y
+            ? item.getBbHeight() * 0.5D
+            : item.getBbWidth() * 0.5D;
+        double clearance = switch (awayFromSupport.getAxis()) {
+            case X -> geometryBounds.getXsize() * 0.5D;
+            case Y -> geometryBounds.getYsize() * 0.5D;
+            case Z -> geometryBounds.getZsize() * 0.5D;
+        };
+        double correction = halfExtent + PlasticEntityPhysics.FACE_EPSILON - clearance;
+        if (correction > 0.0D) itemCenter = itemCenter.add(outward.scale(correction));
+        item.setPos(itemCenter.x, itemCenter.y - item.getBbHeight() * 0.5D, itemCenter.z);
+        item.setDefaultPickUpDelay();
+        Collection<ItemEntity> capturedDrops = this.captureDrops();
+        if (capturedDrops == null) {
+            this.level().addFreshEntity(item);
+        } else {
+            capturedDrops.add(item);
+        }
     }
 
     @Override

@@ -1,5 +1,7 @@
 package dev.anvilcraft.plasticraft.molding.model;
 
+import net.minecraft.resources.ResourceLocation;
+
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +17,7 @@ public sealed interface MoldingCommand permits MoldingCommand.AddElement,
     MoldingCommand.ReplaceGroup,
     MoldingCommand.RemoveGroup,
     MoldingCommand.RenameModel,
+    MoldingCommand.SetRequestedType,
     MoldingCommand.Batch,
     MoldingCommand.Undo,
     MoldingCommand.Redo {
@@ -174,6 +177,13 @@ public sealed interface MoldingCommand permits MoldingCommand.AddElement,
         @Override
         public EditableMoldingModel apply(EditableMoldingModel model) {
             return model.withName(this.name);
+        }
+    }
+
+    record SetRequestedType(ResourceLocation type) implements MoldingCommand {
+        @Override
+        public EditableMoldingModel apply(EditableMoldingModel model) {
+            return model.withRequestedType(this.type);
         }
     }
 

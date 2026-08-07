@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.api.tooltip;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.entity.collision.BuiltInPlasticEntityModels;
+import dev.anvilcraft.plasticraft.entity.redstone.MoldedPlasticRedstoneConductor;
 import dev.anvilcraft.plasticraft.item.AbstractPlasticEntityItem;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
@@ -13,6 +14,7 @@ import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintDisk;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
 import dev.dubhe.anvilcraft.util.ResentmentUtil;
@@ -51,6 +53,7 @@ public final class PlasticItemTooltipManager {
             "Highly adhesive and non-volatile; it appears to need thousands of years to solidify",
             """
                 Right-click an entity, then a block or another entity to bond them
+                Moving selections use their selected position; movement over 2 blocks or lasting 2 seconds refreshes the route
                 Unanchored bonded groups move together under knockback; block-anchored groups rebound together
                 A moving white dashed line means the server is still searching
                 The colored solid line shows the server result; bondable routes match the later white transit trail
@@ -65,6 +68,10 @@ public final class PlasticItemTooltipManager {
                 Each module stores 64 buckets and exposes four output-only ports
                 Oil is separated into high-heat fuel, plastic oil, and crude-oil essence across the first three layers
                 Capping the top-center outlet makes a full module apply backpressure to the entire stack"""
+        );
+        registerNormal(
+            AnvilcraftPlasticraft.of("plastic_3d_printing_component"),
+            "Stores a chamber-filled melt batch and consumes 1 mB/gt to print when installed directly above the chamber"
         );
         register(
             AnvilcraftPlasticraft.of("high_heat_fuel_bucket"),
@@ -163,12 +170,18 @@ public final class PlasticItemTooltipManager {
 
     public static void addTooltip(ItemStack stack, Item.TooltipContext context, List<Component> tooltip) {
         ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        boolean specializedMoldedProduct = MoldedPlasticData.get(stack)
+            .map(data -> MoldingProductTypes.isChest(data.finalType())
+                || MoldingProductTypes.isTank(data.finalType())
+                || MoldingProductTypes.isAnvil(data.finalType())
+                || MoldingProductTypes.isTray(data.finalType()))
+            .orElse(false);
         int dynamicTooltipIndex = 1;
         if (SHIFT.containsKey(itemId)) {
             if (Screen.hasShiftDown()) {
                 dynamicTooltipIndex += addTranslatedTooltip(tooltip, getTranslationKeyShift(itemId));
             } else {
-                if (NORMAL.containsKey(itemId)) {
+                if (NORMAL.containsKey(itemId) && !specializedMoldedProduct) {
                     dynamicTooltipIndex += addTranslatedTooltip(tooltip, getTranslationKey(itemId));
                 }
                 tooltip.add(
@@ -180,7 +193,7 @@ public final class PlasticItemTooltipManager {
                 );
                 dynamicTooltipIndex++;
             }
-        } else if (NORMAL.containsKey(itemId)) {
+        } else if (NORMAL.containsKey(itemId) && !specializedMoldedProduct) {
             dynamicTooltipIndex += addTranslatedTooltip(tooltip, getTranslationKey(itemId));
         }
         addDynamicTooltip(stack, context, tooltip, dynamicTooltipIndex);
@@ -207,7 +220,7 @@ public final class PlasticItemTooltipManager {
                 formatDimensions(size)
             ));
             boolean fitsChamber = MoldingModelBounds.all(blueprint.model())
-                .map(MoldingModelBounds::fitsWorkspace)
+                .map(MoldingModelBounds::fitsWorkspaceSize)
                 .orElse(true);
             dynamicTooltip.add(Component.translatable(
                 fitsChamber
@@ -215,9 +228,11 @@ public final class PlasticItemTooltipManager {
                     : "tooltip.anvilcraftplasticraft.molding.structure_disk.too_large_for_chamber"
             ).withStyle(fitsChamber ? ChatFormatting.GREEN : ChatFormatting.RED));
         });
-        if (stack.getItem() instanceof AbstractPlasticEntityItem<?> && PlasticItemData.isMagnetized(stack)) {
-            dynamicTooltip.add(Component.translatable("tooltip.anvilcraftplasticraft.magnetized")
-                .withStyle(ChatFormatting.AQUA));
+        if (stack.getItem() instanceof AbstractPlasticEntityItem<?>) {
+            if (PlasticItemData.isMagnetized(stack)) {
+                dynamicTooltip.add(Component.translatable("tooltip.anvilcraftplasticraft.magnetized")
+                    .withStyle(ChatFormatting.AQUA));
+            }
         }
         if (stack.getItem() instanceof UniversalPlasticGranuleItem
             || stack.getItem() instanceof UniversalPlasticMeltBucketItem
@@ -225,6 +240,7 @@ public final class PlasticItemTooltipManager {
         ) {
             if (stack.getItem() instanceof UniversalPlasticBlockItem) {
                 addPlasticSizeTooltip(stack, dynamicTooltip);
+                addMoldedProductTooltip(stack, dynamicTooltip);
             }
             dynamicTooltip.add(Component.translatable(
                 "tooltip.anvilcraftplasticraft.color",
@@ -247,6 +263,36 @@ public final class PlasticItemTooltipManager {
             MoldingModelBounds.formatBlocks(bounds.getYsize()),
             MoldingModelBounds.formatBlocks(bounds.getZsize())
         ).withStyle(ChatFormatting.GRAY));
+        if (MoldedPlasticRedstoneConductor.isFullBlockSized(bounds)) {
+            tooltip.add(Component.translatable("tooltip.anvilcraftplasticraft.redstone_conductor")
+                .withStyle(ChatFormatting.RED));
+        }
+    }
+
+    private static void addMoldedProductTooltip(ItemStack stack, List<Component> tooltip) {
+        MoldedPlasticData.get(stack).ifPresent(data -> {
+            if (MoldingProductTypes.isChest(data.finalType())) {
+                tooltip.add(Component.translatable(
+                    "tooltip.anvilcraftplasticraft.molded_chest",
+                    data.capacity()
+                ).withStyle(ChatFormatting.GRAY));
+            } else if (MoldingProductTypes.isTank(data.finalType())) {
+                tooltip.add(Component.translatable(
+                    "tooltip.anvilcraftplasticraft.molded_tank",
+                    data.capacity()
+                ).withStyle(ChatFormatting.GRAY));
+            } else if (MoldingProductTypes.isAnvil(data.finalType())) {
+                tooltip.add(Component.translatable(
+                    data.hasGiantAnvilAbility()
+                        ? "tooltip.anvilcraftplasticraft.molded_giant_anvil"
+                        : "tooltip.anvilcraftplasticraft.molded_anvil"
+                ).withStyle(ChatFormatting.GRAY));
+            } else if (MoldingProductTypes.isTray(data.finalType())) {
+                tooltip.add(Component.translatable(
+                    "tooltip.anvilcraftplasticraft.molded_tray"
+                ).withStyle(ChatFormatting.GRAY));
+            }
+        });
     }
 
     private static String formatDimensions(MoldingVec3 size) {

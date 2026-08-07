@@ -1,0 +1,30 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "C": {
+      "item": "anvilcraft:supercapacitor"
+    },
+    "I": {
+      "item": "anvilcraft:polished_heavy_iron_block"
+    },
+    "P": {
+      "item": "anvilcraft:pipe"
+    },
+    "S": {
+      "item": "anvilcraft:structure_scanner"
+    },
+    "T": {
+      "item": "anvilcraft:fluid_tank"
+    }
+  },
+  "pattern": [
+    " P ",
+    "TSC",
+    "IPI"
+  ],
+  "result": {
+    "count": 1,
+    "id": "anvilcraftplasticraft:plastic_molding_chamber"
+  }
+}

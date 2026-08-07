@@ -15,7 +15,7 @@ items:
 
 ## Resin Anvil
 
-- The resin anvil is a movable entity affected by gravity and buoyancy, and it can attach to all six faces.
+- The resin anvil is a movable entity affected by gravity and buoyancy, and it can attach to all six faces. When placing it, the clicked face is split into four regions by its diagonals; the edge nearest the targeted region selects the in-plane direction, exposing all 24 orientations directly. While a product is held, thick white lines mark the targeted face and both diagonals, and the full face uses alternating translucent-white and transparent grid cells. The active region's three edges and white cells turn green. The green selection slides smoothly when its region changes, while the complete preview slides into place when another block face is targeted.
 - Sneak-use it with any Anvil Hammer to retrieve it directly while preserving magnetism and captured mobs.
 - It bounces when it hits blocks or entities from any direction, but right-clicking it never opens an anvil menu.
 - A falling block dropped onto it rebounds with diminishing speed, then settles as a block when the collision top aligns with the block grid.
@@ -26,7 +26,7 @@ items:
 
 ## Hardened Resin Anvil
 
-- The hardened resin anvil keeps entity movement, gravity, six-face placement, buoyancy, and collision without the elastic bounce.
+- The hardened resin anvil keeps entity movement, gravity, the same 24-direction placement, buoyancy, and collision without the elastic bounce.
 - A falling block dropped onto it does not rebound and settles directly when the collision top aligns with the block grid.
 - Sneak-use it with any Anvil Hammer to retrieve it directly while preserving magnetism.
 - Right-clicking opens the vanilla anvil workflow. Repair and enchantment merging follow vanilla rules, while renaming alone costs no experience and does not increase the prior-work penalty.

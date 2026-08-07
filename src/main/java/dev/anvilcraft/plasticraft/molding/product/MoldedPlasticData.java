@@ -9,12 +9,20 @@ import dev.anvilcraft.plasticraft.api.texture.PlasticTextureLayout;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.init.PlasticraftDataComponents;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
 import dev.anvilcraft.plasticraft.molding.bake.ManufacturedMoldingGeometry;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingBarrierFace;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingAnvilShapeAnalyzer;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingConvexFace;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingConvexHull;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingTrayShapeAnalysis;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingTrayShapeAnalyzer;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductPreview;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductType;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
@@ -31,23 +39,27 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /** 单一动态制品 ID 携带的版本化制造结果。 */
 public record MoldedPlasticData(
     int formatVersion,
     String modelHash,
     MoldingVolumeMask volumeMask,
+    MoldingVolumeMask cavityMask,
     List<MoldingQuad> surfaceMesh,
     FluidStack material,
     ResourceLocation finalType,
     int capacity,
+    MoldedPlasticContents contents,
     String name,
     MoldingVec3 rotationPivot,
     MoldingVec3 entityOrigin,
     PlasticEntityOrientation orientation,
-    List<MoldingConvexHull> collisionHulls
+    List<MoldingConvexHull> collisionHulls,
+    boolean limitOverride
 ) {
-    public static final int CURRENT_FORMAT_VERSION = 2;
+    public static final int CURRENT_FORMAT_VERSION = 4;
     public static final int MAX_SURFACE_QUADS = MoldedPlasticSurfaceAdapter.MAX_SURFACES;
     public static final int MAX_COLLISION_HULLS = EditableMoldingModel.MAX_ELEMENTS;
     private static final int DERIVED_CACHE_LIMIT = 128;
@@ -75,19 +87,33 @@ public record MoldedPlasticData(
             return this.size() > DERIVED_CACHE_LIMIT;
         }
     };
+    private static final Map<ShapeKey, MoldingTrayShapeAnalysis> TRAY_SHAPE_CACHE = new LinkedHashMap<>(
+        DERIVED_CACHE_LIMIT,
+        0.75F,
+        true
+    ) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<ShapeKey, MoldingTrayShapeAnalysis> eldest) {
+            return this.size() > DERIVED_CACHE_LIMIT;
+        }
+    };
     public static final Codec<MoldedPlasticData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
         Codec.INT.fieldOf("format_version").forGetter(MoldedPlasticData::formatVersion),
         Codec.STRING.fieldOf("model_hash").forGetter(MoldedPlasticData::modelHash),
         MoldingVolumeMask.CODEC.fieldOf("volume").forGetter(MoldedPlasticData::volumeMask),
+        MoldingVolumeMask.CODEC.fieldOf("cavities").forGetter(MoldedPlasticData::cavityMask),
         SURFACE_MESH_CODEC.fieldOf("surface_mesh").forGetter(MoldedPlasticData::surfaceMesh),
         FluidStack.CODEC.fieldOf("material").forGetter(MoldedPlasticData::material),
         ResourceLocation.CODEC.fieldOf("final_type").forGetter(MoldedPlasticData::finalType),
         Codec.INT.optionalFieldOf("capacity", 0).forGetter(MoldedPlasticData::capacity),
+        MoldedPlasticContents.CODEC.optionalFieldOf("contents", MoldedPlasticContents.EMPTY)
+            .forGetter(MoldedPlasticData::contents),
         Codec.STRING.fieldOf("name").forGetter(MoldedPlasticData::name),
         MoldingVec3.CODEC.fieldOf("rotation_pivot").forGetter(MoldedPlasticData::rotationPivot),
         MoldingVec3.CODEC.fieldOf("entity_origin").forGetter(MoldedPlasticData::entityOrigin),
         ORIENTATION_CODEC.fieldOf("orientation").forGetter(MoldedPlasticData::orientation),
-        COLLISION_HULLS_CODEC.fieldOf("collision_hulls").forGetter(MoldedPlasticData::collisionHulls)
+        COLLISION_HULLS_CODEC.fieldOf("collision_hulls").forGetter(MoldedPlasticData::collisionHulls),
+        Codec.BOOL.fieldOf("limit_override").forGetter(MoldedPlasticData::limitOverride)
     ).apply(instance, MoldedPlasticData::new));
     public static final StreamCodec<RegistryFriendlyByteBuf, MoldedPlasticData> STREAM_CODEC = StreamCodec.of(
         MoldedPlasticData::encode,
@@ -102,6 +128,12 @@ public record MoldedPlasticData(
             throw new IllegalArgumentException("Invalid molded plastic model hash");
         }
         volumeMask = volumeMask.copy();
+        cavityMask = cavityMask.copy();
+        if (volumeMask.sizeX() != cavityMask.sizeX()
+            || volumeMask.sizeY() != cavityMask.sizeY()
+            || volumeMask.sizeZ() != cavityMask.sizeZ()) {
+            throw new IllegalArgumentException("Molded plastic masks must share dimensions");
+        }
         surfaceMesh = List.copyOf(surfaceMesh);
         if (surfaceMesh.isEmpty() || surfaceMesh.size() > MAX_SURFACE_QUADS) {
             throw new IllegalArgumentException("Invalid molded plastic surface count");
@@ -115,7 +147,46 @@ public record MoldedPlasticData(
         if (material.isEmpty()) throw new IllegalArgumentException("Molded plastic material must not be empty");
         material = material.copyWithAmount(1);
         Objects.requireNonNull(finalType, "finalType");
+        Objects.requireNonNull(contents, "contents");
+        MoldingProductType productType = MoldingProductTypes.get(finalType)
+            .orElseThrow(() -> new IllegalArgumentException("Unknown molded plastic product type " + finalType));
         if (capacity < 0) throw new IllegalArgumentException("Molded plastic capacity must not be negative");
+        int unitsPerCapacity = productType.unitsPerCapacity();
+        if (unitsPerCapacity > 0
+            && capacity != cavityMask.volume() / unitsPerCapacity) {
+            throw new IllegalArgumentException("Molded plastic capacity does not match its cavity volume");
+        }
+        switch (productType.storageKind()) {
+            case NONE -> {
+                if (capacity != 0 || !contents.isEmpty()) {
+                    throw new IllegalArgumentException("Normal molded plastic cannot carry storage contents");
+                }
+            }
+            case ITEMS -> {
+                if (!contents.fluids().isEmpty() || contents.trayComponent().isPresent()) {
+                    throw new IllegalArgumentException("Molded chest cannot carry fluids");
+                }
+                if (contents.items().stream().anyMatch(item -> item.slot() >= capacity)) {
+                    throw new IllegalArgumentException("Molded chest item slot exceeds its capacity");
+                }
+            }
+            case FLUIDS -> {
+                if (!contents.items().isEmpty() || contents.trayComponent().isPresent()) {
+                    throw new IllegalArgumentException("Molded tank cannot carry items");
+                }
+                long fluidAmount = contents.fluids().stream()
+                    .mapToLong(FluidStack::getAmount)
+                    .sum();
+                if (fluidAmount > (long) capacity * 1000L) {
+                    throw new IllegalArgumentException("Molded tank fluids exceed its capacity");
+                }
+            }
+            case TRAY -> {
+                if (capacity != 0 || !contents.items().isEmpty() || !contents.fluids().isEmpty()) {
+                    throw new IllegalArgumentException("Molded tray can only carry its redstone component");
+                }
+            }
+        }
         if (name.isBlank() || name.length() > MAX_TEXT_LENGTH) {
             throw new IllegalArgumentException("Invalid molded plastic name");
         }
@@ -129,7 +200,10 @@ public record MoldedPlasticData(
         for (MoldingConvexHull hull : collisionHulls) {
             for (MoldingVec3 vertex : hull.vertices()) requireWorkspacePoint(vertex, "collision vertex");
         }
-        derivedData(new ShapeKey(modelHash, volumeMask.volume()), surfaceMesh);
+        derivedData(
+            new ShapeKey(modelHash, volumeMask.volume(), volumeMask.sizeX(), volumeMask.sizeY(), volumeMask.sizeZ()),
+            surfaceMesh
+        );
     }
 
     public static MoldedPlasticData manufacture(
@@ -138,13 +212,26 @@ public record MoldedPlasticData(
         FluidStack material,
         int meltMillibuckets
     ) {
-        if (meltMillibuckets < 0) throw new IllegalArgumentException("Melt amount must not be negative");
-        int maximumCells = Math.min(
-            MoldingVolumeMask.CELL_COUNT,
-            Math.multiplyExact(meltMillibuckets, 4)
+        return manufacture(model, baked, material, meltMillibuckets, false, false);
+    }
+
+    public static MoldedPlasticData manufacture(
+        EditableMoldingModel model,
+        BakedMoldingModel baked,
+        FluidStack material,
+        int meltMillibuckets,
+        boolean typeOverride,
+        boolean creativeOverride
+    ) {
+        MoldingProductPreview preview = MoldingProductPreview.evaluate(
+            model,
+            baked,
+            meltMillibuckets,
+            typeOverride,
+            creativeOverride
         );
-        MoldingVolumeMask paidVolume = MoldingModelBaker.createPaidVolumeMask(baked, maximumCells);
-        int requiredCells = baked.volumeMask().volume();
+        MoldingVolumeMask paidVolume = preview.formedVolume();
+        int requiredCells = baked.analysis().volume();
         double formedProportion = requiredCells == 0
             ? 1.0D
             : Math.min(1.0D, paidVolume.volume() / (double) requiredCells);
@@ -157,15 +244,28 @@ public record MoldedPlasticData(
             CURRENT_FORMAT_VERSION,
             baked.modelHash(),
             paidVolume,
+            preview.analysis().cavityMask(),
             surface,
-            material,
-            EditableMoldingModel.NORMAL_TYPE,
-            0,
+            material.isEmpty()
+                ? new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 1)
+                : material,
+            preview.finalType(),
+            preview.capacity(),
+            MoldedPlasticContents.EMPTY,
             model.name(),
             defaultRotationPivot(surface),
-            new MoldingVec3(24.0D, 0.0D, 24.0D),
+            entityOrigin(paidVolume),
             PlasticEntityOrientation.DEFAULT,
-            geometry.collisionHulls()
+            geometry.collisionHulls(),
+            typeOverride || creativeOverride
+        );
+    }
+
+    private static MoldingVec3 entityOrigin(MoldingVolumeMask volume) {
+        return new MoldingVec3(
+            volume.sizeX() == MoldingVolumeMask.SIZE ? 24.0D : volume.sizeX() * 0.5D,
+            0.0D,
+            volume.sizeZ() == MoldingVolumeMask.SIZE ? 24.0D : volume.sizeZ() * 0.5D
         );
     }
 
@@ -175,21 +275,79 @@ public record MoldedPlasticData(
             this.formatVersion,
             this.modelHash,
             this.volumeMask,
+            this.cavityMask,
             this.surfaceMesh,
             this.material,
             this.finalType,
             this.capacity,
+            this.contents,
             this.name,
             this.rotationPivot,
             this.entityOrigin,
             replacement,
-            this.collisionHulls
+            this.collisionHulls,
+            this.limitOverride
         );
     }
 
     @Override
     public MoldingVolumeMask volumeMask() {
         return this.volumeMask.copy();
+    }
+
+    public boolean hasGiantAnvilAbility() {
+        return MoldingProductTypes.isAnvil(this.finalType)
+            && MoldingAnvilShapeAnalyzer.hasGiantBottom(this.volumeMask);
+    }
+
+    @Override
+    public MoldingVolumeMask cavityMask() {
+        return this.cavityMask.copy();
+    }
+
+    public MoldedPlasticData withFunction(
+        ResourceLocation type,
+        int replacementCapacity,
+        MoldingVolumeMask cavities
+    ) {
+        return new MoldedPlasticData(
+            this.formatVersion,
+            this.modelHash,
+            this.volumeMask,
+            cavities,
+            this.surfaceMesh,
+            this.material,
+            type,
+            replacementCapacity,
+            MoldedPlasticContents.EMPTY,
+            this.name,
+            this.rotationPivot,
+            this.entityOrigin,
+            this.orientation,
+            this.collisionHulls,
+            this.limitOverride
+        );
+    }
+
+    public MoldedPlasticData withContents(MoldedPlasticContents replacement) {
+        if (this.contents.equals(replacement)) return this;
+        return new MoldedPlasticData(
+            this.formatVersion,
+            this.modelHash,
+            this.volumeMask,
+            this.cavityMask,
+            this.surfaceMesh,
+            this.material,
+            this.finalType,
+            this.capacity,
+            replacement,
+            this.name,
+            this.rotationPivot,
+            this.entityOrigin,
+            this.orientation,
+            this.collisionHulls,
+            this.limitOverride
+        );
     }
 
     @Override
@@ -222,6 +380,20 @@ public record MoldedPlasticData(
         return this.derivedData().surfaceBounds;
     }
 
+    public MoldingTrayShapeAnalysis trayShapeAnalysis() {
+        ShapeKey key = this.shapeKey();
+        synchronized (TRAY_SHAPE_CACHE) {
+            return TRAY_SHAPE_CACHE.computeIfAbsent(
+                key,
+                ignored -> MoldingTrayShapeAnalyzer.analyze(this.volumeMask, this.surfaceMesh)
+            );
+        }
+    }
+
+    public Set<MoldingBarrierFace> barrierFaces() {
+        return this.derivedData().barrierFaces;
+    }
+
     public static Optional<MoldedPlasticData> get(ItemStack stack) {
         return Optional.ofNullable(stack.get(PlasticraftDataComponents.MOLDED_PLASTIC.get()));
     }
@@ -244,15 +416,19 @@ public record MoldedPlasticData(
     }
 
     ShapeKey shapeKey() {
-        return new ShapeKey(this.modelHash, this.volumeMask.volume());
+        return new ShapeKey(
+            this.modelHash,
+            this.volumeMask.volume(),
+            this.volumeMask.sizeX(),
+            this.volumeMask.sizeY(),
+            this.volumeMask.sizeZ()
+        );
     }
 
     private static void encode(RegistryFriendlyByteBuf buffer, MoldedPlasticData data) {
         buffer.writeVarInt(data.formatVersion);
         buffer.writeUtf(data.modelHash, 128);
-        long[] cells = data.volumeMask.toLongArray();
-        buffer.writeVarInt(cells.length);
-        for (long cell : cells) buffer.writeLong(cell);
+        writeMask(buffer, data.volumeMask);
         buffer.writeVarInt(data.surfaceMesh.size());
         for (MoldingQuad quad : data.surfaceMesh) writeQuad(buffer, quad);
         FluidStack.STREAM_CODEC.encode(buffer, data.material);
@@ -264,14 +440,15 @@ public record MoldedPlasticData(
         buffer.writeByte(data.orientation.pack());
         buffer.writeVarInt(data.collisionHulls.size());
         for (MoldingConvexHull hull : data.collisionHulls) writeHull(buffer, hull);
+        writeMask(buffer, data.cavityMask);
+        MoldedPlasticContents.encode(buffer, data.contents);
+        buffer.writeBoolean(data.limitOverride);
     }
 
     private static MoldedPlasticData decode(RegistryFriendlyByteBuf buffer) {
         int formatVersion = buffer.readVarInt();
         String modelHash = buffer.readUtf(128);
-        int longCount = readBoundedCount(buffer, MoldingVolumeMask.MAX_LONG_COUNT, "molding volume longs");
-        long[] cells = new long[longCount];
-        for (int index = 0; index < longCount; index++) cells[index] = buffer.readLong();
+        MoldingVolumeMask volume = readMask(buffer, "molding volume");
         int quadCount = readBoundedCount(buffer, MAX_SURFACE_QUADS, "molded plastic surfaces");
         List<MoldingQuad> quads = new ArrayList<>(quadCount);
         for (int index = 0; index < quadCount; index++) quads.add(readQuad(buffer));
@@ -285,19 +462,25 @@ public record MoldedPlasticData(
         int hullCount = readBoundedCount(buffer, MAX_COLLISION_HULLS, "molded plastic collision hulls");
         List<MoldingConvexHull> collisionHulls = new ArrayList<>(hullCount);
         for (int index = 0; index < hullCount; index++) collisionHulls.add(readHull(buffer));
+        MoldingVolumeMask cavity = readMask(buffer, "molding cavity");
+        MoldedPlasticContents contents = MoldedPlasticContents.decode(buffer);
+        boolean limitOverride = buffer.readBoolean();
         return new MoldedPlasticData(
             formatVersion,
             modelHash,
-            MoldingVolumeMask.fromLongArray(cells),
+            volume,
+            cavity,
             quads,
             material,
             finalType,
             capacity,
+            contents,
             name,
             rotationPivot,
             entityOrigin,
             orientation,
-            collisionHulls
+            collisionHulls,
+            limitOverride
         );
     }
 
@@ -305,6 +488,29 @@ public record MoldedPlasticData(
         int count = buffer.readVarInt();
         if (count < 0 || count > maximum) throw new IllegalArgumentException("Invalid " + name + " count");
         return count;
+    }
+
+    private static void writeMask(RegistryFriendlyByteBuf buffer, MoldingVolumeMask mask) {
+        buffer.writeVarInt(mask.sizeX());
+        buffer.writeVarInt(mask.sizeY());
+        buffer.writeVarInt(mask.sizeZ());
+        long[] cells = mask.toLongArray();
+        buffer.writeVarInt(cells.length);
+        for (long cell : cells) buffer.writeLong(cell);
+    }
+
+    private static MoldingVolumeMask readMask(RegistryFriendlyByteBuf buffer, String name) {
+        int sizeX = buffer.readVarInt();
+        int sizeY = buffer.readVarInt();
+        int sizeZ = buffer.readVarInt();
+        int longCount = readBoundedCount(
+            buffer,
+            MoldingVolumeMask.maxLongCount(sizeX, sizeY, sizeZ),
+            name + " longs"
+        );
+        long[] cells = new long[longCount];
+        for (int index = 0; index < longCount; index++) cells[index] = buffer.readLong();
+        return MoldingVolumeMask.fromLongArray(sizeX, sizeY, sizeZ, cells);
     }
 
     private static void writeQuad(RegistryFriendlyByteBuf buffer, MoldingQuad quad) {
@@ -394,9 +600,9 @@ public record MoldedPlasticData(
 
     private static void requireWorkspacePoint(MoldingVec3 point, String name) {
         Objects.requireNonNull(point, name);
-        if (point.x() < 0.0D || point.x() > MoldingVolumeMask.SIZE
-            || point.y() < 0.0D || point.y() > MoldingVolumeMask.SIZE
-            || point.z() < 0.0D || point.z() > MoldingVolumeMask.SIZE) {
+        if (point.x() < 0.0D || point.x() > MoldingVolumeMask.MAX_SIZE
+            || point.y() < 0.0D || point.y() > MoldingVolumeMask.MAX_SIZE
+            || point.z() < 0.0D || point.z() > MoldingVolumeMask.MAX_SIZE) {
             throw new IllegalArgumentException("Molded plastic " + name + " is outside the workspace");
         }
     }
@@ -407,11 +613,14 @@ public record MoldedPlasticData(
         if (!(other instanceof MoldedPlasticData data)) return false;
         return this.formatVersion == data.formatVersion
             && this.capacity == data.capacity
+            && this.limitOverride == data.limitOverride
             && this.modelHash.equals(data.modelHash)
             && this.volumeMask.equals(data.volumeMask)
+            && this.cavityMask.equals(data.cavityMask)
             && this.surfaceMesh.equals(data.surfaceMesh)
             && FluidStack.matches(this.material, data.material)
             && this.finalType.equals(data.finalType)
+            && this.contents.equals(data.contents)
             && this.name.equals(data.name)
             && this.rotationPivot.equals(data.rotationPivot)
             && this.entityOrigin.equals(data.entityOrigin)
@@ -425,14 +634,17 @@ public record MoldedPlasticData(
             this.formatVersion,
             this.modelHash,
             this.volumeMask,
+            this.cavityMask,
             this.surfaceMesh,
             this.finalType,
             this.capacity,
+            this.contents,
             this.name,
             this.rotationPivot,
             this.entityOrigin,
             this.orientation,
-            this.collisionHulls
+            this.collisionHulls,
+            this.limitOverride
         );
         result = 31 * result + FluidStack.hashFluidAndComponents(this.material);
         result = 31 * result + this.material.getAmount();
@@ -443,7 +655,8 @@ public record MoldedPlasticData(
         List<PlasticSurface> plasticSurfaces,
         PlasticTextureLayout textureLayout,
         String shapeHash,
-        AABB surfaceBounds
+        AABB surfaceBounds,
+        Set<MoldingBarrierFace> barrierFaces
     ) {
         private static DerivedData create(List<MoldingQuad> surfaceMesh) {
             MoldedPlasticSurfaceAdapter.AdaptedSurfaces adapted =
@@ -453,7 +666,10 @@ public record MoldedPlasticData(
                 surfaces,
                 adapted.textureLayout(),
                 PlasticTextureInput.computeShapeHash(surfaces),
-                createSurfaceBounds(surfaceMesh)
+                createSurfaceBounds(surfaceMesh),
+                MoldingModelBaker.barrierFacesFromZeroThickness(
+                    surfaceMesh.stream().filter(MoldingQuad::doubleSided).toList()
+                )
             );
         }
 
@@ -482,6 +698,6 @@ public record MoldedPlasticData(
         }
     }
 
-    record ShapeKey(String modelHash, int formedCells) {
+    record ShapeKey(String modelHash, int formedCells, int sizeX, int sizeY, int sizeZ) {
     }
 }

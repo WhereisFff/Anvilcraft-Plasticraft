@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.HighHeatFuelCauldronBlockEntity;
+import dev.anvilcraft.plasticraft.block.entity.Plastic3DPrintingComponentBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.BondedEntityBlockEntityRenderer;
@@ -14,6 +15,15 @@ import dev.anvilcraft.plasticraft.client.renderer.blockentity.PlasticMoldingCham
 
 /** Plasticraft 方块实体注册。 */
 public final class PlasticraftBlockEntities {
+    public static final BlockEntityEntry<Plastic3DPrintingComponentBlockEntity> PLASTIC_3D_PRINTING_COMPONENT =
+        AnvilcraftPlasticraft.REGISTRUM
+            .<Plastic3DPrintingComponentBlockEntity>blockEntity(
+                "plastic_3d_printing_component",
+                Plastic3DPrintingComponentBlockEntity::new
+            )
+            .validBlock(PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT)
+            .register();
+
     public static final BlockEntityEntry<PlasticMoldingChamberBlockEntity> PLASTIC_MOLDING_CHAMBER = AnvilcraftPlasticraft.REGISTRUM
         .<PlasticMoldingChamberBlockEntity>blockEntity(
             "plastic_molding_chamber",

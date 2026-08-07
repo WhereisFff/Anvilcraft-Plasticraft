@@ -3,8 +3,12 @@ package dev.anvilcraft.plasticraft.integration.jade.provider;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContentSummary;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import net.minecraft.ChatFormatting;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
@@ -27,6 +31,7 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
 
     private static final String PUSHABLE_KEY = "pushable";
     private static final String MAGNETIZED_KEY = "magnetized";
+    private static final String MOLDED_SUMMARY_KEY = "molded_summary";
     private static final ResourceLocation UID = AnvilcraftPlasticraft.of("hardend_resin_anvil");
 
     @Override
@@ -35,6 +40,12 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
         if (entity instanceof AbstractPlasticEntity anvil) {
             tag.putBoolean(PUSHABLE_KEY, anvil.isPushable());
             tag.putBoolean(MAGNETIZED_KEY, anvil.isMagnetized());
+        }
+        if (entity instanceof UniversalPlasticEntity plastic) {
+            MoldedPlasticContentSummary summary = plastic.getMoldedContentSummary();
+            if (MoldingProductTypes.isChest(summary.type())) {
+                tag.put(MOLDED_SUMMARY_KEY, summary.toTag(entity.registryAccess()));
+            }
         }
     }
 
@@ -63,6 +74,17 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
             tooltip.add(Component.translatable("tooltip.anvilcraftplasticraft.magnetized"));
         }
 
+        if (accessor.getEntity() instanceof UniversalPlasticEntity
+            && data.contains(MOLDED_SUMMARY_KEY, Tag.TAG_COMPOUND)) {
+            appendMoldedSummary(
+                tooltip,
+                MoldedPlasticContentSummary.fromTag(
+                    data.getCompound(MOLDED_SUMMARY_KEY),
+                    accessor.getEntity().registryAccess()
+                )
+            );
+        }
+
         if (accessor.getEntity() instanceof HardenedResinCauldronEntity pot) {
             IElementHelper helper = IElementHelper.get();
             List<ItemStack> items = pot.getSyncedItems();
@@ -78,6 +100,36 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
                     tooltip.add(itemElements);
                 }
             }
+        }
+    }
+
+    private static void appendMoldedSummary(ITooltip tooltip, MoldedPlasticContentSummary summary) {
+        if (!MoldingProductTypes.isChest(summary.type())) return;
+        tooltip.add(Component.translatable(
+            "tooltip.anvilcraftplasticraft.molded_chest_contents",
+            summary.occupiedSlots(),
+            summary.capacity()
+        ).withStyle(ChatFormatting.GRAY));
+        IElementHelper helper = IElementHelper.get();
+        for (MoldedPlasticContentSummary.ItemEntry item : summary.items()) {
+            List<IElement> elements = new ArrayList<>(2);
+            elements.add(helper.smallItem(item.stack()));
+            elements.add(helper.text(Component.translatable(
+                "tooltip.anvilcraftplasticraft.jade.item_count",
+                IDisplayHelper.get().stripColor(item.stack().getHoverName()),
+                item.count()
+            ).withStyle(ChatFormatting.GRAY)).message(null));
+            tooltip.add(elements);
+        }
+        appendOmitted(tooltip, summary.omittedItemTypes());
+    }
+
+    private static void appendOmitted(ITooltip tooltip, int count) {
+        if (count > 0) {
+            tooltip.add(Component.translatable(
+                "tooltip.anvilcraftplasticraft.molded_more_contents",
+                count
+            ).withStyle(ChatFormatting.DARK_GRAY));
         }
     }
 

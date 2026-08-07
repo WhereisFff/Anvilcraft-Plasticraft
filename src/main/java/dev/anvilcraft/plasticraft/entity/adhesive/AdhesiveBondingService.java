@@ -63,6 +63,8 @@ public final class AdhesiveBondingService {
     private static final int TRANSIT_COLLISION_REFINEMENT_STEPS = 8;
     private static final double TRANSIT_PATH_ALIGNMENT_DISTANCE_SQR = 0.25D;
     private static final double TRANSIT_PATH_PROGRESS_EPSILON = 1.0E-6D;
+    private static final double MAX_PLAN_START_DISPLACEMENT_SQR = 4.0D;
+    private static final double PLAN_START_EPSILON_SQR = 1.0E-8D;
     private static final double ELASTIC_SPRING = 0.42D;
     private static final double ELASTIC_DAMPING = 0.76D;
     private static final double ELASTIC_MAX_SPEED = 2.5D;
@@ -149,6 +151,17 @@ public final class AdhesiveBondingService {
         Direction attachmentFace,
         AdhesivePathPlanner.Plan plan
     ) {
+        return bondSelectedWithPlan(player, hand, supportPos, attachmentFace, plan, null);
+    }
+
+    static boolean bondSelectedWithPlan(
+        Player player,
+        InteractionHand hand,
+        BlockPos supportPos,
+        Direction attachmentFace,
+        AdhesivePathPlanner.Plan plan,
+        @Nullable Vec3 expectedStart
+    ) {
         ItemStack bucket = player.getItemInHand(hand);
         if (player.isShiftKeyDown() || !bucket.is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
         if (!(player.level() instanceof ServerLevel level)) return false;
@@ -164,12 +177,13 @@ public final class AdhesiveBondingService {
             return false;
         }
         Direction selectedFace = AdhesiveSelectionManager.getSelectedFace(player);
-        if (!matchesPlanStart(plan, target)
-            || !plan.valid()
+        if (!plan.valid()
             || plan.sourceFace() != (target instanceof AbstractPlasticEntity ? selectedFace : attachmentFace.getOpposite())
             || !plan.occupiedPos().equals(supportPos.relative(attachmentFace))) {
             return false;
         }
+        if (!AdhesiveGroupTransform.isPlanClear(level, target, plan, player)) return false;
+        if (!snapToPlanStart(level, target, plan, expectedStart)) return false;
         return applyBlockPlan(player, hand, level, target, supportPos, attachmentFace, plan);
     }
 
@@ -407,7 +421,8 @@ public final class AdhesiveBondingService {
             movingEntity,
             anchorEntity,
             anchorWorldFace,
-            plan
+            plan,
+            null
         );
     }
 
@@ -417,6 +432,26 @@ public final class AdhesiveBondingService {
         Entity supportEntity,
         Direction supportWorldFace,
         AdhesivePathPlanner.Plan plan
+    ) {
+        return bondSelectedToEntityWithPlan(
+            player,
+            hand,
+            supportEntity,
+            supportWorldFace,
+            plan,
+            null,
+            null
+        );
+    }
+
+    static boolean bondSelectedToEntityWithPlan(
+        Player player,
+        InteractionHand hand,
+        Entity supportEntity,
+        Direction supportWorldFace,
+        AdhesivePathPlanner.Plan plan,
+        @Nullable Vec3 expectedMovingStart,
+        @Nullable Vec3 expectedSupportStart
     ) {
         ItemStack bucket = player.getItemInHand(hand);
         if (player.isShiftKeyDown() || !bucket.is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
@@ -443,13 +478,14 @@ public final class AdhesiveBondingService {
             movingStoredFace = AdhesiveFaces.storedFace(supportEntity, supportWorldFace);
             if (hasAdhesiveOnFace(selected, anchorWorldFace)) return false;
         }
-        if (!matchesPlanStart(plan, movingEntity)
-            || !plan.valid()
+        if (!plan.valid()
             || plan.sourceFace() != (movingEntity instanceof AbstractPlasticEntity
                 ? movingStoredFace
                 : anchorWorldFace.getOpposite())) {
             return false;
         }
+        if (!AdhesiveGroupTransform.isPlanClear(level, movingEntity, plan, player)) return false;
+        if (!snapToPlanStart(level, movingEntity, plan, expectedMovingStart)) return false;
         return applyEntityPlan(
             player,
             hand,
@@ -457,7 +493,8 @@ public final class AdhesiveBondingService {
             movingEntity,
             anchorEntity,
             anchorWorldFace,
-            plan
+            plan,
+            expectedSupportStart
         );
     }
 
@@ -468,7 +505,8 @@ public final class AdhesiveBondingService {
         Entity movingEntity,
         Entity anchorEntity,
         Direction anchorWorldFace,
-        AdhesivePathPlanner.Plan plan
+        AdhesivePathPlanner.Plan plan,
+        @Nullable Vec3 supportStartPosition
     ) {
         if (!plan.valid() || !AdhesiveGroupTransform.isPlanClear(level, movingEntity, plan, player)) {
             return false;
@@ -488,7 +526,7 @@ public final class AdhesiveBondingService {
             plan.sourceFace(),
             Optional.of(anchorEntity.getUUID()),
             anchorEntity.getId(),
-            anchorEntity.position(),
+            supportStartPosition == null ? anchorEntity.position() : supportStartPosition,
             plan.points(),
             level.getGameTime(),
             transitDuration(plan),
@@ -508,9 +546,33 @@ public final class AdhesiveBondingService {
         return true;
     }
 
-    private static boolean matchesPlanStart(AdhesivePathPlanner.Plan plan, Entity entity) {
-        return !plan.points().isEmpty()
-            && plan.points().getFirst().distanceToSqr(entity.position()) <= 0.01D;
+    private static boolean snapToPlanStart(
+        ServerLevel level,
+        Entity entity,
+        AdhesivePathPlanner.Plan plan,
+        @Nullable Vec3 expectedStart
+    ) {
+        if (plan.points().isEmpty()) return false;
+        Vec3 planStart = plan.points().getFirst();
+        if (expectedStart != null && expectedStart.distanceToSqr(planStart) > PLAN_START_EPSILON_SQR) {
+            return false;
+        }
+        Vec3 displacement = planStart.subtract(entity.position());
+        if (displacement.lengthSqr() > MAX_PLAN_START_DISPLACEMENT_SQR) return false;
+        AdhesiveGroupTransform.Projection startProjection = AdhesiveGroupTransform.project(entity, planStart, null);
+        if (!AdhesiveGroupTransform.isProjectionClearOfBlocks(level, startProjection)) return false;
+        if (displacement.lengthSqr() <= PLAN_START_EPSILON_SQR) return true;
+
+        EntityBondManager.prepareAlignedLeader(level, entity);
+        for (Entity member : EntityBondManager.component(level, entity)) {
+            member.setPos(member.position().add(displacement));
+            member.setDeltaMovement(Vec3.ZERO);
+            member.fallDistance = 0.0F;
+            member.hasImpulse = true;
+            member.hurtMarked = true;
+        }
+        EntityBondManager.updateLeaderOffsets(level, entity);
+        return true;
     }
 
     public static void tickAdhesiveTransit(Entity entity, boolean validateAndComplete) {

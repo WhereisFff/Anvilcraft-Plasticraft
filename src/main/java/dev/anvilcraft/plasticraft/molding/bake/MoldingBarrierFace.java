@@ -2,13 +2,13 @@ package dev.anvilcraft.plasticraft.molding.bake;
 
 /**
  * 两个相邻制造单元之间被零厚度 cube 阻断的通路。
- * plane 是 0..48 的格面坐标，u/v 是另外两轴的 0..47 单元坐标。
+ * plane 是制造网格格面坐标，u/v 是另外两轴的单元坐标。
  */
 public record MoldingBarrierFace(MoldingFaceDirection.Axis axis, int plane, int u, int v) {
     public MoldingBarrierFace {
-        if (plane < 0 || plane > MoldingVolumeMask.SIZE
-            || u < 0 || u >= MoldingVolumeMask.SIZE
-            || v < 0 || v >= MoldingVolumeMask.SIZE) {
+        if (plane < 0 || plane > MoldingVolumeMask.MAX_SIZE
+            || u < 0 || u >= MoldingVolumeMask.MAX_SIZE
+            || v < 0 || v >= MoldingVolumeMask.MAX_SIZE) {
             throw new IllegalArgumentException("Barrier face is outside the molding workspace");
         }
     }
