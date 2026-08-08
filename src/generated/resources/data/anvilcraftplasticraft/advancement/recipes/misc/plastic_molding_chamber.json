@@ -1,21 +1,21 @@
 {
   "parent": "minecraft:recipes/root",
   "criteria": {
-    "has_fluid_tank": {
+    "has_empty_supercapacitor": {
       "conditions": {
         "items": [
           {
-            "items": "anvilcraft:fluid_tank"
+            "items": "anvilcraft:supercapacitor_empty"
           }
         ]
       },
       "trigger": "minecraft:inventory_changed"
     },
-    "has_polished_heavy_iron_block": {
+    "has_fluid_tank": {
       "conditions": {
         "items": [
           {
-            "items": "anvilcraft:polished_heavy_iron_block"
+            "items": "anvilcraft:fluid_tank"
           }
         ]
       },
@@ -54,7 +54,7 @@
       "has_fluid_tank",
       "has_structure_scanner",
       "has_supercapacitor",
-      "has_polished_heavy_iron_block"
+      "has_empty_supercapacitor"
     ]
   ],
   "rewards": {

@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.gametest;
 
+import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.MoldingRegionPart;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberStructure;
@@ -12,6 +13,7 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.item.PlasticMoldingChamberItem;
 import dev.anvilcraft.plasticraft.molding.blueprint.BlueprintException;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprint;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintCodec;
@@ -49,8 +51,11 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.CraftingInput;
+import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -931,6 +936,58 @@ public final class PlasticMoldingChamberGameTests {
     }
 
     @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "15x7x15", floor = true)
+    @TestHolder(description = "Crafted chambers inherit full or empty super-capacitor energy")
+    static void craftingInheritsSuperCapacitorEnergy(ExtendedGameTestHelper helper) {
+        CraftingRecipe recipe = helper.getLevel().getRecipeManager()
+            .byKey(AnvilcraftPlasticraft.of("plastic_molding_chamber"))
+            .filter(holder -> holder.value() instanceof CraftingRecipe)
+            .map(holder -> (CraftingRecipe) holder.value())
+            .orElseThrow(() -> new GameTestAssertException("plastic molding chamber recipe was not loaded"));
+        CraftingInput chargedInput = moldingChamberCraftingInput(ModItems.SUPER_CAPACITOR.asStack());
+        CraftingInput emptyInput = moldingChamberCraftingInput(ModItems.SUPER_CAPACITOR_EMPTY.asStack());
+        check(recipe.matches(chargedInput, helper.getLevel()), "charged super-capacitor recipe did not match");
+        check(recipe.matches(emptyInput, helper.getLevel()), "empty super-capacitor recipe did not match");
+
+        ItemStack chargedResult = recipe.assemble(chargedInput, helper.getLevel().registryAccess());
+        ItemStack emptyResult = recipe.assemble(emptyInput, helper.getLevel().registryAccess());
+        check(chargedResult.is(PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.asItem()),
+            "charged recipe produced the wrong item");
+        check(emptyResult.is(PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.asItem()),
+            "empty recipe produced the wrong item");
+        check(PlasticMoldingChamberItem.storedEnergy(chargedResult) == MoldingPowerBridge.capacity(),
+            "charged recipe did not store one full chamber buffer");
+        check(PlasticMoldingChamberItem.storedEnergy(emptyResult) == 0,
+            "empty recipe stored unexpected chamber energy");
+
+        PlasticMoldingChamberBlockEntity chargedChamber = placeChamber(helper, new BlockPos(3, 2, 2));
+        check(BlockItem.updateCustomBlockEntityTag(
+            helper.getLevel(),
+            null,
+            chargedChamber.getBlockPos(),
+            chargedResult
+        ), "charged result did not load its block-entity data");
+        tick(chargedChamber, 1);
+        check(chargedChamber.energyStored() == MoldingPowerBridge.capacity(),
+            "placed charged chamber did not retain full energy");
+        check(chargedChamber.getBlockState().getValue(PlasticMoldingChamberBlock.POWERED),
+            "placed charged chamber did not select the powered model");
+
+        PlasticMoldingChamberBlockEntity emptyChamber = placeChamber(helper, new BlockPos(11, 2, 2));
+        check(!BlockItem.updateCustomBlockEntityTag(
+            helper.getLevel(),
+            null,
+            emptyChamber.getBlockPos(),
+            emptyResult
+        ), "empty result unexpectedly carried block-entity data");
+        tick(emptyChamber, 1);
+        check(emptyChamber.energyStored() == 0, "placed empty chamber gained unexpected energy");
+        check(!emptyChamber.getBlockState().getValue(PlasticMoldingChamberBlock.POWERED),
+            "placed empty chamber selected the powered model");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "9x7x9", floor = true)
     @TestHolder(description = "Multiphase Transcendium bypasses type validation but never the chamber size limit")
     static void multiphaseTranscendiumOnlyOverridesType(ExtendedGameTestHelper helper) {
@@ -1338,6 +1395,15 @@ public final class PlasticMoldingChamberGameTests {
         tick(chamber, 1);
         check(chamber.structureComplete(), "production test chamber structure was incomplete");
         return chamber;
+    }
+
+    private static CraftingInput moldingChamberCraftingInput(ItemStack superCapacitor) {
+        ItemStack pipe = ModItems.PIPE.asStack();
+        return CraftingInput.of(3, 3, List.of(
+            ItemStack.EMPTY, pipe.copy(), ItemStack.EMPTY,
+            ModBlocks.FLUID_TANK.asStack(), ModBlocks.STRUCTURE_SCANNER.asStack(), superCapacitor,
+            ItemStack.EMPTY, pipe.copy(), ItemStack.EMPTY
+        ));
     }
 
     private static EditableMoldingModel cubeModel(double size) {

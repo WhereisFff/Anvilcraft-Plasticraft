@@ -1,34 +1,64 @@
 {
   "variants": {
-    "facing=east,locked=false": {
+    "facing=east,locked=false,powered=false": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber_off",
+      "y": 90
+    },
+    "facing=east,locked=false,powered=true": {
       "model": "anvilcraftplasticraft:block/plastic_molding_chamber",
-      "y": 270
+      "y": 90
     },
-    "facing=east,locked=true": {
-      "model": "anvilcraftplasticraft:block/plastic_molding_chamber_locked",
-      "y": 270
+    "facing=east,locked=true,powered=false": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber_off",
+      "y": 90
     },
-    "facing=north,locked=false": {
+    "facing=east,locked=true,powered=true": {
       "model": "anvilcraftplasticraft:block/plastic_molding_chamber",
-      "y": 180
+      "y": 90
     },
-    "facing=north,locked=true": {
-      "model": "anvilcraftplasticraft:block/plastic_molding_chamber_locked",
-      "y": 180
+    "facing=north,locked=false,powered=false": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber_off"
     },
-    "facing=south,locked=false": {
+    "facing=north,locked=false,powered=true": {
       "model": "anvilcraftplasticraft:block/plastic_molding_chamber"
     },
-    "facing=south,locked=true": {
-      "model": "anvilcraftplasticraft:block/plastic_molding_chamber_locked"
+    "facing=north,locked=true,powered=false": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber_off"
     },
-    "facing=west,locked=false": {
+    "facing=north,locked=true,powered=true": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber"
+    },
+    "facing=south,locked=false,powered=false": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber_off",
+      "y": 180
+    },
+    "facing=south,locked=false,powered=true": {
       "model": "anvilcraftplasticraft:block/plastic_molding_chamber",
-      "y": 90
+      "y": 180
     },
-    "facing=west,locked=true": {
-      "model": "anvilcraftplasticraft:block/plastic_molding_chamber_locked",
-      "y": 90
+    "facing=south,locked=true,powered=false": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber_off",
+      "y": 180
+    },
+    "facing=south,locked=true,powered=true": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber",
+      "y": 180
+    },
+    "facing=west,locked=false,powered=false": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber_off",
+      "y": 270
+    },
+    "facing=west,locked=false,powered=true": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber",
+      "y": 270
+    },
+    "facing=west,locked=true,powered=false": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber_off",
+      "y": 270
+    },
+    "facing=west,locked=true,powered=true": {
+      "model": "anvilcraftplasticraft:block/plastic_molding_chamber",
+      "y": 270
     }
   }
 }

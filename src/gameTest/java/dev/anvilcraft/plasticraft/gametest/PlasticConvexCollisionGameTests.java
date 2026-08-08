@@ -1314,6 +1314,19 @@ public final class PlasticConvexCollisionGameTests {
             check(continuousPrediction.isEmpty(),
                 "continuous carrier batch " + batch + " retained confirmed travel");
         }
+
+        PlasticCarrierPrediction fragmentedPrediction = new PlasticCarrierPrediction();
+        Vec3 almostReverse = reverse.scale(0.99D);
+        for (int segment = 0; segment < 512; segment++) {
+            fragmentedPrediction.add((segment & 1) == 0 ? forward : almostReverse);
+        }
+        Vec3 fragmentedEndpoint = fragmentedPrediction.pendingMovement();
+        check(fragmentedPrediction.remainingTravel() < 4.0D,
+            "fragmented carrier path retained unbounded reconciliation history");
+        check(fragmentedPrediction.reconcile(fragmentedEndpoint),
+            "compacted carrier path endpoint was not confirmed");
+        check(fragmentedPrediction.isEmpty(),
+            "compacted carrier path retained confirmed travel");
     }
 
     private static void check(boolean condition, String message) {

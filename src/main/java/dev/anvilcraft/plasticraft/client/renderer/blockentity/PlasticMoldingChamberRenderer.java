@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.client.renderer.blockentity;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.math.Axis;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberStructure;
@@ -22,6 +23,7 @@ import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingPlan;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingVoxel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
+import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.LightTexture;
@@ -32,10 +34,12 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.fluids.FluidStack;
 import org.joml.Matrix4f;
 import org.joml.Vector3d;
 
@@ -56,6 +60,15 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
     private static final int Y_AXIS_COLOR = 0xFF5EC870;
     private static final int Z_AXIS_COLOR = 0xFF578BE4;
     private static final int NOZZLE_COLOR = 0xFFE7EEF1;
+    private static final float TANK_MIN_X = 10.6F / 16.0F;
+    private static final float TANK_MAX_X = 14.4F / 16.0F;
+    private static final float TANK_MIN_Y = 5.05F / 16.0F;
+    private static final float TANK_MAX_Y = 10.95F / 16.0F;
+    private static final float TANK_MIN_Z = 7.1F / 16.0F;
+    private static final float TANK_MAX_Z = 10.9F / 16.0F;
+    private static final float TANK_ORIGIN_X = 12.5F / 16.0F;
+    private static final float TANK_ORIGIN_Y = 8.0F / 16.0F;
+    private static final float TANK_ORIGIN_Z = 7.0F / 16.0F;
     private static final int[][] BOX_FACES = {
         {0, 3, 7, 4}, {1, 5, 6, 2},
         {0, 4, 5, 1}, {3, 2, 6, 7},
@@ -76,6 +89,7 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
         int packedLight,
         int packedOverlay
     ) {
+        renderStagingTank(chamber, poseStack, bufferSource, packedLight);
         if (shouldRenderProjection(chamber)) {
             renderProjection(chamber, poseStack, bufferSource);
         }
@@ -88,6 +102,47 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
         if (chamber.hasMoldCollision()) {
             renderMold(chamber, partialTick, poseStack, bufferSource);
         }
+    }
+
+    private static void renderStagingTank(
+        PlasticMoldingChamberBlockEntity chamber,
+        PoseStack poseStack,
+        MultiBufferSource bufferSource,
+        int packedLight
+    ) {
+        FluidStack fluid = chamber.stagingFluid();
+        if (fluid.isEmpty()) return;
+        float fill = Mth.clamp(
+            (float) fluid.getAmount() / PlasticMoldingChamberBlockEntity.STAGING_TANK_CAPACITY,
+            0.0F,
+            1.0F
+        );
+        float fluidTop = Mth.lerp(fill, TANK_MIN_Y, TANK_MAX_Y);
+        Direction facing = chamber.getBlockState().getValue(PlasticMoldingChamberBlock.FACING);
+        float blockRotation = (facing.toYRot() + 180.0F) % 360.0F;
+
+        poseStack.pushPose();
+        poseStack.translate(0.5F, 0.0F, 0.5F);
+        poseStack.mulPose(Axis.YP.rotationDegrees(-blockRotation));
+        poseStack.translate(-0.5F, 0.0F, -0.5F);
+        poseStack.translate(TANK_ORIGIN_X, TANK_ORIGIN_Y, TANK_ORIGIN_Z);
+        poseStack.mulPose(Axis.YP.rotationDegrees(45.0F));
+        poseStack.translate(-TANK_ORIGIN_X, -TANK_ORIGIN_Y, -TANK_ORIGIN_Z);
+        FluidRenderHelper.INSTANCE.renderFluidBox(
+            fluid,
+            TANK_MIN_X,
+            TANK_MIN_Y,
+            TANK_MIN_Z,
+            TANK_MAX_X,
+            fluidTop,
+            TANK_MAX_Z,
+            bufferSource,
+            poseStack,
+            packedLight,
+            true,
+            false
+        );
+        poseStack.popPose();
     }
 
     private static boolean shouldRenderProjection(PlasticMoldingChamberBlockEntity chamber) {

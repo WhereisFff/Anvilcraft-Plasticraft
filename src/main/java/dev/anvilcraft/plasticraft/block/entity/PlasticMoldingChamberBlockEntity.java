@@ -234,6 +234,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         chamber.tickGridCharging();
         chamber.tickMachine();
         chamber.flushClientSync();
+        chamber.syncPowerState();
     }
 
     @Override
@@ -1428,6 +1429,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         if (this.energy < required) return false;
         this.energy -= required;
         this.setChanged();
+        this.syncPowerState();
         return true;
     }
 
@@ -1505,13 +1507,18 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         if (this.level == null) return;
         BlockState state = this.getBlockState();
         boolean locked = this.isLocked();
+        boolean powered = this.energy > 0;
+        BlockState nextState = state;
         if (state.hasProperty(PlasticMoldingChamberBlock.LOCKED)
             && state.getValue(PlasticMoldingChamberBlock.LOCKED) != locked) {
-            this.level.setBlock(
-                this.worldPosition,
-                state.setValue(PlasticMoldingChamberBlock.LOCKED, locked),
-                Block.UPDATE_ALL
-            );
+            nextState = nextState.setValue(PlasticMoldingChamberBlock.LOCKED, locked);
+        }
+        if (state.hasProperty(PlasticMoldingChamberBlock.POWERED)
+            && state.getValue(PlasticMoldingChamberBlock.POWERED) != powered) {
+            nextState = nextState.setValue(PlasticMoldingChamberBlock.POWERED, powered);
+        }
+        if (nextState != state) {
+            this.level.setBlock(this.worldPosition, nextState, Block.UPDATE_ALL);
         } else {
             this.level.sendBlockUpdated(this.worldPosition, state, state, Block.UPDATE_CLIENTS);
         }
@@ -1523,6 +1530,20 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
                 BlockState regionState = this.level.getBlockState(region);
                 this.level.sendBlockUpdated(region, regionState, regionState, Block.UPDATE_ALL);
             }
+        }
+    }
+
+    private void syncPowerState() {
+        if (this.level == null || this.level.isClientSide) return;
+        BlockState state = this.getBlockState();
+        if (!state.hasProperty(PlasticMoldingChamberBlock.POWERED)) return;
+        boolean powered = this.energy > 0;
+        if (state.getValue(PlasticMoldingChamberBlock.POWERED) != powered) {
+            this.level.setBlock(
+                this.worldPosition,
+                state.setValue(PlasticMoldingChamberBlock.POWERED, powered),
+                Block.UPDATE_ALL
+            );
         }
     }
 
@@ -2027,6 +2048,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             if (!simulate && accepted > 0) {
                 PlasticMoldingChamberBlockEntity.this.energy += accepted;
                 PlasticMoldingChamberBlockEntity.this.setChanged();
+                PlasticMoldingChamberBlockEntity.this.syncPowerState();
             }
             return accepted;
         }

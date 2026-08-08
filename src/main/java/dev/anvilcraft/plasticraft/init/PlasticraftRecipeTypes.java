@@ -4,6 +4,7 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.recipe.FluidFastCookingRecipe;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
+import dev.anvilcraft.plasticraft.recipe.PlasticMoldingChamberRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.FastCookingRecipe;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.crafting.RecipeSerializer;
@@ -25,6 +26,11 @@ public final class PlasticraftRecipeTypes {
 
     public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<FastCookingRecipe>> FLUID_FAST_COOKING =
         SERIALIZERS.register("fluid_fast_cooking", FluidFastCookingRecipe.Serializer::new);
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<PlasticMoldingChamberRecipe>>
+        PLASTIC_MOLDING_CHAMBER = SERIALIZERS.register(
+            "plastic_molding_chamber",
+            PlasticMoldingChamberRecipe.Serializer::new
+        );
 
     public static final DeferredHolder<RecipeType<?>, RecipeType<PlasmaJetBlastingRecipe>> PLASMA_JET_BLASTING_TYPE =
         TYPES.register("plasma_jet_blasting", () -> new RecipeType<>() {

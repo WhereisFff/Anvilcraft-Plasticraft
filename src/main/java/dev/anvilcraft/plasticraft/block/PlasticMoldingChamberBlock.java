@@ -36,12 +36,14 @@ public class PlasticMoldingChamberBlock extends BaseEntityBlock {
     public static final MapCodec<PlasticMoldingChamberBlock> CODEC = simpleCodec(PlasticMoldingChamberBlock::new);
     public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
     public static final BooleanProperty LOCKED = BlockStateProperties.LOCKED;
+    public static final BooleanProperty POWERED = BlockStateProperties.POWERED;
 
     public PlasticMoldingChamberBlock(Properties properties) {
         super(properties);
         this.registerDefaultState(this.stateDefinition.any()
             .setValue(FACING, Direction.NORTH)
-            .setValue(LOCKED, false));
+            .setValue(LOCKED, false)
+            .setValue(POWERED, false));
     }
 
     @Override
@@ -136,7 +138,7 @@ public class PlasticMoldingChamberBlock extends BaseEntityBlock {
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
-        builder.add(FACING, LOCKED);
+        builder.add(FACING, LOCKED, POWERED);
     }
 
     @Override

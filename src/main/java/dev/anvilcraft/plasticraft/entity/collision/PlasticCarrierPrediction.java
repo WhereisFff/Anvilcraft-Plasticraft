@@ -4,6 +4,7 @@ import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.Objects;
 
 /** 按移动顺序保留尚未获服务端确认的客户端承载位移。 */
@@ -11,6 +12,7 @@ public final class PlasticCarrierPrediction {
     private static final double MOVEMENT_EPSILON = 1.0E-5D;
     // 原版 VecDeltaCodec 将实体坐标量化到 1/4096 格，两端舍入后的位移误差最多为一个量化步长。
     private static final double RECONCILIATION_EPSILON = 1.0D / 4096.0D + MOVEMENT_EPSILON;
+    private static final int MAX_AXIS_SEGMENTS = 16;
 
     private final AxisPrediction x = new AxisPrediction();
     private final AxisPrediction y = new AxisPrediction();
@@ -94,6 +96,7 @@ public final class PlasticCarrierPrediction {
             this.segments.addLast(movement);
             this.pending += movement;
             this.travel += Math.abs(movement);
+            if (this.segments.size() > MAX_AXIS_SEGMENTS) this.compact();
         }
 
         private boolean reconcile(double serverMovement) {
@@ -105,46 +108,57 @@ public final class PlasticCarrierPrediction {
         }
 
         private Reconciliation findReconciliation(double serverMovement) {
-            double traversed = 0.0D;
-            double traversedTravel = 0.0D;
+            double next = this.pending;
+            double tailTravel = 0.0D;
             double maximum = 0.0D;
             double minimum = 0.0D;
-            Reconciliation match = null;
             Reconciliation positiveExtreme = null;
             Reconciliation negativeExtreme = null;
-            int index = 0;
-            for (double segment : this.segments) {
-                double next = traversed + segment;
-                if (between(serverMovement, traversed, next)) {
+            int index = this.segments.size() - 1;
+            Iterator<Double> iterator = this.segments.descendingIterator();
+            while (iterator.hasNext()) {
+                double segment = iterator.next();
+                double previous = next - segment;
+                if (between(serverMovement, previous, next)) {
                     double confirmedPosition = Math.clamp(
                         serverMovement,
-                        Math.min(traversed, next),
-                        Math.max(traversed, next)
+                        Math.min(previous, next),
+                        Math.max(previous, next)
                     );
-                    double confirmedTravel = traversedTravel + Math.abs(confirmedPosition - traversed);
+                    double confirmedTravel = this.travel - tailTravel - Math.abs(next - confirmedPosition);
                     if (confirmedTravel > MOVEMENT_EPSILON) {
-                        match = new Reconciliation(index, next, confirmedPosition);
+                        return new Reconciliation(index, next, confirmedPosition);
                     }
                 }
-                traversedTravel += Math.abs(segment);
-                if (next > maximum + MOVEMENT_EPSILON
-                    || (maximum > MOVEMENT_EPSILON && Math.abs(next - maximum) <= MOVEMENT_EPSILON)) {
-                    maximum = Math.max(maximum, next);
+                if (next > maximum + MOVEMENT_EPSILON) {
+                    maximum = next;
                     positiveExtreme = new Reconciliation(index, next, next);
                 }
-                if (next < minimum - MOVEMENT_EPSILON
-                    || (minimum < -MOVEMENT_EPSILON && Math.abs(next - minimum) <= MOVEMENT_EPSILON)) {
-                    minimum = Math.min(minimum, next);
+                if (next < minimum - MOVEMENT_EPSILON) {
+                    minimum = next;
                     negativeExtreme = new Reconciliation(index, next, next);
                 }
-                traversed = next;
-                index++;
+                tailTravel += Math.abs(segment);
+                next = previous;
+                index--;
             }
-            if (match != null) return match;
             // 同向快照越过预测极值时只确认到极值；完全反向的快照不得破坏待确认路径。
             if (serverMovement > maximum + RECONCILIATION_EPSILON) return positiveExtreme;
             if (serverMovement < minimum - RECONCILIATION_EPSILON) return negativeExtreme;
             return null;
+        }
+
+        private void compact() {
+            double movement = this.pending;
+            this.segments.clear();
+            if (Math.abs(movement) <= MOVEMENT_EPSILON) {
+                this.pending = 0.0D;
+                this.travel = 0.0D;
+                return;
+            }
+            // 超长历史只保留当前预测终点，避免复杂碰撞产生的细碎换向使快照对账无界增长。
+            this.segments.addLast(movement);
+            this.travel = Math.abs(movement);
         }
 
         private void apply(Reconciliation reconciliation) {

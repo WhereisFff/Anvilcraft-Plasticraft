@@ -15,6 +15,7 @@ import dev.anvilcraft.plasticraft.recipe.CondenserGas;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
 import dev.anvilcraft.plasticraft.recipe.FluidFastCookingRecipe;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
+import dev.anvilcraft.plasticraft.recipe.PlasticMoldingChamberRecipe;
 import dev.dubhe.anvilcraft.block.CorruptedBeaconBlock;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.block.ModFluids;
@@ -33,11 +34,13 @@ import dev.dubhe.anvilcraft.recipe.multiblock.BlockPredicateWithState;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockConversionRecipe;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockRecipe;
 import net.minecraft.advancements.Advancement;
+import net.minecraft.advancements.AdvancementHolder;
 import net.minecraft.advancements.AdvancementRequirements;
 import net.minecraft.advancements.AdvancementRewards;
 import net.minecraft.core.component.DataComponentPredicate;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.data.recipes.RecipeCategory;
+import net.minecraft.data.recipes.RecipeOutput;
 import net.minecraft.data.recipes.ShapedRecipeBuilder;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.DyeColor;
@@ -47,11 +50,14 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomModelData;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.ShapedRecipe;
 import net.minecraft.world.item.crafting.ShapedRecipePattern;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.common.conditions.ICondition;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -67,7 +73,7 @@ public final class PlasticraftRecipeData {
     }
 
     private static void generateRecipes(RegistrumRecipeProvider provider) {
-        // 有序合成：用树脂块构成砧面、树脂构成砧腰和底座，产出初期弹性树脂砧。
+        // 有序合成：用树脂块构成砧面、树脂构成砧腰和底座，产出弹性树脂铁砧。
         ShapedRecipeBuilder.shaped(RecipeCategory.BUILDING_BLOCKS, PlasticraftBlocks.RESIN_ANVIL.asItem())
             .pattern("BBB")
             .pattern(" R ")
@@ -78,7 +84,7 @@ public final class PlasticraftRecipeData {
             .unlockedBy("has_resin_block", RegistrumRecipeProvider.has(ModBlocks.RESIN_BLOCK))
             .save(provider, AnvilcraftPlasticraft.of("resin_anvil"));
 
-        // 有序合成：将树脂砧、避雷针和硬化树脂竖直组合，产出轻量树脂砧锤。
+        // 有序合成：将树脂砧、避雷针和硬化树脂竖直组合，产出树脂铁砧锤。
         ShapedRecipeBuilder.shaped(
             RecipeCategory.TOOLS,
             PlasticraftItems.RESIN_ANVIL_HAMMER.get()
@@ -176,21 +182,23 @@ public final class PlasticraftRecipeData {
             .unlockedBy("has_hardend_resin", RegistrumRecipeProvider.has(ModItems.HARDEND_RESIN))
             .save(provider, AnvilcraftPlasticraft.of("catalytic_press_lid"));
 
-        // 有序合成：以储罐、结构扫描仪和大电容构成成型核心，用管道和磨制重质铁块围护，产出塑料成型舱
+        // 有序合成：以储罐、结构扫描仪和超级电容器构成核心，输出继承电容器的满电或空电状态。
         ShapedRecipeBuilder.shaped(RecipeCategory.MISC, PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.asItem())
             .pattern(" P ")
             .pattern("TSC")
-            .pattern("IPI")
+            .pattern(" P ")
             .define('P', Ingredient.of(ModItems.PIPE.get()))
             .define('T', Ingredient.of(ModBlocks.FLUID_TANK.asItem()))
             .define('S', Ingredient.of(ModBlocks.STRUCTURE_SCANNER.asItem()))
-            .define('C', Ingredient.of(ModItems.SUPER_CAPACITOR.get()))
-            .define('I', Ingredient.of(ModBlocks.POLISHED_HEAVY_IRON_BLOCK.asItem()))
+            .define('C', Ingredient.of(
+                ModItems.SUPER_CAPACITOR.get(),
+                ModItems.SUPER_CAPACITOR_EMPTY.get()
+            ))
             .unlockedBy("has_fluid_tank", RegistrumRecipeProvider.has(ModBlocks.FLUID_TANK))
             .unlockedBy("has_structure_scanner", RegistrumRecipeProvider.has(ModBlocks.STRUCTURE_SCANNER))
             .unlockedBy("has_supercapacitor", RegistrumRecipeProvider.has(ModItems.SUPER_CAPACITOR))
-            .unlockedBy("has_polished_heavy_iron_block", RegistrumRecipeProvider.has(ModBlocks.POLISHED_HEAVY_IRON_BLOCK))
-            .save(provider, AnvilcraftPlasticraft.of("plastic_molding_chamber"));
+            .unlockedBy("has_empty_supercapacitor", RegistrumRecipeProvider.has(ModItems.SUPER_CAPACITOR_EMPTY))
+            .save(moldingChamberRecipeOutput(provider), AnvilcraftPlasticraft.of("plastic_molding_chamber"));
 
         // 有序合成：在硬化树脂釜两侧加入磁铁锭，直接产出带磁化数据的硬化树脂釜。
         ItemStack magneticCauldron = PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack();
@@ -401,6 +409,28 @@ public final class PlasticraftRecipeData {
         generatePlasticMeltSolidLiquidRecipes(provider);
 
         generateResinTimeWarpRecipes(provider);
+    }
+
+    private static RecipeOutput moldingChamberRecipeOutput(RecipeOutput output) {
+        return new RecipeOutput() {
+            @Override
+            public void accept(
+                ResourceLocation id,
+                Recipe<?> recipe,
+                @Nullable AdvancementHolder advancement,
+                ICondition... conditions
+            ) {
+                if (!(recipe instanceof ShapedRecipe shaped)) {
+                    throw new IllegalArgumentException("Plastic molding chamber recipe must be shaped");
+                }
+                output.accept(id, new PlasticMoldingChamberRecipe(shaped), advancement, conditions);
+            }
+
+            @Override
+            public Advancement.Builder advancement() {
+                return output.advancement();
+            }
+        };
     }
 
     private static void generatePlasmaJetBlastingRecipes(RegistrumRecipeProvider provider) {

@@ -77,18 +77,16 @@ public final class PlasticraftBlocks {
         .tag(BlockTags.MINEABLE_WITH_PICKAXE)
         .loot((tables, block) -> tables.dropSelf(block))
         .blockstate((context, provider) -> {
-            // 塑料成型舱未锁定与锁定占位模型生成，正式资源沿用这两个稳定 ID 原位替换。
-            ModelFile unlocked = provider.models().cubeAll(
-                context.getName(),
-                provider.modLoc("block/plastic_molding_chamber_placeholder")
+            // 成型舱专用模型由供电状态切换，断电时使用 _off；LOCKED 仅保留机器流程状态。
+            ModelFile powered = provider.models().getExistingFile(
+                provider.modLoc("block/plastic_molding_chamber")
             );
-            ModelFile locked = provider.models().cubeAll(
-                context.getName() + "_locked",
-                provider.modLoc("block/plastic_molding_chamber_placeholder")
+            ModelFile unpowered = provider.models().getExistingFile(
+                provider.modLoc("block/plastic_molding_chamber_off")
             );
             provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
-                .modelFile(state.getValue(PlasticMoldingChamberBlock.LOCKED) ? locked : unlocked)
-                .rotationY((int) state.getValue(PlasticMoldingChamberBlock.FACING).toYRot())
+                .modelFile(state.getValue(PlasticMoldingChamberBlock.POWERED) ? powered : unpowered)
+                .rotationY(((int) state.getValue(PlasticMoldingChamberBlock.FACING).toYRot() + 180) % 360)
                 .build());
         })
         .item(PlasticMoldingChamberItem::new)
