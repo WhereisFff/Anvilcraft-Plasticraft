@@ -198,15 +198,9 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         ChamberControl.DISK_STORE
     };
     private static final String[] TOOL_NAMES = {"move", "scale", "rotate", "pivot", "mirror"};
-    private static final ResourceLocation BACKGROUND = texture(
-        "textures/gui/background/plastic_molding_chamber.png"
-    );
-    private static final ResourceLocation LEFT_OVERLAY = texture(
-        "textures/gui/background/plastic_molding_chamber_left.png"
-    );
-    private static final ResourceLocation RIGHT_OVERLAY = texture(
-        "textures/gui/background/plastic_molding_chamber_right.png"
-    );
+    private static final ResourceLocation BACKGROUND = texture("textures/gui/background/plastic_molding_chamber.png");
+    private static final ResourceLocation LEFT_OVERLAY = texture("textures/gui/background/plastic_molding_chamber_left.png");
+    private static final ResourceLocation RIGHT_OVERLAY = texture("textures/gui/background/plastic_molding_chamber_right.png");
     private static final ResourceLocation BUTTON_32_23_2 = widget("button_32x23_2.png");
     private static final ResourceLocation CUBE_BUTTON = widget("cube.png");
     private static final ResourceLocation NEW_CUBE_BUTTON = widget("new_cube.png");
@@ -3642,16 +3636,6 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         if (Screen.hasShiftDown()) frame += 3;
         drawAtlas(graphics, rect, atlas, 6, frame);
         if (!enabled) drawDisabledOverlay(graphics, rect);
-    }
-
-    private void drawDisabledAtlas(
-        GuiGraphics graphics,
-        GuiRect rect,
-        ResourceLocation atlas,
-        int frames
-    ) {
-        drawAtlas(graphics, rect, atlas, frames, 0);
-        drawDisabledOverlay(graphics, rect);
     }
 
     private void drawDisabledOverlay(GuiGraphics graphics, GuiRect rect) {

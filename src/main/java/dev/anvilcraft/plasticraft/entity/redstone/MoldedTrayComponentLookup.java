@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.entity.redstone;
 
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.molding.product.MoldedTrayCell;
 import dev.dubhe.anvilcraft.block.entity.AdvancedComparatorBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.ItemDetectorBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.PulseGeneratorBlockEntity;
@@ -21,7 +22,7 @@ public final class MoldedTrayComponentLookup {
         BlockEntity direct = level.getBlockEntity(position);
         if (matches(direct, kind)) return direct;
         if (direct instanceof BondedEntityBlockEntity bonded) {
-            BlockEntity tray = trayBlockEntity(bonded, kind);
+            BlockEntity tray = trayBlockEntity(bonded, position, kind);
             if (tray != null) return tray;
         }
 
@@ -35,8 +36,8 @@ public final class MoldedTrayComponentLookup {
             candidate -> candidate.isMoldedTray()
                 && candidate.plasticraft$getAnchorBlockPos().distSqr(position) <= 9.0D
         )) {
-            BlockEntity tray = entity.plasticraft$getTrayBlockEntity();
-            if (!matches(tray, kind)) continue;
+            BlockEntity tray = trayBlockEntity(entity, position, kind);
+            if (tray == null) continue;
             double anchorDistance = entity.plasticraft$getAnchorBlockPos().distSqr(position);
             double entityDistance = entity.position().distanceToSqr(position.getCenter());
             if (anchorDistance < nearestAnchorDistance
@@ -54,7 +55,7 @@ public final class MoldedTrayComponentLookup {
             position.offset(3, 3, 3)
         )) {
             if (!(level.getBlockEntity(nearby) instanceof BondedEntityBlockEntity bonded)) continue;
-            BlockEntity tray = trayBlockEntity(bonded, kind);
+            BlockEntity tray = trayBlockEntity(bonded, position, kind);
             if (tray == null) continue;
             double distance = nearby.distSqr(position);
             if (distance < nearestBondedDistance) {
@@ -65,11 +66,30 @@ public final class MoldedTrayComponentLookup {
         return nearest;
     }
 
-    private static @Nullable BlockEntity trayBlockEntity(BondedEntityBlockEntity bonded, Kind kind) {
+    private static @Nullable BlockEntity trayBlockEntity(
+        BondedEntityBlockEntity bonded,
+        BlockPos position,
+        Kind kind
+    ) {
         Entity renderEntity = bonded.getOrCreateRenderEntity();
         if (!(renderEntity instanceof UniversalPlasticEntity universal) || !universal.isMoldedTray()) return null;
-        BlockEntity tray = universal.plasticraft$getTrayBlockEntity();
-        return matches(tray, kind) ? tray : null;
+        return trayBlockEntity(universal, position, kind);
+    }
+
+    private static @Nullable BlockEntity trayBlockEntity(
+        UniversalPlasticEntity entity,
+        BlockPos position,
+        Kind kind
+    ) {
+        for (var entry : entity.plasticraft$getTrayBlockEntities().entrySet()) {
+            MoldedTrayCell cell = entry.getKey();
+            BlockEntity blockEntity = entry.getValue();
+            if (MoldedTrayRedstoneNetwork.componentPosition(entity, cell).equals(position)
+                && matches(blockEntity, kind)) {
+                return blockEntity;
+            }
+        }
+        return null;
     }
 
     private static boolean matches(@Nullable BlockEntity blockEntity, Kind kind) {

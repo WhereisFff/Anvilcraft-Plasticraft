@@ -11,6 +11,7 @@ import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.collision.BondedPlasticShapeIndex;
+import dev.anvilcraft.plasticraft.entity.redstone.MoldedTrayLightSource;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.dubhe.anvilcraft.api.fluid.IFluidHandlerHolder;
@@ -50,6 +51,7 @@ import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.level.material.PushReaction;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.attachment.AttachmentHolder;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
@@ -97,6 +99,8 @@ public class BondedEntityBlockEntity extends BlockEntity
     private byte hammerReturnFrom = PlasticEntityOrientation.DEFAULT.pack();
     private long hammerReturnStarted = -1L;
     private @Nullable Entity renderEntity;
+    private @Nullable VoxelShape bondedInteractionShape;
+    private @Nullable VoxelShape bondedCollisionShape;
     private static final IItemHandler EMPTY_ITEM_HANDLER = new ItemStackHandler(0);
     private static final IFluidHandler EMPTY_FLUID_HANDLER =
         new FluidTank(0);
@@ -156,6 +160,7 @@ public class BondedEntityBlockEntity extends BlockEntity
         this.originalNoGravity = originalNoGravity;
         this.initialized = true;
         this.renderEntity = null;
+        this.clearBondedShapeCache();
         this.setChangedAndSync();
         return true;
     }
@@ -234,7 +239,11 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     public boolean canHammerRotateTo(PlasticEntityOrientation targetOrientation) {
         if (!(this.getOrCreateRenderEntity() instanceof AbstractPlasticEntity plasticEntity)) return false;
-        Vec3 targetPosition = plasticEntity.plasticraft$placementPosition(this.worldPosition, targetOrientation);
+        Vec3 targetPosition = plasticEntity.plasticraft$placementPosition(
+            this.worldPosition,
+            targetOrientation,
+            this.adhesiveLocalFace
+        );
         return plasticEntity.canHammerRotateTo(targetOrientation, targetPosition, this.worldPosition);
     }
 
@@ -256,6 +265,7 @@ public class BondedEntityBlockEntity extends BlockEntity
         this.hammerReturnAt = this.level.getGameTime() + HAMMER_DEFLECTION_HOLD_TICKS;
         this.hammerReturnStarted = -1L;
         this.renderEntity = null;
+        this.clearBondedShapeCache();
         this.setChangedAndSync();
         return true;
     }
@@ -283,7 +293,26 @@ public class BondedEntityBlockEntity extends BlockEntity
             universal.setMoldedContentsChangedListener(() -> this.captureCachedEntity(true));
         }
         this.positionCachedEntity(this.renderEntity);
+        if (this.renderEntity instanceof UniversalPlasticEntity universal) {
+            MoldedTrayLightSource.update(universal);
+        }
         return this.renderEntity;
+    }
+
+    public @Nullable VoxelShape getBondedInteractionShape() {
+        if (this.bondedInteractionShape != null) return this.bondedInteractionShape;
+        if (!(this.getOrCreateRenderEntity() instanceof UniversalPlasticEntity universal)) return null;
+        this.bondedInteractionShape = universal.plasticraft$getGeometry()
+            .placedInteractionShape(this.getPlasticOrientation(), this.adhesiveLocalFace);
+        return this.bondedInteractionShape;
+    }
+
+    public @Nullable VoxelShape getBondedCollisionShape() {
+        if (this.bondedCollisionShape != null) return this.bondedCollisionShape;
+        if (!(this.getOrCreateRenderEntity() instanceof UniversalPlasticEntity universal)) return null;
+        this.bondedCollisionShape = universal.plasticraft$getGeometry()
+            .placedCollisionShape(this.getPlasticOrientation(), this.adhesiveLocalFace);
+        return this.bondedCollisionShape;
     }
 
     public ItemStack getStoredDropStack() {
@@ -457,7 +486,11 @@ public class BondedEntityBlockEntity extends BlockEntity
             }
             plasticEntity.setOrientation(plasticOrientation);
             plasticEntity.setDisplayState(this.displayState);
-            restored.setPos(plasticEntity.plasticraft$placementPosition(this.worldPosition, plasticOrientation));
+            restored.setPos(plasticEntity.plasticraft$placementPosition(
+                this.worldPosition,
+                plasticOrientation,
+                this.adhesiveLocalFace
+            ));
         } else {
             restored.setPos(
                 this.worldPosition.getX() + 0.5D,
@@ -490,6 +523,7 @@ public class BondedEntityBlockEntity extends BlockEntity
             universal.plasticraft$removeVirtualRedstone();
         }
         this.renderEntity = null;
+        this.clearBondedShapeCache();
         this.setChangedAndSync();
         if (this.level != null) {
             this.level.scheduleTick(this.worldPosition, this.getBlockState().getBlock(), 2);
@@ -544,6 +578,7 @@ public class BondedEntityBlockEntity extends BlockEntity
             ? tag.getLong(TAG_HAMMER_RETURN_STARTED)
             : -1L;
         this.renderEntity = null;
+        this.clearBondedShapeCache();
         BondedPlasticShapeIndex.refresh(this);
     }
 
@@ -598,6 +633,7 @@ public class BondedEntityBlockEntity extends BlockEntity
             this.hammerReturnAt = -1L;
             this.hammerReturnStarted = gameTime;
             this.renderEntity = null;
+            this.clearBondedShapeCache();
             this.setChangedAndSync();
             return;
         }
@@ -623,9 +659,18 @@ public class BondedEntityBlockEntity extends BlockEntity
         PlasticEntityOrientation plasticOrientation = this.getPlasticOrientation();
         plasticEntity.setOrientation(plasticOrientation);
         plasticEntity.setDisplayState(this.displayState);
-        plasticEntity.setPos(plasticEntity.plasticraft$placementPosition(this.worldPosition, plasticOrientation));
+        plasticEntity.setPos(plasticEntity.plasticraft$placementPosition(
+            this.worldPosition,
+            plasticOrientation,
+            this.adhesiveLocalFace
+        ));
         plasticEntity.setNoGravity(true);
         plasticEntity.setDeltaMovement(Vec3.ZERO);
+    }
+
+    private void clearBondedShapeCache() {
+        this.bondedInteractionShape = null;
+        this.bondedCollisionShape = null;
     }
 
     private void captureCachedEntity(boolean sync) {
@@ -633,6 +678,7 @@ public class BondedEntityBlockEntity extends BlockEntity
         CompoundTag savedEntity = new CompoundTag();
         if (!this.renderEntity.save(savedEntity)) return;
         this.entityTag = savedEntity;
+        this.clearBondedShapeCache();
         if (this.renderEntity instanceof AbstractPlasticEntity plasticEntity) {
             this.displayState = plasticEntity.getDisplayState();
             BlockState fixedState = this.getBlockState();

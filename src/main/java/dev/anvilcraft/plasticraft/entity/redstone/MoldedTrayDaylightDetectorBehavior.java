@@ -56,7 +56,7 @@ final class MoldedTrayDaylightDetectorBehavior implements MoldedTrayRedstoneBeha
     }
 
     private static boolean updateSignal(MoldedTrayRedstoneRuntime runtime, BlockState state) {
-        BlockPos position = MoldedTrayRedstoneNetwork.componentCell(runtime.host(), Direction.UP);
+        BlockPos position = MoldedTrayRedstoneNetwork.componentCell(runtime.host(), runtime.cell(), Direction.UP);
         int target = runtime.host().level().getBrightness(LightLayer.SKY, position)
             - runtime.host().level().getSkyDarken();
         float sunAngle = runtime.host().level().getSunAngle(1.0F);

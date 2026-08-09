@@ -104,7 +104,11 @@ public final class BondedPlasticShapeIndex {
             return null;
         }
         PlasticEntityGeometry geometry = product.plasticraft$getGeometry();
-        Vec3 position = geometry.placementPosition(anchor, bonded.getPlasticOrientation());
+        Vec3 position = geometry.placementPosition(
+            anchor,
+            bonded.getPlasticOrientation(),
+            bonded.getAdhesiveLocalFace()
+        );
         PlasticEntityCollisionBox collisionBox = geometry.collisionBoxAt(position, bonded.getPlasticOrientation());
         VoxelShape collision = collisionBox.shape();
         VoxelShape interaction = geometry.interactionShapeAt(position, bonded.getPlasticOrientation());

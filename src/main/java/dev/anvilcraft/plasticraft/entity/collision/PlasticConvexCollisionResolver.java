@@ -11,6 +11,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.BooleanOp;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -385,6 +386,7 @@ public final class PlasticConvexCollisionResolver {
     }
 
     /** 返回整段位移中最先发生的凸体接触；法线从障碍指向移动体。 */
+    @Nullable
     public static SweepContact sweep(
         List<PlasticConvexShape> movingShapes,
         List<PlasticConvexShape> obstacles,
@@ -406,6 +408,23 @@ public final class PlasticConvexCollisionResolver {
             }
         }
         return best;
+    }
+
+    /** 只对方块碰撞体执行连续探测，供侧推吸附判断复用同一套凸体语义。 */
+    @Nullable
+    public static SweepContact sweepBlocks(
+        Entity entity,
+        AABB referenceBox,
+        Vec3 movement
+    ) {
+        Objects.requireNonNull(entity, "entity");
+        Objects.requireNonNull(referenceBox, "referenceBox");
+        Objects.requireNonNull(movement, "movement");
+        if (movement.lengthSqr() <= AXIS_EPSILON) return null;
+        List<PlasticConvexShape> movingShapes = collisionShapes(entity, referenceBox);
+        if (movingShapes.isEmpty()) return null;
+        AABB sweptBounds = enclosingBounds(movingShapes).expandTowards(movement);
+        return sweep(movingShapes, blockObstacles(entity, entity.level(), sweptBounds), movement);
     }
 
     /** 使用真实凸体检查实体在指定重力方向上是否受到方块支撑。 */

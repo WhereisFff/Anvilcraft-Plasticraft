@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.block.piston.PlasticPistonOccupancy;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import net.minecraft.world.level.block.piston.PistonStructureResolver;
 import net.minecraft.world.level.block.state.BlockState;
@@ -13,10 +14,37 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
 import java.util.List;
+import java.util.Set;
 
 /** 使用活塞本次真实解析出的移动列表同步迁移胶粘状态。 */
 @Mixin(PistonBaseBlock.class)
 abstract class PistonBaseBlockMixin {
+    @Redirect(
+        method = "checkIfExtend",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/world/level/Level;blockEvent("
+                     + "Lnet/minecraft/core/BlockPos;"
+                     + "Lnet/minecraft/world/level/block/Block;"
+                     + "II)V"
+        ),
+        require = 2
+    )
+    private void plasticraft$preserveShortPulseDrop(
+        Level level,
+        BlockPos pistonPos,
+        Block piston,
+        int eventId,
+        int eventParam
+    ) {
+        Direction facing = Direction.from3DDataValue(eventParam & 7);
+        int adjustedEventId = eventId == PistonBaseBlock.TRIGGER_CONTRACT
+            && PlasticPistonOccupancy.shouldDropOnRetraction(level, pistonPos, facing)
+            ? PistonBaseBlock.TRIGGER_DROP
+            : eventId;
+        level.blockEvent(pistonPos, piston, adjustedEventId, eventParam);
+    }
+
     @Redirect(
         method = "triggerEvent",
         at = @At(
@@ -46,9 +74,20 @@ abstract class PistonBaseBlockMixin {
     ) {
         if (!resolver.resolve()) return false;
         Direction movementDirection = extending ? facing : facing.getOpposite();
-        List<BlockPos> toPush = List.copyOf(resolver.getToPush());
-        PlasticPistonOccupancy.beginMovement(level, toPush, movementDirection);
-        PistonAdhesionController.beginMovement(level, toPush, movementDirection);
+        List<BlockPos> resolvedPositions = List.copyOf(resolver.getToPush());
+        Set<BlockPos> virtualPositions = PlasticPistonOccupancy.beginMovement(
+            level,
+            resolvedPositions,
+            pistonPos,
+            facing,
+            extending
+        );
+        resolver.getToPush().removeIf(virtualPositions::contains);
+        PistonAdhesionController.beginMovement(
+            level,
+            List.copyOf(resolver.getToPush()),
+            movementDirection
+        );
         return true;
     }
 }

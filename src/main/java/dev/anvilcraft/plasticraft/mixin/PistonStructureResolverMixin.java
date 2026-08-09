@@ -6,6 +6,7 @@ import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.piston.HighViscosityPistonBudget;
 import dev.anvilcraft.plasticraft.block.piston.PlasticPistonOccupancy;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -24,11 +25,12 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 /** 将高粘性树脂和胶粘方块加入活塞本次真实推动结构。 */
 @Mixin(value = PistonStructureResolver.class, priority = 1100)
 abstract class PistonStructureResolverMixin {
-    private static final int MAX_PHYSICAL_PUSH_COUNT = HighViscosityPistonBudget.VANILLA_PUSH_BUDGET * 7;
+    private static final int MAX_RESOLUTION_POSITION_COUNT = HighViscosityPistonBudget.VANILLA_PUSH_BUDGET * 27;
 
     @Shadow
     @Final
@@ -70,15 +72,52 @@ abstract class PistonStructureResolverMixin {
         require = 3
     )
     private int plasticraft$useGroupedPhysicalLimit(List<BlockPos> blocks) {
-        return blocks.size() - (MAX_PHYSICAL_PUSH_COUNT - HighViscosityPistonBudget.VANILLA_PUSH_BUDGET);
+        return blocks.size()
+            - (MAX_RESOLUTION_POSITION_COUNT - HighViscosityPistonBudget.VANILLA_PUSH_BUDGET);
     }
 
     @Inject(method = "resolve", at = @At("RETURN"), cancellable = true)
     private void plasticraft$resolveHighViscosityAdhesion(CallbackInfoReturnable<Boolean> callback) {
         if (!callback.getReturnValue()) return;
-        if (!this.plasticraft$addReverseAdhesion() || !HighViscosityPistonBudget.withinBudget(this.level, this.toPush)) {
+        if (!this.plasticraft$resolveAdditionalAdhesion()
+            || !HighViscosityPistonBudget.withinBudget(this.level, this.toPush)) {
             callback.setReturnValue(false);
         }
+    }
+
+    private boolean plasticraft$resolveAdditionalAdhesion() {
+        int previousSize;
+        do {
+            previousSize = this.toPush.size();
+            if (!this.plasticraft$expandPlasticEntities() || !this.plasticraft$addReverseAdhesion()) {
+                return false;
+            }
+            if (this.toPush.size() > MAX_RESOLUTION_POSITION_COUNT) return false;
+        } while (this.toPush.size() != previousSize);
+        return true;
+    }
+
+    private boolean plasticraft$expandPlasticEntities() {
+        Set<UUID> expandedEntities = new HashSet<>();
+        boolean expanded;
+        do {
+            expanded = false;
+            for (BlockPos movedPos : List.copyOf(this.toPush)) {
+                AbstractPlasticEntity plastic = PlasticPistonOccupancy.plasticEntityAt(this.level, movedPos);
+                if (plastic == null || !expandedEntities.add(plastic.getUUID())) continue;
+                expanded = true;
+                for (BlockPos occupiedPos : PlasticPistonOccupancy.occupiedPositions(plastic)) {
+                    if (PlasticPistonOccupancy.plasticEntityAt(this.level, occupiedPos) != plastic) continue;
+                    if (this.toPush.contains(occupiedPos)) continue;
+                    if (this.toPush.size() >= MAX_RESOLUTION_POSITION_COUNT
+                        || !this.addBlockLine(occupiedPos, this.pushDirection)
+                        || !this.toPush.contains(occupiedPos)) {
+                        return false;
+                    }
+                }
+            }
+        } while (expanded);
+        return true;
     }
 
     private boolean plasticraft$addReverseAdhesion() {
@@ -111,7 +150,7 @@ abstract class PistonStructureResolverMixin {
                 if (!branchedStickyBlocks.add(pos.immutable())) continue;
                 if (!this.addBranchingBlocks(pos)) return false;
             }
-            if (this.toPush.size() > MAX_PHYSICAL_PUSH_COUNT) return false;
+            if (this.toPush.size() > MAX_RESOLUTION_POSITION_COUNT) return false;
         } while (this.toPush.size() != previousSize);
         return true;
     }

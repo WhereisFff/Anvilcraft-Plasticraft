@@ -527,12 +527,13 @@ public final class AdhesivePatchRenderer {
             ? from
             : animation.to();
         float progress = animation == null ? 0.0F : animation.progress();
-        Vec3 fromPosition = entity.plasticraft$placementPosition(blockPos, from);
-        Vec3 toPosition = entity.plasticraft$placementPosition(blockPos, to);
+        Direction localFace = blockEntity.getAdhesiveLocalFace();
+        Vec3 fromPosition = entity.plasticraft$placementPosition(blockPos, from, localFace);
+        Vec3 toPosition = entity.plasticraft$placementPosition(blockPos, to, localFace);
         Vec3 entityPosition = fromPosition.lerp(toPosition, progress);
         Vec3 attachedPoint = entityPosition.add(PlasticEntityRenderTransforms.faceAlignmentOffset(
             entity,
-            blockEntity.getAdhesiveLocalFace(),
+            localFace,
             from,
             to,
             progress

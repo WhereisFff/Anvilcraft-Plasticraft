@@ -4,8 +4,10 @@ import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.molding.product.MoldedTrayCell;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponent;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponentGeometry;
+import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponentPlacement;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -18,6 +20,7 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -40,28 +43,65 @@ public final class MoldedTrayRedstoneNetwork {
     }
 
     public static void update(UniversalPlasticEntity host, MoldedTrayComponent component) {
+        update(host, MoldedTrayCell.CENTER, component);
+    }
+
+    public static void update(
+        UniversalPlasticEntity host,
+        MoldedTrayCell cell,
+        MoldedTrayComponent component
+    ) {
         if (!(host.level() instanceof ServerLevel level)) return;
         long gameTime = level.getGameTime();
         String shapeHash = host.getMoldedData().map(MoldedPlasticData::shapeHash).orElse("");
+        int occupiedCellMask = occupiedCellMask(host);
+        EntryKey key = new EntryKey(host.getUUID(), cell);
         Entry previous;
         synchronized (NETWORKS) {
             Network network = NETWORKS.computeIfAbsent(level, ignored -> new Network());
-            previous = network.entries.get(host.getUUID());
-            if (previous != null && previous.matches(host, component, shapeHash)) {
-                network.entries.put(host.getUUID(), previous.refreshed(gameTime));
+            previous = network.entries.get(key);
+            if (previous != null && previous.matches(host, component, shapeHash, occupiedCellMask)) {
+                network.entries.put(key, previous.refreshed(gameTime));
                 return;
             }
         }
-        Entry replacement = Entry.create(host, component, shapeHash, gameTime);
+        Entry replacement = Entry.create(host, cell, component, shapeHash, occupiedCellMask, gameTime);
         synchronized (NETWORKS) {
             previous = NETWORKS.computeIfAbsent(level, ignored -> new Network())
-                .entries.put(host.getUUID(), replacement);
+                .entries.put(key, replacement);
         }
         notifyChangedPorts(level, previous, replacement);
     }
 
     public static void remove(UniversalPlasticEntity host) {
-        remove(host.level(), host.getUUID());
+        List<Entry> removed = new ArrayList<>();
+        synchronized (NETWORKS) {
+            Network network = NETWORKS.get(host.level());
+            if (network != null) {
+                network.entries.entrySet().removeIf(entry -> {
+                    boolean matches = entry.getKey().hostId.equals(host.getUUID())
+                        && entry.getValue().belongsTo(host);
+                    if (matches) removed.add(entry.getValue());
+                    return matches;
+                });
+            }
+        }
+        if (host.level() instanceof ServerLevel level) {
+            for (Entry entry : removed) notifyChangedPorts(level, entry, null);
+        }
+    }
+
+    public static void remove(UniversalPlasticEntity host, MoldedTrayCell cell) {
+        Entry removed = null;
+        EntryKey key = new EntryKey(host.getUUID(), cell);
+        synchronized (NETWORKS) {
+            Network network = NETWORKS.get(host.level());
+            Entry current = network == null ? null : network.entries.get(key);
+            if (current != null && current.belongsTo(host)) removed = network.entries.remove(key);
+        }
+        if (removed != null && host.level() instanceof ServerLevel level) {
+            notifyChangedPorts(level, removed, null);
+        }
     }
 
     public static int weakSignal(SignalGetter getter, BlockPos sourcePos, Direction queryDirection) {
@@ -87,12 +127,38 @@ public final class MoldedTrayRedstoneNetwork {
 
     /** 返回元件面中心略向内侧所在的方块格。 */
     public static BlockPos componentCell(UniversalPlasticEntity host, Direction localFace) {
-        return faceCenterCell(host, localFace, -FACE_EPSILON);
+        return componentCell(host, MoldedTrayCell.CENTER, localFace);
+    }
+
+    public static BlockPos componentCell(
+        UniversalPlasticEntity host,
+        MoldedTrayCell cell,
+        Direction localFace
+    ) {
+        return faceCenterCell(host, cell, localFace, -FACE_EPSILON);
     }
 
     /** 返回元件面中心略向外侧首先接触的方块格。 */
     public static BlockPos adjacentCell(UniversalPlasticEntity host, Direction localFace) {
-        return faceCenterCell(host, localFace, FACE_EPSILON);
+        return adjacentCell(host, MoldedTrayCell.CENTER, localFace);
+    }
+
+    public static BlockPos adjacentCell(
+        UniversalPlasticEntity host,
+        MoldedTrayCell cell,
+        Direction localFace
+    ) {
+        return faceCenterCell(host, cell, localFace, FACE_EPSILON);
+    }
+
+    public static BlockPos componentPosition(UniversalPlasticEntity host, MoldedTrayCell cell) {
+        MoldedPlasticData data = host.getMoldedData().orElseThrow();
+        Vec3 center = MoldedTrayComponentGeometry.localBounds(data, cell).getCenter();
+        return BlockPos.containing(host.plasticraft$getGeometry().worldPointAt(
+            host.position(),
+            host.getOrientation(),
+            center
+        ));
     }
 
     /**
@@ -103,12 +169,20 @@ public final class MoldedTrayRedstoneNetwork {
         UniversalPlasticEntity host,
         Direction localFace
     ) {
+        return inputCandidateLayers(host, MoldedTrayCell.CENTER, localFace);
+    }
+
+    public static List<List<BlockPos>> inputCandidateLayers(
+        UniversalPlasticEntity host,
+        MoldedTrayCell cell,
+        Direction localFace
+    ) {
         Direction worldFace = host.getOrientation().worldDirection(localFace);
-        List<BlockPos> nearest = faceContactCells(host, worldFace);
-        List<BlockPos> farther = nearest.stream()
-            .map(position -> position.relative(worldFace))
-            .toList();
-        return List.of(nearest, farther);
+        AABB bounds = host.getMoldedData()
+            .map(data -> MoldedTrayComponentGeometry.localBounds(data, cell))
+            .map(local -> MoldedTrayPressurePlateSupport.worldBounds(host, local))
+            .orElseGet(host::getBoundingBox);
+        return MoldedRedstonePortGeometry.candidateLayers(bounds, worldFace);
     }
 
     /** 返回最近有方块层所需的虚拟源方块格；没有接收方块时默认使用近层。 */
@@ -116,12 +190,28 @@ public final class MoldedTrayRedstoneNetwork {
         UniversalPlasticEntity host,
         Direction localFace
     ) {
-        return List.of(outputProjection(host, localFace).sourcePos);
+        return outputSourceCells(host, MoldedTrayCell.CENTER, localFace);
+    }
+
+    public static List<BlockPos> outputSourceCells(
+        UniversalPlasticEntity host,
+        MoldedTrayCell cell,
+        Direction localFace
+    ) {
+        return List.of(outputProjection(host, cell, localFace).sourcePos);
     }
 
     static boolean shouldPrioritizeDiode(UniversalPlasticEntity host, Direction localOutputFace) {
+        return shouldPrioritizeDiode(host, MoldedTrayCell.CENTER, localOutputFace);
+    }
+
+    static boolean shouldPrioritizeDiode(
+        UniversalPlasticEntity host,
+        MoldedTrayCell cell,
+        Direction localOutputFace
+    ) {
         Direction worldOutputFace = host.getOrientation().worldDirection(localOutputFace);
-        Optional<BlockPos> receiver = nearestOutputReceiver(host, localOutputFace);
+        Optional<BlockPos> receiver = nearestOutputReceiver(host, cell, localOutputFace);
         if (receiver.isEmpty()) return false;
         BlockState state = host.level().getBlockState(receiver.get());
         return DiodeBlock.isDiode(state)
@@ -129,14 +219,31 @@ public final class MoldedTrayRedstoneNetwork {
     }
 
     public static AABB outputRange(UniversalPlasticEntity host, Direction localFace) {
+        return outputRange(host, MoldedTrayCell.CENTER, localFace);
+    }
+
+    public static AABB outputRange(
+        UniversalPlasticEntity host,
+        MoldedTrayCell cell,
+        Direction localFace
+    ) {
         MoldedPlasticData data = host.getMoldedData().orElseThrow();
-        AABB localRange = MoldedTrayComponentGeometry.localOutputRange(data, localFace);
+        AABB localRange = MoldedTrayComponentGeometry.localOutputRange(data, cell, localFace);
         return MoldedTrayPressurePlateSupport.worldBounds(host, localRange);
     }
 
     public static AABB forwardRange(UniversalPlasticEntity host, Direction localFace, int distance) {
+        return forwardRange(host, MoldedTrayCell.CENTER, localFace, distance);
+    }
+
+    public static AABB forwardRange(
+        UniversalPlasticEntity host,
+        MoldedTrayCell cell,
+        Direction localFace,
+        int distance
+    ) {
         if (distance < 1) throw new IllegalArgumentException("Tray component range must be positive");
-        BlockPos first = adjacentCell(host, localFace);
+        BlockPos first = adjacentCell(host, cell, localFace);
         BlockPos last = first.relative(
             host.getOrientation().worldDirection(localFace),
             distance - 1
@@ -157,13 +264,14 @@ public final class MoldedTrayRedstoneNetwork {
 
     private static BlockPos faceCenterCell(
         UniversalPlasticEntity host,
+        MoldedTrayCell cell,
         Direction localFace,
         double offset
     ) {
         PlasticEntityOrientation orientation = host.getOrientation();
         Direction worldFace = orientation.worldDirection(localFace);
         Vec3 localSurface = host.getMoldedData()
-            .map(data -> MoldedTrayComponentGeometry.localFaceCenter(data, localFace))
+            .map(data -> MoldedTrayComponentGeometry.localFaceCenter(data, cell, localFace))
             .orElseGet(() -> host.plasticraft$getGeometry().surfaceCenter(localFace));
         Vec3 surface = host.plasticraft$getGeometry().worldPointAt(
             host.position(),
@@ -177,55 +285,12 @@ public final class MoldedTrayRedstoneNetwork {
         ));
     }
 
-    private static List<BlockPos> faceContactCells(
-        UniversalPlasticEntity host,
-        Direction worldFace
-    ) {
-        AABB bounds = host.getMoldedData()
-            .map(MoldedTrayComponentGeometry::localBounds)
-            .map(local -> MoldedTrayPressurePlateSupport.worldBounds(host, local))
-            .orElseGet(host::getBoundingBox);
-        int minimumX = containingMinimum(bounds.minX);
-        int minimumY = containingMinimum(bounds.minY);
-        int minimumZ = containingMinimum(bounds.minZ);
-        int maximumX = containingMaximum(bounds.maxX);
-        int maximumY = containingMaximum(bounds.maxY);
-        int maximumZ = containingMaximum(bounds.maxZ);
-        int faceCell = containingOutsideFace(bounds, worldFace);
-        switch (worldFace.getAxis()) {
-            case X -> minimumX = maximumX = faceCell;
-            case Y -> minimumY = maximumY = faceCell;
-            case Z -> minimumZ = maximumZ = faceCell;
-        }
-        List<BlockPos> result = new ArrayList<>();
-        for (BlockPos position : BlockPos.betweenClosed(
-            minimumX,
-            minimumY,
-            minimumZ,
-            maximumX,
-            maximumY,
-            maximumZ
-        )) {
-            result.add(position.immutable());
-        }
-        return List.copyOf(result);
-    }
-
     private static int containingMinimum(double coordinate) {
         return (int) Math.floor(coordinate + FACE_EPSILON);
     }
 
     private static int containingMaximum(double coordinate) {
         return (int) Math.floor(coordinate - FACE_EPSILON);
-    }
-
-    private static int containingOutsideFace(AABB bounds, Direction face) {
-        double coordinate = switch (face.getAxis()) {
-            case X -> face.getAxisDirection() == Direction.AxisDirection.POSITIVE ? bounds.maxX : bounds.minX;
-            case Y -> face.getAxisDirection() == Direction.AxisDirection.POSITIVE ? bounds.maxY : bounds.minY;
-            case Z -> face.getAxisDirection() == Direction.AxisDirection.POSITIVE ? bounds.maxZ : bounds.minZ;
-        };
-        return (int) Math.floor(coordinate + face.getAxisDirection().getStep() * FACE_EPSILON);
     }
 
     private static boolean isOutputReceiver(UniversalPlasticEntity host, BlockPos position) {
@@ -238,27 +303,31 @@ public final class MoldedTrayRedstoneNetwork {
 
     private static Optional<BlockPos> nearestOutputReceiver(
         UniversalPlasticEntity host,
+        MoldedTrayCell cell,
         Direction localFace
     ) {
-        return nearestOutputCell(host, localFace, true, null);
+        return nearestOutputCell(host, cell, localFace, true, null);
     }
 
     private static OutputProjection outputProjection(
         UniversalPlasticEntity host,
+        MoldedTrayCell cell,
         Direction localFace
     ) {
-        return outputProjection(host, localFace, null);
+        return outputProjection(host, cell, localFace, null);
     }
 
     private static OutputProjection outputProjection(
         UniversalPlasticEntity host,
+        MoldedTrayCell cell,
         Direction localFace,
         Map<BlockPos, Boolean> receiverStates
     ) {
         Direction worldFace = host.getOrientation().worldDirection(localFace);
-        Optional<BlockPos> receiver = nearestOutputCell(host, localFace, true, receiverStates);
+        Optional<BlockPos> receiver = nearestOutputCell(host, cell, localFace, true, receiverStates);
         BlockPos receiverCell = receiver.orElseGet(() -> nearestOutputCell(
             host,
+            cell,
             localFace,
             false,
             receiverStates
@@ -269,17 +338,22 @@ public final class MoldedTrayRedstoneNetwork {
         );
     }
 
-    private static BlockPos nearestOutputCell(UniversalPlasticEntity host, Direction localFace) {
-        return nearestOutputCell(host, localFace, false, null).orElseThrow();
+    private static BlockPos nearestOutputCell(
+        UniversalPlasticEntity host,
+        MoldedTrayCell cell,
+        Direction localFace
+    ) {
+        return nearestOutputCell(host, cell, localFace, false, null).orElseThrow();
     }
 
     private static Optional<BlockPos> nearestOutputCell(
         UniversalPlasticEntity host,
+        MoldedTrayCell cell,
         Direction localFace,
         boolean receiversOnly,
         Map<BlockPos, Boolean> receiverStates
     ) {
-        AABB range = outputRange(host, localFace);
+        AABB range = outputRange(host, cell, localFace);
         Direction worldFace = host.getOrientation().worldDirection(localFace);
         Vec3 outputCenter = range.getCenter().subtract(
             worldFace.getStepX() * 0.5D,
@@ -326,15 +400,14 @@ public final class MoldedTrayRedstoneNetwork {
             && state.getFluidState().createLegacyBlock().is(state.getBlock());
     }
 
-    private static void remove(Level level, UUID hostId) {
-        Entry removed = null;
-        synchronized (NETWORKS) {
-            Network network = NETWORKS.get(level);
-            if (network != null) removed = network.entries.remove(hostId);
-        }
-        if (removed != null && level instanceof ServerLevel serverLevel) {
-            notifyChangedPorts(serverLevel, removed, null);
-        }
+    private static int occupiedCellMask(UniversalPlasticEntity host) {
+        return host.getMoldedData()
+            .map(MoldedPlasticData::contents)
+            .map(contents -> contents.trayComponents().stream()
+                .map(MoldedTrayComponentPlacement::cell)
+                .mapToInt(MoldedTrayCell::bit)
+                .reduce(0, (left, right) -> left | right))
+            .orElse(0);
     }
 
     private static int signal(SignalGetter getter, SignalKey key, SignalKind kind) {
@@ -345,8 +418,8 @@ public final class MoldedTrayRedstoneNetwork {
         synchronized (NETWORKS) {
             Network network = NETWORKS.get(level);
             if (network == null) return 0;
-            for (Map.Entry<UUID, Entry> networkEntry : network.entries.entrySet()) {
-                if (networkEntry.getKey().equals(excludedHost)) continue;
+            for (Map.Entry<EntryKey, Entry> networkEntry : network.entries.entrySet()) {
+                if (networkEntry.getKey().hostId.equals(excludedHost)) continue;
                 Entry entry = networkEntry.getValue();
                 if (gameTime - entry.lastSeenGameTime > 1L) continue;
                 PortSignal port = entry.ports.get(key);
@@ -405,13 +478,16 @@ public final class MoldedTrayRedstoneNetwork {
     }
 
     private static final class Network {
-        private final Map<UUID, Entry> entries = new HashMap<>();
+        private final Map<EntryKey, Entry> entries = new HashMap<>();
     }
 
     private record Entry(
+        WeakReference<UniversalPlasticEntity> owner,
+        MoldedTrayCell cell,
         Vec3 hostPosition,
         PlasticEntityOrientation orientation,
         String shapeHash,
+        int occupiedCellMask,
         MoldedTrayComponent sourceComponent,
         Map<BlockPos, Boolean> receiverStates,
         Block componentBlock,
@@ -422,8 +498,10 @@ public final class MoldedTrayRedstoneNetwork {
     ) {
         private static Entry create(
             UniversalPlasticEntity host,
+            MoldedTrayCell cell,
             MoldedTrayComponent component,
             String shapeHash,
+            int occupiedCellMask,
             long gameTime
         ) {
             Map<SignalKey, PortSignal> ports = new HashMap<>();
@@ -437,16 +515,24 @@ public final class MoldedTrayRedstoneNetwork {
                 int weak = behavior.weakSignal(component, localQueryDirection);
                 int direct = behavior.directSignal(component, localQueryDirection, weak);
                 if (weak <= 0 && direct <= 0) continue;
+                if (cell.relative(outputFace)
+                    .filter(neighbor -> (occupiedCellMask & neighbor.bit()) != 0)
+                    .isPresent()) {
+                    continue;
+                }
                 PortSignal signal = new PortSignal(weak, direct);
-                OutputProjection projection = outputProjection(host, outputFace, receiverStates);
+                OutputProjection projection = outputProjection(host, cell, outputFace, receiverStates);
                 SignalKey key = new SignalKey(projection.sourcePos, worldQueryDirection);
                 ports.merge(key, signal, PortSignal::maximum);
                 if (projection.connected) connectedPorts.add(key);
             }
             return new Entry(
+                new WeakReference<>(host),
+                cell,
                 host.position(),
                 orientation,
                 shapeHash,
+                occupiedCellMask,
                 component,
                 Map.copyOf(receiverStates),
                 component.state().getBlock(),
@@ -460,11 +546,14 @@ public final class MoldedTrayRedstoneNetwork {
         private boolean matches(
             UniversalPlasticEntity host,
             MoldedTrayComponent component,
-            String currentShapeHash
+            String currentShapeHash,
+            int currentOccupiedCellMask
         ) {
-            if (!this.hostPosition.equals(host.position())
+            if (!this.belongsTo(host)
+                || !this.hostPosition.equals(host.position())
                 || !this.orientation.equals(host.getOrientation())
                 || !this.shapeHash.equals(currentShapeHash)
+                || this.occupiedCellMask != currentOccupiedCellMask
                 || !this.sourceComponent.hasSameSignalState(component)) {
                 return false;
             }
@@ -474,11 +563,18 @@ public final class MoldedTrayRedstoneNetwork {
             return true;
         }
 
+        private boolean belongsTo(UniversalPlasticEntity host) {
+            return this.owner.get() == host;
+        }
+
         private Entry refreshed(long gameTime) {
             return new Entry(
+                this.owner,
+                this.cell,
                 this.hostPosition,
                 this.orientation,
                 this.shapeHash,
+                this.occupiedCellMask,
                 this.sourceComponent,
                 this.receiverStates,
                 this.componentBlock,
@@ -488,6 +584,9 @@ public final class MoldedTrayRedstoneNetwork {
                 this.connectedPorts
             );
         }
+    }
+
+    private record EntryKey(UUID hostId, MoldedTrayCell cell) {
     }
 
     private record OutputProjection(BlockPos sourcePos, boolean connected) {

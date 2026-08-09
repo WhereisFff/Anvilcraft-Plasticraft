@@ -9,12 +9,11 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.SignalGetter;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.RedStoneWireBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -63,10 +62,13 @@ public final class MoldedPlasticRedstoneConductor {
 
     public static void remove(UniversalPlasticEntity host) {
         if (!(host.level() instanceof ServerLevel level)) return;
-        Entry removed;
+        Entry removed = null;
         synchronized (NETWORKS) {
             Network network = NETWORKS.get(level);
-            removed = network == null ? null : network.entries.remove(host.getUUID());
+            Entry current = network == null ? null : network.entries.get(host.getUUID());
+            if (current != null && current.belongsTo(host)) {
+                removed = network.entries.remove(host.getUUID());
+            }
         }
         if (removed != null) notifyChangedPorts(level, removed, null);
     }
@@ -76,32 +78,37 @@ public final class MoldedPlasticRedstoneConductor {
         if (!(getter instanceof Level level)) return 0;
         SignalKey key = new SignalKey(sourcePos, queryDirection);
         long gameTime = level.getGameTime();
-        int result = 0;
+        List<Entry> matching = new ArrayList<>();
         synchronized (NETWORKS) {
             Network network = NETWORKS.get(level);
             if (network == null) return 0;
             for (Entry entry : network.entries.values()) {
                 if (gameTime - entry.lastSeenGameTime > 1L) continue;
-                result = Math.max(result, entry.ports.getOrDefault(key, 0));
-                if (result >= 15) return 15;
+                if (entry.ports.containsKey(key)) matching.add(entry);
             }
+        }
+        int result = 0;
+        for (Entry entry : matching) {
+            UniversalPlasticEntity owner = entry.owner.get();
+            if (owner == null || owner.isRemoved() || owner.level() != level) continue;
+            result = Math.max(result, receivedDirectSignal(owner, entry.bounds));
+            if (result >= 15) return 15;
         }
         return result;
     }
 
-    private static int receivedSignal(UniversalPlasticEntity host, AABB bounds) {
+    private static int receivedDirectSignal(UniversalPlasticEntity host, AABB bounds) {
         SignalGetter getter = host.level();
         int result = 0;
         for (Direction face : Direction.values()) {
             for (List<BlockPos> layer : candidateLayers(bounds, face)) {
                 int layerSignal = 0;
                 for (BlockPos source : layer) {
-                    int signal = withoutConductorFeedback(host, () -> getter.getSignal(source, face));
-                    BlockState state = host.level().getBlockState(source);
-                    if (state.is(Blocks.REDSTONE_WIRE)) {
-                        signal = Math.max(signal, state.getValue(RedStoneWireBlock.POWER));
-                    }
-                    layerSignal = Math.max(layerSignal, Math.clamp(signal, 0, 15));
+                    int signal = withoutConductorFeedback(
+                        host,
+                        () -> MoldedRedstoneSignals.directSignal(getter, source, face)
+                    );
+                    layerSignal = Math.max(layerSignal, signal);
                 }
                 if (layerSignal <= 0) continue;
                 result = Math.max(result, layerSignal);
@@ -140,53 +147,7 @@ public final class MoldedPlasticRedstoneConductor {
     }
 
     private static List<List<BlockPos>> candidateLayers(AABB bounds, Direction face) {
-        List<BlockPos> nearest = faceContactCells(bounds, face);
-        List<BlockPos> farther = nearest.stream().map(position -> position.relative(face)).toList();
-        return List.of(nearest, farther);
-    }
-
-    private static List<BlockPos> faceContactCells(AABB bounds, Direction face) {
-        int minimumX = containingMinimum(bounds.minX);
-        int minimumY = containingMinimum(bounds.minY);
-        int minimumZ = containingMinimum(bounds.minZ);
-        int maximumX = containingMaximum(bounds.maxX);
-        int maximumY = containingMaximum(bounds.maxY);
-        int maximumZ = containingMaximum(bounds.maxZ);
-        int faceCell = containingOutsideFace(bounds, face);
-        switch (face.getAxis()) {
-            case X -> minimumX = maximumX = faceCell;
-            case Y -> minimumY = maximumY = faceCell;
-            case Z -> minimumZ = maximumZ = faceCell;
-        }
-        List<BlockPos> result = new ArrayList<>();
-        for (BlockPos position : BlockPos.betweenClosed(
-            minimumX,
-            minimumY,
-            minimumZ,
-            maximumX,
-            maximumY,
-            maximumZ
-        )) {
-            result.add(position.immutable());
-        }
-        return List.copyOf(result);
-    }
-
-    private static int containingMinimum(double coordinate) {
-        return (int) Math.floor(coordinate + FACE_EPSILON);
-    }
-
-    private static int containingMaximum(double coordinate) {
-        return (int) Math.floor(coordinate - FACE_EPSILON);
-    }
-
-    private static int containingOutsideFace(AABB bounds, Direction face) {
-        double coordinate = switch (face.getAxis()) {
-            case X -> face.getAxisDirection() == Direction.AxisDirection.POSITIVE ? bounds.maxX : bounds.minX;
-            case Y -> face.getAxisDirection() == Direction.AxisDirection.POSITIVE ? bounds.maxY : bounds.minY;
-            case Z -> face.getAxisDirection() == Direction.AxisDirection.POSITIVE ? bounds.maxZ : bounds.minZ;
-        };
-        return (int) Math.floor(coordinate + face.getAxisDirection().getStep() * FACE_EPSILON);
+        return MoldedRedstonePortGeometry.candidateLayers(bounds, face);
     }
 
     private static Vec3 surfaceCenter(AABB bounds, Direction face) {
@@ -277,13 +238,15 @@ public final class MoldedPlasticRedstoneConductor {
     }
 
     private record Entry(
+        WeakReference<UniversalPlasticEntity> owner,
+        AABB bounds,
         long lastSeenGameTime,
         Map<SignalKey, Integer> ports,
         Set<SignalKey> connectedPorts
     ) {
         private static Entry create(UniversalPlasticEntity host, long gameTime) {
             AABB bounds = host.getBoundingBox();
-            int signal = receivedSignal(host, bounds);
+            int signal = receivedDirectSignal(host, bounds);
             Map<SignalKey, Integer> ports = new HashMap<>();
             Set<SignalKey> connected = new HashSet<>();
             for (Direction outputFace : Direction.values()) {
@@ -292,7 +255,17 @@ public final class MoldedPlasticRedstoneConductor {
                 ports.merge(key, signal, Math::max);
                 if (projection.connected) connected.add(key);
             }
-            return new Entry(gameTime, Map.copyOf(ports), Set.copyOf(connected));
+            return new Entry(
+                new WeakReference<>(host),
+                bounds,
+                gameTime,
+                Map.copyOf(ports),
+                Set.copyOf(connected)
+            );
+        }
+
+        private boolean belongsTo(UniversalPlasticEntity host) {
+            return this.owner.get() == host;
         }
     }
 

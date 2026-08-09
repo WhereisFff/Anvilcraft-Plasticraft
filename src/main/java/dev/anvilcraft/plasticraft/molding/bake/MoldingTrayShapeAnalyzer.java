@@ -7,10 +7,11 @@ import java.util.List;
 
 /** 按固定模型 Y 轴扫描支架的上下承载面。 */
 public final class MoldingTrayShapeAnalyzer {
-    public static final int CENTER_MIN = 16;
-    public static final int CENTER_MAX_EXCLUSIVE = 32;
+    public static final int CELL_SIZE = 16;
+    public static final int GRID_SIZE = 3;
+    public static final int GRID_MIN = 0;
+    public static final int GRID_MAX_EXCLUSIVE = CELL_SIZE * GRID_SIZE;
     public static final int MAX_HEIGHT = 4;
-    private static final double CENTER_COORDINATE = 24.0D;
     private static final double EPSILON = 1.0E-7D;
 
     private MoldingTrayShapeAnalyzer() {
@@ -27,22 +28,12 @@ public final class MoldingTrayShapeAnalyzer {
             return MoldingTrayShapeAnalysis.invalid("tray_outside_center");
         }
 
-        BitSet cells = volume.copyBits();
-        for (int index = cells.nextSetBit(0); index >= 0; index = cells.nextSetBit(index + 1)) {
-            int x = volume.xOf(index);
-            int z = volume.zOf(index);
-            if (x < CENTER_MIN || x >= CENTER_MAX_EXCLUSIVE
-                || z < CENTER_MIN || z >= CENTER_MAX_EXCLUSIVE) {
-                return MoldingTrayShapeAnalysis.invalid("tray_outside_center");
-            }
-        }
-
         SurfaceBounds bounds = surfaceBounds(surfaces);
         if (bounds == null) return MoldingTrayShapeAnalysis.invalid("tray_bottom_not_flat");
-        if (bounds.minimumX < CENTER_MIN - EPSILON
-            || bounds.maximumX > CENTER_MAX_EXCLUSIVE + EPSILON
-            || bounds.minimumZ < CENTER_MIN - EPSILON
-            || bounds.maximumZ > CENTER_MAX_EXCLUSIVE + EPSILON) {
+        if (bounds.minimumX < GRID_MIN - EPSILON
+            || bounds.maximumX > GRID_MAX_EXCLUSIVE + EPSILON
+            || bounds.minimumZ < GRID_MIN - EPSILON
+            || bounds.maximumZ > GRID_MAX_EXCLUSIVE + EPSILON) {
             return MoldingTrayShapeAnalysis.invalid("tray_outside_center");
         }
         double height = bounds.maximumY - bounds.minimumY;
@@ -58,29 +49,33 @@ public final class MoldingTrayShapeAnalyzer {
         if (top.isEmpty()) {
             return MoldingTrayShapeAnalysis.invalid("tray_top_not_flat");
         }
-        if (!horizontalSurfaceContains(
-            surfaces,
-            bounds.minimumY,
-            -1.0D,
-            CENTER_COORDINATE,
-            CENTER_COORDINATE
-        ) || !horizontalSurfaceContains(
-            surfaces,
-            bounds.maximumY,
-            1.0D,
-            CENTER_COORDINATE,
-            CENTER_COORDINATE
-        )) {
-            return MoldingTrayShapeAnalysis.invalid("tray_center_missing");
-        }
         return new MoldingTrayShapeAnalysis(
             true,
             "",
             bounds.minimumY,
             bounds.maximumY,
             height,
-            bottom.cardinality()
+            bottom.cardinality(),
+            supportedCellMask(volume)
         );
+    }
+
+    /** 超限调试模型也只暴露标准建模区域内的九个承载格。 */
+    public static int supportedCellMask(MoldingVolumeMask volume) {
+        BitSet cells = volume.copyBits();
+        int result = 0;
+        for (int index = cells.nextSetBit(0); index >= 0; index = cells.nextSetBit(index + 1)) {
+            int x = volume.xOf(index);
+            int z = volume.zOf(index);
+            if (x < GRID_MIN || x >= GRID_MAX_EXCLUSIVE
+                || z < GRID_MIN || z >= GRID_MAX_EXCLUSIVE) {
+                continue;
+            }
+            int cellX = x / CELL_SIZE;
+            int cellZ = z / CELL_SIZE;
+            result |= 1 << (cellZ * GRID_SIZE + cellX);
+        }
+        return result;
     }
 
     private static SurfaceBounds surfaceBounds(List<MoldingQuad> surfaces) {
@@ -112,25 +107,13 @@ public final class MoldingTrayShapeAnalyzer {
         BitSet result = new BitSet(MoldingVolumeMask.SIZE * MoldingVolumeMask.SIZE);
         for (MoldingQuad surface : surfaces) {
             if (!isHorizontalSurfaceAt(surface, planeY, expectedNormalY)) continue;
-            for (int x = CENTER_MIN; x < CENTER_MAX_EXCLUSIVE; x++) {
-                for (int z = CENTER_MIN; z < CENTER_MAX_EXCLUSIVE; z++) {
+            for (int x = GRID_MIN; x < GRID_MAX_EXCLUSIVE; x++) {
+                for (int z = GRID_MIN; z < GRID_MAX_EXCLUSIVE; z++) {
                     if (contains(surface, x + 0.5D, z + 0.5D)) result.set(index(x, z));
                 }
             }
         }
         return result;
-    }
-
-    private static boolean horizontalSurfaceContains(
-        List<MoldingQuad> surfaces,
-        double planeY,
-        double expectedNormalY,
-        double x,
-        double z
-    ) {
-        return surfaces.stream().anyMatch(surface ->
-            isHorizontalSurfaceAt(surface, planeY, expectedNormalY) && contains(surface, x, z)
-        );
     }
 
     private static boolean isHorizontalSurfaceAt(

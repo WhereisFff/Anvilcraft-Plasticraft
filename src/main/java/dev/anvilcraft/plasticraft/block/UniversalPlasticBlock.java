@@ -33,7 +33,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /** 由世界熔体凝固得到的无专用功能通用塑料制品。 */
 public class UniversalPlasticBlock extends AbstractPlasticEntityBlock<UniversalPlasticEntity> {
-    private static final Map<PlasticEntityOrientation, VoxelShape> BONDED_SHAPES = new ConcurrentHashMap<>();
+    private static final Map<PlasticEntityOrientation, VoxelShape> BONDED_INTERACTION_SHAPES = new ConcurrentHashMap<>();
+    private static final Map<PlasticEntityOrientation, VoxelShape> BONDED_COLLISION_SHAPES = new ConcurrentHashMap<>();
 
     public UniversalPlasticBlock(Properties properties) {
         super(properties);
@@ -55,12 +56,12 @@ public class UniversalPlasticBlock extends AbstractPlasticEntityBlock<UniversalP
         if (!state.getValue(BONDED)) return UniversalPlasticShape.COLLISION;
         if (level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
             && bonded.isInitialized()
-            && bonded.isPlastic()
-            && bonded.getOrCreateRenderEntity() instanceof UniversalPlasticEntity entity) {
-            return entity.plasticraft$getGeometry().placedInteractionShape(bonded.getPlasticOrientation());
+            && bonded.isPlastic()) {
+            VoxelShape bondedShape = bonded.getBondedInteractionShape();
+            if (bondedShape != null) return bondedShape;
         }
         PlasticEntityOrientation orientation = PlasticEntityOrientation.fromLegacyState(state);
-        return BONDED_SHAPES.computeIfAbsent(
+        return BONDED_INTERACTION_SHAPES.computeIfAbsent(
             orientation,
             UniversalPlasticShape.GEOMETRY::placedInteractionShape
         );
@@ -71,12 +72,12 @@ public class UniversalPlasticBlock extends AbstractPlasticEntityBlock<UniversalP
         if (!state.getValue(BONDED)) return UniversalPlasticShape.COLLISION;
         if (level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
             && bonded.isInitialized()
-            && bonded.isPlastic()
-            && bonded.getOrCreateRenderEntity() instanceof UniversalPlasticEntity entity) {
-            return entity.plasticraft$getGeometry().placedCollisionShape(bonded.getPlasticOrientation());
+            && bonded.isPlastic()) {
+            VoxelShape bondedShape = bonded.getBondedCollisionShape();
+            if (bondedShape != null) return bondedShape;
         }
         PlasticEntityOrientation orientation = PlasticEntityOrientation.fromLegacyState(state);
-        return BONDED_SHAPES.computeIfAbsent(
+        return BONDED_COLLISION_SHAPES.computeIfAbsent(
             orientation,
             UniversalPlasticShape.GEOMETRY::placedCollisionShape
         );

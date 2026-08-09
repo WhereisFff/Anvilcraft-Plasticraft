@@ -240,7 +240,7 @@ public final class PlasticraftLanguageData {
         );
         provider.add(
             "tooltip.anvilcraftplasticraft.molded_tray",
-            "A plastic tray that can carry some redstone components"
+            "A plastic tray that carries up to nine compatible redstone components with their native behavior and lighting"
         );
         provider.add("tooltip.anvilcraftplasticraft.molded_chest_contents", "Occupied slots: %1$s/%2$s");
         provider.add("tooltip.anvilcraftplasticraft.molded_tank_contents", "Stored fluid: %1$s mB/%2$s B");
@@ -273,12 +273,12 @@ public final class PlasticraftLanguageData {
         provider.add("message.anvilcraftplasticraft.molding.type_anvil_segments_invalid", "The anvil segments do not meet the thickness rules");
         provider.add("message.anvilcraftplasticraft.molding.type_anvil_shape_unavailable", "The anvil shape analysis is unavailable");
         provider.add("message.anvilcraftplasticraft.molding.type_tray_empty", "A tray model needs a solid bottom and top");
-        provider.add("message.anvilcraftplasticraft.molding.type_tray_outside_center", "A tray must fit inside the central 16 x 16 px area");
+        provider.add("message.anvilcraftplasticraft.molding.type_tray_outside_center", "A tray must fit inside the 48 x 48 px modeling area");
         provider.add("message.anvilcraftplasticraft.molding.type_tray_too_tall", "A tray may be at most 4 px tall");
         provider.add("message.anvilcraftplasticraft.molding.type_tray_surface_outside_bounds", "A tray surface may not extend below its bottom or above its top");
         provider.add("message.anvilcraftplasticraft.molding.type_tray_bottom_not_flat", "A tray needs a completely flat volumetric bottom face");
         provider.add("message.anvilcraftplasticraft.molding.type_tray_top_not_flat", "A tray needs a completely flat top face");
-        provider.add("message.anvilcraftplasticraft.molding.type_tray_center_missing", "A tray needs both faces to cover the exact center point");
+        provider.add("message.anvilcraftplasticraft.molding.type_tray_center_missing", "A tray needs a volumetric cube in its 3 x 3 modeling area");
         provider.add("message.anvilcraftplasticraft.molding.type_tray_shape_unavailable", "The tray shape analysis is unavailable");
         provider.add("message.anvilcraftplasticraft.molding.type_propeller_model_required", "Propeller validation requires the complete editable model");
         provider.add("message.anvilcraftplasticraft.molding.type_propeller_empty", "A propeller model cannot be empty");
@@ -387,7 +387,6 @@ public final class PlasticraftLanguageData {
 
         // 物品、实体和 HUD 共用的动态状态提示。
         provider.add("tooltip.anvilcraftplasticraft.magnetized", "Magnetized");
-        provider.add("tooltip.anvilcraftplasticraft.redstone_conductor", "Conducts redstone through all six faces");
         provider.add("tooltip.anvilcraftplasticraft.resin_anvil.captured", "Contains: %s");
         provider.add("tooltip.anvilcraftplasticraft.color", "Color: %s");
         provider.add("tooltip.anvilcraftplasticraft.size", "Size: %1$s x %2$s x %3$s blocks");

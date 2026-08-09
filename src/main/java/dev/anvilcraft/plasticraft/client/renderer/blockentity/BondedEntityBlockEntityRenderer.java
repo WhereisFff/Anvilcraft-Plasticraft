@@ -50,7 +50,8 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
             PlasticEntityOrientation orientation = blockEntity.getPlasticOrientation();
             Vec3 entityPosition = plasticEntity.plasticraft$placementPosition(
                 blockEntity.getBlockPos(),
-                orientation
+                orientation,
+                blockEntity.getAdhesiveLocalFace()
             );
             Vec3 relative = entityPosition.subtract(Vec3.atLowerCornerOf(blockEntity.getBlockPos()));
             EntityRenderer<? super AbstractPlasticEntity> renderer = Minecraft.getInstance()

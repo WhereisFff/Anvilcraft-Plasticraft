@@ -12,7 +12,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.function.Supplier;
 
 /** 保存单一熔体流体 ID 的颜色，并在放置后写入世界方块实体。 */
-public final class UniversalPlasticMeltBucketItem extends BucketItem {
+public final class UniversalPlasticMeltBucketItem extends BucketItem implements CreativeColorVariantItem {
     public UniversalPlasticMeltBucketItem(Supplier<? extends Fluid> fluid, Properties properties) {
         super(fluid.get(), properties);
     }

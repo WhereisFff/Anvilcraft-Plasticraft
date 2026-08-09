@@ -20,6 +20,8 @@ import dev.anvilcraft.plasticraft.entity.physics.PlasticFallingBlockSupport;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFluidPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticMagnetism;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticSlidingRailPhysics;
+import dev.anvilcraft.plasticraft.entity.physics.PlasticWallSnapping;
+import dev.anvilcraft.plasticraft.entity.redstone.PlasticObserverContact;
 import dev.anvilcraft.plasticraft.event.CatalyticPressAnvilEvents;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
@@ -65,6 +67,7 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.GameEvent;
@@ -183,6 +186,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     private PlasticEntityCollisionBox cachedCollisionBox;
     private Vec3 cachedInteractionShapePosition;
     private VoxelShape cachedInteractionShape = Shapes.empty();
+    private Set<BlockPos> observerContacts = Set.of();
+    private boolean observerContactsDirty = true;
 
     protected AbstractPlasticEntity(
         EntityType<? extends AbstractPlasticEntity> entityType,
@@ -552,8 +557,10 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     @Override
     public void setPos(double x, double y, double z) {
+        Vec3 previousPosition = this.position();
         if (!this.accelerationPositionCapture || this.accelerationMoveInProgress) {
             super.setPos(x, y, z);
+            this.markObserverContactsDirty(previousPosition);
             return;
         }
 
@@ -562,6 +569,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             || requestedMovement.lengthSqr()
                 <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
             super.setPos(x, y, z);
+            this.markObserverContactsDirty(previousPosition);
             return;
         }
 
@@ -578,6 +586,11 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             );
             this.accelerationMoveInProgress = false;
         }
+        this.markObserverContactsDirty(previousPosition);
+    }
+
+    private void markObserverContactsDirty(Vec3 previousPosition) {
+        if (!this.position().equals(previousPosition)) this.observerContactsDirty = true;
     }
 
     @Override
@@ -585,6 +598,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         Vec3 pistonTarget = PlasticPistonOccupancy.movementTarget(this);
         if (pistonTarget != null) {
             this.tickPistonMovement(pistonTarget);
+            this.refreshObserverContacts();
             return;
         }
         if (this.level().isClientSide) {
@@ -893,7 +907,14 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             this.hasImpulse = true;
             this.hurtMarked = true;
         }
+        this.refreshObserverContacts();
         this.checkBelowWorld();
+    }
+
+    private void refreshObserverContacts() {
+        if (this.level().isClientSide || this.isRemoved() || !this.observerContactsDirty) return;
+        this.observerContacts = PlasticObserverContact.update(this, this.observerContacts);
+        this.observerContactsDirty = false;
     }
 
     private void refreshClientSupportObservation() {
@@ -1225,6 +1246,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         CarrierTransfer transfer = this.carrierTransfer(carrier, previousCarrierBox, actualMovement);
         if (transfer == null) return;
         Vec3 transferredMovement = transfer.targetMovement();
+        if (!transfer.isCarried()) {
+            transferredMovement = PlasticWallSnapping.extendToNearbyBlock(this, transferredMovement);
+        }
 
         PlasticPushChain.ClippedPlan clipped = PlasticPushChain.clip(this, carrier, transferredMovement);
         transferredMovement = clipped.movement();
@@ -1440,6 +1464,12 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             this.carrierMoveInProgress = false;
         }
         Vec3 actualMovement = this.position().subtract(start);
+        if (!this.level().isClientSide
+            && actualMovement.lengthSqr()
+                > PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
+            this.observerContactsDirty = true;
+            this.refreshObserverContacts();
+        }
         if (this.level().isClientSide
             && actualMovement.lengthSqr()
                 > PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
@@ -1545,6 +1575,15 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     }
 
     @Override
+    public void remove(RemovalReason reason) {
+        if (!this.level().isClientSide && reason.shouldDestroy() && !this.observerContacts.isEmpty()) {
+            PlasticObserverContact.clear(this.level(), this.observerContacts);
+            this.observerContacts = Set.of();
+        }
+        super.remove(reason);
+    }
+
+    @Override
     public boolean isAttackable() {
         return true;
     }
@@ -1598,6 +1637,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         this.cachedCollisionBox = null;
         this.cachedInteractionShapePosition = null;
         this.cachedInteractionShape = Shapes.empty();
+        this.observerContactsDirty = true;
         if (this.plasticGeometryReady) {
             this.setBoundingBox(this.makeBoundingBox());
         }
@@ -1635,6 +1675,15 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         PlasticEntityOrientation orientation
     ) {
         return this.currentGeometry().placementPosition(occupiedPos, orientation);
+    }
+
+    /** 返回让指定局部面贴住方块单元对应面时的实体位置。 */
+    public final Vec3 plasticraft$placementPosition(
+        BlockPos occupiedPos,
+        PlasticEntityOrientation orientation,
+        Direction localFace
+    ) {
+        return this.currentGeometry().placementPosition(occupiedPos, orientation, localFace);
     }
 
     /** 返回不会因碰撞外包围盒偏心而漂移的模型旋转中心。 */
@@ -2010,7 +2059,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             return false;
         }
         if (!this.level().isClientSide) {
-            if (this.level().getGameRules().getBoolean(GameRules.RULE_DOENTITYDROPS)) {
+            this.playBlockBreakEffect();
+            if (!isCreativePlayerDamage(source)
+                && this.level().getGameRules().getBoolean(GameRules.RULE_DOENTITYDROPS)) {
                 this.spawnDropAtGeometry(this.getDropStack());
             }
             this.discard();
@@ -2018,6 +2069,18 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             this.markHurt();
         }
         return true;
+    }
+
+    /** 在真实几何中心播放当前显示方块状态的原版破坏效果。 */
+    private void playBlockBreakEffect() {
+        if (this.isRemoved()) return;
+        BlockPos effectPos = BlockPos.containing(this.getBoundingBox().getCenter());
+        this.level().levelEvent(2001, effectPos, Block.getId(this.getDisplayState()));
+    }
+
+    private static boolean isCreativePlayerDamage(DamageSource source) {
+        return source.getEntity() instanceof Player causingPlayer && causingPlayer.isCreative()
+            || source.getDirectEntity() instanceof Player directPlayer && directPlayer.isCreative();
     }
 
     /** 偏置模型的实体原点可能位于真实几何之外，破坏掉落必须改用几何中心并避开支撑面。 */

@@ -87,6 +87,7 @@ final class MoldedTrayButtonBehavior implements MoldedTrayRedstoneBehavior {
         MoldedPlasticData data = runtime.host().getMoldedData().orElseThrow();
         AABB local = MoldedTrayComponentGeometry.localInteractionShape(
             data,
+            runtime.cell(),
             state,
             runtime.host().level(),
             runtime.host().blockPosition()
@@ -113,7 +114,7 @@ final class MoldedTrayButtonBehavior implements MoldedTrayRedstoneBehavior {
         boolean wooden = runtime.state().is(BlockTags.WOODEN_BUTTONS);
         runtime.host().level().playSound(
             null,
-            runtime.host().blockPosition(),
+            MoldedTrayRedstoneNetwork.componentPosition(runtime.host(), runtime.cell()),
             wooden
                 ? powered ? SoundEvents.WOODEN_BUTTON_CLICK_ON : SoundEvents.WOODEN_BUTTON_CLICK_OFF
                 : powered ? SoundEvents.STONE_BUTTON_CLICK_ON : SoundEvents.STONE_BUTTON_CLICK_OFF,

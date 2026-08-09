@@ -41,6 +41,7 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ObserverBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
@@ -61,6 +62,33 @@ public final class UniversalPlasticGameTests {
     private static final double EPSILON = 1.0E-6D;
 
     private UniversalPlasticGameTests() {
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x5x7", floor = true)
+    @TestHolder(description = "Creative attacks remove plastic entities without item drops")
+    static void creativeEntityDestructionHasNoDrop(ExtendedGameTestHelper helper) {
+        BlockPos occupied = new BlockPos(3, 2, 3);
+        ItemStack drop = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        PlasticMeltColor.set(drop, DyeColor.CYAN);
+        UniversalPlasticEntity entity = createUniversal(
+            helper,
+            helper.absolutePos(occupied).getCenter().add(0.0D, -0.5D, 0.0D),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            drop
+        );
+        entity.setNoGravity(true);
+        Player player = helper.makeMockPlayer(GameType.CREATIVE);
+
+        check(entity.hurt(player.damageSources().playerAttack(player), 1.0F),
+            "creative attack did not destroy the plastic entity");
+        check(entity.isRemoved(), "creative attack left the plastic entity alive");
+        check(helper.getLevel().getEntitiesOfClass(
+            ItemEntity.class,
+            new AABB(helper.absolutePos(occupied)).inflate(1.0D),
+            item -> item.getItem().is(PlasticraftBlocks.UNIVERSAL_PLASTIC.asItem())
+        ).isEmpty(), "creative attack dropped the plastic entity item");
+        helper.succeed();
     }
 
     @GameTest(timeoutTicks = 20)
@@ -750,6 +778,64 @@ public final class UniversalPlasticGameTests {
         helper.succeed();
     }
 
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x5x7", floor = true)
+    @TestHolder(description = "A side-pushed plastic snaps to a nearby observer and triggers its vanilla pulse")
+    static void sidePushedPlasticSnapsToAndTriggersObserver(ExtendedGameTestHelper helper) {
+        BlockPos observerPos = new BlockPos(5, 1, 3);
+        helper.setBlock(
+            observerPos,
+            Blocks.OBSERVER.defaultBlockState().setValue(ObserverBlock.FACING, Direction.WEST)
+        );
+        double initialGap = 1.0D / 32.0D;
+        UniversalPlasticEntity target = createUniversal(
+            helper,
+            helper.absoluteVec(new Vec3(4.5D - initialGap, 1.0D, 3.5D)),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack()
+        );
+        target.setNoGravity(true);
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        player.setNoGravity(true);
+        AABB targetBounds = target.plasticraft$getCollisionBox().bounds();
+        player.moveTo(
+            targetBounds.minX - player.getBbWidth() * 0.5D,
+            targetBounds.minY,
+            targetBounds.getCenter().z
+        );
+        BlockPos absoluteObserverPos = helper.absolutePos(observerPos);
+        double targetStartX = target.getX();
+
+        helper.startSequence()
+            .thenIdle(5)
+            .thenExecute(() -> {
+                check(!helper.getBlockState(observerPos).getValue(ObserverBlock.POWERED),
+                    "observer did not settle before the plastic push");
+                check(!helper.getLevel().getBlockTicks().hasScheduledTick(absoluteObserverPos, Blocks.OBSERVER),
+                    "observer retained an unrelated scheduled pulse before the plastic push");
+                player.setOnGround(true);
+                player.move(MoverType.SELF, new Vec3(0.01D, 0.0D, 0.0D));
+                AABB movedBounds = target.plasticraft$getCollisionBox().bounds();
+                double remainingGap = absoluteObserverPos.getX() - movedBounds.maxX;
+                check(target.getX() - targetStartX > 0.025D,
+                    "plastic did not extend its short side push to the nearby observer");
+                check(remainingGap >= -EPSILON && remainingGap <= 1.0E-5D,
+                    "plastic left a visible gap before the observer: " + remainingGap);
+                check(helper.getLevel().getBlockTicks().hasScheduledTick(absoluteObserverPos, Blocks.OBSERVER),
+                    "plastic contact did not schedule the observer pulse");
+            })
+            .thenIdle(2)
+            .thenExecute(() -> check(
+                helper.getBlockState(observerPos).getValue(ObserverBlock.POWERED),
+                "observer did not power after detecting the plastic contact"
+            ))
+            .thenExecute(() -> {
+                target.discard();
+                player.discard();
+            })
+            .thenSucceed();
+    }
+
     @GameTest(timeoutTicks = 30)
     @EmptyTemplate(value = "9x7x7", floor = true)
     @TestHolder(description = "Pushing away from a plastic support leaves enough room for the player to fall")
@@ -846,6 +932,10 @@ public final class UniversalPlasticGameTests {
         check(PlasticMeltColor.get(restored.getDropStack()) == DyeColor.BLUE, "bonded drop stack lost its colour");
         VoxelShape shape = helper.getLevel().getBlockState(pos).getCollisionShape(helper.getLevel(), pos);
         check(close(shape.bounds().getYsize(), 0.875D), "bonded collision no longer matches the 14 px model");
+        check(
+            shape == helper.getLevel().getBlockState(pos).getCollisionShape(helper.getLevel(), pos),
+            "bonded collision shape was rebuilt for an unchanged model"
+        );
         helper.succeed();
     }
 

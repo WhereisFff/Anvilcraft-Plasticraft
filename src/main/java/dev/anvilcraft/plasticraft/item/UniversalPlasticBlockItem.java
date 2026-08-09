@@ -14,7 +14,8 @@ import net.minecraft.world.phys.Vec3;
 import java.util.function.Supplier;
 
 /** 把熔体颜色写入显示方块状态，并直接放置对应的可移动塑料实体。 */
-public class UniversalPlasticBlockItem extends AbstractPlasticEntityItem<UniversalPlasticEntity> {
+public class UniversalPlasticBlockItem extends AbstractPlasticEntityItem<UniversalPlasticEntity>
+    implements CreativeColorVariantItem {
     public UniversalPlasticBlockItem(
         Block block,
         Properties properties,

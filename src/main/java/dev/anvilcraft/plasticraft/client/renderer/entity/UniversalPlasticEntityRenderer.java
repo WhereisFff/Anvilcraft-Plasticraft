@@ -86,7 +86,7 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
         entity.getMoldedData().ifPresent(data -> MoldedTrayComponentRenderer.render(
             data,
             this.dispatcher,
-            entity.plasticraft$getTrayBlockEntity(),
+            entity.plasticraft$getTrayBlockEntities(),
             partialTick,
             pose,
             buffers,

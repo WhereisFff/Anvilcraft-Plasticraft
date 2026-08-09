@@ -5,8 +5,10 @@ import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesivePathPlanner;
 import dev.anvilcraft.plasticraft.entity.redstone.MoldedTrayComponentLookup;
 import dev.anvilcraft.plasticraft.entity.redstone.MoldedTrayComponentSupport;
+import dev.anvilcraft.plasticraft.entity.redstone.MoldedTrayLightSource;
 import dev.anvilcraft.plasticraft.entity.redstone.MoldedTrayRedstoneNetwork;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
@@ -20,7 +22,10 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingTransform;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContents;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.molding.product.MoldedTrayCell;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponent;
+import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponentGeometry;
+import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponentPlacement;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductPreview;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.anvilcraft.plasticraft.molding.type.MoldingTrayIconModel;
@@ -49,6 +54,7 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.ComparatorBlock;
@@ -103,9 +109,17 @@ public final class MoldedPlasticTrayGameTests {
         );
         checkValid(trayModel(List.of(rotated)), "flat tray rotated around Y was rejected");
         checkValid(MoldingTrayIconModel.model(), "bundled open-frame tray icon model was rejected");
+        EditableMoldingModel corner = trayModel(List.of(cube("Corner", 0, 0, 0, 16, 2, 16)));
+        checkValid(corner, "single corner-cell tray was rejected");
+        MoldingTrayShapeAnalysis cornerAnalysis = MoldingTrayShapeAnalyzer.analyze(
+            MoldingModelBaker.bake(corner).volumeMask(),
+            MoldingModelBaker.createExactSurfaceMesh(corner)
+        );
+        check(cornerAnalysis.supportsCell(0, 0) && !cornerAnalysis.supportsCell(1, 1),
+            "corner tray exposed the wrong component support cells");
         checkValid(
-            trayModel(List.of(cube("Center point", 16, 0, 16, 24, 2, 24))),
-            "tray whose two faces reach the exact center point was rejected"
+            trayModel(List.of(cube("Full grid", 0, 0, 0, 48, 4, 48))),
+            "complete 3 x 3 tray was rejected"
         );
 
         checkReason(
@@ -116,17 +130,17 @@ public final class MoldedPlasticTrayGameTests {
             trayModel(List.of(cube("Fractionally tall", 16, 0.25D, 16, 32, 4.251D, 32))),
             "tray_too_tall"
         );
-        checkReason(
+        checkValid(
             trayModel(List.of(cube("Outside", 15, 0, 16, 31, 4, 32))),
-            "tray_outside_center"
+            "tray crossing the former center boundary was rejected"
         );
-        checkReason(
+        checkValid(
             trayModel(List.of(cube("Fractionally outside", 15.75D, 0, 16, 31.75D, 4, 32))),
-            "tray_outside_center"
+            "fractional tray crossing the former center boundary was rejected"
         );
-        checkReason(
+        checkValid(
             trayModel(List.of(cube("Missing center", 16, 0, 16, 23, 4, 32))),
-            "tray_center_missing"
+            "tray without the exact model center was rejected"
         );
         checkValid(
             trayModel(List.of(
@@ -284,6 +298,65 @@ public final class MoldedPlasticTrayGameTests {
         MoldedTrayComponent decoded = MoldedTrayComponent.CODEC.parse(ops, encoded).getOrThrow();
         check(component.equals(decoded), "tray component codec round trip changed its value");
 
+        List<MoldedTrayComponentPlacement> reversedPlacements = MoldedTrayCell.VALUES.reversed().stream()
+            .map(cell -> new MoldedTrayComponentPlacement(cell, component))
+            .toList();
+        MoldedPlasticContents gridContents = new MoldedPlasticContents(List.of(), List.of(), reversedPlacements);
+        check(gridContents.trayComponents().size() == 9
+                && gridContents.trayComponents().getFirst().cell().equals(new MoldedTrayCell(0, 0))
+                && gridContents.trayComponents().getLast().cell().equals(new MoldedTrayCell(2, 2)),
+            "nine tray components were not normalized into stable cell order");
+        var encodedContents = MoldedPlasticContents.CODEC.encodeStart(ops, gridContents).getOrThrow();
+        MoldedPlasticContents decodedContents = MoldedPlasticContents.CODEC.parse(ops, encodedContents).getOrThrow();
+        check(gridContents.equals(decodedContents), "nine tray components changed during codec round trip");
+
+        MoldedPlasticData currentData = manufactureTray(trayModel(List.of(
+            cube("Legacy support", 0, 0, 0, 48, 4, 48)
+        ))).withContents(MoldedPlasticContents.EMPTY.withTrayComponent(Optional.of(component)));
+        CompoundTag legacyData = ((CompoundTag) MoldedPlasticData.CODEC.encodeStart(ops, currentData)
+            .getOrThrow()).copy();
+        legacyData.putInt("format_version", 4);
+        CompoundTag legacyContents = legacyData.getCompound("contents");
+        legacyContents.remove("tray_components");
+        legacyContents.put(
+            "tray_component",
+            MoldedTrayComponent.CODEC.encodeStart(ops, component).getOrThrow()
+        );
+        legacyData.put("contents", legacyContents);
+        MoldedPlasticData migratedData = MoldedPlasticData.CODEC.parse(ops, legacyData).getOrThrow();
+        check(migratedData.formatVersion() == MoldedPlasticData.CURRENT_FORMAT_VERSION,
+            "format four molded plastic was not normalized to the current format");
+        check(migratedData.contents().trayComponent(MoldedTrayCell.CENTER).filter(component::equals).isPresent(),
+            "format four tray component was not migrated to the center cell");
+        CompoundTag migratedEncoding = (CompoundTag) MoldedPlasticData.CODEC.encodeStart(ops, migratedData)
+            .getOrThrow();
+        check(migratedEncoding.getInt("format_version") == MoldedPlasticData.CURRENT_FORMAT_VERSION,
+            "migrated molded plastic was written with its legacy format version");
+        CompoundTag migratedContents = migratedEncoding.getCompound("contents");
+        check(migratedContents.contains("tray_components") && !migratedContents.contains("tray_component"),
+            "migrated tray contents were written with the legacy component field");
+
+        boolean duplicateRejected = false;
+        try {
+            List<MoldedTrayComponentPlacement> duplicate = new ArrayList<>(reversedPlacements);
+            duplicate.add(new MoldedTrayComponentPlacement(MoldedTrayCell.CENTER, component));
+            new MoldedPlasticContents(List.of(), List.of(), duplicate);
+        } catch (IllegalArgumentException ignored) {
+            duplicateRejected = true;
+        }
+        check(duplicateRejected, "a tenth or duplicate tray component was accepted");
+
+        boolean unsupportedCellRejected = false;
+        try {
+            MoldedPlasticData cornerData = manufactureTray(trayModel(List.of(
+                cube("Corner support", 0, 0, 0, 16, 2, 16)
+            )));
+            cornerData.withContents(MoldedPlasticContents.EMPTY.withTrayComponent(Optional.of(component)));
+        } catch (IllegalArgumentException ignored) {
+            unsupportedCellRejected = true;
+        }
+        check(unsupportedCellRejected, "a tray component was stored in a cell without a volumetric cube");
+
         RegistryFriendlyByteBuf buffer = new RegistryFriendlyByteBuf(
             Unpooled.buffer(),
             helper.getLevel().registryAccess(),
@@ -295,6 +368,18 @@ public final class MoldedPlasticTrayGameTests {
             check(component.equals(streamed), "tray component stream codec round trip changed its value");
         } finally {
             buffer.release();
+        }
+        RegistryFriendlyByteBuf contentsBuffer = new RegistryFriendlyByteBuf(
+            Unpooled.buffer(),
+            helper.getLevel().registryAccess(),
+            ConnectionType.NEOFORGE
+        );
+        try {
+            MoldedPlasticContents.encode(contentsBuffer, gridContents);
+            MoldedPlasticContents streamed = MoldedPlasticContents.decode(contentsBuffer);
+            check(gridContents.equals(streamed), "nine tray components changed during stream round trip");
+        } finally {
+            contentsBuffer.release();
         }
         helper.succeed();
     }
@@ -360,6 +445,274 @@ public final class MoldedPlasticTrayGameTests {
                         && !extraData.contains("PhaseDuration"),
                     "tray extraction leaked transient component runtime state");
             })
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "11x8x11", floor = true)
+    @TestHolder(description = "Tray hit positions select independent supported cells across rotated off-grid geometry")
+    static void componentPlacementUsesHitCell(ExtendedGameTestHelper helper) {
+        MoldedPlasticData data = manufactureTray(trayModel(List.of(
+            cube("Full support", 0, 0, 0, 48, 4, 48)
+        )));
+        PlasticEntityOrientation orientation = new PlasticEntityOrientation(Direction.EAST, 1);
+        UniversalPlasticEntity tray = createTray(
+            helper,
+            new BlockPos(5, 4, 5),
+            orientation,
+            new Vec3(0.23D, 0.17D, -0.19D),
+            data
+        );
+        MoldedTrayCell target = new MoldedTrayCell(0, 2);
+        Vec3 localHit = new Vec3(target.x() + 0.5D, data.surfaceBounds().maxY, target.z() + 0.5D);
+        Vec3 relativeHit = tray.plasticraft$getGeometry().worldPointAt(
+            tray.position(),
+            orientation,
+            localHit
+        ).subtract(tray.position());
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Blocks.LEVER));
+        check(tray.interactAt(player, relativeHit, InteractionHand.MAIN_HAND).consumesAction(),
+            "tray rejected placement at the selected off-grid cell");
+        check(tray.getMoldedData().flatMap(value -> value.contents().trayComponent(target)).isPresent(),
+            "tray mounted the component in a different cell than the hit position");
+        check(tray.getMoldedData().orElseThrow().contents().trayComponents().size() == 1,
+            "single-cell placement duplicated the component");
+
+        player.setShiftKeyDown(true);
+        check(tray.interactAt(player, relativeHit, InteractionHand.MAIN_HAND).consumesAction(),
+            "tray rejected extraction from the selected off-grid cell");
+        check(tray.getMoldedData().orElseThrow().contents().trayComponents().isEmpty(),
+            "tray extraction cleared a different cell");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "15x9x13", floor = true)
+    @TestHolder(description = "A block adhesive target aligns the selected asymmetric tray face instead of its bounds")
+    static void adhesiveTargetAlignsSelectedTrayFace(ExtendedGameTestHelper helper) {
+        MoldedPlasticData data = manufactureTray(trayModel(List.of(
+            cube("Long arm", 0, 0, 0, 48, 4, 16),
+            cube("Short arm", 0, 0, 16, 16, 4, 48)
+        )));
+        UniversalPlasticEntity tray = createTray(
+            helper,
+            new BlockPos(3, 4, 6),
+            PlasticEntityOrientation.DEFAULT,
+            Vec3.ZERO,
+            data
+        );
+        tray.setNoGravity(true);
+        BlockPos support = new BlockPos(12, 4, 6);
+        helper.setBlock(support, Blocks.STONE);
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        AdhesivePathPlanner.Plan plan = AdhesivePathPlanner.plan(
+            helper.getLevel(),
+            tray,
+            player,
+            helper.absolutePos(support),
+            Direction.WEST,
+            Direction.EAST
+        );
+        check(plan.valid(), "asymmetric tray face alignment produced no adhesive path: " + plan.status());
+        Vec3 selectedFaceCenter = tray.plasticraft$getGeometry().surfacePointAt(
+            plan.targetPosition(),
+            plan.targetOrientation(),
+            Direction.EAST
+        );
+        Vec3 targetFaceCenter = Vec3.atCenterOf(helper.absolutePos(support)).add(-0.5D, 0.0D, 0.0D);
+        check(selectedFaceCenter.distanceToSqr(targetFaceCenter) < 1.0E-8D,
+            "adhesive target centered the tray bounds instead of aligning its selected face: selected="
+                + selectedFaceCenter + ", target=" + targetFaceCenter);
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate(value = "13x8x13", floor = true)
+    @TestHolder(description = "A tray button powers an adjacent inward-facing repeater and its world output")
+    static void adjacentComponentsInteractAndOutput(ExtendedGameTestHelper helper) {
+        MoldedTrayCell buttonCell = new MoldedTrayCell(1, 1);
+        MoldedTrayCell repeaterCell = new MoldedTrayCell(1, 2);
+        MoldedTrayComponent button = new MoldedTrayComponent(
+            new ItemStack(Blocks.STONE_BUTTON),
+            Blocks.STONE_BUTTON.defaultBlockState()
+                .setValue(BlockStateProperties.ATTACH_FACE, AttachFace.FLOOR)
+                .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH)
+                .setValue(BlockStateProperties.POWERED, false),
+            new CompoundTag(),
+            0,
+            List.of()
+        );
+        MoldedTrayComponent repeater = new MoldedTrayComponent(
+            new ItemStack(Blocks.REPEATER),
+            Blocks.REPEATER.defaultBlockState()
+                .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH)
+                .setValue(BlockStateProperties.POWERED, false),
+            new CompoundTag(),
+            0,
+            List.of()
+        );
+        MoldedPlasticContents contents = new MoldedPlasticContents(
+            List.of(),
+            List.of(),
+            List.of(
+                new MoldedTrayComponentPlacement(buttonCell, button),
+                new MoldedTrayComponentPlacement(repeaterCell, repeater)
+            )
+        );
+        MoldedPlasticData data = manufactureTray(trayModel(List.of(
+            cube("Full support", 0, 0, 0, 48, 4, 48)
+        ))).withContents(contents);
+        UniversalPlasticEntity tray = createTray(
+            helper,
+            new BlockPos(6, 4, 5),
+            PlasticEntityOrientation.DEFAULT,
+            Vec3.ZERO,
+            data
+        );
+        BlockPos receiver = MoldedTrayRedstoneNetwork.adjacentCell(tray, repeaterCell, Direction.SOUTH);
+        helper.getLevel().setBlockAndUpdate(receiver, Blocks.REDSTONE_LAMP.defaultBlockState());
+        tray.getMoldedTrayRuntimes().tick();
+
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        check(tray.getMoldedTrayRuntime(buttonCell).interact(player, InteractionHand.MAIN_HAND).consumesAction(),
+            "mounted button rejected interaction");
+        tray.getMoldedTrayRuntimes().tick();
+        helper.startSequence()
+            .thenIdle(5)
+            .thenExecute(() -> {
+                MoldedTrayComponent poweredRepeater = tray.getMoldedData()
+                    .flatMap(value -> value.contents().trayComponent(repeaterCell))
+                    .orElseThrow();
+                check(poweredRepeater.state().getValue(BlockStateProperties.POWERED),
+                    "adjacent repeater did not receive the mounted button signal");
+                BlockPos source = MoldedTrayRedstoneNetwork.componentCell(
+                    tray,
+                    repeaterCell,
+                    Direction.SOUTH
+                );
+                check(MoldedTrayRedstoneNetwork.weakSignal(helper.getLevel(), source, Direction.NORTH) == 15,
+                    "adjacent repeater did not publish its signal at the corresponding world position");
+                check(helper.getLevel().getBlockState(receiver).getValue(BlockStateProperties.LIT),
+                    "adjacent repeater did not power its world receiver");
+                helper.succeed();
+            });
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "13x8x9", floor = true)
+    @TestHolder(description = "Mounted emitting components keep their native block light through state and movement changes")
+    static void emittingComponentLightsWorld(ExtendedGameTestHelper helper) {
+        MoldedTrayComponent litTorch = new MoldedTrayComponent(
+            new ItemStack(Blocks.REDSTONE_TORCH),
+            Blocks.REDSTONE_TORCH.defaultBlockState().setValue(BlockStateProperties.LIT, true),
+            new CompoundTag(),
+            0,
+            List.of()
+        );
+        UniversalPlasticEntity tray = createTray(
+            helper,
+            new BlockPos(3, 4, 4),
+            PlasticEntityOrientation.DEFAULT,
+            litTorch,
+            Vec3.ZERO
+        );
+        ServerLevel level = helper.getLevel();
+        BlockPos source = MoldedTrayRedstoneNetwork.componentPosition(tray, MoldedTrayCell.CENTER);
+        MoldedTrayLightSource.update(tray);
+        BlockPos[] movedSource = new BlockPos[1];
+        helper.startSequence()
+            .thenIdle(2)
+            .thenExecute(() -> {
+                check(level.getBrightness(LightLayer.BLOCK, source) == 7,
+                    "mounted redstone torch did not emit its native level-seven block light");
+                check(level.getBrightness(LightLayer.BLOCK, source.east()) == 6,
+                    "mounted redstone torch light did not propagate into the world");
+
+                tray.plasticraft$replaceTrayComponent(litTorch.withState(
+                    litTorch.state().setValue(BlockStateProperties.LIT, false)
+                ));
+                MoldedTrayLightSource.update(tray);
+            })
+            .thenIdle(2)
+            .thenExecute(() -> {
+                check(level.getBrightness(LightLayer.BLOCK, source) == 0,
+                    "extinguished mounted redstone torch left world light behind");
+
+                tray.plasticraft$replaceTrayComponent(litTorch);
+                tray.setPos(tray.position().add(3.0D, 0.0D, 0.0D));
+                movedSource[0] = MoldedTrayRedstoneNetwork.componentPosition(tray, MoldedTrayCell.CENTER);
+                MoldedTrayLightSource.update(tray);
+            })
+            .thenIdle(2)
+            .thenExecute(() -> {
+                check(level.getBlockState(source).getLightEmission(level, source) == 0,
+                    "moving the tray left its old component light source registered");
+                check(level.getBrightness(LightLayer.BLOCK, movedSource[0]) == 7,
+                    "mounted redstone torch light did not follow the tray");
+                tray.discard();
+            })
+            .thenIdle(2)
+            .thenExecute(() -> check(level.getBrightness(LightLayer.BLOCK, movedSource[0]) == 0,
+                "removing the tray left its component light source behind"))
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "9x8x9", floor = true)
+    @TestHolder(description = "Blockification handoff keeps one tray payload and the cloned redstone network owner")
+    static void blockificationHandoffKeepsTrayNetwork(ExtendedGameTestHelper helper) {
+        MoldedTrayComponent torch = new MoldedTrayComponent(
+            new ItemStack(Blocks.REDSTONE_TORCH),
+            Blocks.REDSTONE_TORCH.defaultBlockState().setValue(BlockStateProperties.LIT, true),
+            new CompoundTag(),
+            0,
+            List.of()
+        );
+        BlockPos occupied = new BlockPos(4, 4, 4);
+        helper.setBlock(occupied.below(), Blocks.STONE);
+        UniversalPlasticEntity original = createTray(
+            helper,
+            occupied,
+            PlasticEntityOrientation.DEFAULT,
+            torch,
+            Vec3.ZERO
+        );
+        original.getMoldedTrayRuntime().tick();
+
+        BlockState bondedState = PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState()
+            .setValue(AbstractPlasticEntityBlock.BONDED, true);
+        helper.setBlock(occupied, bondedState);
+        check(helper.getBlockEntity(occupied) instanceof BondedEntityBlockEntity bonded
+                && bonded.initialize(
+                    original,
+                    original.getDisplayState(),
+                    Direction.UP,
+                    original.getOrientation(),
+                    false
+                ),
+            "failed to create the blockified tray snapshot");
+        BondedEntityBlockEntity bonded = (BondedEntityBlockEntity) helper.getBlockEntity(occupied);
+        check(bonded.getOrCreateRenderEntity() instanceof UniversalPlasticEntity clone,
+            "blockified tray did not restore its functional entity");
+        UniversalPlasticEntity clone = (UniversalPlasticEntity) bonded.getOrCreateRenderEntity();
+        check(clone.getUUID().equals(original.getUUID()), "blockified tray clone changed the entity UUID");
+        clone.plasticraft$tickBondedTray();
+        original.discard();
+
+        check(original.isRemoved(), "original tray survived its blockification handoff");
+        check(helper.getBlockState(occupied).is(PlasticraftBlocks.UNIVERSAL_PLASTIC.get()),
+            "original tray removal deleted the blockified tray");
+        check(clone.getMoldedData().orElseThrow().contents().trayComponents().size() == 1,
+            "blockified tray duplicated or lost its mounted payload");
+        BlockPos source = MoldedTrayRedstoneNetwork.componentCell(clone, Direction.SOUTH);
+        check(MoldedTrayRedstoneNetwork.weakSignal(helper.getLevel(), source, Direction.NORTH) == 15,
+            "original tray removal unregistered the blockified clone's redstone output");
+        BlockPos lightSource = MoldedTrayRedstoneNetwork.componentPosition(clone, MoldedTrayCell.CENTER);
+        helper.startSequence()
+            .thenIdle(2)
+            .thenExecute(() -> check(helper.getLevel().getBrightness(LightLayer.BLOCK, lightSource) == 7,
+                "original tray removal cleared the blockified clone's light source"))
             .thenSucceed();
     }
 
@@ -493,20 +846,46 @@ public final class MoldedPlasticTrayGameTests {
             pulseGenerator(5, 2),
             Vec3.ZERO
         );
+        MoldedTrayCell otherCell = new MoldedTrayCell(2, 1);
+        MoldedPlasticData targetData = manufactureTray(trayModel(List.of(
+            cube("Full support", 0, 0, 0, 48, 4, 48)
+        ))).withContents(new MoldedPlasticContents(
+            List.of(),
+            List.of(),
+            List.of(
+                new MoldedTrayComponentPlacement(MoldedTrayCell.CENTER, pulseGenerator(7, 3)),
+                new MoldedTrayComponentPlacement(otherCell, pulseGenerator(9, 4))
+            )
+        ));
         UniversalPlasticEntity target = createTray(
             helper,
             new BlockPos(4, 3, 4),
             PlasticEntityOrientation.DEFAULT,
-            pulseGenerator(7, 3),
-            Vec3.ZERO
+            Vec3.ZERO,
+            targetData
         );
         BlockEntity expected = target.plasticraft$getTrayBlockEntity();
+        BlockEntity other = target.plasticraft$getTrayBlockEntity(otherCell);
         BlockEntity found = MoldedTrayComponentLookup.find(
             helper.getLevel(),
-            target.plasticraft$getAnchorBlockPos(),
+            expected.getBlockPos(),
             MoldedTrayComponentLookup.Kind.PULSE_GENERATOR
         );
         check(found == expected, "tray menu lookup selected a nearby component instead of its requested host");
+        check(!expected.getBlockPos().equals(other.getBlockPos()),
+            "two tray menu components received the same virtual position");
+        check(MoldedTrayComponentLookup.find(
+            helper.getLevel(),
+            other.getBlockPos(),
+            MoldedTrayComponentLookup.Kind.PULSE_GENERATOR
+        ) == other, "tray menu lookup selected another cell from the same host");
+        target.setPos(target.position().add(1.1D, 0.0D, 0.0D));
+        BlockPos movedPosition = MoldedTrayRedstoneNetwork.componentPosition(target, MoldedTrayCell.CENTER);
+        check(MoldedTrayComponentLookup.find(
+            helper.getLevel(),
+            movedPosition,
+            MoldedTrayComponentLookup.Kind.PULSE_GENERATOR
+        ) == expected, "moving a tray made its pulse generator unavailable to the menu lookup");
         helper.succeed();
     }
 
@@ -927,6 +1306,45 @@ public final class MoldedPlasticTrayGameTests {
     }
 
     @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x7x9", floor = true)
+    @TestHolder(description = "Weak-only signal sources activate mounted tray components without block-type exceptions")
+    static void weakOnlySignalActivatesMountedRepeater(ExtendedGameTestHelper helper) {
+        MoldedTrayComponent repeater = new MoldedTrayComponent(
+            new ItemStack(Blocks.REPEATER),
+            Blocks.REPEATER.defaultBlockState()
+                .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH),
+            new CompoundTag(),
+            0,
+            List.of()
+        );
+        UniversalPlasticEntity tray = createTray(
+            helper,
+            new BlockPos(4, 3, 4),
+            PlasticEntityOrientation.DEFAULT,
+            repeater,
+            Vec3.ZERO
+        );
+        ServerLevel level = helper.getLevel();
+        BlockPos input = MoldedTrayRedstoneNetwork.adjacentCell(tray, Direction.NORTH);
+        level.setBlockAndUpdate(input.below(), Blocks.STONE.defaultBlockState());
+        level.setBlockAndUpdate(input, ModBlocks.REDSTONE_WIRE.get().defaultBlockState());
+        level.setBlockAndUpdate(input.north(), Blocks.REDSTONE_BLOCK.defaultBlockState());
+
+        check(level.getSignal(input, Direction.NORTH) == 15,
+            "AnvilCraft redstone wire did not expose its weak output to the tray");
+        check(level.getDirectSignal(input, Direction.NORTH) == 0,
+            "AnvilCraft redstone wire unexpectedly exposed direct strong power");
+        tray.getMoldedTrayRuntime().tick();
+        check(scheduledTicks(tray) == 2,
+            "weak-only tray input did not schedule the mounted repeater");
+        helper.runAfterDelay(3, () -> {
+            check(trayComponent(tray).state().getValue(BlockStateProperties.POWERED),
+                "weak-only tray input did not activate the mounted repeater");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "17x10x15", floor = true)
     @TestHolder(description = "Tray output uses one moving forward cell and powers only its nearest receiver")
     static void outputUsesMovingForwardCellAndNearestReceiver(ExtendedGameTestHelper helper) {
@@ -1294,6 +1712,30 @@ public final class MoldedPlasticTrayGameTests {
         for (int tick = 0; tick < 10; tick++) tray.getMoldedTrayRuntime().tick();
         check(trayComponent(tray).state().getValue(BlockStateProperties.POWER) == 1,
             "mounted AnvilCraft copper pressure plate lost its accumulated output algorithm");
+
+        MoldedTrayCell outerCell = new MoldedTrayCell(0, 2);
+        MoldedPlasticData wideData = manufactureTray(trayModel(List.of(
+            cube("Full support", 0, 0, 0, 48, 4, 48)
+        ))).withContents(new MoldedPlasticContents(
+            List.of(),
+            List.of(),
+            List.of(new MoldedTrayComponentPlacement(outerCell, stonePlate))
+        ));
+        UniversalPlasticEntity wideTray = createTray(
+            helper,
+            new BlockPos(9, 3, 4),
+            PlasticEntityOrientation.DEFAULT,
+            Vec3.ZERO,
+            wideData
+        );
+        pressurePlateEntity(helper, wideTray, outerCell);
+        wideTray.getMoldedTrayRuntime(outerCell).tick();
+        check(wideTray.getMoldedData()
+                .flatMap(value -> value.contents().trayComponent(outerCell))
+                .orElseThrow()
+                .state()
+                .getValue(BlockStateProperties.POWERED),
+            "off-center mounted pressure plate ignored an entity on its own cell");
         helper.succeed();
     }
 
@@ -1332,13 +1774,15 @@ public final class MoldedPlasticTrayGameTests {
         BlockPos output = MoldedTrayRedstoneNetwork.componentCell(tray, Direction.SOUTH);
         check(MoldedTrayRedstoneNetwork.weakSignal(helper.getLevel(), output, Direction.NORTH) == 15,
             "mounted advanced comparator did not publish its directional output");
+        BlockEntity expectedBlockEntity = tray.plasticraft$getTrayBlockEntity();
+        tray.setPos(tray.position().add(1.1D, 0.0D, 0.0D));
         BlockEntity blockEntity = MoldedTrayComponentLookup.find(
             helper.getLevel(),
-            tray.plasticraft$getAnchorBlockPos(),
+            MoldedTrayRedstoneNetwork.componentPosition(tray, MoldedTrayCell.CENTER),
             MoldedTrayComponentLookup.Kind.ADVANCED_COMPARATOR
         );
-        check(blockEntity instanceof AdvancedComparatorBlockEntity,
-            "advanced comparator menu lookup did not find the tray block entity");
+        check(blockEntity == expectedBlockEntity && blockEntity instanceof AdvancedComparatorBlockEntity,
+            "moving a tray made its advanced comparator unavailable to the menu lookup");
 
         ItemStack extracted = MoldedTrayComponentSupport.extractionStack(
             trayComponent(tray),
@@ -1506,11 +1950,27 @@ public final class MoldedPlasticTrayGameTests {
         ExtendedGameTestHelper helper,
         UniversalPlasticEntity tray
     ) {
+        return pressurePlateEntity(helper, tray, MoldedTrayCell.CENTER);
+    }
+
+    private static ArmorStand pressurePlateEntity(
+        ExtendedGameTestHelper helper,
+        UniversalPlasticEntity tray,
+        MoldedTrayCell cell
+    ) {
+        MoldedPlasticData data = tray.getMoldedData().orElseThrow();
+        AABB bounds = MoldedTrayComponentGeometry.localBounds(data, cell);
+        Vec3 center = bounds.getCenter();
+        Vec3 position = tray.plasticraft$getGeometry().worldPointAt(
+            tray.position(),
+            tray.getOrientation(),
+            new Vec3(center.x, bounds.minY + 1.0D / 64.0D, center.z)
+        );
         ArmorStand stand = new ArmorStand(
             helper.getLevel(),
-            tray.getX(),
-            tray.getY() + 4.25D / 16.0D,
-            tray.getZ()
+            position.x,
+            position.y,
+            position.z
         );
         stand.setNoGravity(true);
         check(helper.getLevel().addFreshEntity(stand), "failed to add pressure plate test entity");

@@ -33,7 +33,12 @@ final class MoldedTrayItemDetectorBehavior implements MoldedTrayRedstoneBehavior
         if (!(runtime.cachedBlockEntity() instanceof ItemDetectorBlockEntity detector)
             || !(runtime.host().level() instanceof ServerLevel level)) return false;
         Direction facing = state.getValue(BlockStateProperties.HORIZONTAL_FACING);
-        AABB range = MoldedTrayRedstoneNetwork.forwardRange(runtime.host(), facing, detector.getRange());
+        AABB range = MoldedTrayRedstoneNetwork.forwardRange(
+            runtime.host(),
+            runtime.cell(),
+            facing,
+            detector.getRange()
+        );
         int output = detectorOutput(level, detector, range);
         boolean changed = output != runtime.detectorOutput();
         runtime.detectorOutput(output);

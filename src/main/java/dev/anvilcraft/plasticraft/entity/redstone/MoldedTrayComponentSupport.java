@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.entity.redstone;
 
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.molding.product.MoldedTrayCell;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponent;
 import dev.dubhe.anvilcraft.block.entity.AdvancedComparatorBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.ItemDetectorBlockEntity;
@@ -41,6 +42,15 @@ public final class MoldedTrayComponentSupport {
         ItemStack source,
         Direction localFacing
     ) {
+        return create(host, MoldedTrayCell.CENTER, source, localFacing);
+    }
+
+    public static MoldedTrayComponent create(
+        UniversalPlasticEntity host,
+        MoldedTrayCell cell,
+        ItemStack source,
+        Direction localFacing
+    ) {
         if (!MoldedTrayComponent.isSupported(source)
             || !(source.getItem() instanceof BlockItem blockItem)
             || localFacing.getAxis() == Direction.Axis.Y) {
@@ -72,8 +82,9 @@ public final class MoldedTrayComponentSupport {
         CompoundTag blockEntityData = new CompoundTag();
         BlockEntity blockEntity = createBlockEntity(
             state,
-            host.plasticraft$getAnchorBlockPos(),
+            MoldedTrayRedstoneNetwork.componentPosition(host, cell),
             host.level(),
+            null,
             null
         );
         if (blockEntity != null) {
@@ -97,19 +108,28 @@ public final class MoldedTrayComponentSupport {
         BlockPos position,
         Level level
     ) {
-        return createBlockEntity(component, position, level, null);
+        return createBlockEntity(component, position, level, null, null);
     }
 
     public static @Nullable BlockEntity createBlockEntity(
         MoldedTrayComponent component,
         UniversalPlasticEntity host
     ) {
+        return createBlockEntity(component, host, MoldedTrayCell.CENTER);
+    }
+
+    public static @Nullable BlockEntity createBlockEntity(
+        MoldedTrayComponent component,
+        UniversalPlasticEntity host,
+        MoldedTrayCell cell
+    ) {
         Objects.requireNonNull(host, "host");
         return createBlockEntity(
             component,
-            host.plasticraft$getAnchorBlockPos(),
+            MoldedTrayRedstoneNetwork.componentPosition(host, cell),
             host.level(),
-            host
+            host,
+            cell
         );
     }
 
@@ -117,9 +137,10 @@ public final class MoldedTrayComponentSupport {
         MoldedTrayComponent component,
         BlockPos position,
         Level level,
-        @Nullable UniversalPlasticEntity host
+        @Nullable UniversalPlasticEntity host,
+        @Nullable MoldedTrayCell cell
     ) {
-        BlockEntity blockEntity = createBlockEntity(component.state(), position, level, host);
+        BlockEntity blockEntity = createBlockEntity(component.state(), position, level, host, cell);
         if (blockEntity == null) return null;
         blockEntity.loadWithComponents(component.blockEntityData(), level.registryAccess());
         blockEntity.setLevel(level);
@@ -166,13 +187,14 @@ public final class MoldedTrayComponentSupport {
         BlockState state,
         BlockPos position,
         Level level,
-        @Nullable UniversalPlasticEntity host
+        @Nullable UniversalPlasticEntity host,
+        @Nullable MoldedTrayCell cell
     ) {
         if (state.is(ModBlocks.PULSE_GENERATOR.get())) {
             return new VirtualPulseGeneratorBlockEntity(position, state);
         }
         if (state.is(ModBlocks.ITEM_DETECTOR.get())) {
-            return new VirtualItemDetectorBlockEntity(position, state, host);
+            return new VirtualItemDetectorBlockEntity(position, state, host, cell);
         }
         if (!(state.getBlock() instanceof EntityBlock entityBlock)) return null;
         return entityBlock.newBlockEntity(position, state);
@@ -200,14 +222,17 @@ public final class MoldedTrayComponentSupport {
 
     private static final class VirtualItemDetectorBlockEntity extends ItemDetectorBlockEntity {
         private final @Nullable UniversalPlasticEntity host;
+        private final @Nullable MoldedTrayCell cell;
 
         private VirtualItemDetectorBlockEntity(
             BlockPos position,
             BlockState state,
-            @Nullable UniversalPlasticEntity host
+            @Nullable UniversalPlasticEntity host,
+            @Nullable MoldedTrayCell cell
         ) {
             super(position, state);
             this.host = host;
+            this.cell = cell;
         }
 
         @Override
@@ -217,11 +242,14 @@ public final class MoldedTrayComponentSupport {
 
         @Override
         public AABB shape() {
-            if (this.host == null || !this.getBlockState().hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
+            if (this.host == null
+                || this.cell == null
+                || !this.getBlockState().hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
                 return super.shape();
             }
             return MoldedTrayRedstoneNetwork.forwardRange(
                 this.host,
+                this.cell,
                 this.getBlockState().getValue(BlockStateProperties.HORIZONTAL_FACING),
                 this.getRange()
             );

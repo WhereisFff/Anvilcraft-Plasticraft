@@ -7,11 +7,15 @@ import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberStructure;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingMachineState;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
+import dev.anvilcraft.plasticraft.block.piston.PlasticPistonOccupancy;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
-import dev.anvilcraft.plasticraft.entity.redstone.MoldedPlasticRedstoneConductor;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesivePathPlanner;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveTransit;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
+import dev.anvilcraft.plasticraft.entity.redstone.MoldedPlasticRedstoneConductor;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
@@ -34,9 +38,12 @@ import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.event.giantanvil.GiantAnvilLandingEventListener;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.nbt.CompoundTag;
@@ -207,6 +214,69 @@ public final class PlasticMoldingProductionGameTests {
         });
     }
 
+    @GameTest(timeoutTicks = 35)
+    @EmptyTemplate(value = "14x8x14", floor = true)
+    @TestHolder(description = "A piston moves every occupied cell of a multi-block plastic entity as one load")
+    static void pistonMovesMultiBlockPlasticEntity(ExtendedGameTestHelper helper) {
+        BlockPos placement = new BlockPos(6, 3, 6);
+        MoldedPlasticData data = fullData(model(
+            "Large Piston Body",
+            cube("Body", 0.0D, 16.0D, 0.0D, 48.0D, 32.0D, 48.0D)
+        ), DyeColor.WHITE);
+        UniversalPlasticEntity plastic = createMoldedProduct(helper, placement, data);
+        List<BlockPos> occupied = PlasticPistonOccupancy.occupiedPositions(plastic);
+        check(occupied.size() > 1, "multi-block piston test product occupied only one cell");
+
+        BlockPos anchor = plastic.plasticraft$getAnchorBlockPos();
+        BlockPos contact = occupied.stream()
+            .filter(pos -> pos.getY() == anchor.getY())
+            .min(Comparator.comparingInt((BlockPos pos) -> pos.getX()).thenComparingInt(pos -> pos.getZ()))
+            .orElseThrow();
+        BlockPos remoteFront = occupied.stream()
+            .filter(pos -> pos.getY() == anchor.getY())
+            .max(Comparator.comparingInt((BlockPos pos) -> pos.getX()).thenComparingInt(pos -> pos.getZ()))
+            .orElseThrow();
+        BlockPos piston = contact.west();
+        BlockPos obstruction = remoteFront.east();
+        helper.getLevel().setBlockAndUpdate(
+            piston,
+            Blocks.PISTON.defaultBlockState().setValue(BlockStateProperties.FACING, Direction.EAST)
+        );
+        helper.getLevel().setBlockAndUpdate(obstruction, Blocks.STONE.defaultBlockState());
+
+        PistonStructureResolver resolver = new PistonStructureResolver(
+            helper.getLevel(),
+            piston,
+            Direction.EAST,
+            true
+        );
+        check(resolver.resolve(), "multi-block plastic entity was rejected by the piston resolver");
+        for (BlockPos occupiedPos : occupied) {
+            check(resolver.getToPush().contains(occupiedPos),
+                "multi-block plastic cell was absent from the push list: " + occupiedPos);
+        }
+        check(resolver.getToPush().contains(obstruction),
+            "multi-block plastic entity did not relay the remote obstruction");
+
+        Vec3 startPosition = plastic.position();
+        helper.getLevel().setBlockAndUpdate(piston.west(), Blocks.REDSTONE_BLOCK.defaultBlockState());
+        helper.runAfterDelay(2, () -> {
+            check(plastic.getX() > startPosition.x + 0.05D,
+                "multi-block plastic entity did not follow the extending piston");
+            helper.runAfterDelay(5, () -> {
+                check(plastic.plasticraft$getAnchorBlockPos().equals(anchor.east()),
+                    "multi-block plastic entity did not finish moving one block");
+                check(helper.getLevel().getBlockState(obstruction.east()).is(Blocks.STONE),
+                    "multi-block plastic entity did not push the remote obstruction");
+                for (BlockPos occupiedPos : occupied) {
+                    check(!helper.getLevel().getBlockState(occupiedPos.east()).is(Blocks.MOVING_PISTON),
+                        "multi-block plastic movement left a virtual moving piston behind");
+                }
+                helper.succeed();
+            });
+        });
+    }
+
     @GameTest(timeoutTicks = 45)
     @EmptyTemplate(value = "9x6x5", floor = true)
     @TestHolder(description = "A sticky piston retracts a plastic entity touching its extended head")
@@ -241,6 +311,60 @@ public final class PlasticMoldingProductionGameTests {
                     helper.succeed();
                 });
             });
+        });
+    }
+
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate(value = "10x6x9", floor = true)
+    @TestHolder(description = "One- and two-tick sticky-piston pulses spit plastic without ghost blocks")
+    static void shortStickyPistonPulsesSpitPlasticWithoutGhostWall(ExtendedGameTestHelper helper) {
+        BlockPos[] pistons = {new BlockPos(1, 2, 2), new BlockPos(1, 2, 6)};
+        BlockPos[] powers = new BlockPos[pistons.length];
+        BlockPos[] occupied = new BlockPos[pistons.length];
+        UniversalPlasticEntity[] plastics = new UniversalPlasticEntity[pistons.length];
+        Vec3[] startPositions = new Vec3[pistons.length];
+        MoldedPlasticData data = fullData(model(
+            "Short Pulse Piston Cube",
+            cube("Body", 16.0D, 0.0D, 16.0D, 32.0D, 16.0D, 32.0D)
+        ), DyeColor.WHITE);
+
+        for (int index = 0; index < pistons.length; index++) {
+            powers[index] = pistons[index].north();
+            occupied[index] = pistons[index].east();
+            helper.setBlock(
+                pistons[index],
+                Blocks.STICKY_PISTON.defaultBlockState().setValue(BlockStateProperties.FACING, Direction.EAST)
+            );
+            plastics[index] = createMoldedProduct(helper, occupied[index], data);
+            startPositions[index] = plastics[index].position();
+            helper.setBlock(powers[index], Blocks.REDSTONE_BLOCK);
+        }
+
+        helper.runAfterDelay(1, () -> {
+            for (int index = 0; index < pistons.length; index++) {
+                check(helper.getBlockState(pistons[index]).getValue(BlockStateProperties.EXTENDED),
+                    "sticky piston did not begin pulse " + (index + 1));
+                check(plastics[index].getX() > startPositions[index].x + 0.05D,
+                    "plastic entity did not begin pulse " + (index + 1));
+                check(!helper.getBlockState(occupied[index].east()).is(Blocks.MOVING_PISTON),
+                    "virtual plastic occupancy became a moving-piston block");
+            }
+            helper.setBlock(powers[0], Blocks.AIR);
+        });
+        helper.runAfterDelay(2, () -> helper.setBlock(powers[1], Blocks.AIR));
+        helper.runAfterDelay(9, () -> {
+            for (int index = 0; index < pistons.length; index++) {
+                check(!helper.getBlockState(pistons[index]).getValue(BlockStateProperties.EXTENDED),
+                    "sticky piston did not finish retracting pulse " + (index + 1));
+                check(plastics[index].plasticraft$getAnchorBlockPos().equals(
+                        helper.absolutePos(occupied[index].east())),
+                    (index + 1) + "-tick pulse pulled the plastic entity back instead of spitting it");
+            }
+            for (BlockPos pos : BlockPos.betweenClosed(new BlockPos(0, 1, 0), new BlockPos(5, 3, 8))) {
+                check(!helper.getBlockState(pos).is(Blocks.MOVING_PISTON),
+                    "short piston pulse left a moving-piston wall at " + pos);
+            }
+            helper.succeed();
         });
     }
 
@@ -341,9 +465,16 @@ public final class PlasticMoldingProductionGameTests {
             cube("Body", 16.0D, 0.0D, 16.0D, 32.0D, 15.0D, 32.0D)
         ), DyeColor.RED));
 
-        helper.setBlock(fullAnchor.west(), Blocks.REDSTONE_BLOCK);
+        BlockState poweredRepeater = Blocks.REPEATER.defaultBlockState()
+            .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.WEST)
+            .setValue(BlockStateProperties.POWERED, true);
+        helper.setBlock(fullAnchor.west().below(), Blocks.STONE);
+        helper.setBlock(fullAnchor.west(), poweredRepeater);
+        helper.setBlock(fullAnchor.west(2), Blocks.REDSTONE_BLOCK);
         helper.setBlock(fullAnchor.east(), Blocks.REDSTONE_LAMP);
-        helper.setBlock(shortAnchor.west(), Blocks.REDSTONE_BLOCK);
+        helper.setBlock(shortAnchor.west().below(), Blocks.STONE);
+        helper.setBlock(shortAnchor.west(), poweredRepeater);
+        helper.setBlock(shortAnchor.west(2), Blocks.REDSTONE_BLOCK);
         helper.setBlock(shortAnchor.east(), Blocks.REDSTONE_LAMP);
         helper.runAfterDelay(3, () -> {
             BlockPos absoluteFullAnchor = helper.absolutePos(fullAnchor);
@@ -355,7 +486,7 @@ public final class PlasticMoldingProductionGameTests {
                         absoluteFullAnchor,
                         Direction.WEST
                     )
-                    + ", source=" + helper.getLevel().getSignal(
+                    + ", source=" + helper.getLevel().getDirectSignal(
                         absoluteFullAnchor.west(),
                         Direction.WEST
                     )
@@ -378,6 +509,186 @@ public final class PlasticMoldingProductionGameTests {
                     "receiver remained powered after the conducted input was removed");
                 helper.succeed();
             });
+        });
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "24x6x11", floor = true)
+    @TestHolder(description = "Full-sized plastic uses exact one-cell ports and vanilla strong-power propagation")
+    static void fullBlockRedstoneDoesNotBridgeGapsOrWeakPower(ExtendedGameTestHelper helper) {
+        MoldedPlasticData fullProductData = fullData(model(
+            "Redstone Port Cube",
+            cube("Body", 16.0D, 0.0D, 16.0D, 32.0D, 16.0D, 32.0D)
+        ), DyeColor.RED);
+        BlockState poweredRepeater = Blocks.REPEATER.defaultBlockState()
+            .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.WEST)
+            .setValue(BlockStateProperties.POWERED, true);
+
+        BlockPos weakAnchor = new BlockPos(4, 2, 2);
+        createMoldedProduct(helper, weakAnchor, fullProductData);
+        helper.setBlock(weakAnchor.west().below(), Blocks.STONE);
+        helper.setBlock(weakAnchor.west(), ModBlocks.REDSTONE_WIRE.get());
+        helper.setBlock(weakAnchor.west(2), Blocks.REDSTONE_BLOCK);
+        helper.setBlock(weakAnchor.east(), Blocks.REDSTONE_LAMP);
+
+        BlockPos inputGapAnchor = new BlockPos(11, 2, 2);
+        createMoldedProduct(helper, inputGapAnchor, fullProductData);
+        BlockPos separatedInput = inputGapAnchor.west(2);
+        helper.setBlock(separatedInput.below(), Blocks.STONE);
+        helper.setBlock(separatedInput, poweredRepeater);
+        helper.setBlock(separatedInput.west(), Blocks.REDSTONE_BLOCK);
+        helper.setBlock(inputGapAnchor.east(), Blocks.REDSTONE_LAMP);
+
+        BlockPos outputGapAnchor = new BlockPos(18, 2, 2);
+        createMoldedProduct(helper, outputGapAnchor, fullProductData);
+        helper.setBlock(outputGapAnchor.west().below(), Blocks.STONE);
+        helper.setBlock(outputGapAnchor.west(), poweredRepeater);
+        helper.setBlock(outputGapAnchor.west(2), Blocks.REDSTONE_BLOCK);
+        helper.setBlock(outputGapAnchor.east(2), Blocks.REDSTONE_LAMP);
+
+        BlockPos dustAnchor = new BlockPos(11, 2, 7);
+        createMoldedProduct(helper, dustAnchor, fullProductData);
+        BlockPos inputDust = dustAnchor.west();
+        BlockPos outputDust = dustAnchor.east();
+        helper.setBlock(inputDust.below(), Blocks.STONE);
+        helper.setBlock(outputDust.below(), Blocks.STONE);
+        helper.setBlock(inputDust, Blocks.REDSTONE_WIRE);
+        helper.setBlock(inputDust.west(), Blocks.REDSTONE_BLOCK);
+        helper.setBlock(outputDust, Blocks.REDSTONE_WIRE);
+        helper.setBlock(dustAnchor.north(), Blocks.REDSTONE_LAMP);
+
+        helper.runAfterDelay(6, () -> {
+            BlockPos absoluteWeakSource = helper.absolutePos(weakAnchor.west());
+            check(helper.getLevel().getSignal(absoluteWeakSource, Direction.WEST) > 0,
+                "AnvilCraft redstone wire had no weak activation output");
+            check(helper.getLevel().getDirectSignal(absoluteWeakSource, Direction.WEST) == 0,
+                "AnvilCraft redstone wire unexpectedly supplied direct strong power");
+            check(!helper.getBlockState(weakAnchor.east()).getValue(BlockStateProperties.LIT),
+                "weak-only source propagated through full-sized plastic");
+            check(!helper.getBlockState(inputGapAnchor.east()).getValue(BlockStateProperties.LIT),
+                "full-sized plastic read a source across an empty input cell");
+            check(!helper.getBlockState(outputGapAnchor.east(2)).getValue(BlockStateProperties.LIT),
+                "full-sized plastic powered a receiver across an empty output cell");
+            check(helper.getBlockState(inputDust).getValue(BlockStateProperties.POWER) > 0,
+                "input redstone dust was not powered for the propagation test");
+            check(helper.getBlockState(dustAnchor.north()).getValue(BlockStateProperties.LIT),
+                "redstone dust did not activate an ordinary component through full-sized plastic");
+            check(helper.getBlockState(outputDust).getValue(BlockStateProperties.POWER) == 0,
+                "redstone dust propagated through full-sized plastic into redstone dust");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "15x9x13", floor = true)
+    @TestHolder(description = "Adhesive placement centers the complete model face instead of its outermost cube")
+    static void adhesivePlacementCentersCompleteModelFace(ExtendedGameTestHelper helper) {
+        MoldedPlasticData data = fullData(model(
+            "Asymmetric Foot",
+            cube("Corner foot", 0.0D, 0.0D, 0.0D, 8.0D, 4.0D, 8.0D),
+            cube("Wide body", 0.0D, 4.0D, 0.0D, 48.0D, 20.0D, 48.0D)
+        ), DyeColor.WHITE);
+        UniversalPlasticEntity plastic = createMoldedProduct(helper, new BlockPos(3, 5, 6), data);
+        BlockPos support = new BlockPos(11, 1, 6);
+        helper.setBlock(support, Blocks.STONE);
+
+        AdhesivePathPlanner.Plan plan = AdhesivePathPlanner.plan(
+            helper.getLevel(),
+            plastic,
+            helper.makeMockPlayer(GameType.SURVIVAL),
+            helper.absolutePos(support),
+            Direction.UP,
+            Direction.DOWN
+        );
+        check(plan.valid(), "whole-face adhesive alignment produced no path: " + plan.status());
+        check(plan.targetOrientation() != null
+                && plan.targetOrientation().worldDirection(Direction.DOWN) == Direction.DOWN,
+            "whole-face adhesive alignment produced the wrong target orientation");
+        AABB targetBounds = plastic.plasticraft$getGeometry()
+            .collisionBoxAt(plan.targetPosition(), plan.targetOrientation())
+            .bounds();
+        Vec3 actualFaceCenter = new Vec3(
+            (targetBounds.minX + targetBounds.maxX) * 0.5D,
+            targetBounds.minY,
+            (targetBounds.minZ + targetBounds.maxZ) * 0.5D
+        );
+        Vec3 expectedFaceCenter = Vec3.atCenterOf(helper.absolutePos(support)).add(0.0D, 0.5D, 0.0D);
+        check(actualFaceCenter.distanceToSqr(expectedFaceCenter) < EPSILON,
+            "adhesive placement centered the corner foot instead of the complete model face: actual="
+                + actualFaceCenter + ", expected=" + expectedFaceCenter);
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "15x10x13", floor = true)
+    @TestHolder(description = "A sideways wide model can rotate onto a clear upright ground target")
+    static void adhesivePathAllowsClearTargetOrientationAtGround(ExtendedGameTestHelper helper) {
+        MoldedPlasticData data = fullData(model(
+            "Wide Slab",
+            cube("Body", 0.0D, 0.0D, 0.0D, 48.0D, 8.0D, 48.0D)
+        ), DyeColor.LIGHT_BLUE);
+        UniversalPlasticEntity plastic = createMoldedProduct(helper, new BlockPos(3, 6, 6), data);
+        PlasticEntityOrientation sideways = new PlasticEntityOrientation(Direction.EAST, 0);
+        plastic.setOrientation(sideways);
+        plastic.setPos(data.geometry().placementPosition(helper.absolutePos(new BlockPos(3, 6, 6)), sideways));
+        BlockPos support = new BlockPos(11, 1, 6);
+        helper.setBlock(support, Blocks.STONE);
+
+        AdhesivePathPlanner.Plan plan = AdhesivePathPlanner.plan(
+            helper.getLevel(),
+            plastic,
+            helper.makeMockPlayer(GameType.SURVIVAL),
+            helper.absolutePos(support),
+            Direction.UP,
+            Direction.DOWN
+        );
+        check(plan.targetOrientation() != null
+                && plan.targetOrientation().worldDirection(Direction.DOWN) == Direction.DOWN,
+            "sideways model did not receive an upright target orientation");
+        boolean startOrientationBlocked = plastic.plasticraft$getGeometry()
+            .collisionBoxAt(plan.targetPosition(), sideways)
+            .shape()
+            .toAabbs()
+            .stream()
+            .map(box -> box.deflate(0.002D))
+            .anyMatch(box -> !helper.getLevel().noBlockCollision(plastic, box));
+        boolean targetOrientationClear = plastic.plasticraft$getGeometry()
+            .collisionBoxAt(plan.targetPosition(), plan.targetOrientation())
+            .shape()
+            .toAabbs()
+            .stream()
+            .map(box -> box.deflate(0.002D))
+            .allMatch(box -> helper.getLevel().noBlockCollision(plastic, box));
+        check(startOrientationBlocked, "sideways regression fixture also fit at the upright endpoint");
+        check(targetOrientationClear, "upright regression fixture actually collided at the endpoint");
+        check(plan.valid(), "clear upright endpoint was rejected by the sideways route: " + plan.status());
+
+        AdhesiveTransit transit = new AdhesiveTransit(
+            helper.absolutePos(support),
+            Direction.UP,
+            BuiltInRegistries.BLOCK.getKey(Blocks.STONE),
+            plan.sourceFace(),
+            Optional.empty(),
+            -1,
+            Vec3.ZERO,
+            plan.points(),
+            helper.getLevel().getGameTime(),
+            10,
+            plastic.isNoGravity(),
+            true,
+            sideways.pack(),
+            plan.targetOrientation().pack()
+        );
+        plastic.setData(PlasticraftAttachments.ADHESIVE_TRANSIT, transit);
+        plastic.setNoGravity(true);
+        helper.runAfterDelay(13, () -> {
+            BlockPos occupied = support.above();
+            check(helper.getBlockState(occupied).is(PlasticraftBlocks.UNIVERSAL_PLASTIC.get()),
+                "sideways model canceled instead of completing its upright transit");
+            check(helper.getBlockEntity(occupied) instanceof BondedEntityBlockEntity bonded
+                    && bonded.getPlasticOrientation().equals(plan.targetOrientation()),
+                "completed upright transit lost its target orientation");
+            helper.succeed();
         });
     }
 

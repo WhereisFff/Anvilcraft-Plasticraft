@@ -78,12 +78,13 @@ final class MoldedTrayPressurePlateSupport {
         return state.getBlock() instanceof WeightedPressurePlateBlock ? 10 : 20;
     }
 
-    static int expectedSignal(UniversalPlasticEntity host, BlockState state, BlockEntity blockEntity) {
+    static int expectedSignal(MoldedTrayRedstoneRuntime runtime, BlockState state, BlockEntity blockEntity) {
+        UniversalPlasticEntity host = runtime.host();
         if (state.getBlock() instanceof TimeCountedPressurePlateBlock timePlate
             && blockEntity instanceof TimeCountedPressurePlateBlockEntity timeCounter) {
-            return tickTimeCounted(host, timePlate, timeCounter);
+            return tickTimeCounted(runtime, timePlate, timeCounter);
         }
-        AABB bounds = sensitiveBounds(host, false);
+        AABB bounds = sensitiveBounds(runtime, false);
         Block block = state.getBlock();
         if (block == Blocks.LIGHT_WEIGHTED_PRESSURE_PLATE) {
             return weightedSignal(entityCount(host, bounds, Entity.class, MoldedTrayPressurePlateSupport::canTrigger), 15);
@@ -105,11 +106,12 @@ final class MoldedTrayPressurePlateSupport {
     }
 
     private static int tickTimeCounted(
-        UniversalPlasticEntity host,
+        MoldedTrayRedstoneRuntime runtime,
         TimeCountedPressurePlateBlock plate,
         TimeCountedPressurePlateBlockEntity counter
     ) {
-        AABB bounds = sensitiveBounds(host, true);
+        UniversalPlasticEntity host = runtime.host();
+        AABB bounds = sensitiveBounds(runtime, true);
         boolean occupied = !host.level().getEntitiesOfClass(
             LivingEntity.class,
             bounds,
@@ -255,9 +257,10 @@ final class MoldedTrayPressurePlateSupport {
         );
     }
 
-    private static AABB sensitiveBounds(UniversalPlasticEntity host, boolean fullCube) {
+    private static AABB sensitiveBounds(MoldedTrayRedstoneRuntime runtime, boolean fullCube) {
+        UniversalPlasticEntity host = runtime.host();
         MoldedPlasticData data = host.getMoldedData().orElseThrow();
-        AABB component = MoldedTrayComponentGeometry.localBounds(data);
+        AABB component = MoldedTrayComponentGeometry.localBounds(data, runtime.cell());
         AABB local = fullCube ? component : new AABB(
             component.minX + TOUCH_INSET,
             component.minY,

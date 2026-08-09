@@ -16,7 +16,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /** 塑料实体的物理形状、交互轮廓与坐标约定。 */
 public final class PlasticEntityGeometry {
-    private static final double SURFACE_EPSILON = 1.0E-7D;
 
     public static final Vec3 UNIT_CUBE_PIVOT = new Vec3(0.5D, 0.5D, 0.5D);
     public static final Vec3 UNIT_CUBE_ENTITY_ORIGIN = new Vec3(0.5D, 0.0D, 0.5D);
@@ -139,7 +138,7 @@ public final class PlasticEntityGeometry {
         return this.entityOrigin;
     }
 
-    /** 返回局部面的最外层真实表面中心；无物理体时回退到交互轮廓。 */
+    /** 返回局部方向上整个物理外接面的中心；无物理体时回退到交互轮廓。 */
     public Vec3 surfaceCenter(Direction localFace) {
         Objects.requireNonNull(localFace, "localFace");
         return this.surfaceCenters.computeIfAbsent(localFace, this::createSurfaceCenter);
@@ -169,6 +168,27 @@ public final class PlasticEntityGeometry {
         Objects.requireNonNull(orientation, "orientation");
         Vec3 rotated = rotatePoint(requireFinite(localPoint, "localPoint"), orientation, this.rotationPivot);
         return requireFinite(entityPosition, "entityPosition").add(rotated.subtract(this.entityOrigin));
+    }
+
+    /** 将世界坐标逆变换为模型局部坐标。 */
+    public Vec3 localPointAt(
+        Vec3 entityPosition,
+        PlasticEntityOrientation orientation,
+        Vec3 worldPoint
+    ) {
+        Objects.requireNonNull(orientation, "orientation");
+        Vec3 rotated = requireFinite(worldPoint, "worldPoint")
+            .subtract(requireFinite(entityPosition, "entityPosition"))
+            .add(this.entityOrigin);
+        Vec3 offset = rotated.subtract(this.rotationPivot);
+        Direction xAxis = orientation.orthogonalAxis();
+        Direction yAxis = orientation.attachmentFace();
+        Direction zAxis = orientation.longAxis();
+        return this.rotationPivot.add(
+            componentAlong(offset, xAxis),
+            componentAlong(offset, yAxis),
+            componentAlong(offset, zAxis)
+        );
     }
 
     /** 返回真实外层平面与旋转枢轴中心线的交点，供胶合时在切向上对齐整个实体。 */
@@ -238,9 +258,27 @@ public final class PlasticEntityGeometry {
         return this.collisionBoxAt(position, orientation).shape();
     }
 
+    /** 返回让指定局部面贴合原点方块单元后的局部物理形状。 */
+    public VoxelShape placedCollisionShape(
+        PlasticEntityOrientation orientation,
+        Direction localFace
+    ) {
+        Vec3 position = this.placementPosition(BlockPos.ZERO, orientation, localFace);
+        return this.collisionBoxAt(position, orientation).shape();
+    }
+
     /** 返回按指定朝向贴合原点方块单元后的局部交互轮廓。 */
     public VoxelShape placedInteractionShape(PlasticEntityOrientation orientation) {
         Vec3 position = this.placementPosition(BlockPos.ZERO, orientation);
+        return this.interactionShapeAt(position, orientation);
+    }
+
+    /** 返回让指定局部面贴合原点方块单元后的局部交互轮廓。 */
+    public VoxelShape placedInteractionShape(
+        PlasticEntityOrientation orientation,
+        Direction localFace
+    ) {
+        Vec3 position = this.placementPosition(BlockPos.ZERO, orientation, localFace);
         return this.interactionShapeAt(position, orientation);
     }
 
@@ -275,6 +313,28 @@ public final class PlasticEntityGeometry {
             attachmentFace
         );
         return this.entityOrigin.add(translationX, translationY, translationZ);
+    }
+
+    /**
+     * 将指定局部方向上整个物理外接面的中心贴到方块单元对应面的中心。
+     * 不能只取到达最外层平面的局部 Cube，否则不对称模型会在目标面上产生切向漂移。
+     */
+    public Vec3 placementPosition(
+        BlockPos occupiedPos,
+        PlasticEntityOrientation orientation,
+        Direction localFace
+    ) {
+        Objects.requireNonNull(occupiedPos, "occupiedPos");
+        PlasticEntityOrientation targetOrientation = Objects.requireNonNull(orientation, "orientation");
+        Direction targetWorldFace = targetOrientation.worldDirection(
+            Objects.requireNonNull(localFace, "localFace")
+        );
+        Vec3 targetFaceCenter = Vec3.atCenterOf(occupiedPos).add(
+            targetWorldFace.getStepX() * 0.5D,
+            targetWorldFace.getStepY() * 0.5D,
+            targetWorldFace.getStepZ() * 0.5D
+        );
+        return targetFaceCenter.subtract(this.surfaceOffset(targetOrientation, localFace));
     }
 
     /** 返回模型旋转枢轴在世界中的位置。 */
@@ -315,13 +375,7 @@ public final class PlasticEntityGeometry {
             : this.collisionShape;
         AABB bounds = surfaceShape.bounds();
         double plane = faceCoordinate(bounds, localFace);
-        AABB surfaceBounds = null;
-        for (AABB component : surfaceShape.toAabbs()) {
-            if (Math.abs(faceCoordinate(component, localFace) - plane) > SURFACE_EPSILON) continue;
-            surfaceBounds = surfaceBounds == null ? component : surfaceBounds.minmax(component);
-        }
-        AABB selected = Objects.requireNonNull(surfaceBounds, "surface bounds");
-        Vec3 center = selected.getCenter();
+        Vec3 center = bounds.getCenter();
         return switch (localFace.getAxis()) {
             case X -> new Vec3(plane, center.y, center.z);
             case Y -> new Vec3(center.x, plane, center.z);
@@ -343,6 +397,12 @@ public final class PlasticEntityGeometry {
             local.x * xAxis.getStepY() + local.y * yAxis.getStepY() + local.z * zAxis.getStepY(),
             local.x * xAxis.getStepZ() + local.y * yAxis.getStepZ() + local.z * zAxis.getStepZ()
         );
+    }
+
+    private static double componentAlong(Vec3 vector, Direction direction) {
+        return vector.x * direction.getStepX()
+            + vector.y * direction.getStepY()
+            + vector.z * direction.getStepZ();
     }
 
     private static double faceCoordinate(AABB box, Direction face) {

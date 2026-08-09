@@ -83,6 +83,7 @@ import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 import net.neoforged.testframework.gametest.GameTestPlayer;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 /** 高粘性树脂桶固定实体的服务端行为测试。 */
@@ -1119,10 +1120,10 @@ public final class AdhesiveBondingGameTests {
             "rotating universal plastic entity bond failed"
         );
 
-        helper.runAfterDelay(8, () -> {
+        helper.runAfterDelay(14, () -> {
             check(
                 selected.getOrientation().attachmentFace() == Direction.WEST,
-                "selected universal plastic did not rotate during transit"
+                "selected universal plastic did not rotate at the transit endpoint"
             );
             check(
                 follower.getOrientation().attachmentFace() == Direction.WEST,
@@ -1148,6 +1149,8 @@ public final class AdhesiveBondingGameTests {
         Vec3 targetPosition = helper.absoluteVec(new Vec3(6.5D, 3.0D, 4.5D));
         PlasticEntityOrientation targetOrientation = new PlasticEntityOrientation(Direction.WEST, 1);
         helper.setBlock(5, 2, 4, Blocks.STONE);
+        BlockPos support = new BlockPos(7, 3, 4);
+        helper.setBlock(support, Blocks.STONE);
         AdhesivePathPlanner.Plan unrotatedPlan = new AdhesivePathPlanner.Plan(
             AdhesivePathPlanner.Status.VALID,
             List.of(moving.position(), targetPosition),
@@ -1179,6 +1182,30 @@ public final class AdhesiveBondingGameTests {
             AdhesiveGroupTransform.isPlanClear(helper.getLevel(), moving, rotatingPlan),
             "route-only rotation collision rejected the target position"
         );
+        PlasticEntityOrientation startOrientation = moving.getOrientation();
+        long gameTime = helper.getLevel().getGameTime();
+        AdhesiveTransit transit = new AdhesiveTransit(
+            helper.absolutePos(support),
+            Direction.WEST,
+            BuiltInRegistries.BLOCK.getKey(Blocks.STONE),
+            Direction.DOWN,
+            Optional.empty(),
+            -1,
+            Vec3.ZERO,
+            List.of(moving.position(), targetPosition),
+            gameTime - 8,
+            10,
+            true,
+            true,
+            startOrientation.pack(),
+            targetOrientation.pack()
+        );
+        moving.setData(PlasticraftAttachments.ADHESIVE_TRANSIT, transit);
+        AdhesiveBondingService.tickAdhesiveTransit(moving, true);
+        check(moving.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT),
+            "visual rotation switched physical collision early and canceled the transit");
+        check(moving.getOrientation().equals(startOrientation),
+            "physical collision changed orientation before the adhesive endpoint");
         helper.succeed();
     }
 
@@ -1230,7 +1257,7 @@ public final class AdhesiveBondingGameTests {
             "mixed group rotation transit failed"
         );
 
-        helper.runAfterDelay(8, () -> {
+        helper.runAfterDelay(14, () -> {
             check(
                 selected.getOrientation().attachmentFace() == Direction.WEST
                     && follower.getOrientation().attachmentFace() == Direction.WEST,
@@ -1947,10 +1974,19 @@ public final class AdhesiveBondingGameTests {
         ), "mixed-group plastic entity could not start bonding");
 
         helper.runAfterDelay(14, () -> {
+            AdhesiveTransit remainingTransit = anvil.getExistingDataOrNull(
+                PlasticraftAttachments.ADHESIVE_TRANSIT.get()
+            );
             check(
                 helper.getBlockState(occupied).is(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get())
                     && helper.getBlockState(occupied).getValue(AbstractPlasticEntityBlock.BONDED),
-                "mixed-group plastic entity did not blockify"
+                "mixed-group plastic entity did not blockify: state=" + helper.getBlockState(occupied)
+                    + ", anvilPosition=" + anvil.position()
+                    + ", anvilOrientation=" + anvil.getOrientation()
+                    + ", anvilAlive=" + anvil.isAlive()
+                    + ", transit=" + remainingTransit
+                    + ", passengerPosition=" + passenger.position()
+                    + ", passengerBonds=" + EntityBondManager.hasBonds(passenger)
             );
             check(bondedBlockEntity(helper, occupied).isInitialized(), "mixed-group plastic block was not initialized");
             check(!EntityBondManager.hasBonds(passenger), "ordinary entity remained bonded after plastic blockification");
@@ -2385,8 +2421,8 @@ public final class AdhesiveBondingGameTests {
             );
             check(!anvil.isRemoved(), "plastic anvil did not retain its blockification handoff frame");
             check(
-                anvil.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT),
-                "plastic anvil lost its transit ghost before the fixed block appeared"
+                !anvil.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT),
+                "plastic anvil retained adhesive transit after the fixed block appeared"
             );
 
             helper.runAfterDelay(1, () -> {

@@ -59,7 +59,8 @@ public record MoldedPlasticData(
     List<MoldingConvexHull> collisionHulls,
     boolean limitOverride
 ) {
-    public static final int CURRENT_FORMAT_VERSION = 4;
+    public static final int CURRENT_FORMAT_VERSION = 5;
+    private static final int SINGLE_TRAY_COMPONENT_FORMAT_VERSION = 4;
     public static final int MAX_SURFACE_QUADS = MoldedPlasticSurfaceAdapter.MAX_SURFACES;
     public static final int MAX_COLLISION_HULLS = EditableMoldingModel.MAX_ELEMENTS;
     private static final int DERIVED_CACHE_LIMIT = 128;
@@ -73,6 +74,11 @@ public record MoldedPlasticData(
         PlasticEntityOrientation::unpack,
         orientation -> Byte.toUnsignedInt(orientation.pack())
     );
+    // 格式 4 与格式 5 的持久化结构可定向迁移，网络流仍只接受当前格式。
+    private static final Codec<Integer> FORMAT_VERSION_CODEC = Codec.intRange(
+        SINGLE_TRAY_COMPONENT_FORMAT_VERSION,
+        CURRENT_FORMAT_VERSION
+    ).xmap(ignored -> CURRENT_FORMAT_VERSION, version -> version);
     private static final Codec<List<MoldingConvexHull>> COLLISION_HULLS_CODEC = MoldingConvexHull.CODEC.listOf()
         .validate(hulls -> hulls.size() <= MAX_COLLISION_HULLS
             ? DataResult.success(hulls)
@@ -98,7 +104,7 @@ public record MoldedPlasticData(
         }
     };
     public static final Codec<MoldedPlasticData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
-        Codec.INT.fieldOf("format_version").forGetter(MoldedPlasticData::formatVersion),
+        FORMAT_VERSION_CODEC.fieldOf("format_version").forGetter(MoldedPlasticData::formatVersion),
         Codec.STRING.fieldOf("model_hash").forGetter(MoldedPlasticData::modelHash),
         MoldingVolumeMask.CODEC.fieldOf("volume").forGetter(MoldedPlasticData::volumeMask),
         MoldingVolumeMask.CODEC.fieldOf("cavities").forGetter(MoldedPlasticData::cavityMask),
@@ -163,7 +169,7 @@ public record MoldedPlasticData(
                 }
             }
             case ITEMS -> {
-                if (!contents.fluids().isEmpty() || contents.trayComponent().isPresent()) {
+                if (!contents.fluids().isEmpty() || !contents.trayComponents().isEmpty()) {
                     throw new IllegalArgumentException("Molded chest cannot carry fluids");
                 }
                 if (contents.items().stream().anyMatch(item -> item.slot() >= capacity)) {
@@ -171,7 +177,7 @@ public record MoldedPlasticData(
                 }
             }
             case FLUIDS -> {
-                if (!contents.items().isEmpty() || contents.trayComponent().isPresent()) {
+                if (!contents.items().isEmpty() || !contents.trayComponents().isEmpty()) {
                     throw new IllegalArgumentException("Molded tank cannot carry items");
                 }
                 long fluidAmount = contents.fluids().stream()
@@ -184,6 +190,12 @@ public record MoldedPlasticData(
             case TRAY -> {
                 if (capacity != 0 || !contents.items().isEmpty() || !contents.fluids().isEmpty()) {
                     throw new IllegalArgumentException("Molded tray can only carry its redstone component");
+                }
+                int supportedCells = MoldingTrayShapeAnalyzer.supportedCellMask(volumeMask);
+                if (contents.trayComponents().stream()
+                    .map(MoldedTrayComponentPlacement::cell)
+                    .anyMatch(cell -> (supportedCells & cell.bit()) == 0)) {
+                    throw new IllegalArgumentException("Molded tray component cell has no plastic support");
                 }
             }
         }
@@ -341,6 +353,26 @@ public record MoldedPlasticData(
             this.finalType,
             this.capacity,
             replacement,
+            this.name,
+            this.rotationPivot,
+            this.entityOrigin,
+            this.orientation,
+            this.collisionHulls,
+            this.limitOverride
+        );
+    }
+
+    public MoldedPlasticData withMaterial(FluidStack replacement) {
+        return new MoldedPlasticData(
+            this.formatVersion,
+            this.modelHash,
+            this.volumeMask,
+            this.cavityMask,
+            this.surfaceMesh,
+            replacement,
+            this.finalType,
+            this.capacity,
+            this.contents,
             this.name,
             this.rotationPivot,
             this.entityOrigin,

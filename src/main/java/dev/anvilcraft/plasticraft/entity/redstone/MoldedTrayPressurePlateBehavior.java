@@ -27,7 +27,7 @@ final class MoldedTrayPressurePlateBehavior implements MoldedTrayRedstoneBehavio
             if (runtime.remainingTicks() > 0) return false;
         }
         int expected = MoldedTrayPressurePlateSupport.expectedSignal(
-            runtime.host(),
+            runtime,
             state,
             runtime.cachedBlockEntity()
         );
@@ -67,7 +67,7 @@ final class MoldedTrayPressurePlateBehavior implements MoldedTrayRedstoneBehavio
             || state.is(Blocks.POLISHED_BLACKSTONE_PRESSURE_PLATE);
         runtime.host().level().playSound(
             null,
-            runtime.host().blockPosition(),
+            MoldedTrayRedstoneNetwork.componentPosition(runtime.host(), runtime.cell()),
             wooden
                 ? powered ? SoundEvents.WOODEN_PRESSURE_PLATE_CLICK_ON : SoundEvents.WOODEN_PRESSURE_PLATE_CLICK_OFF
                 : stone

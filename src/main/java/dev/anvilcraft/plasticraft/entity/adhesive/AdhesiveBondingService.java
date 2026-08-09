@@ -603,23 +603,52 @@ public final class AdhesiveBondingService {
         double rawProgress = transit.rawProgress(entity.level().getGameTime(), 0.0F);
         double movementProgress = transit.easedProgress(entity.level().getGameTime(), 0.0F);
         Vec3 position = transit.positionAt(movementProgress, supportEntity);
-        byte orientation = transit.plastic() && rawProgress >= 0.72D
+        boolean reachesEndpoint = validateAndComplete
+            && !entity.level().isClientSide
+            && rawProgress >= 1.0D;
+        if (reachesEndpoint && transit.plastic()) {
+            TRANSIT_VALIDATIONS.remove(entity);
+            PlasticEntityOrientation targetOrientation = PlasticEntityOrientation.unpack(
+                transit.targetOrientation()
+            );
+            AdhesiveGroupTransform.Projection targetProjection = AdhesiveGroupTransform.project(
+                entity,
+                position,
+                targetOrientation
+            );
+            if (!AdhesiveGroupTransform.isProjectionClearOfBlocksAtFinalContact(
+                entity.level(),
+                targetProjection
+            )) {
+                cancelTransit(entity, transit);
+                return;
+            }
+            applyTransitProjection(entity, position, transit.targetOrientation());
+            completeTransit(entity, transit, supportEntity);
+            return;
+        }
+        byte orientation = transit.plastic()
+            && entity instanceof AbstractPlasticEntity plasticEntity
+            && plasticEntity.getOrientation().pack() == transit.targetOrientation()
             ? transit.targetOrientation()
             : transit.startOrientation();
         if (!applyTransitProjectionSafely(entity, transit, position, movementProgress, supportEntity, orientation)) return;
         if (validateAndComplete && !entity.level().isClientSide && rawProgress < 1.0D) {
+            byte appliedOrientation = entity instanceof AbstractPlasticEntity plasticEntity
+                ? plasticEntity.getOrientation().pack()
+                : orientation;
             TRANSIT_VALIDATIONS.put(
                 entity,
                 new TransitValidation(
                     transit,
                     entity.level().getGameTime(),
                     supportEntity == null ? Vec3.ZERO : supportEntity.position(),
-                    position,
-                    orientation
+                    entity.position(),
+                    appliedOrientation
                 )
             );
         }
-        if (validateAndComplete && !entity.level().isClientSide && rawProgress >= 1.0D) {
+        if (reachesEndpoint) {
             TRANSIT_VALIDATIONS.remove(entity);
             completeTransit(entity, transit, supportEntity);
         }
@@ -665,6 +694,20 @@ public final class AdhesiveBondingService {
         if (!advance.blocked()) {
             applyTransitProjection(entity, desiredPosition, orientation);
             return true;
+        }
+        if (transit.plastic() && orientation != transit.targetOrientation()) {
+            TransitAdvance rotatedAdvance = findTransitAdvance(
+                entity,
+                transit,
+                desiredPosition,
+                desiredProgress,
+                supportEntity,
+                transit.targetOrientation()
+            );
+            if (!rotatedAdvance.blocked()) {
+                applyTransitProjection(entity, desiredPosition, transit.targetOrientation());
+                return true;
+            }
         }
         byte stopOrientation = isTransitProjectionClear(entity, advance.position(), transit.startOrientation())
             ? transit.startOrientation()
@@ -941,8 +984,7 @@ public final class AdhesiveBondingService {
                 cancelTransit(entity, transit);
                 return;
             }
-            entity.getPersistentData().putLong(TAG_BLOCKIFICATION_HANDOFF, level.getGameTime());
-            holdAtTransitTarget(entity, transit);
+            markBlockificationHandoff(entity);
             level.playSound(
                 null,
                 transit.supportPos(),
@@ -962,6 +1004,7 @@ public final class AdhesiveBondingService {
                 transit.supportPos(),
                 transit.attachmentFace(),
                 PlasticEntityOrientation.unpack(transit.targetOrientation()),
+                transit.sourceFace(),
                 transit.originalNoGravity()
             )
             : blockifies
@@ -979,8 +1022,7 @@ public final class AdhesiveBondingService {
 
         if (blockifies) {
             // 先让目标方块同步一整刻，再移除实体，避免客户端在两种渲染之间出现空帧。
-            entity.getPersistentData().putLong(TAG_BLOCKIFICATION_HANDOFF, level.getGameTime());
-            holdAtTransitTarget(entity, transit);
+            markBlockificationHandoff(entity);
         }
 
         level.playSound(
@@ -1033,9 +1075,24 @@ public final class AdhesiveBondingService {
 
     static void markBlockificationHandoff(Entity entity) {
         if (!(entity.level() instanceof ServerLevel level)) return;
-        entity.removeData(PlasticraftAttachments.ADHESIVE_TRANSIT);
+        onBlockified(entity);
         entity.getPersistentData().putLong(TAG_BLOCKIFICATION_HANDOFF, level.getGameTime());
         holdAtCurrentPosition(entity);
+    }
+
+    static void onBlockified(Entity entity) {
+        if (!entity.level().isClientSide) TRANSIT_VALIDATIONS.remove(entity);
+        if (entity.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)) {
+            entity.removeData(PlasticraftAttachments.ADHESIVE_TRANSIT);
+        }
+    }
+
+    public static void onEntityRemoved(Entity entity) {
+        onBlockified(entity);
+        entity.getPersistentData().remove(TAG_BLOCKIFICATION_HANDOFF);
+        if (entity.level() instanceof ServerLevel level && EntityBondManager.hasBonds(entity)) {
+            EntityBondManager.disconnectEntity(level, entity);
+        }
     }
 
     private static void holdAtCurrentPosition(Entity entity) {
@@ -1240,6 +1297,7 @@ public final class AdhesiveBondingService {
         BlockPos supportPos,
         Direction attachmentFace,
         PlasticEntityOrientation orientation,
+        Direction localFace,
         boolean originalNoGravity
     ) {
         BlockPos occupiedPos = supportPos.relative(attachmentFace);
@@ -1254,7 +1312,7 @@ public final class AdhesiveBondingService {
         for (Entity member : EntityBondManager.component(level, entity)) {
             ignoredEntities.add(member.getUUID());
         }
-        Vec3 targetPosition = entity.plasticraft$placementPosition(occupiedPos, orientation);
+        Vec3 targetPosition = entity.plasticraft$placementPosition(occupiedPos, orientation, localFace);
         VoxelShape targetCollision = entity.plasticraft$getGeometry()
             .collisionBoxAt(targetPosition, orientation)
             .shape();
@@ -1365,6 +1423,7 @@ public final class AdhesiveBondingService {
                 supportPos,
                 attachmentFace,
                 plasticEntity.getOrientation(),
+                plasticEntity.getOrientation().localDirection(attachmentFace.getOpposite()),
                 plasticEntity.isNoGravity()
             );
             case FallingBlockEntity fallingBlock -> bonded = bondFallingBlock(level, fallingBlock, supportPos, attachmentFace);

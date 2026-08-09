@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.init.item;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.item.UniversalPlasticItemStacks;
 import dev.dubhe.anvilcraft.init.item.ModItemGroups;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -33,6 +34,7 @@ public final class PlasticraftItemGroups {
                 output.accept(PlasticraftItems.CRUDE_OIL_ACID_BUCKET.get());
                 output.accept(PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.get());
                 output.accept(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get());
+                output.accept(UniversalPlasticItemStacks.fullBlock());
                 output.accept(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem());
                 output.accept(PlasticraftBlocks.CONDENSER_TOWER.asItem());
                 output.accept(PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.asItem());

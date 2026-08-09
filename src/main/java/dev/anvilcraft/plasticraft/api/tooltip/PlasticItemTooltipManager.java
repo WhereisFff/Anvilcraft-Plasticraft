@@ -2,7 +2,6 @@ package dev.anvilcraft.plasticraft.api.tooltip;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.entity.collision.BuiltInPlasticEntityModels;
-import dev.anvilcraft.plasticraft.entity.redstone.MoldedPlasticRedstoneConductor;
 import dev.anvilcraft.plasticraft.item.AbstractPlasticEntityItem;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
@@ -54,11 +53,13 @@ public final class PlasticItemTooltipManager {
             """
                 Right-click an entity, then a block or another entity to bond them
                 Moving selections use their selected position; movement over 2 blocks or lasting 2 seconds refreshes the route
+                Endpoints align the selected face to the target face; fixed 4 px checker cells tile the complete selected face
                 Unanchored bonded groups move together under knockback; block-anchored groups rebound together
                 A moving white dashed line means the server is still searching
                 The colored solid line shows the server result; bondable routes match the later white transit trail
                 Green and yellow can bond; red cannot
                 Valid endpoint models use the standard pale-blue overlay; rejected endpoints use pale red
+                Route collision and endpoint previews include every member's model and mounted tray components
                 Splash or lingering Invisibility potions permanently hide adhesive without weakening its bond"""
         );
         register(
@@ -263,10 +264,6 @@ public final class PlasticItemTooltipManager {
             MoldingModelBounds.formatBlocks(bounds.getYsize()),
             MoldingModelBounds.formatBlocks(bounds.getZsize())
         ).withStyle(ChatFormatting.GRAY));
-        if (MoldedPlasticRedstoneConductor.isFullBlockSized(bounds)) {
-            tooltip.add(Component.translatable("tooltip.anvilcraftplasticraft.redstone_conductor")
-                .withStyle(ChatFormatting.RED));
-        }
     }
 
     private static void addMoldedProductTooltip(ItemStack stack, List<Component> tooltip) {

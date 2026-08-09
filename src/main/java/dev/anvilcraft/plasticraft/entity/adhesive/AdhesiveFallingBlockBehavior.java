@@ -76,6 +76,7 @@ public final class AdhesiveFallingBlockBehavior {
     }
 
     public static void afterLanding(ServerLevel level, FallingBlockEntity fallingBlock, BlockPos placedPos) {
+        AdhesiveBondingService.onBlockified(fallingBlock);
         if (fallingBlock instanceof AbstractPlasticEntity || fallingBlock instanceof FallingGiantAnvilEntity) return;
         EntityBondState state = EntityBondManager.get(fallingBlock);
         if (state == null) return;

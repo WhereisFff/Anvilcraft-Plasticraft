@@ -9,7 +9,7 @@ import net.minecraft.world.item.Item;
  *
  * <p>默认栈显式记录白色，使村民交易可以用组件谓词准确要求白色塑料粒。</p>
  */
-public class UniversalPlasticGranuleItem extends Item {
+public class UniversalPlasticGranuleItem extends Item implements CreativeColorVariantItem {
     public UniversalPlasticGranuleItem(Properties properties) {
         super(properties.component(
             DataComponents.CUSTOM_DATA,

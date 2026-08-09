@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.item;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberStructure;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -60,6 +61,6 @@ public class PlasticMoldingChamberItem extends BlockItem {
         TooltipFlag flag
     ) {
         super.appendHoverText(stack, context, tooltip, flag);
-        tooltip.add(Component.translatable("tooltip.anvilcraftplasticraft.plastic_molding_chamber"));
+        tooltip.add(Component.translatable("tooltip.anvilcraftplasticraft.plastic_molding_chamber").withStyle(ChatFormatting.GRAY));
     }
 }

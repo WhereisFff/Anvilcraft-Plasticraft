@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.entity.redstone;
 
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.molding.product.MoldedTrayCell;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponent;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.dubhe.anvilcraft.api.item.IDiskCloneable;
@@ -31,8 +32,6 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.SignalGetter;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.RedStoneWireBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -41,11 +40,14 @@ import net.minecraft.world.ticks.TickPriority;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.function.ToIntFunction;
 
 /** 支架元件的加载、行为分派、端口查询与运行状态持久化。 */
 public final class MoldedTrayRedstoneRuntime {
     private final UniversalPlasticEntity host;
+    private final MoldedTrayRedstoneRuntimeManager manager;
+    private final MoldedTrayCell cell;
     private MoldedTrayComponent loadedComponent;
     private BlockEntity blockEntity;
     private int remainingTicks;
@@ -54,8 +56,14 @@ public final class MoldedTrayRedstoneRuntime {
     private boolean initialized;
     private boolean ticking;
 
-    public MoldedTrayRedstoneRuntime(UniversalPlasticEntity host) {
+    MoldedTrayRedstoneRuntime(
+        UniversalPlasticEntity host,
+        MoldedTrayRedstoneRuntimeManager manager,
+        MoldedTrayCell cell
+    ) {
         this.host = Objects.requireNonNull(host, "host");
+        this.manager = Objects.requireNonNull(manager, "manager");
+        this.cell = Objects.requireNonNull(cell, "cell");
     }
 
     public void tick() {
@@ -80,7 +88,7 @@ public final class MoldedTrayRedstoneRuntime {
         }
         MoldedTrayComponent snapshot = this.snapshot();
         this.persistSnapshot(snapshot, changed);
-        MoldedTrayRedstoneNetwork.update(this.host, snapshot);
+        MoldedTrayRedstoneNetwork.update(this.host, this.cell, snapshot);
     }
 
     public void flush() {
@@ -92,7 +100,7 @@ public final class MoldedTrayRedstoneRuntime {
         this.ensureLoaded(component);
         MoldedTrayComponent snapshot = this.snapshot();
         this.persistSnapshot(snapshot, true);
-        MoldedTrayRedstoneNetwork.update(this.host, snapshot);
+        MoldedTrayRedstoneNetwork.update(this.host, this.cell, snapshot);
     }
 
     public void persist() {
@@ -106,14 +114,14 @@ public final class MoldedTrayRedstoneRuntime {
     public void applyTo(ItemStack stack) {
         MoldedPlasticData.get(stack)
             .filter(data -> MoldingProductTypes.isTray(data.finalType()))
-            .ifPresent(data -> data.contents().trayComponent().ifPresent(stored -> {
+            .ifPresent(data -> data.contents().trayComponent(this.cell).ifPresent(stored -> {
                 MoldedTrayComponent current = this.loadedComponent == null
                     || !sameConfiguration(this.loadedComponent, stored)
                     ? stored
                     : this.snapshot();
                 MoldedPlasticData.set(
                     stack,
-                    data.withContents(data.contents().withTrayComponent(Optional.of(current)))
+                    data.withContents(data.contents().withTrayComponent(this.cell, Optional.of(current)))
                 );
             }));
     }
@@ -157,8 +165,9 @@ public final class MoldedTrayRedstoneRuntime {
             player.level()
         );
         player.getInventory().placeItemBackInInventory(result);
-        this.host.plasticraft$clearTrayComponent();
+        this.host.plasticraft$clearTrayComponent(this.cell);
         this.remove();
+        this.manager.publish();
         return true;
     }
 
@@ -170,7 +179,7 @@ public final class MoldedTrayRedstoneRuntime {
         if (!(player instanceof ServerPlayer serverPlayer) || this.blockEntity == null) {
             return InteractionResult.sidedSuccess(player.level().isClientSide);
         }
-        BlockPos menuPosition = this.host.plasticraft$getAnchorBlockPos();
+        BlockPos menuPosition = MoldedTrayRedstoneNetwork.componentPosition(this.host, this.cell);
         BlockEntity menuEntity = this.blockEntity;
         MenuProvider provider = new MenuProvider() {
             @Override
@@ -251,6 +260,10 @@ public final class MoldedTrayRedstoneRuntime {
         return this.host;
     }
 
+    MoldedTrayCell cell() {
+        return this.cell;
+    }
+
     ServerLevel serverLevel() {
         return (ServerLevel) this.host.level();
     }
@@ -312,21 +325,25 @@ public final class MoldedTrayRedstoneRuntime {
     }
 
     int inputSignal(Direction localDirection) {
+        OptionalInt internal = this.manager.internalSignal(this.cell, localDirection, false);
+        if (internal.isPresent()) return internal.getAsInt();
         Direction worldDirection = this.host.getOrientation().worldDirection(localDirection);
-        return this.nearestSignal(localDirection, source -> {
-            int signal = MoldedTrayRedstoneNetwork.excludingHost(
+        return this.nearestSignal(
+            localDirection,
+            source -> MoldedTrayRedstoneNetwork.excludingHost(
                 this.host,
-                () -> ((SignalGetter) this.host.level()).getSignal(source, worldDirection)
-            );
-            BlockState state = this.host.level().getBlockState(source);
-            if (state.is(Blocks.REDSTONE_WIRE)) {
-                signal = Math.max(signal, state.getValue(RedStoneWireBlock.POWER));
-            }
-            return Math.clamp(signal, 0, 15);
-        });
+                () -> MoldedRedstoneSignals.activationSignal(
+                    (SignalGetter) this.host.level(),
+                    source,
+                    worldDirection
+                )
+            )
+        );
     }
 
     int comparatorInput(Direction localDirection) {
+        OptionalInt internal = this.manager.internalSignal(this.cell, localDirection, false);
+        if (internal.isPresent()) return internal.getAsInt();
         Direction worldDirection = this.host.getOrientation().worldDirection(localDirection);
         return this.nearestSignal(
             localDirection,
@@ -335,6 +352,8 @@ public final class MoldedTrayRedstoneRuntime {
     }
 
     int sideSignal(Direction localDirection, boolean diodesOnly) {
+        OptionalInt internal = this.manager.internalSignal(this.cell, localDirection, diodesOnly);
+        if (internal.isPresent()) return internal.getAsInt();
         Direction worldDirection = this.host.getOrientation().worldDirection(localDirection);
         return this.nearestSignal(
             localDirection,
@@ -350,8 +369,11 @@ public final class MoldedTrayRedstoneRuntime {
     }
 
     boolean shouldPrioritizeDiode(Direction inputDirection) {
+        Optional<Boolean> internal = this.manager.internalDiodePriority(this.cell, inputDirection.getOpposite());
+        if (internal.isPresent()) return internal.orElseThrow();
         return MoldedTrayRedstoneNetwork.shouldPrioritizeDiode(
             this.host,
+            this.cell,
             inputDirection.getOpposite()
         );
     }
@@ -363,11 +385,11 @@ public final class MoldedTrayRedstoneRuntime {
     void persistAndPublish() {
         MoldedTrayComponent snapshot = this.snapshot();
         this.persistSnapshot(snapshot, true);
-        MoldedTrayRedstoneNetwork.update(this.host, snapshot);
+        MoldedTrayRedstoneNetwork.update(this.host, this.cell, snapshot);
     }
 
     void publishNetwork() {
-        MoldedTrayRedstoneNetwork.update(this.host, this.snapshot());
+        MoldedTrayRedstoneNetwork.update(this.host, this.cell, this.snapshot());
     }
 
     void runScheduledTick() {
@@ -447,7 +469,7 @@ public final class MoldedTrayRedstoneRuntime {
     private MoldedTrayComponent currentComponent() {
         return this.host.getMoldedData()
             .filter(data -> MoldingProductTypes.isTray(data.finalType()))
-            .flatMap(data -> data.contents().trayComponent())
+            .flatMap(data -> data.contents().trayComponent(this.cell))
             .orElse(null);
     }
 
@@ -462,7 +484,7 @@ public final class MoldedTrayRedstoneRuntime {
         this.remainingTicks = component.scheduledTicks();
         this.torchToggleTimes = List.copyOf(component.torchToggleTimes());
         this.detectorOutput = 0;
-        this.blockEntity = MoldedTrayComponentSupport.createBlockEntity(component, this.host);
+        this.blockEntity = MoldedTrayComponentSupport.createBlockEntity(component, this.host, this.cell);
         this.initialized = true;
         if (this.blockEntity != null) this.blockEntity.setBlockState(component.state());
         MoldedTrayRedstoneBehavior behavior = MoldedTrayRedstoneBehaviors.find(component.state());
@@ -482,7 +504,7 @@ public final class MoldedTrayRedstoneRuntime {
             || !sameConfiguration(this.loadedComponent, component);
         this.ensureLoaded(component);
         if (configurationChanged) {
-            MoldedTrayRedstoneNetwork.update(this.host, this.snapshot());
+            MoldedTrayRedstoneNetwork.update(this.host, this.cell, this.snapshot());
             return;
         }
 
@@ -499,7 +521,7 @@ public final class MoldedTrayRedstoneRuntime {
         }
         MoldedTrayComponent snapshot = this.snapshot();
         this.persistSnapshot(snapshot, true);
-        MoldedTrayRedstoneNetwork.update(this.host, snapshot);
+        MoldedTrayRedstoneNetwork.update(this.host, this.cell, snapshot);
     }
 
     private static boolean sameConfiguration(MoldedTrayComponent first, MoldedTrayComponent second) {
@@ -512,6 +534,7 @@ public final class MoldedTrayRedstoneRuntime {
     ) {
         for (List<BlockPos> layer : MoldedTrayRedstoneNetwork.inputCandidateLayers(
             this.host,
+            this.cell,
             localDirection
         )) {
             int signal = 0;
@@ -526,12 +549,13 @@ public final class MoldedTrayRedstoneRuntime {
     private int comparatorSignalAt(BlockPos source, Direction worldDirection) {
         int signal = MoldedTrayRedstoneNetwork.excludingHost(
             this.host,
-            () -> ((SignalGetter) this.host.level()).getSignal(source, worldDirection)
+            () -> MoldedRedstoneSignals.activationSignal(
+                (SignalGetter) this.host.level(),
+                source,
+                worldDirection
+            )
         );
         BlockState sourceState = this.host.level().getBlockState(source);
-        if (sourceState.is(Blocks.REDSTONE_WIRE)) {
-            signal = Math.max(signal, sourceState.getValue(RedStoneWireBlock.POWER));
-        }
         if (sourceState.hasAnalogOutputSignal()) {
             return Math.clamp(sourceState.getAnalogOutputSignal(this.host.level(), source), 0, 15);
         }
@@ -576,10 +600,20 @@ public final class MoldedTrayRedstoneRuntime {
             ? current.equals(next)
             : sameConfiguration(current, next));
         this.loadedComponent = next;
-        if (!unchanged) this.host.plasticraft$replaceTrayComponent(next);
+        if (!unchanged) this.host.plasticraft$replaceTrayComponent(this.cell, next);
+    }
+
+    MoldedTrayComponent signalComponent() {
+        MoldedTrayComponent current = this.currentComponent();
+        if (current == null) return null;
+        return this.initialized
+            && this.loadedComponent != null
+            && sameConfiguration(this.loadedComponent, current)
+            ? this.snapshot()
+            : current;
     }
 
     private void removeNetwork() {
-        MoldedTrayRedstoneNetwork.remove(this.host);
+        MoldedTrayRedstoneNetwork.remove(this.host, this.cell);
     }
 }

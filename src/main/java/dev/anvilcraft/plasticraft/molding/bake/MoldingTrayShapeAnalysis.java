@@ -7,7 +7,8 @@ public record MoldingTrayShapeAnalysis(
     double bottomY,
     double topY,
     double height,
-    int footprintArea
+    int footprintArea,
+    int supportedCellMask
 ) {
     public MoldingTrayShapeAnalysis {
         reason = reason == null ? "" : reason;
@@ -17,12 +18,18 @@ public record MoldingTrayShapeAnalysis(
             || bottomY < 0.0D
             || topY < bottomY
             || height < 0.0D
-            || footprintArea < 0) {
+            || footprintArea < 0
+            || (supportedCellMask & ~0x1FF) != 0) {
             throw new IllegalArgumentException("Invalid tray shape analysis");
         }
     }
 
+    public boolean supportsCell(int x, int z) {
+        if (x < 0 || x >= 3 || z < 0 || z >= 3) return false;
+        return (this.supportedCellMask & 1 << (z * 3 + x)) != 0;
+    }
+
     public static MoldingTrayShapeAnalysis invalid(String reason) {
-        return new MoldingTrayShapeAnalysis(false, reason, 0, 0, 0, 0);
+        return new MoldingTrayShapeAnalysis(false, reason, 0, 0, 0, 0, 0);
     }
 }

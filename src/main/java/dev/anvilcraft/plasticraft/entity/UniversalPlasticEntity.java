@@ -4,19 +4,25 @@ import dev.anvilcraft.plasticraft.entity.collision.BuiltInPlasticEntityModels;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.entity.redstone.MoldedPlasticRedstoneConductor;
 import dev.anvilcraft.plasticraft.entity.redstone.MoldedTrayComponentSupport;
+import dev.anvilcraft.plasticraft.entity.redstone.MoldedTrayLightSource;
+import dev.anvilcraft.plasticraft.entity.redstone.MoldedTrayRedstoneNetwork;
 import dev.anvilcraft.plasticraft.entity.redstone.MoldedTrayRedstoneRuntime;
+import dev.anvilcraft.plasticraft.entity.redstone.MoldedTrayRedstoneRuntimeManager;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingTrayShapeAnalyzer;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContentSummary;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticFluidHandler;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticItemHandler;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticNames;
+import dev.anvilcraft.plasticraft.molding.product.MoldedTrayCell;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponent;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponentGeometry;
+import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponentPlacement;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.api.giantanvil.IShockEntity;
@@ -38,11 +44,15 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraft.stats.Stats;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.neoforged.neoforge.fluids.FluidUtil;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -72,7 +82,7 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
     );
     private Runnable moldedContentsChanged = () -> {
     };
-    private MoldedTrayRedstoneRuntime trayRuntime;
+    private MoldedTrayRedstoneRuntimeManager trayRuntimes;
 
     public static void configureDefaultDrop(Supplier<ItemStack> supplier) {
         defaultDropSupplier = Objects.requireNonNull(supplier, "supplier");
@@ -120,14 +130,19 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
         if (this.cachedMoldedGeometry == null) {
             MoldedPlasticData molded = data.orElseThrow();
             PlasticEntityGeometry geometry = molded.geometry();
-            Optional<MoldedTrayComponent> component = molded.contents().trayComponent();
-            if (MoldingProductTypes.isTray(molded.finalType()) && component.isPresent()) {
-                BlockState state = component.orElseThrow().state();
+            if (MoldingProductTypes.isTray(molded.finalType())) {
                 BlockPos position = this.blockPosition();
-                geometry = geometry.include(
-                    MoldedTrayComponentGeometry.localCollisionShape(molded, state, this.level(), position),
-                    MoldedTrayComponentGeometry.localInteractionShape(molded, state, this.level(), position)
-                );
+                for (MoldedTrayComponentPlacement placement : molded.contents().trayComponents()) {
+                    BlockState state = placement.component().state();
+                    geometry = geometry.include(
+                        MoldedTrayComponentGeometry.localCollisionShape(
+                            molded, placement.cell(), state, this.level(), position
+                        ),
+                        MoldedTrayComponentGeometry.localInteractionShape(
+                            molded, placement.cell(), state, this.level(), position
+                        )
+                    );
+                }
             }
             this.cachedMoldedGeometry = geometry;
         }
@@ -162,12 +177,21 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
     }
 
     public MoldedTrayRedstoneRuntime getMoldedTrayRuntime() {
-        if (this.trayRuntime == null) this.trayRuntime = new MoldedTrayRedstoneRuntime(this);
-        return this.trayRuntime;
+        return this.getMoldedTrayRuntime(MoldedTrayCell.CENTER);
+    }
+
+    public MoldedTrayRedstoneRuntime getMoldedTrayRuntime(MoldedTrayCell cell) {
+        return this.getMoldedTrayRuntimes().runtime(cell);
+    }
+
+    public MoldedTrayRedstoneRuntimeManager getMoldedTrayRuntimes() {
+        if (this.trayRuntimes == null) this.trayRuntimes = new MoldedTrayRedstoneRuntimeManager(this);
+        return this.trayRuntimes;
     }
 
     public void plasticraft$tickBondedTray() {
-        if (!this.level().isClientSide && this.isMoldedTray()) this.getMoldedTrayRuntime().tick();
+        if (!this.level().isClientSide && this.isMoldedTray()) this.getMoldedTrayRuntimes().tick();
+        MoldedTrayLightSource.update(this);
     }
 
     public void plasticraft$tickRedstoneConductor() {
@@ -176,26 +200,43 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
 
     public void plasticraft$removeVirtualRedstone() {
         MoldedPlasticRedstoneConductor.remove(this);
-        if (this.trayRuntime != null) this.trayRuntime.remove();
+        if (this.trayRuntimes != null) this.trayRuntimes.remove();
+        MoldedTrayLightSource.remove(this);
     }
 
     public BlockEntity plasticraft$getTrayBlockEntity() {
         return this.getMoldedTrayRuntime().blockEntity();
     }
 
+    public BlockEntity plasticraft$getTrayBlockEntity(MoldedTrayCell cell) {
+        return this.getMoldedTrayRuntime(cell).blockEntity();
+    }
+
+    public Map<MoldedTrayCell, BlockEntity> plasticraft$getTrayBlockEntities() {
+        return this.getMoldedTrayRuntimes().blockEntities();
+    }
+
     public void plasticraft$replaceTrayComponent(MoldedTrayComponent component) {
+        this.plasticraft$replaceTrayComponent(MoldedTrayCell.CENTER, component);
+    }
+
+    public void plasticraft$replaceTrayComponent(MoldedTrayCell cell, MoldedTrayComponent component) {
         Optional<MoldedPlasticData> data = this.getMoldedData();
         if (data.isEmpty() || !MoldingProductTypes.isTray(data.orElseThrow().finalType())) return;
         this.replaceMoldedData(data.orElseThrow().withContents(
-            data.orElseThrow().contents().withTrayComponent(Optional.of(component))
+            data.orElseThrow().contents().withTrayComponent(cell, Optional.of(component))
         ));
     }
 
     public void plasticraft$clearTrayComponent() {
+        this.plasticraft$clearTrayComponent(MoldedTrayCell.CENTER);
+    }
+
+    public void plasticraft$clearTrayComponent(MoldedTrayCell cell) {
         Optional<MoldedPlasticData> data = this.getMoldedData();
         if (data.isEmpty() || !MoldingProductTypes.isTray(data.orElseThrow().finalType())) return;
         this.replaceMoldedData(data.orElseThrow().withContents(
-            data.orElseThrow().contents().withTrayComponent(Optional.empty())
+            data.orElseThrow().contents().withTrayComponent(cell, Optional.empty())
         ));
     }
 
@@ -228,31 +269,11 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
         if (this.isMoldedTray()) {
             ItemStack held = player.getItemInHand(hand);
             Optional<MoldedPlasticData> data = this.getMoldedData();
-            Optional<MoldedTrayComponent> component =
-                data.flatMap(value -> value.contents().trayComponent());
-            if (component.isPresent()) return this.getMoldedTrayRuntime().interact(player, hand);
-            if (!MoldedTrayComponentSupport.isSupportedItem(held)) return InteractionResult.PASS;
-            BlockPos anchor = this.plasticraft$getAnchorBlockPos();
-            if (!player.getAbilities().mayBuild || !this.level().mayInteract(player, anchor)) {
-                return InteractionResult.PASS;
-            }
-            if (this.level().isClientSide) return InteractionResult.SUCCESS;
-            Direction localFacing = MoldedTrayComponentSupport.localFacing(this, player.getLookAngle());
-            MoldedTrayComponent tray = MoldedTrayComponentSupport.create(this, held, localFacing);
-            this.replaceMoldedData(data.orElseThrow().withContents(
-                data.orElseThrow().contents().withTrayComponent(Optional.of(tray))
-            ));
-            if (!player.getAbilities().instabuild) held.shrink(1);
-            this.level().playSound(
-                null,
-                anchor,
-                tray.state().getSoundType().getPlaceSound(),
-                SoundSource.BLOCKS,
-                0.8F,
-                1.0F
-            );
-            this.gameEvent(GameEvent.BLOCK_PLACE, player);
-            return InteractionResult.CONSUME;
+            if (data.isEmpty()) return InteractionResult.PASS;
+            Optional<MoldedTrayCell> target = this.fallbackTrayCell(data.orElseThrow(), held);
+            return target.isPresent()
+                ? this.interactTrayCell(player, hand, target.orElseThrow())
+                : InteractionResult.PASS;
         }
         if (this.isMoldedAnvil()) {
             if (this.level().isClientSide) return InteractionResult.SUCCESS;
@@ -268,6 +289,66 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
         return FluidUtil.interactWithFluidHandler(player, hand, this.moldedFluidHandler)
             ? InteractionResult.sidedSuccess(this.level().isClientSide)
             : InteractionResult.PASS;
+    }
+
+    private InteractionResult interactTrayCell(Player player, InteractionHand hand, MoldedTrayCell cell) {
+        Optional<MoldedPlasticData> optionalData = this.getMoldedData();
+        if (optionalData.isEmpty()) return InteractionResult.PASS;
+        MoldedPlasticData data = optionalData.orElseThrow();
+        Optional<MoldedTrayComponent> existing = data.contents().trayComponent(cell);
+        if (existing.isPresent()) return this.getMoldedTrayRuntime(cell).interact(player, hand);
+
+        ItemStack held = player.getItemInHand(hand);
+        if (!MoldedTrayComponentSupport.isSupportedItem(held) || !supportsTrayCell(data, cell)) {
+            return InteractionResult.PASS;
+        }
+        BlockPos position = MoldedTrayRedstoneNetwork.componentPosition(this, cell);
+        if (!player.getAbilities().mayBuild || !this.level().mayInteract(player, position)) {
+            return InteractionResult.PASS;
+        }
+        if (this.level().isClientSide) return InteractionResult.SUCCESS;
+        Direction localFacing = MoldedTrayComponentSupport.localFacing(this, player.getLookAngle());
+        MoldedTrayComponent component = MoldedTrayComponentSupport.create(this, cell, held, localFacing);
+        this.replaceMoldedData(data.withContents(
+            data.contents().withTrayComponent(cell, Optional.of(component))
+        ));
+        this.getMoldedTrayRuntimes().publish();
+        if (!player.getAbilities().instabuild) held.shrink(1);
+        this.level().playSound(
+            null,
+            position,
+            component.state().getSoundType().getPlaceSound(),
+            SoundSource.BLOCKS,
+            0.8F,
+            1.0F
+        );
+        this.gameEvent(GameEvent.BLOCK_PLACE, player);
+        return InteractionResult.CONSUME;
+    }
+
+    private Optional<MoldedTrayCell> fallbackTrayCell(MoldedPlasticData data, ItemStack held) {
+        boolean placing = MoldedTrayComponentSupport.isSupportedItem(held);
+        if (placing) {
+            if (supportsTrayCell(data, MoldedTrayCell.CENTER)
+                && data.contents().trayComponent(MoldedTrayCell.CENTER).isEmpty()) {
+                return Optional.of(MoldedTrayCell.CENTER);
+            }
+            for (MoldedTrayCell cell : MoldedTrayCell.VALUES) {
+                if (supportsTrayCell(data, cell) && data.contents().trayComponent(cell).isEmpty()) {
+                    return Optional.of(cell);
+                }
+            }
+        }
+        if (data.contents().trayComponent(MoldedTrayCell.CENTER).isPresent()) {
+            return Optional.of(MoldedTrayCell.CENTER);
+        }
+        return data.contents().trayComponents().stream()
+            .map(MoldedTrayComponentPlacement::cell)
+            .findFirst();
+    }
+
+    private static boolean supportsTrayCell(MoldedPlasticData data, MoldedTrayCell cell) {
+        return (MoldingTrayShapeAnalyzer.supportedCellMask(data.volumeMask()) & cell.bit()) != 0;
     }
 
     @Override
@@ -304,7 +385,7 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
 
     @Override
     protected ItemStack prepareDropStack(ItemStack stack) {
-        if (this.trayRuntime != null) this.trayRuntime.applyTo(stack);
+        if (this.trayRuntimes != null) this.trayRuntimes.applyTo(stack);
         MoldedPlasticData.get(stack).ifPresent(data ->
             MoldedPlasticData.set(stack, data.withOrientation(PlasticEntityOrientation.DEFAULT))
         );
@@ -313,47 +394,99 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
 
     @Override
     protected void addAdditionalSaveData(CompoundTag tag) {
-        if (!this.level().isClientSide && this.trayRuntime != null) this.trayRuntime.persist();
+        if (!this.level().isClientSide && this.trayRuntimes != null) this.trayRuntimes.persist();
         super.addAdditionalSaveData(tag);
     }
 
     @Override
     public void tick() {
         super.tick();
-        if (this.isRemoved() || this.level().isClientSide) return;
-        this.plasticraft$tickRedstoneConductor();
-        if (this.isMoldedTray()) this.getMoldedTrayRuntime().tick();
+        if (this.isRemoved()) return;
+        if (!this.level().isClientSide) {
+            this.plasticraft$tickRedstoneConductor();
+            if (this.isMoldedTray()) this.getMoldedTrayRuntimes().tick();
+        }
+        MoldedTrayLightSource.update(this);
     }
 
     @Override
     public InteractionResult interactAt(Player player, Vec3 location, InteractionHand hand) {
-        if (this.isMoldedTray() && player.isShiftKeyDown() && player.getItemInHand(hand).isEmpty()) {
-            if (!player.getAbilities().mayBuild || !this.level().mayInteract(player, this.plasticraft$getAnchorBlockPos())) {
-                return InteractionResult.PASS;
-            }
-            if (this.getMoldedData().flatMap(data -> data.contents().trayComponent()).isEmpty()) {
-                return InteractionResult.PASS;
-            }
-            if (this.level().isClientSide) return InteractionResult.SUCCESS;
-            if (this.getMoldedTrayRuntime().extract(player)) {
-                this.level().playSound(
-                    null,
-                    this.plasticraft$getAnchorBlockPos(),
-                    this.getDisplayState().getSoundType().getBreakSound(),
-                    SoundSource.BLOCKS,
-                    0.8F,
-                    1.0F
-                );
-                this.gameEvent(GameEvent.ENTITY_INTERACT, player);
-                return InteractionResult.CONSUME;
+        if (this.isMoldedTray()) {
+            Optional<MoldedTrayCell> target = this.trayCellAt(location);
+            if (target.isPresent()) {
+                MoldedTrayCell cell = target.orElseThrow();
+                if (!player.isShiftKeyDown()) {
+                    InteractionResult result = this.interactTrayCell(player, hand, cell);
+                    if (result != InteractionResult.PASS) return result;
+                } else if (player.getItemInHand(hand).isEmpty()) {
+                    BlockPos position = MoldedTrayRedstoneNetwork.componentPosition(this, cell);
+                    if (!player.getAbilities().mayBuild || !this.level().mayInteract(player, position)) {
+                        return InteractionResult.PASS;
+                    }
+                    if (this.getMoldedData().flatMap(data -> data.contents().trayComponent(cell)).isEmpty()) {
+                        return InteractionResult.PASS;
+                    }
+                    if (this.level().isClientSide) return InteractionResult.SUCCESS;
+                    if (this.getMoldedTrayRuntime(cell).extract(player)) {
+                        this.level().playSound(
+                            null,
+                            position,
+                            this.getDisplayState().getSoundType().getBreakSound(),
+                            SoundSource.BLOCKS,
+                            0.8F,
+                            1.0F
+                        );
+                        this.gameEvent(GameEvent.ENTITY_INTERACT, player);
+                        return InteractionResult.CONSUME;
+                    }
+                }
             }
         }
         return super.interactAt(player, location, hand);
     }
 
+    private Optional<MoldedTrayCell> trayCellAt(Vec3 relativeLocation) {
+        Optional<MoldedPlasticData> optionalData = this.getMoldedData();
+        if (optionalData.isEmpty()) return Optional.empty();
+        MoldedPlasticData data = optionalData.orElseThrow();
+        Vec3 worldPoint = this.position().add(relativeLocation);
+        Vec3 localPoint = this.plasticraft$getGeometry().localPointAt(
+            this.position(),
+            this.getOrientation(),
+            worldPoint
+        );
+        MoldedTrayCell componentHit = null;
+        double nearestDistance = Double.POSITIVE_INFINITY;
+        for (MoldedTrayComponentPlacement placement : data.contents().trayComponents()) {
+            VoxelShape shape = MoldedTrayComponentGeometry.localInteractionShape(
+                data,
+                placement.cell(),
+                placement.component().state(),
+                this.level(),
+                this.blockPosition()
+            );
+            for (AABB bounds : shape.toAabbs()) {
+                if (!bounds.inflate(1.0E-5D).contains(localPoint)) continue;
+                double distance = bounds.getCenter().distanceToSqr(localPoint);
+                if (componentHit == null || distance < nearestDistance) {
+                    componentHit = placement.cell();
+                    nearestDistance = distance;
+                }
+            }
+        }
+        if (componentHit != null) return Optional.of(componentHit);
+        if (localPoint.x < -1.0E-5D || localPoint.x > MoldedTrayCell.GRID_SIZE + 1.0E-5D
+            || localPoint.z < -1.0E-5D || localPoint.z > MoldedTrayCell.GRID_SIZE + 1.0E-5D) {
+            return Optional.empty();
+        }
+        int x = Math.clamp((int) Math.floor(localPoint.x), 0, MoldedTrayCell.GRID_SIZE - 1);
+        int z = Math.clamp((int) Math.floor(localPoint.z), 0, MoldedTrayCell.GRID_SIZE - 1);
+        return Optional.of(new MoldedTrayCell(x, z));
+    }
+
     @Override
     protected void prepareAnvilHammerPickup(Player player) {
-        if (this.isMoldedTray()) this.getMoldedTrayRuntime().flush();
+        if (this.isMoldedTray()) this.getMoldedTrayRuntimes().flush();
     }
 
     @Override

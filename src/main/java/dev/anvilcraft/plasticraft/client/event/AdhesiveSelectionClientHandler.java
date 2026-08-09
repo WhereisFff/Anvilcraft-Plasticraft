@@ -3,11 +3,13 @@ package dev.anvilcraft.plasticraft.client.event;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.client.renderer.MoldedTrayComponentRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.ThickLineRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderHelper;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveGroupTransform;
@@ -75,6 +77,8 @@ public final class AdhesiveSelectionClientHandler {
     private static final double SEARCH_DASH_SPEED = 1.2D;
     private static final double GRID_OUTWARD_OFFSET = 0.004D;
     private static final double SELECTED_GRID_INSET = 0.004D;
+    private static final double GRID_CELL_SIZE = 0.25D;
+    private static final double GRID_SIZE_EPSILON = 1.0E-7D;
     private static final int WHITE = 0xFFFFFFFF;
     private static final int GRID_WHITE = 0x70FFFFFF;
     private static final int SAFE_GREEN = 0xFF40FF40;
@@ -647,6 +651,10 @@ public final class AdhesiveSelectionClientHandler {
         if (player == null || level == null) return;
 
         Entity selected = getSelectedEntity(minecraft);
+        if (animatedEntity != null
+            && (animatedEntity.level() != level || animatedEntity.isRemoved() || !animatedEntity.isAlive())) {
+            resetAnimation();
+        }
         if (selected != null) {
             if (!selected.getUUID().equals(animatedUuid)) beginSelectionAnimation(selected);
             animatedEntity = selected;
@@ -1199,13 +1207,17 @@ public final class AdhesiveSelectionClientHandler {
         @Nullable BlockPos supportPos,
         Direction supportFace
     ) {
-        AABB endpointBox = supportEntity != null
-            ? supportEntity.getBoundingBox().inflate(0.006D)
-            : selected instanceof FallingBlockEntity
-                ? new AABB(preview.occupiedPos()).inflate(0.006D)
-                : selected.getBoundingBox().move(
-                    preview.targetPosition().subtract(selected.position())
-                ).inflate(0.006D);
+        AdhesiveGroupTransform.Projection projection = previewProjection(selected, preview);
+        AdhesiveGroupTransform.Member selectedTarget = projection.member(selected);
+        AABB endpointBox = selected instanceof AbstractPlasticEntity && selectedTarget != null
+            ? selectedTarget.collisionBounds().inflate(0.006D)
+            : supportEntity != null
+                ? supportEntity.getBoundingBox().inflate(0.006D)
+                : selected instanceof FallingBlockEntity
+                    ? new AABB(preview.occupiedPos()).inflate(0.006D)
+                    : selected.getBoundingBox().move(
+                        preview.targetPosition().subtract(selected.position())
+                    ).inflate(0.006D);
         renderAnimatedBox(pose, buffers, endpointBox, 1.0F);
         if (supportEntity != null) {
             renderFaceGrid(pose, buffers, supportEntity.getBoundingBox(), supportFace);
@@ -1213,7 +1225,7 @@ public final class AdhesiveSelectionClientHandler {
             renderFaceGrid(pose, buffers, new AABB(supportPos), supportFace);
         }
         if (previewReady) {
-            renderPreviewGroup(pose, buffers, previewProjection(selected, preview), previewClear);
+            renderPreviewGroup(pose, buffers, projection, previewClear);
         }
     }
 
@@ -1238,28 +1250,31 @@ public final class AdhesiveSelectionClientHandler {
         AdhesiveTransit transit,
         @Nullable Entity supportEntity
     ) {
-        AABB endpointBox = supportEntity != null
-            ? supportEntity.getBoundingBox().inflate(0.006D)
-            : movingEntity instanceof FallingBlockEntity
-                ? new AABB(transit.supportPos().relative(transit.attachmentFace())).inflate(0.006D)
-                : movingEntity.getBoundingBox().move(
-                    transit.targetPosition(supportEntity).subtract(movingEntity.position())
-                ).inflate(0.006D);
+        PlasticEntityOrientation orientation = transit.plastic()
+            ? PlasticEntityOrientation.unpack(transit.targetOrientation())
+            : null;
+        AdhesiveGroupTransform.Projection projection = AdhesiveGroupTransform.project(
+            movingEntity,
+            transit.targetPosition(supportEntity),
+            orientation
+        );
+        AdhesiveGroupTransform.Member movingTarget = projection.member(movingEntity);
+        AABB endpointBox = movingEntity instanceof AbstractPlasticEntity && movingTarget != null
+            ? movingTarget.collisionBounds().inflate(0.006D)
+            : supportEntity != null
+                ? supportEntity.getBoundingBox().inflate(0.006D)
+                : movingEntity instanceof FallingBlockEntity
+                    ? new AABB(transit.supportPos().relative(transit.attachmentFace())).inflate(0.006D)
+                    : movingEntity.getBoundingBox().move(
+                        transit.targetPosition(supportEntity).subtract(movingEntity.position())
+                    ).inflate(0.006D);
         renderAnimatedBox(pose, buffers, endpointBox, 1.0F);
         if (supportEntity != null) {
             renderFaceGrid(pose, buffers, supportEntity.getBoundingBox(), transit.attachmentFace());
         } else {
             renderFaceGrid(pose, buffers, new AABB(transit.supportPos()), transit.attachmentFace());
         }
-        PlasticEntityOrientation orientation = transit.plastic()
-            ? PlasticEntityOrientation.unpack(transit.targetOrientation())
-            : null;
-        renderPreviewGroup(
-            pose,
-            buffers,
-            AdhesiveGroupTransform.project(movingEntity, transit.targetPosition(supportEntity), orientation),
-            true
-        );
+        renderPreviewGroup(pose, buffers, projection, true);
     }
 
     private static void renderPreviewGroup(
@@ -1298,6 +1313,15 @@ public final class AdhesiveSelectionClientHandler {
                 buffers,
                 valid
             );
+            if (plastic instanceof UniversalPlasticEntity universal) {
+                universal.getMoldedData().ifPresent(data -> MoldedTrayComponentRenderer.renderPreview(
+                    data,
+                    Minecraft.getInstance().getBlockRenderer(),
+                    pose,
+                    buffers,
+                    valid
+                ));
+            }
         } else {
             pose.translate(-0.5D, 0.0D, -0.5D);
             PlasticEntityRenderHelper.renderFallingPreviewModel(
@@ -1329,13 +1353,37 @@ public final class AdhesiveSelectionClientHandler {
     ) {
         RenderType renderType = RenderType.debugQuads();
         VertexConsumer consumer = buffers.getBuffer(renderType);
-        for (int first = 0; first < 4; first++) {
-            for (int second = 0; second < 4; second++) {
+        double firstLength = switch (face.getAxis()) {
+            case X -> box.getYsize();
+            case Y, Z -> box.getXsize();
+        };
+        double secondLength = switch (face.getAxis()) {
+            case X, Y -> box.getZsize();
+            case Z -> box.getYsize();
+        };
+        int firstCells = gridCellCount(firstLength);
+        int secondCells = gridCellCount(secondLength);
+        for (int first = 0; first < firstCells; first++) {
+            for (int second = 0; second < secondCells; second++) {
                 if (((first + second) & 1) != 0) continue;
-                addGridCell(pose, consumer, box, face, normalOffset, first, second);
+                addGridCell(
+                    pose,
+                    consumer,
+                    box,
+                    face,
+                    normalOffset,
+                    first * GRID_CELL_SIZE,
+                    Math.min(firstLength, (first + 1) * GRID_CELL_SIZE),
+                    second * GRID_CELL_SIZE,
+                    Math.min(secondLength, (second + 1) * GRID_CELL_SIZE)
+                );
             }
         }
         buffers.endBatch(renderType);
+    }
+
+    private static int gridCellCount(double length) {
+        return Math.max(1, (int) Math.ceil((length - GRID_SIZE_EPSILON) / GRID_CELL_SIZE));
     }
 
     private static void addGridCell(
@@ -1344,8 +1392,10 @@ public final class AdhesiveSelectionClientHandler {
         AABB box,
         Direction face,
         double normalOffset,
-        int first,
-        int second
+        double firstStart,
+        double firstEnd,
+        double secondStart,
+        double secondEnd
     ) {
         double firstMin;
         double firstMax;
@@ -1357,10 +1407,10 @@ public final class AdhesiveSelectionClientHandler {
         Vec3 d;
         switch (face.getAxis()) {
             case X -> {
-                firstMin = box.minY + box.getYsize() * first / 4.0D;
-                firstMax = box.minY + box.getYsize() * (first + 1) / 4.0D;
-                secondMin = box.minZ + box.getZsize() * second / 4.0D;
-                secondMax = box.minZ + box.getZsize() * (second + 1) / 4.0D;
+                firstMin = box.minY + firstStart;
+                firstMax = box.minY + firstEnd;
+                secondMin = box.minZ + secondStart;
+                secondMax = box.minZ + secondEnd;
                 double x = (face == Direction.EAST ? box.maxX : box.minX)
                     + face.getStepX() * normalOffset;
                 a = new Vec3(x, firstMin, secondMin);
@@ -1369,10 +1419,10 @@ public final class AdhesiveSelectionClientHandler {
                 d = new Vec3(x, firstMin, secondMax);
             }
             case Y -> {
-                firstMin = box.minX + box.getXsize() * first / 4.0D;
-                firstMax = box.minX + box.getXsize() * (first + 1) / 4.0D;
-                secondMin = box.minZ + box.getZsize() * second / 4.0D;
-                secondMax = box.minZ + box.getZsize() * (second + 1) / 4.0D;
+                firstMin = box.minX + firstStart;
+                firstMax = box.minX + firstEnd;
+                secondMin = box.minZ + secondStart;
+                secondMax = box.minZ + secondEnd;
                 double y = (face == Direction.UP ? box.maxY : box.minY)
                     + face.getStepY() * normalOffset;
                 a = new Vec3(firstMin, y, secondMin);
@@ -1381,10 +1431,10 @@ public final class AdhesiveSelectionClientHandler {
                 d = new Vec3(firstMin, y, secondMax);
             }
             case Z -> {
-                firstMin = box.minX + box.getXsize() * first / 4.0D;
-                firstMax = box.minX + box.getXsize() * (first + 1) / 4.0D;
-                secondMin = box.minY + box.getYsize() * second / 4.0D;
-                secondMax = box.minY + box.getYsize() * (second + 1) / 4.0D;
+                firstMin = box.minX + firstStart;
+                firstMax = box.minX + firstEnd;
+                secondMin = box.minY + secondStart;
+                secondMax = box.minY + secondEnd;
                 double z = (face == Direction.SOUTH ? box.maxZ : box.minZ)
                     + face.getStepZ() * normalOffset;
                 a = new Vec3(firstMin, secondMin, z);

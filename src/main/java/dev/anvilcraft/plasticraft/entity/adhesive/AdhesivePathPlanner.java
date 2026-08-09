@@ -264,6 +264,7 @@ public final class AdhesivePathPlanner {
                 supportPos,
                 attachmentFace,
                 targetOrientation,
+                sourceFace,
                 start,
                 originalBox
             );
@@ -392,13 +393,14 @@ public final class AdhesivePathPlanner {
             if (this.complete) return;
             if (!this.searchStarted) {
                 this.searchStarted = true;
-                if (isSegmentClear(
+                if (isDirectSegmentClear(
                     this.level,
                     this.entity,
                     this.originalBox,
                     this.start,
                     this.start,
                     this.directPreview.targetPosition(),
+                    this.directPreview.targetOrientation(),
                     true,
                     SEGMENT_SAMPLE_STEP,
                     new PathCheckCache()
@@ -500,7 +502,13 @@ public final class AdhesivePathPlanner {
         PlasticEntityOrientation targetOrientation = entity instanceof AbstractPlasticEntity plastic
             ? AdhesiveFaces.targetOrientation(plastic, sourceFace, attachmentFace.getOpposite(), player)
             : null;
-        Vec3 targetPosition = targetPosition(entity, supportPos, attachmentFace, targetOrientation);
+        Vec3 targetPosition = targetPosition(
+            entity,
+            supportPos,
+            attachmentFace,
+            targetOrientation,
+            sourceFace
+        );
         double directDistance = entity.position().distanceTo(targetPosition);
         List<Vec3> directPreview = List.of(entity.position(), targetPosition);
 
@@ -546,13 +554,14 @@ public final class AdhesivePathPlanner {
         AABB originalBox = entity.getBoundingBox();
         Vec3 start = entity.position();
         PathCheckCache checks = new PathCheckCache();
-        if (isSegmentClear(
+        if (isDirectSegmentClear(
             level,
             entity,
             originalBox,
             start,
             start,
             targetPosition,
+            targetOrientation,
             true,
             SEGMENT_SAMPLE_STEP,
             checks
@@ -726,13 +735,14 @@ public final class AdhesivePathPlanner {
         AABB originalBox = entity.getBoundingBox();
         Vec3 start = entity.position();
         PathCheckCache checks = new PathCheckCache();
-        if (isSegmentClear(
+        if (isDirectSegmentClear(
             level,
             entity,
             originalBox,
             start,
             start,
             targetPosition,
+            targetOrientation,
             true,
             SEGMENT_SAMPLE_STEP,
             checks
@@ -808,13 +818,15 @@ public final class AdhesivePathPlanner {
         Entity entity,
         BlockPos supportPos,
         Direction attachmentFace,
-        @Nullable PlasticEntityOrientation orientation
+        @Nullable PlasticEntityOrientation orientation,
+        Direction sourceFace
     ) {
         return targetPosition(
             entity,
             supportPos,
             attachmentFace,
             orientation,
+            sourceFace,
             entity.position(),
             entity.getBoundingBox()
         );
@@ -825,12 +837,13 @@ public final class AdhesivePathPlanner {
         BlockPos supportPos,
         Direction attachmentFace,
         @Nullable PlasticEntityOrientation orientation,
+        Direction sourceFace,
         Vec3 start,
         AABB box
     ) {
         BlockPos occupiedPos = supportPos.relative(attachmentFace);
         if (entity instanceof AbstractPlasticEntity plasticEntity && orientation != null) {
-            return plasticEntity.plasticraft$placementPosition(occupiedPos, orientation);
+            return plasticEntity.plasticraft$placementPosition(occupiedPos, orientation, sourceFace);
         }
         if (AdhesiveFallingBlockBehavior.canBlockifyComponent(entity.level(), entity)) {
             return Vec3.atBottomCenterOf(occupiedPos);
@@ -1197,6 +1210,167 @@ public final class AdhesivePathPlanner {
             )) return false;
         }
         return true;
+    }
+
+    private static boolean isDirectSegmentClear(
+        Level level,
+        Entity entity,
+        AABB originalBox,
+        Vec3 originalPosition,
+        Vec3 from,
+        Vec3 to,
+        @Nullable PlasticEntityOrientation targetOrientation,
+        boolean allowFinalContact,
+        double sampleStep,
+        PathCheckCache checks
+    ) {
+        if (isSegmentClear(
+            level,
+            entity,
+            originalBox,
+            originalPosition,
+            from,
+            to,
+            allowFinalContact,
+            sampleStep,
+            checks
+        )) {
+            return true;
+        }
+        if (!(entity instanceof AbstractPlasticEntity plastic)
+            || targetOrientation == null
+            || targetOrientation.equals(plastic.getOrientation())) {
+            return false;
+        }
+        return isOrientationSwitchSegmentClear(
+            level,
+            plastic,
+            originalBox,
+            originalPosition,
+            from,
+            to,
+            targetOrientation,
+            allowFinalContact,
+            sampleStep,
+            checks
+        );
+    }
+
+    /** 路线中只允许从起始姿态切换到目标姿态一次，与服务端牵引的物理状态保持一致。 */
+    private static boolean isOrientationSwitchSegmentClear(
+        Level level,
+        AbstractPlasticEntity entity,
+        AABB originalBox,
+        Vec3 originalPosition,
+        Vec3 from,
+        Vec3 to,
+        PlasticEntityOrientation targetOrientation,
+        boolean allowFinalContact,
+        double sampleStep,
+        PathCheckCache checks
+    ) {
+        double distance = from.distanceTo(to);
+        int steps = Math.max(1, (int) Math.ceil(distance / sampleStep));
+        Vec3 previous = from;
+        boolean startReachable = true;
+        boolean targetReachable = isPlasticOrientationPositionClear(
+            level,
+            entity,
+            targetOrientation,
+            from,
+            false,
+            checks
+        );
+        for (int step = 1; step <= steps; step++) {
+            Vec3 position = from.lerp(to, step / (double) steps);
+            boolean finalStep = step == steps;
+            boolean nextStartReachable = startReachable && isSegmentClear(
+                level,
+                entity,
+                originalBox,
+                originalPosition,
+                previous,
+                position,
+                false,
+                sampleStep,
+                checks
+            );
+            boolean nextTargetReachable = targetReachable && isPlasticOrientationSegmentClear(
+                level,
+                entity,
+                targetOrientation,
+                previous,
+                position,
+                allowFinalContact && finalStep,
+                sampleStep,
+                checks
+            );
+            if (nextStartReachable && isPlasticOrientationPositionClear(
+                level,
+                entity,
+                targetOrientation,
+                position,
+                allowFinalContact && finalStep,
+                checks
+            )) {
+                nextTargetReachable = true;
+            }
+            if (!nextStartReachable && !nextTargetReachable) return false;
+            startReachable = nextStartReachable;
+            targetReachable = nextTargetReachable;
+            previous = position;
+        }
+        return targetReachable;
+    }
+
+    private static boolean isPlasticOrientationSegmentClear(
+        Level level,
+        AbstractPlasticEntity entity,
+        PlasticEntityOrientation orientation,
+        Vec3 from,
+        Vec3 to,
+        boolean allowFinalContact,
+        double sampleStep,
+        PathCheckCache checks
+    ) {
+        if (!isPlasticOrientationPositionClear(level, entity, orientation, from, false, checks)) return false;
+        PlasticEntityCollisionBox collisionBox = entity.plasticraft$getGeometry().collisionBoxAt(from, orientation);
+        Vec3 movement = to.subtract(from);
+        AABB sweptBounds = collisionBox.bounds().expandTowards(movement);
+        if (!level.getWorldBorder().isWithinBounds(sweptBounds)) return false;
+        Vec3 allowed = collisionBox.collide(entity, movement, level, List.of(), ignored -> false);
+        if (!sameMovement(allowed, movement)) return false;
+
+        double distance = from.distanceTo(to);
+        int steps = Math.max(1, (int) Math.ceil(distance / sampleStep));
+        for (int step = 1; step <= steps; step++) {
+            if (!isPlasticOrientationPositionClear(
+                level,
+                entity,
+                orientation,
+                from.lerp(to, step / (double) steps),
+                allowFinalContact && step == steps,
+                checks
+            )) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isPlasticOrientationPositionClear(
+        Level level,
+        AbstractPlasticEntity entity,
+        PlasticEntityOrientation orientation,
+        Vec3 position,
+        boolean allowFinalContact,
+        PathCheckCache checks
+    ) {
+        PlasticEntityCollisionBox collisionBox = entity.plasticraft$getGeometry().collisionBoxAt(position, orientation);
+        AABB bounds = collisionBox.bounds();
+        if (!level.getWorldBorder().isWithinBounds(bounds)) return false;
+        return noBlockCollision(level, entity, collisionBox, Vec3.ZERO, bounds, allowFinalContact)
+            && !isDangerousPosition(level, bounds, checks);
     }
 
     private static boolean isSegmentClear(
