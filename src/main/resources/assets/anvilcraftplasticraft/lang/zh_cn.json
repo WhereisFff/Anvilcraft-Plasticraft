@@ -102,7 +102,7 @@
   "block.anvilcraftplasticraft.plastic_molding_chamber": "塑料成型舱",
   "block.anvilcraftplasticraft.plastic_3d_printing_component": "3D打印组件",
   "block.anvilcraftplasticraft.plastic_molding_region": "塑料成型区域",
-  "tooltip.anvilcraftplasticraft.plastic_molding_chamber": "使用塑料熔体铸造或3D打印蓝图模型",
+  "tooltip.anvilcraftplasticraft.plastic_molding_chamber": "自动吸收附近粘土球并使用塑料熔体铸造或3D打印蓝图模型",
   "tooltip.anvilcraftplasticraft.item.plastic_3d_printing_component": "安装在成型舱正上方，暂存熔体并以 1 mB/gt 消耗以执行打印",
   "container.anvilcraftplasticraft.plastic_molding_chamber": "塑料成型舱",
   "screen.anvilcraftplasticraft.molding.search_type": "搜索类型",

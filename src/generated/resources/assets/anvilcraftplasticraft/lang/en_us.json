@@ -327,7 +327,7 @@
   "tooltip.anvilcraftplasticraft.molding.state": "State: %s",
   "tooltip.anvilcraftplasticraft.molding.structure_disk.fit_chamber": "✓ Can be processed by Plastic Molding Chamber",
   "tooltip.anvilcraftplasticraft.molding.structure_disk.too_large_for_chamber": "✗ Model is too large to process",
-  "tooltip.anvilcraftplasticraft.plastic_molding_chamber": "Casts blueprint models with clay and a Giant Anvil, or prints them directly with the component above the chamber",
+  "tooltip.anvilcraftplasticraft.plastic_molding_chamber": "Collects nearby clay balls and casts blueprint models with a Giant Anvil, or prints them with the component above",
   "tooltip.anvilcraftplasticraft.resin_anvil.captured": "Contains: %s",
   "tooltip.anvilcraftplasticraft.size": "Size: %1$s x %2$s x %3$s blocks"
 }

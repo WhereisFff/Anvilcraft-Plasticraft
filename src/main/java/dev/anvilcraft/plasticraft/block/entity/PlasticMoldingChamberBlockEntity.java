@@ -57,6 +57,7 @@ import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.Containers;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -97,6 +98,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     public static final int CLAY_LIMIT_MIN = 1;
     public static final int CLAY_LIMIT_MAX = 256;
     public static final int DEFAULT_CLAY_LIMIT = 256;
+    public static final int CLAY_COLLECTION_INTERVAL = 40;
     public static final int MOLD_FILL_LAYERS = 3;
     public static final int MOLD_FILL_LAYER_TICKS = 4;
     public static final int MOLD_FILL_TICKS = MOLD_FILL_LAYERS * MOLD_FILL_LAYER_TICKS;
@@ -173,6 +175,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     private boolean structureComplete;
     private boolean redstonePowered;
     private int repairCountdown;
+    private int clayCollectionCountdown = CLAY_COLLECTION_INTERVAL;
     private long lastClientSyncGameTime = Long.MIN_VALUE;
     private boolean clientSyncPending;
     private int clayLimit = DEFAULT_CLAY_LIMIT;
@@ -229,6 +232,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
                 chamber.setChanged();
             }
         }
+        chamber.tickClayCollection();
         chamber.tickRedstone(level);
         chamber.tickResourceSlot();
         chamber.tickGridCharging();
@@ -1418,6 +1422,31 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             bounds,
             entity -> entity.isAlive() && !entity.isSpectator()
         ).isEmpty();
+    }
+
+    private void tickClayCollection() {
+        if (--this.clayCollectionCountdown > 0) return;
+        this.clayCollectionCountdown = CLAY_COLLECTION_INTERVAL;
+        if (this.level == null || this.level.isClientSide
+            || this.inventory.getItem(CLAY_SLOT).getCount() >= this.clayLimit) {
+            return;
+        }
+        Direction front = this.getBlockState().getValue(PlasticMoldingChamberBlock.FACING);
+        AABB bounds = PlasticMoldingChamberStructure.clayCollectionBounds(this.worldPosition, front);
+        List<ItemEntity> clayEntities = this.level.getEntitiesOfClass(
+            ItemEntity.class,
+            bounds,
+            entity -> entity.isAlive() && entity.getItem().is(Items.CLAY_BALL)
+        );
+        for (ItemEntity entity : clayEntities) {
+            ItemStack remainder = this.clayItemHandler.insertItem(0, entity.getItem(), false);
+            if (remainder.isEmpty()) {
+                entity.remove(Entity.RemovalReason.DISCARDED);
+            } else {
+                entity.setItem(remainder);
+            }
+            if (this.inventory.getItem(CLAY_SLOT).getCount() >= this.clayLimit) return;
+        }
     }
 
     private boolean hasWorkingEnergy() {

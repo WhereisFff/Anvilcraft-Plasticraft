@@ -43,7 +43,7 @@ public final class PlasticraftLanguageData {
         // 塑料成型舱物品说明、容器标题和建模器界面语言文件生成。
         provider.add(
             "tooltip.anvilcraftplasticraft.plastic_molding_chamber",
-            "Casts blueprint models with clay and a Giant Anvil, or prints them directly with the component above the chamber"
+            "Collects nearby clay balls and casts blueprint models with a Giant Anvil, or prints them with the component above"
         );
         provider.add(
             "container.anvilcraftplasticraft.plastic_molding_chamber",

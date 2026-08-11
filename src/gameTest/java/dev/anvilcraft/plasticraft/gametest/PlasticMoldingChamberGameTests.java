@@ -365,6 +365,60 @@ public final class PlasticMoldingChamberGameTests {
     }
 
     @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "11x8x11", floor = true)
+    @TestHolder(description = "Every two seconds the chamber collects clay balls from the forming region and its one-block ring up to the configured limit")
+    static void clayCollectionUsesExpandedRegionAndLimit(ExtendedGameTestHelper helper) {
+        PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(5, 2, 2));
+        check(chamber.setClayLimit(70, chamber.revision()).accepted(), "clay collection limit was rejected");
+        chamber.inventory().setItem(
+            PlasticMoldingChamberBlockEntity.CLAY_SLOT,
+            new ItemStack(Items.CLAY_BALL, 60)
+        );
+
+        BlockPos controller = chamber.getBlockPos();
+        ItemEntity innerClay = addItem(
+            helper,
+            controller.relative(Direction.SOUTH, 2).above(),
+            new ItemStack(Items.CLAY_BALL, 6)
+        );
+        ItemEntity ringClay = addItem(
+            helper,
+            controller.relative(Direction.SOUTH, 4).east(2).above(3),
+            new ItemStack(Items.CLAY_BALL, 20)
+        );
+        ItemEntity outsideClay = addItem(
+            helper,
+            controller.relative(Direction.SOUTH, 5),
+            new ItemStack(Items.CLAY_BALL, 7)
+        );
+        ItemEntity nonClay = addItem(
+            helper,
+            controller.relative(Direction.SOUTH, 2),
+            new ItemStack(Items.STONE, 3)
+        );
+
+        tick(chamber, PlasticMoldingChamberBlockEntity.CLAY_COLLECTION_INTERVAL - 2);
+        check(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.CLAY_SLOT).getCount() == 60,
+            "chamber collected clay before two seconds elapsed");
+        tick(chamber, 1);
+        check(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.CLAY_SLOT).getCount() == 70,
+            "chamber did not fill its clay slot to the configured limit");
+        int collectedAreaRemainder = (innerClay.isAlive() ? innerClay.getItem().getCount() : 0)
+            + (ringClay.isAlive() ? ringClay.getItem().getCount() : 0);
+        check(collectedAreaRemainder == 16, "chamber did not leave the exact overflow in its collection area");
+        check(outsideClay.isAlive() && outsideClay.getItem().getCount() == 7,
+            "chamber collected clay outside the expanded 5x5x5 region");
+        check(nonClay.isAlive() && nonClay.getItem().getCount() == 3,
+            "chamber collected a non-clay item");
+
+        tick(chamber, PlasticMoldingChamberBlockEntity.CLAY_COLLECTION_INTERVAL);
+        check(collectedAreaRemainder == (innerClay.isAlive() ? innerClay.getItem().getCount() : 0)
+                + (ringClay.isAlive() ? ringClay.getItem().getCount() : 0),
+            "full clay slot continued collecting item entities");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "9x7x9", floor = true)
     @TestHolder(description = "Unlock returns the whole batch to staging only when all of it fits")
     static void batchMeltReturnsOnlyWhenStagingFits(ExtendedGameTestHelper helper) {
@@ -1404,6 +1458,13 @@ public final class PlasticMoldingChamberGameTests {
             ModBlocks.FLUID_TANK.asStack(), ModBlocks.STRUCTURE_SCANNER.asStack(), superCapacitor,
             ItemStack.EMPTY, pipe.copy(), ItemStack.EMPTY
         ));
+    }
+
+    private static ItemEntity addItem(ExtendedGameTestHelper helper, BlockPos pos, ItemStack stack) {
+        Vec3 center = pos.getCenter();
+        ItemEntity entity = new ItemEntity(helper.getLevel(), center.x, center.y, center.z, stack);
+        helper.getLevel().addFreshEntity(entity);
+        return entity;
     }
 
     private static EditableMoldingModel cubeModel(double size) {

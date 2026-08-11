@@ -94,6 +94,10 @@ public final class PlasticMoldingChamberStructure {
         return new AABB(minX, minY, minZ, maxX + 1.0D, maxY + 1.0D, maxZ + 1.0D);
     }
 
+    public static AABB clayCollectionBounds(BlockPos controller, Direction front) {
+        return regionBounds(controller, front).inflate(1.0D);
+    }
+
     public static boolean canPlace(Level level, BlockPos controller, Direction front) {
         for (BlockPos region : regionPositions(controller, front)) {
             if (!level.isInWorldBounds(region) || !level.isLoaded(region) || !level.getBlockState(region).isAir()) {
