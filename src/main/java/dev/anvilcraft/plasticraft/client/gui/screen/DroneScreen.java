@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.client.gui.screen;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionWaitReason;
 import dev.anvilcraft.plasticraft.drone.DroneEnergyModel;
 import dev.anvilcraft.plasticraft.drone.DroneShortageStrategy;
 import dev.anvilcraft.plasticraft.drone.tool.DroneCapability;
@@ -190,7 +191,31 @@ public class DroneScreen extends AbstractContainerScreen<DroneMenu> {
             0x404040,
             false
         );
-        if (definition.hasCapability(DroneCapability.CHUNK_LOADING)) {
+        ConstructionWaitReason waitReason = this.menu.waitReason();
+        if (waitReason != ConstructionWaitReason.NONE) {
+            graphics.drawString(
+                this.font,
+                Component.translatable(
+                    "screen.anvilcraftplasticraft.drone.wait." + waitReason.name().toLowerCase(Locale.ROOT)
+                ),
+                TEXT_X,
+                58,
+                0xA04040,
+                false
+            );
+        }
+        ItemStack carry = this.menu.hostedCarry();
+        if (!carry.isEmpty()) {
+            graphics.drawString(
+                this.font,
+                Component.translatable("screen.anvilcraftplasticraft.drone.carry", carry.getHoverName()),
+                TEXT_X,
+                waitReason == ConstructionWaitReason.NONE ? 58 : 70,
+                0x404040,
+                false
+            );
+        }
+        if (definition.hasCapability(DroneCapability.CHUNK_LOADING) && waitReason == ConstructionWaitReason.NONE) {
             graphics.drawString(
                 this.font,
                 Component.translatable("screen.anvilcraftplasticraft.drone.coverage.inactive"),

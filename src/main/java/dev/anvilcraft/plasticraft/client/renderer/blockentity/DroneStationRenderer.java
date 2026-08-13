@@ -56,6 +56,7 @@ public class DroneStationRenderer implements BlockEntityRenderer<DroneStationBlo
             docking.toolId(),
             docking.leftPropeller(),
             docking.rightPropeller(),
+            docking.hostedCarry(),
             spin,
             poseStack,
             buffers,

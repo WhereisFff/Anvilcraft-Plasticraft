@@ -40,12 +40,15 @@ The two propellers in the top corners must be "propeller" type products made in 
 - Cost model: total = 256 FE × airborne gt + 256 FE × actual flight distance in blocks + 2,560 FE × instant actions; distance follows the real server-side trajectory, and a landed drone pays no hover cost
 - Drones charge automatically inside any working power grid; each drone below full charge requests only 8 kW and converts it with the current power efficiency (800 FE/gt by default); hovering, moving and instant actions always drain internal FE first
 - Without a job, regular drones wait on the ground; an observation drone with charge takes off and hovers with the bottom of its collision box 4 blocks above the nearest stable, non-fluid collision surface below, returning to the ground if blocked above
+- A construction drone discovers work when the nearest executable target is within 128 blocks and has a path, with a 1-block reach; it takes items from the owner's inventory, flies to an approach cell, delivers a construction projection, then returns to the player; pickup and returns do not count as instant actions, and each delivery costs 2,560 FE
+- Delivered construction projections stay as air with no block entity, but they provide real collision so players can stand on them; undelivered holograms can be walked through; empty-collision targets such as redstone dust create no fake collision
+- Pausing a job stops dispatch and returns in-transit items to the inventory while keeping delivered fake blocks; cancelling quietly commits delivered blocks, returns in-transit items, and leaves undelivered cells as they are in the world
 - An observation drone always keeps a safe-landing reserve of 20,480 FE and lands as soon as the reserve is reached; it will not take off below the 40,960 FE threshold
 - A drone whose energy cannot cover a job quote plus the safe-landing reserve refuses the job
 
 ## Settings Screen
 
 - Right-click a drone entity, or sneak and right-click while holding a drone item, to open the same settings screen; both forms read and write the same data, and settings survive recovery
-- The screen shows the installed tool, owner, flight state and energy; the energy bar shares the Plastic Molding Chamber layout
+- The screen shows the installed tool, owner, flight state, wait reason and energy; construction drones also show hosted carry; the energy bar shares the Plastic Molding Chamber layout
 - Construction and demolition drones can switch the shortage strategy between pause-and-wait (default) and skip
 - Collection drones additionally show their nine-slot cargo; observation drones show their chunk loading state

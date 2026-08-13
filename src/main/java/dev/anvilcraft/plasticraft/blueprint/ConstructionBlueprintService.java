@@ -11,6 +11,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.InteractionHand;
@@ -27,10 +28,6 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
-
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -176,14 +173,14 @@ public final class ConstructionBlueprintService {
         }
     }
 
-    /** 磁盘改写前移除它引用的已放置蓝图,避免投影残留在世界里无法清除。 */
+    /** 磁盘改写前按取消语义清理先前部署:已交付投影提交,在途材料返还。 */
     private static void removeDiskJob(MinecraftServer server, ItemStack disk) {
         UUID jobId = ConstructionBlueprintData.get(disk).flatMap(ConstructionBlueprintData::jobId).orElse(null);
         if (jobId == null) return;
         ConstructionJobIndex index = ConstructionJobIndex.get(server);
-        if (index.job(jobId) == null) return;
-        index.remove(jobId);
-        BlueprintJobSync.syncRemove(server, jobId);
+        ConstructionJob job = index.job(jobId);
+        if (job == null) return;
+        ConstructionJobController.cancel(server, job);
     }
 
     /**
@@ -208,6 +205,9 @@ public final class ConstructionBlueprintService {
         ConstructionJob existing = data.jobId().map(index::job).orElse(null);
         if (existing != null) {
             requireOwner(player, existing);
+            if (ConstructionJobController.hasProgressLock(server, existing.jobId())) {
+                throw new ConstructionBlueprintException("placement_locked", "");
+            }
             ConstructionJob moved = existing.withPlacement(anchor, rotation, mirror);
             index.put(moved);
             BlueprintJobSync.syncPut(server, moved);
@@ -234,7 +234,7 @@ public final class ConstructionBlueprintService {
         return job;
     }
 
-    /** 取消一份已放置蓝图:删除任务条目,并清除玩家手中引用它的磁盘组件 jobId。 */
+    /** 取消一份已放置蓝图:按进度提交已交付投影,返还在途材料,并清除磁盘 jobId。 */
     public static void cancel(ServerPlayer player, UUID jobId) throws ConstructionBlueprintException {
         MinecraftServer server = player.server;
         ConstructionJobIndex index = ConstructionJobIndex.get(server);
@@ -243,8 +243,7 @@ public final class ConstructionBlueprintService {
             throw new ConstructionBlueprintException("job_missing", "");
         }
         requireOwner(player, job);
-        index.remove(jobId);
-        BlueprintJobSync.syncRemove(server, jobId);
+        ConstructionJobController.cancel(server, job);
         clearJobId(player.getInventory().getSelected(), jobId);
         clearJobId(player.getOffhandItem(), jobId);
         for (ItemStack stack : player.getInventory().items) {
@@ -260,7 +259,7 @@ public final class ConstructionBlueprintService {
         }
     }
 
-    /** 启动一份任务并暂停该玩家的其他活动任务;TODO 04 只切换状态,不派发无人机。 */
+    /** 启动一份任务并暂停该玩家的其他活动任务;暂停时返还在途材料并保留已交付投影。 */
     public static void start(ServerPlayer player, UUID jobId) throws ConstructionBlueprintException {
         MinecraftServer server = player.server;
         ConstructionJobIndex index = ConstructionJobIndex.get(server);
@@ -271,11 +270,20 @@ public final class ConstructionBlueprintService {
         requireOwner(player, job);
         List<ConstructionJob> paused = index.activate(jobId);
         for (ConstructionJob pausedJob : paused) {
-            BlueprintJobSync.syncPut(server, pausedJob);
+            ConstructionJobController.pause(server, pausedJob);
         }
         ConstructionJob started = index.job(jobId);
         if (started != null) {
-            BlueprintJobSync.syncPut(server, started);
+            ServerLevel level = server.getLevel(started.dimension());
+            if (level != null) {
+                ConstructionJobProgress progress = ConstructionJobStore.get(server).getOrCreate(started.jobId());
+                ConstructionJobController.plan(level, started, progress);
+                ConstructionJobStore.get(server).markDirty();
+            }
+            ConstructionJob planned = index.job(jobId);
+            if (planned != null) {
+                BlueprintJobSync.syncPut(server, planned);
+            }
         }
     }
 
@@ -289,9 +297,7 @@ public final class ConstructionBlueprintService {
         }
         requireOwner(player, job);
         if (job.isActive()) {
-            ConstructionJob stopped = job.withState(ConstructionJob.STATE_INACTIVE);
-            index.put(stopped);
-            BlueprintJobSync.syncPut(server, stopped);
+            ConstructionJobController.pause(server, job);
             return false;
         }
         start(player, jobId);

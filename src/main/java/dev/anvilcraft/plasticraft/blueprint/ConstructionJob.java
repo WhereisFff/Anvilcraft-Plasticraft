@@ -36,8 +36,23 @@ public record ConstructionJob(
 ) {
     /** 投影已放置但未启动。 */
     public static final byte STATE_INACTIVE = 0;
-    /** 已启动;每名玩家同一时间最多一份。 */
+    /** 已启动的兼容值;计入进行中,新启动写入 PLANNING。 */
     public static final byte STATE_ACTIVE = 1;
+    public static final byte STATE_PLANNING = 2;
+    public static final byte STATE_WAITING_PERMISSION = 3;
+    public static final byte STATE_WAITING_OBSERVER = 4;
+    public static final byte STATE_SEALING_FLUID = 5;
+    public static final byte STATE_DEMOLISHING = 6;
+    public static final byte STATE_COLLECTING_DEBRIS = 7;
+    public static final byte STATE_WAITING_DEMOLITION = 8;
+    public static final byte STATE_BUILDING = 9;
+    public static final byte STATE_WAITING_MATERIAL = 10;
+    public static final byte STATE_SOURCE_UNAVAILABLE = 11;
+    public static final byte STATE_COMMITTING = 12;
+    public static final byte STATE_COMPLETED = 13;
+    public static final byte STATE_COMPLETED_INCOMPLETE = 14;
+    public static final byte STATE_STOPPED_PARTIAL = 15;
+    public static final byte STATE_FAILED = 16;
 
     private static final Codec<Rotation> ROTATION_CODEC = Codec.STRING.xmap(
         name -> Rotation.valueOf(name.toUpperCase(Locale.ROOT)),
@@ -67,8 +82,16 @@ public record ConstructionJob(
         Codec.BOOL.fieldOf("has_entities").forGetter(ConstructionJob::hasEntities)
     ).apply(instance, ConstructionJob::new));
 
+    /** 磁盘绿底与每玩家一份活动任务:非未启动且非终态。 */
     public boolean isActive() {
-        return this.state == STATE_ACTIVE;
+        return this.state != STATE_INACTIVE && !this.isTerminal();
+    }
+
+    public boolean isTerminal() {
+        return this.state == STATE_COMPLETED
+            || this.state == STATE_COMPLETED_INCOMPLETE
+            || this.state == STATE_STOPPED_PARTIAL
+            || this.state == STATE_FAILED;
     }
 
     public ConstructionJob withState(byte newState) {

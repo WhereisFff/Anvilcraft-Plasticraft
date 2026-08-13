@@ -107,7 +107,9 @@ public final class DroneGameTests {
             123456,
             Optional.of(UUID.fromString("00000000-0000-0000-0000-000000000042")),
             DroneShortageStrategy.SKIP,
-            List.of(new ItemStack(Items.COBBLESTONE, 17))
+            List.of(new ItemStack(Items.COBBLESTONE, 17)),
+            Optional.empty(),
+            ItemStack.EMPTY
         );
         DroneEntity drone = spawnDrone(helper, new Vec3(1.5D, 2.0D, 1.5D), data);
 
@@ -283,7 +285,10 @@ public final class DroneGameTests {
             || actual.energy() != expected.energy()
             || !actual.owner().equals(expected.owner())
             || actual.shortageStrategy() != expected.shortageStrategy()
-            || actual.collectionInventory().size() != expected.collectionInventory().size()) {
+            || actual.collectionInventory().size() != expected.collectionInventory().size()
+            || !actual.assignedJobId().equals(expected.assignedJobId())
+            || !ItemStack.isSameItemSameComponents(actual.hostedCarry(), expected.hostedCarry())
+            || actual.hostedCarry().getCount() != expected.hostedCarry().getCount()) {
             return false;
         }
         for (int index = 0; index < actual.collectionInventory().size(); index++) {

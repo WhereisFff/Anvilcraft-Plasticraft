@@ -6,6 +6,7 @@ import com.mojang.math.Axis;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.blueprint.BlueprintPlacement;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionProjectionIndex;
 import dev.anvilcraft.plasticraft.blueprint.StructureSnapshot;
 import dev.anvilcraft.plasticraft.client.blueprint.BlueprintDeploySession;
 import dev.anvilcraft.plasticraft.client.blueprint.ClientBlueprintJobCache;
@@ -52,6 +53,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.client.model.data.ModelData;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 
@@ -77,6 +79,7 @@ public final class BlueprintProjectionRenderer {
     private static final double VIEW_DISTANCE = 160.0D;
     /** 投影统一着色:把方块原色向全息青略洗,避免直接乘青把红石和树叶滤成灰褐。 */
     private static final float TINT_ALPHA = 0.55F;
+    private static final float DELIVERED_ALPHA = 0.82F;
     private static final float BOX_RED = 0.25F;
     private static final float BOX_GREEN = 0.85F;
     private static final float BOX_BLUE = 1.0F;
@@ -139,10 +142,18 @@ public final class BlueprintProjectionRenderer {
                     minecraft,
                     poseStack,
                     tintedBlocks,
-                    prepared
+                    prepared,
+                    item
                 ));
             }
             buffers.endBatch(blockType);
+            VertexConsumer deliveredBlocks = new TintedVertexConsumer(
+                buffers.getBuffer(blockType),
+                DELIVERED_ALPHA
+            );
+            renderDeliveredBlocks(minecraft, poseStack, deliveredBlocks, items);
+            buffers.endBatch(blockType);
+            renderDeliveredMasks(minecraft, poseStack, buffers, items);
             for (RenderItem item : items) {
                 PreparedProjection prepared = preparedOrNull(minecraft, item, poseOf(item, sessionPose));
                 if (prepared == null) continue;
@@ -182,7 +193,8 @@ public final class BlueprintProjectionRenderer {
         BlueprintPlacement placement,
         int layerView,
         Vec3i size,
-        boolean session
+        boolean session,
+        @Nullable UUID jobId
     ) {
     }
 
@@ -208,7 +220,8 @@ public final class BlueprintProjectionRenderer {
                 sessionPlacement,
                 BlueprintDeploySession.layerView(),
                 sessionSize,
-                true
+                true,
+                sessionJobId
             ));
         }
         assert minecraft.level != null && minecraft.player != null;
@@ -221,7 +234,8 @@ public final class BlueprintProjectionRenderer {
                 BlueprintPlacement.of(job),
                 BlueprintDeploySession.LAYERS_ALL,
                 job.size(),
-                false
+                false,
+                job.jobId()
             ));
         }
         return items;
@@ -481,20 +495,22 @@ public final class BlueprintProjectionRenderer {
         Minecraft minecraft,
         PoseStack poseStack,
         VertexConsumer tintedBlocks,
-        PreparedProjection prepared
+        PreparedProjection prepared,
+        RenderItem item
     ) {
         BlockRenderDispatcher dispatcher = minecraft.getBlockRenderer();
         try {
             prepared.view().hideNonOccludingNeighbors(true);
             ModelBlockRenderer.enableCaching();
-            tessellateModels(dispatcher, poseStack, tintedBlocks, prepared, true);
+            tessellateModels(dispatcher, poseStack, tintedBlocks, prepared, item, true);
             ModelBlockRenderer.clearCache();
             prepared.view().hideNonOccludingNeighbors(false);
             ModelBlockRenderer.enableCaching();
-            tessellateModels(dispatcher, poseStack, tintedBlocks, prepared, false);
+            tessellateModels(dispatcher, poseStack, tintedBlocks, prepared, item, false);
             ModelBlockRenderer.clearCache();
             prepared.view().hideNonOccludingNeighbors(false);
             for (BlockPos pos : prepared.fluidBlocks()) {
+                if (isDelivered(minecraft.level, item, pos)) continue;
                 BlockState state = prepared.view().realState(pos);
                 FluidState fluid = state.getFluidState();
                 if (fluid.isEmpty()) continue;
@@ -516,10 +532,13 @@ public final class BlueprintProjectionRenderer {
         PoseStack poseStack,
         VertexConsumer tintedBlocks,
         PreparedProjection prepared,
+        RenderItem item,
         boolean solidPass
     ) {
         RandomSource random = RandomSource.create();
+        ClientLevel level = Minecraft.getInstance().level;
         for (BlockPos pos : prepared.modelBlocks()) {
+            if (isDelivered(level, item, pos)) continue;
             BlockState state = prepared.view().realState(pos);
             if (state.getRenderShape() != RenderShape.MODEL) continue;
             if (isSolidCube(state) != solidPass) continue;
@@ -539,6 +558,106 @@ public final class BlueprintProjectionRenderer {
             );
             poseStack.popPose();
         }
+    }
+
+    private static boolean isDelivered(@Nullable ClientLevel level, RenderItem item, BlockPos local) {
+        if (level == null || item.jobId() == null) return false;
+        return ConstructionProjectionIndex.has(level, local.offset(item.placement().anchor()));
+    }
+
+    private static void renderDeliveredBlocks(
+        Minecraft minecraft,
+        PoseStack poseStack,
+        VertexConsumer tintedBlocks,
+        List<RenderItem> items
+    ) {
+        ClientLevel level = minecraft.level;
+        if (level == null) return;
+        BlockRenderDispatcher dispatcher = minecraft.getBlockRenderer();
+        RandomSource random = RandomSource.create();
+        for (RenderItem item : items) {
+            if (item.jobId() == null) continue;
+            for (Map.Entry<BlockPos, BlockState> entry
+                : ConstructionProjectionIndex.deliveredIn(level, item.jobId()).entrySet()) {
+                BlockPos pos = entry.getKey();
+                BlockState state = entry.getValue();
+                if (state.getRenderShape() != RenderShape.MODEL) continue;
+                random.setSeed(state.getSeed(pos));
+                poseStack.pushPose();
+                poseStack.translate(pos.getX(), pos.getY(), pos.getZ());
+                dispatcher.renderBatched(
+                    state,
+                    pos,
+                    level,
+                    poseStack,
+                    tintedBlocks,
+                    true,
+                    random,
+                    ModelData.EMPTY,
+                    null
+                );
+                poseStack.popPose();
+            }
+        }
+    }
+
+    private static void renderDeliveredMasks(
+        Minecraft minecraft,
+        PoseStack poseStack,
+        MultiBufferSource.BufferSource buffers,
+        List<RenderItem> items
+    ) {
+        ClientLevel level = minecraft.level;
+        if (level == null) return;
+        RenderType mask = BlueprintProjectionRenderTypes.constructionMask();
+        VertexConsumer consumer = buffers.getBuffer(mask);
+        int color = packColor(0.35F, 0.95F, 0.55F, 0.38F);
+        for (RenderItem item : items) {
+            if (item.jobId() == null) continue;
+            for (BlockPos pos : ConstructionProjectionIndex.deliveredIn(level, item.jobId()).keySet()) {
+                overlayCube(poseStack, consumer, pos, color);
+            }
+        }
+        buffers.endBatch(mask);
+    }
+
+    private static void overlayCube(PoseStack poseStack, VertexConsumer consumer, BlockPos pos, int color) {
+        Matrix4f matrix = poseStack.last().pose();
+        float x0 = pos.getX();
+        float y0 = pos.getY();
+        float z0 = pos.getZ();
+        float x1 = x0 + 1.0F;
+        float y1 = y0 + 1.0F;
+        float z1 = z0 + 1.0F;
+        overlayQuad(consumer, matrix, x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, color);
+        overlayQuad(consumer, matrix, x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0, color);
+        overlayQuad(consumer, matrix, x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0, color);
+        overlayQuad(consumer, matrix, x0, y0, z1, x0, y0, z0, x1, y0, z0, x1, y0, z1, color);
+        overlayQuad(consumer, matrix, x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, color);
+        overlayQuad(consumer, matrix, x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1, color);
+    }
+
+    private static void overlayQuad(
+        VertexConsumer consumer,
+        Matrix4f matrix,
+        float x0,
+        float y0,
+        float z0,
+        float x1,
+        float y1,
+        float z1,
+        float x2,
+        float y2,
+        float z2,
+        float x3,
+        float y3,
+        float z3,
+        int color
+    ) {
+        consumer.addVertex(matrix, x0, y0, z0).setUv(0.0F, 0.0F).setColor(color);
+        consumer.addVertex(matrix, x1, y1, z1).setUv(1.0F, 0.0F).setColor(color);
+        consumer.addVertex(matrix, x2, y2, z2).setUv(1.0F, 1.0F).setColor(color);
+        consumer.addVertex(matrix, x3, y3, z3).setUv(0.0F, 1.0F).setColor(color);
     }
 
     private static boolean isSolidCube(BlockState state) {

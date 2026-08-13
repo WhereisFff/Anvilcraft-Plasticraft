@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.client.blueprint;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionProjectionIndex;
 import dev.anvilcraft.plasticraft.client.renderer.blueprint.BlueprintProjectionRenderer;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -39,6 +40,9 @@ public final class BlueprintClientEvents {
             .withStyle(ChatFormatting.DARK_GRAY));
         event.getToolTip().add(Component
             .translatable("tooltip.anvilcraftplasticraft.blueprint.controls")
+            .withStyle(ChatFormatting.DARK_GRAY));
+        event.getToolTip().add(Component
+            .translatable("tooltip.anvilcraftplasticraft.blueprint.cancel_commits")
             .withStyle(ChatFormatting.DARK_GRAY));
         if (data.hasBlockEntities()) {
             event.getToolTip().add(Component
@@ -81,5 +85,8 @@ public final class BlueprintClientEvents {
         ClientBlueprintJobCache.clear();
         ClientBlueprintSnapshotCache.clear();
         BlueprintProjectionRenderer.clearCache();
+        if (Minecraft.getInstance().level != null) {
+            ConstructionProjectionIndex.clearLevel(Minecraft.getInstance().level);
+        }
     }
 }

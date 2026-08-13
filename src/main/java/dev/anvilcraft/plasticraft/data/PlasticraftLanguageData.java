@@ -47,7 +47,7 @@ public final class PlasticraftLanguageData {
         );
         provider.add(
             "tooltip.anvilcraftplasticraft.drone.construction",
-            "Mechanical drone fitted with a crab claw attachment"
+            "Takes materials from the owner's inventory and delivers construction projections"
         );
         provider.add(
             "tooltip.anvilcraftplasticraft.drone.demolition",
@@ -75,6 +75,15 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.drone.state.taking_off", "Taking off");
         provider.add("screen.anvilcraftplasticraft.drone.state.hovering", "Hovering");
         provider.add("screen.anvilcraftplasticraft.drone.state.landing", "Landing");
+        provider.add("screen.anvilcraftplasticraft.drone.state.docking", "Docking");
+        provider.add("screen.anvilcraftplasticraft.drone.state.flying", "Flying");
+        provider.add("screen.anvilcraftplasticraft.drone.wait.none", "");
+        provider.add("screen.anvilcraftplasticraft.drone.wait.material", "Waiting for materials");
+        provider.add("screen.anvilcraftplasticraft.drone.wait.occupied", "Construction position occupied");
+        provider.add("screen.anvilcraftplasticraft.drone.wait.world", "Waiting for the world block to clear");
+        provider.add("screen.anvilcraftplasticraft.drone.wait.source", "Owner is not in this dimension");
+        provider.add("screen.anvilcraftplasticraft.drone.wait.energy", "Not enough energy for the next delivery");
+        provider.add("screen.anvilcraftplasticraft.drone.carry", "Carrying: %s");
         provider.add("screen.anvilcraftplasticraft.drone.strategy", "Shortage strategy");
         provider.add("screen.anvilcraftplasticraft.drone.strategy.pause", "Pause and wait");
         provider.add("screen.anvilcraftplasticraft.drone.strategy.skip", "Skip");
@@ -496,8 +505,12 @@ public final class PlasticraftLanguageData {
         // 结构蓝图磁盘 Tooltip:名称和尺寸走本体「结构：」行,这里只追加部署状态;Shift 展开来源与内容标记。
         provider.add("tooltip.anvilcraftplasticraft.blueprint.summary", "Construction blueprint: %s");
         provider.add("tooltip.anvilcraftplasticraft.blueprint.state_imported", "Not placed, right-click to place a projection");
-        provider.add("tooltip.anvilcraftplasticraft.blueprint.state_placed", "Placed, right-click this slot to start");
-        provider.add("tooltip.anvilcraftplasticraft.blueprint.state_active", "Construction task running");
+        provider.add("tooltip.anvilcraftplasticraft.blueprint.state_placed", "Paused, yellow slot, right-click this slot to start");
+        provider.add("tooltip.anvilcraftplasticraft.blueprint.state_active", "Building, green slot");
+        provider.add(
+            "tooltip.anvilcraftplasticraft.blueprint.cancel_commits",
+            "Cancel quietly commits delivered blocks and returns in-transit items"
+        );
         provider.add("tooltip.anvilcraftplasticraft.blueprint.size", "Size: %1$s x %2$s x %3$s");
         provider.add("tooltip.anvilcraftplasticraft.blueprint.source.vanilla_template", "Source: structure block template");
         provider.add("tooltip.anvilcraftplasticraft.blueprint.source.scanner_disk", "Source: structure scanner");
@@ -547,6 +560,20 @@ public final class PlasticraftLanguageData {
         provider.add("message.anvilcraftplasticraft.blueprint.cancelled", "Projection cancelled");
         provider.add("message.anvilcraftplasticraft.blueprint.started", "Construction task started");
         provider.add("message.anvilcraftplasticraft.blueprint.stopped", "Construction task stopped");
+        provider.add(
+            "message.anvilcraftplasticraft.blueprint.placement_locked",
+            "Cannot move a blueprint that already has construction progress"
+        );
+        provider.add("message.anvilcraftplasticraft.construction.completed", "Construction finished");
+        provider.add(
+            "message.anvilcraftplasticraft.construction.completed_incomplete",
+            "Construction finished with skipped blocks"
+        );
+        provider.add("message.anvilcraftplasticraft.construction.wait.material", "Construction is waiting for materials");
+        provider.add("message.anvilcraftplasticraft.construction.wait.occupied", "A construction position is occupied");
+        provider.add("message.anvilcraftplasticraft.construction.wait.world", "A construction position is blocked by the world");
+        provider.add("message.anvilcraftplasticraft.construction.wait.source", "Construction is waiting for the owner to return");
+        provider.add("message.anvilcraftplasticraft.construction.wait.energy", "A construction drone does not have enough energy");
         provider.add("message.anvilcraftplasticraft.blueprint.not_structure_disk", "Hold a structure disk to import");
         provider.add(
             "message.anvilcraftplasticraft.blueprint.disk_in_molding_use",

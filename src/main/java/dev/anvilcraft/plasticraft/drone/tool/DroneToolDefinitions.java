@@ -43,7 +43,7 @@ public final class DroneToolDefinitions {
         0,
         INSTANT_ACTION_ENERGY_COST,
         List.of("idle", "open", "approach", "grab", "hold", "release"),
-        DroneToolBehavior.NONE
+        ConstructionDroneToolBehavior.INSTANCE
     ));
 
     public static final DroneToolDefinition DEMOLITION = register(new DroneToolDefinition(

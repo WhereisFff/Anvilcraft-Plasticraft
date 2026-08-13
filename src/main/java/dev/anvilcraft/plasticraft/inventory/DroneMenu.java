@@ -1,5 +1,7 @@
 package dev.anvilcraft.plasticraft.inventory;
 
+import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionWaitReason;
 import dev.anvilcraft.plasticraft.drone.DroneData;
 import dev.anvilcraft.plasticraft.drone.DroneFlightState;
 import dev.anvilcraft.plasticraft.drone.DroneShortageStrategy;
@@ -9,7 +11,6 @@ import dev.anvilcraft.plasticraft.entity.drone.DroneEntity;
 import dev.anvilcraft.plasticraft.init.PlasticraftMenuTypes;
 import dev.anvilcraft.plasticraft.item.DroneItem;
 import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -38,7 +39,8 @@ public class DroneMenu extends AbstractContainerMenu {
     public static final int DATA_ENERGY = 0;
     public static final int DATA_FLIGHT_STATE = 1;
     public static final int DATA_STRATEGY = 2;
-    public static final int DATA_COUNT = 3;
+    public static final int DATA_WAIT_REASON = 3;
+    public static final int DATA_COUNT = 4;
     /** 收集库存展示区的九格槽位布局左上角。 */
     public static final int COLLECTION_SLOT_X = 106;
     public static final int COLLECTION_SLOT_Y = 78;
@@ -50,6 +52,7 @@ public class DroneMenu extends AbstractContainerMenu {
     private final InteractionHand hand;
     private final ResourceLocation toolId;
     private final String ownerName;
+    private final int droneEntityId;
     private final ContainerData data;
 
     private DroneMenu(
@@ -60,6 +63,7 @@ public class DroneMenu extends AbstractContainerMenu {
         @Nullable InteractionHand hand,
         ResourceLocation toolId,
         String ownerName,
+        int droneEntityId,
         List<ItemStack> collectionInventory,
         ContainerData data
     ) {
@@ -69,6 +73,7 @@ public class DroneMenu extends AbstractContainerMenu {
         this.hand = hand;
         this.toolId = toolId;
         this.ownerName = ownerName;
+        this.droneEntityId = droneEntityId;
         this.data = data;
         if (this.toolDefinition().inventorySize() > 0) {
             this.addCollectionSlots(collectionInventory);
@@ -86,6 +91,7 @@ public class DroneMenu extends AbstractContainerMenu {
             null,
             drone.toolId(),
             resolveOwnerName(playerInventory.player, drone.getOwner()),
+            drone.getId(),
             drone.toDroneData().collectionInventory(),
             new ContainerData() {
                 @Override
@@ -94,6 +100,7 @@ public class DroneMenu extends AbstractContainerMenu {
                         case DATA_ENERGY -> drone.getEnergy();
                         case DATA_FLIGHT_STATE -> drone.flightState().ordinal();
                         case DATA_STRATEGY -> drone.shortageStrategy().ordinal();
+                        case DATA_WAIT_REASON -> drone.waitReason().ordinal();
                         default -> 0;
                     };
                 }
@@ -120,6 +127,7 @@ public class DroneMenu extends AbstractContainerMenu {
             hand,
             itemData(playerInventory.player, hand).toolId(),
             resolveOwnerName(playerInventory.player, itemData(playerInventory.player, hand).owner()),
+            -1,
             itemData(playerInventory.player, hand).collectionInventory(),
             new ContainerData() {
                 @Override
@@ -155,6 +163,7 @@ public class DroneMenu extends AbstractContainerMenu {
             buffer.readBoolean() ? InteractionHand.values()[buffer.readVarInt()] : null,
             ResourceLocation.STREAM_CODEC.decode(buffer),
             buffer.readUtf(64),
+            buffer.readVarInt(),
             ItemStack.OPTIONAL_LIST_STREAM_CODEC.decode(buffer),
             new SimpleContainerData(DATA_COUNT)
         );
@@ -177,6 +186,7 @@ public class DroneMenu extends AbstractContainerMenu {
                 null,
                 drone.toolId(),
                 resolveOwnerName(player, drone.getOwner()),
+                drone.getId(),
                 data.collectionInventory()
             )
         );
@@ -200,6 +210,7 @@ public class DroneMenu extends AbstractContainerMenu {
                 hand,
                 data.toolId(),
                 resolveOwnerName(player, data.owner()),
+                -1,
                 data.collectionInventory()
             )
         );
@@ -210,12 +221,14 @@ public class DroneMenu extends AbstractContainerMenu {
         @Nullable InteractionHand hand,
         ResourceLocation toolId,
         String ownerName,
+        int droneEntityId,
         List<ItemStack> collectionInventory
     ) {
         buffer.writeBoolean(hand != null);
         if (hand != null) buffer.writeVarInt(hand.ordinal());
         ResourceLocation.STREAM_CODEC.encode(buffer, toolId);
         buffer.writeUtf(ownerName, 64);
+        buffer.writeVarInt(droneEntityId);
         ItemStack.OPTIONAL_LIST_STREAM_CODEC.encode(buffer, collectionInventory);
     }
 
@@ -269,22 +282,17 @@ public class DroneMenu extends AbstractContainerMenu {
     public void applyStrategy(DroneShortageStrategy strategy) {
         if (this.drone != null) {
             this.drone.setShortageStrategy(strategy);
-            return;
+        } else {
+            if (this.hand == null) return;
+            ItemStack stack = this.player.getItemInHand(this.hand);
+            if (!(stack.getItem() instanceof DroneItem droneItem)) return;
+            DroneData data = DroneData.get(stack)
+                .orElseGet(() -> DroneData.assembled(droneItem.definition().id(), ItemStack.EMPTY, ItemStack.EMPTY));
+            DroneData.set(stack, data.withShortageStrategy(strategy));
         }
-        if (this.hand == null) return;
-        ItemStack stack = this.player.getItemInHand(this.hand);
-        if (!(stack.getItem() instanceof DroneItem droneItem)) return;
-        DroneData data = DroneData.get(stack)
-            .orElseGet(() -> DroneData.assembled(droneItem.definition().id(), ItemStack.EMPTY, ItemStack.EMPTY));
-        DroneData.set(stack, new DroneData(
-            data.toolId(),
-            data.leftPropeller(),
-            data.rightPropeller(),
-            data.energy(),
-            data.owner(),
-            strategy,
-            data.collectionInventory()
-        ));
+        if (this.player instanceof ServerPlayer serverPlayer) {
+            ConstructionJobController.onShortageStrategyChanged(serverPlayer, strategy);
+        }
     }
 
     public ResourceLocation toolId() {
@@ -311,6 +319,19 @@ public class DroneMenu extends AbstractContainerMenu {
         int ordinal = this.data.get(DATA_STRATEGY);
         DroneShortageStrategy[] values = DroneShortageStrategy.values();
         return ordinal >= 0 && ordinal < values.length ? values[ordinal] : DroneShortageStrategy.PAUSE;
+    }
+
+    public ConstructionWaitReason waitReason() {
+        return ConstructionWaitReason.byId(this.data.get(DATA_WAIT_REASON));
+    }
+
+    public ItemStack hostedCarry() {
+        if (this.drone != null) return this.drone.hostedCarry();
+        if (this.droneEntityId < 0 || this.player.level() == null) return ItemStack.EMPTY;
+        if (this.player.level().getEntity(this.droneEntityId) instanceof DroneEntity entity) {
+            return entity.hostedCarry();
+        }
+        return ItemStack.EMPTY;
     }
 
     @Override

@@ -11,7 +11,9 @@ public enum DroneFlightState {
     /** 主动下降直到触地。 */
     LANDING,
     /** 飞向无人机站顶部泊位准备入库;未轮到时在站顶上方方阵格位悬停等待。 */
-    DOCKING;
+    DOCKING,
+    /** 沿任务路点飞行;不要复用观察无人机的四格悬停。 */
+    FLYING;
 
     public static DroneFlightState byId(int id) {
         DroneFlightState[] values = values();

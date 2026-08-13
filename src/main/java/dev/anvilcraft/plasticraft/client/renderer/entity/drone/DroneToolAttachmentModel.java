@@ -32,6 +32,15 @@ public class DroneToolAttachmentModel {
         this.root = root;
     }
 
+    public void translateToHeldItem(PoseStack poseStack) {
+        if (!this.root.hasChild("construction_attachment")) return;
+        ModelPart attachment = this.root.getChild("construction_attachment");
+        attachment.translateAndRotate(poseStack);
+        if (attachment.hasChild("held_item_anchor")) {
+            attachment.getChild("held_item_anchor").translateAndRotate(poseStack);
+        }
+    }
+
     public void render(PoseStack poseStack, VertexConsumer buffer, int packedLight, int packedOverlay) {
         this.root.render(poseStack, buffer, packedLight, packedOverlay);
     }

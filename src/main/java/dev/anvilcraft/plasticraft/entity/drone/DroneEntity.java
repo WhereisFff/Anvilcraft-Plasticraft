@@ -1,9 +1,11 @@
 package dev.anvilcraft.plasticraft.entity.drone;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionWaitReason;
 import dev.anvilcraft.plasticraft.block.entity.DroneStationBlockEntity;
 import dev.anvilcraft.plasticraft.drone.DroneData;
 import dev.anvilcraft.plasticraft.drone.DroneEnergyModel;
+import dev.anvilcraft.plasticraft.drone.DroneFlightNavigator;
 import dev.anvilcraft.plasticraft.drone.DroneFlightState;
 import dev.anvilcraft.plasticraft.drone.DronePropellerTraits;
 import dev.anvilcraft.plasticraft.drone.DroneShortageStrategy;
@@ -66,6 +68,8 @@ public class DroneEntity extends Entity {
         SynchedEntityData.defineId(DroneEntity.class, EntityDataSerializers.BYTE);
     private static final EntityDataAccessor<Byte> DATA_FLIGHT_STATE =
         SynchedEntityData.defineId(DroneEntity.class, EntityDataSerializers.BYTE);
+    private static final EntityDataAccessor<ItemStack> DATA_CARRIED_ITEM =
+        SynchedEntityData.defineId(DroneEntity.class, EntityDataSerializers.ITEM_STACK);
     /** 每架未满电无人机向所在电网申报的充电功率。 */
     private static final DynamicPowerComponent.PowerConsumption CHARGE_CONSUMPTION =
         new DynamicPowerComponent.PowerConsumption(DroneEnergyModel.CHARGE_POWER_KW);
@@ -81,6 +85,10 @@ public class DroneEntity extends Entity {
     private double flightDistanceAccumulator;
     @Nullable
     private BlockPos dockStationPos;
+    private Optional<UUID> assignedJobId = Optional.empty();
+    private int taskOpId = -1;
+    private ConstructionWaitReason waitReason = ConstructionWaitReason.NONE;
+    private final DroneFlightNavigator navigator = new DroneFlightNavigator();
 
     public DroneEntity(EntityType<? extends DroneEntity> entityType, Level level) {
         super(entityType, level);
@@ -95,6 +103,7 @@ public class DroneEntity extends Entity {
         builder.define(DATA_RIGHT_PROPELLER, ItemStack.EMPTY);
         builder.define(DATA_ACTION_STATE, (byte) 0);
         builder.define(DATA_FLIGHT_STATE, (byte) DroneFlightState.LANDED.ordinal());
+        builder.define(DATA_CARRIED_ITEM, ItemStack.EMPTY);
     }
 
     @Override
@@ -110,6 +119,7 @@ public class DroneEntity extends Entity {
         super.tick();
         if (!this.level().isClientSide) {
             this.serverChargeTick();
+            this.toolDefinition().behavior().serverTick(this);
             this.serverFlightTick();
         }
         DroneFlightState state = this.flightState();
@@ -150,7 +160,7 @@ public class DroneEntity extends Entity {
         }
     }
 
-    /** 统一飞行/降落状态机;当前只有无任务行为,任务飞行由任务系统 TODO 驱动。 */
+    /** 统一飞行/降落状态机;FLYING 沿路点前进,无任务时仍走悬停与降落。 */
     private void serverFlightTick() {
         switch (this.flightState()) {
             case LANDED -> {
@@ -203,6 +213,11 @@ public class DroneEntity extends Entity {
                 }
             }
             case DOCKING -> this.serverDockingTick();
+            case FLYING -> {
+                if (!this.navigator.follow(this)) {
+                    this.setDeltaMovement(Vec3.ZERO);
+                }
+            }
         }
     }
 
@@ -478,6 +493,53 @@ public class DroneEntity extends Entity {
         this.shortageStrategy = strategy;
     }
 
+    public Optional<UUID> assignedJobId() {
+        return this.assignedJobId;
+    }
+
+    public int taskOpId() {
+        return this.taskOpId;
+    }
+
+    public void assign(UUID jobId, int opId) {
+        this.assignedJobId = Optional.of(jobId);
+        this.taskOpId = opId;
+    }
+
+    /** 解除任务租约;clearCarry 只清空同步携带物,不在世界里再生成一份物品。 */
+    public void clearAssignment(boolean clearCarry) {
+        this.assignedJobId = Optional.empty();
+        this.taskOpId = -1;
+        this.navigator.clear();
+        if (clearCarry) {
+            this.setHostedCarry(ItemStack.EMPTY);
+        }
+    }
+
+    public ItemStack hostedCarry() {
+        return this.entityData.get(DATA_CARRIED_ITEM);
+    }
+
+    public void setHostedCarry(ItemStack stack) {
+        this.entityData.set(DATA_CARRIED_ITEM, stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
+    }
+
+    public void setActionState(byte state) {
+        this.entityData.set(DATA_ACTION_STATE, state);
+    }
+
+    public ConstructionWaitReason waitReason() {
+        return this.waitReason;
+    }
+
+    public void setWaitReason(ConstructionWaitReason reason) {
+        this.waitReason = reason;
+    }
+
+    public DroneFlightNavigator navigator() {
+        return this.navigator;
+    }
+
     public DroneData toDroneData() {
         return new DroneData(
             this.toolId(),
@@ -486,7 +548,9 @@ public class DroneEntity extends Entity {
             this.energy,
             Optional.ofNullable(this.owner),
             this.shortageStrategy,
-            List.copyOf(this.collectionInventory)
+            List.copyOf(this.collectionInventory),
+            this.assignedJobId,
+            this.hostedCarry().copy()
         );
     }
 
@@ -499,6 +563,8 @@ public class DroneEntity extends Entity {
         this.owner = data.owner().orElse(null);
         this.shortageStrategy = data.shortageStrategy();
         this.collectionInventory = new ArrayList<>(data.collectionInventory());
+        this.assignedJobId = data.assignedJobId();
+        this.setHostedCarry(data.hostedCarry());
     }
 
     /** 铁砧锤回收与摧毁掉落共用的完整数据物品;自定义名称随物品往返。 */
@@ -529,6 +595,13 @@ public class DroneEntity extends Entity {
         this.dockStationPos = tag.contains("DockStation")
             ? BlockPos.of(tag.getLong("DockStation"))
             : null;
+        this.taskOpId = tag.contains("TaskOpId") ? tag.getInt("TaskOpId") : -1;
+        if (tag.contains("WaitReason")) {
+            this.waitReason = ConstructionWaitReason.byId(tag.getByte("WaitReason"));
+        }
+        if (tag.contains("Navigator")) {
+            this.navigator.load(tag.getCompound("Navigator"));
+        }
     }
 
     @Override
@@ -541,5 +614,8 @@ public class DroneEntity extends Entity {
         if (this.dockStationPos != null) {
             tag.putLong("DockStation", this.dockStationPos.asLong());
         }
+        tag.putInt("TaskOpId", this.taskOpId);
+        tag.putByte("WaitReason", (byte) this.waitReason.ordinal());
+        tag.put("Navigator", this.navigator.save());
     }
 }

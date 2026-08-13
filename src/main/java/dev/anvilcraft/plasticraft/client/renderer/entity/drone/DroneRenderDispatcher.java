@@ -7,11 +7,13 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer;
 import dev.anvilcraft.plasticraft.drone.tool.DroneToolDefinitions;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.geom.ModelLayerLocation;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 
@@ -101,6 +103,30 @@ public final class DroneRenderDispatcher {
         int packedLight,
         int packedOverlay
     ) {
+        this.render(
+            toolId,
+            leftPropeller,
+            rightPropeller,
+            ItemStack.EMPTY,
+            propellerSpinDegrees,
+            poseStack,
+            buffers,
+            packedLight,
+            packedOverlay
+        );
+    }
+
+    public void render(
+        ResourceLocation toolId,
+        ItemStack leftPropeller,
+        ItemStack rightPropeller,
+        ItemStack carried,
+        float propellerSpinDegrees,
+        PoseStack poseStack,
+        MultiBufferSource buffers,
+        int packedLight,
+        int packedOverlay
+    ) {
         this.renderPropeller(leftPropeller, true, propellerSpinDegrees, poseStack, buffers, packedLight);
         this.renderPropeller(rightPropeller, false, -propellerSpinDegrees, poseStack, buffers, packedLight);
 
@@ -119,6 +145,22 @@ public final class DroneRenderDispatcher {
             VertexConsumer attachmentBuffer =
                 buffers.getBuffer(RenderType.entityCutoutNoCull(attachment.texture()));
             attachment.model().render(poseStack, attachmentBuffer, packedLight, packedOverlay);
+            if (!carried.isEmpty()) {
+                poseStack.pushPose();
+                attachment.model().translateToHeldItem(poseStack);
+                poseStack.scale(0.4F, 0.4F, 0.4F);
+                Minecraft.getInstance().getItemRenderer().renderStatic(
+                    carried,
+                    ItemDisplayContext.FIXED,
+                    packedLight,
+                    packedOverlay,
+                    poseStack,
+                    buffers,
+                    null,
+                    0
+                );
+                poseStack.popPose();
+            }
             poseStack.popPose();
         }
         poseStack.popPose();

@@ -119,7 +119,7 @@ public final class ConstructionJobIndex extends SavedData {
                 paused.add(pausedJob);
             }
         }
-        this.jobs.put(jobId, target.withState(ConstructionJob.STATE_ACTIVE));
+        this.jobs.put(jobId, target.withState(ConstructionJob.STATE_PLANNING));
         this.setDirty();
         return paused;
     }

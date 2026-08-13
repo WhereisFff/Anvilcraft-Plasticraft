@@ -4,12 +4,14 @@ import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.resources.ResourceLocation;
 import org.lwjgl.opengl.GL11;
 
 import java.util.ArrayList;
@@ -40,6 +42,24 @@ final class BlueprintProjectionRenderTypes {
             .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
             .createCompositeState(true)
     );
+    private static final ResourceLocation CONSTRUCTION_MASK_TEXTURE =
+        AnvilcraftPlasticraft.of("textures/misc/construction_projection.png");
+    private static final RenderType CONSTRUCTION_MASK = RenderType.create(
+        "anvilcraftplasticraft:construction_projection_mask",
+        DefaultVertexFormat.POSITION_TEX_COLOR,
+        VertexFormat.Mode.QUADS,
+        RenderType.TRANSIENT_BUFFER_SIZE,
+        false,
+        false,
+        RenderType.CompositeState.builder()
+            .setShaderState(new RenderStateShard.ShaderStateShard(GameRenderer::getPositionTexColorShader))
+            .setTextureState(new RenderStateShard.TextureStateShard(CONSTRUCTION_MASK_TEXTURE, false, false))
+            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
+            .setCullState(RenderStateShard.NO_CULL)
+            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
+            .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
+            .createCompositeState(true)
+    );
     private static final Map<RenderType, RenderType> COLOR_OVERLAYS = new IdentityHashMap<>();
     private static final Map<RenderType, RenderType> DEPTH_OVERLAYS = new IdentityHashMap<>();
 
@@ -48,6 +68,10 @@ final class BlueprintProjectionRenderTypes {
 
     static RenderType hologramBlock() {
         return HOLOGRAM_BLOCK;
+    }
+
+    static RenderType constructionMask() {
+        return CONSTRUCTION_MASK;
     }
 
     static RenderType overlay(RenderType type) {

@@ -93,15 +93,7 @@ public class DroneItem extends Item implements CreativeVariantPickerItem {
             }
             if (item == null) continue;
             ItemStack variant = new ItemStack(item);
-            DroneData.set(variant, new DroneData(
-                toolDefinition.id(),
-                data.leftPropeller().copy(),
-                data.rightPropeller().copy(),
-                data.energy(),
-                data.owner(),
-                data.shortageStrategy(),
-                data.collectionInventory()
-            ));
+            DroneData.set(variant, data.withToolId(toolDefinition.id()));
             if (customName != null) {
                 variant.set(DataComponents.CUSTOM_NAME, customName);
             }

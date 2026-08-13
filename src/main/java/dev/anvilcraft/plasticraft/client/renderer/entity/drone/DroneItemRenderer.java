@@ -50,6 +50,7 @@ public final class DroneItemRenderer extends BlockEntityWithoutLevelRenderer {
         DroneData data = DroneData.get(stack).orElse(null);
         ItemStack leftPropeller = data == null ? ItemStack.EMPTY : data.leftPropeller();
         ItemStack rightPropeller = data == null ? ItemStack.EMPTY : data.rightPropeller();
+        ItemStack carried = data == null ? ItemStack.EMPTY : data.hostedCarry();
 
         poseStack.pushPose();
         poseStack.translate(0.5D, 0.0D, 0.5D);
@@ -57,6 +58,7 @@ public final class DroneItemRenderer extends BlockEntityWithoutLevelRenderer {
             toolId,
             leftPropeller,
             rightPropeller,
+            carried,
             0.0F,
             poseStack,
             buffers,

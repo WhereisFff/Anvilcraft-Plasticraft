@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.mixin;
 
+import dev.anvilcraft.plasticraft.blueprint.ConstructionProjectionIndex;
 import dev.anvilcraft.plasticraft.entity.collision.BondedPlasticShapeIndex;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockCollisions;
@@ -21,7 +22,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import java.util.Iterator;
 import java.util.function.BiFunction;
 
-/** 在常规扫描结束前补入锚点位于扫描范围外的动态制品碰撞。 */
+/** 在常规扫描结束后补入粘合制品溢出轮廓与已交付施工假方块碰撞。 */
 @Mixin(BlockCollisions.class)
 abstract class BlockCollisionsMixin<T> {
     @Shadow
@@ -45,6 +46,8 @@ abstract class BlockCollisionsMixin<T> {
 
     @Unique
     private Iterator<BondedPlasticShapeIndex.Entry> plasticraft$extendedEntries;
+    @Unique
+    private Iterator<ConstructionProjectionIndex.Collision> plasticraft$projectionCollisions;
 
     @Inject(
         method = "computeNext",
@@ -54,7 +57,7 @@ abstract class BlockCollisionsMixin<T> {
         ),
         cancellable = true
     )
-    private void plasticraft$appendExtendedPlasticCollision(CallbackInfoReturnable<T> cir) {
+    private void plasticraft$appendVirtualCollisions(CallbackInfoReturnable<T> cir) {
         if (this.plasticraft$extendedEntries == null) {
             this.plasticraft$extendedEntries = BondedPlasticShapeIndex
                 .extendedCollisionEntries(this.collisionGetter, this.box)
@@ -73,6 +76,22 @@ abstract class BlockCollisionsMixin<T> {
                 continue;
             }
             cir.setReturnValue(this.resultProvider.apply(anchor.mutable(), worldShape));
+            return;
+        }
+        if (this.onlySuffocatingBlocks) return;
+        if (this.plasticraft$projectionCollisions == null) {
+            this.plasticraft$projectionCollisions = ConstructionProjectionIndex
+                .collisions(this.collisionGetter, this.box)
+                .iterator();
+        }
+        while (this.plasticraft$projectionCollisions.hasNext()) {
+            ConstructionProjectionIndex.Collision collision = this.plasticraft$projectionCollisions.next();
+            VoxelShape worldShape = collision.worldShape();
+            if (worldShape.isEmpty()
+                || !Shapes.joinIsNotEmpty(worldShape, this.entityShape, BooleanOp.AND)) {
+                continue;
+            }
+            cir.setReturnValue(this.resultProvider.apply(collision.pos().mutable(), worldShape));
             return;
         }
     }

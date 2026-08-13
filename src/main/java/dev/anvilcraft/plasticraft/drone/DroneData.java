@@ -26,6 +26,8 @@ import java.util.UUID;
  * @param owner               制造或放置玩家
  * @param shortageStrategy    缺料与缺拆除能力策略
  * @param collectionInventory 收集无人机的物品库存;其余工种保持空列表
+ * @param assignedJobId       当前任务租约;无任务时为空
+ * @param hostedCarry         建设无人机的任务托管携带物,不算普通库存
  */
 public record DroneData(
     ResourceLocation toolId,
@@ -34,7 +36,9 @@ public record DroneData(
     int energy,
     Optional<UUID> owner,
     DroneShortageStrategy shortageStrategy,
-    List<ItemStack> collectionInventory
+    List<ItemStack> collectionInventory,
+    Optional<UUID> assignedJobId,
+    ItemStack hostedCarry
 ) {
     public static final Codec<DroneData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
         ResourceLocation.CODEC.fieldOf("tool_id").forGetter(DroneData::toolId),
@@ -47,7 +51,10 @@ public record DroneData(
         DroneShortageStrategy.CODEC.optionalFieldOf("shortage_strategy", DroneShortageStrategy.PAUSE)
             .forGetter(DroneData::shortageStrategy),
         ItemStack.OPTIONAL_CODEC.listOf().optionalFieldOf("collection_inventory", List.of())
-            .forGetter(DroneData::collectionInventory)
+            .forGetter(DroneData::collectionInventory),
+        UUIDUtil.CODEC.optionalFieldOf("assigned_job_id").forGetter(DroneData::assignedJobId),
+        ItemStack.OPTIONAL_CODEC.optionalFieldOf("hosted_carry", ItemStack.EMPTY)
+            .forGetter(DroneData::hostedCarry)
     ).apply(instance, DroneData::new));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, DroneData> STREAM_CODEC = StreamCodec.of(
@@ -62,6 +69,8 @@ public record DroneData(
         Objects.requireNonNull(owner, "owner");
         Objects.requireNonNull(shortageStrategy, "shortageStrategy");
         collectionInventory = List.copyOf(collectionInventory);
+        Objects.requireNonNull(assignedJobId, "assignedJobId");
+        Objects.requireNonNull(hostedCarry, "hostedCarry");
     }
 
     /** 合成装配时的初始数据;所有者在放置时补写。 */
@@ -73,7 +82,9 @@ public record DroneData(
             0,
             Optional.empty(),
             DroneShortageStrategy.PAUSE,
-            List.of()
+            List.of(),
+            Optional.empty(),
+            ItemStack.EMPTY
         );
     }
 
@@ -93,7 +104,9 @@ public record DroneData(
             this.energy,
             Optional.of(ownerId),
             this.shortageStrategy,
-            this.collectionInventory
+            this.collectionInventory,
+            this.assignedJobId,
+            this.hostedCarry
         );
     }
 
@@ -105,7 +118,51 @@ public record DroneData(
             newEnergy,
             this.owner,
             this.shortageStrategy,
-            this.collectionInventory
+            this.collectionInventory,
+            this.assignedJobId,
+            this.hostedCarry
+        );
+    }
+
+    public DroneData withShortageStrategy(DroneShortageStrategy strategy) {
+        return new DroneData(
+            this.toolId,
+            this.leftPropeller,
+            this.rightPropeller,
+            this.energy,
+            this.owner,
+            strategy,
+            this.collectionInventory,
+            this.assignedJobId,
+            this.hostedCarry
+        );
+    }
+
+    public DroneData withToolId(ResourceLocation newToolId) {
+        return new DroneData(
+            newToolId,
+            this.leftPropeller,
+            this.rightPropeller,
+            this.energy,
+            this.owner,
+            this.shortageStrategy,
+            this.collectionInventory,
+            this.assignedJobId,
+            this.hostedCarry
+        );
+    }
+
+    public DroneData withAssignment(Optional<UUID> jobId, ItemStack carry) {
+        return new DroneData(
+            this.toolId,
+            this.leftPropeller,
+            this.rightPropeller,
+            this.energy,
+            this.owner,
+            this.shortageStrategy,
+            this.collectionInventory,
+            jobId,
+            carry
         );
     }
 
@@ -117,6 +174,8 @@ public record DroneData(
         ByteBufCodecs.optional(UUIDUtil.STREAM_CODEC).encode(buffer, data.owner);
         DroneShortageStrategy.STREAM_CODEC.encode(buffer, data.shortageStrategy);
         ItemStack.OPTIONAL_LIST_STREAM_CODEC.encode(buffer, data.collectionInventory);
+        ByteBufCodecs.optional(UUIDUtil.STREAM_CODEC).encode(buffer, data.assignedJobId);
+        ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, data.hostedCarry);
     }
 
     private static DroneData decode(RegistryFriendlyByteBuf buffer) {
@@ -127,6 +186,18 @@ public record DroneData(
         Optional<UUID> owner = ByteBufCodecs.optional(UUIDUtil.STREAM_CODEC).decode(buffer);
         DroneShortageStrategy strategy = DroneShortageStrategy.STREAM_CODEC.decode(buffer);
         List<ItemStack> inventory = ItemStack.OPTIONAL_LIST_STREAM_CODEC.decode(buffer);
-        return new DroneData(toolId, leftPropeller, rightPropeller, energy, owner, strategy, inventory);
+        Optional<UUID> assignedJobId = ByteBufCodecs.optional(UUIDUtil.STREAM_CODEC).decode(buffer);
+        ItemStack hostedCarry = ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer);
+        return new DroneData(
+            toolId,
+            leftPropeller,
+            rightPropeller,
+            energy,
+            owner,
+            strategy,
+            inventory,
+            assignedJobId,
+            hostedCarry
+        );
     }
 }

@@ -37,7 +37,10 @@ Placed projections are visible to all players and multiple blueprints can coexis
 
 ## Starting and status
 
-- The slot background colour of the disk in any menu reflects job state: yellow means placed but not started, green means running; the colour follows the disk into any container
+- The slot background colour of the disk in any menu reflects job state: yellow means placed but not started or paused, green means construction is running; the colour follows the disk into any container
 - Right-click a deployed disk in a menu with an empty cursor to toggle start and stop; the vanilla pickup interaction is overridden
-- Each player can have at most one running task at a time; starting a new one automatically pauses the old
-- This stage only deploys and toggles projections; drones are dispatched by the later task system
+- Each player can have at most one running task at a time; starting a new one automatically pauses the old and returns in-transit items while keeping delivered fake blocks
+- A construction drone takes materials from the owner's inventory and, within a 128-block discovery range, delivers ordinary blocks as collidable construction projections; reach is 1 block and each delivery costs 2,560 FE
+- After progress exists the anchor can no longer be moved or rotated
+- Cancel quietly commits delivered blocks, returns in-transit items, and leaves undelivered cells as they are in the world; a material shortage pauses by default, and switching to skip lets the rest continue then finishes incomplete
+- Fluids, block-entity contents, entities and demolition are out of scope for this stage; those cells are skipped and finish incomplete instead of stalling an otherwise air-built house

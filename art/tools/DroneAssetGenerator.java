@@ -69,6 +69,10 @@ public final class DroneAssetGenerator {
     }
 
     public static void main(String[] args) throws IOException {
+        if (args.length > 0 && "mask".equals(args[0])) {
+            generateConstructionProjectionMask();
+            return;
+        }
         Files.createDirectories(TEXTURES.resolve("drone/tool"));
         Files.createDirectories(BLOCKBENCH.resolve("drone_tool"));
 
@@ -137,7 +141,25 @@ public final class DroneAssetGenerator {
             BLOCKBENCH.resolve("drone_tool/observation_spyglass.bbmodel"), "observation_spyglass");
         generateGui();
         generateStationAssets();
+        generateConstructionProjectionMask();
         System.out.println("Drone assets generated.");
+    }
+
+    /** 施工投影占位遮罩:白网格半透明像素,由渲染器按未交付/已交付状态着色。 */
+    static void generateConstructionProjectionMask() throws IOException {
+        Path directory = Path.of("src/main/resources/assets/anvilcraftplasticraft/textures/misc");
+        Files.createDirectories(directory);
+        BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) {
+                boolean line = x == 0 || y == 0 || x == 15 || y == 15 || x == 8 || y == 8 || (x + y) % 4 == 0;
+                int alpha = line ? 0xA0 : 0x28;
+                image.setRGB(x, y, (alpha << 24) | 0x00FFFFFF);
+            }
+        }
+        Path path = directory.resolve("construction_projection.png");
+        ImageIO.write(image, "png", path.toFile());
+        System.out.println("  " + path);
     }
 
     // ==================== 无人机站资产 ====================
