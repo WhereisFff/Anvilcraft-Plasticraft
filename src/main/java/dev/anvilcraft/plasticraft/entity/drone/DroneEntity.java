@@ -207,7 +207,8 @@ public class DroneEntity extends Entity {
     }
 
     /**
-     * 飞向目标无人机站的顶部泊位。泊位是单通道:占用或站满时在对准点附近悬停等待,
+     * 飞向目标无人机站的顶部泊位。站点按登记顺序排队:队首独占顶部对准点,
+     * 其余在站顶上方的方阵等待格位悬停,轮到后再飞向对准点,不再向同一点互相推挤;
      * 站点消失则取消入库并降落。入库成功时实体数据已原子转入站内,随后移除实体。
      */
     private void serverDockingTick() {
@@ -221,25 +222,45 @@ public class DroneEntity extends Entity {
             this.setFlightState(DroneFlightState.LANDING);
             return;
         }
-        Vec3 approach = station.dockApproachPoint();
-        Vec3 delta = approach.subtract(this.position());
+        DroneStationBlockEntity.DockAssignment assignment = station.assignDockTarget(this);
+        Vec3 delta = assignment.target().subtract(this.position());
         if (delta.length() < 0.35D) {
-            if (station.canAcceptDocking() && station.tryDock(this)) {
+            if (assignment.head() && station.canAcceptDocking() && station.tryDock(this)) {
                 this.dockStationPos = null;
                 this.discard();
                 return;
             }
-            // 泊位忙或站满:贴着对准点悬停等待,推挤自然分散多架排队的无人机。
+            // 队首泊位忙(下沉动画或站满)在对准点保持;其余在各自方阵格位保持,
+            // 目标互异,不会因互相推挤而不断抬升。
             this.setDeltaMovement(delta.scale(0.2D));
             return;
         }
         double speed = Math.min(0.25D, delta.length() * 0.25D);
         Vec3 motion = delta.normalize().scale(speed);
-        // 无寻路的基础版本:水平方向被挡时优先爬升越障。
         if (this.horizontalCollision) {
-            motion = new Vec3(motion.x * 0.2D, 0.12D, motion.z * 0.2D);
+            if (!this.hasDroneContactTowards(motion) || this.getY() < assignment.target().y + 1.0D) {
+                // 无寻路的基础版本:被方块挡住时无上限爬升越障;与另一架无人机卡位时
+                // 也先爬升,但只允许爬到目标上方一格,避免互相垫高不断抬升。
+                motion = new Vec3(motion.x * 0.2D, 0.12D, motion.z * 0.2D);
+            } else {
+                // 已到爬升上限仍与同高的无人机相互顶住:向自身右侧绕行错开;
+                // 双方都向右让,打破对称死锁后各自继续飞向互异目标。
+                motion = new Vec3(-motion.z, 0.0D, motion.x).scale(0.6D);
+            }
         }
         this.setDeltaMovement(motion);
+    }
+
+    /** 判断水平前进方向上是否贴着另一架无人机,用于区分实体卡位与方块阻挡。 */
+    private boolean hasDroneContactTowards(Vec3 motion) {
+        Vec3 horizontal = new Vec3(motion.x, 0.0D, motion.z);
+        if (horizontal.lengthSqr() < 1.0E-8D) return false;
+        Vec3 probe = horizontal.normalize().scale(0.1D);
+        return !this.level().getEntities(
+            this,
+            this.getBoundingBox().expandTowards(probe),
+            entity -> entity instanceof DroneEntity
+        ).isEmpty();
     }
 
     /**
@@ -252,6 +273,11 @@ public class DroneEntity extends Entity {
         this.dockStationPos = stationPos.immutable();
         this.setFlightState(DroneFlightState.DOCKING);
         return true;
+    }
+
+    /** 站点排队清理用:该无人机是否仍在飞向指定站点入库。 */
+    public boolean isDockingTo(BlockPos stationPos) {
+        return this.flightState() == DroneFlightState.DOCKING && stationPos.equals(this.dockStationPos);
     }
 
     /** 无任务观察无人机有电即离地悬停;其余工种落地等待。 */

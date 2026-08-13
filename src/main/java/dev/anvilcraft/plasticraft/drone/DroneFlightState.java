@@ -10,7 +10,7 @@ public enum DroneFlightState {
     HOVERING,
     /** 主动下降直到触地。 */
     LANDING,
-    /** 飞向无人机站顶部泊位准备入库;泊位忙时在站旁悬停等待。 */
+    /** 飞向无人机站顶部泊位准备入库;未轮到时在站顶上方方阵格位悬停等待。 */
     DOCKING;
 
     public static DroneFlightState byId(int id) {

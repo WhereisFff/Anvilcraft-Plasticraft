@@ -25,12 +25,14 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.Containers;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.SimpleMenuProvider;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -44,6 +46,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 无人机站方块实体。站内提供 16 个无人机槽、1 个任务结构磁盘槽和 1 个电容器充能槽,
@@ -62,6 +65,12 @@ public class DroneStationBlockEntity extends BlockEntity implements IPowerConsum
     public static final int DOCKING_DURATION_TICKS = 20;
     /** 召回指令扫描站点周围无任务无人机的半径(格)。 */
     public static final double RECALL_RANGE = 16.0D;
+    /** 等待方阵每层的边长;一层容纳 16 架,满层后向上叠层。 */
+    public static final int FORMATION_GRID_SIZE = 4;
+    /** 等待方阵首层(无人机碰撞箱底面)相对站顶方块坐标的高度。 */
+    public static final double FORMATION_BASE_OFFSET_Y = 3.0D;
+    private static final int FORMATION_LAYER_CAPACITY = FORMATION_GRID_SIZE * FORMATION_GRID_SIZE;
+    private static final double FORMATION_SPACING = 1.0D;
 
     private final ItemStackHandler items = new ItemStackHandler(SLOT_COUNT) {
         @Override
@@ -75,6 +84,9 @@ public class DroneStationBlockEntity extends BlockEntity implements IPowerConsum
         }
     };
     private final List<Player> viewers = new ArrayList<>();
+    // 入库排队瞬态状态:队首独占顶部对准点,其余按登记顺序占用方阵格位;
+    // 不持久化,重启后由仍处 DOCKING 状态的无人机重新登记。
+    private final List<UUID> dockingQueue = new ArrayList<>();
     private int energy;
     @Nullable
     private PowerGrid grid;
@@ -254,6 +266,52 @@ public class DroneStationBlockEntity extends BlockEntity implements IPowerConsum
         this.setChanged();
     }
 
+    /** 入库飞行目标分配结果:是否为队首,以及应当前往的坐标。 */
+    public record DockAssignment(boolean head, Vec3 target) {
+    }
+
+    /**
+     * 为一架入库中的无人机分配当前飞行目标。队首独占顶部对准点,其余按登记顺序
+     * 前往站顶上方的方阵等待格位;目标互异,多机不再向同一点互相推挤抬升。
+     */
+    public DockAssignment assignDockTarget(DroneEntity drone) {
+        this.pruneDockingQueue();
+        UUID id = drone.getUUID();
+        int index = this.dockingQueue.indexOf(id);
+        if (index < 0) {
+            index = this.dockingQueue.size();
+            this.dockingQueue.add(id);
+        }
+        return index == 0
+            ? new DockAssignment(true, this.dockApproachPoint())
+            : new DockAssignment(false, this.formationSlotPosition(index - 1));
+    }
+
+    /** 清理已消失、已入库或不再飞向本站的排队条目,让后续无人机依次前移。 */
+    private void pruneDockingQueue() {
+        if (!(this.level instanceof ServerLevel serverLevel)) return;
+        this.dockingQueue.removeIf(id -> {
+            Entity entity = serverLevel.getEntity(id);
+            return !(entity instanceof DroneEntity drone)
+                || drone.isRemoved()
+                || !drone.isDockingTo(this.worldPosition);
+        });
+    }
+
+    /** 方阵等待格位:以站顶上方为中心的 4x4 网格,1 格间距,满 16 架向上叠层。 */
+    private Vec3 formationSlotPosition(int slot) {
+        int layer = slot / FORMATION_LAYER_CAPACITY;
+        int cell = slot % FORMATION_LAYER_CAPACITY;
+        double half = (FORMATION_GRID_SIZE - 1) / 2.0D;
+        double dx = (cell % FORMATION_GRID_SIZE - half) * FORMATION_SPACING;
+        double dz = (cell / FORMATION_GRID_SIZE - half) * FORMATION_SPACING;
+        return new Vec3(
+            this.worldPosition.getX() + 0.5D + dx,
+            this.worldPosition.getY() + FORMATION_BASE_OFFSET_Y + layer,
+            this.worldPosition.getZ() + 0.5D + dz
+        );
+    }
+
     /**
      * 顶部泊位接收一架世界无人机:实体完整数据原子转入托管对象,调用方随后移除实体。
      * 断电、泊位占用或站内无空槽时拒绝,不覆盖已有无人机物品。
@@ -263,6 +321,7 @@ public class DroneStationBlockEntity extends BlockEntity implements IPowerConsum
         if (this.energy <= 0) return false;
         if (this.dockingData != null) return false;
         if (this.findEmptyDroneSlot() < 0) return false;
+        this.dockingQueue.remove(drone.getUUID());
         this.dockingData = drone.toDroneData();
         this.dockingName = drone.getCustomName();
         this.dockingProgress = 0;

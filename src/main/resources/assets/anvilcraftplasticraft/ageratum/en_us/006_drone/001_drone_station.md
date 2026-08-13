@@ -25,7 +25,7 @@ The Drone Station is the dock and charger of a drone fleet. It offers 16 slots t
 
 - The station body always keeps a full stable block collision; the top hatch never opens a hole players or entities could fall into
 - The top bay is a single channel: only one drone docks at a time and each descent animation lasts 20 gt, so at most one drone per second
-- The recall button in the screen orders world drones within 16 blocks to fly to the top bay one after another; while the bay is busy or the station is full, drones hover and wait beside the station, and a full station never overwrites stored items
+- The recall button in the screen orders world drones within 16 blocks to fly to the top bay one after another; when several return at once they queue in registration order, only the queue head approaches the bay while the rest hover in a 4x4 grid formation with 1 block spacing, 3 blocks above the station top, stacking an extra layer per 16 drones and shifting forward as the bay frees up; at a full station they keep waiting in formation and never overwrite stored items
 - On docking the complete entity data is atomically transferred into a station slot while the client plays the descent with a collision-free parked display object
 - If power is lost mid-activity, slots, escrowed data and animation progress are all kept while the model switches to the unpowered look; charging back up resumes from the same progress
 - The undocking interface is reserved for the job coordinator and no manual undock is provided at this stage

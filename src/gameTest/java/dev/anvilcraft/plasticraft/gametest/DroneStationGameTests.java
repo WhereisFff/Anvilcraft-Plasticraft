@@ -23,6 +23,7 @@ import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /** 覆盖无人机站的电网充电、电容器消耗返还、站内充电、顶部单通道停泊与数据保留。 */
@@ -137,6 +138,79 @@ public final class DroneStationGameTests {
                 long gap = filledTimes[1] - filledTimes[0];
                 check(gap >= DroneStationBlockEntity.DOCKING_DURATION_TICKS,
                     "second drone docked only " + gap + " ticks after the first");
+            })
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 260)
+    @EmptyTemplate(value = "7x7x7", floor = true)
+    @TestHolder(description = "Waiting drones hold a tidy grid formation above the station instead of climbing")
+    static void waitingDronesHoldTidyFormation(ExtendedGameTestHelper helper) {
+        BlockPos stationPos = new BlockPos(3, 2, 3);
+        helper.setBlock(stationPos, PlasticraftBlocks.DRONE_STATION.get());
+        if (!(helper.getBlockEntity(stationPos) instanceof DroneStationBlockEntity station)) {
+            throw new GameTestAssertException("drone station block entity is missing");
+        }
+        station.setEnergy(DroneStationBlockEntity.capacity());
+        // 站满使泊位始终不可用:队首停在对准点,其余保持方阵,队形长期可观测。
+        for (int slot = 0; slot < DroneStationBlockEntity.DRONE_SLOT_COUNT; slot++) {
+            ItemStack filler = new ItemStack(PlasticraftItems.OBSERVATION_DRONE.get());
+            DroneData.set(filler, DroneData.assembled(
+                DroneToolDefinitions.OBSERVATION.id(),
+                ItemStack.EMPTY,
+                ItemStack.EMPTY
+            ));
+            station.items().setStackInSlot(slot, filler);
+        }
+        List<DroneEntity> drones = List.of(
+            spawnDrone(helper, new Vec3(1.5D, 2.0D, 1.5D)),
+            spawnDrone(helper, new Vec3(5.5D, 2.0D, 1.5D)),
+            spawnDrone(helper, new Vec3(1.5D, 2.0D, 5.5D)),
+            spawnDrone(helper, new Vec3(5.5D, 2.0D, 5.5D)),
+            spawnDrone(helper, new Vec3(3.5D, 2.0D, 5.5D))
+        );
+        for (DroneEntity drone : drones) {
+            check(drone.startDockingTo(helper.absolutePos(stationPos)), "drone rejected docking order");
+        }
+        Vec3 center = helper.absoluteVec(new Vec3(3.5D, 0.0D, 3.5D));
+        double stationY = helper.absolutePos(stationPos).getY();
+        // 途中互相越障允许短暂高出格位;只有旧缺陷那种持续互挤抬升才会突破该上限。
+        double ceilingY = stationY + DroneStationBlockEntity.FORMATION_BASE_OFFSET_Y + 2.5D;
+        helper.onEachTick(() -> {
+            for (DroneEntity drone : drones) {
+                check(drone.getY() <= ceilingY,
+                    "drone climbed to " + drone.getY() + " above the formation ceiling " + ceilingY);
+            }
+        });
+        helper.startSequence()
+            .thenExecuteAfter(160, () -> {
+                List<DroneEntity> waiters = new ArrayList<>();
+                int heads = 0;
+                for (DroneEntity drone : drones) {
+                    check(!drone.isRemoved(), "a drone docked into a full station");
+                    double horizontal = Math.hypot(drone.getX() - center.x, drone.getZ() - center.z);
+                    if (horizontal < 0.5D && drone.getY() < stationY + 2.0D) {
+                        heads++;
+                    } else {
+                        waiters.add(drone);
+                    }
+                }
+                check(heads == 1, "expected exactly one drone at the approach point, found " + heads);
+                for (DroneEntity waiter : waiters) {
+                    double altitude = waiter.getY() - stationY;
+                    check(Math.abs(altitude - DroneStationBlockEntity.FORMATION_BASE_OFFSET_Y) < 0.5D,
+                        "waiting drone altitude off formation layer: " + altitude);
+                }
+                for (int a = 0; a < waiters.size(); a++) {
+                    for (int b = a + 1; b < waiters.size(); b++) {
+                        double distance = Math.hypot(
+                            waiters.get(a).getX() - waiters.get(b).getX(),
+                            waiters.get(a).getZ() - waiters.get(b).getZ()
+                        );
+                        check(distance >= 0.9D,
+                            "waiting drones crowded together at distance " + distance);
+                    }
+                }
             })
             .thenSucceed();
     }
