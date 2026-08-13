@@ -1,6 +1,8 @@
 package dev.anvilcraft.plasticraft.init;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.recipe.DroneAssemblyRecipe;
+import dev.anvilcraft.plasticraft.recipe.DronePropellerIngredient;
 import dev.anvilcraft.plasticraft.recipe.FluidFastCookingRecipe;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
@@ -10,8 +12,10 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.common.crafting.IngredientType;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
+import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
 /** 复用本体配方类型时所需的附属序列化器。 */
 public final class PlasticraftRecipeTypes {
@@ -21,6 +25,10 @@ public final class PlasticraftRecipeTypes {
     );
     private static final DeferredRegister<RecipeSerializer<?>> SERIALIZERS = DeferredRegister.create(
         Registries.RECIPE_SERIALIZER,
+        AnvilcraftPlasticraft.MOD_ID
+    );
+    private static final DeferredRegister<IngredientType<?>> INGREDIENT_TYPES = DeferredRegister.create(
+        NeoForgeRegistries.INGREDIENT_TYPES,
         AnvilcraftPlasticraft.MOD_ID
     );
 
@@ -55,11 +63,20 @@ public final class PlasticraftRecipeTypes {
     public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<CondenserRecipe>> CONDENSER_SERIALIZER =
         SERIALIZERS.register("condenser", CondenserRecipe.Serializer::new);
 
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<DroneAssemblyRecipe>> DRONE_ASSEMBLY =
+        SERIALIZERS.register("drone_assembly", DroneAssemblyRecipe.Serializer::new);
+    public static final DeferredHolder<IngredientType<?>, IngredientType<DronePropellerIngredient>>
+        DRONE_PROPELLER_INGREDIENT = INGREDIENT_TYPES.register(
+            "drone_propeller",
+            () -> new IngredientType<>(DronePropellerIngredient.CODEC)
+        );
+
     private PlasticraftRecipeTypes() {
     }
 
     public static void register(IEventBus modEventBus) {
         TYPES.register(modEventBus);
         SERIALIZERS.register(modEventBus);
+        INGREDIENT_TYPES.register(modEventBus);
     }
 }

@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.init;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.drone.DroneData;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
@@ -21,6 +22,14 @@ public final class PlasticraftDataComponents {
         () -> DataComponentType.<MoldedPlasticData>builder()
             .persistent(MoldedPlasticData.CODEC)
             .networkSynchronized(MoldedPlasticData.STREAM_CODEC)
+            .build()
+    );
+
+    public static final Supplier<DataComponentType<DroneData>> DRONE_DATA = COMPONENTS.register(
+        "drone_data",
+        () -> DataComponentType.<DroneData>builder()
+            .persistent(DroneData.CODEC)
+            .networkSynchronized(DroneData.STREAM_CODEC)
             .build()
     );
 

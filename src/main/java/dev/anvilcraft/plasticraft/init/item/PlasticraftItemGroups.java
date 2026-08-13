@@ -39,6 +39,10 @@ public final class PlasticraftItemGroups {
                 output.accept(PlasticraftBlocks.CONDENSER_TOWER.asItem());
                 output.accept(PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.asItem());
                 output.accept(PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.asItem());
+                output.accept(PlasticraftItems.CONSTRUCTION_DRONE.get());
+                output.accept(PlasticraftItems.DEMOLITION_DRONE.get());
+                output.accept(PlasticraftItems.COLLECTION_DRONE.get());
+                output.accept(PlasticraftItems.OBSERVATION_DRONE.get());
             })
             .title(Component.translatable(TITLE_KEY))
             // NeoForge 的排序图将 withTabsBefore(X) 记录为 X -> this，

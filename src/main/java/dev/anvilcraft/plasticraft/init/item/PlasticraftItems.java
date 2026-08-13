@@ -2,7 +2,10 @@ package dev.anvilcraft.plasticraft.init.item;
 
 import dev.anvilcraft.lib.v2.registrum.util.entry.ItemEntry;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.drone.tool.DroneToolDefinition;
+import dev.anvilcraft.plasticraft.drone.tool.DroneToolDefinitions;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.item.DroneItem;
 import dev.anvilcraft.plasticraft.item.HighViscosityResinBucketItem;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticGranuleItem;
@@ -82,7 +85,38 @@ public final class PlasticraftItems {
         })
         .register();
 
+    public static final ItemEntry<DroneItem> CONSTRUCTION_DRONE = drone(
+        "construction_drone",
+        DroneToolDefinitions.CONSTRUCTION,
+        "Construction Drone"
+    );
+    public static final ItemEntry<DroneItem> DEMOLITION_DRONE = drone(
+        "demolition_drone",
+        DroneToolDefinitions.DEMOLITION,
+        "Demolition Drone"
+    );
+    public static final ItemEntry<DroneItem> COLLECTION_DRONE = drone(
+        "collection_drone",
+        DroneToolDefinitions.COLLECTION,
+        "Collection Drone"
+    );
+    public static final ItemEntry<DroneItem> OBSERVATION_DRONE = drone(
+        "observation_drone",
+        DroneToolDefinitions.OBSERVATION,
+        "Observation Drone"
+    );
+
     private PlasticraftItems() {
+    }
+
+    /** 四种无人机共用注册流程;物品模型是手写的 builtin/entity JSON,不参与数据生成。 */
+    private static ItemEntry<DroneItem> drone(String id, DroneToolDefinition definition, String name) {
+        return AnvilcraftPlasticraft.REGISTRUM
+            .item(id, properties -> new DroneItem(definition, properties))
+            .lang(name)
+            .model((context, provider) -> {
+            })
+            .register();
     }
 
     private static ItemEntry<BucketItem> fluidBucket(

@@ -19,6 +19,9 @@ import dev.anvilcraft.plasticraft.client.renderer.blockentity.PlasticMoldingCham
 import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingViewportResources;
 import dev.anvilcraft.plasticraft.client.renderer.entity.CatalyticPressLidRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinCauldronRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.entity.drone.DroneItemRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.entity.drone.DroneModel;
+import dev.anvilcraft.plasticraft.client.renderer.entity.drone.DroneToolAttachmentModel;
 import dev.anvilcraft.plasticraft.init.PlasticraftParticles;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
@@ -35,6 +38,7 @@ import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
+import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.RegisterColorHandlersEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
@@ -57,6 +61,7 @@ public final class AnvilcraftPlasticraftClient {
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerBlockColors);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerItemColors);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerClientExtensions);
+        modEventBus.addListener(AnvilcraftPlasticraftClient::registerLayerDefinitions);
         modEventBus.addListener(PlasticPreviewRenderTypes::registerShader);
         modEventBus.addListener(PlasticTextureSpriteSource::registerType);
         NeoForge.EVENT_BUS.addListener(AnvilcraftPlasticraftClient::clearPlasticTextureCache);
@@ -127,6 +132,37 @@ public final class AnvilcraftPlasticraftClient {
                 return UniversalPlasticItemRenderer.getInstance();
             }
         }, PlasticraftBlocks.UNIVERSAL_PLASTIC.asItem());
+        event.registerItem(new IClientItemExtensions() {
+            @Override
+            public BlockEntityWithoutLevelRenderer getCustomRenderer() {
+                return DroneItemRenderer.getInstance();
+            }
+        },
+            PlasticraftItems.CONSTRUCTION_DRONE.get(),
+            PlasticraftItems.DEMOLITION_DRONE.get(),
+            PlasticraftItems.COLLECTION_DRONE.get(),
+            PlasticraftItems.OBSERVATION_DRONE.get()
+        );
+    }
+
+    private static void registerLayerDefinitions(EntityRenderersEvent.RegisterLayerDefinitions event) {
+        event.registerLayerDefinition(DroneModel.LAYER, DroneModel::createBodyLayer);
+        event.registerLayerDefinition(
+            DroneToolAttachmentModel.CONSTRUCTION_CLAW_LAYER,
+            DroneToolAttachmentModel::createConstructionClawLayer
+        );
+        event.registerLayerDefinition(
+            DroneToolAttachmentModel.DEMOLITION_STONECUTTER_LAYER,
+            DroneToolAttachmentModel::createDemolitionStonecutterLayer
+        );
+        event.registerLayerDefinition(
+            DroneToolAttachmentModel.COLLECTION_MAGNET_LAYER,
+            DroneToolAttachmentModel::createCollectionMagnetLayer
+        );
+        event.registerLayerDefinition(
+            DroneToolAttachmentModel.OBSERVATION_SPYGLASS_LAYER,
+            DroneToolAttachmentModel::createObservationSpyglassLayer
+        );
     }
 
     private static void registerAdditionalModels(ModelEvent.RegisterAdditional event) {

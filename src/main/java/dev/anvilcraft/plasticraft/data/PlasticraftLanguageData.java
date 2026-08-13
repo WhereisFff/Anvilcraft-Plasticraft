@@ -40,6 +40,27 @@ public final class PlasticraftLanguageData {
         provider.add("item.anvilcraftplasticraft.molded_product_name", "%1$s %2$s");
         provider.add("item.anvilcraftplasticraft.molded_product_suffix.block", "Block");
 
+        // 四种无人机物品说明与螺旋桨信息行的语言文件生成。
+        provider.add(
+            "tooltip.anvilcraftplasticraft.drone.construction",
+            "Mechanical drone fitted with a crab claw attachment"
+        );
+        provider.add(
+            "tooltip.anvilcraftplasticraft.drone.demolition",
+            "Mechanical drone fitted with a stonecutter attachment"
+        );
+        provider.add(
+            "tooltip.anvilcraftplasticraft.drone.collection",
+            "Mechanical drone fitted with a handheld magnet attachment"
+        );
+        provider.add(
+            "tooltip.anvilcraftplasticraft.drone.observation",
+            "Mechanical drone fitted with a spyglass attachment"
+        );
+        provider.add("tooltip.anvilcraftplasticraft.drone.propeller.left", "Left propeller: %s");
+        provider.add("tooltip.anvilcraftplasticraft.drone.propeller.right", "Right propeller: %s");
+        provider.add("tooltip.anvilcraftplasticraft.drone.propeller.missing", "Missing");
+
         // 塑料成型舱物品说明、容器标题和建模器界面语言文件生成。
         provider.add(
             "tooltip.anvilcraftplasticraft.plastic_molding_chamber",
