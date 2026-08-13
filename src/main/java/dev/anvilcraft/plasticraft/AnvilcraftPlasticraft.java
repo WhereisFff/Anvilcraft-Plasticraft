@@ -3,12 +3,11 @@ package dev.anvilcraft.plasticraft;
 import com.mojang.logging.LogUtils;
 import dev.anvilcraft.lib.v2.network.register.NetworkRegistrar;
 import dev.anvilcraft.lib.v2.registrum.Registrum;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationSources;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.YukkuriCapabilities;
 import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
 import dev.anvilcraft.plasticraft.data.PlasticraftDatagen;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveInvisibilityService;
+import dev.anvilcraft.plasticraft.event.AnvilCraftApiBootstrap;
 import dev.anvilcraft.plasticraft.event.HighViscosityResinEvents;
 import dev.anvilcraft.plasticraft.event.PlasticVillagerTrades;
 import dev.anvilcraft.plasticraft.fluid.UniversalPlasticMeltBucketWrapper;
@@ -31,6 +30,8 @@ import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
 import dev.anvilcraft.plasticraft.recipe.EscapingVaporEffects;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetVaporizationSource;
 import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
+import dev.anvilcraft.plasticraft.vapor.VaporCapabilities;
+import dev.anvilcraft.plasticraft.vapor.VaporizationSources;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -68,6 +69,7 @@ public final class AnvilcraftPlasticraft {
         PlasticraftRecipeTypes.register(modEventBus);
         PlasticraftDatagen.init();
         VaporizationSources.register(PlasmaJetVaporizationSource.INSTANCE);
+        AnvilCraftApiBootstrap.register();
         NeoForge.EVENT_BUS.addListener(AnvilcraftPlasticraft::addItemTooltips);
         NeoForge.EVENT_BUS.addListener(HighViscosityResinEvents::useEntity);
         NeoForge.EVENT_BUS.addListener(AdhesiveInvisibilityService::projectileImpact);
@@ -140,7 +142,7 @@ public final class AnvilcraftPlasticraft {
             PlasticraftBlocks.CONDENSER_TOWER.get()
         );
         event.registerBlock(
-            YukkuriCapabilities.VAPOR_CONSUMER,
+            VaporCapabilities.VAPOR_CONSUMER,
             CondenserTowerBlockEntity::vaporCapability,
             PlasticraftBlocks.CONDENSER_TOWER.get()
         );

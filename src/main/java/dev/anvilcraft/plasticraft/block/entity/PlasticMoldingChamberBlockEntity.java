@@ -76,6 +76,8 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.EntityCollisionContext;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.energy.IEnergyStorage;
 import net.neoforged.neoforge.fluids.FluidActionResult;
@@ -439,8 +441,17 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     }
 
     public boolean hasFormingRegionShape(MoldingRegionPart part) {
-        if (this.printingDischargeOpen) return false;
         return this.printingComponentPresent() || part.up() < this.completedMoldLayers();
+    }
+
+    /** 出料只对当前这件塑料制品放开成型区碰撞，舱顶和其他实体仍站得住。 */
+    public boolean ignoresFormingRegionCollision(CollisionContext context) {
+        if (!this.printingDischargeOpen || this.printingDischargeProductId == null) return false;
+        Entity entity = context instanceof EntityCollisionContext entityContext
+            ? entityContext.getEntity()
+            : null;
+        return entity instanceof UniversalPlasticEntity
+            && entity.getUUID().equals(this.printingDischargeProductId);
     }
 
     public boolean printingDischargeOpen() {
@@ -2064,7 +2075,6 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     }
 
     private int formingRegionLayers() {
-        if (this.printingDischargeOpen) return 0;
         return this.printingComponentPresent() ? MOLD_FILL_LAYERS : this.completedMoldLayers();
     }
 

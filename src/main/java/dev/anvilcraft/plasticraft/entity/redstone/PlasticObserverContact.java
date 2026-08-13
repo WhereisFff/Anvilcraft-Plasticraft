@@ -22,28 +22,15 @@ public final class PlasticObserverContact {
     private static final double PROBE_DISTANCE = 1.0E-3D;
     private static final double NORMAL_ALIGNMENT_EPSILON = 1.0E-5D;
 
+    public record ScanResult(Set<BlockPos> contacts, boolean complete) {
+    }
+
     private PlasticObserverContact() {
     }
 
-    public static Set<BlockPos> update(AbstractPlasticEntity entity, Set<BlockPos> previousContacts) {
-        Set<BlockPos> contacts = findContacts(entity);
-        if (contacts.equals(previousContacts)) return previousContacts;
-        for (BlockPos previous : previousContacts) {
-            if (!contacts.contains(previous)) scheduleSignal(entity.level(), previous);
-        }
-        for (BlockPos contact : contacts) {
-            if (!previousContacts.contains(contact)) scheduleSignal(entity.level(), contact);
-        }
-        return contacts;
-    }
-
-    public static void clear(Level level, Set<BlockPos> contacts) {
-        for (BlockPos contact : contacts) scheduleSignal(level, contact);
-    }
-
-    private static Set<BlockPos> findContacts(AbstractPlasticEntity entity) {
+    public static ScanResult scan(AbstractPlasticEntity entity) {
         List<PlasticConvexShape> entityShapes = entity.plasticraft$getCollisionBox().convexComponents();
-        if (entityShapes.isEmpty()) return Set.of();
+        if (entityShapes.isEmpty()) return new ScanResult(Set.of(), true);
         AABB bounds = entity.plasticraft$getCollisionBox().bounds();
         int minX = Mth.floor(bounds.minX - PROBE_DISTANCE);
         int minY = Mth.floor(bounds.minY - PROBE_DISTANCE);
@@ -52,9 +39,13 @@ public final class PlasticObserverContact {
         int maxY = Mth.floor(bounds.maxY + PROBE_DISTANCE);
         int maxZ = Mth.floor(bounds.maxZ + PROBE_DISTANCE);
         Set<BlockPos> contacts = new LinkedHashSet<>();
+        boolean complete = true;
         for (BlockPos mutablePos : BlockPos.betweenClosed(minX, minY, minZ, maxX, maxY, maxZ)) {
             BlockPos pos = mutablePos.immutable();
-            if (!entity.level().hasChunkAt(pos)) continue;
+            if (!entity.level().hasChunkAt(pos)) {
+                complete = false;
+                continue;
+            }
             BlockState state = entity.level().getBlockState(pos);
             if (!state.is(Blocks.OBSERVER)) continue;
             Direction facing = state.getValue(ObserverBlock.FACING);
@@ -70,7 +61,26 @@ public final class PlasticObserverContact {
                 contacts.add(pos);
             }
         }
-        return contacts.isEmpty() ? Set.of() : Set.copyOf(contacts);
+        return new ScanResult(contacts.isEmpty() ? Set.of() : Set.copyOf(contacts), complete);
+    }
+
+    public static Set<BlockPos> emitTransitions(
+        Level level,
+        Set<BlockPos> previousContacts,
+        Set<BlockPos> contacts
+    ) {
+        if (contacts.equals(previousContacts)) return previousContacts;
+        for (BlockPos previous : previousContacts) {
+            if (!contacts.contains(previous)) scheduleSignal(level, previous);
+        }
+        for (BlockPos contact : contacts) {
+            if (!previousContacts.contains(contact)) scheduleSignal(level, contact);
+        }
+        return contacts;
+    }
+
+    public static void clear(Level level, Set<BlockPos> contacts) {
+        for (BlockPos contact : contacts) scheduleSignal(level, contact);
     }
 
     private static void scheduleSignal(Level level, BlockPos pos) {

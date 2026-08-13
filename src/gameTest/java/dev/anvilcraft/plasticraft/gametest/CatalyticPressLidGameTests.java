@@ -4,11 +4,9 @@ import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
-import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
-import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.event.CatalyticPressAnvilEvents;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
@@ -76,27 +74,18 @@ public final class CatalyticPressLidGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "5x10x5", floor = true)
-    @TestHolder(description = "A distant falling anvil does not lower the catalytic press arm early")
-    static void distantAnvilDoesNotStartPressAnimation(ExtendedGameTestHelper helper) {
-        CatalyticPressLidEntity lid = spawnReadyLid(helper, new BlockPos(2, 2, 2));
-        FallingBlockEntity anvil = spawnFallingAnvil(helper, new BlockPos(2, 8, 2), -0.5D);
+    @TestHolder(description = "A falling anvil starts the press animation only within its four-tick approach")
+    static void fallingAnvilPressAnimationRespectsApproach(ExtendedGameTestHelper helper) {
+        CatalyticPressLidEntity distantLid = spawnReadyLid(helper, new BlockPos(1, 2, 2));
+        FallingBlockEntity distantAnvil = spawnFallingAnvil(helper, new BlockPos(1, 8, 2), -0.5D);
+        CatalyticPressLidEntity nearbyLid = spawnReadyLid(helper, new BlockPos(3, 2, 2));
+        FallingBlockEntity nearbyAnvil = spawnFallingAnvil(helper, new BlockPos(3, 5, 2), -0.5D);
 
-        CatalyticPressAnvilEvents.beforeFallingAnvilTick(anvil);
+        CatalyticPressAnvilEvents.beforeFallingAnvilTick(distantAnvil);
+        CatalyticPressAnvilEvents.beforeFallingAnvilTick(nearbyAnvil);
 
-        check(lid.pressAnimationProgress(1.0F) == 0.0F, "distant anvil lowered the press arm early");
-        helper.succeed();
-    }
-
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate(value = "5x7x5", floor = true)
-    @TestHolder(description = "A falling anvil starts the press animation within its four-tick approach")
-    static void nearbyAnvilStartsPressAnimation(ExtendedGameTestHelper helper) {
-        CatalyticPressLidEntity lid = spawnReadyLid(helper, new BlockPos(2, 2, 2));
-        FallingBlockEntity anvil = spawnFallingAnvil(helper, new BlockPos(2, 5, 2), -0.5D);
-
-        CatalyticPressAnvilEvents.beforeFallingAnvilTick(anvil);
-
-        check(lid.pressAnimationProgress(1.0F) > 0.0F, "nearby anvil did not start the press animation");
+        check(distantLid.pressAnimationProgress(1.0F) == 0.0F, "distant anvil lowered the press arm early");
+        check(nearbyLid.pressAnimationProgress(1.0F) > 0.0F, "nearby anvil did not start the press animation");
         helper.succeed();
     }
 
@@ -339,28 +328,6 @@ public final class CatalyticPressLidGameTests {
         return anvil;
     }
 
-    private static HardenedResinAnvilEntity spawnHardenedResinAnvil(
-        ExtendedGameTestHelper helper,
-        BlockPos relativePos
-    ) {
-        BlockPos pos = helper.absolutePos(relativePos);
-        Vec3 position = PlasticEntityOrientation.DEFAULT.entityPosition(
-            pos,
-            PlasticraftEntities.HARDEND_RESIN_ANVIL.get().getWidth(),
-            PlasticraftEntities.HARDEND_RESIN_ANVIL.get().getHeight()
-        );
-        HardenedResinAnvilEntity anvil = new HardenedResinAnvilEntity(
-            PlasticraftEntities.HARDEND_RESIN_ANVIL.get(),
-            helper.getLevel(),
-            position,
-            PlasticraftBlocks.HARDEND_RESIN_ANVIL.get().defaultBlockState(),
-            PlasticraftBlocks.HARDEND_RESIN_ANVIL.asStack(),
-            PlasticEntityOrientation.DEFAULT
-        );
-        check(helper.getLevel().addFreshEntity(anvil), "failed to add hardened resin anvil");
-        return anvil;
-    }
-
     private static HardenedResinCauldronEntity spawnCauldron(
         ExtendedGameTestHelper helper,
         BlockPos relativePos
@@ -382,23 +349,6 @@ public final class CatalyticPressLidGameTests {
         cauldron.setNoGravity(true);
         check(helper.getLevel().addFreshEntity(cauldron), "failed to add resin cauldron");
         return cauldron;
-    }
-
-    private static UniversalPlasticEntity spawnUniversalPlastic(
-        ExtendedGameTestHelper helper,
-        Vec3 position
-    ) {
-        UniversalPlasticEntity plastic = new UniversalPlasticEntity(
-            PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
-            helper.getLevel(),
-            position,
-            PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
-            PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack(),
-            PlasticEntityOrientation.DEFAULT
-        );
-        plastic.setNoGravity(true);
-        check(helper.getLevel().addFreshEntity(plastic), "failed to add universal plastic support");
-        return plastic;
     }
 
     private static BondedEntityBlockEntity bondedBlockEntity(

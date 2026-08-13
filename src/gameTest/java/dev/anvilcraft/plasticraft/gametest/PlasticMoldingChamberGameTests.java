@@ -72,6 +72,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.Shapes;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidType;
@@ -653,6 +654,7 @@ public final class PlasticMoldingChamberGameTests {
         check(chamber.formingMode() == MoldingFormingMode.PRINTING,
             "installing the printing component did not select printing");
         assertRegionShapes(chamber, 3);
+        assertPrintingCabinSelectionShapes(chamber);
         helper.getLevel().setBlockAndUpdate(chamber.getBlockPos().above(), Blocks.AIR.defaultBlockState());
         check(chamber.formingMode() == MoldingFormingMode.CASTING,
             "removing the printing component did not restore casting");
@@ -816,8 +818,16 @@ public final class PlasticMoldingChamberGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "Printing includes positive-volume slope intersections and closes each printed pixel")
-    static void printingPlanPreservesSlopedPixelGeometry(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "Printing occupancy, slope fragments, closed pixels, and rotated dihedrals stay exact")
+    static void printingGeometryStaysClosedAndMatchesOccupancy(ExtendedGameTestHelper helper) {
+        assertPrintingPlanPreservesSlopedPixelGeometry();
+        assertPrintingOccupancyAndPrintedSurfaceStayExact();
+        assertPrintingPartialSlopeKeepsFragmentArea();
+        assertPrintingRotatedCubeDihedralsStayClosed();
+        helper.succeed();
+    }
+
+    private static void assertPrintingPlanPreservesSlopedPixelGeometry() {
         MoldingElement source = MoldingElement.cube(
             "Sloped Sheet",
             new MoldingVec3(12.0D, 22.5D, 16.0D),
@@ -868,13 +878,9 @@ public final class PlasticMoldingChamberGameTests {
         closedCell.forEach(quad -> normals.add(quad.normal()));
         check(normals.size() == 6, "an interior printed pixel repeated or omitted a closing face");
         check(intersecting.volume() == slopedPlan.size(), "printing plan and intersecting mask diverged");
-        helper.succeed();
     }
 
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "Printing occupancy SAT reject matches CSG and fully printed faces stay source cubes")
-    static void printingOccupancyAndPrintedSurfaceStayExact(ExtendedGameTestHelper helper) {
+    private static void assertPrintingOccupancyAndPrintedSurfaceStayExact() {
         EditableMoldingModel aligned = EditableMoldingModel.empty().withElements(List.of(MoldingElement.cube(
             "Aligned",
             new MoldingVec3(16.0D, 16.0D, 16.0D),
@@ -939,13 +945,9 @@ public final class PlasticMoldingChamberGameTests {
             Math.abs(MoldingPrintedGeometry.triangleListArea(alignedPrinted.surfaceTriangles()) - 384.0D) <= 0.05D,
             "fully printed cube lost original faces"
         );
-        helper.succeed();
     }
 
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "Partial printed slope keeps occupancy fragments without corner webbing")
-    static void printingPartialSlopeKeepsFragmentArea(ExtendedGameTestHelper helper) {
+    private static void assertPrintingPartialSlopeKeepsFragmentArea() {
         EditableMoldingModel sloped = rotatedCube(
             "Sloped",
             new MoldingVec3(12.0D, 22.5D, 16.0D),
@@ -995,13 +997,9 @@ public final class PlasticMoldingChamberGameTests {
             "concave occupancy webbed across unprinted face area: "
                 + concavePrintedArea + " vs " + concaveFragments
         );
-        helper.succeed();
     }
 
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "Rotated cube plane-slope dihedrals stay closed without outer voxel caps")
-    static void printingRotatedCubeDihedralsStayClosed(ExtendedGameTestHelper helper) {
+    private static void assertPrintingRotatedCubeDihedralsStayClosed() {
         EditableMoldingModel sloped = rotatedCube(
             "Sloped",
             new MoldingVec3(12.0D, 22.5D, 16.0D),
@@ -1020,7 +1018,6 @@ public final class PlasticMoldingChamberGameTests {
         partial.advanceTo(partialCount);
         checkCapsAvoidOriginalFaces(sloped, partial.capTriangles(), "partial print");
         checkPrintedDihedralCellsCovered(sloped, plan, partialCount, partial.surfaceTriangles());
-        helper.succeed();
     }
 
     @GameTest(timeoutTicks = 20)
@@ -1856,6 +1853,30 @@ public final class PlasticMoldingChamberGameTests {
                 chamber.getBlockPos(),
                 chamber.getBlockState(),
                 chamber
+            );
+        }
+    }
+
+    private static void assertPrintingCabinSelectionShapes(PlasticMoldingChamberBlockEntity chamber) {
+        Direction front = chamber.getBlockState().getValue(PlasticMoldingChamberBlock.FACING);
+        AABB regionBounds = PlasticMoldingChamberStructure.regionBounds(chamber.getBlockPos(), front);
+        for (MoldingRegionPart part : MoldingRegionPart.values()) {
+            BlockPos region = PlasticMoldingChamberStructure.regionPos(chamber.getBlockPos(), front, part);
+            BlockState state = chamber.getLevel().getBlockState(region);
+            AABB selection = state.getShape(chamber.getLevel(), region).bounds();
+            AABB expected = regionBounds.move(-region.getX(), -region.getY(), -region.getZ());
+            check(
+                Math.abs(selection.minX - expected.minX) <= EPSILON
+                    && Math.abs(selection.minY - expected.minY) <= EPSILON
+                    && Math.abs(selection.minZ - expected.minZ) <= EPSILON
+                    && Math.abs(selection.maxX - expected.maxX) <= EPSILON
+                    && Math.abs(selection.maxY - expected.maxY) <= EPSILON
+                    && Math.abs(selection.maxZ - expected.maxZ) <= EPSILON,
+                "printing cabin selection did not cover the full 3x3x3 at " + part
+            );
+            check(
+                state.getCollisionShape(chamber.getLevel(), region).equals(Shapes.block()),
+                "printing cabin collision left its own cell at " + part
             );
         }
     }

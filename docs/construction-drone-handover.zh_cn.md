@@ -18,7 +18,7 @@
 
 ### 联调与环境备注(2026-08-13)
 
-- 本体扫描器已在本地仓库 `C:\Users\a1810\IdeaProjects\AnvilCraft`(分支 `cr`,提交 `dc10bbd0f`)补齐方块实体 NBT 与实体保存,并新增 `StructureDiskData.upsideDown`;Plasticraft 暂以 `gradle.properties` 的 `anvilcraft_jar` 指向本地构建的 `1.6.0+snapshot.9999` jar 联调,本体发版后需移除该属性并同步版本号
+- 本体扫描器已补齐方块实体 NBT 与实体保存,并新增 `StructureDiskData.upsideDown`;Plasticraft 已切回远程 AnvilCraft `1.6.0+snapshot.2145` 与 AnvilLib `2.0.0+snapshot.507`
 - 本体 HEAD 的炼药锅配方 API 改为 `FluidStackPredicate`/`FluidStack` 转换列表,Plasticraft 已完成迁移(`refactor(recipe)` 672aa44);等离子喷流虚拟气体独立为 `gas` 字段
 - 另一智能体(grok cli)在同一工作树修复其他 bug,其未提交改动包含胶粘拉杆活塞推动等内容;其 `BondedPistonReactions.claimDestroyBlock` 未检查推动反应,把黑曜石等不可推方块收进 `toPush`,导致既有测试 `immovableBondedMemberBlocksPiston` 失败——这是它在制品的回归,与无人机 TODO 无关
 - 并发开发注意:两个智能体同时跑 gradle/GameTest 会互抢 `session.lock`、互杀 Java 进程、互相覆盖 datagen 产物与哈希缓存;若再出现 datagen 结果与代码不符,先删 `src/generated/resources/.cache` 强制全量重写

@@ -591,81 +591,73 @@ public final class PlasticConvexCollisionGameTests {
     }
 
     @GameTest(timeoutTicks = 40)
-    @EmptyTemplate(value = "11x7x11", floor = true)
-    @TestHolder(description = "A player under an upside-down cauldron rim can reverse without being crushed")
-    static void playerUnderUpsideDownCauldronRimCanReverseWithoutBeingCrushed(ExtendedGameTestHelper helper) {
-        for (int x = 1; x < 10; x++) {
+    @EmptyTemplate(value = "21x7x11", floor = true)
+    @TestHolder(description = "A player under an upside-down cauldron rim or inner ceiling can reverse without being crushed")
+    static void playerUnderUpsideDownCauldronCanReverseWithoutBeingCrushed(ExtendedGameTestHelper helper) {
+        for (int x = 1; x < 20; x++) {
             for (int z = 1; z < 10; z++) helper.setBlock(x, 1, z, Blocks.STONE);
         }
-        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        Vec3 playerPosition = helper.absoluteVec(new Vec3(5.5D, 2.0D, 5.5D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
-        player.setOnGround(true);
+        GameTestPlayer rimPlayer = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        Vec3 rimPlayerPosition = helper.absoluteVec(new Vec3(5.5D, 2.0D, 5.5D));
+        rimPlayer.moveTo(rimPlayerPosition.x, rimPlayerPosition.y, rimPlayerPosition.z);
+        rimPlayer.setOnGround(true);
+        HardenedResinCauldronEntity rimCauldron = spawnUpsideDownCauldron(helper, new Vec3(5.5D, 4.0D, 5.5D));
+        AABB rimBounds = rimCauldron.getBoundingBox();
+        rimPlayer.moveTo(
+            rimBounds.minX - rimPlayer.getBbWidth() * 0.5D + 0.18D,
+            rimPlayerPosition.y,
+            rimBounds.getCenter().z
+        );
+        AABB rimPlayerBox = rimPlayer.getBoundingBox();
+        rimCauldron.setPos(
+            rimCauldron.getX(),
+            rimCauldron.getY() + rimPlayerBox.maxY - rimBounds.minY,
+            rimCauldron.getZ()
+        );
 
-        HardenedResinCauldronEntity cauldron = new HardenedResinCauldronEntity(
-            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
-            helper.getLevel(),
-            helper.absoluteVec(new Vec3(5.5D, 4.0D, 5.5D)),
-            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
-            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(),
-            new PlasticEntityOrientation(Direction.DOWN, 0)
-        );
-        check(helper.getLevel().addFreshEntity(cauldron), "failed to add upside-down cauldron");
-        AABB cauldronBounds = cauldron.getBoundingBox();
-        double rimOverlap = 0.18D;
-        player.moveTo(
-            cauldronBounds.minX - player.getBbWidth() * 0.5D + rimOverlap,
-            playerPosition.y,
-            cauldronBounds.getCenter().z
-        );
-        AABB playerBox = player.getBoundingBox();
-        cauldron.setPos(
-            cauldron.getX(),
-            cauldron.getY() + playerBox.maxY - cauldronBounds.minY,
-            cauldron.getZ()
-        );
-        runUpsideDownCauldronReversalTest(helper, player, cauldron, "rim");
-    }
-
-    @GameTest(timeoutTicks = 40)
-    @EmptyTemplate(value = "11x7x11", floor = true)
-    @TestHolder(description = "A player touching an upside-down cauldron's inner ceiling can reverse safely")
-    static void playerInsideUpsideDownCauldronCanReverseWithoutBeingCrushed(ExtendedGameTestHelper helper) {
-        for (int x = 1; x < 10; x++) {
-            for (int z = 1; z < 10; z++) helper.setBlock(x, 1, z, Blocks.STONE);
-        }
-        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        Vec3 playerPosition = helper.absoluteVec(new Vec3(5.5D, 2.0D, 5.5D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
-        player.setOnGround(true);
-
-        HardenedResinCauldronEntity cauldron = new HardenedResinCauldronEntity(
-            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
-            helper.getLevel(),
-            helper.absoluteVec(new Vec3(5.5D, 4.0D, 5.5D)),
-            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
-            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(),
-            new PlasticEntityOrientation(Direction.DOWN, 0)
-        );
-        check(helper.getLevel().addFreshEntity(cauldron), "failed to add upside-down cauldron");
-        AABB playerBox = player.getBoundingBox();
-        double innerCeilingMinY = cauldron.plasticraft$getCollisionBox().convexComponents().stream()
+        GameTestPlayer innerPlayer = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        Vec3 innerPlayerPosition = helper.absoluteVec(new Vec3(15.5D, 2.0D, 5.5D));
+        innerPlayer.moveTo(innerPlayerPosition.x, innerPlayerPosition.y, innerPlayerPosition.z);
+        innerPlayer.setOnGround(true);
+        HardenedResinCauldronEntity innerCauldron = spawnUpsideDownCauldron(helper, new Vec3(15.5D, 4.0D, 5.5D));
+        AABB innerPlayerBox = innerPlayer.getBoundingBox();
+        double innerCeilingMinY = innerCauldron.plasticraft$getCollisionBox().convexComponents().stream()
             .map(PlasticConvexShape::bounds)
-            .filter(bounds -> bounds.minX <= playerBox.minX + EPSILON
-                && bounds.maxX >= playerBox.maxX - EPSILON
-                && bounds.minZ <= playerBox.minZ + EPSILON
-                && bounds.maxZ >= playerBox.maxZ - EPSILON)
+            .filter(bounds -> bounds.minX <= innerPlayerBox.minX + EPSILON
+                && bounds.maxX >= innerPlayerBox.maxX - EPSILON
+                && bounds.minZ <= innerPlayerBox.minZ + EPSILON
+                && bounds.maxZ >= innerPlayerBox.maxZ - EPSILON)
             .mapToDouble(bounds -> bounds.minY)
             .min()
             .orElseThrow(() -> new GameTestAssertException(
                 "upside-down cauldron exposed no inner ceiling over the player"
             ));
-        cauldron.setPos(
-            cauldron.getX(),
-            cauldron.getY() + playerBox.maxY - innerCeilingMinY,
-            cauldron.getZ()
+        innerCauldron.setPos(
+            innerCauldron.getX(),
+            innerCauldron.getY() + innerPlayerBox.maxY - innerCeilingMinY,
+            innerCauldron.getZ()
         );
-        runUpsideDownCauldronReversalTest(helper, player, cauldron, "inner ceiling");
+        runUpsideDownCauldronReversalTest(
+            helper,
+            new ReversalContact(rimPlayer, rimCauldron, "rim"),
+            new ReversalContact(innerPlayer, innerCauldron, "inner ceiling")
+        );
+    }
+
+    private static HardenedResinCauldronEntity spawnUpsideDownCauldron(
+        ExtendedGameTestHelper helper,
+        Vec3 relativePosition
+    ) {
+        HardenedResinCauldronEntity cauldron = new HardenedResinCauldronEntity(
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
+            helper.getLevel(),
+            helper.absoluteVec(relativePosition),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(),
+            new PlasticEntityOrientation(Direction.DOWN, 0)
+        );
+        check(helper.getLevel().addFreshEntity(cauldron), "failed to add upside-down cauldron");
+        return cauldron;
     }
 
     @GameTest(timeoutTicks = 40)
@@ -1456,9 +1448,7 @@ public final class PlasticConvexCollisionGameTests {
 
     private static void runUpsideDownCauldronReversalTest(
         ExtendedGameTestHelper helper,
-        GameTestPlayer player,
-        HardenedResinCauldronEntity cauldron,
-        String contactName
+        ReversalContact... contacts
     ) {
         Vec3[] directions = {
             new Vec3(0.12D, -0.08D, 0.0D),
@@ -1470,65 +1460,80 @@ public final class PlasticConvexCollisionGameTests {
             new Vec3(0.0D, -0.08D, 0.12D),
             new Vec3(0.0D, -0.08D, -0.12D)
         };
-        Vec3[] relativeStart = {Vec3.ZERO};
+        Vec3[] relativeStart = new Vec3[contacts.length];
         int[] step = {0};
         helper.startSequence()
             .thenIdle(3)
             .thenExecute(() -> {
-                check(player.getPose() == Pose.STANDING,
-                    contactName + " contact started with player pose " + player.getPose());
-                check(
-                    PlasticEntityPhysics.hasImmediateEntityContact(cauldron, player, Direction.DOWN),
-                    contactName + " did not directly support the upside-down cauldron"
-                );
-                relativeStart[0] = cauldron.position().subtract(player.position());
+                for (int index = 0; index < contacts.length; index++) {
+                    ReversalContact contact = contacts[index];
+                    check(contact.player().getPose() == Pose.STANDING,
+                        contact.name() + " contact started with player pose " + contact.player().getPose());
+                    check(
+                        PlasticEntityPhysics.hasImmediateEntityContact(contact.cauldron(), contact.player(), Direction.DOWN),
+                        contact.name() + " did not directly support the upside-down cauldron"
+                    );
+                    relativeStart[index] = contact.cauldron().position().subtract(contact.player().position());
+                }
             })
             .thenExecuteFor(directions.length, () -> {
                 int currentStep = step[0]++;
-                Vec3 playerStart = player.position();
-                Vec3 cauldronStart = cauldron.position();
-                player.setOnGround(true);
                 Vec3 requested = directions[currentStep];
-                check(
-                    PlasticEntityPhysics.hasSurfaceSupport(
-                        cauldron,
-                        cauldron.getBoundingBox(),
-                        player,
-                        Direction.DOWN
-                    ),
-                    contactName + " lost head support before step " + currentStep
-                );
-                check(
-                    PlasticEntityPhysics.canMoveWithCarrier(
-                        cauldron,
-                        player,
-                        player.getBoundingBox(),
-                        Direction.DOWN,
-                        requested
-                    ),
-                    contactName + " rejected its head carrier before step " + currentStep
-                );
-                player.move(MoverType.SELF, requested);
-                check(player.getPose() == Pose.STANDING,
-                    contactName + " reversal forced pose " + player.getPose() + " at step " + currentStep);
-                Vec3 playerMovement = player.position().subtract(playerStart);
-                Vec3 cauldronMovement = cauldron.position().subtract(cauldronStart);
-                check(
-                    cauldronMovement.distanceToSqr(playerMovement) <= EPSILON * EPSILON,
-                    contactName + " cauldron lagged at step " + currentStep
-                        + ": player=" + playerMovement + ", cauldron=" + cauldronMovement
-                );
-                check(
-                    cauldron.position().subtract(player.position()).distanceToSqr(relativeStart[0])
-                        <= EPSILON * EPSILON,
-                    contactName + " changed its head offset at step " + currentStep
-                );
+                for (int index = 0; index < contacts.length; index++) {
+                    ReversalContact contact = contacts[index];
+                    Vec3 playerStart = contact.player().position();
+                    Vec3 cauldronStart = contact.cauldron().position();
+                    contact.player().setOnGround(true);
+                    check(
+                        PlasticEntityPhysics.hasSurfaceSupport(
+                            contact.cauldron(),
+                            contact.cauldron().getBoundingBox(),
+                            contact.player(),
+                            Direction.DOWN
+                        ),
+                        contact.name() + " lost head support before step " + currentStep
+                    );
+                    check(
+                        PlasticEntityPhysics.canMoveWithCarrier(
+                            contact.cauldron(),
+                            contact.player(),
+                            contact.player().getBoundingBox(),
+                            Direction.DOWN,
+                            requested
+                        ),
+                        contact.name() + " rejected its head carrier before step " + currentStep
+                    );
+                    contact.player().move(MoverType.SELF, requested);
+                    check(contact.player().getPose() == Pose.STANDING,
+                        contact.name() + " reversal forced pose " + contact.player().getPose() + " at step " + currentStep);
+                    Vec3 playerMovement = contact.player().position().subtract(playerStart);
+                    Vec3 cauldronMovement = contact.cauldron().position().subtract(cauldronStart);
+                    check(
+                        cauldronMovement.distanceToSqr(playerMovement) <= EPSILON * EPSILON,
+                        contact.name() + " cauldron lagged at step " + currentStep
+                            + ": player=" + playerMovement + ", cauldron=" + cauldronMovement
+                    );
+                    check(
+                        contact.cauldron().position().subtract(contact.player().position()).distanceToSqr(relativeStart[index])
+                            <= EPSILON * EPSILON,
+                        contact.name() + " changed its head offset at step " + currentStep
+                    );
+                }
             })
             .thenExecute(() -> {
-                cauldron.discard();
-                player.discard();
+                for (ReversalContact contact : contacts) {
+                    contact.cauldron().discard();
+                    contact.player().discard();
+                }
             })
             .thenSucceed();
+    }
+
+    private record ReversalContact(
+        GameTestPlayer player,
+        HardenedResinCauldronEntity cauldron,
+        String name
+    ) {
     }
 
     private static void assertPredictionReversal(Vec3 forward) {

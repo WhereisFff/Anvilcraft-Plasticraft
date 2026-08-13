@@ -1,13 +1,14 @@
 package dev.anvilcraft.plasticraft.recipe;
 
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporAction;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporStack;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationContext;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationManager;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationOffer;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationSource;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
+import dev.anvilcraft.plasticraft.vapor.LargeCauldronVaporHost;
+import dev.anvilcraft.plasticraft.vapor.VaporAction;
+import dev.anvilcraft.plasticraft.vapor.VaporStack;
+import dev.anvilcraft.plasticraft.vapor.VaporizationContext;
+import dev.anvilcraft.plasticraft.vapor.VaporizationManager;
+import dev.anvilcraft.plasticraft.vapor.VaporizationOffer;
+import dev.anvilcraft.plasticraft.vapor.VaporizationSource;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.recipe.component.HasCauldronSimple;
 import net.minecraft.resources.ResourceLocation;
@@ -18,7 +19,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/** Adapts Plasticraft's plasma-jet recipes to Yukkuri's generic source protocol. */
+/** 把塑料工艺喷流配方接到气化源协议。 */
 public final class PlasmaJetVaporizationSource implements VaporizationSource {
     public static final PlasmaJetVaporizationSource INSTANCE = new PlasmaJetVaporizationSource();
     public static final ResourceLocation ID = AnvilcraftPlasticraft.of("plasma_jets");
@@ -99,7 +100,8 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
 
     @Override
     public void commit(VaporizationContext context, VaporizationOffer offer) {
-        if (!(context.cauldron() instanceof LargeCauldronBlockEntity cauldron)) return;
+        LargeCauldronBlockEntity cauldron = LargeCauldronVaporHost.unwrap(context.cauldron());
+        if (cauldron == null) return;
         ResourceLocation vaporType = CondenserGas.canonicalize(offer.output().type());
         if (CondenserGas.GASEOUS_EXPERIENCE.equals(vaporType)) {
             CondenserTowerProcess.emitLargeCauldronExperienceVaporParticles(

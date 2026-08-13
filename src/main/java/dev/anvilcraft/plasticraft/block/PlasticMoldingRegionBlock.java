@@ -108,7 +108,7 @@ public class PlasticMoldingRegionBlock extends Block {
         BlockPos pos,
         CollisionContext context
     ) {
-        return formingShape(state, level, pos);
+        return selectionShape(state, level, pos);
     }
 
     @Override
@@ -118,19 +118,40 @@ public class PlasticMoldingRegionBlock extends Block {
         BlockPos pos,
         CollisionContext context
     ) {
-        return formingShape(state, level, pos);
+        return formingCollisionShape(state, level, pos, context);
     }
 
-    private static VoxelShape formingShape(BlockState state, BlockGetter level, BlockPos pos) {
+    private static VoxelShape selectionShape(BlockState state, BlockGetter level, BlockPos pos) {
+        Direction front = state.getValue(FACING);
+        MoldingRegionPart part = state.getValue(PART);
+        BlockPos controller = PlasticMoldingChamberStructure.controllerPos(pos, front, part);
+        if (!(level.getBlockEntity(controller) instanceof PlasticMoldingChamberBlockEntity chamber)
+            || !chamber.hasFormingRegionShape(part)) {
+            return Shapes.empty();
+        }
+        return chamber.printingComponentPresent()
+            ? PlasticMoldingChamberStructure.regionSelectionShape(front, part)
+            : Shapes.block();
+    }
+
+    private static VoxelShape formingCollisionShape(
+        BlockState state,
+        BlockGetter level,
+        BlockPos pos,
+        CollisionContext context
+    ) {
+        MoldingRegionPart part = state.getValue(PART);
         BlockPos controller = PlasticMoldingChamberStructure.controllerPos(
             pos,
             state.getValue(FACING),
-            state.getValue(PART)
+            part
         );
-        return level.getBlockEntity(controller) instanceof PlasticMoldingChamberBlockEntity chamber
-            && chamber.hasFormingRegionShape(state.getValue(PART))
-            ? Shapes.block()
-            : Shapes.empty();
+        if (!(level.getBlockEntity(controller) instanceof PlasticMoldingChamberBlockEntity chamber)
+            || !chamber.hasFormingRegionShape(part)
+            || chamber.ignoresFormingRegionCollision(context)) {
+            return Shapes.empty();
+        }
+        return Shapes.block();
     }
 
     @Override

@@ -66,6 +66,7 @@ public final class AnvilcraftPlasticraftClient {
         modEventBus.addListener(PlasticPreviewRenderTypes::registerShader);
         modEventBus.addListener(PlasticTextureSpriteSource::registerType);
         NeoForge.EVENT_BUS.addListener(AnvilcraftPlasticraftClient::clearPlasticTextureCache);
+        AnvilCraftClientApiBootstrap.register();
         // 硬化树脂和树脂均为固定颜色材料，不注册方块或物品着色处理器。
         // 后续支持调色板的材料在此按需注册。
     }

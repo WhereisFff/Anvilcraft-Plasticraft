@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.gametest;
 
-import dev.anvilcraft.plasticraft.api.blockentity.EnhancedPlasmaJetExtension;
+import dev.anvilcraft.plasticraft.recipe.EnhancedPlasmaJets;
 import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
@@ -221,9 +221,8 @@ public final class IgnitedFuelGameTests {
             check(level.getBlockEntity(jetPos) instanceof PlasmaJetsBlockEntity,
                 "plasma jet block entity was not created");
             PlasmaJetsBlockEntity jet = (PlasmaJetsBlockEntity) level.getBlockEntity(jetPos);
-            EnhancedPlasmaJetExtension extension = (EnhancedPlasmaJetExtension) jet;
-            extension.plasticraft$setEnhanced(true);
-            extension.plasticraft$setUsesLayeredFuel(true);
+            EnhancedPlasmaJets.setEnhanced(jet, true);
+            EnhancedPlasmaJets.setUsesLayeredFuel(jet, true);
             player.moveTo(jetPos.getBottomCenter());
             player.clearFire();
             player.invulnerableTime = 0;

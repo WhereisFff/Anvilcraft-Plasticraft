@@ -67,8 +67,8 @@ public final class MoldingProductGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "Anvil type accepts the required three-section profile")
-    static void anvilShapeValidation(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "Anvil type accepts the three-section profile, projection/giant bounds, and reversed Ember outline")
+    static void anvilShapeBoundaries(ExtendedGameTestHelper helper) {
         MoldingAnvilShapeAnalysis valid = MoldingAnvilShapeAnalyzer.analyze(anvilMask(
             3,
             3,
@@ -113,18 +113,11 @@ public final class MoldingProductGameTests {
             "top projection with equal area was rejected");
         check(!MoldingAnvilShapeAnalyzer.analyze(anvilMask(4, 3, 4, 16, 10, 18)).valid(),
             "top segment no thicker than bottom passed");
-        helper.succeed();
-    }
 
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "Anvil top-area tolerance and giant-bottom boundaries remain inclusive")
-    static void anvilProjectionAndGiantBoundaries(ExtendedGameTestHelper helper) {
         check(MoldingAnvilShapeAnalyzer.analyze(anvilRectMask(15, 15, 9, 9, 11, 19)).valid(),
             "top projection exactly 16 square pixels smaller than the bottom was rejected");
         check(!MoldingAnvilShapeAnalyzer.analyze(anvilRectMask(15, 15, 9, 9, 13, 16)).valid(),
             "top projection 17 square pixels smaller than the bottom was accepted");
-
         MoldingAnvilShapeAnalysis belowBoundary = MoldingAnvilShapeAnalyzer.analyze(
             anvilRectMask(39, 40, 30, 30, 41, 42)
         );
@@ -135,6 +128,15 @@ public final class MoldingProductGameTests {
         );
         check(boundary.valid(), "40 x 40 anvil profile was rejected");
         check(boundary.giant(), "40 x 40 bottom did not gain giant-anvil ability");
+
+        EditableMoldingModel emberAnvil = emberAnvilModel(true);
+        var emberBaked = MoldingModelBaker.bake(emberAnvil);
+        check(emberBaked.functionalAnalysis().anvilShape().valid(),
+            "ember-anvil reversed bottom outline was rejected: " + emberBaked.functionalAnalysis().anvilShape());
+        check(MoldingProductTypes.validate(MoldingProductTypes.ANVIL_ID, emberAnvil, emberBaked).valid(),
+            "ember-anvil could not be assigned the anvil type");
+        check(!MoldingModelBaker.bake(emberAnvilModel(false)).functionalAnalysis().anvilShape().valid(),
+            "ordinary 12 x 12 bottom passed without a reversed outer outline");
         helper.succeed();
     }
 
@@ -179,23 +181,6 @@ public final class MoldingProductGameTests {
         check(actualFrom.equals(expectedFrom) && actualTo.equals(expectedTo),
             "bundled propeller icon cube was not moved upward with the complete model: "
                 + element.name() + " " + actualFrom + " -> " + actualTo);
-    }
-
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "A reversed lowest outline accepts the imported Ember Anvil footprint")
-    static void negativeAnvilBottomOutline(ExtendedGameTestHelper helper) {
-        EditableMoldingModel emberAnvil = emberAnvilModel(true);
-        var baked = MoldingModelBaker.bake(emberAnvil);
-        check(baked.functionalAnalysis().anvilShape().valid(),
-            "ember-anvil reversed bottom outline was rejected: " + baked.functionalAnalysis().anvilShape());
-        check(MoldingProductTypes.validate(MoldingProductTypes.ANVIL_ID, emberAnvil, baked).valid(),
-            "ember-anvil could not be assigned the anvil type");
-
-        EditableMoldingModel withoutNegativeOutline = emberAnvilModel(false);
-        check(!MoldingModelBaker.bake(withoutNegativeOutline).functionalAnalysis().anvilShape().valid(),
-            "ordinary 12 x 12 bottom passed without a reversed outer outline");
-        helper.succeed();
     }
 
     @GameTest(timeoutTicks = 20)

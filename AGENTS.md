@@ -27,3 +27,7 @@
 - 严禁使用 Computer Use、桌面自动化或其他 UI 控制工具启动、聚焦、重载、检查、输入或关闭 Minecraft 客户端，包括用户已启动的客户端。
 - 渲染与资源改动仅做静态检查和非客户端构建验证，游戏内视觉效果由用户验收。
 - 使用 JDK 21。按改动范围运行 `./gradlew build`、`./gradlew runData` 或 `./gradlew runGameTestServer`，并遵循 `CONTRIBUTING.md`。
+
+## GameTest
+
+- 编写或修改 GameTest 前必须先阅读并遵守 `docs/gametest-coverage.zh_cn.md`。

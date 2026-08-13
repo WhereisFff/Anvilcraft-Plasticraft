@@ -46,8 +46,8 @@ public final class DroneStationGameTests {
 
     @GameTest(timeoutTicks = 60)
     @EmptyTemplate(value = "3x4x3", floor = true)
-    @TestHolder(description = "Charged capacitors are consumed whole and empty shells stay in the slot")
-    static void capacitorConsumedWholeAndReturned(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "Charged capacitors are consumed whole, returned empty, and rejected when they cannot fit")
+    static void capacitorConsumptionRespectsWholeUnitCapacity(ExtendedGameTestHelper helper) {
         DroneStationBlockEntity station = placeStation(helper);
         station.items().setStackInSlot(
             DroneStationBlockEntity.CAPACITOR_SLOT,
@@ -60,20 +60,13 @@ public final class DroneStationGameTests {
                 station.items().getStackInSlot(DroneStationBlockEntity.CAPACITOR_SLOT)
                     .is(ModItems.CAPACITOR_EMPTY.get()),
                 "empty capacitor shell did not stay in the freed slot"))
-            .thenSucceed();
-    }
-
-    @GameTest(timeoutTicks = 40)
-    @EmptyTemplate(value = "3x4x3", floor = true)
-    @TestHolder(description = "A capacitor is not consumed when the remaining capacity cannot take it whole")
-    static void capacitorRejectedWhenNearlyFull(ExtendedGameTestHelper helper) {
-        DroneStationBlockEntity station = placeStation(helper);
-        station.setEnergy(DroneStationBlockEntity.capacity() - 100);
-        station.items().setStackInSlot(
-            DroneStationBlockEntity.CAPACITOR_SLOT,
-            new ItemStack(ModItems.CAPACITOR.get())
-        );
-        helper.startSequence()
+            .thenExecute(() -> {
+                station.setEnergy(DroneStationBlockEntity.capacity() - 100);
+                station.items().setStackInSlot(
+                    DroneStationBlockEntity.CAPACITOR_SLOT,
+                    new ItemStack(ModItems.CAPACITOR.get())
+                );
+            })
             .thenExecuteAfter(10, () -> {
                 check(station.items().getStackInSlot(DroneStationBlockEntity.CAPACITOR_SLOT)
                     .is(ModItems.CAPACITOR.get()), "nearly full station consumed a capacitor it cannot hold");

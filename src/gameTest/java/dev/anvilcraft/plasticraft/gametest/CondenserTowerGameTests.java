@@ -1,18 +1,19 @@
 package dev.anvilcraft.plasticraft.gametest;
 
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.IVaporConsumer;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporAction;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporStack;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationContext;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.YukkuriCapabilities;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.api.blockentity.EnhancedPlasmaJetExtension;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.recipe.EnhancedPlasmaJets;
+import dev.anvilcraft.plasticraft.vapor.IVaporConsumer;
+import dev.anvilcraft.plasticraft.vapor.LargeCauldronVaporHost;
+import dev.anvilcraft.plasticraft.vapor.VaporAction;
+import dev.anvilcraft.plasticraft.vapor.VaporCapabilities;
+import dev.anvilcraft.plasticraft.vapor.VaporStack;
+import dev.anvilcraft.plasticraft.vapor.VaporizationContext;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.recipe.CondenserGas;
@@ -20,6 +21,7 @@ import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
 import dev.anvilcraft.plasticraft.recipe.EscapingVaporEffects;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
+import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
 import dev.dubhe.anvilcraft.block.fluid.PipeBlock;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.block.ModFluids;
@@ -220,9 +222,9 @@ public final class CondenserTowerGameTests {
 
         BlockPos jetPos = cauldron.getBlockPos().below(2);
         setJet(helper.getLevel(), jetPos);
-        check(helper.getLevel().getBlockEntity(jetPos) instanceof EnhancedPlasmaJetExtension,
-            "plasma jet block entity did not expose enhanced state");
-        ((EnhancedPlasmaJetExtension) helper.getLevel().getBlockEntity(jetPos)).plasticraft$setEnhanced(true);
+        check(helper.getLevel().getBlockEntity(jetPos) instanceof PlasmaJetsBlockEntity,
+            "plasma jet block entity was not created");
+        EnhancedPlasmaJets.setEnhanced((PlasmaJetsBlockEntity) helper.getLevel().getBlockEntity(jetPos), true);
 
         CondenserTowerProcess.tickLargeCauldron((ServerLevel) helper.getLevel(), cauldron);
         check(cauldron.getTopFluid().getAmount() == 950,
@@ -242,7 +244,7 @@ public final class CondenserTowerGameTests {
     @SubscribeEvent
     static void registerTestCapabilities(RegisterCapabilitiesEvent event) {
         event.registerBlock(
-            YukkuriCapabilities.VAPOR_CONSUMER,
+            VaporCapabilities.VAPOR_CONSUMER,
             (level, pos, state, blockEntity, side) -> side == null || side == Direction.DOWN
                 ? FULL_SEALED_CONSUMER
                 : null,
@@ -285,15 +287,15 @@ public final class CondenserTowerGameTests {
 
         CondenserTowerBlockEntity first = placed.getFirst();
         var vaporConsumer = helper.getLevel().getCapability(
-            YukkuriCapabilities.VAPOR_CONSUMER,
+            VaporCapabilities.VAPOR_CONSUMER,
             towerBase,
             Direction.DOWN
         );
-        check(vaporConsumer != null, "tower bottom center did not expose Yukkuri's vapor capability");
+        check(vaporConsumer != null, "tower bottom center did not expose vapor capability");
         check(vaporConsumer.receiveVapor(
                 new VaporStack(ResourceLocation.fromNamespaceAndPath("test", "custom_vapor"), 250),
                 VaporAction.SIMULATE,
-                new VaporizationContext((ServerLevel) helper.getLevel(), cauldron)
+                new VaporizationContext((ServerLevel) helper.getLevel(), new LargeCauldronVaporHost(cauldron))
             ) == 250,
             "tower did not simulate accepting an addon-defined vapor");
         check(first.getGasAmount() == 0, "simulating vapor input changed the tower gas buffer");
@@ -391,7 +393,7 @@ public final class CondenserTowerGameTests {
             new FluidStack(ModFluids.EXP_FLUID.get(), 20),
             IFluidHandler.FluidAction.EXECUTE
         );
-        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), new LargeCauldronVaporHost(cauldron));
         Player player = addMockPlayer(helper, context.outletPos());
 
         for (int tick = 0; tick < 2; tick++) {
@@ -417,7 +419,7 @@ public final class CondenserTowerGameTests {
     static void experienceVaporRoundsEqualShares(ExtendedGameTestHelper helper) {
         BlockPos base = new BlockPos(5, 2, 5);
         LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
-        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), new LargeCauldronVaporHost(cauldron));
         Player first = addMockPlayer(helper, context.outletPos());
         Player second = addMockPlayer(helper, context.outletPos());
         Player third = addMockPlayer(helper, context.outletPos());
@@ -452,7 +454,7 @@ public final class CondenserTowerGameTests {
                 == TOWER_CAPACITY - 5,
             "failed to prepare the gaseous-experience buffer");
 
-        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), new LargeCauldronVaporHost(cauldron));
         Player lowerPlayer = addMockPlayer(helper, context.outletPos());
         Player topPlayer = addMockPlayer(helper, tower.getBlockPos().above(5).east(3));
         setJet(helper.getLevel(), cauldron.getBlockPos().below(2));
@@ -487,7 +489,7 @@ public final class CondenserTowerGameTests {
     static void villagerMastersAfterSixtyFourBucketsOfVapor(ExtendedGameTestHelper helper) {
         BlockPos base = new BlockPos(5, 2, 5);
         LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
-        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), new LargeCauldronVaporHost(cauldron));
         Villager villager = new Villager(EntityType.VILLAGER, helper.getLevel());
         villager.setVillagerData(villager.getVillagerData().setProfession(VillagerProfession.FARMER));
         villager.moveTo(context.outletPos().getCenter());
@@ -508,7 +510,7 @@ public final class CondenserTowerGameTests {
     static void escapingWaterVaporExtinguishesOutletRange(ExtendedGameTestHelper helper) {
         BlockPos base = new BlockPos(5, 2, 5);
         LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
-        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), new LargeCauldronVaporHost(cauldron));
         BlockPos outlet = context.outletPos();
         for (int x = -1; x <= 1; x++) {
             for (int z = -1; z <= 1; z++) {
@@ -554,7 +556,7 @@ public final class CondenserTowerGameTests {
     static void flintAndSteelIgnitesGaseousOilOutlet(ExtendedGameTestHelper helper) {
         BlockPos base = new BlockPos(5, 2, 5);
         LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
-        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), new LargeCauldronVaporHost(cauldron));
         CondenserTowerProcess.releaseEscapingVapor(
             context,
             new VaporStack(CondenserGas.GASEOUS_OIL, 10),
@@ -587,7 +589,7 @@ public final class CondenserTowerGameTests {
     @TestHolder(description = "A fire charge ignites an active gaseous-oil outlet and is consumed")
     static void fireChargeIgnitesGaseousOilOutlet(ExtendedGameTestHelper helper) {
         LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, new BlockPos(5, 2, 5));
-        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), new LargeCauldronVaporHost(cauldron));
         CondenserTowerProcess.releaseEscapingVapor(
             context,
             new VaporStack(CondenserGas.GASEOUS_OIL, 10),
@@ -618,7 +620,7 @@ public final class CondenserTowerGameTests {
     @TestHolder(description = "A thrown torch ignites gaseous oil and is consumed")
     static void thrownTorchIgnitesGaseousOilOutlet(ExtendedGameTestHelper helper) {
         LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, new BlockPos(5, 2, 5));
-        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), new LargeCauldronVaporHost(cauldron));
         CondenserTowerProcess.releaseEscapingVapor(
             context,
             new VaporStack(CondenserGas.GASEOUS_OIL, 10),
@@ -643,7 +645,7 @@ public final class CondenserTowerGameTests {
     @TestHolder(description = "A thrown high-temperature block ignites gaseous oil without being consumed")
     static void thrownHotBlockIgnitesGaseousOilOutlet(ExtendedGameTestHelper helper) {
         LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, new BlockPos(5, 2, 5));
-        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), cauldron);
+        VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), new LargeCauldronVaporHost(cauldron));
         CondenserTowerProcess.releaseEscapingVapor(
             context,
             new VaporStack(CondenserGas.GASEOUS_OIL, 10),

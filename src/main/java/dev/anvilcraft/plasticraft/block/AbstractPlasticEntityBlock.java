@@ -8,6 +8,7 @@ import dev.anvilcraft.plasticraft.entity.collision.BuiltInPlasticEntityModels;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
+import dev.dubhe.anvilcraft.api.giantanvil.IShockFixedBlock;
 import dev.dubhe.anvilcraft.block.RoyalAnvilBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -43,7 +44,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 而不是让 {@code FallingBlockMixin} 创建原版落方块实体。</p>
  */
 public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity> extends RoyalAnvilBlock
-    implements IMoveableEntityBlock {
+    implements IMoveableEntityBlock, IShockFixedBlock {
     /** 磁化状态与材料相互独立，并在实体转换后保留。 */
     public static final BooleanProperty MAGNETIZED = BooleanProperty.create("magnetized");
     public static final BooleanProperty BONDED = BooleanProperty.create("bonded");
@@ -178,6 +179,11 @@ public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity
 
     protected static VoxelShape rotateShape(VoxelShape shape, PlasticEntityOrientation orientation) {
         return PlasticEntityCollisionShapes.rotate(shape, orientation);
+    }
+
+    @Override
+    public boolean anvilcraft$isFixedDuringShockBounce(BlockState state) {
+        return state.hasProperty(BONDED) && state.getValue(BONDED);
     }
 
     @Override

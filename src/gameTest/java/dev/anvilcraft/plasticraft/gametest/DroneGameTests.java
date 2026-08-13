@@ -98,8 +98,8 @@ public final class DroneGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "Drone data survives entity NBT reload and drop stack round trips")
-    static void droneDataRoundTrip(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "Drone data survives NBT reload, drop stacks, and anvil-hammer recovery")
+    static void droneDataSurvivesReloadAndHammerRecovery(ExtendedGameTestHelper helper) {
         DroneData data = new DroneData(
             DroneToolDefinitions.COLLECTION.id(),
             propeller(DyeColor.LIME),
@@ -124,21 +124,6 @@ public final class DroneGameTests {
         DroneData dropData = DroneData.get(drop).orElseThrow(
             () -> new GameTestAssertException("drop stack has no drone data"));
         check(equalData(dropData, data), "drone data changed inside the drop stack");
-        helper.succeed();
-    }
-
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "Sneaking with an anvil hammer recovers the drone into the inventory")
-    static void droneAnvilHammerRecovery(ExtendedGameTestHelper helper) {
-        DroneData data = DroneData
-            .assembled(
-                DroneToolDefinitions.DEMOLITION.id(),
-                propeller(DyeColor.YELLOW),
-                propeller(DyeColor.CYAN)
-            )
-            .withOwner(UUID.fromString("00000000-0000-0000-0000-000000000042"));
-        DroneEntity drone = spawnDrone(helper, new Vec3(1.5D, 2.0D, 1.5D), data);
 
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(ModItems.ANVIL_HAMMER.get()));
@@ -150,12 +135,12 @@ public final class DroneGameTests {
         ItemStack recovered = ItemStack.EMPTY;
         for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
             ItemStack stack = player.getInventory().getItem(slot);
-            if (stack.is(PlasticraftItems.DEMOLITION_DRONE.get())) {
+            if (stack.is(PlasticraftItems.COLLECTION_DRONE.get())) {
                 recovered = stack;
                 break;
             }
         }
-        check(!recovered.isEmpty(), "recovered demolition drone item was not in the player inventory");
+        check(!recovered.isEmpty(), "recovered collection drone item was not in the player inventory");
         DroneData recoveredData = DroneData.get(recovered).orElseThrow(
             () -> new GameTestAssertException("recovered drone item has no drone data"));
         check(equalData(recoveredData, data), "drone data changed during anvil hammer recovery");

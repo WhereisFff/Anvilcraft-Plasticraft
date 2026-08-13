@@ -13,6 +13,7 @@ import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.dubhe.anvilcraft.api.entity.IGenericAnvilEntity;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingTrayShapeAnalyzer;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContentSummary;
@@ -58,7 +59,7 @@ import java.util.Optional;
 import java.util.function.Supplier;
 
 /** 保留通用塑料颜色并复用全部公共塑料物理的轻量制品实体。 */
-public class UniversalPlasticEntity extends AbstractPlasticEntity implements IShockEntity {
+public class UniversalPlasticEntity extends AbstractPlasticEntity implements IShockEntity, IGenericAnvilEntity {
     private static final EntityDataAccessor<ItemStack> MOLDED_STACK = SynchedEntityData.defineId(
         UniversalPlasticEntity.class,
         EntityDataSerializers.ITEM_STACK
@@ -164,6 +165,11 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
         return this.getMoldedData()
             .map(data -> MoldingProductTypes.isAnvil(data.finalType()))
             .orElse(false);
+    }
+
+    @Override
+    public boolean anvilcraft$isGenericAnvil() {
+        return this.isMoldedAnvil();
     }
 
     public boolean isMoldedGiantAnvil() {

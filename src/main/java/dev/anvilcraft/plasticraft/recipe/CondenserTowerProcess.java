@@ -3,13 +3,6 @@ package dev.anvilcraft.plasticraft.recipe;
 import dev.anvilcraft.lib.v2.recipe.cache.BlockCache;
 import dev.anvilcraft.lib.v2.util.predicate.ChanceItemStack;
 import dev.anvilcraft.lib.v2.util.predicate.ItemIngredientPredicate;
-import dev.anvilcraft.lib.v2.yukkuri.api.event.LargeCauldronProcessEvent;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.IVaporConsumer;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporAction;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporStack;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationContext;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationManager;
-import dev.anvilcraft.plasticraft.api.blockentity.EnhancedPlasmaJetExtension;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
@@ -18,7 +11,15 @@ import dev.anvilcraft.plasticraft.init.PlasticraftParticles;
 import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
 import dev.anvilcraft.plasticraft.mixin.VillagerExperienceAccessor;
 import dev.anvilcraft.plasticraft.particle.DynamicFluidVaporParticleOptions;
+import dev.anvilcraft.plasticraft.vapor.IVaporConsumer;
+import dev.anvilcraft.plasticraft.vapor.LargeCauldronVaporHost;
+import dev.anvilcraft.plasticraft.vapor.VaporAction;
+import dev.anvilcraft.plasticraft.vapor.VaporStack;
+import dev.anvilcraft.plasticraft.vapor.VaporizationContext;
+import dev.anvilcraft.plasticraft.vapor.VaporizationManager;
+import dev.anvilcraft.plasticraft.vapor.event.LargeCauldronProcessEvent;
 import dev.dubhe.anvilcraft.api.block.IIgnitableCauldron;
+import dev.dubhe.anvilcraft.api.event.LargeCauldronEvent;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
 import dev.dubhe.anvilcraft.api.itemhandler.ItemHandlerUtil;
@@ -26,6 +27,7 @@ import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
+import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.block.ModFluidTags;
@@ -93,9 +95,9 @@ public final class CondenserTowerProcess {
     private CondenserTowerProcess() {
     }
 
-    /** 供测试和旧调用方使用的完整大锅处理入口；运行时由 AnvilCraft 直接调用 Yukkuri。 */
+    /** 供测试使用的完整大锅处理入口；运行时由 {@link LargeCauldronEvent.ServerTick} 触发。 */
     public static void tickLargeCauldron(ServerLevel level, LargeCauldronBlockEntity cauldron) {
-        VaporizationManager.tick(level, cauldron);
+        VaporizationManager.tick(level, new LargeCauldronVaporHost(cauldron));
     }
 
     /** 在通用气化事务前处理喷流配方，在事务后推进冷凝。 */
@@ -105,7 +107,7 @@ public final class CondenserTowerProcess {
             // 先处理已有缓存，避免可冷凝的气体在新蒸汽到达时被误判为溢流。
             condenseTowers(context.level(), context.cauldronPos());
             int jets = countJetsBelow(context.level(), context.cauldronPos());
-            if (context.cauldron() instanceof LargeCauldronBlockEntity cauldron) {
+            if (LargeCauldronVaporHost.unwrap(context.cauldron()) instanceof LargeCauldronBlockEntity cauldron) {
                 boolean backpressured = isBackpressured(context);
                 CompoundTag persistentData = cauldron.getPersistentData();
                 boolean activeBackpressure = persistentData.getBoolean(ACTIVE_BACKPRESSURE);
@@ -241,8 +243,8 @@ public final class CondenserTowerProcess {
     }
 
     private static int vaporizationRateAt(Level level, BlockPos jetPos) {
-        return level.getBlockEntity(jetPos) instanceof EnhancedPlasmaJetExtension extension
-            && extension.plasticraft$isEnhanced()
+        return level.getBlockEntity(jetPos) instanceof PlasmaJetsBlockEntity jet
+            && EnhancedPlasmaJets.isEnhanced(jet)
             ? ENHANCED_VAPORIZATION_PER_JET
             : VAPORIZATION_PER_JET;
     }
@@ -663,7 +665,7 @@ public final class CondenserTowerProcess {
             ResourceLocation vaporType = CondenserGas.canonicalize(gasOutput.id());
             if (vaporType == null || !CondenserGas.isGas(vaporType)) return false;
             gasAmount = gasOutput.amount();
-            vaporContext = new VaporizationContext(level, cauldron);
+            vaporContext = new VaporizationContext(level, new LargeCauldronVaporHost(cauldron));
             vaporOutput = new VaporStack(vaporType, gasAmount);
             IVaporConsumer consumer = VaporizationManager.findConsumer(vaporContext);
             if (consumer != null) {

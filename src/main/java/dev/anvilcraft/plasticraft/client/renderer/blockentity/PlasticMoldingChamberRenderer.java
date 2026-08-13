@@ -12,6 +12,7 @@ import dev.anvilcraft.plasticraft.client.molding.scene.EditorSceneMesh;
 import dev.anvilcraft.plasticraft.client.molding.scene.EditorScenePart;
 import dev.anvilcraft.plasticraft.client.molding.scene.EditorVertex;
 import dev.anvilcraft.plasticraft.client.molding.scene.MoldingSceneBuilder;
+import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingProjectionRenderTypes;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingFormingMode;
@@ -80,6 +81,7 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
     );
     public static final MoldingVec3 PRINTER_MODEL_ORIGIN = new MoldingVec3(16.0D, 16.0D, 16.0D);
     private static final double WORLD_PROJECTION_LIFT_PIXELS = 0.05D;
+    private static final float PROJECTION_HOLOGRAM_ALPHA = 0.55F;
     private static final double PRINTER_RENDER_MAX_Y = 58.0D;
     private static final float TANK_MIN_X = 10.6F / 16.0F;
     private static final float TANK_MAX_X = 14.4F / 16.0F;
@@ -189,7 +191,7 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
             printing
         );
         Matrix4f pose = poseStack.last().pose();
-        renderMesh(cached.mesh, chamber, front, pose, bufferSource, true);
+        renderHologramSurfaces(cached.mesh, chamber, front, pose, bufferSource);
         renderMesh(guides, chamber, front, pose, bufferSource, false);
     }
 
@@ -440,6 +442,66 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
         }
     }
 
+    private static void renderHologramSurfaces(
+        EditorSceneMesh mesh,
+        PlasticMoldingChamberBlockEntity chamber,
+        Direction front,
+        Matrix4f pose,
+        MultiBufferSource bufferSource
+    ) {
+        Level level = chamber.getLevel();
+        int skyDarken = level == null ? 0 : level.getSkyDarken();
+        Map<BlockPos, Float> lightCache = level == null ? Map.of() : new HashMap<>();
+        submitHologramSurfaces(mesh, chamber, front, pose, bufferSource, lightCache, skyDarken, true);
+        MoldingProjectionRenderTypes.endDepth(bufferSource);
+        submitHologramSurfaces(mesh, chamber, front, pose, bufferSource, lightCache, skyDarken, false);
+        MoldingProjectionRenderTypes.endColor(bufferSource);
+    }
+
+    private static void submitHologramSurfaces(
+        EditorSceneMesh mesh,
+        PlasticMoldingChamberBlockEntity chamber,
+        Direction front,
+        Matrix4f pose,
+        MultiBufferSource bufferSource,
+        Map<BlockPos, Float> lightCache,
+        int skyDarken,
+        boolean depthPass
+    ) {
+        Level level = chamber.getLevel();
+        for (EditorScenePart part : mesh.parts()) {
+            boolean volume = part.phase() == EditorDrawPhase.MANUFACTURING_SURFACE;
+            if (!volume && part.phase() != EditorDrawPhase.ZERO_THICKNESS_SURFACE) continue;
+            VertexConsumer consumer = bufferSource.getBuffer(
+                depthPass
+                    ? MoldingProjectionRenderTypes.depth(volume)
+                    : MoldingProjectionRenderTypes.color(volume)
+            );
+            for (int index : part.indices()) {
+                EditorVertex vertex = part.vertices().get(index);
+                Vec3 offset = PlasticMoldingChamberStructure.worldAlignedProjectionOffset(
+                    front,
+                    vertex.x(),
+                    vertex.y() + WORLD_PROJECTION_LIFT_PIXELS,
+                    vertex.z()
+                );
+                int color = 0xFFFFFFFF;
+                if (!depthPass) {
+                    BlockPos worldPos = BlockPos.containing(
+                        offset.add(Vec3.atLowerCornerOf(chamber.getBlockPos()))
+                    );
+                    float brightness = level == null ? 1.0F : lightCache.computeIfAbsent(
+                        worldPos,
+                        pos -> worldBrightness(LevelRenderer.getLightColor(level, pos), skyDarken)
+                    );
+                    color = hologramColor(vertex.color(), brightness);
+                }
+                consumer.addVertex(pose, (float) offset.x, (float) offset.y, (float) offset.z)
+                    .setColor(color);
+            }
+        }
+    }
+
     private static void renderMesh(
         EditorSceneMesh mesh,
         PlasticMoldingChamberBlockEntity chamber,
@@ -451,12 +513,8 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
         Level level = chamber.getLevel();
         int skyDarken = level == null ? 0 : level.getSkyDarken();
         Map<BlockPos, Float> lightCache = useWorldLight && level != null ? new HashMap<>() : Map.of();
+        VertexConsumer consumer = bufferSource.getBuffer(RenderType.debugQuads());
         for (EditorScenePart part : mesh.parts()) {
-            VertexConsumer consumer = bufferSource.getBuffer(
-                part.phase() == EditorDrawPhase.MANUFACTURING_SURFACE
-                    ? RenderType.debugSectionQuads()
-                    : RenderType.debugQuads()
-            );
             for (int index : part.indices()) {
                 EditorVertex vertex = part.vertices().get(index);
                 Vec3 offset = PlasticMoldingChamberStructure.worldAlignedProjectionOffset(
@@ -482,6 +540,12 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
         int skyLight = Math.max(0, LightTexture.sky(packedLight) - skyDarken);
         int light = Math.max(LightTexture.block(packedLight), skyLight);
         return 0.18F + 0.82F * light / 15.0F;
+    }
+
+    private static int hologramColor(int color, float brightness) {
+        int shaded = modulateColor(color, brightness);
+        int alpha = Math.round(255.0F * PROJECTION_HOLOGRAM_ALPHA);
+        return alpha << 24 | shaded & 0x00FFFFFF;
     }
 
     private static int modulateColor(int color, float brightness) {

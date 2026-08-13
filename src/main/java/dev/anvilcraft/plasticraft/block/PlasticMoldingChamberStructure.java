@@ -8,15 +8,40 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 /** 成型舱结构落点以及固定世界轴模型投影相对控制器的坐标映射。 */
 public final class PlasticMoldingChamberStructure {
     public static final int PART_COUNT = 27;
+    private static final Map<Direction, VoxelShape[]> REGION_SELECTION_SHAPES = new EnumMap<>(Direction.class);
+
+    static {
+        for (Direction front : Direction.Plane.HORIZONTAL) {
+            VoxelShape[] shapes = new VoxelShape[PART_COUNT];
+            for (MoldingRegionPart part : MoldingRegionPart.values()) {
+                BlockPos region = BlockPos.ZERO;
+                AABB bounds = regionBounds(controllerPos(region, front, part), front);
+                shapes[part.ordinal()] = Shapes.create(bounds.move(-region.getX(), -region.getY(), -region.getZ()));
+            }
+            REGION_SELECTION_SHAPES.put(front, shapes);
+        }
+    }
 
     private PlasticMoldingChamberStructure() {
+    }
+
+    /** 打印舱 27 格共用同一 3x3x3 选取轮廓，避免准星落在舱内时画出单格边框。 */
+    public static VoxelShape regionSelectionShape(Direction front, MoldingRegionPart part) {
+        if (!front.getAxis().isHorizontal()) {
+            throw new IllegalArgumentException("Molding chamber front must be horizontal");
+        }
+        return REGION_SELECTION_SHAPES.get(front)[part.ordinal()];
     }
 
     public static Direction back(Direction front) {

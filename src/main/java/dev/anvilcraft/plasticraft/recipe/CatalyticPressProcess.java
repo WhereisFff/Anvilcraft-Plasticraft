@@ -1,6 +1,5 @@
 package dev.anvilcraft.plasticraft.recipe;
 
-import dev.anvilcraft.plasticraft.api.FluidPipeNetworkExtension;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
@@ -262,13 +261,17 @@ public final class CatalyticPressProcess {
             if (!FluidNetworkScanner.isPipePart(level.getBlockState(pipePos))) continue;
             FluidPipeNetwork network = FluidNetworkScanner.scan(level, pipePos);
             if (network == null) continue;
-            if (((FluidPipeNetworkExtension) network).plasticraft$pushAll(
+            BlockPos target = network.pushExact(
                 source.handler(),
                 source.pos(),
                 pipePos,
                 source.pos().getY() + 10,
                 melt
-            )) return true;
+            );
+            if (target != null) {
+                CatalyticPressProcess.syncMeltContainerColor(level, target, melt);
+                return true;
+            }
         }
         return false;
     }

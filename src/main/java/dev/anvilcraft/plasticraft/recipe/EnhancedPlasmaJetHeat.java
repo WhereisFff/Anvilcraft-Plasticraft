@@ -1,6 +1,5 @@
 package dev.anvilcraft.plasticraft.recipe;
 
-import dev.anvilcraft.plasticraft.api.blockentity.EnhancedPlasmaJetExtension;
 import dev.dubhe.anvilcraft.api.heat.HeatRecorder;
 import dev.dubhe.anvilcraft.api.heat.HeatTier;
 import dev.dubhe.anvilcraft.api.heat.HeatTierLine;
@@ -57,7 +56,6 @@ public final class EnhancedPlasmaJetHeat {
     private static Optional<PlasmaJetsBlockEntity> getEnhancedJet(Level level, BlockPos pos) {
         if (!level.isLoaded(pos)) return Optional.empty();
         return level.getBlockEntity(pos, ModBlockEntities.PLASMA_JETS.get())
-            .filter(jet -> jet instanceof EnhancedPlasmaJetExtension extension
-                && extension.plasticraft$isEnhanced());
+            .filter(EnhancedPlasmaJets::isEnhanced);
     }
 }

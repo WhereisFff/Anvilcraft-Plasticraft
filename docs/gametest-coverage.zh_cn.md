@@ -1,57 +1,122 @@
-# GameTest 覆盖范围与裁剪记录
+# GameTest 规范
 
-## 目标与边界
+编写或修改 GameTest 前必须先读完本文，并按本文执行。`AGENTS.md` 的 GameTest 小节指向本文。
 
-GameTest 只验证服务器运行时的玩法契约：玩家或实体实际执行操作后，世界状态、碰撞、移动、持久化、资源事务和机器状态必须保持正确。测试不把配方文件、注册名、客户端资源生成结果或某个内部算法的中间值当作独立的玩法回归目标。
+本文是长期维护的**约束与说明**，不是测试目录、覆盖矩阵或变更记录。不要在本文逐条罗列 `@GameTest` 方法名。
 
-本轮任务开始时扫描到 351 个 GameTest，当前注册数量为 261 个。减少的测试不是按源码行数裁剪，而是按“修改后玩家可观察的旧行为是否会回归”逐项判断。需要精确验证的资源数量只保留在资源事务边界中，例如防止物品、熔体或黏土被重复消耗；不保留“某个配方产出多少燃料”或“燃料持续多少 tick”这类配方定义测试。
+## 怎么跑
 
-## 当前覆盖矩阵
+使用 JDK 21。不要用 `runClient`，也不要用 Computer Use 或其它 UI 自动化启动 Minecraft 客户端。
 
-| 功能板块 | 测试类 | 数量 | 保留的回归契约 |
-| --- | --- | ---: | --- |
-| 黏合关系与运输 | `AdhesiveBondingGameTests` | 75 | 选面、建立和解除双向黏合、实体/方块混合组件、已占胶面仍可方块化巨型铁砧、路径绕障、碰撞回滚、活塞、滑轨、磁力和锤子旋转 |
-| 塑料实体世界行为 | `UniversalPlasticGameTests` | 17 | 放置、24 向旋转、重力、浮力、树脂减速、铁砧碰撞、支撑、拾取、锤子恢复、绑定后碰撞和显示同步 |
-| 凸形碰撞与玩家移动 | `PlasticConvexCollisionGameTests` | 13 | 绑定与动态斜面、空角穿越、站立稳定性、玩家服务器移动包、潜行边界、旋转面法线、倒置树脂锅的安全脱离、斜面头顶姿态和窄缝头顶承载 |
-| 塑料铁砧与树脂交互 | `PlasticAnvilGameTests` | 106 | 下落/浮力/黏性树脂、冲击台、修复、锤子、树脂锅、实体支撑、落地、掉落和物理交互；不验证配方 JSON 本身 |
-| 催化压盖 | `CatalyticPressLidGameTests` | 9 | 实体和方块碰撞、下落铁砧接触、压盖方向和失败黏合清理 |
-| 冷凝塔 | `CondenserTowerGameTests` | 16 | 出口阻塞与背压、层级连通、容器优先级、经验实体分配、蒸汽灭火和油气点燃 |
-| 高热燃料与点火 | `IgnitedFuelGameTests` | 4 | 四类高热燃料容器共享伤害契约、手持点火、普通/增强等离子喷口伤害和温度 |
-| 塑料锅物流 | `PlasticEntityItemTransferGameTests` | 1 | Hopper、Hopper Minecart 和 Chute 的输入/输出路径 |
-| 硬化树脂锅流体危险 | `HardenedResinCauldronFluidHazardGameTests` | 1 | 熔岩填充、接触伤害、移动穿越、绑定保存和流体溢出 |
-| 成型机结构和编辑事务 | `PlasticMoldingChamberGameTests` | 12 | 四向结构锚点、原子放置、并发会话、黏土填充、熔体容量、断电、红石边沿、蓝图磁盘和导入限制 |
-| 成型生产事务 | `PlasticMoldingProductionGameTests` | 7 | 24 向产品方向与拾取恢复、绑定产品远端形状、四向输出结构、物品/实体两种生产、预检回滚、连续模式和中断恢复、粘液/蜂蜜推动时塑料占位与载体对齐 |
-| 塑料生产事务 | `UniversalPlasticProductionGameTests` | 4 | 催化出口与锅事务、颜色传递、资源不足预检和执行失败回滚 |
-| 施工蓝图 | `BlueprintConstructionGameTests` | 13 | 规范哈希、导入校验、扫描器归一化、放置变换(含实体格内坐标)、部署生命周期、手持磁盘在部署前可读快照、覆盖导入清除旧投影并替换本体结构磁盘数据、Litematica 等价、Litematica 实体相对区域角点、告示牌/流体/实体快照保留、站点磁盘槽 |
+Windows：
 
-## 聚合场景
+```powershell
+.\gradlew.bat compileGameTestJava
+.\gradlew.bat runGameTestServer
+```
 
-下列测试把相同玩法契约的不同载体放在同一个场景中，减少重复平台和重复初始化：
+Unix：`./gradlew compileGameTestJava` 与 `./gradlew runGameTestServer`。`CONTRIBUTING.md` 与 `README.md` 使用同一任务。玩法改动以 `runGameTestServer` 为准；只需确认测试源码能编译时用 `compileGameTestJava`。
 
-| 聚合测试 | 合并内容 | 聚合后仍分别验证 |
-| --- | --- | --- |
-| `plasticCauldronSupportsAllItemTransferPaths` | 原 Hopper 输入/输出、Hopper Minecart 输出、Chute 输出和空锅 Chute 行为 | 每种物流设备的方向、插入/提取能力和空容器阻塞规则 |
-| `hardenedResinCauldronFluidHazards` | 原硬化树脂锅熔岩填充/接触与移动、黏合和溢出场景 | 填充拒绝或销毁、实体伤害、移动后的流体位置、绑定持久化和溢出清理 |
-| `highHeatFuelContainersShareDamage` | 分层高热燃料锅、鱼缸、塑料锅和大型锅的四个相同伤害测试 | 四种容器都必须产生相同伤害，容器自身的内容物和点火来源仍按各自场景建立 |
-| `PlasticMoldingProductionGameTests` | 成型产品和机器生产的共用准备流程 | 每个测试只锁定一个生产事务边界，避免把物品输出、实体输出、阻塞回滚和连续等待混成一个不可诊断的长流程 |
+`compileGameTestJava` 依赖主源集已编译。主源集因 AnvilCraft API 迁移失败时，不要在 GameTest 里回滚那些 import。冷凝塔蒸汽能力使用本模组 `dev.anvilcraft.plasticraft.vapor`，不要把 yukkuri 加回来。
 
-黏合和塑料铁砧测试没有把所有方法强行压成一个巨型场景：它们虽然都使用平台，但失败条件属于不同的公开契约，例如“路径不能穿过伤害性流体”和“活塞必须原子移动整个黏合组件”不能互相替代。只有输入、状态机和预期结果相同的测试才适合聚合。
+入口点是 `src/gameTest/java/dev/anvilcraft/plasticraft/gametest/PlasticraftGameTestEntrypoint.java`，测试模组 ID 为 `anvilcraftplasticraft_tests`。运行目录是 `run/gameTestServer`，日志在 `run/gameTestServer/logs`。测试专用配方放在 `src/gameTest/resources/data/anvilcraftplasticraft_tests/`。
 
-## 删除与保留判断
+两个智能体不要同时跑 Gradle / GameTest：会互抢 `session.lock`、互杀 Java 进程。
 
-| 删除内容 | 判断 | 覆盖处理 |
-| --- | --- | --- |
-| `PlasticTextureGeneratorGameTests`（6） | 验证客户端纹理字节、灰度级和 CPU 缓存生命周期，不是服务器玩法 | 删除；运行时产品颜色、显示和实体数据仍由 `UniversalPlasticGameTests` 覆盖 |
-| `PlasticMoldingModelGameTests`（19） | 相机、视口、编辑器控件、CPU 命中测试和生成数学的内部回归，不应通过 GameTest 伪装成世界玩法 | 删除；成型机结构、生产结果和塑料实体实际碰撞保留在成型/凸碰撞测试中 |
-| `PlasticOilCatalysisGameTests`（2） | 公式曲线和热源平均值属于实现/配方数据，修改配方后不应要求回归场景 | 删除；冷凝塔仍测试背压、连通、蒸汽和油气点燃的运行时行为 |
-| `PlasticMeltColorGameTests`（1） | 只验证默认组件合并的静态颜色结果 | 删除；生产与固化场景仍验证颜色不会在实际事务中丢失 |
-| 冷凝塔的产量、燃料寿命、配方形式和 Royal Preference 测试 | 把配方数量、消耗时长或配置选择误当成玩法回归 | 删除；保留塔结构、背压、存储优先级和危险流体行为 |
-| `PlasticAnvilGameTests` 中的配方选择、交易、旧 NBT/旧注册名迁移和重复负向事件 | 配方定义、未来不维护的旧存档迁移以及与现有落地边界重复 | 删除；保留实际铁砧/锅/锤子/实体交互和状态变化 |
-| 凸形碰撞中的调试轮廓、模型资源一致性和 broad phase 实现检查 | 只锁定内部实现，不是玩家可观察的独立契约 | 删除；保留穿越、站立、推挤、服务器移动和安全脱离 |
-| 黏合中的重复列间隙、单实体丢弃、对角接缝、头顶跳跃和 FallingBlock 活塞场景 | 已被同一公开契约的运输、剩余连接、平滑推挤、头顶承载和活塞移动场景覆盖 | 删除重复场景，保留对应的代表性边界 |
-| 催化压盖中三个独立但重复的下落铁砧支撑场景 | 实际接触和压盖状态已由剩余实体/方块接触场景覆盖 | 删除重复平台，保留距离、方向、接触和失败黏合清理 |
-| `UniversalPlasticProductionGameTests` 中纯配方和交易随机性测试 | 不防止运行时事务回归，且会把配方内容变成测试 API | 删除；保留锅与催化出口的成功、预检失败和执行回滚 |
+## 测什么
 
-## 后续判定规则
+GameTest 只验证**服务器运行时**的玩法契约：玩家或实体实际执行操作后，世界状态、碰撞、移动、持久化、资源事务和机器状态必须保持正确。
 
-新增 GameTest 前先回答三个问题：是否有玩家可观察的服务器行为；修改该代码后是否可能让旧行为回归；现有板块是否已有一个场景能在同一状态机中覆盖它。如果答案分别为“是、是、否”，才新增测试；如果只是配方内容、资源生成、注册表名称、客户端数学或内部中间值，应改用静态检查、单元测试或数据生成验证，而不是重新增加 GameTest。
+同一公开契约、不同载体，可以放在同一场景里分别断言。失败条件不同的契约必须分开，失败时才能定位。
+
+## 不测什么
+
+不要把下列内容当成独立的 GameTest 回归目标，也不要为它们新开测试类：
+
+- 配方 JSON 的数量、时长、权重、燃烧寿命、交易随机性
+- 注册名、资源路径、语言键、手册 Markdown 排版
+- 客户端渲染、模型、纹理字节、光影、F3+B、编辑器控件与 CPU 命中测试
+- JEI / Jade / Ageratum 等集成 UI
+- 某个内部算法的中间值（除非它会直接变成玩家可观察的世界状态）
+- 真实联机带宽、延迟、分块卸载竞态（存档往返可用单机 NBT 重载测）
+- 真实跨维度传送（传送门测试只验证 AnvilCraft `EntityThroughPortalEvent` 后实体身份）
+- 无人机在超大世界里的完整寻路耗时，以及模板内超远距离扫描
+
+已删除、不要加回来的同类测试：纹理生成、成型编辑器数学、油气催化公式曲线、熔体静态默认色、冷凝塔产量/燃料寿命/Royal Preference 配方定义、铁砧配方选择与旧 NBT 迁移、凸碰撞调试轮廓与 broad phase。这些运行时契约分别由通用塑料、成型舱/凸碰撞、冷凝塔背压与点燃、生产事务、铁砧/锅交互覆盖。
+
+## 源码组织
+
+全部测试类放在 `src/gameTest/java/dev/anvilcraft/plasticraft/gametest/`，按玩法子系统分文件。没有 `@GameTestGenerator`；参数化矩阵写成同一方法内的循环或私有断言，不要复制 `@GameTest`。
+
+全部使用 NeoForge Test Framework 的 `@EmptyTemplate`，没有独立结构 NBT。需要地板时写 `@EmptyTemplate(..., floor = true)`。`@TestHolder(description = ...)` 用一句话说明该条证明的契约。
+
+## 归类与合并
+
+新增或改测试时，先找到负责同一契约的测试类，优先在已有方法里加断言。
+
+- **归入已有类**：同一状态机、同一机器、同一实体族的服务器行为。
+- **可以合成一条**：同一前置、同一结构、只差载体或只差一个断言；失败信息必须写清是哪一载体、哪一相位失败。
+- **必须分开**：失败条件不同、时序语义不同、或「解析器认为可以」与「世界里真的发生了」不是同一契约。
+- **不要塞进同一条**：无关玩法、不同机器、或需要完全不同超时/模板尺寸的场景。
+- **不要删除**：仍无其它测试覆盖的场景。
+
+本文只在约束或子系统职责变化时改。不要为增删方法名而把本文改成清单。
+
+## 禁止再复制
+
+下列场景已经按「同契约多载体」或「失败条件不同必须分开」处理过，禁止再复制一套几乎相同的 `@GameTest`：
+
+- 同一胶粘/隐身/运输契约的方块贴片、拉伸实体胶、锚点实体胶；裸胶与占胶。方块障碍与实体障碍时序不同则分开，不要再为第三种相同障碍复制。
+- 活塞：结构解析器收集 ≠ 活塞真的伸出/收回。黏合前与黏合后的杠杆已同场景。
+- 锤子、弹跳、头顶产品：同一交互在实体形态与方块化形态上的结果，优先同场景断言。
+- 冷却固化的雨/邻水/冷却剂标签；传送门的末地门与下界门。
+- 成型打印的斜面像素、占用、碎片面积、旋转二面角——它们共同证明「几何封闭且与占用一致」。
+- 托盘红石：比较器、中继器、脉冲发生器是不同 tick 契约，不要合成一条长时序，也不要为每个元件再复制六向端口测试。
+- 无人机：NBT 重载、掉落堆、锤子恢复已同场景；整颗电容消耗成功与容量不足拒绝已同场景。落地零耗、悬停扣费、低能不起飞、安全余量降落失败条件不同，保持分开。
+- 通用塑料生产：预检失败保资源 ≠ 执行中失败回滚。
+- 冷凝塔油气点燃：打火石、火焰弹、扔火把、扔热方块失败条件不同，不要为了少方法而合成参数化。
+- 高热燃料：分层锅 / 鱼缸 / 塑料锅 / 大型锅的共享伤害已同场景。
+
+## 模板、超时、失败信息
+
+- `@EmptyTemplate(floor = true)` 的铁块地板占据 helper 相对坐标 **y=1**，可用地面顶面在 **y=2**。实体 spawn、`setBlock` 都要从 y=2 起算。
+- 原版 `GameTestInfo.succeed()` 会丢弃结构 bounds 外扩 1 格内的所有实体。不要断言「实体必须仍存活」；断言位置、数据或精确引用自己的实体。
+- GameTest 结构间距仅 5 格。大范围世界操作（召回扫描、超远寻路）会波及邻居测试；测试里调用窄接口，把大范围行为留给游戏内验收。
+- `timeoutTicks` 必须让 `succeedWhen` / `startSequence` / `runAfterDelay` 在超时前完成。不要靠拉长超时掩盖不确定等待。
+- `succeedOnTickWhen` 要求条件在目标 tick **之前必须失败**。持续不变式用 `onEachTick` + `runAfterDelay(n, helper::succeed)`。
+- 失败用 `GameTestAssertException`，消息写清失败的契约、载体和相位，避免只写 `expected true`。
+- 注释只写设计意图，用中文。禁止 `*` import 和正文全限定名。
+
+## 子系统职责
+
+每个类只证明自己这一块的服务器契约。跨系统现场作业（例如站点无人机去执行一份施工蓝图）不要靠复制两套测试来假装覆盖。
+
+- **`AdhesiveBondingGameTests`**：选面、建胶、解胶、运输绕障、活塞/滑轨/磁力带动黏合组、锤子旋转黏合件。证明胶键能建立、保持、在障碍前停下，并被合法外力带动或拆开。
+- **`PlasticAnvilGameTests`**：塑料铁砧/锅/树脂冲击、锤子、滑轨、承载与推动。证明这些实体在重力、流体、玩家推动和 AnvilCraft 装置下的世界行为。
+- **`PlasticConvexCollisionGameTests`**：凸形 SAT 对玩家、生物、掉落物和塑料实体的可观察结果：齐平碰撞、斜面穿越/站稳、倒置锅安全脱离、窄缝承载。不测调试轮廓或 broad phase 计数。
+- **`UniversalPlasticGameTests`**：通用塑料放置、世界冷却固化、锤子旋转对齐碰撞、观察者触发与重载不重复触发、绑定保色与公共物理。
+- **`PlasticMoldingChamberGameTests`**：成型舱四向结构、会话与历史、黏土/熔体事务、打印几何与蓝图磁盘。证明机器占用、资源与打印结果在服务器上正确，不测编辑器 UI。
+- **`PlasticMoldingProductionGameTests`**：成型产品产出事务、活塞中继、整块红石导电。证明生产预检/执行/中断重载，以及产出实体能被活塞和红石按契约对待。
+- **`MoldingProductGameTests`**：成型产品在服务器物品上的类型边界、容量、能力编解码与堆叠。不是客户端编辑器数学。
+- **`MoldedPlasticTrayGameTests`**：托盘外形、元件白名单、红石端口与方块化交接后的网络。比较器/中继/脉冲的短 tick 契约在此覆盖；不要再写 20 秒以上的随机红石钟。
+- **`MoldedPlasticAnvilGameTests`**：成型铁砧谓词与菜单、落地朝向、巨型多方块与冲击。
+- **`CatalyticPressLidGameTests`**：压盖碰撞、下落接近才开启动画、接触等待、失败压合清胶。
+- **`CondenserTowerGameTests`**：背压、层级连通、经验蒸汽、出口熄火/点燃。蒸汽 API 用本模组 `vapor` 包。
+- **`IgnitedFuelGameTests`**：高热燃料容器伤害、手持点火、增强等离子喷口。
+- **`DroneGameTests` / `DroneEnergyGameTests` / `DroneStationGameTests`**：组装与数据往返、悬停能耗与报价策略、站点充能/停靠/召回。站点作业与蓝图部署尚未串成一条现场测试，不要用复制来补。
+- **`BlueprintConstructionGameTests`**：施工蓝图哈希、导入校验、部署生命周期与 Litematica 数据契约。投影渲染仍是客户端，本类只锁数据。
+- **`UniversalPlasticProductionGameTests`**：催化出口与锅事务的精确消耗、预检保资源、执行失败回滚。
+- **`PlasticEntityPortalGameTests`**：塑料实体经传送门事件后保持身份；普通下落方块仍转末地尘作为对照。
+- **`PlasticEntityItemTransferGameTests`**：塑料锅与 Hopper / 漏斗矿车 / Chute 的物品传输。
+- **`HardenedResinCauldronFluidHazardGameTests`**：硬化树脂锅对熔岩等危险流体的拒绝、伤害、移动后位置与溢出清理。
+- **`CreativeColorVariantGameTests`**：创造十六色条目的公共物品数据。
+
+## 新增或修改时
+
+1. 先在对应子系统类里找同类场景。已有方法能加断言就加，不要新开 `@EmptyTemplate`。
+2. 三个问题都为「是、是、否」才新增：是否玩家可观察的服务器行为；改代码后旧行为是否会回归；现有板块是否已有同一状态机场景。
+3. 能循环的矩阵不要手写 N 份拷贝。
+4. 不要把无关玩法塞进同一个测试。
+5. 不要删除仍无其它覆盖的场景。
+6. 测试名、超时、`succeedWhen` / `startSequence` / `runAfterDelay` 必须仍能在超时前完成。
+7. 若本次改的是玩法，同步 Tooltip / 手册。本文只在约束或子系统职责变化时改。

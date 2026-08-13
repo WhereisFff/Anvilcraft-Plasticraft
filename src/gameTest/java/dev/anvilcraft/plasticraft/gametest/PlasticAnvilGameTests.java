@@ -48,6 +48,7 @@ import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.event.giantanvil.shock.GiantAnvilShockEventListener;
 import dev.dubhe.anvilcraft.event.giantanvil.shock.ShockContext;
 import dev.dubhe.anvilcraft.init.block.ModBlockEntities;
+import dev.dubhe.anvilcraft.init.block.ModBlockTags;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItems;
@@ -627,11 +628,11 @@ public final class PlasticAnvilGameTests {
             0.0F
         );
         check(
-            context.testCorner(ModBlocks.RESIN_BLOCK.get()),
+            context.testCorner(ModBlockTags.RESIN_SHOCK_COMPATIBLE),
             "high-viscosity resin failed the resin shock corner check"
         );
         check(
-            context.testBorder(ModBlocks.RESIN_BLOCK.get()),
+            context.testBorder(ModBlockTags.RESIN_SHOCK_COMPATIBLE),
             "high-viscosity resin failed the resin shock border check"
         );
         helper.succeed();
@@ -669,11 +670,11 @@ public final class PlasticAnvilGameTests {
             1.0F
         );
         check(
-            context.testCorner(ModBlocks.RESIN_BLOCK.get()),
+            context.testCorner(ModBlockTags.RESIN_SHOCK_COMPATIBLE),
             "resin anvil entities did not match the resin shock corners"
         );
         check(
-            context.testBorder(ModBlocks.RESIN_BLOCK.get()),
+            context.testBorder(ModBlockTags.RESIN_SHOCK_COMPATIBLE),
             "resin anvil entities did not match the resin shock border"
         );
         ShockDropBehavior resinDrop = context.getBorderAnvilBehavior()
@@ -739,8 +740,8 @@ public final class PlasticAnvilGameTests {
             0.0F
         );
         check(
-            context.testCorner(ModBlocks.RESIN_BLOCK.get())
-                && context.testBorder(ModBlocks.RESIN_BLOCK.get()),
+            context.testCorner(ModBlockTags.RESIN_SHOCK_COMPATIBLE)
+                && context.testBorder(ModBlockTags.RESIN_SHOCK_COMPATIBLE),
             "bonded resin anvils did not qualify as a resin shock pedestal"
         );
 
@@ -2037,9 +2038,9 @@ public final class PlasticAnvilGameTests {
     }
 
     @GameTest(timeoutTicks = 20)
-    @EmptyTemplate(value = "7x8x7", floor = true)
-    @TestHolder(description = "A player falling onto a resin anvil rebounds like landing on a resin block")
-    static void playerBouncesFromResinAnvil(ExtendedGameTestHelper helper) {
+    @EmptyTemplate(value = "11x8x7", floor = true)
+    @TestHolder(description = "A player rebounds from resin anvil entities and blockified resin anvils")
+    static void playerBouncesFromResinAnvilForms(ExtendedGameTestHelper helper) {
         ResinAnvilEntity anvil = createResinAnvil(
             helper,
             new Vec3(3.5D, 1.0D, 3.5D),
@@ -2050,14 +2051,23 @@ public final class PlasticAnvilGameTests {
         Vec3 start = helper.absoluteVec(new Vec3(3.5D, 2.45D, 3.5D));
         player.moveTo(start.x, start.y, start.z);
         player.setDeltaMovement(0.0D, -0.75D, 0.0D);
-
         player.move(MoverType.SELF, player.getDeltaMovement());
-
         check(player.getDeltaMovement().y > 0.70D, "falling player did not rebound from the resin anvil");
         check(
             Math.abs(player.getBoundingBox().minY - anvil.getBoundingBox().maxY) < 0.03D,
             "falling player was not collision-clipped at the resin anvil surface"
         );
+
+        BlockPos pos = new BlockPos(7, 1, 3);
+        BlockState state = PlasticraftBlocks.RESIN_ANVIL.get()
+            .defaultBlockState()
+            .setValue(AbstractPlasticEntityBlock.BONDED, true);
+        helper.setBlock(pos, state);
+        Zombie falling = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(7.5D, 2.0D, 3.5D));
+        falling.setDeltaMovement(0.0D, -0.75D, 0.0D);
+        state.getBlock().updateEntityAfterFallOn(helper.getLevel(), falling);
+        check(falling.getDeltaMovement().y > 0.70D, "blockified resin anvil did not bounce a falling entity");
+        check(state.getBlock().isSlimeBlock(state), "blockified resin anvil was not marked as a slime block");
         helper.succeed();
     }
 
@@ -2193,25 +2203,6 @@ public final class PlasticAnvilGameTests {
                 }
             })
             .thenSucceed();
-    }
-
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate(value = "7x6x7", floor = true)
-    @TestHolder(description = "A blockified resin anvil retains resin-block bounce behavior")
-    static void playerBouncesFromBlockifiedResinAnvil(ExtendedGameTestHelper helper) {
-        BlockPos pos = new BlockPos(3, 1, 3);
-        BlockState state = PlasticraftBlocks.RESIN_ANVIL.get()
-            .defaultBlockState()
-            .setValue(AbstractPlasticEntityBlock.BONDED, true);
-        helper.setBlock(pos, state);
-        Zombie falling = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(3.5D, 2.0D, 3.5D));
-        falling.setDeltaMovement(0.0D, -0.75D, 0.0D);
-
-        state.getBlock().updateEntityAfterFallOn(helper.getLevel(), falling);
-
-        check(falling.getDeltaMovement().y > 0.70D, "blockified resin anvil did not bounce a falling entity");
-        check(state.getBlock().isSlimeBlock(state), "blockified resin anvil was not marked as a slime block");
-        helper.succeed();
     }
 
     @GameTest(timeoutTicks = 20)
@@ -2950,26 +2941,19 @@ public final class PlasticAnvilGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate("5x5x5")
-    @TestHolder(description = "The plastic pot entity owns a full one-block collision box")
-    static void plasticPotUsesFullBlockCollisionSize(ExtendedGameTestHelper helper) {
-        HardenedResinCauldronEntity pot = createPot(helper, new Vec3(2.5D, 1.0D, 2.5D), PlasticEntityOrientation.DEFAULT);
-        check(Math.abs(pot.getBbWidth() - 1.0F) < 1.0E-6F, "pot width is not one block");
-        check(Math.abs(pot.getBbHeight() - 1.0F) < 1.0E-6F, "pot height is not one block");
-        check(Math.abs(pot.getBoundingBox().getXsize() - 1.0D) < EPSILON, "pot bounding box width is not one block");
-        check(Math.abs(pot.getBoundingBox().getYsize() - 1.0D) < EPSILON, "pot bounding box height is not one block");
-        helper.succeed();
-    }
-
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate("5x5x5")
-    @TestHolder(description = "A plastic pot entity uses the same hollow collision shape as its block state")
-    static void plasticPotUsesHollowCompositeCollision(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "A plastic pot entity uses a full one-block box and the same hollow collision as its block")
+    static void plasticPotUsesHollowFullBlockCollision(ExtendedGameTestHelper helper) {
         HardenedResinCauldronEntity pot = createPot(
             helper,
             new Vec3(2.5D, 1.0D, 2.5D),
             PlasticEntityOrientation.DEFAULT
         );
         pot.setNoGravity(true);
+        check(Math.abs(pot.getBbWidth() - 1.0F) < 1.0E-6F, "pot width is not one block");
+        check(Math.abs(pot.getBbHeight() - 1.0F) < 1.0E-6F, "pot height is not one block");
+        check(Math.abs(pot.getBoundingBox().getXsize() - 1.0D) < EPSILON, "pot bounding box width is not one block");
+        check(Math.abs(pot.getBoundingBox().getYsize() - 1.0D) < EPSILON, "pot bounding box height is not one block");
+
         AABB bounds = pot.getBoundingBox();
         VoxelShape expected = HardenedResinCauldronBlock.COLLISION_SHAPE.move(
             bounds.minX,
@@ -3119,31 +3103,22 @@ public final class PlasticAnvilGameTests {
         });
     }
 
-    @GameTest(timeoutTicks = 30)
-    @EmptyTemplate("5x5x5")
-    @TestHolder(description = "A command-placed plastic-anvil block converts to the persistent custom entity")
+    @GameTest(timeoutTicks = 50)
+    @EmptyTemplate("9x9x9")
+    @TestHolder(description = "A command-placed plastic-anvil block converts under default, horizontal, and upward gravity")
     static void blockStateConvertsToEntity(ExtendedGameTestHelper helper) {
         BlockPos pos = new BlockPos(2, 2, 2);
         helper.setBlock(pos, PlasticraftBlocks.HARDEND_RESIN_ANVIL.get());
         helper.runAfterDelay(5, () -> {
             check(!helper.getBlockState(pos).is(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get()), "compatibility block did not convert");
             helper.assertEntityPresent(PlasticraftEntities.HARDEND_RESIN_ANVIL.get(), pos, 1.5D);
-            helper.succeed();
+            helper.getLevel().getEntitiesOfClass(
+                FallingBlockEntity.class,
+                new AABB(helper.absolutePos(pos)).inflate(1.5D)
+            ).forEach(Entity::discard);
+            assertBlockConvertsUnderGravity(helper, Direction.WEST, () ->
+                assertBlockConvertsUnderGravity(helper, Direction.UP, helper::succeed));
         });
-    }
-
-    @GameTest(timeoutTicks = 30)
-    @EmptyTemplate("7x7x7")
-    @TestHolder(description = "A plastic-anvil block under horizontal gravity still creates its custom entity")
-    static void blockStateConvertsToEntityUnderHorizontalGravity(ExtendedGameTestHelper helper) {
-        assertBlockConvertsUnderGravity(helper, Direction.WEST);
-    }
-
-    @GameTest(timeoutTicks = 30)
-    @EmptyTemplate("7x7x7")
-    @TestHolder(description = "A plastic-anvil block under upward gravity still creates its custom entity")
-    static void blockStateConvertsToEntityUnderUpwardGravity(ExtendedGameTestHelper helper) {
-        assertBlockConvertsUnderGravity(helper, Direction.UP);
     }
 
     @GameTest(timeoutTicks = 20)
@@ -3184,36 +3159,28 @@ public final class PlasticAnvilGameTests {
         });
     }
 
-    @GameTest(timeoutTicks = 30)
-    @EmptyTemplate(value = "7x7x7", floor = true)
-    @TestHolder(description = "A player can jump and step up while carrying a resin anvil on their head")
-    static void playerJumpsAndStepsWithResinAnvil(ExtendedGameTestHelper helper) {
+    @GameTest(timeoutTicks = 50)
+    @EmptyTemplate(value = "15x7x7", floor = true)
+    @TestHolder(description = "A player can jump and step up while carrying resin products on their head")
+    static void playerJumpsAndStepsWithHeadProducts(ExtendedGameTestHelper helper) {
         assertPlayerJumpsAndStepsWithHeadProduct(
             helper,
+            2,
             "resin anvil",
-            position -> createResinAnvil(helper, position, PlasticraftBlocks.RESIN_ANVIL.asStack())
-        );
-    }
-
-    @GameTest(timeoutTicks = 30)
-    @EmptyTemplate(value = "7x7x7", floor = true)
-    @TestHolder(description = "A player can jump and step up while carrying a hardened resin anvil on their head")
-    static void playerJumpsAndStepsWithHardenedResinAnvil(ExtendedGameTestHelper helper) {
-        assertPlayerJumpsAndStepsWithHeadProduct(
-            helper,
-            "hardened resin anvil",
-            position -> createAnvil(helper, position)
-        );
-    }
-
-    @GameTest(timeoutTicks = 30)
-    @EmptyTemplate(value = "7x7x7", floor = true)
-    @TestHolder(description = "A player can jump and step up while carrying a hardened resin cauldron on their head")
-    static void playerJumpsAndStepsWithHardenedResinCauldron(ExtendedGameTestHelper helper) {
-        assertPlayerJumpsAndStepsWithHeadProduct(
-            helper,
-            "hardened resin cauldron",
-            position -> createPot(helper, position, PlasticEntityOrientation.DEFAULT)
+            position -> createResinAnvil(helper, position, PlasticraftBlocks.RESIN_ANVIL.asStack()),
+            () -> assertPlayerJumpsAndStepsWithHeadProduct(
+                helper,
+                6,
+                "hardened resin anvil",
+                position -> createAnvil(helper, position),
+                () -> assertPlayerJumpsAndStepsWithHeadProduct(
+                    helper,
+                    10,
+                    "hardened resin cauldron",
+                    position -> createPot(helper, position, PlasticEntityOrientation.DEFAULT),
+                    helper::succeed
+                )
+            )
         );
     }
 
@@ -4645,14 +4612,17 @@ public final class PlasticAnvilGameTests {
 
     private static void assertPlayerJumpsAndStepsWithHeadProduct(
         ExtendedGameTestHelper helper,
+        int slabX,
         String productName,
-        Function<Vec3, AbstractPlasticEntity> productFactory
+        Function<Vec3, AbstractPlasticEntity> productFactory,
+        Runnable after
     ) {
-        helper.setBlock(3, 1, 3, Blocks.STONE_SLAB);
+        helper.setBlock(slabX, 1, 3, Blocks.STONE_SLAB);
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        Vec3 playerPosition = helper.absoluteVec(new Vec3(2.5D, 1.0D, 3.5D));
+        double startX = slabX - 0.5D;
+        Vec3 playerPosition = helper.absoluteVec(new Vec3(startX, 1.0D, 3.5D));
         player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
-        Vec3 relativeProductPosition = new Vec3(2.5D, 1.0D + player.getBbHeight(), 3.5D);
+        Vec3 relativeProductPosition = new Vec3(startX, 1.0D + player.getBbHeight(), 3.5D);
         AbstractPlasticEntity product = productFactory.apply(relativeProductPosition);
 
         helper.runAfterDelay(3, () -> {
@@ -4684,7 +4654,9 @@ public final class PlasticAnvilGameTests {
                 product.getX() > productStart.x + 0.4D && product.getY() > productStart.y + 0.4D,
                 productName + " did not follow the player's step-up"
             );
-            helper.succeed();
+            product.discard();
+            player.discard();
+            after.run();
         });
     }
 
@@ -4753,7 +4725,11 @@ public final class PlasticAnvilGameTests {
         }
     }
 
-    private static void assertBlockConvertsUnderGravity(ExtendedGameTestHelper helper, Direction direction) {
+    private static void assertBlockConvertsUnderGravity(
+        ExtendedGameTestHelper helper,
+        Direction direction,
+        Runnable after
+    ) {
         BlockPos pos = new BlockPos(3, 3, 3);
         BlockPos absolutePos = helper.absolutePos(pos);
         Vec3 blockCenter = absolutePos.getCenter();
@@ -4778,7 +4754,7 @@ public final class PlasticAnvilGameTests {
             check(!helper.getBlockState(pos).is(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get()), "compatibility block did not convert");
             List<FallingBlockEntity> fallingBlocks = helper.getLevel().getEntitiesOfClass(
                 FallingBlockEntity.class,
-                new AABB(blockCenter, blockCenter).inflate(3.0D)
+                new AABB(blockCenter, blockCenter).inflate(1.5D)
             );
             check(fallingBlocks.size() == 1, "expected one converted falling-block entity, got " + fallingBlocks.size());
             check(
@@ -4792,7 +4768,9 @@ public final class PlasticAnvilGameTests {
                 direction + " conversion lost the hardened resin material"
             );
             check(!anvil.getDisplayState().hasProperty(DyeableMaterial.COLOR), "fixed material gained a colour state");
-            helper.succeed();
+            anvil.discard();
+            GravityManager.GravitySourceManager.removeSource(helper.getLevel(), sourceId);
+            after.run();
         });
     }
 

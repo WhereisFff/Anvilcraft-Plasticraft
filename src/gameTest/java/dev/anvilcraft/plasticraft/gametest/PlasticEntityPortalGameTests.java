@@ -13,6 +13,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.world.entity.item.FallingBlockEntity;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -28,48 +29,13 @@ public final class PlasticEntityPortalGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "8x6x8", floor = true)
-    @TestHolder(description = "A plastic entity keeps its identity when AnvilCraft handles an end portal")
-    static void plasticEntitySurvivesEndPortalConversion(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "A plastic entity keeps its identity when AnvilCraft handles end and nether portals")
+    static void plasticEntitySurvivesPortalConversion(ExtendedGameTestHelper helper) {
         UniversalPlasticEntity plastic = createUniversalPlastic(helper, new Vec3(3.5D, 2.0D, 3.5D));
         BlockState before = plastic.getDisplayState();
         check(before.is(ModBlockTags.END_PORTAL_UNABLE_CHANGE), "plastic display is missing the end-portal exemption tag");
-        NeoForge.EVENT_BUS.post(new EntityThroughPortalEvent(
-            helper.getLevel(),
-            plastic,
-            PortalType.END_PORTAL
-        ));
-        check(!plastic.isRemoved(), "end portal conversion removed the plastic entity");
-        check(
-            plastic.getDisplayState().equals(before) && plastic.blockState.equals(before),
-            "end portal conversion changed the plastic block state"
-        );
-        check(
-            !plastic.blockState.is(ModBlocks.END_DUST.get()),
-            "plastic entity was converted into end dust"
-        );
-        helper.succeed();
-    }
-
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate(value = "8x6x8", floor = true)
-    @TestHolder(description = "A plastic entity keeps its identity when AnvilCraft handles a nether portal")
-    static void plasticEntitySurvivesNetherPortalConversion(ExtendedGameTestHelper helper) {
-        UniversalPlasticEntity plastic = createUniversalPlastic(helper, new Vec3(3.5D, 2.0D, 3.5D));
-        BlockState before = plastic.getDisplayState();
-        NeoForge.EVENT_BUS.post(new EntityThroughPortalEvent(
-            helper.getLevel(),
-            plastic,
-            PortalType.NETHER_PORTAL
-        ));
-        check(!plastic.isRemoved(), "nether portal conversion removed the plastic entity");
-        check(
-            plastic.getDisplayState().equals(before) && plastic.blockState.equals(before),
-            "nether portal conversion changed the plastic block state"
-        );
-        check(
-            !plastic.blockState.is(ModBlocks.NETHER_DUST.get()),
-            "plastic entity was converted into nether dust"
-        );
+        assertPortalKeepsPlastic(helper, plastic, before, PortalType.END_PORTAL, ModBlocks.END_DUST.get());
+        assertPortalKeepsPlastic(helper, plastic, before, PortalType.NETHER_PORTAL, ModBlocks.NETHER_DUST.get());
         helper.succeed();
     }
 
@@ -104,6 +70,23 @@ public final class PlasticEntityPortalGameTests {
         check(plastic.blockState.equals(original), "plastic entity kept the overwritten blockState");
         check(plastic.getDisplayState().equals(original), "plastic entity changed its display state");
         helper.succeed();
+    }
+
+    private static void assertPortalKeepsPlastic(
+        ExtendedGameTestHelper helper,
+        UniversalPlasticEntity plastic,
+        BlockState before,
+        PortalType portalType,
+        Block dust
+    ) {
+        String portal = String.valueOf(portalType);
+        NeoForge.EVENT_BUS.post(new EntityThroughPortalEvent(helper.getLevel(), plastic, portalType));
+        check(!plastic.isRemoved(), portal + " conversion removed the plastic entity");
+        check(
+            plastic.getDisplayState().equals(before) && plastic.blockState.equals(before),
+            portal + " conversion changed the plastic block state"
+        );
+        check(!plastic.blockState.is(dust), "plastic entity was converted into " + portal + " dust");
     }
 
     private static UniversalPlasticEntity createUniversalPlastic(

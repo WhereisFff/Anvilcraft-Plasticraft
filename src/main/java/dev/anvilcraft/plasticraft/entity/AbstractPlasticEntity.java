@@ -190,6 +190,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     private VoxelShape cachedInteractionShape = Shapes.empty();
     private Set<BlockPos> observerContacts = Set.of();
     private boolean observerContactsDirty = true;
+    private boolean silentObserverContactHydration;
 
     protected AbstractPlasticEntity(
         EntityType<? extends AbstractPlasticEntity> entityType,
@@ -931,7 +932,20 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     private void refreshObserverContacts() {
         if (this.level().isClientSide || this.isRemoved() || !this.observerContactsDirty) return;
-        this.observerContacts = PlasticObserverContact.update(this, this.observerContacts);
+        PlasticObserverContact.ScanResult scan = PlasticObserverContact.scan(this);
+        if (this.silentObserverContactHydration) {
+            this.observerContacts = scan.contacts();
+            if (!scan.complete()) return;
+            this.silentObserverContactHydration = false;
+            this.observerContactsDirty = false;
+            return;
+        }
+        if (!scan.complete()) return;
+        this.observerContacts = PlasticObserverContact.emitTransitions(
+            this.level(),
+            this.observerContacts,
+            scan.contacts()
+        );
         this.observerContactsDirty = false;
     }
 
@@ -2245,6 +2259,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     @Override
     protected void readAdditionalSaveData(CompoundTag tag) {
+        // 存档与区块加载共用这条 NBT 路径；已有接触只能恢复边沿，不能当成新接触发脉冲。
+        this.silentObserverContactHydration = true;
         // 改用落方块基类前的实体不会保存此标志，因此让这些实体保持轻量且不造成伤害。
         CompoundTag fallingBlockData = tag;
         if (!tag.contains("HurtEntities", Tag.TAG_ANY_NUMERIC)) {

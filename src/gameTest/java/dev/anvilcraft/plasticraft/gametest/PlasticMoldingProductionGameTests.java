@@ -54,6 +54,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.DyeColor;
@@ -1026,10 +1027,32 @@ public final class PlasticMoldingProductionGameTests {
             Direction.NORTH
         )) {
             BlockState state = helper.getLevel().getBlockState(region);
-            check(state.getShape(helper.getLevel(), region).isEmpty()
-                    && state.getCollisionShape(helper.getLevel(), region).isEmpty(),
-                "open printing discharge retained a forming-region shape");
+            check(!state.getShape(helper.getLevel(), region).isEmpty(),
+                "open printing discharge hid the cabin selection");
+            check(state.getCollisionShape(helper.getLevel(), region).equals(Shapes.block()),
+                "open printing discharge released cabin collision for other entities");
+            check(
+                state.getCollisionShape(
+                    helper.getLevel(),
+                    region,
+                    CollisionContext.of(continuousProduct)
+                ).isEmpty(),
+                "open printing discharge kept cabin collision for the printed product"
+            );
         }
+        Player rider = helper.makeMockPlayer(GameType.SURVIVAL);
+        rider.setPos(
+            (continuousBounds.minX + continuousBounds.maxX) * 0.5D,
+            continuousBounds.maxY,
+            (continuousBounds.minZ + continuousBounds.maxZ) * 0.5D
+        );
+        double standingY = rider.getY();
+        rider.move(MoverType.SELF, new Vec3(0.0D, -0.08D, 0.0D));
+        check(
+            Math.abs(rider.getY() - standingY) <= 1.0E-4D,
+            "player fell into the printing cabin during discharge"
+        );
+        rider.discard();
         check(continuous.machineState() == PlasticMoldingMachineState.WAITING_NEXT_CYCLE,
             "continuous printing did not wait for its next cycle");
         check(clayCount(helper.getLevel(), continuousBounds) == 0,

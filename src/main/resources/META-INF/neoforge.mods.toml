@@ -12,6 +12,9 @@ description = '''${mod_description}'''
 [[mixins]]
 config = "${mod_id}.mixins.json"
 
+[[mixins]]
+config = "${mod_id}.jei.mixins.json"
+
 [[dependencies."${mod_id}"]]
 modId = "neoforge"
 type = "required"
@@ -35,13 +38,6 @@ side = "BOTH"
 
 [[dependencies."${mod_id}"]]
 modId = "anvillib"
-type = "required"
-versionRange = "${anvillib_version_range}"
-ordering = "AFTER"
-side = "BOTH"
-
-[[dependencies."${mod_id}"]]
-modId = "anvillib_yukkuri"
 type = "required"
 versionRange = "${anvillib_version_range}"
 ordering = "AFTER"

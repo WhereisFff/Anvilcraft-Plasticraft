@@ -836,6 +836,72 @@ public final class UniversalPlasticGameTests {
             .thenSucceed();
     }
 
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate(value = "9x5x7", floor = true)
+    @TestHolder(description = "Reloading a plastic that already touches an observer does not retrigger its pulse")
+    static void reloadedPlasticContactDoesNotRetriggerObserver(ExtendedGameTestHelper helper) {
+        BlockPos observerPos = new BlockPos(5, 1, 3);
+        helper.setBlock(
+            observerPos,
+            Blocks.OBSERVER.defaultBlockState().setValue(ObserverBlock.FACING, Direction.WEST)
+        );
+        BlockPos absoluteObserverPos = helper.absolutePos(observerPos);
+        UniversalPlasticEntity[] plastic = new UniversalPlasticEntity[1];
+
+        helper.startSequence()
+            .thenIdle(5)
+            .thenExecute(() -> {
+                check(!helper.getBlockState(observerPos).getValue(ObserverBlock.POWERED),
+                    "observer did not settle before the plastic spawn");
+                check(!helper.getLevel().getBlockTicks().hasScheduledTick(absoluteObserverPos, Blocks.OBSERVER),
+                    "observer retained an unrelated scheduled pulse before the plastic spawn");
+                plastic[0] = createUniversal(
+                    helper,
+                    helper.absoluteVec(new Vec3(4.5D, 1.0D, 3.5D)),
+                    PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+                    PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack()
+                );
+                plastic[0].setNoGravity(true);
+            })
+            .thenIdle(3)
+            .thenExecute(() -> check(
+                helper.getBlockState(observerPos).getValue(ObserverBlock.POWERED),
+                "fresh plastic contact did not power the observer"
+            ))
+            .thenIdle(2)
+            .thenExecute(() -> {
+                check(!helper.getBlockState(observerPos).getValue(ObserverBlock.POWERED),
+                    "observer did not finish its fresh-contact pulse before reload");
+                check(!helper.getLevel().getBlockTicks().hasScheduledTick(absoluteObserverPos, Blocks.OBSERVER),
+                    "observer retained a scheduled pulse before reload");
+                UniversalPlasticEntity previous = plastic[0];
+                CompoundTag saved = previous.saveWithoutId(new CompoundTag());
+                previous.remove(Entity.RemovalReason.UNLOADED_TO_CHUNK);
+                UniversalPlasticEntity loaded = new UniversalPlasticEntity(
+                    PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
+                    helper.getLevel()
+                );
+                loaded.load(saved);
+                loaded.setNoGravity(true);
+                check(helper.getLevel().addFreshEntity(loaded), "failed to restore the saved plastic entity");
+                plastic[0] = loaded;
+            })
+            .thenIdle(5)
+            .thenExecute(() -> {
+                check(!helper.getBlockState(observerPos).getValue(ObserverBlock.POWERED),
+                    "reloaded plastic contact powered the observer");
+                check(!helper.getLevel().getBlockTicks().hasScheduledTick(absoluteObserverPos, Blocks.OBSERVER),
+                    "reloaded plastic contact scheduled an observer pulse");
+                plastic[0].discard();
+            })
+            .thenIdle(2)
+            .thenExecute(() -> check(
+                helper.getBlockState(observerPos).getValue(ObserverBlock.POWERED),
+                "leaving a rehydrated plastic contact did not power the observer"
+            ))
+            .thenSucceed();
+    }
+
     @GameTest(timeoutTicks = 30)
     @EmptyTemplate(value = "9x7x7", floor = true)
     @TestHolder(description = "Pushing away from a plastic support leaves enough room for the player to fall")
