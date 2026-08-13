@@ -8,7 +8,7 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import java.util.List;
 
 /** 为创造物品栏的公共十六色选择器提供完整物品栈变体。 */
-public interface CreativeColorVariantItem {
+public interface CreativeColorVariantItem extends CreativeVariantPickerItem {
     List<DyeColor> CREATIVE_COLOR_ORDER = List.of(
         DyeColor.WHITE,
         DyeColor.LIGHT_GRAY,
@@ -37,5 +37,12 @@ public interface CreativeColorVariantItem {
         });
         PlasticMeltColor.set(variant, color);
         return variant;
+    }
+
+    @Override
+    default List<ItemStack> createCreativePickerVariants(ItemStack source) {
+        return CREATIVE_COLOR_ORDER.stream()
+            .map(color -> this.createCreativeColorVariant(source, color))
+            .toList();
     }
 }

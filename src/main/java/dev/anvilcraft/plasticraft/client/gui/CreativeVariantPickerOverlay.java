@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.client.gui;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.item.CreativeColorVariantItem;
+import dev.anvilcraft.plasticraft.item.CreativeVariantPickerItem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -15,8 +15,8 @@ import net.neoforged.neoforge.client.extensions.common.IClientItemExtensions;
 import java.util.List;
 import java.util.Optional;
 
-/** 锚定创造物品格的通用十六色选择叠加层。 */
-public final class CreativeColorPickerOverlay {
+/** 锚定创造物品格的通用 4x4 变体选择叠加层;十六色塑料与无人机工具共用。 */
+public final class CreativeVariantPickerOverlay {
     private static final ResourceLocation TEXTURE = AnvilcraftPlasticraft.of(
         "textures/gui/background/16_color_overlay.png"
     );
@@ -37,22 +37,19 @@ public final class CreativeColorPickerOverlay {
     private final ItemStack sourceStack;
     private final List<ItemStack> variants;
 
-    private CreativeColorPickerOverlay(
-        Slot sourceSlot,
-        ItemStack sourceStack,
-        CreativeColorVariantItem provider
-    ) {
+    private CreativeVariantPickerOverlay(Slot sourceSlot, ItemStack sourceStack, List<ItemStack> variants) {
         this.sourceSlot = sourceSlot;
-        this.sourceStack = sourceStack.copyWithCount(1);
-        this.variants = CreativeColorVariantItem.CREATIVE_COLOR_ORDER.stream()
-            .map(color -> provider.createCreativeColorVariant(this.sourceStack, color))
-            .toList();
+        this.sourceStack = sourceStack;
+        this.variants = variants;
     }
 
-    public static Optional<CreativeColorPickerOverlay> create(Slot sourceSlot) {
+    public static Optional<CreativeVariantPickerOverlay> create(Slot sourceSlot) {
         ItemStack sourceStack = sourceSlot.getItem();
-        if (!(sourceStack.getItem() instanceof CreativeColorVariantItem provider)) return Optional.empty();
-        return Optional.of(new CreativeColorPickerOverlay(sourceSlot, sourceStack, provider));
+        if (!(sourceStack.getItem() instanceof CreativeVariantPickerItem provider)) return Optional.empty();
+        ItemStack source = sourceStack.copyWithCount(1);
+        List<ItemStack> variants = provider.createCreativePickerVariants(source);
+        if (variants.isEmpty()) return Optional.empty();
+        return Optional.of(new CreativeVariantPickerOverlay(sourceSlot, source, variants));
     }
 
     public boolean isValid() {
@@ -72,7 +69,7 @@ public final class CreativeColorPickerOverlay {
     }
 
     public Optional<ItemStack> variantAt(int guiLeft, int guiTop, double mouseX, double mouseY) {
-        int index = this.colorIndexAt(guiLeft, guiTop, mouseX, mouseY);
+        int index = this.variantIndexAt(guiLeft, guiTop, mouseX, mouseY);
         return index < 0 ? Optional.empty() : Optional.of(this.variants.get(index));
     }
 
@@ -107,7 +104,7 @@ public final class CreativeColorPickerOverlay {
                 graphics.renderItem(variant, itemX, itemY, index);
                 graphics.renderItemDecorations(Minecraft.getInstance().font, variant, itemX, itemY);
             }
-            int hoveredIndex = this.colorIndexAt(guiLeft, guiTop, mouseX, mouseY);
+            int hoveredIndex = this.variantIndexAt(guiLeft, guiTop, mouseX, mouseY);
             if (hoveredIndex >= 0) {
                 int itemX = left + ITEM_OFFSET + hoveredIndex % COLUMNS * CELL_SIZE;
                 int itemY = top + ITEM_OFFSET + hoveredIndex / COLUMNS * CELL_SIZE;
@@ -136,7 +133,7 @@ public final class CreativeColorPickerOverlay {
         }
     }
 
-    private int colorIndexAt(int guiLeft, int guiTop, double mouseX, double mouseY) {
+    private int variantIndexAt(int guiLeft, int guiTop, double mouseX, double mouseY) {
         int localX = (int) Math.floor(mouseX - this.left(guiLeft));
         int localY = (int) Math.floor(mouseY - this.top(guiTop));
         int gridSize = COLUMNS * CELL_SIZE;
@@ -146,7 +143,8 @@ public final class CreativeColorPickerOverlay {
         }
         int column = (localX - CELL_OFFSET) / CELL_SIZE;
         int row = (localY - CELL_OFFSET) / CELL_SIZE;
-        return row * COLUMNS + column;
+        int index = row * COLUMNS + column;
+        return index >= this.variants.size() ? -1 : index;
     }
 
     private void renderCarriedItem(GuiGraphics graphics, ItemStack stack, int mouseX, int mouseY) {

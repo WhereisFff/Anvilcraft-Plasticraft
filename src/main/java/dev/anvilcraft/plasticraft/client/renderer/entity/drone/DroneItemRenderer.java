@@ -57,6 +57,7 @@ public final class DroneItemRenderer extends BlockEntityWithoutLevelRenderer {
             toolId,
             leftPropeller,
             rightPropeller,
+            0.0F,
             poseStack,
             buffers,
             packedLight,

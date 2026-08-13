@@ -40,7 +40,11 @@ public final class PlasticraftLanguageData {
         provider.add("item.anvilcraftplasticraft.molded_product_name", "%1$s %2$s");
         provider.add("item.anvilcraftplasticraft.molded_product_suffix.block", "Block");
 
-        // 四种无人机物品说明与螺旋桨信息行的语言文件生成。
+        // 无人机物品说明与螺旋桨信息行的语言文件生成。
+        provider.add(
+            "tooltip.anvilcraftplasticraft.drone.none",
+            "Mechanical drone without an installed tool"
+        );
         provider.add(
             "tooltip.anvilcraftplasticraft.drone.construction",
             "Mechanical drone fitted with a crab claw attachment"
@@ -60,6 +64,22 @@ public final class PlasticraftLanguageData {
         provider.add("tooltip.anvilcraftplasticraft.drone.propeller.left", "Left propeller: %s");
         provider.add("tooltip.anvilcraftplasticraft.drone.propeller.right", "Right propeller: %s");
         provider.add("tooltip.anvilcraftplasticraft.drone.propeller.missing", "Missing");
+        provider.add("tooltip.anvilcraftplasticraft.drone.energy", "Energy: %1$s / %2$s FE");
+
+        // 无人机单机设置界面。
+        provider.add("screen.anvilcraftplasticraft.drone.energy", "%1$s / %2$s FE");
+        provider.add("screen.anvilcraftplasticraft.drone.tool", "Tool: %s");
+        provider.add("screen.anvilcraftplasticraft.drone.tool.none", "None");
+        provider.add("screen.anvilcraftplasticraft.drone.owner", "Owner: %s");
+        provider.add("screen.anvilcraftplasticraft.drone.state.landed", "Landed");
+        provider.add("screen.anvilcraftplasticraft.drone.state.taking_off", "Taking off");
+        provider.add("screen.anvilcraftplasticraft.drone.state.hovering", "Hovering");
+        provider.add("screen.anvilcraftplasticraft.drone.state.landing", "Landing");
+        provider.add("screen.anvilcraftplasticraft.drone.strategy", "Shortage strategy");
+        provider.add("screen.anvilcraftplasticraft.drone.strategy.pause", "Pause and wait");
+        provider.add("screen.anvilcraftplasticraft.drone.strategy.skip", "Skip");
+        provider.add("screen.anvilcraftplasticraft.drone.coverage.inactive", "No chunk loading");
+        provider.add("screen.anvilcraftplasticraft.drone.inventory", "Cargo");
 
         // 塑料成型舱物品说明、容器标题和建模器界面语言文件生成。
         provider.add(

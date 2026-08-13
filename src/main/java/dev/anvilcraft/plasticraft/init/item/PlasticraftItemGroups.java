@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.init.item;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.item.DroneItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticItemStacks;
 import dev.dubhe.anvilcraft.init.item.ModItemGroups;
 import net.minecraft.core.registries.Registries;
@@ -39,10 +40,9 @@ public final class PlasticraftItemGroups {
                 output.accept(PlasticraftBlocks.CONDENSER_TOWER.asItem());
                 output.accept(PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.asItem());
                 output.accept(PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.asItem());
-                output.accept(PlasticraftItems.CONSTRUCTION_DRONE.get());
-                output.accept(PlasticraftItems.DEMOLITION_DRONE.get());
-                output.accept(PlasticraftItems.COLLECTION_DRONE.get());
-                output.accept(PlasticraftItems.OBSERVATION_DRONE.get());
+                // 创造物品栏只展示装好默认白色螺旋桨的空无人机;
+                // 具体工具经右击叠加层选择,与十六色塑料的交互一致。
+                output.accept(DroneItem.creativePickerSource());
             })
             .title(Component.translatable(TITLE_KEY))
             // NeoForge 的排序图将 withTabsBefore(X) 记录为 X -> this，

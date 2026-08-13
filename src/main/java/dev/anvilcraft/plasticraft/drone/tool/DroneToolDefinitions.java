@@ -18,6 +18,18 @@ public final class DroneToolDefinitions {
     public static final long INSTANT_ACTION_ENERGY_COST = 2_560L;
     private static final Map<ResourceLocation, DroneToolDefinition> DEFINITIONS = new LinkedHashMap<>();
 
+    /** 未安装工具的空无人机:没有任何任务能力,是创造物品栏工具选择的默认状态。 */
+    public static final DroneToolDefinition NONE = register(new DroneToolDefinition(
+        AnvilcraftPlasticraft.of("none"),
+        () -> Items.AIR,
+        Set.of(),
+        0.0D,
+        0,
+        INSTANT_ACTION_ENERGY_COST,
+        List.of("idle"),
+        DroneToolBehavior.NONE
+    ));
+
     public static final DroneToolDefinition CONSTRUCTION = register(new DroneToolDefinition(
         AnvilcraftPlasticraft.of("construction"),
         ModItems.CRAB_CLAW::get,

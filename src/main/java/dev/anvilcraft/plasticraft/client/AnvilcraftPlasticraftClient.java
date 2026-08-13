@@ -138,6 +138,7 @@ public final class AnvilcraftPlasticraftClient {
                 return DroneItemRenderer.getInstance();
             }
         },
+            PlasticraftItems.DRONE.get(),
             PlasticraftItems.CONSTRUCTION_DRONE.get(),
             PlasticraftItems.DEMOLITION_DRONE.get(),
             PlasticraftItems.COLLECTION_DRONE.get(),

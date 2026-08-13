@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.recipe;
 
 import com.mojang.serialization.MapCodec;
+import dev.anvilcraft.plasticraft.drone.DroneDefaultPropeller;
 import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
@@ -32,8 +33,8 @@ public final class DronePropellerIngredient implements ICustomIngredient {
 
     @Override
     public Stream<ItemStack> getItems() {
-        // 展示用途;真实匹配始终经过 test,不依赖这里的示例堆。
-        return Stream.of(new ItemStack(PlasticraftBlocks.UNIVERSAL_PLASTIC.asItem()));
+        // 展示用途;配方界面显示默认白色螺旋桨制品,真实匹配始终经过 test。
+        return Stream.of(DroneDefaultPropeller.stack());
     }
 
     @Override

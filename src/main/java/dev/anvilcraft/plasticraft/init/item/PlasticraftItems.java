@@ -85,6 +85,11 @@ public final class PlasticraftItems {
         })
         .register();
 
+    public static final ItemEntry<DroneItem> DRONE = drone(
+        "drone",
+        DroneToolDefinitions.NONE,
+        "Mechanical Drone"
+    );
     public static final ItemEntry<DroneItem> CONSTRUCTION_DRONE = drone(
         "construction_drone",
         DroneToolDefinitions.CONSTRUCTION,

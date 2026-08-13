@@ -2,13 +2,20 @@ package dev.anvilcraft.plasticraft.entity.drone;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.drone.DroneData;
+import dev.anvilcraft.plasticraft.drone.DroneEnergyModel;
+import dev.anvilcraft.plasticraft.drone.DroneFlightState;
 import dev.anvilcraft.plasticraft.drone.DronePropellerTraits;
 import dev.anvilcraft.plasticraft.drone.DroneShortageStrategy;
+import dev.anvilcraft.plasticraft.drone.tool.DroneCapability;
 import dev.anvilcraft.plasticraft.drone.tool.DroneToolDefinition;
 import dev.anvilcraft.plasticraft.drone.tool.DroneToolDefinitions;
+import dev.anvilcraft.plasticraft.inventory.DroneMenu;
 import dev.anvilcraft.plasticraft.item.DroneItem;
+import dev.dubhe.anvilcraft.api.power.DynamicPowerComponent;
+import dev.dubhe.anvilcraft.api.power.PowerGrid;
 import dev.dubhe.anvilcraft.item.AnvilHammerItem;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
@@ -16,7 +23,9 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
@@ -27,12 +36,16 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -49,16 +62,26 @@ public class DroneEntity extends Entity {
         SynchedEntityData.defineId(DroneEntity.class, EntityDataSerializers.ITEM_STACK);
     private static final EntityDataAccessor<Byte> DATA_ACTION_STATE =
         SynchedEntityData.defineId(DroneEntity.class, EntityDataSerializers.BYTE);
+    private static final EntityDataAccessor<Byte> DATA_FLIGHT_STATE =
+        SynchedEntityData.defineId(DroneEntity.class, EntityDataSerializers.BYTE);
+    /** 每架未满电无人机向所在电网申报的充电功率。 */
+    private static final DynamicPowerComponent.PowerConsumption CHARGE_CONSUMPTION =
+        new DynamicPowerComponent.PowerConsumption(DroneEnergyModel.CHARGE_POWER_KW);
+    /** 无任务悬停高度受阻或找不到地面时向下搜索的最大格数。 */
+    private static final int GROUND_SCAN_RANGE = 32;
 
+    private final DynamicPowerComponent chargeComponent;
     private ResourceLocation cachedToolId = DroneToolDefinitions.CONSTRUCTION.id();
     private int energy;
     private UUID owner;
     private DroneShortageStrategy shortageStrategy = DroneShortageStrategy.PAUSE;
     private List<ItemStack> collectionInventory = new ArrayList<>();
+    private double flightDistanceAccumulator;
 
     public DroneEntity(EntityType<? extends DroneEntity> entityType, Level level) {
         super(entityType, level);
         this.blocksBuilding = true;
+        this.chargeComponent = new DynamicPowerComponent(this, () -> this.getBoundingBox().inflate(0.5D));
     }
 
     @Override
@@ -67,6 +90,7 @@ public class DroneEntity extends Entity {
         builder.define(DATA_LEFT_PROPELLER, ItemStack.EMPTY);
         builder.define(DATA_RIGHT_PROPELLER, ItemStack.EMPTY);
         builder.define(DATA_ACTION_STATE, (byte) 0);
+        builder.define(DATA_FLIGHT_STATE, (byte) DroneFlightState.LANDED.ordinal());
     }
 
     @Override
@@ -80,19 +104,142 @@ public class DroneEntity extends Entity {
     @Override
     public void tick() {
         super.tick();
-        // 无任务无人机在地面等待;飞行状态机属于能源系统 TODO,这里只保证
-        // 自由落体、着地静止以及被推动后经过方块碰撞的位移。
-        if (!this.isNoGravity()) {
+        if (!this.level().isClientSide) {
+            this.serverChargeTick();
+            this.serverFlightTick();
+        }
+        DroneFlightState state = this.flightState();
+        if (state == DroneFlightState.LANDED && !this.isNoGravity()) {
             this.setDeltaMovement(this.getDeltaMovement().add(0.0D, -0.04D, 0.0D));
         }
+        Vec3 before = this.position();
         this.move(MoverType.SELF, this.getDeltaMovement());
-        Vec3 motion = this.getDeltaMovement();
-        if (this.onGround()) {
-            this.setDeltaMovement(motion.x * 0.6D, motion.y < 0.0D ? 0.0D : motion.y * 0.98D, motion.z * 0.6D);
-        } else {
-            this.setDeltaMovement(motion.x * 0.91D, motion.y * 0.98D, motion.z * 0.91D);
+        if (state == DroneFlightState.LANDED) {
+            Vec3 motion = this.getDeltaMovement();
+            if (this.onGround()) {
+                this.setDeltaMovement(motion.x * 0.6D, motion.y < 0.0D ? 0.0D : motion.y * 0.98D, motion.z * 0.6D);
+            } else {
+                this.setDeltaMovement(motion.x * 0.91D, motion.y * 0.98D, motion.z * 0.91D);
+            }
+        }
+        if (!this.level().isClientSide) {
+            this.serverEnergyCostTick(this.position().subtract(before));
         }
         this.pushOverlappingDrones();
+    }
+
+    /** 电网充电:未满电时申报 8 功率,电网供电正常则按转换效率充入内部 FE。 */
+    private void serverChargeTick() {
+        PowerGrid grid = PowerGrid
+            .findPowerGridContains(this.level(), this.getBoundingBox().inflate(0.5D))
+            .orElse(null);
+        this.chargeComponent.switchTo(grid);
+        boolean wantsCharge = this.energy < DroneEnergyModel.capacity();
+        Set<DynamicPowerComponent.PowerConsumption> consumptions = this.chargeComponent.getPowerConsumptions();
+        if (wantsCharge) {
+            consumptions.add(CHARGE_CONSUMPTION);
+        } else {
+            consumptions.remove(CHARGE_CONSUMPTION);
+        }
+        if (grid != null && grid.isWorking() && wantsCharge) {
+            this.energy = Math.min(DroneEnergyModel.capacity(), this.energy + DroneEnergyModel.chargePerTick());
+        }
+    }
+
+    /** 统一飞行/降落状态机;当前只有无任务行为,任务飞行由任务系统 TODO 驱动。 */
+    private void serverFlightTick() {
+        switch (this.flightState()) {
+            case LANDED -> {
+                if (this.wantsIdleHover() && this.energy >= DroneEnergyModel.IDLE_TAKEOFF_MINIMUM) {
+                    this.setFlightState(DroneFlightState.TAKING_OFF);
+                }
+            }
+            case TAKING_OFF -> {
+                if (!this.canKeepHovering()) {
+                    this.setFlightState(DroneFlightState.LANDING);
+                    return;
+                }
+                double target = this.idleHoverTargetY();
+                if (Double.isNaN(target)) {
+                    this.setFlightState(DroneFlightState.LANDING);
+                    return;
+                }
+                double dy = target - this.getY();
+                if (Math.abs(dy) < 0.05D) {
+                    this.setDeltaMovement(Vec3.ZERO);
+                    this.setFlightState(DroneFlightState.HOVERING);
+                    return;
+                }
+                // 头顶受阻爬升不动时回到地面等待,不在障碍下面耗电死循环;
+                // verticalCollisionBelow 排除起飞瞬间残留的落地碰撞标志。
+                if (this.verticalCollision && !this.verticalCollisionBelow && dy > 0.1D) {
+                    this.setFlightState(DroneFlightState.LANDING);
+                    return;
+                }
+                this.setDeltaMovement(0.0D, Mth.clamp(dy * 0.3D, -0.12D, 0.12D), 0.0D);
+            }
+            case HOVERING -> {
+                if (!this.canKeepHovering()) {
+                    this.setFlightState(DroneFlightState.LANDING);
+                    return;
+                }
+                double target = this.idleHoverTargetY();
+                if (Double.isNaN(target)) {
+                    this.setFlightState(DroneFlightState.LANDING);
+                    return;
+                }
+                this.setDeltaMovement(0.0D, Mth.clamp((target - this.getY()) * 0.3D, -0.1D, 0.1D), 0.0D);
+            }
+            case LANDING -> {
+                Vec3 motion = this.getDeltaMovement();
+                this.setDeltaMovement(motion.x * 0.6D, -0.12D, motion.z * 0.6D);
+                if (this.onGround()) {
+                    this.setDeltaMovement(Vec3.ZERO);
+                    this.setFlightState(DroneFlightState.LANDED);
+                }
+            }
+        }
+    }
+
+    /** 无任务观察无人机有电即离地悬停;其余工种落地等待。 */
+    private boolean wantsIdleHover() {
+        return this.toolDefinition().hasCapability(DroneCapability.CHUNK_LOADING);
+    }
+
+    /** 世界观察无人机必须始终保留安全降落电量,达到储备立即降落停耗。 */
+    private boolean canKeepHovering() {
+        return this.wantsIdleHover() && this.energy > DroneEnergyModel.SAFE_LANDING_RESERVE;
+    }
+
+    /**
+     * 计算无任务悬停目标高度:碰撞箱底面保持在当前 X/Z 下方最近稳定、
+     * 非流体碰撞顶面之上 4 格;向下有限搜索,找不到地面返回 NaN 保持落地。
+     */
+    private double idleHoverTargetY() {
+        BlockPos.MutableBlockPos cursor = this.blockPosition().mutable();
+        for (int step = 0; step <= GROUND_SCAN_RANGE; step++) {
+            if (cursor.getY() < this.level().getMinBuildHeight()) return Double.NaN;
+            BlockState state = this.level().getBlockState(cursor);
+            VoxelShape shape = state.getFluidState().isEmpty()
+                ? state.getCollisionShape(this.level(), cursor)
+                : Shapes.empty();
+            if (!shape.isEmpty()) {
+                return cursor.getY() + shape.max(Direction.Axis.Y) + 4.0D;
+            }
+            cursor.move(0, -1, 0);
+        }
+        return Double.NaN;
+    }
+
+    /** 空中每 gt 扣悬浮费,并按实际轨迹长度累计距离费;着地不扣。 */
+    private void serverEnergyCostTick(Vec3 movedDelta) {
+        if (this.onGround()) return;
+        this.consumeEnergy(DroneEnergyModel.HOVER_COST_PER_AIR_TICK);
+        this.flightDistanceAccumulator += movedDelta.length();
+        while (this.flightDistanceAccumulator >= 1.0D) {
+            this.consumeEnergy(DroneEnergyModel.MOVE_COST_PER_BLOCK);
+            this.flightDistanceAccumulator -= 1.0D;
+        }
     }
 
     /** 碰撞箱真正重叠的无人机互相推开;整齐堆放的相邻碰撞箱不会触发。 */
@@ -134,8 +281,11 @@ public class DroneEntity extends Entity {
         if (player.isShiftKeyDown() && stack.getItem() instanceof AnvilHammerItem) {
             return this.pickUpWithAnvilHammer(player);
         }
-        // 右击打开单机设置界面由能源与设置 TODO 提供。
-        return InteractionResult.PASS;
+        if (player.isShiftKeyDown()) return InteractionResult.PASS;
+        if (player instanceof ServerPlayer serverPlayer) {
+            DroneMenu.openForEntity(serverPlayer, this);
+        }
+        return InteractionResult.sidedSuccess(this.level().isClientSide);
     }
 
     private InteractionResult pickUpWithAnvilHammer(Player player) {
@@ -181,6 +331,12 @@ public class DroneEntity extends Entity {
         return true;
     }
 
+    @Override
+    public void remove(RemovalReason reason) {
+        super.remove(reason);
+        this.chargeComponent.switchTo(null);
+    }
+
     public ResourceLocation toolId() {
         return this.cachedToolId;
     }
@@ -201,12 +357,46 @@ public class DroneEntity extends Entity {
         return this.entityData.get(DATA_ACTION_STATE);
     }
 
+    public DroneFlightState flightState() {
+        return DroneFlightState.byId(this.entityData.get(DATA_FLIGHT_STATE));
+    }
+
+    public void setFlightState(DroneFlightState state) {
+        this.entityData.set(DATA_FLIGHT_STATE, (byte) state.ordinal());
+    }
+
+    public int getEnergy() {
+        return this.energy;
+    }
+
+    public void setEnergy(int energy) {
+        this.energy = Mth.clamp(energy, 0, DroneEnergyModel.capacity());
+    }
+
+    public void consumeEnergy(long amount) {
+        this.energy = (int) Math.max(0L, this.energy - amount);
+    }
+
+    /** 任务分配前的能量资格:报价之外还必须保留安全降落储备。 */
+    public boolean canAcceptQuote(DroneEnergyModel.Quote quote) {
+        long total = quote.totalCost(this.toolDefinition().instantActionEnergyCost());
+        return this.energy >= total + DroneEnergyModel.SAFE_LANDING_RESERVE;
+    }
+
     public Optional<UUID> getOwner() {
         return Optional.ofNullable(this.owner);
     }
 
     public void setOwner(UUID ownerId) {
         this.owner = ownerId;
+    }
+
+    public DroneShortageStrategy shortageStrategy() {
+        return this.shortageStrategy;
+    }
+
+    public void setShortageStrategy(DroneShortageStrategy strategy) {
+        this.shortageStrategy = strategy;
     }
 
     public DroneData toDroneData() {
@@ -226,7 +416,7 @@ public class DroneEntity extends Entity {
         this.cachedToolId = data.toolId();
         this.entityData.set(DATA_LEFT_PROPELLER, data.leftPropeller().copy());
         this.entityData.set(DATA_RIGHT_PROPELLER, data.rightPropeller().copy());
-        this.energy = data.energy();
+        this.energy = Mth.clamp(data.energy(), 0, DroneEnergyModel.capacity());
         this.owner = data.owner().orElse(null);
         this.shortageStrategy = data.shortageStrategy();
         this.collectionInventory = new ArrayList<>(data.collectionInventory());
@@ -254,6 +444,9 @@ public class DroneEntity extends Entity {
             .parse(this.registryAccess().createSerializationContext(NbtOps.INSTANCE), tag.get("DroneData"))
             .resultOrPartial(error -> AnvilcraftPlasticraft.LOGGER.error("Failed to load drone data: {}", error))
             .ifPresent(this::applyDroneData);
+        if (tag.contains("FlightState")) {
+            this.setFlightState(DroneFlightState.byId(tag.getByte("FlightState")));
+        }
     }
 
     @Override
@@ -262,5 +455,6 @@ public class DroneEntity extends Entity {
             .encodeStart(this.registryAccess().createSerializationContext(NbtOps.INSTANCE), this.toDroneData())
             .resultOrPartial(error -> AnvilcraftPlasticraft.LOGGER.error("Failed to save drone data: {}", error))
             .ifPresent(encoded -> tag.put("DroneData", encoded));
+        tag.putByte("FlightState", (byte) this.flightState().ordinal());
     }
 }

@@ -135,7 +135,161 @@ public final class DroneAssetGenerator {
             BLOCKBENCH.resolve("drone_tool/collection_magnet.bbmodel"), "collection_magnet");
         emit(spyglass, 32, TEXTURES.resolve("drone/tool/observation_spyglass.png"),
             BLOCKBENCH.resolve("drone_tool/observation_spyglass.bbmodel"), "observation_spyglass");
+        generateGui();
         System.out.println("Drone assets generated.");
+    }
+
+    // ==================== GUI 资产 ====================
+
+    static final Path GUI = Path.of("src/main/resources/assets/anvilcraftplasticraft/textures/gui");
+
+    /** 无人机单机设置界面背景与策略按钮;布局与 DroneScreen/DroneMenu 中的常量保持一致。 */
+    static void generateGui() throws IOException {
+        Files.createDirectories(GUI.resolve("background"));
+        Files.createDirectories(GUI.resolve("button/drone"));
+
+        BufferedImage background = new BufferedImage(176, 150, BufferedImage.TYPE_INT_ARGB);
+        paintPanel(background, 0, 0, 176, 150);
+        paintInset(background, 10, 20, 13, 37);      // 能量条框
+        for (int row = 0; row < 3; row++) {          // 收集库存 3x3 槽位
+            for (int column = 0; column < 3; column++) {
+                paintSlot(background, 105 + column * 18, 77 + row * 18);
+            }
+        }
+        ImageIO.write(background, "png", GUI.resolve("background/drone.png").toFile());
+        System.out.println("  " + GUI.resolve("background/drone.png"));
+
+        writeButton("pause", DroneAssetGenerator::paintPauseIcon);
+        writeButton("skip", DroneAssetGenerator::paintSkipIcon);
+    }
+
+    interface IconPainter {
+        void paint(BufferedImage image, int y0, int color);
+    }
+
+    static void writeButton(String name, IconPainter icon) throws IOException {
+        BufferedImage image = new BufferedImage(16, 64, BufferedImage.TYPE_INT_ARGB);
+        // 四帧竖排:0 正常、1 悬停、2 按下(当前选中)、3 禁用。
+        int[][] frames = {
+            {0x8B8B8B, 0xFFFFFF, 0x555555, 0xE9E9E9},
+            {0x9DA2A6, 0xFFFFFF, 0x606468, 0xFFFFFF},
+            {0x5E6265, 0x3F4144, 0xA7B0B6, 0x7CCDCA},
+            {0x6F6F6F, 0x7F7F7F, 0x4F4F4F, 0x9A9A9A}
+        };
+        for (int frame = 0; frame < 4; frame++) {
+            int y0 = frame * 16;
+            int base = frames[frame][0];
+            int light = frames[frame][1];
+            int dark = frames[frame][2];
+            int iconColor = frames[frame][3];
+            for (int x = 0; x < 16; x++) {
+                for (int y = 0; y < 16; y++) {
+                    set(image, x, y0 + y, base);
+                }
+            }
+            for (int i = 0; i < 16; i++) {
+                set(image, i, y0, light);
+                set(image, 0, y0 + i, light);
+                set(image, i, y0 + 15, dark);
+                set(image, 15, y0 + i, dark);
+            }
+            icon.paint(image, y0, iconColor);
+        }
+        Path path = GUI.resolve("button/drone/" + name + ".png");
+        ImageIO.write(image, "png", path.toFile());
+        System.out.println("  " + path);
+    }
+
+    static void paintPauseIcon(BufferedImage image, int y0, int color) {
+        for (int y = 4; y <= 11; y++) {
+            set(image, 5, y0 + y, color);
+            set(image, 6, y0 + y, color);
+            set(image, 9, y0 + y, color);
+            set(image, 10, y0 + y, color);
+        }
+    }
+
+    static void paintSkipIcon(BufferedImage image, int y0, int color) {
+        for (int x = 4; x <= 8; x++) {
+            int half = x - 4;
+            for (int y = 4 + half; y <= 11 - half; y++) {
+                set(image, x, y0 + y, color);
+            }
+        }
+        for (int y = 4; y <= 11; y++) {
+            set(image, 10, y0 + y, color);
+            set(image, 11, y0 + y, color);
+        }
+    }
+
+    /** 原版风格灰色面板:黑色圆角外框、左上高光、右下阴影。 */
+    static void paintPanel(BufferedImage image, int x, int y, int w, int h) {
+        for (int px = 0; px < w; px++) {
+            for (int py = 0; py < h; py++) {
+                set(image, x + px, y + py, 0xC6C6C6);
+            }
+        }
+        for (int i = 1; i < w - 1; i++) {
+            set(image, x + i, y, 0x000000);
+            set(image, x + i, y + h - 1, 0x000000);
+        }
+        for (int i = 1; i < h - 1; i++) {
+            set(image, x, y + i, 0x000000);
+            set(image, x + w - 1, y + i, 0x000000);
+        }
+        for (int i = 2; i < w - 2; i++) {
+            set(image, x + i, y + 1, 0xFFFFFF);
+            set(image, x + i, y + h - 2, 0x555555);
+        }
+        for (int i = 2; i < h - 2; i++) {
+            set(image, x + 1, y + i, 0xFFFFFF);
+            set(image, x + w - 2, y + i, 0x555555);
+        }
+        set(image, x + 1, y + h - 2, 0x8B8B8B);
+        set(image, x + w - 2, y + 1, 0x8B8B8B);
+        // 四角圆角:清掉外框角像素。
+        clear(image, x, y, 1, 1);
+        clear(image, x + w - 1, y, 1, 1);
+        clear(image, x, y + h - 1, 1, 1);
+        clear(image, x + w - 1, y + h - 1, 1, 1);
+        set(image, x + 1, y + 1, 0xC6C6C6);
+        set(image, x + w - 2, y + h - 2, 0xC6C6C6);
+    }
+
+    /** 内凹区域:左上暗边、右下亮边、深色底,供能量条这类动态内容覆盖。 */
+    static void paintInset(BufferedImage image, int x, int y, int w, int h) {
+        for (int px = 0; px < w; px++) {
+            for (int py = 0; py < h; py++) {
+                set(image, x + px, y + py, 0x1B0A0A);
+            }
+        }
+        for (int i = 0; i < w; i++) {
+            set(image, x + i, y, 0x373737);
+            set(image, x + i, y + h - 1, 0xFFFFFF);
+        }
+        for (int i = 0; i < h; i++) {
+            set(image, x, y + i, 0x373737);
+            set(image, x + w - 1, y + i, 0xFFFFFF);
+        }
+        set(image, x + w - 1, y, 0x8B8B8B);
+        set(image, x, y + h - 1, 0x8B8B8B);
+    }
+
+    /** 原版 18x18 物品槽位框。 */
+    static void paintSlot(BufferedImage image, int x, int y) {
+        for (int px = 1; px < 17; px++) {
+            for (int py = 1; py < 17; py++) {
+                set(image, x + px, y + py, 0x8B8B8B);
+            }
+        }
+        for (int i = 0; i < 17; i++) {
+            set(image, x + i, y, 0x373737);
+            set(image, x, y + i, 0x373737);
+            set(image, x + i + 1, y + 17, 0xFFFFFF);
+            set(image, x + 17, y + i + 1, 0xFFFFFF);
+        }
+        set(image, x + 17, y, 0x8B8B8B);
+        set(image, x, y + 17, 0x8B8B8B);
     }
 
     static void emit(Part root, int size, Path texturePath, Path bbmodelPath, String name) throws IOException {

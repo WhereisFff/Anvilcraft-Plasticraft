@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.client.renderer.entity.drone;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.math.Axis;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer;
 import dev.anvilcraft.plasticraft.drone.tool.DroneToolDefinitions;
@@ -88,19 +89,20 @@ public final class DroneRenderDispatcher {
 
     /**
      * 渲染完整无人机。姿态栈需要位于实体底部中心、Y 轴向上并已按实体朝向旋转;
-     * 模型前方是本地 -Z。
+     * 模型前方是本地 -Z;螺旋桨转角由调用方按同步的飞行状态计算,双桨反向。
      */
     public void render(
         ResourceLocation toolId,
         ItemStack leftPropeller,
         ItemStack rightPropeller,
+        float propellerSpinDegrees,
         PoseStack poseStack,
         MultiBufferSource buffers,
         int packedLight,
         int packedOverlay
     ) {
-        this.renderPropeller(leftPropeller, true, poseStack, buffers, packedLight);
-        this.renderPropeller(rightPropeller, false, poseStack, buffers, packedLight);
+        this.renderPropeller(leftPropeller, true, propellerSpinDegrees, poseStack, buffers, packedLight);
+        this.renderPropeller(rightPropeller, false, -propellerSpinDegrees, poseStack, buffers, packedLight);
 
         poseStack.pushPose();
         // 实体模型惯例:Y 向下建模,渲染时翻转并抬升 1.5 格。
@@ -125,6 +127,7 @@ public final class DroneRenderDispatcher {
     private void renderPropeller(
         ItemStack propeller,
         boolean left,
+        float spinDegrees,
         PoseStack poseStack,
         MultiBufferSource buffers,
         int packedLight
@@ -133,6 +136,7 @@ public final class DroneRenderDispatcher {
         if (data == null) return;
         poseStack.pushPose();
         poseStack.translate(left ? -0.5D : 0.5D, PROPELLER_ANCHOR_HEIGHT, 0.0D);
+        poseStack.mulPose(Axis.YP.rotationDegrees(spinDegrees));
         poseStack.scale(PROPELLER_SCALE, PROPELLER_SCALE, PROPELLER_SCALE);
         // 螺旋桨形状校验保证桨盘围绕建模空间中心,把轴心平移到锚点、桨底贴住毂顶。
         AABB bounds = data.surfaceBounds();

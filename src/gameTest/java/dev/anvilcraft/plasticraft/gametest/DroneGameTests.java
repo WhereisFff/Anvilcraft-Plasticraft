@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.drone.DroneData;
+import dev.anvilcraft.plasticraft.drone.DroneDefaultPropeller;
 import dev.anvilcraft.plasticraft.drone.DroneShortageStrategy;
 import dev.anvilcraft.plasticraft.drone.tool.DroneToolDefinitions;
 import dev.anvilcraft.plasticraft.entity.drone.DroneEntity;
@@ -8,7 +9,9 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
+import dev.anvilcraft.plasticraft.item.DroneItem;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.recipe.DronePropellerIngredient;
 import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
@@ -106,7 +109,7 @@ public final class DroneGameTests {
             DroneShortageStrategy.SKIP,
             List.of(new ItemStack(Items.COBBLESTONE, 17))
         );
-        DroneEntity drone = spawnDrone(helper, new Vec3(1.5D, 0.0D, 1.5D), data);
+        DroneEntity drone = spawnDrone(helper, new Vec3(1.5D, 2.0D, 1.5D), data);
 
         CompoundTag saved = new CompoundTag();
         drone.saveWithoutId(saved);
@@ -135,7 +138,7 @@ public final class DroneGameTests {
                 propeller(DyeColor.CYAN)
             )
             .withOwner(UUID.fromString("00000000-0000-0000-0000-000000000042"));
-        DroneEntity drone = spawnDrone(helper, new Vec3(1.5D, 0.0D, 1.5D), data);
+        DroneEntity drone = spawnDrone(helper, new Vec3(1.5D, 2.0D, 1.5D), data);
 
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(ModItems.ANVIL_HAMMER.get()));
@@ -167,7 +170,7 @@ public final class DroneGameTests {
         for (int index = 0; index < 8; index++) {
             double x = 1.25D + (index & 1) * 0.5D;
             double z = 1.25D + ((index >> 1) & 1) * 0.5D;
-            double y = 0.0D + ((index >> 2) & 1) * 0.5D;
+            double y = 2.0D + ((index >> 2) & 1) * 0.5D;
             drones.add(spawnDrone(
                 helper,
                 new Vec3(x, y, z),
@@ -180,7 +183,7 @@ public final class DroneGameTests {
         }
         // 只断言位置稳定性:GameTest 框架清理相邻结构时可能合法丢弃实体,
         // 被丢弃实体保留最后位置,该断言仍能捕捉真实的漂移或穿透。
-        AABB allowed = new AABB(helper.absolutePos(new BlockPos(1, 0, 1))).inflate(0.35D, 0.6D, 0.35D);
+        AABB allowed = new AABB(helper.absolutePos(new BlockPos(1, 2, 1))).inflate(0.35D, 0.6D, 0.35D);
         helper.onEachTick(() -> {
             for (DroneEntity drone : drones) {
                 check(allowed.contains(drone.position()),
@@ -194,12 +197,12 @@ public final class DroneGameTests {
     @EmptyTemplate(value = "5x3x3", floor = true)
     @TestHolder(description = "A pushed drone collides with walls instead of passing through")
     static void pushedDroneStopsAtWall(ExtendedGameTestHelper helper) {
-        BlockPos wall = new BlockPos(3, 0, 1);
+        BlockPos wall = new BlockPos(3, 2, 1);
         helper.setBlock(wall, Blocks.STONE);
         helper.setBlock(wall.above(), Blocks.STONE);
         DroneEntity drone = spawnDrone(
             helper,
-            new Vec3(1.5D, 0.0D, 1.5D),
+            new Vec3(1.5D, 2.0D, 1.5D),
             DroneData.assembled(
                 DroneToolDefinitions.OBSERVATION.id(),
                 ItemStack.EMPTY,
@@ -213,6 +216,41 @@ public final class DroneGameTests {
         helper.onEachTick(() -> check(!wallBox.intersects(drone.getBoundingBox()),
             "pushed drone entered the wall block at " + drone.position()));
         helper.runAfterDelay(40, helper::succeed);
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "The embedded default propeller drives the creative entry and picker variants")
+    static void defaultPropellerAndCreativePicker(ExtendedGameTestHelper helper) {
+        // 默认螺旋桨固化在模组资源中,与世界蓝图库无关。
+        ItemStack propeller = DroneDefaultPropeller.stack();
+        MoldedPlasticData propellerData = MoldedPlasticData.get(propeller).orElseThrow(
+            () -> new GameTestAssertException("default propeller stack has no molded data"));
+        check(MoldingProductTypes.PROPELLER_ID.equals(propellerData.finalType()),
+            "default propeller is not a propeller type product");
+        check(DronePropellerIngredient.INSTANCE.test(propeller),
+            "default propeller does not match the recipe ingredient");
+
+        ItemStack source = DroneItem.creativePickerSource();
+        check(source.is(PlasticraftItems.DRONE.get()), "creative entry is not the toolless drone");
+        DroneData sourceData = DroneData.get(source).orElseThrow(
+            () -> new GameTestAssertException("creative entry has no drone data"));
+        check(DroneToolDefinitions.NONE.id().equals(sourceData.toolId()),
+            "creative entry is not toolless");
+        check(ItemStack.isSameItemSameComponents(sourceData.leftPropeller(), propeller),
+            "creative entry does not carry the default white propeller");
+
+        List<ItemStack> variants = ((DroneItem) source.getItem()).createCreativePickerVariants(source);
+        check(variants.size() == DroneToolDefinitions.values().size(),
+            "picker variant count mismatch: " + variants.size());
+        check(variants.get(0).is(PlasticraftItems.DRONE.get()), "first picker variant is not toolless");
+        check(variants.get(1).is(PlasticraftItems.CONSTRUCTION_DRONE.get()),
+            "second picker variant is not the construction drone");
+        DroneData constructionData = DroneData.get(variants.get(1)).orElseThrow(
+            () -> new GameTestAssertException("construction variant has no drone data"));
+        check(ItemStack.isSameItemSameComponents(constructionData.leftPropeller(), sourceData.leftPropeller()),
+            "picker variant lost the source propellers");
+        helper.succeed();
     }
 
     private static DroneEntity spawnDrone(ExtendedGameTestHelper helper, Vec3 relativePos, DroneData data) {

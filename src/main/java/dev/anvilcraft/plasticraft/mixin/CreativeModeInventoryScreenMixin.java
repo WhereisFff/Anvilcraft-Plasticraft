@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.mixin;
 
 import com.mojang.blaze3d.platform.InputConstants;
-import dev.anvilcraft.plasticraft.client.gui.CreativeColorPickerOverlay;
+import dev.anvilcraft.plasticraft.client.gui.CreativeVariantPickerOverlay;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemGroups;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -23,7 +23,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** 让 Plasticraft 创造标签中的多色物品通过公共叠加层选择具体颜色。 */
+/** 让 Plasticraft 创造标签中的多变体物品通过公共叠加层选择颜色或工具。 */
 @Mixin(CreativeModeInventoryScreen.class)
 abstract class CreativeModeInventoryScreenMixin
     extends AbstractContainerScreen<CreativeModeInventoryScreen.ItemPickerMenu> {
@@ -35,10 +35,10 @@ abstract class CreativeModeInventoryScreenMixin
 
     @Unique
     @Nullable
-    private CreativeColorPickerOverlay plasticraft$colorOverlay;
+    private CreativeVariantPickerOverlay plasticraft$variantOverlay;
     @Unique
     @Nullable
-    private ItemStack plasticraft$hoveredColorVariant;
+    private ItemStack plasticraft$hoveredPickerVariant;
     @Unique
     private int plasticraft$consumedMouseButtons;
 
@@ -51,18 +51,18 @@ abstract class CreativeModeInventoryScreenMixin
     }
 
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
-    private void plasticraft$handleColorOverlayClick(
+    private void plasticraft$handleVariantOverlayClick(
         double mouseX,
         double mouseY,
         int button,
         CallbackInfoReturnable<Boolean> cir
     ) {
-        CreativeColorPickerOverlay overlay = this.plasticraft$validColorOverlay();
+        CreativeVariantPickerOverlay overlay = this.plasticraft$validVariantOverlay();
         if (overlay != null && overlay.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
             this.plasticraft$consumeMouseButton(button);
             if (button == 0 || button == 1) {
                 overlay.variantAt(this.leftPos, this.topPos, mouseX, mouseY)
-                    .ifPresent(variant -> this.plasticraft$selectColorVariant(overlay, variant, button));
+                    .ifPresent(variant -> this.plasticraft$selectPickerVariant(overlay, variant, button));
             }
             cir.setReturnValue(true);
             return;
@@ -70,7 +70,7 @@ abstract class CreativeModeInventoryScreenMixin
 
         Slot sourceSlot = this.plasticraft$findCreativeSlot(mouseX, mouseY);
         if (overlay != null) {
-            this.plasticraft$closeColorOverlay();
+            this.plasticraft$closeVariantOverlay();
             if (button == 1 && sourceSlot == overlay.sourceSlot()) {
                 this.plasticraft$consumeMouseButton(button);
                 cir.setReturnValue(true);
@@ -79,16 +79,16 @@ abstract class CreativeModeInventoryScreenMixin
         }
         if (button != 1 || selectedTab != PlasticraftItemGroups.MAIN.get()) return;
         if (sourceSlot == null) return;
-        CreativeColorPickerOverlay.create(sourceSlot).ifPresent(created -> {
-            this.plasticraft$colorOverlay = created;
-            this.plasticraft$hoveredColorVariant = null;
+        CreativeVariantPickerOverlay.create(sourceSlot).ifPresent(created -> {
+            this.plasticraft$variantOverlay = created;
+            this.plasticraft$hoveredPickerVariant = null;
             this.plasticraft$consumeMouseButton(button);
             cir.setReturnValue(true);
         });
     }
 
     @Inject(method = "mouseReleased", at = @At("HEAD"), cancellable = true)
-    private void plasticraft$finishColorOverlayClick(
+    private void plasticraft$finishVariantOverlayClick(
         double mouseX,
         double mouseY,
         int button,
@@ -100,7 +100,7 @@ abstract class CreativeModeInventoryScreenMixin
     }
 
     @Inject(method = "mouseDragged", at = @At("HEAD"), cancellable = true)
-    private void plasticraft$blockColorOverlayDrag(
+    private void plasticraft$blockVariantOverlayDrag(
         double mouseX,
         double mouseY,
         int button,
@@ -112,18 +112,18 @@ abstract class CreativeModeInventoryScreenMixin
     }
 
     @Inject(method = "mouseScrolled", at = @At("HEAD"))
-    private void plasticraft$closeColorOverlayOnScroll(
+    private void plasticraft$closeVariantOverlayOnScroll(
         double mouseX,
         double mouseY,
         double scrollX,
         double scrollY,
         CallbackInfoReturnable<Boolean> cir
     ) {
-        this.plasticraft$closeColorOverlay();
+        this.plasticraft$closeVariantOverlay();
     }
 
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
-    private void plasticraft$handleColorOverlayKey(
+    private void plasticraft$handleVariantOverlayKey(
         int keyCode,
         int scanCode,
         int modifiers,
@@ -132,14 +132,14 @@ abstract class CreativeModeInventoryScreenMixin
         InputConstants.Key key = InputConstants.getKey(keyCode, scanCode);
         if (keyCode == InputConstants.KEY_ESCAPE
             || this.minecraft.options.keyInventory.isActiveAndMatches(key)) {
-            this.plasticraft$closeColorOverlay();
+            this.plasticraft$closeVariantOverlay();
             return;
         }
-        CreativeColorPickerOverlay overlay = this.plasticraft$validColorOverlay();
-        ItemStack variant = this.plasticraft$hoveredColorVariant;
+        CreativeVariantPickerOverlay overlay = this.plasticraft$validVariantOverlay();
+        ItemStack variant = this.plasticraft$hoveredPickerVariant;
         if (overlay == null || variant == null
             || !this.minecraft.options.keyDrop.isActiveAndMatches(key)) return;
-        this.plasticraft$clickColorVariant(
+        this.plasticraft$clickPickerVariant(
             overlay,
             variant,
             hasControlDown() ? 1 : 0,
@@ -149,8 +149,8 @@ abstract class CreativeModeInventoryScreenMixin
     }
 
     @Inject(method = "removed", at = @At("TAIL"))
-    private void plasticraft$clearColorOverlay(CallbackInfo ci) {
-        this.plasticraft$closeColorOverlay();
+    private void plasticraft$clearVariantOverlay(CallbackInfo ci) {
+        this.plasticraft$closeVariantOverlay();
         this.plasticraft$consumedMouseButtons = 0;
     }
 
@@ -166,7 +166,7 @@ abstract class CreativeModeInventoryScreenMixin
         int mouseY,
         CallbackInfoReturnable<Boolean> cir
     ) {
-        CreativeColorPickerOverlay overlay = this.plasticraft$validColorOverlay();
+        CreativeVariantPickerOverlay overlay = this.plasticraft$validVariantOverlay();
         if (overlay != null && overlay.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
             cir.setReturnValue(false);
         }
@@ -180,19 +180,19 @@ abstract class CreativeModeInventoryScreenMixin
                 + "renderTooltip(Lnet/minecraft/client/gui/GuiGraphics;II)V"
         )
     )
-    private void plasticraft$renderColorOverlay(
+    private void plasticraft$renderVariantOverlay(
         GuiGraphics graphics,
         int mouseX,
         int mouseY,
         float partialTick,
         CallbackInfo ci
     ) {
-        CreativeColorPickerOverlay overlay = this.plasticraft$validColorOverlay();
+        CreativeVariantPickerOverlay overlay = this.plasticraft$validVariantOverlay();
         if (overlay == null) {
-            this.plasticraft$hoveredColorVariant = null;
+            this.plasticraft$hoveredPickerVariant = null;
             return;
         }
-        this.plasticraft$hoveredColorVariant = overlay.variantAt(
+        this.plasticraft$hoveredPickerVariant = overlay.variantAt(
             this.leftPos,
             this.topPos,
             mouseX,
@@ -218,15 +218,15 @@ abstract class CreativeModeInventoryScreenMixin
             shift = At.Shift.AFTER
         )
     )
-    private void plasticraft$renderColorOverlayTooltip(
+    private void plasticraft$renderVariantOverlayTooltip(
         GuiGraphics graphics,
         int mouseX,
         int mouseY,
         float partialTick,
         CallbackInfo ci
     ) {
-        CreativeColorPickerOverlay overlay = this.plasticraft$validColorOverlay();
-        ItemStack variant = this.plasticraft$hoveredColorVariant;
+        CreativeVariantPickerOverlay overlay = this.plasticraft$validVariantOverlay();
+        ItemStack variant = this.plasticraft$hoveredPickerVariant;
         if (overlay == null || variant == null) return;
         Slot previousHoveredSlot = this.hoveredSlot;
         this.hoveredSlot = overlay.sourceSlot();
@@ -246,11 +246,11 @@ abstract class CreativeModeInventoryScreenMixin
 
     @Unique
     @Nullable
-    private CreativeColorPickerOverlay plasticraft$validColorOverlay() {
-        CreativeColorPickerOverlay overlay = this.plasticraft$colorOverlay;
+    private CreativeVariantPickerOverlay plasticraft$validVariantOverlay() {
+        CreativeVariantPickerOverlay overlay = this.plasticraft$variantOverlay;
         if (overlay == null) return null;
         if (selectedTab != PlasticraftItemGroups.MAIN.get() || !overlay.isValid()) {
-            this.plasticraft$closeColorOverlay();
+            this.plasticraft$closeVariantOverlay();
             return null;
         }
         return overlay;
@@ -272,18 +272,18 @@ abstract class CreativeModeInventoryScreenMixin
     }
 
     @Unique
-    private void plasticraft$selectColorVariant(
-        CreativeColorPickerOverlay overlay,
+    private void plasticraft$selectPickerVariant(
+        CreativeVariantPickerOverlay overlay,
         ItemStack variant,
         int button
     ) {
         ClickType clickType = hasShiftDown() ? ClickType.QUICK_MOVE : ClickType.PICKUP;
-        this.plasticraft$clickColorVariant(overlay, variant, button, clickType);
+        this.plasticraft$clickPickerVariant(overlay, variant, button, clickType);
     }
 
     @Unique
-    private void plasticraft$clickColorVariant(
-        CreativeColorPickerOverlay overlay,
+    private void plasticraft$clickPickerVariant(
+        CreativeVariantPickerOverlay overlay,
         ItemStack variant,
         int button,
         ClickType clickType
@@ -299,9 +299,9 @@ abstract class CreativeModeInventoryScreenMixin
     }
 
     @Unique
-    private void plasticraft$closeColorOverlay() {
-        this.plasticraft$colorOverlay = null;
-        this.plasticraft$hoveredColorVariant = null;
+    private void plasticraft$closeVariantOverlay() {
+        this.plasticraft$variantOverlay = null;
+        this.plasticraft$hoveredPickerVariant = null;
     }
 
     @Unique
