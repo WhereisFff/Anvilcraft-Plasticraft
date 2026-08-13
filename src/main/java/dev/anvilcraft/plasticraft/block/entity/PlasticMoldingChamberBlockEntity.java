@@ -1,9 +1,11 @@
 package dev.anvilcraft.plasticraft.block.entity;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.block.MoldingRegionPart;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberStructure;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingMachineState;
+import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
@@ -14,8 +16,12 @@ import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintDisk;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingMachineAction;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingCycleFeedback;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingFormingMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingPrinterMotion;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingDoorState;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingMotionPhase;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProcessSnapshot;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingPlan;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingVoxel;
@@ -30,7 +36,9 @@ import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingCommand;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelPersistence;
+import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.session.MoldingSessionSnapshot;
+import dev.anvilcraft.plasticraft.network.MoldingPrinterMotionPacket;
 import dev.anvilcraft.plasticraft.network.MoldingSessionStatusPacket;
 import dev.dubhe.anvilcraft.api.injection.tooltip.ITooltipProviderExtension;
 import dev.dubhe.anvilcraft.api.item.IChargerDischargeable;
@@ -62,6 +70,7 @@ import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -77,6 +86,7 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.fluids.capability.IFluidHandlerItem;
 import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayDeque;
@@ -107,7 +117,8 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     public static final int PRINTING_PUMP_RATE = MOLDING_PUMP_RATE;
     public static final int PRINTING_CONSUMPTION_RATE = 1;
     public static final int MINIMUM_PROCESS_MELT = 250;
-    public static final int MENU_DATA_COUNT = 20;
+    public static final int PRINTING_DOOR_ANIMATION_TICKS = 10;
+    public static final int MENU_DATA_COUNT = 21;
     private static final int REPAIR_INTERVAL = 20;
     private static final int CLIENT_SYNC_INTERVAL = 4;
     private static final String TAG_MODEL = "EditableModel";
@@ -134,6 +145,21 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     private static final String TAG_PRINTING_TOTAL = "PrintingTotal";
     private static final String TAG_PRINTING_MATERIAL = "PrintingMaterial";
     private static final String TAG_PRINTING_MELT_CONSUMED = "PrintingMeltConsumed";
+    private static final String TAG_PRINTING_MOTION_PHASE = "PrintingMotionPhase";
+    private static final String TAG_PRINTING_MOTION_FROM_X = "PrintingMotionFromX";
+    private static final String TAG_PRINTING_MOTION_FROM_Y = "PrintingMotionFromY";
+    private static final String TAG_PRINTING_MOTION_FROM_Z = "PrintingMotionFromZ";
+    private static final String TAG_PRINTING_MOTION_TO_X = "PrintingMotionToX";
+    private static final String TAG_PRINTING_MOTION_TO_Y = "PrintingMotionToY";
+    private static final String TAG_PRINTING_MOTION_TO_Z = "PrintingMotionToZ";
+    private static final String TAG_PRINTING_MOTION_START = "PrintingMotionStart";
+    private static final String TAG_PRINTING_MOTION_DURATION = "PrintingMotionDuration";
+    private static final String TAG_PRINTING_MOTION_REMAINING = "PrintingMotionRemaining";
+    private static final String TAG_PRINTING_DISCHARGE_OPEN = "PrintingDischargeOpen";
+    private static final String TAG_PRINTING_DISCHARGE_PRODUCT = "PrintingDischargeProduct";
+    private static final String TAG_PRINTING_DOOR_STATE = "PrintingDoorState";
+    private static final String TAG_PRINTING_DOOR_START = "PrintingDoorStart";
+    private static final String TAG_PRINTING_DOOR_REMAINING = "PrintingDoorRemaining";
 
     private final SimpleContainer inventory = createInventory();
     private final Deque<EditableMoldingModel> undoHistory = new ArrayDeque<>();
@@ -171,6 +197,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     private MoldingProductionMode cycleMode = MoldingProductionMode.REDSTONE;
     private MoldingFormingMode cycleFormingMode = MoldingFormingMode.CASTING;
     private MoldingWaitReason waitReason = MoldingWaitReason.NONE;
+    private MoldingWaitReason announcedStallReason = MoldingWaitReason.NONE;
     private long revision;
     private boolean structureComplete;
     private boolean redstonePowered;
@@ -189,6 +216,18 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     private int printingTotal;
     private FluidStack printingMaterial = FluidStack.EMPTY;
     private int printingMeltConsumed;
+    private MoldingPrintingMotionPhase printingMotionPhase = MoldingPrintingMotionPhase.IDLE;
+    private MoldingPrinterMotion printingMotion = MoldingPrinterMotion.stationary(
+        MoldingPrinterMotion.DEFAULT_POSITION,
+        0L
+    );
+    private int printingMotionTicksRemaining;
+    private boolean printingDischargeOpen;
+    private MoldingPrintingDoorState printingDoorState = MoldingPrintingDoorState.CLOSED;
+    private long printingDoorStartGameTime;
+    private int printingDoorTicksRemaining;
+    @Nullable
+    private UUID printingDischargeProductId;
     @Nullable
     private MoldingPrintingPlan printingPlan;
     @Nullable
@@ -236,7 +275,8 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         chamber.tickRedstone(level);
         chamber.tickResourceSlot();
         chamber.tickGridCharging();
-        chamber.tickMachine();
+        if (!chamber.tickPrintingDischarge()) chamber.tickMachine();
+        chamber.tickCycleFeedback();
         chamber.flushClientSync();
         chamber.syncPowerState();
     }
@@ -248,6 +288,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             if (this.machineState == PlasticMoldingMachineState.PROCESSING) {
                 if (this.isPrintingProcess()
                     && this.processingSnapshot != null) {
+                    this.reconcilePrintingMotionTime();
                     this.syncProductionState(false);
                     return;
                 }
@@ -258,7 +299,8 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
                 this.updateReadyState();
                 return;
             }
-            this.syncProductionState(this.hasMoldCollision());
+            if (this.printingDischargeOpen) this.reconcilePrintingDoorTime();
+            this.syncProductionState(this.formingRegionLayers() > 0);
         }
     }
 
@@ -323,9 +365,38 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         return this.printingTotal;
     }
 
+    public MoldingPrinterMotion printingMotion() {
+        return this.printingMotion;
+    }
+
+    public MoldingPrintingMotionPhase printingMotionPhase() {
+        return this.printingMotionPhase;
+    }
+
+    public MoldingPrintingDoorState printingDoorState() {
+        return this.printingDoorState;
+    }
+
+    public float printingDoorProgress(float partialTick) {
+        if (this.level == null) return this.printingDoorState == MoldingPrintingDoorState.OPEN ? 1.0F : 0.0F;
+        float linear = Math.clamp(
+            (this.level.getGameTime() + partialTick - this.printingDoorStartGameTime)
+                / PRINTING_DOOR_ANIMATION_TICKS,
+            0.0F,
+            1.0F
+        );
+        float eased = (float) MoldingPrinterMotion.easeInOutQuadratic(linear);
+        return switch (this.printingDoorState) {
+            case CLOSED -> 0.0F;
+            case OPENING -> eased;
+            case OPEN -> 1.0F;
+            case CLOSING -> 1.0F - eased;
+        };
+    }
+
     public MoldingPrintingPlan printingPlan() {
         if (this.printingPlan == null) {
-            this.printingPlan = MoldingPrintingPlan.create(this.bakedModel);
+            this.printingPlan = MoldingPrintingPlan.create(this.model, this.bakedModel);
         }
         return this.printingPlan;
     }
@@ -337,6 +408,17 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     public Optional<MoldingPrintingVoxel> currentPrintingVoxel() {
         if (!this.isPrintingProcess() || this.printingProgress >= this.printingTotal) return Optional.empty();
         return Optional.of(this.printingPlan().voxelAt(this.printingProgress));
+    }
+
+    public void applyClientPrinterMotion(
+        MoldingPrintingMotionPhase phase,
+        MoldingPrinterMotion motion,
+        int completedProgress
+    ) {
+        if (this.level == null || !this.level.isClientSide) return;
+        this.printingMotionPhase = phase;
+        this.printingMotion = motion;
+        this.printingProgress = Math.clamp(completedProgress, 0, this.printingTotal);
     }
 
     public MoldingWaitReason waitReason() {
@@ -352,7 +434,26 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     }
 
     public boolean hasMoldCollision() {
-        return this.cycleFormingMode == MoldingFormingMode.CASTING && hasMoldCollision(this.machineState);
+        return !this.printingDischargeOpen
+            && this.cycleFormingMode == MoldingFormingMode.CASTING
+            && switch (this.machineState) {
+                case MOLD_FILLING, MOLD_READY, PROCESS_READY -> true;
+                case EDITABLE, WAITING_TO_LOCK, PROCESSING, WAITING_NEXT_CYCLE -> false;
+            };
+    }
+
+    public boolean hasFormingRegionShape(MoldingRegionPart part) {
+        if (this.printingDischargeOpen) return false;
+        return this.printingComponentPresent() || part.up() < this.completedMoldLayers();
+    }
+
+    public boolean printingDischargeOpen() {
+        return this.printingDischargeOpen;
+    }
+
+    public void refreshFormingRegionShapes() {
+        if (this.level == null || this.level.isClientSide) return;
+        this.syncProductionState(true);
     }
 
     public float moldFillFraction(float partialTick) {
@@ -422,8 +523,14 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     }
 
     public boolean modelFitsWorkspace() {
+        return this.modelFitsWorkspace(this.formingMode());
+    }
+
+    public boolean modelFitsWorkspace(MoldingFormingMode formingMode) {
         return MoldingModelBounds.all(this.model)
-            .map(MoldingModelBounds::fitsWorkspaceSize)
+            .map(bounds -> formingMode == MoldingFormingMode.PRINTING
+                ? bounds.fitsPrintingWorkspace()
+                : bounds.fitsWorkspaceSize())
             .orElse(true);
     }
 
@@ -447,6 +554,10 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
 
     public FluidStack batchFluid() {
         return this.formingFluid();
+    }
+
+    public FluidStack printingMaterial() {
+        return this.printingMaterial.copy();
     }
 
     public SimpleContainer inventory() {
@@ -568,12 +679,14 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
 
     public MachineOutcome toggleLock(long baseRevision) {
         if (baseRevision != this.revision) return MachineOutcome.rejected("stale_revision");
+        if (this.printingDischargeOpen) return MachineOutcome.rejected("printing_output_pending");
         return this.machineState == PlasticMoldingMachineState.EDITABLE
             ? this.requestLock()
             : this.unlock();
     }
 
     public MachineOutcome requestLock() {
+        if (this.printingDischargeOpen) return MachineOutcome.rejected("printing_output_pending");
         if (this.machineState != PlasticMoldingMachineState.EDITABLE) {
             return MachineOutcome.rejected("already_locked");
         }
@@ -585,7 +698,8 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         ItemStack resource = this.inventory.getItem(RESOURCE_SLOT);
         boolean creativeOverride = isCreativeGenerator(resource);
         boolean alloyOverride = isMultiphaseTranscendium(resource);
-        if (!this.modelFitsWorkspace() && !creativeOverride) {
+        MoldingFormingMode formingMode = this.formingMode();
+        if (!this.modelFitsWorkspace(formingMode) && !creativeOverride) {
             return MachineOutcome.rejected("model_too_large");
         }
         MoldingTypeValidation typeValidation = MoldingProductTypes.validate(
@@ -593,7 +707,6 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             this.model,
             this.bakedModel
         );
-        MoldingFormingMode formingMode = this.formingMode();
         boolean printing = formingMode == MoldingFormingMode.PRINTING;
         if (MoldingProductTypes.requiresPrinting(this.model.requestedType()) && !printing) {
             return MachineOutcome.rejected("missing_printing_component");
@@ -632,17 +745,19 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         this.moldFillProgress = 0;
         this.cycleMode = this.selectedMode;
         this.cycleFormingMode = formingMode;
-        this.printingPlan = printing ? MoldingPrintingPlan.create(this.bakedModel) : null;
+        this.printingPlan = printing ? MoldingPrintingPlan.create(this.model, this.bakedModel) : null;
         this.printingProgress = 0;
         this.printingTotal = printing ? this.printingPlan().size() : 0;
         this.printingMaterial = FluidStack.EMPTY;
         this.printingMeltConsumed = 0;
+        this.resetPrintingMotion();
         this.setMachineState(PlasticMoldingMachineState.WAITING_TO_LOCK);
         this.setWaitReason(MoldingWaitReason.NONE);
         return MachineOutcome.success();
     }
 
     public MachineOutcome unlock() {
+        if (this.printingDischargeOpen) return MachineOutcome.rejected("printing_output_pending");
         if (this.machineState == PlasticMoldingMachineState.EDITABLE) {
             return MachineOutcome.rejected("not_locked");
         }
@@ -657,6 +772,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         this.printingTotal = 0;
         this.printingMaterial = FluidStack.EMPTY;
         this.printingMeltConsumed = 0;
+        this.resetPrintingMotion();
         this.typeOverrideCommitted = false;
         this.creativeOverrideLocked = false;
         this.setMachineState(PlasticMoldingMachineState.EDITABLE);
@@ -668,7 +784,20 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         if (baseRevision != this.revision) return MachineOutcome.rejected("stale_revision");
         if (this.selectedMode == mode) return MachineOutcome.success();
         this.selectedMode = mode;
-        if (this.machineState == PlasticMoldingMachineState.EDITABLE) this.cycleMode = mode;
+        if (this.printingDischargeOpen) {
+            this.cycleMode = mode;
+            this.setMachineState(mode == MoldingProductionMode.CONTINUOUS
+                ? PlasticMoldingMachineState.WAITING_NEXT_CYCLE
+                : PlasticMoldingMachineState.EDITABLE);
+        } else if (this.machineState == PlasticMoldingMachineState.EDITABLE) {
+            this.cycleMode = mode;
+        } else if (this.machineState == PlasticMoldingMachineState.WAITING_NEXT_CYCLE
+            && mode != MoldingProductionMode.CONTINUOUS) {
+            this.cycleMode = mode;
+            this.cycleFormingMode = this.formingMode();
+            this.setMachineState(PlasticMoldingMachineState.EDITABLE);
+            this.setWaitReason(MoldingWaitReason.NONE);
+        }
         this.setChanged();
         return MachineOutcome.success();
     }
@@ -775,7 +904,8 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     }
 
     private Optional<MoldingProcessSnapshot> beginProcessingTransaction() {
-        if (this.machineState != PlasticMoldingMachineState.PROCESS_READY
+        if (this.printingDischargeOpen
+            || this.machineState != PlasticMoldingMachineState.PROCESS_READY
             || !this.structureComplete
             || !this.creativeOverrideLocked && this.formingFluidAmount() < this.requiredProcessMelt()
             || this.cycleFormingMode == MoldingFormingMode.PRINTING && !this.printingComponentPresent()
@@ -811,6 +941,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         if (snapshot.formingMode() == MoldingFormingMode.PRINTING) {
             this.printingMaterial = snapshot.batchFluid().copy();
             this.printingMeltConsumed = 0;
+            this.resetPrintingMotion();
         }
         this.setMachineState(PlasticMoldingMachineState.PROCESSING);
         this.setWaitReason(MoldingWaitReason.PROCESSING);
@@ -832,35 +963,60 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             || this.processingSnapshot == null) {
             return false;
         }
+        if (this.printingProgress >= this.printingTotal
+            && this.printingMotionPhase == MoldingPrintingMotionPhase.IDLE) {
+            if (this.printingMotion.to().equals(MoldingPrinterMotion.DEFAULT_POSITION)) return true;
+            this.startPrintingMotion(MoldingPrintingMotionPhase.RETURNING, MoldingPrinterMotion.DEFAULT_POSITION);
+            return false;
+        }
+        if (this.printingMotionPhase == MoldingPrintingMotionPhase.RETURNING) {
+            if (!this.tickPrintingMotionComplete()) return false;
+            this.completePrintingMotion(MoldingPrintingMotionPhase.IDLE);
+            return true;
+        }
+        if (this.printingProgress >= this.printingTotal) return false;
+        MoldingVec3 target = printingPosition(this.printingPlan().voxelAt(this.printingProgress));
+        if (this.printingMotionPhase == MoldingPrintingMotionPhase.IDLE) {
+            this.startPrintingMotion(MoldingPrintingMotionPhase.MOVING_TO_VOXEL, target);
+            return false;
+        }
+        if (this.printingMotionPhase == MoldingPrintingMotionPhase.MOVING_TO_VOXEL) {
+            if (!this.tickPrintingMotionComplete()) return false;
+            this.completePrintingMotion(MoldingPrintingMotionPhase.PRINTING_VOXEL);
+        }
+        if (this.printingMotionPhase != MoldingPrintingMotionPhase.PRINTING_VOXEL) return false;
         Plastic3DPrintingComponentBlockEntity component = this.printingComponent();
         if (component == null) {
             this.setWaitReason(MoldingWaitReason.MISSING_PRINTING_COMPONENT);
             return false;
         }
-        if (this.printingProgress >= this.printingTotal) return true;
         int requiredMelt = this.requiredProcessMelt();
+        int nextProgress = this.printingProgress + 1;
+        int targetConsumed = (int) Math.ceil((double) nextProgress * requiredMelt / this.printingTotal);
+        int remainingConsumption = targetConsumed - this.printingMeltConsumed;
+        int consumption = Math.min(PRINTING_CONSUMPTION_RATE, remainingConsumption);
         FluidStack simulated = FluidStack.EMPTY;
-        if (!this.creativeOverrideLocked) {
+        if (!this.creativeOverrideLocked && consumption > 0) {
             simulated = component.consumeForPrinting(
-                PRINTING_CONSUMPTION_RATE,
+                consumption,
                 IFluidHandler.FluidAction.SIMULATE
             );
-            if (simulated.getAmount() != PRINTING_CONSUMPTION_RATE
+            if (simulated.getAmount() != consumption
                 || !FluidStack.isSameFluidSameComponents(simulated, this.printingMaterial)) {
                 this.setWaitReason(MoldingWaitReason.MOLD_READY);
                 return false;
             }
         }
-        if (!this.consumeWorkingEnergy()) {
+        if (consumption > 0 && !this.consumeWorkingEnergy()) {
             this.setWaitReason(MoldingWaitReason.MISSING_POWER);
             return false;
         }
-        if (!this.creativeOverrideLocked) {
+        if (!this.creativeOverrideLocked && consumption > 0) {
             FluidStack consumed = component.consumeForPrinting(
-                PRINTING_CONSUMPTION_RATE,
+                consumption,
                 IFluidHandler.FluidAction.EXECUTE
             );
-            if (consumed.getAmount() != PRINTING_CONSUMPTION_RATE
+            if (consumed.getAmount() != consumption
                 || !FluidStack.isSameFluidSameComponents(simulated, consumed)) {
                 this.energy = Math.min(
                     MoldingPowerBridge.capacity(),
@@ -870,18 +1026,81 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
                 return false;
             }
         }
-        this.printingMeltConsumed = Math.min(
-            requiredMelt,
-            this.printingMeltConsumed + PRINTING_CONSUMPTION_RATE
-        );
-        this.printingProgress = Math.clamp(
-            (int) ((long) this.printingMeltConsumed * this.printingTotal / requiredMelt),
-            this.printingProgress,
-            this.printingTotal
-        );
+        this.printingMeltConsumed = Math.min(requiredMelt, this.printingMeltConsumed + consumption);
+        if (this.printingMeltConsumed < targetConsumed) {
+            this.setWaitReason(MoldingWaitReason.PROCESSING);
+            return false;
+        }
+        this.printingProgress = nextProgress;
         this.setWaitReason(MoldingWaitReason.PROCESSING);
-        this.requestClientSync();
-        return true;
+        if (this.printingProgress < this.printingTotal) {
+            this.startPrintingMotion(
+                MoldingPrintingMotionPhase.MOVING_TO_VOXEL,
+                printingPosition(this.printingPlan().voxelAt(this.printingProgress))
+            );
+        } else {
+            this.startPrintingMotion(MoldingPrintingMotionPhase.RETURNING, MoldingPrinterMotion.DEFAULT_POSITION);
+        }
+        return false;
+    }
+
+    private void startPrintingMotion(MoldingPrintingMotionPhase phase, MoldingVec3 target) {
+        if (this.level == null) return;
+        MoldingVec3 from = this.printingMotion.position(this.level.getGameTime());
+        this.printingMotionPhase = phase;
+        this.printingMotion = MoldingPrinterMotion.between(from, target, this.level.getGameTime());
+        this.printingMotionTicksRemaining = this.printingMotion.durationTicks();
+        this.syncPrinterMotion();
+    }
+
+    private void completePrintingMotion(MoldingPrintingMotionPhase nextPhase) {
+        this.printingMotion = MoldingPrinterMotion.stationary(
+            this.printingMotion.to(),
+            this.level == null ? 0L : this.level.getGameTime()
+        );
+        this.printingMotionPhase = nextPhase;
+        this.printingMotionTicksRemaining = 0;
+        this.syncPrinterMotion();
+    }
+
+    private void resetPrintingMotion() {
+        long gameTime = this.level == null ? 0L : this.level.getGameTime();
+        this.printingMotionPhase = MoldingPrintingMotionPhase.IDLE;
+        this.printingMotion = MoldingPrinterMotion.stationary(MoldingPrinterMotion.DEFAULT_POSITION, gameTime);
+        this.printingMotionTicksRemaining = 0;
+    }
+
+    private boolean tickPrintingMotionComplete() {
+        if (this.printingMotionTicksRemaining > 0) this.printingMotionTicksRemaining--;
+        return this.printingMotionTicksRemaining == 0;
+    }
+
+    private void reconcilePrintingMotionTime() {
+        if (this.level == null || this.printingMotionTicksRemaining == 0) return;
+        long elapsed = Math.max(0L, this.level.getGameTime() - this.printingMotion.startGameTime());
+        this.printingMotionTicksRemaining = Math.max(
+            0,
+            this.printingMotion.durationTicks() - (int) Math.min(Integer.MAX_VALUE, elapsed)
+        );
+    }
+
+    private void syncPrinterMotion() {
+        this.setChanged();
+        if (!(this.level instanceof ServerLevel serverLevel)) return;
+        PacketDistributor.sendToPlayersTrackingChunk(
+            serverLevel,
+            new ChunkPos(this.worldPosition),
+            new MoldingPrinterMotionPacket(
+                this.worldPosition,
+                this.printingMotionPhase,
+                this.printingMotion,
+                this.printingProgress
+            )
+        );
+    }
+
+    private static MoldingVec3 printingPosition(MoldingPrintingVoxel voxel) {
+        return new MoldingVec3(voxel.x(), voxel.y(), voxel.z());
     }
 
     public boolean finishProcessing(MoldingProcessSnapshot snapshot, boolean success) {
@@ -910,9 +1129,10 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         this.printingTotal = 0;
         this.printingMaterial = FluidStack.EMPTY;
         this.printingMeltConsumed = 0;
+        this.resetPrintingMotion();
         this.typeOverrideCommitted = false;
         this.creativeOverrideLocked = false;
-        MoldingProductionMode completedMode = this.cycleMode;
+        MoldingProductionMode completedMode = this.selectedMode;
         this.cycleMode = this.selectedMode;
         this.cycleFormingMode = this.formingMode();
         this.setMachineState(completedMode == MoldingProductionMode.CONTINUOUS
@@ -921,6 +1141,16 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         this.setWaitReason(completedMode == MoldingProductionMode.CONTINUOUS
             ? MoldingWaitReason.WAITING_FOR_CLEAR_REGION
             : MoldingWaitReason.NONE);
+        return true;
+    }
+
+    public boolean openPrintingDischarge(UniversalPlasticEntity product) {
+        if (this.printingDischargeOpen || !product.isAlive()) return false;
+        this.printingDischargeProductId = product.getUUID();
+        this.setPrintingDischargeOpen(true);
+        this.setPrintingDoorState(MoldingPrintingDoorState.OPENING);
+        product.setNoGravity(true);
+        this.setWaitReason(MoldingWaitReason.PRINTING_OUTPUT_PENDING);
         return true;
     }
 
@@ -944,6 +1174,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         this.printingTotal = snapshot.printingTotal();
         this.printingMaterial = FluidStack.EMPTY;
         this.printingMeltConsumed = 0;
+        this.resetPrintingMotion();
         this.energy = Math.min(
             MoldingPowerBridge.capacity(),
             this.energy + MoldingPowerBridge.energyPerWorkingTick()
@@ -1005,6 +1236,12 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         this.printingTotal = 0;
         this.printingMaterial = FluidStack.EMPTY;
         this.printingMeltConsumed = 0;
+        this.resetPrintingMotion();
+        this.printingDischargeOpen = false;
+        this.printingDoorState = MoldingPrintingDoorState.CLOSED;
+        this.printingDoorStartGameTime = 0L;
+        this.printingDoorTicksRemaining = 0;
+        this.printingDischargeProductId = null;
         this.processingSnapshot = null;
         this.typeOverrideCommitted = false;
         this.creativeOverrideLocked = false;
@@ -1099,9 +1336,93 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         }
         if (rising
             && this.selectedMode == MoldingProductionMode.REDSTONE
-            && this.machineState == PlasticMoldingMachineState.EDITABLE) {
+            && this.machineState == PlasticMoldingMachineState.EDITABLE
+            && !this.printingDischargeOpen) {
             this.requestLock();
         }
+    }
+
+    private boolean tickPrintingDischarge() {
+        if (!this.printingDischargeOpen) return false;
+        this.setWaitReason(MoldingWaitReason.PRINTING_OUTPUT_PENDING);
+        if (!(this.level instanceof ServerLevel serverLevel)) return true;
+        if (this.printingDoorState == MoldingPrintingDoorState.OPENING) {
+            if (!this.printingDoorAnimationComplete()) return true;
+            UniversalPlasticEntity product = this.findPrintingDischargeProduct(serverLevel);
+            if (product != null) product.setNoGravity(false);
+            this.setPrintingDoorState(MoldingPrintingDoorState.OPEN);
+            return true;
+        }
+        if (this.printingDoorState == MoldingPrintingDoorState.CLOSING) {
+            if (!this.printingDoorAnimationComplete()) return true;
+            this.printingDischargeProductId = null;
+            this.printingDoorState = MoldingPrintingDoorState.CLOSED;
+            this.printingDoorTicksRemaining = 0;
+            this.setPrintingDischargeOpen(false);
+            if (this.machineState == PlasticMoldingMachineState.WAITING_NEXT_CYCLE) {
+                this.setWaitReason(MoldingWaitReason.WAITING_FOR_CLEAR_REGION);
+            } else {
+                this.setWaitReason(MoldingWaitReason.NONE);
+            }
+            MoldingCycleFeedback.success(serverLevel, this.worldPosition);
+            return true;
+        }
+        UniversalPlasticEntity product = this.findPrintingDischargeProduct(serverLevel);
+        if (product != null && product.isAlive() && this.isInsideFormingRegion(product)) return true;
+        this.setPrintingDoorState(MoldingPrintingDoorState.CLOSING);
+        return true;
+    }
+
+    private @Nullable UniversalPlasticEntity findPrintingDischargeProduct(ServerLevel level) {
+        if (this.printingDischargeProductId == null) return null;
+        AABB searchBounds = PlasticMoldingChamberStructure.regionBounds(
+            this.worldPosition,
+            this.getBlockState().getValue(PlasticMoldingChamberBlock.FACING)
+        ).inflate(1.0D);
+        return level.getEntitiesOfClass(
+            UniversalPlasticEntity.class,
+            searchBounds,
+            product -> product.isAlive() && product.getUUID().equals(this.printingDischargeProductId)
+        ).stream().findFirst().orElse(null);
+    }
+
+    private boolean isInsideFormingRegion(UniversalPlasticEntity product) {
+        AABB bounds = PlasticMoldingChamberStructure.regionBounds(
+            this.worldPosition,
+            this.getBlockState().getValue(PlasticMoldingChamberBlock.FACING)
+        );
+        return product.getBoundingBox().intersects(bounds);
+    }
+
+    private void setPrintingDischargeOpen(boolean open) {
+        if (this.printingDischargeOpen == open) return;
+        this.printingDischargeOpen = open;
+        this.syncProductionState(true);
+    }
+
+    private void setPrintingDoorState(MoldingPrintingDoorState state) {
+        if (this.level == null) return;
+        this.printingDoorState = state;
+        this.printingDoorStartGameTime = this.level.getGameTime();
+        this.printingDoorTicksRemaining = switch (state) {
+            case OPENING, CLOSING -> PRINTING_DOOR_ANIMATION_TICKS;
+            case CLOSED, OPEN -> 0;
+        };
+        this.syncProductionState(false);
+    }
+
+    private boolean printingDoorAnimationComplete() {
+        if (this.printingDoorTicksRemaining > 0) this.printingDoorTicksRemaining--;
+        return this.printingDoorTicksRemaining == 0;
+    }
+
+    private void reconcilePrintingDoorTime() {
+        if (this.level == null || this.printingDoorTicksRemaining == 0) return;
+        long elapsed = Math.max(0L, this.level.getGameTime() - this.printingDoorStartGameTime);
+        this.printingDoorTicksRemaining = Math.max(
+            0,
+            PRINTING_DOOR_ANIMATION_TICKS - (int) Math.min(Integer.MAX_VALUE, elapsed)
+        );
     }
 
     private void tickGridCharging() {
@@ -1206,6 +1527,34 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             }
             case WAITING_NEXT_CYCLE -> this.tickWaitingNextCycle();
         }
+    }
+
+    private void tickCycleFeedback() {
+        if (!(this.level instanceof ServerLevel serverLevel)) return;
+        MoldingWaitReason stalled = this.cycleStallReason();
+        if (stalled != MoldingWaitReason.NONE && stalled != this.announcedStallReason) {
+            MoldingCycleFeedback.stalled(serverLevel, this.worldPosition);
+        }
+        this.announcedStallReason = stalled;
+    }
+
+    private MoldingWaitReason cycleStallReason() {
+        if (!this.isLocked() || this.printingDischargeOpen) return MoldingWaitReason.NONE;
+        return switch (this.waitReason) {
+            case MISSING_CLAY,
+                 MISSING_PRINTING_COMPONENT,
+                 MISSING_POWER,
+                 STRUCTURE_INCOMPLETE,
+                 REGION_BLOCKED,
+                 INVALID_MODEL,
+                 BATCH_FULL -> this.waitReason;
+            case MOLD_READY -> this.machineState == PlasticMoldingMachineState.PROCESSING
+                || this.stagingTank.isEmpty() ? this.waitReason : MoldingWaitReason.NONE;
+            case PROCESS_READY -> this.cycleFormingMode == MoldingFormingMode.CASTING
+                ? this.waitReason
+                : MoldingWaitReason.NONE;
+            default -> MoldingWaitReason.NONE;
+        };
     }
 
     private void tickPrintingStart() {
@@ -1313,6 +1662,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             }
             this.moldedClayBalls += toConsume;
         }
+        int previousRegionLayers = this.formingRegionLayers();
         this.moldFillProgress = nextProgress;
         if (this.moldFillProgress >= MOLD_FILL_TICKS && this.moldedClayBalls >= this.requiredClayBalls) {
             this.setMachineState(PlasticMoldingMachineState.MOLD_READY);
@@ -1320,7 +1670,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         } else {
             this.setWaitReason(MoldingWaitReason.MOLD_FILLING);
         }
-        this.syncProductionState(false);
+        this.syncProductionState(previousRegionLayers != this.formingRegionLayers());
     }
 
     private void tickMeltPump() {
@@ -1519,10 +1869,9 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
 
     private void setMachineState(PlasticMoldingMachineState next) {
         if (this.machineState == next) return;
-        boolean oldCollision = this.hasMoldCollision();
+        int previousRegionLayers = this.formingRegionLayers();
         this.machineState = next;
-        boolean newCollision = this.hasMoldCollision();
-        this.syncProductionState(oldCollision != newCollision);
+        this.syncProductionState(previousRegionLayers != this.formingRegionLayers());
     }
 
     private void setWaitReason(MoldingWaitReason reason) {
@@ -1681,10 +2030,19 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         return (total * Math.clamp(layer, 0, MOLD_FILL_LAYERS) + MOLD_FILL_LAYERS - 1) / MOLD_FILL_LAYERS;
     }
 
-    private static boolean hasMoldCollision(PlasticMoldingMachineState state) {
-        return switch (state) {
-            case MOLD_FILLING, MOLD_READY, PROCESS_READY -> true;
-            case EDITABLE, WAITING_TO_LOCK, PROCESSING, WAITING_NEXT_CYCLE -> false;
+    private int formingRegionLayers() {
+        if (this.printingDischargeOpen) return 0;
+        return this.printingComponentPresent() ? MOLD_FILL_LAYERS : this.completedMoldLayers();
+    }
+
+    private int completedMoldLayers() {
+        if (this.machineState == PlasticMoldingMachineState.MOLD_FILLING) {
+            return Math.clamp(this.moldFillProgress / MOLD_FILL_LAYER_TICKS, 0, MOLD_FILL_LAYERS);
+        }
+        if (this.cycleFormingMode != MoldingFormingMode.CASTING) return 0;
+        return switch (this.machineState) {
+            case MOLD_READY, PROCESS_READY -> MOLD_FILL_LAYERS;
+            case EDITABLE, WAITING_TO_LOCK, MOLD_FILLING, PROCESSING, WAITING_NEXT_CYCLE -> 0;
         };
     }
 
@@ -1805,6 +2163,23 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         tag.putInt(TAG_PRINTING_TOTAL, this.printingTotal);
         tag.put(TAG_PRINTING_MATERIAL, this.printingMaterial.saveOptional(provider));
         tag.putInt(TAG_PRINTING_MELT_CONSUMED, this.printingMeltConsumed);
+        tag.putString(TAG_PRINTING_MOTION_PHASE, this.printingMotionPhase.name());
+        tag.putDouble(TAG_PRINTING_MOTION_FROM_X, this.printingMotion.from().x());
+        tag.putDouble(TAG_PRINTING_MOTION_FROM_Y, this.printingMotion.from().y());
+        tag.putDouble(TAG_PRINTING_MOTION_FROM_Z, this.printingMotion.from().z());
+        tag.putDouble(TAG_PRINTING_MOTION_TO_X, this.printingMotion.to().x());
+        tag.putDouble(TAG_PRINTING_MOTION_TO_Y, this.printingMotion.to().y());
+        tag.putDouble(TAG_PRINTING_MOTION_TO_Z, this.printingMotion.to().z());
+        tag.putLong(TAG_PRINTING_MOTION_START, this.printingMotion.startGameTime());
+        tag.putInt(TAG_PRINTING_MOTION_DURATION, this.printingMotion.durationTicks());
+        tag.putInt(TAG_PRINTING_MOTION_REMAINING, this.printingMotionTicksRemaining);
+        tag.putBoolean(TAG_PRINTING_DISCHARGE_OPEN, this.printingDischargeOpen);
+        tag.putString(TAG_PRINTING_DOOR_STATE, this.printingDoorState.name());
+        tag.putLong(TAG_PRINTING_DOOR_START, this.printingDoorStartGameTime);
+        tag.putInt(TAG_PRINTING_DOOR_REMAINING, this.printingDoorTicksRemaining);
+        if (this.printingDischargeProductId != null) {
+            tag.putUUID(TAG_PRINTING_DISCHARGE_PRODUCT, this.printingDischargeProductId);
+        }
         tag.putBoolean(TAG_REDSTONE_POWERED, this.redstonePowered);
         tag.putString(TAG_WAIT_REASON, this.waitReason.name());
         tag.putBoolean(TAG_TYPE_OVERRIDE, this.typeOverrideCommitted);
@@ -1850,6 +2225,55 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             0,
             this.batchFluidCapacity()
         );
+        try {
+            this.printingMotionPhase = MoldingPrintingMotionPhase.valueOf(
+                tag.getString(TAG_PRINTING_MOTION_PHASE)
+            );
+        } catch (IllegalArgumentException exception) {
+            this.printingMotionPhase = MoldingPrintingMotionPhase.IDLE;
+        }
+        MoldingVec3 motionFrom = tag.contains(TAG_PRINTING_MOTION_FROM_X)
+            ? new MoldingVec3(
+                tag.getDouble(TAG_PRINTING_MOTION_FROM_X),
+                tag.getDouble(TAG_PRINTING_MOTION_FROM_Y),
+                tag.getDouble(TAG_PRINTING_MOTION_FROM_Z)
+            )
+            : MoldingPrinterMotion.DEFAULT_POSITION;
+        MoldingVec3 motionTo = tag.contains(TAG_PRINTING_MOTION_TO_X)
+            ? new MoldingVec3(
+                tag.getDouble(TAG_PRINTING_MOTION_TO_X),
+                tag.getDouble(TAG_PRINTING_MOTION_TO_Y),
+                tag.getDouble(TAG_PRINTING_MOTION_TO_Z)
+            )
+            : motionFrom;
+        this.printingMotion = new MoldingPrinterMotion(
+            motionFrom,
+            motionTo,
+            tag.getLong(TAG_PRINTING_MOTION_START),
+            Math.max(0, tag.getInt(TAG_PRINTING_MOTION_DURATION))
+        );
+        this.printingMotionTicksRemaining = Math.clamp(
+            tag.getInt(TAG_PRINTING_MOTION_REMAINING),
+            0,
+            this.printingMotion.durationTicks()
+        );
+        this.printingDischargeOpen = tag.getBoolean(TAG_PRINTING_DISCHARGE_OPEN);
+        try {
+            this.printingDoorState = MoldingPrintingDoorState.valueOf(tag.getString(TAG_PRINTING_DOOR_STATE));
+        } catch (IllegalArgumentException exception) {
+            this.printingDoorState = this.printingDischargeOpen
+                ? MoldingPrintingDoorState.OPEN
+                : MoldingPrintingDoorState.CLOSED;
+        }
+        this.printingDoorStartGameTime = tag.getLong(TAG_PRINTING_DOOR_START);
+        this.printingDoorTicksRemaining = Math.clamp(
+            tag.getInt(TAG_PRINTING_DOOR_REMAINING),
+            0,
+            PRINTING_DOOR_ANIMATION_TICKS
+        );
+        this.printingDischargeProductId = tag.hasUUID(TAG_PRINTING_DISCHARGE_PRODUCT)
+            ? tag.getUUID(TAG_PRINTING_DISCHARGE_PRODUCT)
+            : null;
         this.redstonePowered = tag.getBoolean(TAG_REDSTONE_POWERED);
         this.typeOverrideCommitted = tag.getBoolean(TAG_TYPE_OVERRIDE);
         this.creativeOverrideLocked = tag.getBoolean(TAG_CREATIVE_OVERRIDE);
@@ -1866,6 +2290,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             this.printingTotal = 0;
             this.printingMaterial = FluidStack.EMPTY;
             this.printingMeltConsumed = 0;
+            this.resetPrintingMotion();
             this.cycleFormingMode = MoldingFormingMode.CASTING;
             this.typeOverrideCommitted = false;
             this.creativeOverrideLocked = false;
@@ -2132,6 +2557,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
                 case 17 -> PlasticMoldingChamberBlockEntity.this.printingComponentPresent() ? 1 : 0;
                 case 18 -> PlasticMoldingChamberBlockEntity.this.printingProgress;
                 case 19 -> PlasticMoldingChamberBlockEntity.this.printingTotal;
+                case 20 -> PlasticMoldingChamberBlockEntity.this.printingDischargeOpen ? 1 : 0;
                 default -> 0;
             };
         }

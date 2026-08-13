@@ -16,13 +16,22 @@ import dev.anvilcraft.plasticraft.client.molding.scene.EditorDrawState;
 import dev.anvilcraft.plasticraft.client.molding.scene.EditorSceneMesh;
 import dev.anvilcraft.plasticraft.client.molding.scene.EditorScenePart;
 import dev.anvilcraft.plasticraft.client.molding.scene.EditorVertex;
+import dev.anvilcraft.plasticraft.client.molding.scene.PrintingViewportScene;
 import dev.anvilcraft.plasticraft.client.molding.scene.ViewportFrame;
+import dev.anvilcraft.plasticraft.client.renderer.blockentity.PlasticMoldingChamberRenderer;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingPrinterMotion;
+import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.Sheets;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.resources.model.ModelResourceLocation;
 import org.joml.Matrix4fStack;
 import org.joml.Vector3d;
 
@@ -111,7 +120,9 @@ public final class MoldingViewportBackend1211 implements MoldingViewportBackend 
         target.clear(Minecraft.ON_OSX);
         target.bindWrite(true);
         try {
-            if (frame.controllerState() != null) renderController(frame, target);
+            if (frame.controllerState() != null || frame.printingScene() != null) {
+                renderOpaqueBlockModels(frame, target);
+            }
             ShaderInstance shader = Objects.requireNonNull(
                 GameRenderer.getPositionColorShader(),
                 "Position-color shader is unavailable"
@@ -185,7 +196,7 @@ public final class MoldingViewportBackend1211 implements MoldingViewportBackend 
         if (this.closed) throw new IllegalStateException("Viewport backend is closed");
     }
 
-    private void renderController(ViewportFrame frame, TextureTarget target) {
+    private void renderOpaqueBlockModels(ViewportFrame frame, TextureTarget target) {
         Matrix4fStack modelView = RenderSystem.getModelViewStack();
         RenderSystem.backupProjectionMatrix();
         modelView.pushMatrix();
@@ -198,16 +209,8 @@ public final class MoldingViewportBackend1211 implements MoldingViewportBackend 
             RenderSystem.applyModelViewMatrix();
             PoseStack pose = new PoseStack();
             pose.mulPose(frame.transform().viewMatrix());
-            Vector3d controllerOrigin = Objects.requireNonNull(frame.controllerOrigin());
-            pose.translate(controllerOrigin.x, controllerOrigin.y, controllerOrigin.z);
-            pose.scale(16.0F, 16.0F, 16.0F);
-            Minecraft.getInstance().getBlockRenderer().renderSingleBlock(
-                frame.controllerState(),
-                pose,
-                this.blockBuffers,
-                frame.controllerLight(),
-                OverlayTexture.NO_OVERLAY
-            );
+            if (frame.controllerState() != null) renderController(frame, pose);
+            if (frame.printingScene() != null) renderPrinterOpaque(frame, pose);
             this.blockBuffers.endBatch();
         } finally {
             modelView.popMatrix();
@@ -215,6 +218,103 @@ public final class MoldingViewportBackend1211 implements MoldingViewportBackend 
             RenderSystem.restoreProjectionMatrix();
             target.bindWrite(false);
         }
+    }
+
+    private void renderController(ViewportFrame frame, PoseStack rootPose) {
+        PoseStack pose = copyPose(rootPose);
+        Vector3d controllerOrigin = Objects.requireNonNull(frame.controllerOrigin());
+        pose.translate(controllerOrigin.x, controllerOrigin.y, controllerOrigin.z);
+        pose.scale(16.0F, 16.0F, 16.0F);
+        Minecraft.getInstance().getBlockRenderer().renderSingleBlock(
+            frame.controllerState(),
+            pose,
+            this.blockBuffers,
+            frame.controllerLight(),
+            OverlayTexture.NO_OVERLAY
+        );
+    }
+
+    private void renderPrinterOpaque(ViewportFrame frame, PoseStack rootPose) {
+        PrintingViewportScene scene = Objects.requireNonNull(frame.printingScene());
+        Vector3d componentOrigin = scene.controllerOrigin().add(0.0D, 16.0D, 0.0D);
+        PoseStack componentPose = copyPose(rootPose);
+        componentPose.translate(componentOrigin.x, componentOrigin.y, componentOrigin.z);
+        componentPose.scale(16.0F, 16.0F, 16.0F);
+        Minecraft.getInstance().getBlockRenderer().renderSingleBlock(
+            scene.componentState(),
+            componentPose,
+            this.blockBuffers,
+            scene.packedLight(),
+            OverlayTexture.NO_OVERLAY
+        );
+
+        renderPrinterModel(
+            rootPose, scene, PlasticMoldingChamberRenderer.PRINTER_GUI_MODEL,
+            PlasticMoldingChamberRenderer.PRINTER_MODEL_ORIGIN,
+            scene.packedLight(), Sheets.cutoutBlockSheet()
+        );
+        MoldingVec3 head = scene.headPosition();
+        MoldingVec3 movement = head.subtract(MoldingPrinterMotion.DEFAULT_POSITION);
+        MoldingVec3 modelOrigin = PlasticMoldingChamberRenderer.PRINTER_MODEL_ORIGIN;
+        renderPrinterModel(
+            rootPose, scene, PlasticMoldingChamberRenderer.PRINTER_Y_MODEL,
+            modelOrigin.add(new MoldingVec3(0.0D, movement.y(), 0.0D)),
+            scene.packedLight(), Sheets.cutoutBlockSheet()
+        );
+        renderPrinterModel(
+            rootPose, scene, PlasticMoldingChamberRenderer.PRINTER_X_MODEL,
+            modelOrigin.add(new MoldingVec3(movement.x(), movement.y(), 0.0D)),
+            scene.packedLight(), Sheets.cutoutBlockSheet()
+        );
+        renderPrinterModel(
+            rootPose, scene, PlasticMoldingChamberRenderer.PRINTER_Z_MODEL,
+            modelOrigin.add(movement), scene.packedLight(), Sheets.cutoutBlockSheet()
+        );
+        renderPrinterModel(
+            rootPose, scene, PlasticMoldingChamberRenderer.PRINTER_Z_EYE_MODEL,
+            modelOrigin.add(movement), LightTexture.FULL_BLOCK, RenderType.cutout()
+        );
+        renderPrinterModel(
+            rootPose, scene, PlasticMoldingChamberRenderer.PRINTER_DOOR_LEFT_MODEL,
+            modelOrigin.add(new MoldingVec3(scene.doorProgress() * 16.0D, 0.0D, 0.0D)),
+            scene.packedLight(), Sheets.cutoutBlockSheet()
+        );
+        renderPrinterModel(
+            rootPose, scene, PlasticMoldingChamberRenderer.PRINTER_DOOR_RIGHT_MODEL,
+            modelOrigin.add(new MoldingVec3(scene.doorProgress() * -16.0D, 0.0D, 0.0D)),
+            scene.packedLight(), Sheets.cutoutBlockSheet()
+        );
+    }
+
+    private void renderPrinterModel(
+        PoseStack rootPose,
+        PrintingViewportScene scene,
+        ModelResourceLocation location,
+        MoldingVec3 origin,
+        int packedLight,
+        RenderType renderType
+    ) {
+        BakedModel model = Minecraft.getInstance().getModelManager().getModel(location);
+        PoseStack pose = copyPose(rootPose);
+        pose.translate(origin.x(), origin.y(), origin.z());
+        pose.scale(16.0F, 16.0F, 16.0F);
+        Minecraft.getInstance().getBlockRenderer().getModelRenderer().renderModel(
+            pose.last(),
+            this.blockBuffers.getBuffer(renderType),
+            scene.chamberState(),
+            model,
+            1.0F,
+            1.0F,
+            1.0F,
+            packedLight,
+            OverlayTexture.NO_OVERLAY
+        );
+    }
+
+    private static PoseStack copyPose(PoseStack source) {
+        PoseStack copy = new PoseStack();
+        copy.mulPose(source.last().pose());
+        return copy;
     }
 
     private static CachedBuffer upload(EditorScenePart part, long fingerprint) {

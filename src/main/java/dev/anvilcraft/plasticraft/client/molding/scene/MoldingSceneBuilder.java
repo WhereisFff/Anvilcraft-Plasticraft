@@ -11,6 +11,7 @@ import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingCoordinateSystem;
 import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
 import dev.anvilcraft.plasticraft.molding.model.MoldingGroup;
+import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import org.joml.Vector3d;
 import org.jetbrains.annotations.Nullable;
@@ -145,6 +146,31 @@ public final class MoldingSceneBuilder {
         @Nullable MoldingAxis hoveredGizmoAxis,
         @Nullable ViewportTransform viewportTransform
     ) {
+        return buildEditor(
+            revision, dynamicRevision, model, baked, selection, tool, gizmoOrigin,
+            gizmoWorldUnitsPerPixel, cameraDirection, invalidPreview, showGrid, showAxes,
+            hoveredElement, hoveredGizmoAxis, viewportTransform, false
+        );
+    }
+
+    public static EditorSceneMesh buildEditor(
+        long revision,
+        long dynamicRevision,
+        EditableMoldingModel model,
+        @Nullable BakedMoldingModel baked,
+        MoldingSelection selection,
+        MoldingTool tool,
+        Vector3d gizmoOrigin,
+        double gizmoWorldUnitsPerPixel,
+        Vector3d cameraDirection,
+        boolean invalidPreview,
+        boolean showGrid,
+        boolean showAxes,
+        @Nullable UUID hoveredElement,
+        @Nullable MoldingAxis hoveredGizmoAxis,
+        @Nullable ViewportTransform viewportTransform,
+        boolean printingWorkspace
+    ) {
         return buildEditorScene(
             revision,
             dynamicRevision,
@@ -160,7 +186,8 @@ public final class MoldingSceneBuilder {
             hoveredElement,
             hoveredGizmoAxis,
             viewportTransform,
-            true
+            true,
+            printingWorkspace
         );
     }
 
@@ -179,7 +206,8 @@ public final class MoldingSceneBuilder {
         @Nullable UUID hoveredElement,
         @Nullable MoldingAxis hoveredGizmoAxis,
         @Nullable ViewportTransform viewportTransform,
-        boolean includeSourceSurfaces
+        boolean includeSourceSurfaces,
+        boolean printingWorkspace
     ) {
         SceneAccumulators scene = new SceneAccumulators(
             cameraDirection,
@@ -191,12 +219,17 @@ public final class MoldingSceneBuilder {
                 ? cameraDirection
                 : viewportTransform.directionToCamera(new Vector3d(24.0D, 24.0D, 24.0D));
             addFineGrid(scene.accumulator(EditorDrawPhase.FINE_GRID), gizmoWorldUnitsPerPixel);
-            addEditorGrid(scene.accumulator(EditorDrawPhase.MAIN_GRID), gizmoWorldUnitsPerPixel);
+            addEditorGrid(
+                scene.accumulator(EditorDrawPhase.MAIN_GRID),
+                gizmoWorldUnitsPerPixel,
+                workspaceBounds(printingWorkspace)
+            );
             addWorkspaceOutline(
                 scene.accumulator(EditorDrawPhase.WORKSPACE_OUTLINE),
                 workspaceDirectionToCamera,
                 gizmoWorldUnitsPerPixel,
-                viewportTransform
+                viewportTransform,
+                workspaceBounds(printingWorkspace)
             );
         }
         if (showAxes) addGroundAxes(scene.accumulator(EditorDrawPhase.MAIN_GRID), gizmoWorldUnitsPerPixel);
@@ -255,6 +288,30 @@ public final class MoldingSceneBuilder {
         @Nullable MoldingAxis hoveredGizmoAxis,
         @Nullable ViewportTransform viewportTransform
     ) {
+        return replaceViewDependent(
+            previous, dynamicRevision, model, selection, tool, gizmoOrigin, gizmoWorldUnitsPerPixel,
+            cameraDirection, invalidPreview, showGrid, showAxes, hoveredElement, hoveredGizmoAxis,
+            viewportTransform, false
+        );
+    }
+
+    public static EditorSceneMesh replaceViewDependent(
+        EditorSceneMesh previous,
+        long dynamicRevision,
+        EditableMoldingModel model,
+        MoldingSelection selection,
+        MoldingTool tool,
+        Vector3d gizmoOrigin,
+        double gizmoWorldUnitsPerPixel,
+        Vector3d cameraDirection,
+        boolean invalidPreview,
+        boolean showGrid,
+        boolean showAxes,
+        @Nullable UUID hoveredElement,
+        @Nullable MoldingAxis hoveredGizmoAxis,
+        @Nullable ViewportTransform viewportTransform,
+        boolean printingWorkspace
+    ) {
         EditorSceneMesh dynamic = buildEditorScene(
             previous.staticRevision(),
             dynamicRevision,
@@ -270,7 +327,8 @@ public final class MoldingSceneBuilder {
             hoveredElement,
             hoveredGizmoAxis,
             viewportTransform,
-            false
+            false,
+            printingWorkspace
         );
         Map<EditorDrawPhase, EditorScenePart> partsByPhase = new EnumMap<>(EditorDrawPhase.class);
         for (EditorScenePart part : previous.parts()) {
@@ -319,13 +377,23 @@ public final class MoldingSceneBuilder {
         double worldUnitsPerPixel,
         @Nullable Vector3d cameraPosition
     ) {
+        return buildWorldGuides(directionToCamera, worldUnitsPerPixel, cameraPosition, false);
+    }
+
+    public static EditorSceneMesh buildWorldGuides(
+        Vector3d directionToCamera,
+        double worldUnitsPerPixel,
+        @Nullable Vector3d cameraPosition,
+        boolean printingWorkspace
+    ) {
         double pixelScale = Math.max(1.0E-5D, worldUnitsPerPixel);
         SceneAccumulators scene = new SceneAccumulators(directionToCamera, pixelScale, null);
         addFineGrid(scene.accumulator(EditorDrawPhase.FINE_GRID), pixelScale);
         addEditorGrid(
             scene.accumulator(EditorDrawPhase.MAIN_GRID),
             pixelScale,
-            WORLD_MAIN_LINE_WIDTH_PIXELS
+            WORLD_MAIN_LINE_WIDTH_PIXELS,
+            workspaceBounds(printingWorkspace)
         );
         addGroundAxes(
             scene.accumulator(EditorDrawPhase.MAIN_GRID),
@@ -338,7 +406,8 @@ public final class MoldingSceneBuilder {
             pixelScale,
             null,
             cameraPosition,
-            WORLD_WORKSPACE_LINE_WIDTH_PIXELS
+            WORLD_WORKSPACE_LINE_WIDTH_PIXELS,
+            workspaceBounds(printingWorkspace)
         );
         return scene.build(0L, 0L);
     }
@@ -424,25 +493,55 @@ public final class MoldingSceneBuilder {
     }
 
     private static void addEditorGrid(MeshAccumulator mesh, double worldUnitsPerPixel) {
-        addEditorGrid(mesh, worldUnitsPerPixel, MAIN_LINE_WIDTH_PIXELS);
+        addEditorGrid(
+            mesh, worldUnitsPerPixel, MAIN_LINE_WIDTH_PIXELS,
+            MoldingWorkspaceOutline.FULL_BOUNDS
+        );
     }
 
     private static void addEditorGrid(
         MeshAccumulator mesh,
         double worldUnitsPerPixel,
-        double lineWidthPixels
+        MoldingModelBounds bounds
+    ) {
+        addEditorGrid(mesh, worldUnitsPerPixel, MAIN_LINE_WIDTH_PIXELS, bounds);
+    }
+
+    private static void addEditorGrid(
+        MeshAccumulator mesh,
+        double worldUnitsPerPixel,
+        double lineWidthPixels,
+        MoldingModelBounds bounds
     ) {
         double width = lineWidthPixels * worldUnitsPerPixel;
-        for (int value = 0; value <= 48; value += 16) {
+        double minimumX = bounds.minimum().x();
+        double maximumX = bounds.maximum().x();
+        double minimumZ = bounds.minimum().z();
+        double maximumZ = bounds.maximum().z();
+        double[] lines = {
+            minimumX,
+            MoldingCoordinateSystem.GRID_MIN,
+            MoldingCoordinateSystem.GRID_MAX,
+            maximumX
+        };
+        for (double value : lines) {
             mesh.segment(
-                new Vector3d(value, 16.0D, 0.0D),
-                new Vector3d(value, 16.0D, 48.0D),
+                new Vector3d(value, 16.0D, minimumZ),
+                new Vector3d(value, 16.0D, maximumZ),
                 width,
                 MAIN_GRID_COLOR
             );
+        }
+        double[] depthLines = {
+            minimumZ,
+            MoldingCoordinateSystem.GRID_MIN,
+            MoldingCoordinateSystem.GRID_MAX,
+            maximumZ
+        };
+        for (double value : depthLines) {
             mesh.segment(
-                new Vector3d(0.0D, 16.0D, value),
-                new Vector3d(48.0D, 16.0D, value),
+                new Vector3d(minimumX, 16.0D, value),
+                new Vector3d(maximumX, 16.0D, value),
                 width,
                 MAIN_GRID_COLOR
             );
@@ -453,7 +552,8 @@ public final class MoldingSceneBuilder {
         MeshAccumulator mesh,
         Vector3d directionToCamera,
         double worldUnitsPerPixel,
-        @Nullable ViewportTransform viewportTransform
+        @Nullable ViewportTransform viewportTransform,
+        MoldingModelBounds bounds
     ) {
         addWorkspaceOutline(
             mesh,
@@ -461,7 +561,8 @@ public final class MoldingSceneBuilder {
             worldUnitsPerPixel,
             viewportTransform,
             null,
-            WORKSPACE_LINE_WIDTH_PIXELS
+            WORKSPACE_LINE_WIDTH_PIXELS,
+            bounds
         );
     }
 
@@ -478,7 +579,8 @@ public final class MoldingSceneBuilder {
             worldUnitsPerPixel,
             viewportTransform,
             perspectiveCameraPosition,
-            WORKSPACE_LINE_WIDTH_PIXELS
+            WORKSPACE_LINE_WIDTH_PIXELS,
+            MoldingWorkspaceOutline.FULL_BOUNDS
         );
     }
 
@@ -488,7 +590,8 @@ public final class MoldingSceneBuilder {
         double worldUnitsPerPixel,
         @Nullable ViewportTransform viewportTransform,
         @Nullable Vector3d perspectiveCameraPosition,
-        double lineWidthPixels
+        double lineWidthPixels,
+        MoldingModelBounds bounds
     ) {
         double width = lineWidthPixels * worldUnitsPerPixel;
         List<MoldingWorkspaceOutline.Edge> edges;
@@ -496,20 +599,38 @@ public final class MoldingSceneBuilder {
             edges = MoldingWorkspaceOutline.silhouetteEdges(
                 viewportTransform.position(),
                 viewportTransform.perspective(),
-                directionToCamera
+                directionToCamera,
+                bounds
             );
         } else if (perspectiveCameraPosition != null) {
             edges = MoldingWorkspaceOutline.silhouetteEdges(
                 perspectiveCameraPosition,
                 true,
-                directionToCamera
+                directionToCamera,
+                bounds
             );
         } else {
-            edges = MoldingWorkspaceOutline.silhouetteEdges(directionToCamera);
+            edges = MoldingWorkspaceOutline.silhouetteEdges(directionToCamera, bounds);
         }
         for (MoldingWorkspaceOutline.Edge edge : edges) {
             mesh.segment(edge.from(), edge.to(), width, WORKSPACE_OUTLINE_COLOR);
         }
+    }
+
+    private static MoldingModelBounds workspaceBounds(boolean printingWorkspace) {
+        if (!printingWorkspace) return MoldingWorkspaceOutline.FULL_BOUNDS;
+        return new MoldingModelBounds(
+            new MoldingVec3(
+                MoldingModelBounds.PRINTING_WORKSPACE_HORIZONTAL_MIN,
+                MoldingModelBounds.PRINTING_WORKSPACE_VERTICAL_MIN,
+                MoldingModelBounds.PRINTING_WORKSPACE_HORIZONTAL_MIN
+            ),
+            new MoldingVec3(
+                MoldingModelBounds.PRINTING_WORKSPACE_HORIZONTAL_MAX,
+                MoldingModelBounds.PRINTING_WORKSPACE_VERTICAL_MAX,
+                MoldingModelBounds.PRINTING_WORKSPACE_HORIZONTAL_MAX
+            )
+        );
     }
 
     private static void addGroundAxes(MeshAccumulator mesh, double worldUnitsPerPixel) {

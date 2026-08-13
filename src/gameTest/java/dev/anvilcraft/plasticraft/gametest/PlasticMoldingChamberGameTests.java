@@ -23,10 +23,12 @@ import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintLibrary;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintService;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintSummary;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingFormingMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingMachineAction;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProcessSnapshot;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingPrinterMotion;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingPlan;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingVoxel;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProductionMode;
@@ -36,6 +38,7 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingCommand;
 import dev.anvilcraft.plasticraft.molding.model.MoldingCoordinateSystem;
 import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
+import dev.anvilcraft.plasticraft.molding.model.MoldingTransform;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.session.MoldingSessionSnapshot;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
@@ -317,6 +320,7 @@ public final class PlasticMoldingChamberGameTests {
         check(chamber.moldFillFraction(0.0F) == 1.0F / 3.0F
                 && chamber.moldFillFraction(0.0F) == chamber.moldFillFraction(0.75F),
             "missing clay pause did not retain exactly one complete layer");
+        assertRegionShapes(chamber, 1);
         ItemStack refillRemainder = chamber.clayItemHandler().insertItem(
             0,
             new ItemStack(Items.CLAY_BALL, 64),
@@ -328,6 +332,7 @@ public final class PlasticMoldingChamberGameTests {
             "second layer did not settle as one 34-ball transaction");
         check(chamber.moldFillFraction(0.0F) == 2.0F / 3.0F,
             "second complete layer did not render as two thirds");
+        assertRegionShapes(chamber, 2);
         check(chamber.clayItemHandler().insertItem(0, new ItemStack(Items.CLAY_BALL, 64), false).getCount() == 30,
             "third-layer refill exceeded the configured slot limit");
         tick(chamber, 1);
@@ -335,6 +340,7 @@ public final class PlasticMoldingChamberGameTests {
             "twelve active ticks did not complete the mold");
         check(chamber.moldedClayBalls() == 101 && chamber.requiredClayBalls() == 101,
             "multi-refill mold did not preserve the exact clay requirement");
+        assertRegionShapes(chamber, 3);
 
         IFluidHandler fluids = chamber.fluidHandler();
         FluidStack melt = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 8000);
@@ -610,10 +616,15 @@ public final class PlasticMoldingChamberGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "9x7x9", floor = true)
-    @TestHolder(description = "The chamber fills its printing component at 250 mB per tick, then the component consumes one mB per printing tick")
+    @TestHolder(description = "The chamber fills its printing component, moves to a voxel, then consumes one mB per printing tick")
     static void printingSkipsClayAndStartsAutomatically(ExtendedGameTestHelper helper) {
         PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
-        check(chamber.replaceEditableModel(cubeModel(11.0D), chamber.revision()).accepted(),
+        EditableMoldingModel printingModel = EditableMoldingModel.empty().withElements(List.of(MoldingElement.cube(
+            "Printing Cube",
+            new MoldingVec3(8.0D, 8.0D, 8.0D),
+            new MoldingVec3(19.0D, 19.0D, 19.0D)
+        )));
+        check(chamber.replaceEditableModel(printingModel, chamber.revision()).accepted(),
             "printing model was rejected");
         check(chamber.formingMode() == MoldingFormingMode.CASTING,
             "chamber without a printing component did not select casting");
@@ -627,9 +638,11 @@ public final class PlasticMoldingChamberGameTests {
             "printing component did not create its internal melt storage");
         check(chamber.formingMode() == MoldingFormingMode.PRINTING,
             "installing the printing component did not select printing");
+        assertRegionShapes(chamber, 3);
         helper.getLevel().setBlockAndUpdate(chamber.getBlockPos().above(), Blocks.AIR.defaultBlockState());
         check(chamber.formingMode() == MoldingFormingMode.CASTING,
             "removing the printing component did not restore casting");
+        assertRegionShapes(chamber, 0);
         helper.getLevel().setBlockAndUpdate(
             chamber.getBlockPos().above(),
             PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get().defaultBlockState()
@@ -664,14 +677,19 @@ public final class PlasticMoldingChamberGameTests {
         tick(chamber, 1);
         check(chamber.batchFluidAmount() == chamber.batchFluidCapacity()
                 && chamber.machineState() == PlasticMoldingMachineState.PROCESSING
-                && chamber.printingProgress() == 0,
+                && chamber.printingProgress() == 0
+                && chamber.printingMotion().to().equals(MoldingPrinterMotion.DEFAULT_POSITION),
             "full printing component did not start automatically without consuming melt early");
         tick(chamber, 1);
+        check(chamber.batchFluidAmount() == chamber.batchFluidCapacity()
+                && chamber.printingProgress() == 0,
+            "printing consumed material before the print head arrived");
+        tick(chamber, chamber.printingMotion().durationTicks());
         check(chamber.batchFluidAmount() == chamber.batchFluidCapacity() - 1,
-            "printing component did not consume exactly 1 mB in one printing tick");
-        check(chamber.printingProgress() > 0
+            "printing component did not consume exactly 1 mB after arriving");
+        check(chamber.printingProgress() == 1
                 && chamber.machineState() == PlasticMoldingMachineState.PROCESSING,
-            "printing consumption did not reveal its proportional voxel prefix");
+            "printing did not reveal the first voxel after consuming its full material share");
         check(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.CLAY_SLOT).getCount() == 64
                 && chamber.moldedClayBalls() == 0,
             "printing consumed clay after it started");
@@ -712,24 +730,149 @@ public final class PlasticMoldingChamberGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "Printing voxels scan Y layers, then Z rows, then X from negative to positive")
-    static void printingPlanUsesYzxOrder(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "Printing voxels scan Y layers with X rows and alternating Z directions")
+    static void printingPlanUsesSnakeOrder(ExtendedGameTestHelper helper) {
         EditableMoldingModel model = EditableMoldingModel.empty().withElements(List.of(
-            MoldingElement.cube("Later X", new MoldingVec3(30, 20, 20), new MoldingVec3(31, 21, 21)),
-            MoldingElement.cube("First", new MoldingVec3(18, 20, 20), new MoldingVec3(19, 21, 21)),
-            MoldingElement.cube("Later Z", new MoldingVec3(18, 20, 22), new MoldingVec3(19, 21, 23)),
-            MoldingElement.cube("Later Y", new MoldingVec3(18, 22, 20), new MoldingVec3(19, 23, 21))
+            MoldingElement.cube("First", new MoldingVec3(18, 20, 18), new MoldingVec3(19, 21, 19)),
+            MoldingElement.cube("First Row End", new MoldingVec3(18, 20, 30), new MoldingVec3(19, 21, 31)),
+            MoldingElement.cube("Second Row Start", new MoldingVec3(19, 20, 30), new MoldingVec3(20, 21, 31)),
+            MoldingElement.cube("Second Row End", new MoldingVec3(19, 20, 18), new MoldingVec3(20, 21, 19)),
+            MoldingElement.cube("Later Y", new MoldingVec3(18, 22, 18), new MoldingVec3(19, 23, 19))
         ));
-        MoldingPrintingPlan plan = MoldingPrintingPlan.create(MoldingModelBaker.bake(model));
-        check(plan.size() == 4, "printing plan added cells outside the model");
-        check(plan.voxelAt(0).equals(new MoldingPrintingVoxel(18, 20, 20)),
-            "printing plan did not begin at the lowest X in its first row");
-        check(plan.voxelAt(1).equals(new MoldingPrintingVoxel(30, 20, 20)),
-            "printing plan did not advance from -X to +X");
-        check(plan.voxelAt(2).equals(new MoldingPrintingVoxel(18, 20, 22)),
-            "printing plan did not advance to the next Z row");
-        check(plan.voxelAt(3).equals(new MoldingPrintingVoxel(18, 22, 20)),
+        MoldingPrintingPlan plan = MoldingPrintingPlan.create(model, MoldingModelBaker.bake(model));
+        check(plan.size() == 5, "printing plan added cells outside the model");
+        check(plan.voxelAt(0).equals(new MoldingPrintingVoxel(18, 20, 18)),
+            "printing plan did not begin at the north end of its first row");
+        check(plan.voxelAt(1).equals(new MoldingPrintingVoxel(18, 20, 30)),
+            "printing plan did not advance south along the first row");
+        check(plan.voxelAt(2).equals(new MoldingPrintingVoxel(19, 20, 30)),
+            "printing plan did not move one pixel east at the row end");
+        check(plan.voxelAt(3).equals(new MoldingPrintingVoxel(19, 20, 18)),
+            "printing plan did not reverse north along the second row");
+        check(plan.voxelAt(4).equals(new MoldingPrintingVoxel(18, 22, 18)),
             "printing plan did not advance to the next Y layer last");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Printing includes positive-volume slope intersections and closes each printed pixel")
+    static void printingPlanPreservesSlopedPixelGeometry(ExtendedGameTestHelper helper) {
+        MoldingElement source = MoldingElement.cube(
+            "Sloped Sheet",
+            new MoldingVec3(12.0D, 22.5D, 16.0D),
+            new MoldingVec3(36.0D, 25.5D, 32.0D)
+        );
+        MoldingElement sloped = new MoldingElement(
+            source.id(),
+            source.name(),
+            source.groupId(),
+            source.from(),
+            source.to(),
+            new MoldingTransform(
+                MoldingVec3.ZERO,
+                new MoldingVec3(0.0D, 0.0D, 30.0D),
+                MoldingVec3.ONE,
+                source.transform().pivot()
+            ),
+            source.visible(),
+            source.locked()
+        );
+        EditableMoldingModel slopedModel = EditableMoldingModel.empty().withElements(List.of(sloped));
+        var slopedBaked = MoldingModelBaker.bake(slopedModel);
+        MoldingPrintingPlan slopedPlan = MoldingPrintingPlan.create(slopedModel, slopedBaked);
+        check(slopedPlan.size() > slopedBaked.volumeMask().volume(),
+            "printing plan still omitted slope intersections without a sampled cell center");
+
+        var sampled = slopedBaked.volumeMask();
+        var intersecting = slopedPlan.voxelMask();
+        boolean foundBoundaryCell = false;
+        for (int index = 0; index < slopedPlan.size(); index++) {
+            MoldingPrintingVoxel voxel = slopedPlan.voxelAt(index);
+            if (!sampled.get(voxel.x(), voxel.y(), voxel.z())) {
+                foundBoundaryCell = true;
+                break;
+            }
+        }
+        check(foundBoundaryCell, "printing slope regression did not exercise a boundary-only cell");
+
+        EditableMoldingModel solid = EditableMoldingModel.empty().withElements(List.of(MoldingElement.cube(
+            "Solid",
+            new MoldingVec3(8.0D, 8.0D, 8.0D),
+            new MoldingVec3(40.0D, 40.0D, 40.0D)
+        )));
+        var solidHull = MoldingModelBaker.createManufacturedGeometry(solid, 1.0D).collisionHulls().getFirst();
+        List<MoldingQuad> closedCell = MoldingModelBaker.clipConvexHullToCell(solidHull, 20, 20, 20);
+        check(closedCell.size() == 6, "an interior printed pixel was not closed on all six sides");
+        Set<MoldingVec3> normals = new HashSet<>();
+        closedCell.forEach(quad -> normals.add(quad.normal()));
+        check(normals.size() == 6, "an interior printed pixel repeated or omitted a closing face");
+        check(intersecting.volume() == slopedPlan.size(), "printing plan and intersecting mask diverged");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x7x9", floor = true)
+    @TestHolder(description = "Printing accepts only x/z 8..40 and y 1..33")
+    static void printingUsesReducedWorkspace(ExtendedGameTestHelper helper) {
+        check(MoldingPrinterMotion.DEFAULT_POSITION.equals(new MoldingVec3(16.0D, 32.0D, 16.0D)),
+            "printing head did not use the raised default position");
+        PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
+        helper.getLevel().setBlockAndUpdate(
+            chamber.getBlockPos().above(),
+            PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get().defaultBlockState()
+        );
+        EditableMoldingModel maximum = EditableMoldingModel.empty().withElements(List.of(MoldingElement.cube(
+            "Maximum Printing Volume",
+            new MoldingVec3(8.0D, 1.0D, 8.0D),
+            new MoldingVec3(40.0D, 33.0D, 40.0D)
+        )));
+        check(chamber.replaceEditableModel(maximum, chamber.revision()).accepted(),
+            "maximum printing model could not be staged");
+        check(chamber.modelFitsWorkspace() && chamber.requestLock().accepted(),
+            "maximum printing volume did not lock");
+        check(chamber.printingTotal() == 32768 && chamber.batchFluidCapacity() == 8192,
+            "maximum printing volume or melt requirement was incorrect");
+        check(chamber.unlock().accepted(), "maximum printing model could not be unlocked");
+
+        EditableMoldingModel tooWide = EditableMoldingModel.empty().withElements(List.of(MoldingElement.cube(
+            "Too Wide For Printer",
+            new MoldingVec3(7.0D, 1.0D, 8.0D),
+            new MoldingVec3(40.0D, 33.0D, 40.0D)
+        )));
+        check(chamber.replaceEditableModel(tooWide, chamber.revision()).accepted(),
+            "oversized printing model could not be staged");
+        PlasticMoldingChamberBlockEntity.MachineOutcome wideResult = chamber.requestLock();
+        check(!chamber.modelFitsWorkspace()
+                && !wideResult.accepted()
+                && wideResult.reason().equals("model_too_large"),
+            "printing accepted geometry outside the centered 32x32 area");
+
+        EditableMoldingModel tooLow = EditableMoldingModel.empty().withElements(List.of(MoldingElement.cube(
+            "Too Low For Printer",
+            new MoldingVec3(8.0D, 0.0D, 8.0D),
+            new MoldingVec3(40.0D, 33.0D, 40.0D)
+        )));
+        check(chamber.replaceEditableModel(tooLow, chamber.revision()).accepted(),
+            "too-low printing model could not be staged");
+        PlasticMoldingChamberBlockEntity.MachineOutcome lowResult = chamber.requestLock();
+        check(!chamber.modelFitsWorkspace()
+                && !lowResult.accepted()
+                && lowResult.reason().equals("model_too_large"),
+            "printing accepted geometry below the centered volume");
+
+        EditableMoldingModel tooHigh = EditableMoldingModel.empty().withElements(List.of(MoldingElement.cube(
+            "Too High For Printer",
+            new MoldingVec3(8.0D, 1.0D, 8.0D),
+            new MoldingVec3(40.0D, 34.0D, 40.0D)
+        )));
+        check(chamber.replaceEditableModel(tooHigh, chamber.revision()).accepted(),
+            "too-high printing model could not be staged");
+        PlasticMoldingChamberBlockEntity.MachineOutcome highResult = chamber.requestLock();
+        check(!chamber.modelFitsWorkspace()
+                && !highResult.accepted()
+                && highResult.reason().equals("model_too_large"),
+            "printing accepted geometry above the centered volume");
         helper.succeed();
     }
 
@@ -1483,6 +1626,19 @@ public final class PlasticMoldingChamberGameTests {
                 chamber.getBlockState(),
                 chamber
             );
+        }
+    }
+
+    private static void assertRegionShapes(PlasticMoldingChamberBlockEntity chamber, int completeLayers) {
+        Direction front = chamber.getBlockState().getValue(PlasticMoldingChamberBlock.FACING);
+        for (MoldingRegionPart part : MoldingRegionPart.values()) {
+            BlockPos region = PlasticMoldingChamberStructure.regionPos(chamber.getBlockPos(), front, part);
+            BlockState state = chamber.getLevel().getBlockState(region);
+            boolean expected = part.up() < completeLayers;
+            check(!state.getShape(chamber.getLevel(), region).isEmpty() == expected,
+                "region selection shape did not match layer " + part);
+            check(!state.getCollisionShape(chamber.getLevel(), region).isEmpty() == expected,
+                "region collision shape did not match layer " + part);
         }
     }
 

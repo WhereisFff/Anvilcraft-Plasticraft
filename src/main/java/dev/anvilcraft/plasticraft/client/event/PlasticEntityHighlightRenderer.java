@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.client.event;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticCollisionOutlineRenderer;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
@@ -19,6 +20,7 @@ public final class PlasticEntityHighlightRenderer {
 
     @SubscribeEvent
     public static void renderEntityHighlight(RenderHighlightEvent.Entity event) {
+        if (Minecraft.getInstance().options.hideGui) return;
         Entity entity = event.getTarget().getEntity();
         if (!(entity instanceof ShapedCollisionEntity shaped)) return;
 

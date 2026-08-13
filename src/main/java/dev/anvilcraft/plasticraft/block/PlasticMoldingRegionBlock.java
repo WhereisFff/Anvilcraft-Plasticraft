@@ -31,7 +31,7 @@ public class PlasticMoldingRegionBlock extends Block {
     private static final int VALIDATION_DELAY = 40;
 
     public PlasticMoldingRegionBlock(Properties properties) {
-        super(properties);
+        super(properties.dynamicShape());
         this.registerDefaultState(this.stateDefinition.any()
             .setValue(FACING, Direction.NORTH)
             .setValue(PART, MoldingRegionPart.D1_R0_U0));
@@ -108,7 +108,7 @@ public class PlasticMoldingRegionBlock extends Block {
         BlockPos pos,
         CollisionContext context
     ) {
-        return Shapes.empty();
+        return formingShape(state, level, pos);
     }
 
     @Override
@@ -118,13 +118,17 @@ public class PlasticMoldingRegionBlock extends Block {
         BlockPos pos,
         CollisionContext context
     ) {
+        return formingShape(state, level, pos);
+    }
+
+    private static VoxelShape formingShape(BlockState state, BlockGetter level, BlockPos pos) {
         BlockPos controller = PlasticMoldingChamberStructure.controllerPos(
             pos,
             state.getValue(FACING),
             state.getValue(PART)
         );
         return level.getBlockEntity(controller) instanceof PlasticMoldingChamberBlockEntity chamber
-            && chamber.hasMoldCollision()
+            && chamber.hasFormingRegionShape(state.getValue(PART))
             ? Shapes.block()
             : Shapes.empty();
     }

@@ -161,7 +161,8 @@ public final class PlasticraftLanguageData {
             "jei.anvilcraftplasticraft.plastic_molding_chamber.forming",
             "Casting fills a clay mold and pumps at 250 mB/gt. For 3D printing, the chamber pumps the complete "
                 + "model batch into the component above it at 250 mB/gt. Once full, the component automatically "
-                + "consumes 1 mB/gt and reveals the exact model in Y-layer, Z-row, then -X to +X order."
+                + "consumes 1 mB/gt and reveals a closed exact intersection in Y layers with eastward X rows and "
+                + "alternating north-south Z travel, including every positive-volume slope intersection."
         );
         provider.add(
             "jei.anvilcraftplasticraft.plastic_molding_chamber.outputs",
@@ -173,7 +174,8 @@ public final class PlasticraftLanguageData {
             "Continuous starts another cycle after the region clears; Redstone starts one cycle per rising edge; "
                 + "Single returns to editing after one cycle and ignores redstone. These production modes are "
                 + "independent of the forming method: casting still needs a Giant Anvil strike, while printing "
-                + "starts automatically when its batch is full."
+                + "starts automatically when its batch is full. A changed mode immediately controls the current "
+                + "cycle's completion and any pending next cycle."
         );
         provider.add("screen.anvilcraftplasticraft.molding.fluid_staging", "Staging: %1$s / %2$s mB");
         provider.add("screen.anvilcraftplasticraft.molding.fluid_batch", "Batch: %1$s / %2$s mB");
@@ -217,6 +219,10 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.molding.wait.process_ready", "Ready to process");
         provider.add("screen.anvilcraftplasticraft.molding.wait.processing", "Processing transaction active");
         provider.add("screen.anvilcraftplasticraft.molding.wait.waiting_for_clear_region", "Waiting for region to clear");
+        provider.add(
+            "screen.anvilcraftplasticraft.molding.wait.printing_output_pending",
+            "Waiting for the printed product to leave the discharge opening"
+        );
 
         provider.add("tooltip.anvilcraftplasticraft.molding.state", "State: %s");
         provider.add("tooltip.anvilcraftplasticraft.molding.energy", "%1$s / %2$s FE, %3$s kW");
@@ -342,6 +348,14 @@ public final class PlasticraftLanguageData {
             "A model is being edited; click again to confirm loading"
         );
         provider.add("message.anvilcraftplasticraft.molding.model_too_large", "Model is too large to process");
+        provider.add(
+            "message.anvilcraftplasticraft.molding.printing_model_too_large",
+            "3D printing is limited to x/z 8..40 px and y 1..33 px"
+        );
+        provider.add(
+            "message.anvilcraftplasticraft.molding.printing_output_pending",
+            "Waiting for the printed product to leave the discharge opening"
+        );
         provider.add("message.anvilcraftplasticraft.molding.disk_write_failed", "Unable to update the Structure Disk");
         provider.add("message.anvilcraftplasticraft.molding.server_unavailable", "Server is unavailable");
         provider.add("message.anvilcraftplasticraft.molding.blueprint_missing", "The shared model no longer exists");

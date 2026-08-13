@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
@@ -26,6 +27,7 @@ public final class MoldingModelBaker {
     private static final int BAKED_CACHE_LIMIT = 128;
     private static final int MANUFACTURED_CACHE_LIMIT = 256;
     private static final double EPSILON = 1.0E-7D;
+    private static final double VOLUME_EPSILON = 1.0E-10D;
     private static final int[][] CUBE_FACES = {
         {0, 4, 6, 2}, {1, 3, 7, 5},
         {0, 1, 5, 4}, {2, 6, 7, 3},
@@ -330,6 +332,249 @@ public final class MoldingModelBaker {
             MANUFACTURED_CACHE.put(key, manufactured);
         }
         return manufactured;
+    }
+
+    /** 将中心采样掩码补齐为与源凸体存在正体积交集的全部像素格。 */
+    public static MoldingVolumeMask createIntersectingVolumeMask(
+        EditableMoldingModel model,
+        MoldingVolumeMask sampledVolume
+    ) {
+        MoldingVolumeMask result = sampledVolume.copy();
+        for (MoldingConvexHull hull : createManufacturedGeometry(model, 1.0D).collisionHulls()) {
+            MoldingConvexHull.Bounds bounds = hull.bounds();
+            int minX = cellMinimum(bounds.minimum().x(), result.sizeX());
+            int minY = cellMinimum(bounds.minimum().y(), result.sizeY());
+            int minZ = cellMinimum(bounds.minimum().z(), result.sizeZ());
+            int maxX = cellMaximum(bounds.maximum().x(), result.sizeX());
+            int maxY = cellMaximum(bounds.maximum().y(), result.sizeY());
+            int maxZ = cellMaximum(bounds.maximum().z(), result.sizeZ());
+            for (int y = minY; y <= maxY; y++) {
+                for (int x = minX; x <= maxX; x++) {
+                    for (int z = minZ; z <= maxZ; z++) {
+                        if (!result.get(x, y, z) && convexHullIntersectsCell(hull, x, y, z)) {
+                            result.set(x, y, z);
+                        }
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    /** 返回源凸体与一个 1 px 单元正体积相交后形成的闭合表面。 */
+    public static List<MoldingQuad> clipConvexHullToCell(
+        MoldingConvexHull hull,
+        int x,
+        int y,
+        int z
+    ) {
+        return clipConvexHull(hull, x, y, z, x + 1.0D, y + 1.0D, z + 1.0D);
+    }
+
+    public static List<MoldingQuad> clipConvexHull(
+        MoldingConvexHull hull,
+        double minX,
+        double minY,
+        double minZ,
+        double maxX,
+        double maxY,
+        double maxZ
+    ) {
+        if (maxX <= minX || maxY <= minY || maxZ <= minZ) return List.of();
+        List<FacePolygon> clipped = clipConvexHullToBox(hull, minX, minY, minZ, maxX, maxY, maxZ);
+        if (!hasPositiveVolume(clipped)) return List.of();
+        List<MoldingQuad> surface = new ArrayList<>();
+        for (FacePolygon face : clipped) addPolygonSurfaces(surface, face, false);
+        return List.copyOf(surface);
+    }
+
+    public static boolean convexHullIntersectsCell(MoldingConvexHull hull, int x, int y, int z) {
+        return hasPositiveVolume(clipConvexHullToBox(hull, x, y, z, x + 1.0D, y + 1.0D, z + 1.0D));
+    }
+
+    private static List<FacePolygon> clipConvexHullToBox(
+        MoldingConvexHull hull,
+        double minX,
+        double minY,
+        double minZ,
+        double maxX,
+        double maxY,
+        double maxZ
+    ) {
+        MoldingConvexHull.Bounds bounds = hull.bounds();
+        if (bounds.maximum().x() <= minX + EPSILON || bounds.minimum().x() >= maxX - EPSILON
+            || bounds.maximum().y() <= minY + EPSILON || bounds.minimum().y() >= maxY - EPSILON
+            || bounds.maximum().z() <= minZ + EPSILON || bounds.minimum().z() >= maxZ - EPSILON) {
+            return List.of();
+        }
+        List<FacePolygon> faces = hull.faces().stream().map(face -> new FacePolygon(
+            face.vertices().stream().map(hull.vertices()::get).toList(),
+            face.normal()
+        )).toList();
+        faces = clipPolyhedron(faces, 0, minX, true);
+        faces = clipPolyhedron(faces, 0, maxX, false);
+        faces = clipPolyhedron(faces, 1, minY, true);
+        faces = clipPolyhedron(faces, 1, maxY, false);
+        faces = clipPolyhedron(faces, 2, minZ, true);
+        return clipPolyhedron(faces, 2, maxZ, false);
+    }
+
+    private static List<FacePolygon> clipPolyhedron(
+        List<FacePolygon> input,
+        int axis,
+        double boundary,
+        boolean keepGreater
+    ) {
+        if (input.isEmpty()) return List.of();
+        List<FacePolygon> output = new ArrayList<>(input.size() + 1);
+        List<MoldingVec3> capVertices = new ArrayList<>();
+        for (FacePolygon face : input) {
+            List<MoldingVec3> clipped = clipPolygon(face.vertices(), axis, boundary, keepGreater, capVertices);
+            if (clipped.size() >= 3 && polygonAreaSquared(clipped) > EPSILON * EPSILON) {
+                output.add(new FacePolygon(clipped, face.normal()));
+            }
+        }
+        capVertices = removeCollinearVertices(capVertices);
+        if (capVertices.size() >= 3) {
+            MoldingVec3 normal = axisVector(axis, keepGreater ? -1.0D : 1.0D);
+            List<MoldingVec3> cap = orientCap(capVertices, axis, normal);
+            if (polygonAreaSquared(cap) > EPSILON * EPSILON) output.add(new FacePolygon(cap, normal));
+        }
+        return List.copyOf(output);
+    }
+
+    private static List<MoldingVec3> clipPolygon(
+        List<MoldingVec3> input,
+        int axis,
+        double boundary,
+        boolean keepGreater,
+        List<MoldingVec3> capVertices
+    ) {
+        List<MoldingVec3> output = new ArrayList<>(input.size() + 2);
+        MoldingVec3 previous = input.getLast();
+        double previousCoordinate = coordinate(previous, axis);
+        boolean previousInside = inside(previousCoordinate, boundary, keepGreater);
+        for (MoldingVec3 current : input) {
+            double currentCoordinate = coordinate(current, axis);
+            boolean currentInside = inside(currentCoordinate, boundary, keepGreater);
+            if (currentInside != previousInside) {
+                double amount = Math.clamp(
+                    (boundary - previousCoordinate) / (currentCoordinate - previousCoordinate),
+                    0.0D,
+                    1.0D
+                );
+                MoldingVec3 intersection = previous.add(current.subtract(previous).scale(amount));
+                addDistinct(output, intersection);
+                addDistinct(capVertices, intersection);
+            }
+            if (currentInside) addDistinct(output, current);
+            previous = current;
+            previousCoordinate = currentCoordinate;
+            previousInside = currentInside;
+        }
+        if (output.size() > 1 && samePoint(output.getFirst(), output.getLast())) output.removeLast();
+        return List.copyOf(output);
+    }
+
+    private static List<MoldingVec3> orientCap(
+        List<MoldingVec3> vertices,
+        int axis,
+        MoldingVec3 normal
+    ) {
+        MoldingVec3 center = MoldingVec3.ZERO;
+        for (MoldingVec3 vertex : vertices) center = center.add(vertex);
+        center = center.scale(1.0D / vertices.size());
+        MoldingVec3 capCenter = center;
+        int firstTransverse = axis == 0 ? 1 : 0;
+        int secondTransverse = axis == 2 ? 1 : 2;
+        List<MoldingVec3> result = new ArrayList<>(vertices);
+        result.sort(Comparator.comparingDouble(vertex -> Math.atan2(
+            coordinate(vertex, secondTransverse) - coordinate(capCenter, secondTransverse),
+            coordinate(vertex, firstTransverse) - coordinate(capCenter, firstTransverse)
+        )));
+        MoldingVec3 measured = unitNormal(result.get(0), result.get(1), result.get(2));
+        if (measured.dot(normal) < 0.0D) Collections.reverse(result);
+        return List.copyOf(result);
+    }
+
+    private static List<MoldingVec3> removeCollinearVertices(List<MoldingVec3> vertices) {
+        List<MoldingVec3> unique = new ArrayList<>();
+        for (MoldingVec3 vertex : vertices) addDistinct(unique, vertex);
+        if (unique.size() < 3) return List.copyOf(unique);
+        MoldingVec3 center = MoldingVec3.ZERO;
+        for (MoldingVec3 vertex : unique) center = center.add(vertex);
+        center = center.scale(1.0D / unique.size());
+        Bounds bounds = Bounds.of(unique);
+        MoldingVec3 extent = bounds.max().subtract(bounds.min());
+        int axis = extent.x() <= EPSILON ? 0 : extent.y() <= EPSILON ? 1 : 2;
+        List<MoldingVec3> sorted = orientUnorientedPolygon(unique, center, axis);
+        List<MoldingVec3> result = new ArrayList<>(sorted.size());
+        for (int index = 0; index < sorted.size(); index++) {
+            MoldingVec3 vertex = sorted.get(index);
+            MoldingVec3 previous = sorted.get(Math.floorMod(index - 1, sorted.size()));
+            MoldingVec3 next = sorted.get((index + 1) % sorted.size());
+            if (vertex.subtract(previous).cross(next.subtract(vertex)).lengthSquared() > EPSILON * EPSILON) {
+                result.add(vertex);
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private static List<MoldingVec3> orientUnorientedPolygon(
+        List<MoldingVec3> vertices,
+        MoldingVec3 center,
+        int axis
+    ) {
+        int firstTransverse = axis == 0 ? 1 : 0;
+        int secondTransverse = axis == 2 ? 1 : 2;
+        return vertices.stream().sorted(Comparator.comparingDouble(vertex -> Math.atan2(
+            coordinate(vertex, secondTransverse) - coordinate(center, secondTransverse),
+            coordinate(vertex, firstTransverse) - coordinate(center, firstTransverse)
+        ))).toList();
+    }
+
+    private static boolean hasPositiveVolume(List<FacePolygon> faces) {
+        double volumeTimesSix = 0.0D;
+        for (FacePolygon face : faces) {
+            MoldingVec3 first = face.vertices().getFirst();
+            for (int index = 1; index + 1 < face.vertices().size(); index++) {
+                volumeTimesSix += first.dot(
+                    face.vertices().get(index).cross(face.vertices().get(index + 1))
+                );
+            }
+        }
+        return Math.abs(volumeTimesSix) > VOLUME_EPSILON * 6.0D;
+    }
+
+    private static double polygonAreaSquared(List<MoldingVec3> vertices) {
+        MoldingVec3 area = MoldingVec3.ZERO;
+        MoldingVec3 first = vertices.getFirst();
+        for (int index = 1; index + 1 < vertices.size(); index++) {
+            area = area.add(vertices.get(index).subtract(first).cross(vertices.get(index + 1).subtract(first)));
+        }
+        return area.lengthSquared();
+    }
+
+    private static boolean inside(double coordinate, double boundary, boolean keepGreater) {
+        return keepGreater ? coordinate >= boundary - EPSILON : coordinate <= boundary + EPSILON;
+    }
+
+    private static double coordinate(MoldingVec3 point, int axis) {
+        return switch (axis) {
+            case 0 -> point.x();
+            case 1 -> point.y();
+            case 2 -> point.z();
+            default -> throw new IllegalArgumentException("Unknown molding axis " + axis);
+        };
+    }
+
+    private static MoldingVec3 axisVector(int axis, double direction) {
+        return switch (axis) {
+            case 0 -> new MoldingVec3(direction, 0.0D, 0.0D);
+            case 1 -> new MoldingVec3(0.0D, direction, 0.0D);
+            case 2 -> new MoldingVec3(0.0D, 0.0D, direction);
+            default -> throw new IllegalArgumentException("Unknown molding axis " + axis);
+        };
     }
 
     private static ManufacturedMoldingGeometry createManufacturedGeometryUncached(

@@ -127,6 +127,23 @@ public class PlasticMoldingChamberBlock extends BaseEntityBlock {
     }
 
     @Override
+    protected void neighborChanged(
+        BlockState state,
+        Level level,
+        BlockPos pos,
+        Block neighborBlock,
+        BlockPos neighborPos,
+        boolean movedByPiston
+    ) {
+        super.neighborChanged(state, level, pos, neighborBlock, neighborPos, movedByPiston);
+        if (!level.isClientSide
+            && neighborPos.equals(pos.above())
+            && level.getBlockEntity(pos) instanceof PlasticMoldingChamberBlockEntity chamber) {
+            chamber.refreshFormingRegionShapes();
+        }
+    }
+
+    @Override
     protected BlockState rotate(BlockState state, Rotation rotation) {
         return state.setValue(FACING, rotation.rotate(state.getValue(FACING)));
     }

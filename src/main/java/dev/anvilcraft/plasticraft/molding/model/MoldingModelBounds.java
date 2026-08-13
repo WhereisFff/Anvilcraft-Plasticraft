@@ -11,6 +11,10 @@ import java.util.UUID;
 /** 模型预览、成型舱限制与制品提示共用的精确外接范围。 */
 public record MoldingModelBounds(MoldingVec3 minimum, MoldingVec3 maximum) {
     public static final double PIXELS_PER_BLOCK = 16.0D;
+    public static final double PRINTING_WORKSPACE_HORIZONTAL_MIN = 8.0D;
+    public static final double PRINTING_WORKSPACE_HORIZONTAL_MAX = 40.0D;
+    public static final double PRINTING_WORKSPACE_VERTICAL_MIN = 1.0D;
+    public static final double PRINTING_WORKSPACE_VERTICAL_MAX = 33.0D;
     private static final double EPSILON = 1.0E-7D;
     private static final MoldingModelBounds EMPTY = new MoldingModelBounds(MoldingVec3.ZERO, MoldingVec3.ZERO);
 
@@ -55,6 +59,15 @@ public record MoldingModelBounds(MoldingVec3 minimum, MoldingVec3 maximum) {
             && this.maximum.x() <= MoldingCoordinateSystem.WORKSPACE_MAX + EPSILON
             && this.maximum.y() <= MoldingCoordinateSystem.WORKSPACE_MAX + EPSILON
             && this.maximum.z() <= MoldingCoordinateSystem.WORKSPACE_MAX + EPSILON;
+    }
+
+    public boolean fitsPrintingWorkspace() {
+        return this.minimum.x() >= PRINTING_WORKSPACE_HORIZONTAL_MIN - EPSILON
+            && this.minimum.y() >= PRINTING_WORKSPACE_VERTICAL_MIN - EPSILON
+            && this.minimum.z() >= PRINTING_WORKSPACE_HORIZONTAL_MIN - EPSILON
+            && this.maximum.x() <= PRINTING_WORKSPACE_HORIZONTAL_MAX + EPSILON
+            && this.maximum.y() <= PRINTING_WORKSPACE_VERTICAL_MAX + EPSILON
+            && this.maximum.z() <= PRINTING_WORKSPACE_HORIZONTAL_MAX + EPSILON;
     }
 
     public static String formatBlocks(double size) {

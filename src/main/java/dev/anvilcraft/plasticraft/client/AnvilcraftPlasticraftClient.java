@@ -15,6 +15,7 @@ import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticPreviewRenderTypes;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticTextureSpriteSource;
 import dev.anvilcraft.plasticraft.client.renderer.UniversalPlasticItemRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.blockentity.PlasticMoldingChamberRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingViewportResources;
 import dev.anvilcraft.plasticraft.client.renderer.entity.CatalyticPressLidRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinCauldronRenderer;
@@ -129,6 +130,15 @@ public final class AnvilcraftPlasticraftClient {
     }
 
     private static void registerAdditionalModels(ModelEvent.RegisterAdditional event) {
+        event.register(PlasticMoldingChamberRenderer.PRINTER_FRAME_MODEL);
+        event.register(PlasticMoldingChamberRenderer.PRINTER_GLASS_MODEL);
+        event.register(PlasticMoldingChamberRenderer.PRINTER_GUI_MODEL);
+        event.register(PlasticMoldingChamberRenderer.PRINTER_X_MODEL);
+        event.register(PlasticMoldingChamberRenderer.PRINTER_Y_MODEL);
+        event.register(PlasticMoldingChamberRenderer.PRINTER_Z_MODEL);
+        event.register(PlasticMoldingChamberRenderer.PRINTER_Z_EYE_MODEL);
+        event.register(PlasticMoldingChamberRenderer.PRINTER_DOOR_LEFT_MODEL);
+        event.register(PlasticMoldingChamberRenderer.PRINTER_DOOR_RIGHT_MODEL);
         event.register(HardenedResinCauldronRenderer.OUTLET_MODEL);
         event.register(CatalyticPressLidRenderer.ARM_MODEL);
         event.register(AdhesivePatchRenderer.MODEL);

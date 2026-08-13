@@ -28,6 +28,7 @@ import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingFormingMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProcessSnapshot;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingDoorState;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProductionMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingWaitReason;
 import dev.anvilcraft.plasticraft.molding.machine.PlasticMoldingAnvilProcessor;
@@ -49,6 +50,7 @@ import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
@@ -986,14 +988,70 @@ public final class PlasticMoldingProductionGameTests {
         );
         check(productEntities(helper.getLevel(), continuousBounds).size() == 1,
             "continuous printing did not directly create one plastic entity");
+        UniversalPlasticEntity continuousProduct = productEntities(helper.getLevel(), continuousBounds).getFirst();
+        continuousProduct.setNoGravity(true);
+        check(continuous.printingDischargeOpen()
+                && continuous.printingDoorState() == MoldingPrintingDoorState.OPENING
+                && continuous.waitReason() == MoldingWaitReason.PRINTING_OUTPUT_PENDING,
+            "continuous printing did not begin opening its discharge for the product");
+        check(continuous.requestLock().reason().equals("printing_output_pending"),
+            "open printing discharge accepted a manual lock request");
+        for (BlockPos region : PlasticMoldingChamberStructure.regionPositions(
+            continuous.getBlockPos(),
+            Direction.NORTH
+        )) {
+            BlockState state = helper.getLevel().getBlockState(region);
+            check(state.getShape(helper.getLevel(), region).isEmpty()
+                    && state.getCollisionShape(helper.getLevel(), region).isEmpty(),
+                "open printing discharge retained a forming-region shape");
+        }
         check(continuous.machineState() == PlasticMoldingMachineState.WAITING_NEXT_CYCLE,
             "continuous printing did not wait for its next cycle");
         check(clayCount(helper.getLevel(), continuousBounds) == 0,
             "continuous printing created clay recovery drops");
-        entitiesIn(helper.getLevel(), continuousBounds).forEach(Entity::discard);
+
+        int dischargeFloorY = Mth.floor(continuousBounds.minY) - 1;
+        for (int x = Mth.floor(continuousBounds.minX); x < Mth.ceil(continuousBounds.maxX); x++) {
+            for (int z = Mth.floor(continuousBounds.minZ); z < Mth.ceil(continuousBounds.maxZ); z++) {
+                helper.getLevel().setBlockAndUpdate(
+                    new BlockPos(x, dischargeFloorY, z),
+                    Blocks.STONE.defaultBlockState()
+                );
+            }
+        }
+        AABB supportedBounds = continuousProduct.getBoundingBox();
+        continuousProduct.setPos(
+            continuousProduct.getX(),
+            continuousProduct.getY() + continuousBounds.minY - supportedBounds.minY,
+            continuousProduct.getZ()
+        );
+        tick(continuous, 1);
+        check(continuous.printingDischargeOpen(),
+            "printing discharge closed while the product was held inside by blocks below");
+
+        tick(continuous, PlasticMoldingChamberBlockEntity.PRINTING_DOOR_ANIMATION_TICKS);
+        check(continuous.printingDoorState() == MoldingPrintingDoorState.OPEN,
+            "printing discharge door did not finish opening");
+
+        AABB leavingBounds = continuousProduct.getBoundingBox();
+        continuousProduct.setPos(
+            continuousProduct.getX(),
+            continuousProduct.getY() + continuousBounds.minY - leavingBounds.maxY - 0.1D,
+            continuousProduct.getZ()
+        );
+        tick(continuous, 1);
+        check(continuous.printingDischargeOpen()
+                && continuous.printingDoorState() == MoldingPrintingDoorState.CLOSING,
+            "printing discharge did not begin closing after the product left");
+        tick(continuous, PlasticMoldingChamberBlockEntity.PRINTING_DOOR_ANIMATION_TICKS);
+        check(!continuous.printingDischargeOpen()
+                && continuous.printingDoorState() == MoldingPrintingDoorState.CLOSED,
+            "printing discharge stayed open after its closing animation");
+        check(continuous.machineState() == PlasticMoldingMachineState.WAITING_NEXT_CYCLE,
+            "continuous printing advanced before the discharge door closed");
         tick(continuous, 1);
         check(continuous.machineState() == PlasticMoldingMachineState.WAITING_TO_LOCK,
-            "continuous printing did not prepare its next cycle after the region cleared");
+            "continuous printing did not prepare its next cycle after the door closed");
         tick(continuous, 1);
         check(continuous.batchFluidAmount() == 250,
             "continuous printing did not begin pumping the next batch automatically");
@@ -1009,8 +1067,7 @@ public final class PlasticMoldingProductionGameTests {
         tick(redstone, 1);
         check(redstone.isLocked() && redstone.batchFluidAmount() == 250,
             "redstone rising edge did not start the first printing batch");
-        tick(redstone, 249);
-        tick(redstone, 2);
+        waitForPrintingDischarge(redstone);
         AABB redstoneBounds = PlasticMoldingChamberStructure.regionBounds(redstone.getBlockPos(), Direction.NORTH);
         check(redstone.machineState() == PlasticMoldingMachineState.EDITABLE,
             "redstone printing did not return to the unlocked state");
@@ -1019,6 +1076,10 @@ public final class PlasticMoldingProductionGameTests {
         check(!redstone.isLocked(), "steady redstone signal retriggered printing");
         helper.getLevel().setBlockAndUpdate(redstoneSignal, Blocks.AIR.defaultBlockState());
         tick(redstone, 1);
+        int doorLimit = PlasticMoldingChamberBlockEntity.PRINTING_DOOR_ANIMATION_TICKS * 2 + 2;
+        while (redstone.printingDischargeOpen() && doorLimit-- > 0) tick(redstone, 1);
+        check(!redstone.printingDischargeOpen(),
+            "redstone printer did not close its discharge after the product left");
         helper.getLevel().setBlockAndUpdate(redstoneSignal, Blocks.REDSTONE_BLOCK.defaultBlockState());
         tick(redstone, 1);
         check(redstone.isLocked(), "a new redstone rising edge did not start the next print");
@@ -1038,6 +1099,76 @@ public final class PlasticMoldingProductionGameTests {
         helper.getLevel().setBlockAndUpdate(single.getBlockPos().west(), Blocks.REDSTONE_BLOCK.defaultBlockState());
         tick(single, 1);
         check(!single.isLocked(), "single printing accepted a redstone lock request");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "31x8x13", floor = true)
+    @TestHolder(description = "Production mode buttons immediately change active printing completion behavior")
+    static void printingModeChangesApplyToActiveCycle(ExtendedGameTestHelper helper) {
+        PlasticMoldingChamberBlockEntity redstoneToContinuous = prepareAutomaticPrinter(
+            helper,
+            new BlockPos(5, 2, 3),
+            MoldingProductionMode.REDSTONE,
+            250
+        );
+        BlockPos signal = redstoneToContinuous.getBlockPos().west();
+        helper.getLevel().setBlockAndUpdate(signal, Blocks.REDSTONE_BLOCK.defaultBlockState());
+        tick(redstoneToContinuous, 2);
+        check(redstoneToContinuous.machineState() == PlasticMoldingMachineState.PROCESSING,
+            "redstone printer did not enter processing before its mode change");
+        check(redstoneToContinuous.setProductionMode(
+            MoldingProductionMode.CONTINUOUS,
+            redstoneToContinuous.revision()
+        ).accepted(), "active redstone printer rejected continuous mode");
+        waitForPrintingDischarge(redstoneToContinuous);
+        check(redstoneToContinuous.machineState() == PlasticMoldingMachineState.WAITING_NEXT_CYCLE,
+            "redstone-to-continuous change waited until another batch");
+        check(redstoneToContinuous.setProductionMode(
+            MoldingProductionMode.SINGLE,
+            redstoneToContinuous.revision()
+        ).accepted(), "discharging continuous printer rejected single mode");
+        check(redstoneToContinuous.machineState() == PlasticMoldingMachineState.EDITABLE,
+            "leaving continuous mode did not immediately cancel the pending next cycle");
+
+        PlasticMoldingChamberBlockEntity continuousToSingle = prepareAutomaticPrinter(
+            helper,
+            new BlockPos(15, 2, 3),
+            MoldingProductionMode.CONTINUOUS,
+            250
+        );
+        check(continuousToSingle.requestLock().accepted(), "continuous printer did not lock");
+        tick(continuousToSingle, 2);
+        check(continuousToSingle.setProductionMode(
+            MoldingProductionMode.SINGLE,
+            continuousToSingle.revision()
+        ).accepted(), "active continuous printer rejected single mode");
+        waitForPrintingDischarge(continuousToSingle);
+        check(continuousToSingle.machineState() == PlasticMoldingMachineState.EDITABLE,
+            "continuous-to-single change waited until another batch");
+        check(continuousToSingle.setProductionMode(
+            MoldingProductionMode.CONTINUOUS,
+            continuousToSingle.revision()
+        ).accepted(), "discharging single printer rejected continuous mode");
+        check(continuousToSingle.machineState() == PlasticMoldingMachineState.WAITING_NEXT_CYCLE,
+            "continuous mode did not immediately schedule the next cycle during discharge");
+
+        PlasticMoldingChamberBlockEntity singleToRedstone = prepareAutomaticPrinter(
+            helper,
+            new BlockPos(25, 2, 3),
+            MoldingProductionMode.SINGLE,
+            250
+        );
+        check(singleToRedstone.requestLock().accepted(), "single printer did not lock");
+        tick(singleToRedstone, 2);
+        check(singleToRedstone.setProductionMode(
+            MoldingProductionMode.REDSTONE,
+            singleToRedstone.revision()
+        ).accepted(), "active single printer rejected redstone mode");
+        waitForPrintingDischarge(singleToRedstone);
+        check(singleToRedstone.machineState() == PlasticMoldingMachineState.EDITABLE
+                && singleToRedstone.cycleMode() == MoldingProductionMode.REDSTONE,
+            "single-to-redstone change did not apply to the completed batch");
         helper.succeed();
     }
 
@@ -1076,7 +1207,7 @@ public final class PlasticMoldingProductionGameTests {
     ) {
         PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, relativeController, Direction.NORTH);
         check(chamber.replaceEditableModel(
-            model("Printed Cell", cube("Cell", 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)),
+            model("Printed Cell", cube("Cell", 16.0, 16.0, 16.0, 17.0, 17.0, 17.0)),
             chamber.revision()
         ).accepted(), "automatic printing model was rejected");
         check(chamber.setProductionMode(mode, chamber.revision()).accepted(),
@@ -1102,7 +1233,13 @@ public final class PlasticMoldingProductionGameTests {
         tick(chamber, 1);
         check(chamber.machineState() == PlasticMoldingMachineState.PROCESSING,
             "automatic printer waited for a giant anvil");
-        tick(chamber, chamber.batchFluidCapacity());
+        waitForPrintingDischarge(chamber);
+    }
+
+    private static void waitForPrintingDischarge(PlasticMoldingChamberBlockEntity chamber) {
+        int limit = chamber.batchFluidCapacity() + 128;
+        while (!chamber.printingDischargeOpen() && limit-- > 0) tick(chamber, 1);
+        check(chamber.printingDischargeOpen(), "automatic printer did not complete its movement and output");
     }
 
     private static EditableMoldingModel almostFullModel() {

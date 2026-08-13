@@ -37,6 +37,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /** 把成型舱动态快照接入 AnvilCraft 巨型铁砧落地流程。 */
 public final class PlasticMoldingAnvilProcessor {
@@ -47,11 +48,7 @@ public final class PlasticMoldingAnvilProcessor {
         if (!chamber.isPrintingProcess()) return;
         Optional<MoldingProcessSnapshot> active = chamber.activeProcessingSnapshot();
         if (active.isEmpty()) return;
-        if (chamber.printingProgress() < chamber.printingTotal()
-            && !chamber.advancePrintingTick()) {
-            return;
-        }
-        if (chamber.printingProgress() < chamber.printingTotal()) return;
+        if (!chamber.advancePrintingTick()) return;
         finishPrinting(level, chamber, active.orElseThrow());
     }
 
@@ -153,7 +150,7 @@ public final class PlasticMoldingAnvilProcessor {
             chamber.abortProcessing(snapshot);
             return;
         }
-        if (!canOccupyPreparedOutput(prepared, snapshot.creativeOverride())) {
+        if (!canOccupyPreparedOutput(prepared, snapshot.creativeOverride(), match)) {
             chamber.abortProcessing(snapshot);
             return;
         }
@@ -172,6 +169,7 @@ public final class PlasticMoldingAnvilProcessor {
             return;
         }
         playEffects(level, prepared.bounds, prepared.displayState, snapshot.formingMode());
+        MoldingCycleFeedback.success(level, chamber.getBlockPos());
     }
 
     private static void finishPrinting(
@@ -188,7 +186,7 @@ public final class PlasticMoldingAnvilProcessor {
             chamber.waitForPrintingOutput();
             return;
         }
-        if (!canOccupyPreparedOutput(prepared, snapshot.creativeOverride())) {
+        if (!canOccupyPreparedOutput(prepared, snapshot.creativeOverride(), match)) {
             chamber.waitForPrintingOutput();
             return;
         }
@@ -202,6 +200,16 @@ public final class PlasticMoldingAnvilProcessor {
             }
             spawned.add(entity);
         }
+        UniversalPlasticEntity product = spawned.stream()
+            .filter(UniversalPlasticEntity.class::isInstance)
+            .map(UniversalPlasticEntity.class::cast)
+            .findFirst()
+            .orElse(null);
+        if (product == null) {
+            spawned.forEach(Entity::discard);
+            chamber.waitForPrintingOutput();
+            return;
+        }
         if (!chamber.finishProcessing(snapshot, true)) {
             spawned.forEach(Entity::discard);
             AnvilcraftPlasticraft.LOGGER.error(
@@ -210,14 +218,34 @@ public final class PlasticMoldingAnvilProcessor {
             );
             return;
         }
+        if (!chamber.openPrintingDischarge(product)) {
+            spawned.forEach(Entity::discard);
+            AnvilcraftPlasticraft.LOGGER.error(
+                "Unable to open completed plastic printing discharge at {}",
+                chamber.getBlockPos()
+            );
+            return;
+        }
         playEffects(level, prepared.bounds, prepared.displayState, snapshot.formingMode());
     }
 
-    private static boolean canOccupyPreparedOutput(PreparedOutput prepared, boolean creativeOverride) {
+    private static boolean canOccupyPreparedOutput(
+        PreparedOutput prepared,
+        boolean creativeOverride,
+        ChamberMatch match
+    ) {
+        Set<BlockPos> formingRegion = Set.copyOf(PlasticMoldingChamberStructure.regionPositions(
+            match.controller,
+            match.front
+        ));
         for (Entity entity : prepared.entities) {
             if (entity instanceof UniversalPlasticEntity plastic
                 && !creativeOverride
-                && !plastic.plasticraft$canOccupyBlocks(plastic.getOrientation(), plastic.position())) {
+                && !plastic.plasticraft$canOccupyBlocks(
+                    plastic.getOrientation(),
+                    plastic.position(),
+                    formingRegion
+                )) {
                 return false;
             }
         }

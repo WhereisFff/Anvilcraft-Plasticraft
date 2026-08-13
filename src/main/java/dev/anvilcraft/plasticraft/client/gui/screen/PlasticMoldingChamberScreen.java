@@ -24,6 +24,7 @@ import dev.anvilcraft.plasticraft.client.molding.editor.ViewportRay;
 import dev.anvilcraft.plasticraft.client.molding.editor.ViewportTransform;
 import dev.anvilcraft.plasticraft.client.molding.scene.EditorSceneMesh;
 import dev.anvilcraft.plasticraft.client.molding.scene.MoldingSceneBuilder;
+import dev.anvilcraft.plasticraft.client.molding.scene.PrintingViewportScene;
 import dev.anvilcraft.plasticraft.client.molding.scene.ViewportFrame;
 import dev.anvilcraft.plasticraft.client.renderer.AntialiasedGuiLineRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingOrientationCubeRenderer;
@@ -41,6 +42,7 @@ import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintSummary;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingMachineAction;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingFormingMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingPrinterMotion;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProductionMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingWaitReason;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
@@ -265,6 +267,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private Optional<MoldingTypeValidation> cachedTypeValidation = Optional.empty();
     @Nullable
     private EditableMoldingModel cachedWorkspaceBoundsModel;
+    private MoldingFormingMode cachedWorkspaceFormingMode = MoldingFormingMode.CASTING;
     private boolean cachedModelFitsWorkspace = true;
     @Nullable
     private EditableMoldingModel cachedDowngradeModel;
@@ -275,6 +278,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private boolean cachedInvalid;
     private boolean cachedShowGrid = true;
     private boolean cachedShowAxes = true;
+    private boolean cachedPrintingWorkspace;
     private double cachedGizmoWorldUnitsPerPixel = Double.NaN;
     private final Vector3d cachedGizmoCameraDirection = new Vector3d();
     @Nullable
@@ -452,7 +456,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 OVERLAY_HEIGHT
             );
         }
-        renderViewport(graphics, mouseX, mouseY);
+        renderViewport(graphics, mouseX, mouseY, partialTick);
         renderToolButtons(graphics, mouseX, mouseY);
         renderElementList(graphics, mouseX, mouseY);
         renderMainControls(graphics, mouseX, mouseY, partialTick);
@@ -466,7 +470,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         Optional<MoldingTypeValidation> typeValidation = currentTypeValidation();
         boolean invalidType = typeValidation.filter(validation -> !validation.valid()).isPresent()
             && !typeOverrideActive();
-        boolean oversized = !modelFitsStandardWorkspace() && !creativeOverrideActive();
+        boolean oversized = !modelFitsCurrentWorkspace() && !creativeOverrideActive();
         Component label = showingMessage
             ? this.menu.titleMessage().copy().withStyle(ChatFormatting.BOLD)
             : oversized
@@ -895,7 +899,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         super.removed();
     }
 
-    private void renderViewport(GuiGraphics graphics, int mouseX, int mouseY) {
+    private void renderViewport(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         double guiScale = this.minecraft.getWindow().getGuiScale();
         int targetWidth = this.layoutTransform.framebufferPixels(VIEWPORT_WIDTH, guiScale);
         int targetHeight = this.layoutTransform.framebufferPixels(VIEWPORT_HEIGHT, guiScale);
@@ -913,7 +917,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             this.editor.invalidPreview(),
             controllerPreviewState(),
             new Vector3d(controllerOrigin.x, controllerOrigin.y, controllerOrigin.z),
-            controllerPreviewLight()
+            controllerPreviewLight(),
+            printingViewportScene(controllerOrigin, partialTick)
         ));
         this.viewportBackend.compose(
             graphics,
@@ -1022,6 +1027,29 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         return LevelRenderer.getLightColor(this.minecraft.level, this.menu.chamberPos());
     }
 
+    private @Nullable PrintingViewportScene printingViewportScene(Vec3 controllerOrigin, float partialTick) {
+        if (displayedFormingMode() != MoldingFormingMode.PRINTING || !this.menu.printingComponentPresent()) return null;
+        BlockState chamberState = controllerPreviewState();
+        if (chamberState == null) return null;
+        BlockState componentState = this.minecraft.level == null
+            ? PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get().defaultBlockState()
+            : this.minecraft.level.getBlockState(this.menu.chamberPos().above());
+        if (!componentState.is(PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get())) {
+            componentState = PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get().defaultBlockState();
+        }
+        PlasticMoldingChamberBlockEntity chamber = clientChamber();
+        return new PrintingViewportScene(
+            chamberState,
+            componentState,
+            new Vector3d(controllerOrigin.x, controllerOrigin.y, controllerOrigin.z),
+            chamber == null || this.minecraft.level == null
+                ? MoldingPrinterMotion.DEFAULT_POSITION
+                : chamber.printingMotion().position(this.minecraft.level.getGameTime() + partialTick),
+            chamber == null ? 0.0F : chamber.printingDoorProgress(partialTick),
+            controllerPreviewLight()
+        );
+    }
+
     private void drawDirectionLabel(GuiGraphics graphics, double localX, double localY, String label, int color) {
         int x = this.leftPos + VIEWPORT_X
             + Math.clamp((int) Math.round(localX - this.font.width(label) * 0.5D), 2, VIEWPORT_WIDTH - 8);
@@ -1101,8 +1129,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             lines.add(Component.translatable("screen.anvilcraftplasticraft.molding.partial_downgrade")
                 .withStyle(ChatFormatting.RED));
         }
-        if (!modelFitsStandardWorkspace() && !creativeOverrideActive()) {
-            lines.add(Component.translatable("message.anvilcraftplasticraft.molding.model_too_large")
+        if (!modelFitsCurrentWorkspace() && !creativeOverrideActive()) {
+            lines.add(Component.translatable(workspaceLimitMessageKey())
                 .withStyle(ChatFormatting.RED));
         }
         typeValidation.filter(validation -> !validation.valid() && !typeOverrideActive())
@@ -1306,7 +1334,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         boolean enabled = chamberControlEnabled(ChamberControl.OPERATE, null);
         boolean pressed = enabled && isChamberControlPressed(ChamberControl.OPERATE, rect, mouseX, mouseY);
         boolean editable = this.menu.machineState() == PlasticMoldingMachineState.EDITABLE;
-        int stateFrame = !editable ? 2 : this.lockConfirmation ? 1 : 0;
+        boolean oversized = editable && !modelFitsCurrentWorkspace() && !creativeOverrideActive();
+        int stateFrame = !editable ? 2 : oversized ? 0 : this.lockConfirmation ? 1 : 0;
         int interactionFrame = pressed ? 2 : hovered && enabled ? 1 : 0;
         drawAtlas(graphics, rect, OPERATE_BUTTON, 9, stateFrame * 3 + interactionFrame);
         if (overrideVisualActive()) {
@@ -1318,12 +1347,16 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             List<Component> lines = new ArrayList<>();
             Optional<MoldingTypeValidation> typeValidation = currentTypeValidation()
                 .filter(validation -> !validation.valid() && !typeOverrideActive());
-            if (editable && missingPrintingComponent()) {
+            if (this.menu.printingDischargeOpen()) {
+                lines.add(Component.translatable(
+                    "message.anvilcraftplasticraft.molding.printing_output_pending"
+                ).withStyle(ChatFormatting.YELLOW));
+            } else if (editable && missingPrintingComponent()) {
                 lines.add(Component.translatable(
                     "screen.anvilcraftplasticraft.molding.high_precision_requires_component"
                 ).withStyle(ChatFormatting.RED));
-            } else if (editable && !modelFitsStandardWorkspace() && !creativeOverrideActive()) {
-                lines.add(Component.translatable("message.anvilcraftplasticraft.molding.model_too_large")
+            } else if (oversized) {
+                lines.add(Component.translatable(workspaceLimitMessageKey())
                     .withStyle(ChatFormatting.RED));
             } else if (editable && typeValidation.isPresent()) {
                 lines.addAll(typeValidationTooltip(typeValidation.orElseThrow()));
@@ -1336,7 +1369,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 lines.add(Component.translatable(tooltipKey));
             }
             if (editable && this.lockConfirmation && typeValidation.isEmpty()
-                && modelFitsStandardWorkspace()
+                && modelFitsCurrentWorkspace()
                 && this.menu.formingMode() == MoldingFormingMode.CASTING) {
                 lines.add(Component.translatable(
                     "screen.anvilcraftplasticraft.molding.clay_lock_status",
@@ -2087,6 +2120,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         double gizmoWorldUnitsPerPixel = transform.worldUnitsPerPixel(gizmoOrigin);
         Vector3d gizmoCameraDirection = transform.directionToCamera(gizmoOrigin);
         boolean hasSelection = !this.editor.selection().isEmpty();
+        boolean printingWorkspace = displayedFormingMode() == MoldingFormingMode.PRINTING;
         boolean sceneViewChanged = Math.abs(gizmoWorldUnitsPerPixel - this.cachedGizmoWorldUnitsPerPixel) > 1.0E-9D
             || gizmoCameraDirection.distanceSquared(this.cachedGizmoCameraDirection) > 1.0E-12D;
         boolean gizmoViewChanged = hasSelection && sceneViewChanged;
@@ -2097,6 +2131,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             || this.cachedInvalid != this.editor.invalidPreview()
             || this.cachedShowGrid != this.showGrid
             || this.cachedShowAxes != this.showAxes
+            || this.cachedPrintingWorkspace != printingWorkspace
             || !Objects.equals(this.cachedHoveredElement, hover.elementId())
             || sceneViewChanged;
         boolean rebuildGizmo = hasSelection
@@ -2127,7 +2162,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 this.showAxes,
                 hover.elementId(),
                 hover.gizmoAxis(),
-                transform
+                transform,
+                printingWorkspace
             );
         } else if (rebuildViewDependent) {
             this.cachedScene = MoldingSceneBuilder.replaceViewDependent(
@@ -2144,7 +2180,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 this.showAxes,
                 hover.elementId(),
                 hover.gizmoAxis(),
-                transform
+                transform,
+                printingWorkspace
             );
         } else {
             this.cachedScene = MoldingSceneBuilder.replaceGizmo(
@@ -2164,6 +2201,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         this.cachedInvalid = this.editor.invalidPreview();
         this.cachedShowGrid = this.showGrid;
         this.cachedShowAxes = this.showAxes;
+        this.cachedPrintingWorkspace = printingWorkspace;
         this.cachedGizmoWorldUnitsPerPixel = gizmoWorldUnitsPerPixel;
         this.cachedGizmoCameraDirection.set(gizmoCameraDirection);
         this.cachedHoveredElement = hover.elementId();
@@ -2571,6 +2609,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             case OPERATE -> this.menu.writable()
                 && !this.editor.pending()
                 && !this.editor.invalidPreview()
+                && !this.menu.printingDischargeOpen()
                 && (this.menu.machineState() != PlasticMoldingMachineState.EDITABLE
                 || lockConstraintsSatisfied());
             case DISK_LOAD -> MoldingBlueprintDisk.read(diskStack()).isPresent();
@@ -3463,14 +3502,26 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         return this.cachedTypeValidation;
     }
 
-    private boolean modelFitsStandardWorkspace() {
+    private boolean modelFitsCurrentWorkspace() {
         EditableMoldingModel model = this.editor.model();
-        if (this.cachedWorkspaceBoundsModel == model) return this.cachedModelFitsWorkspace;
+        MoldingFormingMode formingMode = displayedFormingMode();
+        if (this.cachedWorkspaceBoundsModel == model && this.cachedWorkspaceFormingMode == formingMode) {
+            return this.cachedModelFitsWorkspace;
+        }
         this.cachedWorkspaceBoundsModel = model;
+        this.cachedWorkspaceFormingMode = formingMode;
         this.cachedModelFitsWorkspace = MoldingModelBounds.all(model)
-            .map(MoldingModelBounds::fitsWorkspaceSize)
+            .map(bounds -> formingMode == MoldingFormingMode.PRINTING
+                ? bounds.fitsPrintingWorkspace()
+                : bounds.fitsWorkspaceSize())
             .orElse(true);
         return this.cachedModelFitsWorkspace;
+    }
+
+    private String workspaceLimitMessageKey() {
+        return displayedFormingMode() == MoldingFormingMode.PRINTING
+            ? "message.anvilcraftplasticraft.molding.printing_model_too_large"
+            : "message.anvilcraftplasticraft.molding.model_too_large";
     }
 
     private ItemStack resourceStack() {
@@ -3494,7 +3545,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
 
     private boolean lockConstraintsSatisfied() {
         if (missingPrintingComponent()) return false;
-        if (!modelFitsStandardWorkspace() && !creativeOverrideActive()) return false;
+        if (!modelFitsCurrentWorkspace() && !creativeOverrideActive()) return false;
         return currentTypeValidation()
             .map(validation -> validation.valid() || typeOverrideActive())
             .orElse(false);

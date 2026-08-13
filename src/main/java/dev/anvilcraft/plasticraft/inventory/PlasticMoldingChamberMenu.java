@@ -221,6 +221,10 @@ public class PlasticMoldingChamberMenu extends AbstractContainerMenu {
         return this.machineData.get(17) != 0;
     }
 
+    public boolean printingDischargeOpen() {
+        return this.machineData.get(20) != 0;
+    }
+
     public MoldingWaitReason waitReason() {
         MoldingWaitReason[] values = MoldingWaitReason.values();
         return values[Math.clamp(this.machineData.get(2), 0, values.length - 1)];

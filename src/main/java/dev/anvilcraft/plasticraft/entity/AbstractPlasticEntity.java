@@ -1826,8 +1826,18 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         PlasticEntityOrientation targetOrientation,
         Vec3 targetPosition
     ) {
+        return this.plasticraft$canOccupyBlocks(targetOrientation, targetPosition, Set.of());
+    }
+
+    /** 检查目标姿态能否占据世界，并允许制造流程忽略自身的结构占位方块。 */
+    public final boolean plasticraft$canOccupyBlocks(
+        PlasticEntityOrientation targetOrientation,
+        Vec3 targetPosition,
+        Set<BlockPos> ignoredBlocks
+    ) {
+        Objects.requireNonNull(ignoredBlocks, "ignoredBlocks");
         PlasticEntityCollisionBox targetBox = this.currentGeometry().collisionBoxAt(targetPosition, targetOrientation);
-        return this.hasUnobstructedBlocks(targetBox, Set.of());
+        return this.hasUnobstructedBlocks(targetBox, ignoredBlocks);
     }
 
     /** 固定制品校验目标格时忽略承载自身数据的方块。 */

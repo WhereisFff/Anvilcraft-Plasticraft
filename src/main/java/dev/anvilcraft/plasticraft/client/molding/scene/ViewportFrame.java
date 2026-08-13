@@ -12,7 +12,8 @@ public record ViewportFrame(
     boolean invalidPreview,
     @Nullable BlockState controllerState,
     @Nullable Vector3d controllerOrigin,
-    int controllerLight
+    int controllerLight,
+    @Nullable PrintingViewportScene printingScene
 ) {
     public ViewportFrame {
         controllerOrigin = controllerOrigin == null ? null : new Vector3d(controllerOrigin);

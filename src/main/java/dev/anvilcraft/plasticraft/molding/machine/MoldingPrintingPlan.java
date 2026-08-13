@@ -1,8 +1,10 @@
 package dev.anvilcraft.plasticraft.molding.machine;
 
 import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
+import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 
 /** 将烘焙模型转换为打印头逐像素执行的稳定扫描计划。 */
 public record MoldingPrintingPlan(MoldingVolumeMask voxelMask, int[] order) {
@@ -54,17 +56,19 @@ public record MoldingPrintingPlan(MoldingVolumeMask voxelMask, int[] order) {
         );
     }
 
-    public static MoldingPrintingPlan create(BakedMoldingModel baked) {
-        MoldingVolumeMask mask = baked.volumeMask();
+    public static MoldingPrintingPlan create(EditableMoldingModel model, BakedMoldingModel baked) {
+        MoldingVolumeMask mask = MoldingModelBaker.createIntersectingVolumeMask(model, baked.volumeMask());
         for (MoldingQuad quad : baked.surfaceMesh()) {
             if (quad.doubleSided()) rasterizeSurface(mask, quad);
         }
         int[] order = new int[mask.volume()];
         int orderIndex = 0;
-        // 每层沿 Z 逐行推进，每行内固定从 -X 到 +X。
+        // 每层沿 X 换行，Z 轴交替往返，避免打印头在行尾空程复位。
         for (int y = 0; y < mask.sizeY(); y++) {
-            for (int z = 0; z < mask.sizeZ(); z++) {
-                for (int x = 0; x < mask.sizeX(); x++) {
+            for (int x = 0; x < mask.sizeX(); x++) {
+                boolean forward = (x & 1) == 0;
+                for (int offset = 0; offset < mask.sizeZ(); offset++) {
+                    int z = forward ? offset : mask.sizeZ() - 1 - offset;
                     if (mask.get(x, y, z)) order[orderIndex++] = mask.indexOf(x, y, z);
                 }
             }
