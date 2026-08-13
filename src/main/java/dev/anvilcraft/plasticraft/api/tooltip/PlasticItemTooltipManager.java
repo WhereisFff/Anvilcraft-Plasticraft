@@ -154,6 +154,17 @@ public final class PlasticItemTooltipManager {
                 Creative players can Shift-use a magnet to magnetize it
                 Can be placed in any direction; only impacts on its bottom face can process recipes"""
         );
+        register(
+            AnvilcraftPlasticraft.of("drone_station"),
+            "Docks, stores and charges a mixed fleet of up to 16 drones",
+            """
+                Holds 16 drones, 1 structure disk and 1 capacitor slot with no material storage
+                Stores up to 160,000,000 FE, requests 256 kW from the grid until full and keeps its FE when broken
+                Consumes fully charged capacitors like the Plastic Molding Chamber and returns the empty shells
+                Charges every docked drone at the 8 kW rate from its internal FE
+                The recall button in its screen orders nearby drones to dock through the single top bay, one per second
+                The bottom face is its only logistics side; task material flows are handled by later systems"""
+        );
     }
 
     private static void registerNormal(ResourceLocation itemId, String description) {

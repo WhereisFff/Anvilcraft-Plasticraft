@@ -81,6 +81,10 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.drone.coverage.inactive", "No chunk loading");
         provider.add("screen.anvilcraftplasticraft.drone.inventory", "Cargo");
 
+        // 无人机站界面。
+        provider.add("container.anvilcraftplasticraft.drone_station", "Drone Station");
+        provider.add("screen.anvilcraftplasticraft.drone_station.recall", "Recall nearby drones to dock");
+
         // 塑料成型舱物品说明、容器标题和建模器界面语言文件生成。
         provider.add(
             "tooltip.anvilcraftplasticraft.plastic_molding_chamber",

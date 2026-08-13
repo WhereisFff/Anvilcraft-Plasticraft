@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.entity.drone;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.block.entity.DroneStationBlockEntity;
 import dev.anvilcraft.plasticraft.drone.DroneData;
 import dev.anvilcraft.plasticraft.drone.DroneEnergyModel;
 import dev.anvilcraft.plasticraft.drone.DroneFlightState;
@@ -41,6 +42,7 @@ import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -77,6 +79,8 @@ public class DroneEntity extends Entity {
     private DroneShortageStrategy shortageStrategy = DroneShortageStrategy.PAUSE;
     private List<ItemStack> collectionInventory = new ArrayList<>();
     private double flightDistanceAccumulator;
+    @Nullable
+    private BlockPos dockStationPos;
 
     public DroneEntity(EntityType<? extends DroneEntity> entityType, Level level) {
         super(entityType, level);
@@ -198,7 +202,56 @@ public class DroneEntity extends Entity {
                     this.setFlightState(DroneFlightState.LANDED);
                 }
             }
+            case DOCKING -> this.serverDockingTick();
         }
+    }
+
+    /**
+     * 飞向目标无人机站的顶部泊位。泊位是单通道:占用或站满时在对准点附近悬停等待,
+     * 站点消失则取消入库并降落。入库成功时实体数据已原子转入站内,随后移除实体。
+     */
+    private void serverDockingTick() {
+        BlockPos stationPos = this.dockStationPos;
+        DroneStationBlockEntity station = stationPos != null
+            && this.level().getBlockEntity(stationPos) instanceof DroneStationBlockEntity found
+            ? found
+            : null;
+        if (station == null) {
+            this.dockStationPos = null;
+            this.setFlightState(DroneFlightState.LANDING);
+            return;
+        }
+        Vec3 approach = station.dockApproachPoint();
+        Vec3 delta = approach.subtract(this.position());
+        if (delta.length() < 0.35D) {
+            if (station.canAcceptDocking() && station.tryDock(this)) {
+                this.dockStationPos = null;
+                this.discard();
+                return;
+            }
+            // 泊位忙或站满:贴着对准点悬停等待,推挤自然分散多架排队的无人机。
+            this.setDeltaMovement(delta.scale(0.2D));
+            return;
+        }
+        double speed = Math.min(0.25D, delta.length() * 0.25D);
+        Vec3 motion = delta.normalize().scale(speed);
+        // 无寻路的基础版本:水平方向被挡时优先爬升越障。
+        if (this.horizontalCollision) {
+            motion = new Vec3(motion.x * 0.2D, 0.12D, motion.z * 0.2D);
+        }
+        this.setDeltaMovement(motion);
+    }
+
+    /**
+     * 接受站点召回,转入入库飞行。已在入库途中、正在执行入库的无人机不重复接受;
+     * 返回是否真正开始返站。
+     */
+    public boolean startDockingTo(BlockPos stationPos) {
+        if (this.level().isClientSide || this.isRemoved()) return false;
+        if (this.flightState() == DroneFlightState.DOCKING) return false;
+        this.dockStationPos = stationPos.immutable();
+        this.setFlightState(DroneFlightState.DOCKING);
+        return true;
     }
 
     /** 无任务观察无人机有电即离地悬停;其余工种落地等待。 */
@@ -447,6 +500,9 @@ public class DroneEntity extends Entity {
         if (tag.contains("FlightState")) {
             this.setFlightState(DroneFlightState.byId(tag.getByte("FlightState")));
         }
+        this.dockStationPos = tag.contains("DockStation")
+            ? BlockPos.of(tag.getLong("DockStation"))
+            : null;
     }
 
     @Override
@@ -456,5 +512,8 @@ public class DroneEntity extends Entity {
             .resultOrPartial(error -> AnvilcraftPlasticraft.LOGGER.error("Failed to save drone data: {}", error))
             .ifPresent(encoded -> tag.put("DroneData", encoded));
         tag.putByte("FlightState", (byte) this.flightState().ordinal());
+        if (this.dockStationPos != null) {
+            tag.putLong("DockStation", this.dockStationPos.asLong());
+        }
     }
 }

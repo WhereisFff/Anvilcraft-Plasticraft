@@ -43,6 +43,7 @@ public final class PlasticraftItemGroups {
                 // 创造物品栏只展示装好默认白色螺旋桨的空无人机;
                 // 具体工具经右击叠加层选择,与十六色塑料的交互一致。
                 output.accept(DroneItem.creativePickerSource());
+                output.accept(PlasticraftBlocks.DRONE_STATION.asItem());
             })
             .title(Component.translatable(TITLE_KEY))
             // NeoForge 的排序图将 withTabsBefore(X) 记录为 X -> this，

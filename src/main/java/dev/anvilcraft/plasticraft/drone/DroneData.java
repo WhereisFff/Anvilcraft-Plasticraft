@@ -97,6 +97,18 @@ public record DroneData(
         );
     }
 
+    public DroneData withEnergy(int newEnergy) {
+        return new DroneData(
+            this.toolId,
+            this.leftPropeller,
+            this.rightPropeller,
+            newEnergy,
+            this.owner,
+            this.shortageStrategy,
+            this.collectionInventory
+        );
+    }
+
     private static void encode(RegistryFriendlyByteBuf buffer, DroneData data) {
         ResourceLocation.STREAM_CODEC.encode(buffer, data.toolId);
         ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, data.leftPropeller);

@@ -1,10 +1,12 @@
 package dev.anvilcraft.plasticraft.init;
 
+import com.mojang.serialization.Codec;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.drone.DroneData;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.codec.ByteBufCodecs;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
@@ -30,6 +32,15 @@ public final class PlasticraftDataComponents {
         () -> DataComponentType.<DroneData>builder()
             .persistent(DroneData.CODEC)
             .networkSynchronized(DroneData.STREAM_CODEC)
+            .build()
+    );
+
+    /** 无人机站拆下与重放时随物品保留的内部 FE。 */
+    public static final Supplier<DataComponentType<Integer>> STATION_ENERGY = COMPONENTS.register(
+        "station_energy",
+        () -> DataComponentType.<Integer>builder()
+            .persistent(Codec.intRange(0, Integer.MAX_VALUE))
+            .networkSynchronized(ByteBufCodecs.VAR_INT)
             .build()
     );
 

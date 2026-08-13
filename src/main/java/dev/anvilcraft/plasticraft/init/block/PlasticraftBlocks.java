@@ -5,6 +5,7 @@ import dev.anvilcraft.lib.v2.registrum.util.entry.BlockEntry;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.CatalyticPressLidBlock;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
+import dev.anvilcraft.plasticraft.block.DroneStationBlock;
 import dev.anvilcraft.plasticraft.block.HardenedResinAnvilBlock;
 import dev.anvilcraft.plasticraft.block.HardenedResinCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
@@ -56,6 +57,11 @@ import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.material.PushReaction;
 import net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent;
+import net.minecraft.world.level.storage.loot.LootPool;
+import net.minecraft.world.level.storage.loot.LootTable;
+import net.minecraft.world.level.storage.loot.entries.LootItem;
+import net.minecraft.world.level.storage.loot.functions.CopyComponentsFunction;
+import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
 import net.neoforged.neoforge.client.model.generators.ConfiguredModel;
 import net.neoforged.neoforge.client.model.generators.ModelBuilder;
 import net.neoforged.neoforge.client.model.generators.ModelFile;
@@ -93,6 +99,38 @@ public final class PlasticraftBlocks {
         .model((context, provider) -> provider.withExistingParent(
             context.getName(),
             provider.modLoc("block/" + context.getName())
+        ))
+        .build()
+        .register();
+
+    public static final BlockEntry<DroneStationBlock> DRONE_STATION = AnvilcraftPlasticraft.REGISTRUM
+        .block("drone_station", DroneStationBlock::new)
+        .initialProperties(() -> Blocks.IRON_BLOCK)
+        .properties(properties -> properties
+            .strength(5.0F, 1200.0F)
+            .sound(SoundType.METAL)
+            .pushReaction(PushReaction.BLOCK))
+        .lang("Drone Station")
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE)
+        // 拆下与重放经方块实体隐式组件保留内部 FE。
+        .loot((tables, block) -> tables.add(block, LootTable.lootTable().withPool(LootPool.lootPool()
+            .setRolls(ConstantValue.exactly(1.0F))
+            .add(LootItem.lootTableItem(block)
+                .apply(CopyComponentsFunction.copyComponents(CopyComponentsFunction.Source.BLOCK_ENTITY))))))
+        .blockstate((context, provider) -> {
+            // 有电与无电两套烘焙模型由内部 FE 是否为零切换,与塑料成型舱一致。
+            ModelFile powered = provider.models().getExistingFile(provider.modLoc("block/drone_station"));
+            ModelFile unpowered = provider.models().getExistingFile(provider.modLoc("block/drone_station_off"));
+            provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
+                .modelFile(state.getValue(DroneStationBlock.POWERED) ? powered : unpowered)
+                .rotationY(((int) state.getValue(DroneStationBlock.FACING).toYRot() + 180) % 360)
+                .build());
+        })
+        .item()
+        // 物品模型使用有电闭舱外观。
+        .model((context, provider) -> provider.withExistingParent(
+            context.getName(),
+            provider.modLoc("block/drone_station")
         ))
         .build()
         .register();

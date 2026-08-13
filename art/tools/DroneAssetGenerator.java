@@ -136,7 +136,108 @@ public final class DroneAssetGenerator {
         emit(spyglass, 32, TEXTURES.resolve("drone/tool/observation_spyglass.png"),
             BLOCKBENCH.resolve("drone_tool/observation_spyglass.bbmodel"), "observation_spyglass");
         generateGui();
+        generateStationAssets();
         System.out.println("Drone assets generated.");
+    }
+
+    // ==================== 无人机站资产 ====================
+
+    static final Path BLOCK_TEXTURES = Path.of("src/main/resources/assets/anvilcraftplasticraft/textures/block");
+
+    /** 站体方块贴图(有电/无电各一张,cube_all 共用)、站点 GUI 背景与召回按钮。 */
+    static void generateStationAssets() throws IOException {
+        Files.createDirectories(BLOCK_TEXTURES);
+        writeStationBlockTexture("drone_station.png", true);
+        writeStationBlockTexture("drone_station_off.png", false);
+
+        BufferedImage background = new BufferedImage(176, 186, BufferedImage.TYPE_INT_ARGB);
+        paintPanel(background, 0, 0, 176, 186);
+        paintInset(background, 10, 20, 13, 37);      // 能量条框
+        for (int row = 0; row < 4; row++) {          // 16 个无人机槽 4x4
+            for (int column = 0; column < 4; column++) {
+                paintSlot(background, 43 + column * 18, 17 + row * 18);
+            }
+        }
+        paintSlot(background, 133, 26);              // 结构磁盘槽
+        paintSlot(background, 133, 62);              // 电容器充能槽
+        for (int row = 0; row < 3; row++) {          // 玩家背包
+            for (int column = 0; column < 9; column++) {
+                paintSlot(background, 7 + column * 18, 103 + row * 18);
+            }
+        }
+        for (int column = 0; column < 9; column++) { // 快捷栏
+            paintSlot(background, 7 + column * 18, 161);
+        }
+        ImageIO.write(background, "png", GUI.resolve("background/drone_station.png").toFile());
+        System.out.println("  " + GUI.resolve("background/drone_station.png"));
+
+        writeButton("return_home", DroneAssetGenerator::paintReturnHomeIcon);
+    }
+
+    static void writeStationBlockTexture(String name, boolean powered) throws IOException {
+        BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+        long seed = name.hashCode();
+        // 机壳底色与铆钉边框。
+        for (int x = 0; x < 16; x++) {
+            for (int y = 0; y < 16; y++) {
+                double noise = (hash(seed, x, y) % 1000) / 1000.0 * 0.08 - 0.04;
+                set(image, x, y, scale(BODY, (powered ? 1.0 : 0.82) * (1.0 + noise)));
+            }
+        }
+        for (int i = 0; i < 16; i++) {
+            set(image, i, 0, scale(IONO, 0.9));
+            set(image, i, 15, scale(IONO, 0.7));
+            set(image, 0, i, scale(IONO, 0.8));
+            set(image, 15, i, scale(IONO, 0.8));
+        }
+        set(image, 1, 1, CORE);
+        set(image, 14, 1, CORE);
+        set(image, 1, 14, CORE);
+        set(image, 14, 14, CORE);
+        // 中央舱门:双开缝线与合页。
+        for (int x = 4; x <= 11; x++) {
+            for (int y = 4; y <= 11; y++) {
+                double noise = (hash(seed + 7, x, y) % 1000) / 1000.0 * 0.06 - 0.03;
+                set(image, x, y, scale(0x2C2E31, (powered ? 1.0 : 0.8) * (1.0 + noise)));
+            }
+        }
+        for (int i = 4; i <= 11; i++) {
+            set(image, i, 4, scale(HUB, 0.8));
+            set(image, i, 11, scale(HUB, 0.6));
+            set(image, 4, i, scale(HUB, 0.7));
+            set(image, 11, i, scale(HUB, 0.7));
+            set(image, 7, i, scale(0x1B1C1E, 1.0));
+            set(image, 8, i, scale(0x1B1C1E, 1.0));
+        }
+        // 四角状态灯:有电亮青,无电熄灭。
+        int lampColor = powered ? CORE_GLOW : scale(CORE_GLOW, 0.25);
+        set(image, 2, 2, lampColor);
+        set(image, 13, 2, lampColor);
+        set(image, 2, 13, lampColor);
+        set(image, 13, 13, lampColor);
+        Path path = BLOCK_TEXTURES.resolve(name);
+        ImageIO.write(image, "png", path.toFile());
+        System.out.println("  " + path);
+    }
+
+    static void paintReturnHomeIcon(BufferedImage image, int y0, int color) {
+        // 小房子:屋顶三角 + 房体。
+        for (int x = 3; x <= 12; x++) {
+            int half = Math.abs(x - 7) + Math.abs(x - 8);
+            int roofY = 3 + (half - 1) / 2;
+            for (int y = roofY; y <= 7; y++) {
+                if (y >= 3) set(image, x, y0 + y, color);
+            }
+        }
+        for (int x = 5; x <= 10; x++) {
+            for (int y = 8; y <= 12; y++) {
+                set(image, x, y0 + y, color);
+            }
+        }
+        for (int y = 9; y <= 12; y++) {
+            set(image, 7, y0 + y, 0);
+            set(image, 8, y0 + y, 0);
+        }
     }
 
     // ==================== GUI 资产 ====================

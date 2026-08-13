@@ -4,17 +4,25 @@ import dev.anvilcraft.lib.v2.registrum.util.entry.BlockEntityEntry;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
+import dev.anvilcraft.plasticraft.block.entity.DroneStationBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.HighHeatFuelCauldronBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.Plastic3DPrintingComponentBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.BondedEntityBlockEntityRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.CondenserTowerBlockEntityRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.blockentity.DroneStationRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.HighHeatFuelCauldronBlockEntityRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.PlasticMoldingChamberRenderer;
 
 /** Plasticraft 方块实体注册。 */
 public final class PlasticraftBlockEntities {
+    public static final BlockEntityEntry<DroneStationBlockEntity> DRONE_STATION = AnvilcraftPlasticraft.REGISTRUM
+        .<DroneStationBlockEntity>blockEntity("drone_station", DroneStationBlockEntity::new)
+        .validBlock(PlasticraftBlocks.DRONE_STATION)
+        .renderer(() -> DroneStationRenderer::new)
+        .register();
+
     public static final BlockEntityEntry<Plastic3DPrintingComponentBlockEntity> PLASTIC_3D_PRINTING_COMPONENT =
         AnvilcraftPlasticraft.REGISTRUM
             .<Plastic3DPrintingComponentBlockEntity>blockEntity(
