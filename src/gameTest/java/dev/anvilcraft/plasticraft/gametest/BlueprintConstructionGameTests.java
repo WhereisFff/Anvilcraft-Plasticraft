@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintService;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobIndex;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionStructureLibrary;
+import dev.anvilcraft.plasticraft.blueprint.LitematicaImporter;
 import dev.anvilcraft.plasticraft.blueprint.ScannerDiskImporter;
 import dev.anvilcraft.plasticraft.blueprint.StructureSnapshot;
 import dev.anvilcraft.plasticraft.blueprint.StructureSnapshotCodec;
@@ -18,7 +19,9 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
+import net.minecraft.SharedConstants;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.DoubleTag;
 import net.minecraft.nbt.IntTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -442,6 +445,224 @@ public final class BlueprintConstructionGameTests {
             BlueprintSource.VANILLA_FILE
         );
         return disk;
+    }
+
+    /** 多区域(含负尺寸轴)Litematica 与等价原版稠密 NBT 产生相同规范哈希。 */
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "A multi-region litematic converts to the same canonical hash as vanilla NBT")
+    static void litematicMatchesVanillaCanonicalHash(ExtendedGameTestHelper helper) {
+        try {
+            LitematicaImporter.ConvertedStructure converted = LitematicaImporter.convert(sampleLitematic(false));
+            check(converted.warnings().isEmpty(), "clean litematic produced warnings: " + converted.warnings());
+            StructureSnapshotCodec.ParsedSnapshot fromLitematic = StructureSnapshotCodec.parse(
+                converted.structureTag(),
+                helper.getLevel().registryAccess()
+            );
+            StructureSnapshotCodec.ParsedSnapshot fromVanilla = StructureSnapshotCodec.parse(
+                equivalentVanillaStructure(),
+                helper.getLevel().registryAccess()
+            );
+            String litematicHash = StructureSnapshotCodec.hash(StructureSnapshotCodec.write(fromLitematic.snapshot()));
+            String vanillaHash = StructureSnapshotCodec.hash(StructureSnapshotCodec.write(fromVanilla.snapshot()));
+            check(
+                litematicHash.equals(vanillaHash),
+                "litematic hash " + litematicHash + " differs from vanilla hash " + vanillaHash
+            );
+            check(fromLitematic.snapshot().hasBlockEntities(), "litematic chest NBT was lost");
+            check(fromLitematic.snapshot().hasEntities(), "litematic entity was lost");
+            check(
+                fromLitematic.snapshot().size().equals(new Vec3i(3, 2, 2)),
+                "litematic union size wrong: " + fromLitematic.snapshot().size()
+            );
+        } catch (ConstructionBlueprintException exception) {
+            throw new GameTestAssertException(
+                "conversion failed: " + exception.reason() + " " + exception.detail()
+            );
+        }
+        helper.succeed();
+    }
+
+    /** 损坏的 Litematica 数组、缺失区域与重叠区域按设计显式报告。 */
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Corrupted litematic files report explicit reasons and overlaps warn")
+    static void litematicCorruptionAndOverlapAreReported(ExtendedGameTestHelper helper) {
+        CompoundTag missingRegions = new CompoundTag();
+        missingRegions.putInt("MinecraftDataVersion", currentDataVersion());
+        try {
+            LitematicaImporter.convert(missingRegions);
+            throw new GameTestAssertException("litematic without regions converted successfully");
+        } catch (ConstructionBlueprintException exception) {
+            check(exception.reason().equals("corrupt_litematic"), "unexpected reason: " + exception.reason());
+        }
+
+        CompoundTag truncated = sampleLitematic(false);
+        truncated.getCompound("Regions").getCompound("a").putLongArray("BlockStates", new long[0]);
+        try {
+            LitematicaImporter.convert(truncated);
+            throw new GameTestAssertException("litematic with truncated BlockStates converted successfully");
+        } catch (ConstructionBlueprintException exception) {
+            check(exception.reason().equals("corrupt_litematic"), "unexpected reason: " + exception.reason());
+        }
+
+        try {
+            LitematicaImporter.ConvertedStructure overlapped = LitematicaImporter.convert(sampleLitematic(true));
+            check(
+                overlapped.warnings().stream().anyMatch(warning -> warning.reason().equals("overlapping_regions")),
+                "overlapping regions did not produce a warning"
+            );
+        } catch (ConstructionBlueprintException exception) {
+            throw new GameTestAssertException("overlapping litematic failed to convert: " + exception.reason());
+        }
+        helper.succeed();
+    }
+
+    private static int currentDataVersion() {
+        return SharedConstants.getCurrentVersion().getDataVersion().getVersion();
+    }
+
+    /**
+     * 两区域样例:区域 a 为 2x2x2 正尺寸(石头层+玻璃+带内容箱子+盔甲架),
+     * 区域 b 用负 Y/Z 尺寸覆盖 x=2 的泥土列;overlap 为真时区域 b 平移进区域 a 制造重叠。
+     */
+    private static CompoundTag sampleLitematic(boolean overlap) {
+        CompoundTag root = new CompoundTag();
+        root.putInt("Version", 6);
+        root.putInt("MinecraftDataVersion", currentDataVersion());
+        CompoundTag regions = new CompoundTag();
+
+        CompoundTag regionA = new CompoundTag();
+        regionA.put("Position", vecTag(0, 0, 0));
+        regionA.put("Size", vecTag(2, 2, 2));
+        ListTag paletteA = new ListTag();
+        paletteA.add(namedState("minecraft:air"));
+        paletteA.add(namedState("minecraft:stone"));
+        paletteA.add(namedState("minecraft:glass"));
+        paletteA.add(namedState("minecraft:chest"));
+        regionA.put("BlockStatePalette", paletteA);
+        // 2 bit 条目,索引序 x+z*2+y*4,低位在前:石头(1)、箱子(3)、石头、石头、玻璃(2)、空气x3。
+        regionA.putLongArray("BlockStates", new long[]{0b10_01_01_11_01L});
+        ListTag tileEntities = new ListTag();
+        CompoundTag chest = new CompoundTag();
+        chest.putString("id", "minecraft:chest");
+        ListTag items = new ListTag();
+        CompoundTag diamond = new CompoundTag();
+        diamond.putByte("Slot", (byte) 0);
+        diamond.putString("id", "minecraft:diamond");
+        diamond.putInt("count", 1);
+        items.add(diamond);
+        chest.put("Items", items);
+        chest.putInt("x", 1);
+        chest.putInt("y", 0);
+        chest.putInt("z", 0);
+        tileEntities.add(chest);
+        regionA.put("TileEntities", tileEntities);
+        ListTag entitiesA = new ListTag();
+        entitiesA.add(armorStandNbt());
+        regionA.put("Entities", entitiesA);
+        regions.put("a", regionA);
+
+        CompoundTag regionB = new CompoundTag();
+        regionB.put("Position", overlap ? vecTag(1, 1, 1) : vecTag(2, 1, 1));
+        regionB.put("Size", vecTag(1, -2, -2));
+        ListTag paletteB = new ListTag();
+        paletteB.add(namedState("minecraft:dirt"));
+        regionB.put("BlockStatePalette", paletteB);
+        regionB.putLongArray("BlockStates", new long[]{0L});
+        regionB.put("TileEntities", new ListTag());
+        regionB.put("Entities", new ListTag());
+        regions.put("b", regionB);
+
+        root.put("Regions", regions);
+        return root;
+    }
+
+    private static CompoundTag vecTag(int x, int y, int z) {
+        CompoundTag tag = new CompoundTag();
+        tag.putInt("x", x);
+        tag.putInt("y", y);
+        tag.putInt("z", z);
+        return tag;
+    }
+
+    private static CompoundTag namedState(String id) {
+        CompoundTag tag = new CompoundTag();
+        tag.putString("Name", id);
+        return tag;
+    }
+
+    private static CompoundTag armorStandNbt() {
+        CompoundTag entity = new CompoundTag();
+        entity.putString("id", "minecraft:armor_stand");
+        ListTag pos = new ListTag();
+        pos.add(DoubleTag.valueOf(0.5D));
+        pos.add(DoubleTag.valueOf(1.0D));
+        pos.add(DoubleTag.valueOf(0.5D));
+        entity.put("Pos", pos);
+        return entity;
+    }
+
+    /** 与 {@link #sampleLitematic} 等价的原版稠密结构 NBT。 */
+    private static CompoundTag equivalentVanillaStructure() {
+        CompoundTag tag = new CompoundTag();
+        tag.putInt("DataVersion", currentDataVersion());
+        ListTag size = new ListTag();
+        size.add(IntTag.valueOf(3));
+        size.add(IntTag.valueOf(2));
+        size.add(IntTag.valueOf(2));
+        tag.put("size", size);
+
+        ListTag palette = new ListTag();
+        palette.add(namedState("minecraft:stone"));
+        palette.add(namedState("minecraft:chest"));
+        palette.add(namedState("minecraft:glass"));
+        palette.add(namedState("minecraft:dirt"));
+        palette.add(namedState("minecraft:air"));
+        tag.put("palette", palette);
+
+        ListTag blocks = new ListTag();
+        blocks.add(blockEntry(0, 0, 0, 0));
+        CompoundTag chestEntry = blockEntry(1, 0, 0, 1);
+        CompoundTag chestNbt = new CompoundTag();
+        chestNbt.putString("id", "minecraft:chest");
+        ListTag items = new ListTag();
+        CompoundTag diamond = new CompoundTag();
+        diamond.putByte("Slot", (byte) 0);
+        diamond.putString("id", "minecraft:diamond");
+        diamond.putInt("count", 1);
+        items.add(diamond);
+        chestNbt.put("Items", items);
+        chestEntry.put("nbt", chestNbt);
+        blocks.add(chestEntry);
+        blocks.add(blockEntry(0, 0, 1, 0));
+        blocks.add(blockEntry(1, 0, 1, 0));
+        blocks.add(blockEntry(0, 1, 0, 2));
+        blocks.add(blockEntry(1, 1, 0, 4));
+        blocks.add(blockEntry(0, 1, 1, 4));
+        blocks.add(blockEntry(1, 1, 1, 4));
+        blocks.add(blockEntry(2, 0, 0, 3));
+        blocks.add(blockEntry(2, 0, 1, 3));
+        blocks.add(blockEntry(2, 1, 0, 3));
+        blocks.add(blockEntry(2, 1, 1, 3));
+        tag.put("blocks", blocks);
+
+        ListTag entities = new ListTag();
+        CompoundTag entry = new CompoundTag();
+        ListTag pos = new ListTag();
+        pos.add(DoubleTag.valueOf(0.5D));
+        pos.add(DoubleTag.valueOf(1.0D));
+        pos.add(DoubleTag.valueOf(0.5D));
+        entry.put("pos", pos);
+        ListTag blockPos = new ListTag();
+        blockPos.add(IntTag.valueOf(0));
+        blockPos.add(IntTag.valueOf(1));
+        blockPos.add(IntTag.valueOf(0));
+        entry.put("blockPos", blockPos);
+        entry.put("nbt", armorStandNbt());
+        entities.add(entry);
+        tag.put("entities", entities);
+        return tag;
     }
 
     /** 站点磁盘槽只接受带施工蓝图的结构磁盘。 */

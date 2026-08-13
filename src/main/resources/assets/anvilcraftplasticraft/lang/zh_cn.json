@@ -382,7 +382,7 @@
   "screen.anvilcraftplasticraft.blueprint_import.title": "导入蓝图文件",
   "screen.anvilcraftplasticraft.blueprint_import.refresh": "刷新",
   "screen.anvilcraftplasticraft.blueprint_import.open_folder": "打开文件夹",
-  "screen.anvilcraftplasticraft.blueprint_import.empty": "把 .nbt 结构文件放入 anvilcraftplasticraft/structures 后刷新",
+  "screen.anvilcraftplasticraft.blueprint_import.empty": "把 .nbt 或 .litematic 文件放入 anvilcraftplasticraft/structures 后刷新",
   "screen.anvilcraftplasticraft.blueprint_session.tool.move": "移动锚点",
   "screen.anvilcraftplasticraft.blueprint_session.tool.rotate": "旋转",
   "screen.anvilcraftplasticraft.blueprint_session.tool.flip": "镜像",
@@ -425,8 +425,11 @@
   "message.anvilcraftplasticraft.blueprint.unknown_entity": "存在未知实体,可能缺少模组",
   "message.anvilcraftplasticraft.blueprint.unsupported_format": "不支持的文件格式",
   "message.anvilcraftplasticraft.blueprint.corrupt_file": "文件不是可读的压缩 NBT",
+  "message.anvilcraftplasticraft.blueprint.corrupt_litematic": "Litematica 文件损坏",
   "message.anvilcraftplasticraft.blueprint.upload_rejected": "上传被拒绝",
   "message.anvilcraftplasticraft.blueprint.warning.multiple_palettes": "文件含多份调色板,已使用第一份",
   "message.anvilcraftplasticraft.blueprint.warning.duplicate_block_position": "存在重复方块坐标,保留最后一项",
-  "message.anvilcraftplasticraft.blueprint.warning.entity_missing_id": "缺少 id 的实体仅保留数据"
+  "message.anvilcraftplasticraft.blueprint.warning.entity_missing_id": "缺少 id 的实体仅保留数据",
+  "message.anvilcraftplasticraft.blueprint.warning.overlapping_regions": "区域存在重叠,后写入的区域覆盖先前内容",
+  "message.anvilcraftplasticraft.blueprint.warning.unmapped_fields": "已忽略无法映射的扩展字段"
 }

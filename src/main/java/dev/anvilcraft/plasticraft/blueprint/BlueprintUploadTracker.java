@@ -10,6 +10,8 @@ import net.minecraft.world.item.ItemStack;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -75,6 +77,13 @@ public final class BlueprintUploadTracker {
         try {
             byte[] assembled = assemble(session);
             CompoundTag tag = readStructureNbt(assembled);
+            BlueprintSource source = sourceOf(session.fileName());
+            List<StructureSnapshotCodec.BlueprintWarning> conversionWarnings = List.of();
+            if (source == BlueprintSource.LITEMATICA_FILE) {
+                LitematicaImporter.ConvertedStructure converted = LitematicaImporter.convert(tag);
+                tag = converted.structureTag();
+                conversionWarnings = converted.warnings();
+            }
             ItemStack disk = player.getItemInHand(InteractionHand.MAIN_HAND);
             String name = stripExtension(session.fileName());
             ConstructionBlueprintService.ImportResult result = ConstructionBlueprintService.importIntoDisk(
@@ -82,14 +91,11 @@ public final class BlueprintUploadTracker {
                 disk,
                 tag,
                 name,
-                sourceOf(session.fileName())
+                source
             );
-            BlueprintImportResultPacket.sendSuccess(
-                player,
-                "imported",
-                result.data().name(),
-                result.warnings()
-            );
+            List<StructureSnapshotCodec.BlueprintWarning> allWarnings = new ArrayList<>(conversionWarnings);
+            allWarnings.addAll(result.warnings());
+            BlueprintImportResultPacket.sendSuccess(player, "imported", result.data().name(), allWarnings);
         } catch (ConstructionBlueprintException exception) {
             BlueprintImportResultPacket.sendFailure(player, exception);
         }
@@ -122,10 +128,11 @@ public final class BlueprintUploadTracker {
         }
     }
 
-    /** 按扩展名识别文件格式;TODO 05 在此追加 Create 与 Litematica 适配。 */
+    /** 按扩展名识别文件格式;Create 蓝图就是原版结构 .nbt,走同一路径。 */
     private static BlueprintSource sourceOf(String fileName) throws ConstructionBlueprintException {
         String lower = fileName.toLowerCase(Locale.ROOT);
         if (lower.endsWith(".nbt")) return BlueprintSource.VANILLA_FILE;
+        if (lower.endsWith(".litematic")) return BlueprintSource.LITEMATICA_FILE;
         throw new ConstructionBlueprintException("unsupported_format", fileName);
     }
 

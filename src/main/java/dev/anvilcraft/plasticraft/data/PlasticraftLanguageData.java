@@ -513,7 +513,7 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.blueprint_import.open_folder", "Open Folder");
         provider.add(
             "screen.anvilcraftplasticraft.blueprint_import.empty",
-            "Put .nbt structure files into anvilcraftplasticraft/structures and refresh"
+            "Put .nbt or .litematic files into anvilcraftplasticraft/structures and refresh"
         );
 
         // 部署会话工具条与状态行。
@@ -570,9 +570,12 @@ public final class PlasticraftLanguageData {
         provider.add("message.anvilcraftplasticraft.blueprint.unknown_entity", "Unknown entities, likely missing mods");
         provider.add("message.anvilcraftplasticraft.blueprint.unsupported_format", "Unsupported file format");
         provider.add("message.anvilcraftplasticraft.blueprint.corrupt_file", "File is not readable compressed NBT");
+        provider.add("message.anvilcraftplasticraft.blueprint.corrupt_litematic", "Corrupted Litematica file");
         provider.add("message.anvilcraftplasticraft.blueprint.upload_rejected", "Upload rejected");
         provider.add("message.anvilcraftplasticraft.blueprint.warning.multiple_palettes", "File has multiple palettes, used the first");
         provider.add("message.anvilcraftplasticraft.blueprint.warning.duplicate_block_position", "Duplicate block positions, kept the last");
         provider.add("message.anvilcraftplasticraft.blueprint.warning.entity_missing_id", "Entities without id kept as data only");
+        provider.add("message.anvilcraftplasticraft.blueprint.warning.overlapping_regions", "Overlapping regions, later regions override earlier ones");
+        provider.add("message.anvilcraftplasticraft.blueprint.warning.unmapped_fields", "Ignored unmapped extra fields");
     }
 }

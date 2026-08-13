@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
  */
 public final class BlueprintClientFiles {
     private static final Pattern SAFE_FILE_NAME = Pattern.compile("[^/\\\\]{1,128}");
-    private static final List<String> IMPORTABLE_EXTENSIONS = List.of(".nbt");
+    private static final List<String> IMPORTABLE_EXTENSIONS = List.of(".nbt", ".litematic");
 
     private BlueprintClientFiles() {
     }

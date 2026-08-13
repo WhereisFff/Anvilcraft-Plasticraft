@@ -16,9 +16,11 @@ Three import entries, all writing into the held structure disk:
 
 - Right-click a vanilla structure block with a saved structure while holding a disk to copy that template
 - Right-click a structure disk that carries scanner data to convert the scan in place; the conversion restores coordinates to world alignment using the recorded facing and upside-down flag, so the deployed result matches the scanned original
-- Sneak-right-click the disk to open the file import screen, which reads vanilla .nbt structure files from anvilcraftplasticraft/structures in the game directory and uploads them in chunks
+- Sneak-right-click the disk to open the file import screen, which reads files from anvilcraftplasticraft/structures in the game directory and uploads them in chunks
 
-Limits: at most 512 blocks per axis, 2,097,152 block entries, 4,096 entity entries and 8 MiB per uploaded file. A disk holding a molding chamber blueprint cannot double as a construction blueprint; a disk with a live deployment must be cancelled before importing over it.
+File import supports three formats that all produce the same canonical snapshot, so identical content yields identical hashes: vanilla structure .nbt; Create schematics, whose .nbt is the vanilla structure format and is read through the vanilla path; and Litematica .litematic with multiple regions, negative-size axes, tightly bit-packed palettes, block entities and entities, where the union of regions forms the blueprint bounds, overlapping regions are overridden by later ones with a warning, and unmappable extra fields are ignored and reported individually. Files from older game versions are upgraded through data fixers first.
+
+Limits: at most 512 blocks per axis, 2,097,152 block entries (for Litematica counted over the region union volume), 4,096 entity entries and 8 MiB per uploaded file. A disk holding a molding chamber blueprint cannot double as a construction blueprint; a disk with a live deployment must be cancelled before importing over it.
 
 ## Deployment session
 
