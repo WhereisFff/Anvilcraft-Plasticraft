@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.block.entity;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.DroneStationBlock;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
 import dev.anvilcraft.plasticraft.drone.DroneData;
 import dev.anvilcraft.plasticraft.drone.DroneEnergyModel;
 import dev.anvilcraft.plasticraft.entity.drone.DroneEntity;
@@ -14,8 +15,8 @@ import dev.dubhe.anvilcraft.AnvilCraft;
 import dev.dubhe.anvilcraft.api.item.IChargerDischargeable;
 import dev.dubhe.anvilcraft.api.power.IPowerConsumer;
 import dev.dubhe.anvilcraft.api.power.PowerGrid;
+import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.item.CapacitorItem;
-import dev.dubhe.anvilcraft.item.DiskItem;
 import dev.dubhe.anvilcraft.item.SuperCapacitorItem;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
@@ -124,7 +125,10 @@ public class DroneStationBlockEntity extends BlockEntity implements IPowerConsum
 
     public static boolean isValidForSlot(int slot, ItemStack stack) {
         if (slot < DRONE_SLOT_COUNT) return stack.getItem() instanceof DroneItem;
-        if (slot == DISK_SLOT) return stack.getItem() instanceof DiskItem;
+        // 磁盘槽只接受携带施工蓝图的结构磁盘,空盘与成型舱蓝图盘都不入槽。
+        if (slot == DISK_SLOT) {
+            return stack.is(ModItems.STRUCTURE_DISK.get()) && ConstructionBlueprintData.get(stack).isPresent();
+        }
         if (slot == CAPACITOR_SLOT) return capacitorEnergy(stack) > 0;
         return false;
     }

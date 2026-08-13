@@ -492,5 +492,87 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.hammer_direction.east", "East");
         provider.add("screen.anvilcraftplasticraft.hammer_direction.south", "South");
         provider.add("screen.anvilcraftplasticraft.hammer_direction.west", "West");
+
+        // 结构蓝图磁盘 Tooltip:首行摘要与状态,Shift 展开尺寸、来源与内容标记。
+        provider.add("tooltip.anvilcraftplasticraft.blueprint.summary", "Construction blueprint: %s");
+        provider.add("tooltip.anvilcraftplasticraft.blueprint.state_imported", "Not placed, right-click to place a projection");
+        provider.add("tooltip.anvilcraftplasticraft.blueprint.state_placed", "Placed, right-click this slot to start");
+        provider.add("tooltip.anvilcraftplasticraft.blueprint.state_active", "Construction task running");
+        provider.add("tooltip.anvilcraftplasticraft.blueprint.size", "Size: %1$s x %2$s x %3$s");
+        provider.add("tooltip.anvilcraftplasticraft.blueprint.source.vanilla_template", "Source: structure block template");
+        provider.add("tooltip.anvilcraftplasticraft.blueprint.source.scanner_disk", "Source: structure scanner");
+        provider.add("tooltip.anvilcraftplasticraft.blueprint.source.vanilla_file", "Source: vanilla .nbt file");
+        provider.add("tooltip.anvilcraftplasticraft.blueprint.source.create_file", "Source: Create .nbt file");
+        provider.add("tooltip.anvilcraftplasticraft.blueprint.source.litematica_file", "Source: Litematica file");
+        provider.add("tooltip.anvilcraftplasticraft.blueprint.has_block_entities", "Contains block entity data");
+        provider.add("tooltip.anvilcraftplasticraft.blueprint.has_entities", "Contains entities");
+
+        // 蓝图文件导入界面。
+        provider.add("screen.anvilcraftplasticraft.blueprint_import.title", "Import Blueprint File");
+        provider.add("screen.anvilcraftplasticraft.blueprint_import.refresh", "Refresh");
+        provider.add("screen.anvilcraftplasticraft.blueprint_import.open_folder", "Open Folder");
+        provider.add(
+            "screen.anvilcraftplasticraft.blueprint_import.empty",
+            "Put .nbt structure files into anvilcraftplasticraft/structures and refresh"
+        );
+
+        // 部署会话工具条与状态行。
+        provider.add("screen.anvilcraftplasticraft.blueprint_session.tool.move", "Move anchor");
+        provider.add("screen.anvilcraftplasticraft.blueprint_session.tool.rotate", "Rotate");
+        provider.add("screen.anvilcraftplasticraft.blueprint_session.tool.flip", "Mirror");
+        provider.add("screen.anvilcraftplasticraft.blueprint_session.tool.layer_down", "Layer down");
+        provider.add("screen.anvilcraftplasticraft.blueprint_session.tool.layer_up", "Layer up");
+        provider.add("screen.anvilcraftplasticraft.blueprint_session.tool.confirm", "Confirm placement");
+        provider.add("screen.anvilcraftplasticraft.blueprint_session.tool.cancel", "Cancel placement");
+        provider.add("screen.anvilcraftplasticraft.blueprint_session.layer_all", "All");
+        provider.add("screen.anvilcraftplasticraft.blueprint_session.anchor_locked", "Anchor locked");
+        provider.add("screen.anvilcraftplasticraft.blueprint_session.anchor_following", "Following crosshair");
+        provider.add(
+            "screen.anvilcraftplasticraft.blueprint_session.status",
+            "%1$s | %2$s | Rotation %3$s | Mirror %4$s | Layer %5$s | %6$s"
+        );
+
+        // 蓝图操作结果与导入错误消息;detail 由客户端原样追加在冒号后。
+        provider.add("message.anvilcraftplasticraft.blueprint.imported", "Blueprint imported");
+        provider.add("message.anvilcraftplasticraft.blueprint.deployed", "Projection placed");
+        provider.add("message.anvilcraftplasticraft.blueprint.cancelled", "Projection cancelled");
+        provider.add("message.anvilcraftplasticraft.blueprint.started", "Construction task started");
+        provider.add("message.anvilcraftplasticraft.blueprint.stopped", "Construction task stopped");
+        provider.add("message.anvilcraftplasticraft.blueprint.not_structure_disk", "Hold a structure disk to import");
+        provider.add(
+            "message.anvilcraftplasticraft.blueprint.disk_in_molding_use",
+            "This disk stores a molding chamber blueprint"
+        );
+        provider.add("message.anvilcraftplasticraft.blueprint.disk_not_imported", "This disk has no blueprint yet");
+        provider.add("message.anvilcraftplasticraft.blueprint.structure_missing", "Structure data is missing from this world");
+        provider.add("message.anvilcraftplasticraft.blueprint.job_missing", "This deployment no longer exists");
+        provider.add("message.anvilcraftplasticraft.blueprint.not_owner", "Only the owner can manage this blueprint");
+        provider.add("message.anvilcraftplasticraft.blueprint.template_missing", "Structure block has no saved template");
+        provider.add("message.anvilcraftplasticraft.blueprint.scanner_data_missing", "This disk has no scanner data");
+        provider.add("message.anvilcraftplasticraft.blueprint.scanner_file_missing", "Scanner structure file is missing");
+        provider.add("message.anvilcraftplasticraft.blueprint.unsafe_filename", "Rejected unsafe file name");
+        provider.add("message.anvilcraftplasticraft.blueprint.unsafe_path", "Rejected unsafe file path");
+        provider.add("message.anvilcraftplasticraft.blueprint.unsafe_symlink", "Rejected symbolic link in structure library");
+        provider.add("message.anvilcraftplasticraft.blueprint.library_directory_failed", "Cannot prepare structure library");
+        provider.add("message.anvilcraftplasticraft.blueprint.structure_write_failed", "Failed to write structure file");
+        provider.add("message.anvilcraftplasticraft.blueprint.structure_read_failed", "Failed to read structure file");
+        provider.add(
+            "message.anvilcraftplasticraft.blueprint.atomic_write_unsupported",
+            "Filesystem does not support atomic writes"
+        );
+        provider.add("message.anvilcraftplasticraft.blueprint.corrupt_size", "Corrupted structure size");
+        provider.add("message.anvilcraftplasticraft.blueprint.corrupt_palette", "Corrupted structure palette");
+        provider.add("message.anvilcraftplasticraft.blueprint.corrupt_blocks", "Corrupted structure blocks");
+        provider.add("message.anvilcraftplasticraft.blueprint.corrupt_entities", "Corrupted structure entities");
+        provider.add("message.anvilcraftplasticraft.blueprint.position_out_of_bounds", "Block position outside declared size");
+        provider.add("message.anvilcraftplasticraft.blueprint.oversized", "Structure exceeds size limits");
+        provider.add("message.anvilcraftplasticraft.blueprint.unknown_block", "Unknown blocks, likely missing mods");
+        provider.add("message.anvilcraftplasticraft.blueprint.unknown_entity", "Unknown entities, likely missing mods");
+        provider.add("message.anvilcraftplasticraft.blueprint.unsupported_format", "Unsupported file format");
+        provider.add("message.anvilcraftplasticraft.blueprint.corrupt_file", "File is not readable compressed NBT");
+        provider.add("message.anvilcraftplasticraft.blueprint.upload_rejected", "Upload rejected");
+        provider.add("message.anvilcraftplasticraft.blueprint.warning.multiple_palettes", "File has multiple palettes, used the first");
+        provider.add("message.anvilcraftplasticraft.blueprint.warning.duplicate_block_position", "Duplicate block positions, kept the last");
+        provider.add("message.anvilcraftplasticraft.blueprint.warning.entity_missing_id", "Entities without id kept as data only");
     }
 }

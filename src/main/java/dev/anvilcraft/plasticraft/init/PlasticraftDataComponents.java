@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.init;
 
 import com.mojang.serialization.Codec;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
 import dev.anvilcraft.plasticraft.drone.DroneData;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import net.minecraft.core.component.DataComponentType;
@@ -41,6 +42,15 @@ public final class PlasticraftDataComponents {
         () -> DataComponentType.<Integer>builder()
             .persistent(Codec.intRange(0, Integer.MAX_VALUE))
             .networkSynchronized(ByteBufCodecs.VAR_INT)
+            .build()
+    );
+
+    /** 结构磁盘上的施工蓝图引用:内容哈希、摘要与部署任务 UUID。 */
+    public static final Supplier<DataComponentType<ConstructionBlueprintData>> BLUEPRINT_TASK = COMPONENTS.register(
+        "blueprint_task",
+        () -> DataComponentType.<ConstructionBlueprintData>builder()
+            .persistent(ConstructionBlueprintData.CODEC)
+            .networkSynchronized(ConstructionBlueprintData.STREAM_CODEC)
             .build()
     );
 
