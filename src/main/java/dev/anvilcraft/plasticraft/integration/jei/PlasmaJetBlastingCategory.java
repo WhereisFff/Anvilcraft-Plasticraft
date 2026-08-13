@@ -13,8 +13,6 @@ import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiFluidUtil;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiRecipeUtil;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiRenderHelper;
-import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
-import dev.dubhe.anvilcraft.recipe.component.HasCauldronSimple;
 import mezz.jei.api.gui.builder.IRecipeLayoutBuilder;
 import mezz.jei.api.gui.builder.IRecipeSlotBuilder;
 import mezz.jei.api.gui.builder.ITooltipBuilder;
@@ -27,15 +25,12 @@ import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.material.Fluid;
-import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
 import org.jetbrains.annotations.Nullable;
 
@@ -127,17 +122,15 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
         }
         if (recipe.hasFluidInput()) {
             Position position = fluidPosition(true, 1, 0, splitInputColumns);
-            if (hasRenderableInput(recipe.getHasCauldron())) {
-                JeiFluidUtil.addInputSlot(
-                    builder,
-                    INPUT_FLUID,
-                    position.x() + 1,
-                    position.y() + 1,
-                    16,
-                    16,
-                    recipe.getHasCauldron()
-                );
-            }
+            JeiFluidUtil.addInputSlot(
+                builder,
+                INPUT_FLUID,
+                position.x() + 1,
+                position.y() + 1,
+                16,
+                16,
+                recipe.getHasCauldron()
+            );
         }
 
         boolean splitOutputColumns = !recipe.getResultItems().isEmpty() && recipe.hasFluidOutput();
@@ -158,19 +151,18 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
             ).addItemStack(stack);
             JeiRecipeUtil.addTooltips(resultSlot, result.getMaxCount(), result.count());
         }
-        if (recipe.hasFluidOutput()) {
+        // 虚拟气体输出没有可注册的流体槽位,由 draw 阶段用蒸汽图标手绘。
+        if (!recipe.getHasCauldron().transforms().isEmpty()) {
             Position position = fluidPosition(false, 1, 0, splitOutputColumns);
-            if (hasRegisteredFluid(recipe.getHasCauldron().transform())) {
-                JeiFluidUtil.addOutputSlot(
-                    builder,
-                    OUTPUT_FLUID,
-                    position.x() + 1,
-                    position.y() + 1,
-                    16,
-                    16,
-                    recipe.getHasCauldron()
-                );
-            }
+            JeiFluidUtil.addOutputSlots(
+                builder,
+                OUTPUT_FLUID,
+                position.x() + 1,
+                position.y() + 1,
+                16,
+                16,
+                recipe.getHasCauldron()
+            );
         }
     }
 
@@ -202,7 +194,7 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
             );
             this.slot.draw(graphics, position.x(), position.y());
         }
-        if (recipe.hasFluidInput() && hasRenderableInput(recipe.getHasCauldron())) {
+        if (recipe.hasFluidInput()) {
             Position position = fluidPosition(true, 1, 0, splitInputColumns);
             this.slot.draw(graphics, position.x(), position.y());
         }
@@ -217,7 +209,7 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
             );
             this.slot.draw(graphics, position.x(), position.y());
         }
-        if (recipe.hasFluidOutput() && hasRegisteredFluid(recipe.getHasCauldron().transform())) {
+        if (recipe.hasFluidOutput()) {
             Position position = fluidPosition(false, 1, 0, splitOutputColumns);
             this.slot.draw(graphics, position.x(), position.y());
         }
@@ -235,20 +227,11 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
             RenderSupport.SINGLE_BLOCK
         );
 
-        if (recipe.hasFluidInput() && isVirtualFluidInput(recipe.getHasCauldron())) {
-            drawVirtualFluid(
-                graphics,
-                fluidPosition(true, 1, 0, splitInputColumns),
-                recipe.getHasCauldron().fluid()
-            );
-        }
-        if (recipe.hasFluidOutput() && isVirtualFluid(recipe.getHasCauldron().transform())) {
-            drawVirtualFluid(
-                graphics,
-                fluidPosition(false, 1, 0, splitOutputColumns),
-                recipe.getHasCauldron().transform()
-            );
-        }
+        recipe.gasOutput().ifPresent(gas -> drawVirtualFluid(
+            graphics,
+            fluidPosition(false, 1, 0, splitOutputColumns),
+            gas.id()
+        ));
     }
 
     @Override
@@ -262,23 +245,18 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
         PlasmaJetBlastingRecipe recipe = holder.value();
         boolean splitInputColumns = !recipe.getInputItems().isEmpty() && recipe.hasFluidInput();
         boolean splitOutputColumns = !recipe.getResultItems().isEmpty() && recipe.hasFluidOutput();
-        if (recipe.hasFluidInput() && isVirtualFluidInput(recipe.getHasCauldron())) {
-            Position position = fluidPosition(true, 1, 0, splitInputColumns);
-            if (inside(position, mouseX, mouseY)) {
-                addVirtualFluidTooltip(tooltip, recipe.getHasCauldron().fluid(), recipe.getHasCauldron().consume());
-            }
-        } else if (recipe.hasFluidInput()) {
+        if (recipe.hasFluidInput()) {
             Position position = fluidPosition(true, 1, 0, splitInputColumns);
             if (inside(position, mouseX, mouseY)) {
                 tooltip.add(Component.literal(recipe.getHasCauldron().consume() + " mB"));
             }
         }
-        if (recipe.hasFluidOutput() && isVirtualFluid(recipe.getHasCauldron().transform())) {
+        PlasmaJetBlastingRecipe.GasOutput gas = recipe.gasOutput().orElse(null);
+        if (gas != null) {
             Position position = fluidPosition(false, 1, 0, splitOutputColumns);
             if (inside(position, mouseX, mouseY)) {
-                ResourceLocation output = recipe.getHasCauldron().transform();
-                tooltip.add(virtualFluidName(output));
-                if (CondenserGas.isGas(output)) {
+                tooltip.add(virtualFluidName(gas.id()));
+                if (CondenserGas.isGas(gas.id())) {
                     int rate = PlasticraftJeiPlugin.isEnhancedRecipe(holder)
                         ? CondenserTowerProcess.ENHANCED_VAPORIZATION_PER_JET
                         : CondenserTowerProcess.VAPORIZATION_PER_JET;
@@ -287,7 +265,7 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
                         rate
                     ));
                 } else {
-                    tooltip.add(virtualAmount(output, recipe.getHasCauldron().produce()));
+                    tooltip.add(Component.literal(gas.amount() + " mB"));
                 }
             }
         } else if (recipe.hasFluidOutput()) {
@@ -296,24 +274,6 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
                 tooltip.add(Component.literal(recipe.getHasCauldron().produce() + " mB"));
             }
         }
-    }
-
-    private static boolean hasRenderableInput(HasCauldronSimple cauldron) {
-        return cauldron.fluidTag() != null || hasRegisteredFluid(cauldron.fluid());
-    }
-
-    private static boolean isVirtualFluidInput(HasCauldronSimple cauldron) {
-        return cauldron.fluidTag() == null && isVirtualFluid(cauldron.fluid());
-    }
-
-    private static boolean isVirtualFluid(ResourceLocation id) {
-        return HasCauldron.isNotEmpty(id) && !hasRegisteredFluid(id);
-    }
-
-    private static boolean hasRegisteredFluid(ResourceLocation id) {
-        if (!HasCauldron.isNotEmpty(id)) return false;
-        Fluid fluid = BuiltInRegistries.FLUID.get(id);
-        return fluid != null && fluid != Fluids.EMPTY;
     }
 
     private static Component virtualFluidName(ResourceLocation id) {
@@ -326,15 +286,6 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
         ResourceLocation id
     ) {
         this.vaporDrawables.draw(graphics, id, position.x() + 1, position.y() + 1);
-    }
-
-    private static void addVirtualFluidTooltip(ITooltipBuilder tooltip, ResourceLocation id, int amount) {
-        tooltip.add(virtualFluidName(id));
-        tooltip.add(virtualAmount(id, amount));
-    }
-
-    private static Component virtualAmount(ResourceLocation id, int amount) {
-        return Component.literal(amount + " mB");
     }
 
     private void drawPlasmaJets(GuiGraphics graphics, boolean enhanced) {

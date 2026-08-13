@@ -9,15 +9,9 @@ import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationSource;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
-import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
 import dev.dubhe.anvilcraft.recipe.component.HasCauldronSimple;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.crafting.RecipeHolder;
-import net.minecraft.world.level.material.Fluid;
-import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidStack;
 
 import java.util.ArrayList;
@@ -71,12 +65,12 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
             PlasmaJetBlastingRecipe recipe = holder.value();
             if (!CondenserTowerProcess.isDirectVaporizationRecipe(recipe)) continue;
             HasCauldronSimple definition = recipe.getHasCauldron();
-            if (!matchesInput(availableInput, definition) || definition.consume() <= 0 || definition.produce() <= 0) {
-                continue;
-            }
-            int divisor = greatestCommonDivisor(definition.consume(), definition.produce());
+            PlasmaJetBlastingRecipe.GasOutput gas = recipe.gasOutput().orElse(null);
+            if (gas == null || gas.amount() <= 0 || definition.consume() <= 0) continue;
+            if (!definition.hasFluid() || !definition.fluid().test(availableInput)) continue;
+            int divisor = greatestCommonDivisor(definition.consume(), gas.amount());
             int inputUnit = definition.consume() / divisor;
-            int outputUnit = definition.produce() / divisor;
+            int outputUnit = gas.amount() / divisor;
             int units = Math.min(
                 Math.min(availableInput.getAmount(), inputRate) / inputUnit,
                 maxVapor / outputUnit
@@ -84,7 +78,7 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
             if (units <= 0) continue;
             int inputAmount = units * inputUnit;
             int outputAmount = units * outputUnit;
-            ResourceLocation outputId = CondenserGas.canonicalize(definition.transform());
+            ResourceLocation outputId = CondenserGas.canonicalize(gas.id());
             if (outputId == null || !CondenserGas.isGas(outputId)) continue;
             return new VaporizationOffer(
                 availableInput.copyWithAmount(inputAmount),
@@ -133,14 +127,4 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
         }
     }
 
-    private static boolean matchesInput(FluidStack available, HasCauldronSimple definition) {
-        if (available.isEmpty()) return false;
-        if (definition.fluidTag() != null) {
-            TagKey<Fluid> tag = TagKey.create(Registries.FLUID, definition.fluidTag());
-            return available.is(tag);
-        }
-        if (!HasCauldron.isNotEmpty(definition.fluid())) return false;
-        Fluid expected = BuiltInRegistries.FLUID.get(definition.fluid());
-        return expected != null && expected != Fluids.EMPTY && available.is(expected);
-    }
 }

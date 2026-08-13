@@ -2,6 +2,8 @@
   "type": "anvilcraftplasticraft:plasma_jet_blasting",
   "consume": 50,
   "fluid": "anvilcraft:exp_fluid",
-  "produce": 50,
-  "transform": "anvilcraftplasticraft:gaseous_experience"
+  "gas": {
+    "amount": 50,
+    "id": "anvilcraftplasticraft:gaseous_experience"
+  }
 }

@@ -7,11 +7,13 @@
       "items": "minecraft:coal"
     }
   ],
-  "produce": 50,
   "results": [
     {
       "id": "minecraft:diamond"
     }
   ],
-  "transform": "minecraft:lava"
+  "transform": {
+    "id": "minecraft:lava",
+    "amount": 50
+  }
 }

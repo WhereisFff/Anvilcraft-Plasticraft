@@ -153,8 +153,7 @@ public final class PlasticraftRecipeData {
         FluidFastCookingRecipe.fluidBuilder()
             .cauldron(Blocks.WATER_CAULDRON)
             .consume(1000)
-            .transform(PlasticraftFluids.liquidHighViscosityResinId())
-            .produce(1000)
+            .transform(PlasticraftFluids.LIQUID_HIGH_VISCOSITY_RESIN.get(), 1000)
             .requires(ModItems.RESIN.get(), 4)
             .requires(Items.SLIME_BALL, 4)
             .requires(ModItems.LIME_POWDER.get())
@@ -473,26 +472,23 @@ public final class PlasticraftRecipeData {
     private static void generatePlasmaJetBlastingRecipes(RegistrumRecipeProvider provider) {
         // 等离子喷流配方：每次把 50 mB 原油完全汽化为等量气态原油，供冷凝塔分层处理。
         PlasmaJetBlastingRecipe.builder()
-            .fluid(ModFluids.OIL.getId())
+            .fluid(ModFluids.OIL.get())
             .consume(50)
-            .transform(CondenserGas.GASEOUS_OIL)
-            .produce(50)
+            .gas(CondenserGas.GASEOUS_OIL, 50)
             .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/crude_oil_to_gaseous_oil"));
 
         // 等离子喷流配方：每次把 50 mB 水完全汽化为等量气态水，随后可冷凝回收。
         PlasmaJetBlastingRecipe.builder()
-            .fluid(ResourceLocation.fromNamespaceAndPath("minecraft", "water"))
+            .fluid(Fluids.WATER)
             .consume(50)
-            .transform(CondenserGas.GASEOUS_WATER)
-            .produce(50)
+            .gas(CondenserGas.GASEOUS_WATER, 50)
             .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/water_to_gaseous_water"));
 
         // 等离子喷流配方：每次把 50 mB 经验液完全汽化为等量气态经验，随后可冷凝回收。
         PlasmaJetBlastingRecipe.builder()
-            .fluid(ModFluids.EXP_FLUID.getId())
+            .fluid(ModFluids.EXP_FLUID.get())
             .consume(50)
-            .transform(CondenserGas.GASEOUS_EXPERIENCE)
-            .produce(50)
+            .gas(CondenserGas.GASEOUS_EXPERIENCE, 50)
             .save(provider, AnvilcraftPlasticraft.of("plasma_jet_blasting/experience_fluid_to_gaseous_experience"));
     }
 
@@ -576,18 +572,24 @@ public final class PlasticraftRecipeData {
     private static void generatePlasticMeltSolidLiquidRecipes(RegistrumRecipeProvider provider) {
         // 固液配方：向一桶通用塑料熔体投入任意冷却物品，消耗熔体并产出 16 个塑料颗粒。
         SolidLiquidRecipe.builder()
-            .cauldron(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.getId())
+            .cauldron(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())
             .consume(1000)
             .requires(PlasticraftItemTags.COLD_ITEMS)
             .result(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("solid_liquid/cool_universal_plastic_melt"));
 
-        // 固液配方（每种染料各一份）：投入染料后不消耗熔体，只把整釜熔体转换为对应颜色。
+        // 固液配方（每种染料各一份）：投入染料后熔体种类与数量都不变，
+        // 颜色由配方上下文在提交后写回，因此有意不声明物品或流体产出,
+        // 用覆盖 validate 的构建器跳过本体"必须有产出"的数据生成校验。
         for (DyeColor color : DyeColor.values()) {
             DyeItem dye = DyeItem.byColor(color);
-            SolidLiquidRecipe.builder()
-                .cauldron(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.getId())
-                .transform(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.getId())
+            SolidLiquidRecipe.Builder dyeBuilder = new SolidLiquidRecipe.Builder() {
+                @Override
+                public void validate(ResourceLocation id) {
+                }
+            };
+            dyeBuilder
+                .cauldron(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())
                 .requires(dye)
                 .save(provider, AnvilcraftPlasticraft.of("solid_liquid/dye_universal_plastic_melt_" + color.getName()));
         }
@@ -609,7 +611,7 @@ public final class PlasticraftRecipeData {
     private static void generateResinTimeWarpRecipes(RegistrumRecipeProvider provider) {
         // 时间扭曲配方：一桶液态高黏度树脂经过漫长时间固化，产出高黏度树脂块。
         TimeWarpRecipe.builder()
-            .fluid(PlasticraftFluids.liquidHighViscosityResinId())
+            .fluid(PlasticraftFluids.LIQUID_HIGH_VISCOSITY_RESIN.get())
             .consume(1000)
             .result(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK)
             .unlockedBy(
