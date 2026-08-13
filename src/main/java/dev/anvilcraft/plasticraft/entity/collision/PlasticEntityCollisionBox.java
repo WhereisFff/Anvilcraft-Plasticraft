@@ -22,6 +22,7 @@ public final class PlasticEntityCollisionBox {
     private final List<PlasticConvexShape> convexComponents;
     private final AABB bounds;
     private volatile List<PlasticConvexCollisionOutline.Segment> convexOutline;
+    private volatile PlasticConvexCollisionOutline.PackedOutline packedOutline;
 
     private PlasticEntityCollisionBox(
         VoxelShape shape,
@@ -135,6 +136,16 @@ public final class PlasticEntityCollisionBox {
         if (cached != null) return cached;
         cached = PlasticConvexCollisionOutline.build(this.convexComponents);
         this.convexOutline = cached;
+        return cached;
+    }
+
+    public PlasticConvexCollisionOutline.PackedOutline packedOutline() {
+        PlasticConvexCollisionOutline.PackedOutline cached = this.packedOutline;
+        if (cached != null) return cached;
+        cached = this.convexComponents.isEmpty()
+            ? PlasticConvexCollisionOutline.PackedOutline.EMPTY
+            : PlasticConvexCollisionOutline.PackedOutline.of(this.convexOutline());
+        this.packedOutline = cached;
         return cached;
     }
 

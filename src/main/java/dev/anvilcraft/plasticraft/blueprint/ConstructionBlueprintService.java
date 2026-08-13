@@ -1,17 +1,35 @@
 package dev.anvilcraft.plasticraft.blueprint;
 
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintDisk;
+import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItems;
+import dev.dubhe.anvilcraft.item.property.component.StructureDiskData;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.Vec3i;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.storage.LevelResource;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 import java.util.List;
 import java.util.Optional;
@@ -19,7 +37,8 @@ import java.util.UUID;
 
 /**
  * 结构蓝图的服务端操作入口:导入写盘、部署、锚点移动、取消与启动。
- * 所有操作只信任服务端状态;磁盘组件是任务索引的引用,不承载权威数据。
+ * 导入时同时写入本体结构磁盘数据和 {@code anvilcraft/structures} 原版 NBT,
+ * 使 Tooltip、旋转预览和智能方块放置器走 AnvilCraft 原逻辑;任务索引仍是施工投影的权威状态。
  */
 public final class ConstructionBlueprintService {
     private ConstructionBlueprintService() {
@@ -67,6 +86,7 @@ public final class ConstructionBlueprintService {
         BlueprintSource source
     ) throws ConstructionBlueprintException {
         requireImportableDisk(disk);
+        removeDiskJob(server, disk);
         StructureSnapshot snapshot = StructureSnapshotCodec.canonicalize(parsed.snapshot());
         CompoundTag canonical = StructureSnapshotCodec.write(snapshot);
         String hash = StructureSnapshotCodec.hash(canonical);
@@ -81,10 +101,72 @@ public final class ConstructionBlueprintService {
             Optional.empty()
         );
         ConstructionBlueprintData.set(disk, data);
+        bindVanillaStructureDisk(server, disk, name, snapshot.size(), hash, canonical);
         return new ImportResult(data, parsed.warnings());
     }
 
-    /** 导入目标必须是结构磁盘、未被成型舱蓝图占用,且没有仍然有效的部署任务。 */
+    /**
+     * 施工蓝图与本体结构是同一份原版 NBT:覆盖写入 {@code anvilcraft/structures} 和
+     * {@code StructureDiskData},Tooltip「结构：」、尺寸、5×5×5 判定和旋转预览都走 AnvilCraft 原逻辑。
+     */
+    private static void bindVanillaStructureDisk(
+        MinecraftServer server,
+        ItemStack disk,
+        String name,
+        Vec3i size,
+        String hash,
+        CompoundTag canonical
+    ) throws ConstructionBlueprintException {
+        UUID uuid = UUID.nameUUIDFromBytes(("anvilcraftplasticraft:" + hash).getBytes(StandardCharsets.US_ASCII));
+        String fileName = "blueprint_" + uuid + ".nbt";
+        Path baseDir = server.getWorldPath(LevelResource.ROOT)
+            .toAbsolutePath()
+            .normalize()
+            .resolve("anvilcraft")
+            .resolve("structures");
+        Path target = baseDir.resolve(fileName).toAbsolutePath().normalize();
+        if (!target.startsWith(baseDir.toAbsolutePath().normalize())) {
+            throw new ConstructionBlueprintException("unsafe_path", fileName);
+        }
+        try {
+            Files.createDirectories(baseDir);
+            if (!Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)) {
+                Path temporary = Files.createTempFile(baseDir, ".blueprint-", ".tmp");
+                try {
+                    NbtIo.writeCompressed(canonical, temporary);
+                    Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
+                    temporary = null;
+                } catch (AtomicMoveNotSupportedException exception) {
+                    throw new ConstructionBlueprintException(
+                        "atomic_write_unsupported",
+                        "Filesystem does not support atomic structure writes",
+                        exception
+                    );
+                } finally {
+                    if (temporary != null) {
+                        Files.deleteIfExists(temporary);
+                    }
+                }
+            }
+        } catch (IOException exception) {
+            throw new ConstructionBlueprintException("structure_write_failed", exception.getMessage(), exception);
+        }
+        disk.set(
+            ModComponents.STRUCTURE_DISK_DATA,
+            new StructureDiskData(
+                fileName,
+                name,
+                uuid,
+                Direction.NORTH,
+                size.getX(),
+                size.getY(),
+                size.getZ(),
+                false
+            )
+        );
+    }
+
+    /** 导入目标必须是结构磁盘、未被成型舱蓝图占用。覆盖导入会清掉该磁盘先前的部署。 */
     private static void requireImportableDisk(ItemStack disk) throws ConstructionBlueprintException {
         if (!isStructureDisk(disk)) {
             throw new ConstructionBlueprintException("not_structure_disk", "");
@@ -92,6 +174,16 @@ public final class ConstructionBlueprintService {
         if (MoldingBlueprintDisk.hasBlueprintData(disk)) {
             throw new ConstructionBlueprintException("disk_in_molding_use", "");
         }
+    }
+
+    /** 磁盘改写前移除它引用的已放置蓝图,避免投影残留在世界里无法清除。 */
+    private static void removeDiskJob(MinecraftServer server, ItemStack disk) {
+        UUID jobId = ConstructionBlueprintData.get(disk).flatMap(ConstructionBlueprintData::jobId).orElse(null);
+        if (jobId == null) return;
+        ConstructionJobIndex index = ConstructionJobIndex.get(server);
+        if (index.job(jobId) == null) return;
+        index.remove(jobId);
+        BlueprintJobSync.syncRemove(server, jobId);
     }
 
     /**
@@ -153,12 +245,18 @@ public final class ConstructionBlueprintService {
         requireOwner(player, job);
         index.remove(jobId);
         BlueprintJobSync.syncRemove(server, jobId);
-        for (InteractionHand hand : InteractionHand.values()) {
-            ItemStack held = player.getItemInHand(hand);
-            ConstructionBlueprintData data = ConstructionBlueprintData.get(held).orElse(null);
-            if (data != null && data.jobId().map(jobId::equals).orElse(false)) {
-                ConstructionBlueprintData.set(held, data.withoutJobId());
-            }
+        clearJobId(player.getInventory().getSelected(), jobId);
+        clearJobId(player.getOffhandItem(), jobId);
+        for (ItemStack stack : player.getInventory().items) {
+            clearJobId(stack, jobId);
+        }
+        clearJobId(player.containerMenu.getCarried(), jobId);
+    }
+
+    private static void clearJobId(ItemStack stack, UUID jobId) {
+        ConstructionBlueprintData data = ConstructionBlueprintData.get(stack).orElse(null);
+        if (data != null && data.jobId().map(jobId::equals).orElse(false)) {
+            ConstructionBlueprintData.set(stack, data.withoutJobId());
         }
     }
 
@@ -198,6 +296,37 @@ public final class ConstructionBlueprintService {
         }
         start(player, jobId);
         return true;
+    }
+
+    /**
+     * 客户端投影可读的结构哈希:已部署任务引用的内容,或该玩家物品栏/打开菜单里磁盘上的内容。
+     * 部署确认前会话必须能拿到快照,否则世界里不会出现投影。
+     */
+    public static boolean canReadSnapshot(ServerPlayer player, String hash) {
+        if (!ConstructionStructureLibrary.isValidHash(hash)) return false;
+        for (ConstructionJob job : ConstructionJobIndex.get(player.server).jobs()) {
+            if (job.hash().equals(hash)) {
+                return true;
+            }
+        }
+        if (diskHasHash(player.containerMenu.getCarried(), hash)) {
+            return true;
+        }
+        for (Slot slot : player.containerMenu.slots) {
+            if (diskHasHash(slot.getItem(), hash)) {
+                return true;
+            }
+        }
+        for (ItemStack stack : player.getInventory().items) {
+            if (diskHasHash(stack, hash)) {
+                return true;
+            }
+        }
+        return diskHasHash(player.getOffhandItem(), hash);
+    }
+
+    private static boolean diskHasHash(ItemStack stack, String hash) {
+        return ConstructionBlueprintData.get(stack).map(data -> data.hash().equals(hash)).orElse(false);
     }
 
     private static void requireOwner(ServerPlayer player, ConstructionJob job)

@@ -2,7 +2,6 @@ package dev.anvilcraft.plasticraft.block.entity;
 
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
-import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -19,7 +18,7 @@ import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
 
 /** 保存单件打印制品所需的塑料熔体，并只允许下方成型舱驱动转移。 */
 public final class Plastic3DPrintingComponentBlockEntity extends BlockEntity {
-    public static final int CAPACITY = MoldingVolumeMask.CELL_COUNT / 4;
+    public static final int CAPACITY = 8192;
     private static final String TAG_TANK = "Tank";
 
     private final FluidTank tank = new FluidTank(CAPACITY) {

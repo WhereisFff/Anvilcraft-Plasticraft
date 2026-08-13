@@ -20,7 +20,7 @@ unlocked; they are not meant to be a longer processing chain for its own sake.
 - Movable resin and hardened-resin anvils affected by gravity, collisions, buoyancy, and magnetism.
 - Six-direction placement, continuous pushing, and the vanilla anvil workflow on hardened-resin anvils.
 - High-viscosity resin buckets select and move entities, preserve ordinary block interactions on a short press, and place exposed adhesive after a 0.5-second hold or immediately on non-interactive blocks.
-- Exposed adhesive bonds touching entities and newly placed blocks; pistons and sliding rails move the resulting block group together.
+- Exposed adhesive bonds touching entities and newly placed blocks; pistons and sliding rails move the resulting block group together. A plastic entity glued to a sliding rail becomes a block and ignores that rail.
 - Bonding support for 3x3x3 falling giant anvils; ordinary falling blocks no longer time out while bonded, but still land as blocks without losing the bond.
 - Hardened-resin cauldrons, condenser towers, plasma-jet processing, and JEI/Jade/Ageratum integration.
 

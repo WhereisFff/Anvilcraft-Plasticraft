@@ -28,8 +28,8 @@ public record BlockAdhesionState(
         patchMask &= FACE_MASK;
         blockBondMask &= FACE_MASK;
         entityBondMask &= FACE_MASK;
+        // 裸胶被方块粘合占用后不再作为可再放胶面，但已粘上的实体可以和后来方块化的邻接结构共存。
         patchMask &= ~blockBondMask;
-        entityBondMask &= ~blockBondMask;
         invisibleMask &= patchMask | blockBondMask | entityBondMask;
     }
 
@@ -101,7 +101,7 @@ public record BlockAdhesionState(
             this.blockId,
             this.patchMask & ~bit,
             this.blockBondMask | bit,
-            this.entityBondMask & ~bit,
+            this.entityBondMask,
             this.invisibleMask
         );
     }
@@ -121,7 +121,7 @@ public record BlockAdhesionState(
         return new BlockAdhesionState(
             this.blockId,
             this.patchMask,
-            this.blockBondMask & ~bit,
+            this.blockBondMask,
             this.entityBondMask | bit,
             this.invisibleMask
         );

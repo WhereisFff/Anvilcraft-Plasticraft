@@ -63,8 +63,10 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.piston.PistonMovingBlockEntity;
 import net.minecraft.world.level.block.piston.PistonStructureResolver;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -211,6 +213,13 @@ public final class PlasticMoldingProductionGameTests {
                 "piston did not move the block ahead of the plastic entity");
             check(plastic.plasticraft$getAnchorBlockPos().equals(helper.absolutePos(occupied.east())),
                 "plastic entity did not move normally with the piston");
+            AABB bounds = plastic.plasticraft$getCollisionBox().bounds();
+            BlockPos dest = helper.absolutePos(occupied.east());
+            check(
+                Math.abs(bounds.minX - dest.getX()) <= 1.0E-12D
+                    && Math.abs(bounds.maxX - (dest.getX() + 1.0D)) <= 1.0E-12D,
+                "piston push left a side protrusion: bounds=" + bounds + " dest=" + dest
+            );
             check(helper.getBlockState(ahead).isAir(), "temporary plastic occupancy remained after the push");
             helper.succeed();
         });
@@ -420,6 +429,19 @@ public final class PlasticMoldingProductionGameTests {
             for (int index = 0; index < stickyStates.length; index++) {
                 check(plastics[index].getX() > startPositions[index].x + 0.05D,
                     labels[index] + " did not move its adjacent plastic entity while extending");
+                double carrierDelta = stickyTravelEast(
+                    helper,
+                    carriers[index],
+                    carriers[index].east(),
+                    stickyStates[index].getBlock()
+                );
+                check(
+                    Math.abs((plastics[index].getX() - startPositions[index].x) - carrierDelta) <= 0.08D,
+                    labels[index] + " left a mid-push gap: plastic="
+                        + (plastics[index].getX() - startPositions[index].x)
+                        + " carrier="
+                        + carrierDelta
+                );
             }
             helper.runAfterDelay(3, () -> {
                 for (int index = 0; index < stickyStates.length; index++) {
@@ -980,6 +1002,7 @@ public final class PlasticMoldingProductionGameTests {
             MoldingProductionMode.CONTINUOUS,
             500
         );
+        check(continuous.showsWorldProjection(), "idle printer hid its world projection");
         check(continuous.requestLock().accepted(), "continuous printer did not lock");
         completeOneVoxelPrint(continuous);
         AABB continuousBounds = PlasticMoldingChamberStructure.regionBounds(
@@ -994,6 +1017,8 @@ public final class PlasticMoldingProductionGameTests {
                 && continuous.printingDoorState() == MoldingPrintingDoorState.OPENING
                 && continuous.waitReason() == MoldingWaitReason.PRINTING_OUTPUT_PENDING,
             "continuous printing did not begin opening its discharge for the product");
+        check(!continuous.showsWorldProjection(),
+            "world projection appeared while the discharge door was still opening");
         check(continuous.requestLock().reason().equals("printing_output_pending"),
             "open printing discharge accepted a manual lock request");
         for (BlockPos region : PlasticMoldingChamberStructure.regionPositions(
@@ -1047,6 +1072,8 @@ public final class PlasticMoldingProductionGameTests {
         check(!continuous.printingDischargeOpen()
                 && continuous.printingDoorState() == MoldingPrintingDoorState.CLOSED,
             "printing discharge stayed open after its closing animation");
+        check(continuous.showsWorldProjection(),
+            "world projection did not return after the discharge door fully closed");
         check(continuous.machineState() == PlasticMoldingMachineState.WAITING_NEXT_CYCLE,
             "continuous printing advanced before the discharge door closed");
         tick(continuous, 1);
@@ -1383,6 +1410,27 @@ public final class PlasticMoldingProductionGameTests {
                 chamber
             );
         }
+    }
+
+    private static double stickyTravelEast(
+        ExtendedGameTestHelper helper,
+        BlockPos source,
+        BlockPos destination,
+        Block expected
+    ) {
+        BlockEntity destinationEntity = helper.getLevel().getBlockEntity(helper.absolutePos(destination));
+        if (destinationEntity instanceof PistonMovingBlockEntity piston
+            && piston.getMovedState().is(expected)) {
+            return 1.0D + piston.getXOff(1.0F);
+        }
+        BlockEntity sourceEntity = helper.getLevel().getBlockEntity(helper.absolutePos(source));
+        if (sourceEntity instanceof PistonMovingBlockEntity piston
+            && piston.getMovedState().is(expected)) {
+            return piston.getXOff(1.0F);
+        }
+        if (helper.getBlockState(destination).is(expected)) return 1.0D;
+        if (helper.getBlockState(source).is(expected)) return 0.0D;
+        return 0.0D;
     }
 
     private static void check(boolean condition, String message) {

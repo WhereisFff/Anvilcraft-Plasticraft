@@ -401,10 +401,6 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         return this.printingPlan;
     }
 
-    public MoldingVolumeMask printedMask() {
-        return this.printingPlan().prefix(this.printingProgress);
-    }
-
     public Optional<MoldingPrintingVoxel> currentPrintingVoxel() {
         if (!this.isPrintingProcess() || this.printingProgress >= this.printingTotal) return Optional.empty();
         return Optional.of(this.printingPlan().voxelAt(this.printingProgress));
@@ -451,8 +447,22 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         return this.printingDischargeOpen;
     }
 
+    /** 打印出料未完成前不显示世界投影，避免与下落制品重叠。 */
+    public boolean showsWorldProjection() {
+        MoldingFormingMode formingMode = this.isLocked()
+            ? this.cycleFormingMode()
+            : this.formingMode();
+        if (formingMode == MoldingFormingMode.PRINTING) {
+            return !this.isPrintingProcess() && !this.printingDischargeOpen;
+        }
+        return this.machineState == PlasticMoldingMachineState.EDITABLE
+            || this.machineState == PlasticMoldingMachineState.WAITING_TO_LOCK
+            || this.machineState == PlasticMoldingMachineState.MOLD_FILLING;
+    }
+
     public void refreshFormingRegionShapes() {
         if (this.level == null || this.level.isClientSide) return;
+        this.stopInterruptedPrinting();
         this.syncProductionState(true);
     }
 
@@ -1515,6 +1525,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             }
             case PROCESSING -> {
                 if (this.level instanceof ServerLevel serverLevel && this.isPrintingProcess()) {
+                    if (this.stopInterruptedPrinting()) return;
                     PlasticMoldingAnvilProcessor.tickPrinting(serverLevel, this);
                 }
             }
@@ -1743,6 +1754,28 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         }
         MachineOutcome outcome = this.prepareCurrentModelForCycle();
         if (!outcome.accepted()) this.setWaitReason(MoldingWaitReason.INVALID_MODEL);
+    }
+
+    private boolean stopInterruptedPrinting() {
+        if (!this.isPrintingProcess() || this.printingComponentPresent()) return false;
+        this.processingSnapshot = null;
+        this.requiredClayBalls = 0;
+        this.moldedClayBalls = 0;
+        this.moldFillProgress = 0;
+        this.printingPlan = null;
+        this.printingProgress = 0;
+        this.printingTotal = 0;
+        this.printingMaterial = FluidStack.EMPTY;
+        this.printingMeltConsumed = 0;
+        this.resetPrintingMotion();
+        this.typeOverrideCommitted = false;
+        this.creativeOverrideLocked = false;
+        this.cycleMode = this.selectedMode;
+        this.cycleFormingMode = this.formingMode();
+        this.announcedStallReason = MoldingWaitReason.NONE;
+        this.setMachineState(PlasticMoldingMachineState.EDITABLE);
+        this.setWaitReason(MoldingWaitReason.NONE);
+        return true;
     }
 
     private void updateReadyState() {
@@ -2202,10 +2235,15 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         this.selectedMode = MoldingProductionMode.fromSerializedName(tag.getString(TAG_SELECTED_MODE));
         this.cycleMode = MoldingProductionMode.fromSerializedName(tag.getString(TAG_CYCLE_MODE));
         this.cycleFormingMode = MoldingFormingMode.fromSerializedName(tag.getString(TAG_CYCLE_FORMING_MODE));
-        this.printingPlan = null;
-        int printingPlanSize = this.cycleFormingMode == MoldingFormingMode.PRINTING
-            ? this.printingPlan().size()
-            : 0;
+        if (this.cycleFormingMode != MoldingFormingMode.PRINTING) {
+            this.printingPlan = null;
+        } else {
+            String modelHash = this.bakedModel.modelHash();
+            if (this.printingPlan == null || !modelHash.equals(this.printingPlan.modelHash())) {
+                this.printingPlan = MoldingPrintingPlan.create(this.model, this.bakedModel);
+            }
+        }
+        int printingPlanSize = this.printingPlan == null ? 0 : this.printingPlan.size();
         this.printingTotal = Math.clamp(
             tag.contains(TAG_PRINTING_TOTAL) ? tag.getInt(TAG_PRINTING_TOTAL) : 0,
             0,

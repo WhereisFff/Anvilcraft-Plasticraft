@@ -157,6 +157,13 @@ public final class PlasticPistonOccupancy {
             || level instanceof ServerLevel serverLevel && serverLevel.isHandlingTick();
     }
 
+    public static boolean isMoving(AbstractPlasticEntity entity) {
+        synchronized (MOVEMENTS) {
+            MovementIndex index = MOVEMENTS.get(entity.level());
+            return index != null && index.byEntity.containsKey(entity.getUUID());
+        }
+    }
+
     public static @Nullable Vec3 movementTarget(AbstractPlasticEntity entity) {
         EntityMovement entityMovement;
         synchronized (MOVEMENTS) {
@@ -175,12 +182,23 @@ public final class PlasticPistonOccupancy {
         if (blockEntity instanceof PistonMovingBlockEntity piston
             && piston.isSourcePiston()
             && piston.getMovementDirection() == movement.direction()) {
-            double progress = Mth.clamp(piston.getProgress(1.0F), 0.0F, 1.0F);
-            return entityMovement.sourcePosition().lerp(entityMovement.targetPosition(), progress);
+            return entityMovement.sourcePosition().lerp(
+                entityMovement.targetPosition(),
+                followProgress(entity.level(), piston)
+            );
         }
 
         removeMovement(entity.level(), entity.getUUID());
         return entityMovement.targetPosition();
+    }
+
+    /** 实体 tick 早于活塞方块实体；不预读下一拍进度时，碰撞会在粘液顶面前方留下半格可站缝。 */
+    private static double followProgress(Level level, PistonMovingBlockEntity piston) {
+        double progress = Mth.clamp(piston.getProgress(1.0F), 0.0F, 1.0F);
+        if (level.getGameTime() != piston.getLastTicked()) {
+            progress = Math.min(progress + 0.5D, 1.0D);
+        }
+        return progress;
     }
 
     private static @Nullable AbstractPlasticEntity plasticEntityAt(

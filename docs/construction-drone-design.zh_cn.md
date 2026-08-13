@@ -459,7 +459,7 @@ AnvilCraft 大型方块在解析阶段识别核心控制器和全部 `part`：
 
 ### TODO 03：无人机站本体、能源、库存与停泊
 
-- [ ] 完成 TODO 03
+- [x] 完成 TODO 03
 
 依赖：TODO 01、TODO 02。
 
@@ -469,7 +469,7 @@ AnvilCraft 大型方块在解析阶段识别核心控制器和全部 `part`：
 
 ### TODO 04：原版结构蓝图、世界部署与结构磁盘交互
 
-- [ ] 完成 TODO 04
+- [x] 完成 TODO 04
 
 依赖：无；与 TODO 01 至 TODO 03 可并行。
 
@@ -479,7 +479,7 @@ AnvilCraft 大型方块在解析阶段识别核心控制器和全部 `part`：
 
 ### TODO 05：Create 与 Litematica 蓝图导入兼容
 
-- [ ] 完成 TODO 05
+- [x] 完成 TODO 05
 
 依赖：TODO 04。
 

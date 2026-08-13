@@ -52,6 +52,7 @@ public final class PlasticItemTooltipManager {
             "Highly adhesive and non-volatile; it appears to need thousands of years to solidify",
             """
                 Right-click an entity, then a block or another entity to bond them
+                Exposed adhesive still catches later blocks or a falling giant anvil after an entity is already stuck
                 Moving selections use their selected position; movement over 2 blocks or lasting 2 seconds refreshes the route
                 Endpoints align the selected face to the target face; fixed 4 px checker cells tile the complete selected face
                 Unanchored bonded groups move together under knockback; block-anchored groups rebound together
@@ -60,6 +61,8 @@ public final class PlasticItemTooltipManager {
                 Green and yellow can bond; red cannot
                 Valid endpoint models use the standard pale-blue overlay; rejected endpoints use pale red
                 Route collision and endpoint previews include every member's model and mounted tray components
+                Pistons and sliding rails move bonded groups together, including levers and other breakable blocks
+                A block glued to a sliding rail ignores that rail and is not carried as cargo
                 Splash or lingering Invisibility potions permanently hide adhesive without weakening its bond"""
         );
         register(
@@ -70,9 +73,10 @@ public final class PlasticItemTooltipManager {
                 Oil is separated into high-heat fuel, plastic oil, and crude-oil essence across the first three layers
                 Capping the top-center outlet makes a full module apply backpressure to the entire stack"""
         );
-        registerNormal(
+        register(
             AnvilcraftPlasticraft.of("plastic_3d_printing_component"),
-            "Stores a chamber-filled melt batch and consumes 1 mB/gt to print when installed directly above the chamber"
+            "Stores up to 8192 mB from the chamber and consumes 1 mB/gt to print when installed directly above it",
+            "Right-click opens the Plastic Molding Chamber GUI"
         );
         register(
             AnvilcraftPlasticraft.of("high_heat_fuel_bucket"),

@@ -1,13 +1,8 @@
 package dev.anvilcraft.plasticraft.client.renderer.blueprint;
 
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.ByteBufferBuilder;
-import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexBuffer;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.math.Axis;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.blueprint.BlueprintPlacement;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
@@ -15,96 +10,206 @@ import dev.anvilcraft.plasticraft.blueprint.StructureSnapshot;
 import dev.anvilcraft.plasticraft.client.blueprint.BlueprintDeploySession;
 import dev.anvilcraft.plasticraft.client.blueprint.ClientBlueprintJobCache;
 import dev.anvilcraft.plasticraft.client.blueprint.ClientBlueprintSnapshotCache;
+import dev.anvilcraft.plasticraft.client.renderer.ThickLineRenderer;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.block.BlockRenderDispatcher;
+import net.minecraft.client.renderer.block.ModelBlockRenderer;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
+import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.Vec3i;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.DoubleTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.util.FastColor;
+import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.EmptyBlockGetter;
+import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
-import net.neoforged.neoforge.client.model.data.ModelData;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
- * 施工投影渲染器:为已放置蓝图与部署会话渲染半透明目标方块投影。
- * 网格按(哈希、旋转、镜像、分层)缓存为顶点缓冲,只在放置参数变化时重建;
- * 每帧仅按锚点与相机平移绘制。当前阶段的明确简化:纯方块实体渲染的方块
- * 以其粒子贴图画半透明占位盒,实体条目只保留在数据中不渲染投影。
+ * 施工投影渲染器:为已放置蓝图与部署会话渲染半透明目标投影。
+ * 方块走与机械动力投影相同的邻接面剔除({@code tesselateBlock} / {@code renderBatched});
+ * 告示牌、机械臂等方块实体与矿车等实体分别走 BER / 实体渲染器,再映射到不写深度的半透明层;
+ * 箱子和矿车先单独走深度预通道再上色,只保留朝向相机的外轮廓;
+ * 流体按格平移后以 (0,0,0) 调用 {@code renderLiquid},避免原版 {@code pos & 15} 在负坐标/大结构上错位。
+ * 快照尚未到达时仍画出包围盒,保证放置位置始终可见。
  */
 @EventBusSubscriber(modid = AnvilcraftPlasticraft.MOD_ID, value = Dist.CLIENT)
 public final class BlueprintProjectionRenderer {
     /** 投影可见距离(格),超出的已放置蓝图不渲染。 */
     private static final double VIEW_DISTANCE = 160.0D;
-    /** 网格缓存上限,超出按最久未用淘汰。 */
-    private static final int MAX_CACHED_MESHES = 4;
-    /** 投影统一着色:偏蓝的半透明全息色。 */
-    private static final float TINT_RED = 0.62F;
-    private static final float TINT_GREEN = 0.82F;
-    private static final float TINT_BLUE = 1.0F;
+    /** 投影统一着色:把方块原色向全息青略洗,避免直接乘青把红石和树叶滤成灰褐。 */
     private static final float TINT_ALPHA = 0.55F;
+    private static final float BOX_RED = 0.25F;
+    private static final float BOX_GREEN = 0.85F;
+    private static final float BOX_BLUE = 1.0F;
+    private static final float BOX_ALPHA = 0.95F;
+    private static final int BOX_COLOR = packColor(BOX_RED, BOX_GREEN, BOX_BLUE, BOX_ALPHA);
+    private static final int[][] BOX_EDGES = {
+        {0, 1}, {1, 2}, {2, 3}, {3, 0},
+        {4, 5}, {5, 6}, {6, 7}, {7, 4},
+        {0, 4}, {1, 5}, {2, 6}, {3, 7}
+    };
+    private static final int MAX_CACHED_MESHES = 4;
 
-    private record MeshKey(String hash, Rotation rotation, Mirror mirror, int layerView) {
-    }
-
-    private static final Map<MeshKey, VertexBuffer> MESHES = new LinkedHashMap<>();
+    private static final Map<MeshKey, PreparedProjection> CACHE = new LinkedHashMap<>(MAX_CACHED_MESHES + 1, 0.75F, true);
+    private static final Set<String> FAILED_RENDERERS = new HashSet<>();
+    private static final BlueprintProjectionAnimator ANIMATOR = new BlueprintProjectionAnimator();
 
     private BlueprintProjectionRenderer() {
     }
 
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) return;
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null || minecraft.player == null) return;
 
         List<RenderItem> items = collectRenderItems(minecraft);
-        if (items.isEmpty()) return;
+        if (items.isEmpty()) {
+            ANIMATOR.clear();
+            return;
+        }
+
+        BlueprintProjectionAnimator.Pose sessionPose = null;
+        boolean hasSession = false;
+        for (RenderItem item : items) {
+            if (!item.session()) continue;
+            sessionPose = ANIMATOR.tick(item.hash(), item.placement(), item.size(), 0.0F);
+            hasSession = true;
+            break;
+        }
+        if (!hasSession) {
+            ANIMATOR.clear();
+        }
 
         Vec3 camera = event.getCamera().getPosition();
         PoseStack poseStack = event.getPoseStack();
-        for (RenderItem item : items) {
-            StructureSnapshot snapshot = ClientBlueprintSnapshotCache.snapshotOrRequest(item.hash());
-            if (snapshot == null) continue;
-            VertexBuffer mesh = meshFor(item, snapshot);
-            if (mesh == null) continue;
-            poseStack.pushPose();
-            poseStack.translate(
-                item.placement().anchor().getX() - camera.x,
-                item.placement().anchor().getY() - camera.y,
-                item.placement().anchor().getZ() - camera.z
-            );
-            drawMesh(mesh, poseStack.last().pose(), event.getProjectionMatrix());
-            poseStack.popPose();
+        PoseStack.Pose origin = poseStack.last();
+        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
+        TintedBufferSource depthBuffers = new TintedBufferSource(buffers, TINT_ALPHA, true);
+        TintedBufferSource colorBuffers = new TintedBufferSource(buffers, TINT_ALPHA, false);
+        RenderType blockType = BlueprintProjectionRenderTypes.hologramBlock();
+        VertexConsumer tintedBlocks = new TintedVertexConsumer(buffers.getBuffer(blockType), TINT_ALPHA);
+
+        poseStack.pushPose();
+        try {
+            poseStack.translate(-camera.x, -camera.y, -camera.z);
+            for (RenderItem item : items) {
+                PreparedProjection prepared = preparedOrNull(minecraft, item, poseOf(item, sessionPose));
+                if (prepared == null) continue;
+                withMeshPose(poseStack, poseOf(item, sessionPose), () -> renderBlocksAndFluids(
+                    minecraft,
+                    poseStack,
+                    tintedBlocks,
+                    prepared
+                ));
+            }
+            buffers.endBatch(blockType);
+            for (RenderItem item : items) {
+                PreparedProjection prepared = preparedOrNull(minecraft, item, poseOf(item, sessionPose));
+                if (prepared == null) continue;
+                withMeshPose(poseStack, poseOf(item, sessionPose), () -> {
+                    renderBlockEntities(minecraft, poseStack, depthBuffers, prepared);
+                    renderEntities(minecraft, poseStack, depthBuffers, prepared);
+                });
+            }
+            BlueprintProjectionRenderTypes.endSilhouetteDepth(buffers);
+            for (RenderItem item : items) {
+                PreparedProjection prepared = preparedOrNull(minecraft, item, poseOf(item, sessionPose));
+                if (prepared == null) continue;
+                withMeshPose(poseStack, poseOf(item, sessionPose), () -> {
+                    renderBlockEntities(minecraft, poseStack, colorBuffers, prepared);
+                    renderEntities(minecraft, poseStack, colorBuffers, prepared);
+                });
+            }
+            buffers.endBatch();
+            for (RenderItem item : items) {
+                renderBounds(poseStack, buffers, poseOf(item, sessionPose), item.size());
+            }
+        } catch (RuntimeException exception) {
+            AnvilcraftPlasticraft.LOGGER.error("Blueprint projection failed", exception);
+        } finally {
+            restorePose(poseStack, origin);
         }
     }
 
-    private record RenderItem(String hash, BlueprintPlacement placement, int layerView) {
+    public static void clearCache() {
+        CACHE.clear();
+        FAILED_RENDERERS.clear();
+        ANIMATOR.clear();
+    }
+
+    private record RenderItem(
+        String hash,
+        BlueprintPlacement placement,
+        int layerView,
+        Vec3i size,
+        boolean session
+    ) {
+    }
+
+    private static BlueprintProjectionAnimator.Pose poseOf(
+        RenderItem item,
+        @Nullable BlueprintProjectionAnimator.Pose sessionPose
+    ) {
+        if (item.session() && sessionPose != null) {
+            return sessionPose;
+        }
+        return BlueprintProjectionAnimator.immediate(item.placement(), item.size());
     }
 
     private static List<RenderItem> collectRenderItems(Minecraft minecraft) {
         List<RenderItem> items = new ArrayList<>();
         String sessionHash = BlueprintDeploySession.activeHash();
         BlueprintPlacement sessionPlacement = BlueprintDeploySession.activePlacement();
+        Vec3i sessionSize = BlueprintDeploySession.activeSize();
         UUID sessionJobId = BlueprintDeploySession.activeJobId();
-        if (sessionHash != null && sessionPlacement != null) {
-            items.add(new RenderItem(sessionHash, sessionPlacement, BlueprintDeploySession.layerView()));
+        if (sessionHash != null && sessionPlacement != null && sessionSize != null) {
+            items.add(new RenderItem(
+                sessionHash,
+                sessionPlacement,
+                BlueprintDeploySession.layerView(),
+                sessionSize,
+                true
+            ));
         }
         assert minecraft.level != null && minecraft.player != null;
         for (ConstructionJob job : ClientBlueprintJobCache.jobs()) {
@@ -114,182 +219,544 @@ public final class BlueprintProjectionRenderer {
             items.add(new RenderItem(
                 job.hash(),
                 BlueprintPlacement.of(job),
-                BlueprintDeploySession.LAYERS_ALL
+                BlueprintDeploySession.LAYERS_ALL,
+                job.size(),
+                false
             ));
         }
         return items;
     }
 
-    @Nullable
-    private static VertexBuffer meshFor(RenderItem item, StructureSnapshot snapshot) {
-        MeshKey key = new MeshKey(
-            item.hash(),
-            item.placement().rotation(),
-            item.placement().mirror(),
-            item.layerView()
-        );
-        VertexBuffer cached = MESHES.remove(key);
-        if (cached != null) {
-            MESHES.put(key, cached);
-            return cached;
+    private static void renderBounds(
+        PoseStack poseStack,
+        MultiBufferSource.BufferSource buffers,
+        BlueprintProjectionAnimator.Pose pose,
+        Vec3i size
+    ) {
+        AABB baked = AABB.of(pose.mesh().bounds(size));
+        Vec3[] corners = {
+            pose.worldOf(new Vec3(baked.minX, baked.minY, baked.minZ)),
+            pose.worldOf(new Vec3(baked.maxX, baked.minY, baked.minZ)),
+            pose.worldOf(new Vec3(baked.maxX, baked.minY, baked.maxZ)),
+            pose.worldOf(new Vec3(baked.minX, baked.minY, baked.maxZ)),
+            pose.worldOf(new Vec3(baked.minX, baked.maxY, baked.minZ)),
+            pose.worldOf(new Vec3(baked.maxX, baked.maxY, baked.minZ)),
+            pose.worldOf(new Vec3(baked.maxX, baked.maxY, baked.maxZ)),
+            pose.worldOf(new Vec3(baked.minX, baked.maxY, baked.maxZ))
+        };
+        List<ThickLineRenderer.Segment> segments = new ArrayList<>(BOX_EDGES.length);
+        for (int[] edge : BOX_EDGES) {
+            segments.add(new ThickLineRenderer.Segment(corners[edge[0]], corners[edge[1]]));
         }
-        VertexBuffer built = buildMesh(item, snapshot);
-        if (built == null) return null;
-        MESHES.put(key, built);
-        while (MESHES.size() > MAX_CACHED_MESHES) {
-            MeshKey oldest = MESHES.keySet().iterator().next();
-            VertexBuffer evicted = MESHES.remove(oldest);
-            if (evicted != null) evicted.close();
+        ThickLineRenderer.renderSegments(
+            poseStack,
+            buffers,
+            segments,
+            BOX_COLOR,
+            ThickLineRenderer.SELECTION_WIDTH
+        );
+    }
+
+    private static PreparedProjection prepared(
+        Minecraft minecraft,
+        RenderItem item,
+        StructureSnapshot snapshot,
+        BlueprintPlacement mesh
+    ) {
+        MeshKey key = new MeshKey(item.hash(), mesh.rotation(), mesh.mirror(), item.layerView());
+        PreparedProjection cached = CACHE.get(key);
+        if (cached != null) return cached;
+        PreparedProjection built = build(minecraft, item, snapshot, mesh);
+        CACHE.put(key, built);
+        while (CACHE.size() > MAX_CACHED_MESHES) {
+            MeshKey oldest = CACHE.keySet().iterator().next();
+            CACHE.remove(oldest);
         }
         return built;
     }
 
-    /** 以锚点为原点烘焙整份投影网格;方块坐标与状态都按放置参数变换。 */
+    private static PreparedProjection build(
+        Minecraft minecraft,
+        RenderItem item,
+        StructureSnapshot snapshot,
+        BlueprintPlacement placement
+    ) {
+        ClientLevel level = minecraft.level;
+        assert level != null && minecraft.player != null;
+        BlueprintRenderView view = new BlueprintRenderView(level, minecraft.player.blockPosition());
+        List<BlockPos> modelBlocks = new ArrayList<>();
+        List<BlockPos> fluidBlocks = new ArrayList<>();
+        List<BlockEntity> blockEntities = new ArrayList<>();
+        HolderLookup.Provider registries = level.registryAccess();
+
+        for (StructureSnapshot.BlockEntry entry : snapshot.blocks()) {
+            if (item.layerView() != BlueprintDeploySession.LAYERS_ALL
+                && entry.pos().getY() != item.layerView()) {
+                continue;
+            }
+            BlockState state = snapshot.stateOf(entry);
+            if (state.isAir()) continue;
+            BlockState transformed = placement.stateOf(state);
+            BlockPos local = placement.localOf(entry.pos());
+            BlockEntity blockEntity = createBlockEntity(level, registries, local, transformed, entry.nbt().orElse(null));
+            view.put(local, transformed, blockEntity);
+            if (transformed.getRenderShape() == RenderShape.MODEL) {
+                modelBlocks.add(local);
+            }
+            if (!transformed.getFluidState().isEmpty()) {
+                fluidBlocks.add(local);
+            }
+            if (blockEntity != null) {
+                blockEntities.add(blockEntity);
+            }
+        }
+
+        List<PreparedEntity> entities = new ArrayList<>();
+        for (StructureSnapshot.EntityEntry entry : snapshot.entities()) {
+            if (item.layerView() != BlueprintDeploySession.LAYERS_ALL
+                && Mth.floor(entry.pos().y) != item.layerView()) {
+                continue;
+            }
+            PreparedEntity prepared = createPreviewEntity(level, placement, entry);
+            if (prepared != null) {
+                entities.add(prepared);
+            }
+        }
+        return new PreparedProjection(view, modelBlocks, fluidBlocks, blockEntities, entities);
+    }
+
     @Nullable
-    private static VertexBuffer buildMesh(RenderItem item, StructureSnapshot snapshot) {
-        Minecraft minecraft = Minecraft.getInstance();
-        BlueprintPlacement local = new BlueprintPlacement(
-            BlockPos.ZERO,
-            item.placement().rotation(),
-            item.placement().mirror()
-        );
-        ByteBufferBuilder byteBuffer = new ByteBufferBuilder(4 * 1024 * 1024);
+    private static BlockEntity createBlockEntity(
+        ClientLevel level,
+        HolderLookup.Provider registries,
+        BlockPos local,
+        BlockState state,
+        @Nullable CompoundTag nbt
+    ) {
+        BlockEntity blockEntity = null;
+        if (nbt != null) {
+            try {
+                blockEntity = BlockEntity.loadStatic(local, state, nbt, registries);
+            } catch (RuntimeException exception) {
+                skipOnce("block-entity-nbt:" + state, exception);
+            }
+        }
+        if (blockEntity == null && state.getBlock() instanceof EntityBlock entityBlock) {
+            try {
+                blockEntity = entityBlock.newBlockEntity(local, state);
+            } catch (RuntimeException exception) {
+                skipOnce("block-entity-create:" + state, exception);
+            }
+        }
+        if (blockEntity == null) return null;
+        blockEntity.setLevel(level);
+        return blockEntity;
+    }
+
+    @Nullable
+    private static PreparedEntity createPreviewEntity(
+        ClientLevel level,
+        BlueprintPlacement placement,
+        StructureSnapshot.EntityEntry entry
+    ) {
+        CompoundTag nbt = entry.nbt().copy();
+        if (nbt.getString("id").isEmpty()) return null;
+        nbt.remove("UUID");
+        Vec3 local = placement.localOf(entry.pos(), snapshotBlockOf(entry));
+        // 实体留在世界外高空,避免 MinecartRenderer.getPos 去真实世界找铁轨并把全息矿车吸走。
+        ListTag posTag = new ListTag();
+        posTag.add(DoubleTag.valueOf(0.0D));
+        posTag.add(DoubleTag.valueOf(4096.0D));
+        posTag.add(DoubleTag.valueOf(0.0D));
+        nbt.put("Pos", posTag);
         try {
-            BufferBuilder builder = new BufferBuilder(
-                byteBuffer,
-                VertexFormat.Mode.QUADS,
-                RenderType.translucent().format()
-            );
-            VertexConsumer tinted = new TintedVertexConsumer(builder, TINT_RED, TINT_GREEN, TINT_BLUE, TINT_ALPHA);
-            MultiBufferSource singleBuffer = ignored -> tinted;
-            PoseStack poseStack = new PoseStack();
-            for (StructureSnapshot.BlockEntry entry : snapshot.blocks()) {
-                if (item.layerView() != BlueprintDeploySession.LAYERS_ALL
-                    && entry.pos().getY() != item.layerView()) {
-                    continue;
-                }
-                BlockState state = snapshot.stateOf(entry);
-                if (state.isAir()) continue;
-                BlockState transformed = local.stateOf(state);
-                BlockPos renderPos = local.worldOf(entry.pos());
+            return EntityType.create(nbt, level)
+                .filter(entity -> !(entity instanceof Player))
+                .map(entity -> {
+                    applyEntityPlacement(entity, placement);
+                    return new PreparedEntity(entity, local, entity.getYRot(), entity.getXRot());
+                })
+                .orElse(null);
+        } catch (RuntimeException exception) {
+            skipOnce("entity:" + nbt.getString("id"), exception);
+            return null;
+        }
+    }
+
+    private static BlockPos snapshotBlockOf(StructureSnapshot.EntityEntry entry) {
+        BlockPos contained = BlockPos.containing(entry.pos());
+        BlockPos recorded = entry.blockPos();
+        return contained.distManhattan(recorded) <= 1 ? recorded : contained;
+    }
+
+    private static void applyEntityPlacement(Entity entity, BlueprintPlacement placement) {
+        float yRot = entity.rotate(placement.rotation());
+        yRot += entity.mirror(placement.mirror()) - entity.getYRot();
+        entity.moveTo(0.0D, 4096.0D, 0.0D, yRot, entity.getXRot());
+        entity.xOld = 0.0D;
+        entity.yOld = 4096.0D;
+        entity.zOld = 0.0D;
+        entity.yRotO = yRot;
+        entity.xRotO = entity.getXRot();
+        entity.setDeltaMovement(Vec3.ZERO);
+        if (entity instanceof LivingEntity living) {
+            living.setYHeadRot(yRot);
+            living.setYBodyRot(yRot);
+        }
+        if (entity instanceof Mob mob) {
+            mob.setNoAi(true);
+        }
+        if (entity instanceof AbstractPlasticEntity plastic) {
+            applyPlasticPlacement(plastic, placement);
+        }
+    }
+
+    private static void applyPlasticPlacement(AbstractPlasticEntity plastic, BlueprintPlacement placement) {
+        PlasticEntityOrientation orientation = plastic.getOrientation();
+        Direction face = placement.mirror().mirror(orientation.attachmentFace());
+        face = placement.rotation().rotate(face);
+        int turn = orientation.quarterTurn();
+        if (orientation.attachmentFace().getAxis() == Direction.Axis.Y) {
+            turn = switch (placement.mirror()) {
+                case LEFT_RIGHT -> Math.floorMod(2 - turn, 4);
+                case FRONT_BACK -> Math.floorMod(-turn, 4);
+                case NONE -> turn;
+            };
+            turn = Math.floorMod(turn + rotationSteps(placement.rotation()), 4);
+        }
+        plastic.setOrientation(new PlasticEntityOrientation(face, turn));
+        plastic.setDisplayState(placement.stateOf(plastic.getDisplayState()));
+    }
+
+    private static int rotationSteps(Rotation rotation) {
+        return switch (rotation) {
+            case NONE -> 0;
+            case CLOCKWISE_90 -> 1;
+            case CLOCKWISE_180 -> 2;
+            case COUNTERCLOCKWISE_90 -> 3;
+        };
+    }
+
+    @Nullable
+    private static PreparedProjection preparedOrNull(
+        Minecraft minecraft,
+        RenderItem item,
+        BlueprintProjectionAnimator.Pose pose
+    ) {
+        StructureSnapshot snapshot = ClientBlueprintSnapshotCache.snapshotOrRequest(item.hash());
+        if (snapshot == null) return null;
+        return prepared(minecraft, item, snapshot, pose.mesh());
+    }
+
+    private static void withMeshPose(
+        PoseStack poseStack,
+        BlueprintProjectionAnimator.Pose pose,
+        Runnable action
+    ) {
+        PoseStack.Pose origin = poseStack.last();
+        poseStack.pushPose();
+        try {
+            applyMeshPose(poseStack, pose);
+            action.run();
+        } finally {
+            restorePose(poseStack, origin);
+        }
+    }
+
+    private static void applyMeshPose(PoseStack poseStack, BlueprintProjectionAnimator.Pose pose) {
+        Vec3 displayedCenter = pose.displayedCenter();
+        Vec3 bakedCenter = pose.bakedCenter();
+        BlockPos bakedAnchor = pose.mesh().anchor();
+        poseStack.translate(displayedCenter.x, displayedCenter.y, displayedCenter.z);
+        poseStack.mulPose(Axis.YP.rotationDegrees(pose.extraYaw()));
+        poseStack.scale(pose.extraMirrorX(), 1.0F, pose.extraMirrorZ());
+        poseStack.translate(
+            bakedAnchor.getX() - bakedCenter.x,
+            bakedAnchor.getY() - bakedCenter.y,
+            bakedAnchor.getZ() - bakedCenter.z
+        );
+    }
+
+    private static void renderBlocksAndFluids(
+        Minecraft minecraft,
+        PoseStack poseStack,
+        VertexConsumer tintedBlocks,
+        PreparedProjection prepared
+    ) {
+        BlockRenderDispatcher dispatcher = minecraft.getBlockRenderer();
+        try {
+            prepared.view().hideNonOccludingNeighbors(true);
+            ModelBlockRenderer.enableCaching();
+            tessellateModels(dispatcher, poseStack, tintedBlocks, prepared, true);
+            ModelBlockRenderer.clearCache();
+            prepared.view().hideNonOccludingNeighbors(false);
+            ModelBlockRenderer.enableCaching();
+            tessellateModels(dispatcher, poseStack, tintedBlocks, prepared, false);
+            ModelBlockRenderer.clearCache();
+            prepared.view().hideNonOccludingNeighbors(false);
+            for (BlockPos pos : prepared.fluidBlocks()) {
+                BlockState state = prepared.view().realState(pos);
+                FluidState fluid = state.getFluidState();
+                if (fluid.isEmpty()) continue;
                 poseStack.pushPose();
-                poseStack.translate(renderPos.getX(), renderPos.getY(), renderPos.getZ());
-                if (transformed.getRenderShape() == RenderShape.MODEL) {
-                    minecraft.getBlockRenderer().renderSingleBlock(
-                        transformed,
-                        poseStack,
-                        singleBuffer,
-                        LightTexture.FULL_BRIGHT,
-                        OverlayTexture.NO_OVERLAY,
-                        ModelData.EMPTY,
-                        null
-                    );
-                } else {
-                    renderPlaceholderBox(minecraft, transformed, poseStack, tinted);
-                }
+                poseStack.translate(pos.getX(), pos.getY(), pos.getZ());
+                Matrix4f matrix = new Matrix4f(poseStack.last().pose());
+                VertexConsumer fluidConsumer = new PoseVertexConsumer(tintedBlocks, matrix);
+                dispatcher.renderLiquid(BlockPos.ZERO, prepared.view().shifted(pos), fluidConsumer, state, fluid);
                 poseStack.popPose();
             }
-            MeshData meshData = builder.build();
-            if (meshData == null) return null;
-            VertexBuffer vertexBuffer = new VertexBuffer(VertexBuffer.Usage.STATIC);
-            vertexBuffer.bind();
-            vertexBuffer.upload(meshData);
-            VertexBuffer.unbind();
-            return vertexBuffer;
         } finally {
-            byteBuffer.close();
+            prepared.view().hideNonOccludingNeighbors(true);
+            ModelBlockRenderer.clearCache();
         }
     }
 
-    /** 纯方块实体渲染的方块(箱子、告示牌等)以粒子贴图画一个内缩占位盒。 */
-    private static void renderPlaceholderBox(
-        Minecraft minecraft,
-        BlockState state,
+    private static void tessellateModels(
+        BlockRenderDispatcher dispatcher,
         PoseStack poseStack,
-        VertexConsumer consumer
+        VertexConsumer tintedBlocks,
+        PreparedProjection prepared,
+        boolean solidPass
     ) {
-        TextureAtlasSprite sprite = minecraft.getBlockRenderer().getBlockModel(state).getParticleIcon(ModelData.EMPTY);
-        PoseStack.Pose pose = poseStack.last();
-        float min = 0.05F;
-        float max = 0.95F;
-        float u0 = sprite.getU0();
-        float u1 = sprite.getU1();
-        float v0 = sprite.getV0();
-        float v1 = sprite.getV1();
-        // 六个面按面法线逐面写入;占位盒只求可辨识,不做遮挡剔除。
-        quad(consumer, pose, u0, v0, u1, v1, new float[][]{
-            {min, max, min}, {max, max, min}, {max, max, max}, {min, max, max}
-        }, 0.0F, 1.0F, 0.0F);
-        quad(consumer, pose, u0, v0, u1, v1, new float[][]{
-            {min, min, max}, {max, min, max}, {max, min, min}, {min, min, min}
-        }, 0.0F, -1.0F, 0.0F);
-        quad(consumer, pose, u0, v0, u1, v1, new float[][]{
-            {min, min, min}, {min, max, min}, {max, max, min}, {max, min, min}
-        }, 0.0F, 0.0F, -1.0F);
-        quad(consumer, pose, u0, v0, u1, v1, new float[][]{
-            {max, min, max}, {max, max, max}, {min, max, max}, {min, min, max}
-        }, 0.0F, 0.0F, 1.0F);
-        quad(consumer, pose, u0, v0, u1, v1, new float[][]{
-            {min, min, max}, {min, max, max}, {min, max, min}, {min, min, min}
-        }, -1.0F, 0.0F, 0.0F);
-        quad(consumer, pose, u0, v0, u1, v1, new float[][]{
-            {max, min, min}, {max, max, min}, {max, max, max}, {max, min, max}
-        }, 1.0F, 0.0F, 0.0F);
-    }
-
-    private static void quad(
-        VertexConsumer consumer,
-        PoseStack.Pose pose,
-        float u0,
-        float v0,
-        float u1,
-        float v1,
-        float[][] corners,
-        float normalX,
-        float normalY,
-        float normalZ
-    ) {
-        float[] us = {u0, u0, u1, u1};
-        float[] vs = {v1, v0, v0, v1};
-        for (int corner = 0; corner < 4; corner++) {
-            consumer.addVertex(pose, corners[corner][0], corners[corner][1], corners[corner][2])
-                .setColor(255, 255, 255, 255)
-                .setUv(us[corner], vs[corner])
-                .setUv2(LightTexture.FULL_BRIGHT & 0xFFFF, LightTexture.FULL_BRIGHT >> 16)
-                .setOverlay(OverlayTexture.NO_OVERLAY)
-                .setNormal(pose, normalX, normalY, normalZ);
+        RandomSource random = RandomSource.create();
+        for (BlockPos pos : prepared.modelBlocks()) {
+            BlockState state = prepared.view().realState(pos);
+            if (state.getRenderShape() != RenderShape.MODEL) continue;
+            if (isSolidCube(state) != solidPass) continue;
+            random.setSeed(state.getSeed(pos));
+            poseStack.pushPose();
+            poseStack.translate(pos.getX(), pos.getY(), pos.getZ());
+            dispatcher.renderBatched(
+                state,
+                pos,
+                prepared.view(),
+                poseStack,
+                tintedBlocks,
+                true,
+                random,
+                prepared.view().getModelData(pos),
+                null
+            );
+            poseStack.popPose();
         }
     }
 
-    private static void drawMesh(VertexBuffer mesh, Matrix4f modelView, Matrix4f projection) {
-        RenderType renderType = RenderType.translucent();
-        renderType.setupRenderState();
-        mesh.bind();
-        mesh.drawWithShader(modelView, projection, RenderSystem.getShader());
-        VertexBuffer.unbind();
-        renderType.clearRenderState();
+    private static boolean isSolidCube(BlockState state) {
+        return state.isSolidRender(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
     }
 
-    @SubscribeEvent
-    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
-        clearMeshes();
-    }
-
-    private static void clearMeshes() {
-        for (VertexBuffer mesh : MESHES.values()) {
-            mesh.close();
+    private static void renderBlockEntities(
+        Minecraft minecraft,
+        PoseStack poseStack,
+        MultiBufferSource buffers,
+        PreparedProjection prepared
+    ) {
+        for (BlockEntity blockEntity : prepared.blockEntities()) {
+            BlockEntityRenderer<?> renderer = minecraft.getBlockEntityRenderDispatcher().getRenderer(blockEntity);
+            if (renderer == null) continue;
+            if (!blockEntity.getType().isValid(blockEntity.getBlockState())) continue;
+            BlockPos pos = blockEntity.getBlockPos();
+            PoseStack.Pose origin = poseStack.last();
+            poseStack.pushPose();
+            poseStack.translate(pos.getX(), pos.getY(), pos.getZ());
+            try {
+                renderBlockEntity(renderer, blockEntity, poseStack, buffers);
+            } catch (RuntimeException exception) {
+                skipOnce("ber:" + blockEntity.getType(), exception);
+            } finally {
+                restorePose(poseStack, origin);
+            }
         }
-        MESHES.clear();
     }
 
-    /** 半透明统一着色的顶点包装:把模型颜色乘上投影色与透明度。 */
-    private record TintedVertexConsumer(
-        VertexConsumer delegate,
-        float red,
-        float green,
-        float blue,
-        float alpha
-    ) implements VertexConsumer {
+    @SuppressWarnings("unchecked")
+    private static <T extends BlockEntity> void renderBlockEntity(
+        BlockEntityRenderer<?> renderer,
+        T blockEntity,
+        PoseStack poseStack,
+        MultiBufferSource buffers
+    ) {
+        ((BlockEntityRenderer<T>) renderer).render(
+            blockEntity,
+            0.0F,
+            poseStack,
+            buffers,
+            LightTexture.FULL_BRIGHT,
+            OverlayTexture.NO_OVERLAY
+        );
+    }
+
+    private static void renderEntities(
+        Minecraft minecraft,
+        PoseStack poseStack,
+        MultiBufferSource buffers,
+        PreparedProjection prepared
+    ) {
+        EntityRenderDispatcher dispatcher = minecraft.getEntityRenderDispatcher();
+        dispatcher.setRenderShadow(false);
+        try {
+            for (PreparedEntity preparedEntity : prepared.entities()) {
+                Entity entity = preparedEntity.entity();
+                Vec3 local = preparedEntity.local();
+                PoseStack.Pose origin = poseStack.last();
+                poseStack.pushPose();
+                poseStack.translate(local.x, local.y, local.z);
+                try {
+                    dispatcher.render(
+                        entity,
+                        0.0D,
+                        0.0D,
+                        0.0D,
+                        preparedEntity.yRot(),
+                        0.0F,
+                        poseStack,
+                        buffers,
+                        LightTexture.FULL_BRIGHT
+                    );
+                } catch (RuntimeException exception) {
+                    skipOnce("entity-render:" + entity.getType(), exception);
+                } finally {
+                    restorePose(poseStack, origin);
+                }
+            }
+        } finally {
+            dispatcher.setRenderShadow(true);
+        }
+    }
+
+    private static void skipOnce(String key, RuntimeException exception) {
+        if (FAILED_RENDERERS.add(key)) {
+            AnvilcraftPlasticraft.LOGGER.warn("Blueprint projection cannot render {}", key, exception);
+        }
+    }
+
+    /** BER / 实体渲染器抛错时可能已经 push 却没 pop,按进入时的栈帧弹回到原深度。 */
+    private static void restorePose(PoseStack poseStack, PoseStack.Pose origin) {
+        int guard = 64;
+        while (poseStack.last() != origin && guard-- > 0) {
+            poseStack.popPose();
+        }
+    }
+
+    private static int packColor(float red, float green, float blue, float alpha) {
+        return ((int) (alpha * 255.0F) << 24)
+            | ((int) (red * 255.0F) << 16)
+            | ((int) (green * 255.0F) << 8)
+            | (int) (blue * 255.0F);
+    }
+
+    private record MeshKey(String hash, Rotation rotation, Mirror mirror, int layerView) {
+    }
+
+    private record PreparedProjection(
+        BlueprintRenderView view,
+        List<BlockPos> modelBlocks,
+        List<BlockPos> fluidBlocks,
+        List<BlockEntity> blockEntities,
+        List<PreparedEntity> entities
+    ) {
+    }
+
+    private record PreparedEntity(Entity entity, Vec3 local, float yRot, float xRot) {
+    }
+
+    /**
+     * {@code renderLiquid} 按区块内 {@code pos & 15} 写顶点。把查询原点挪到当前格并以 (0,0,0) 调用,
+     * 顶点落在 0-1,再乘当前姿态,与方块共用旋转/镜像/锚点。
+     */
+    private record PoseVertexConsumer(VertexConsumer delegate, Matrix4f pose) implements VertexConsumer {
+        @Override
+        public VertexConsumer addVertex(float x, float y, float z) {
+            this.delegate.addVertex(this.pose, x, y, z);
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setColor(int red, int green, int blue, int alpha) {
+            this.delegate.setColor(red, green, blue, alpha);
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv(float u, float v) {
+            this.delegate.setUv(u, v);
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv1(int u, int v) {
+            this.delegate.setUv1(u, v);
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv2(int u, int v) {
+            this.delegate.setUv2(u, v);
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setNormal(float x, float y, float z) {
+            this.delegate.setNormal(x, y, z);
+            return this;
+        }
+    }
+
+    /**
+     * 主 BufferSource 对不在 fixedBuffers 里的自定义层一次只能打开一个 builder。
+     * 深度和颜色必须分两遍取 buffer,不能 VertexMultiConsumer 双写,否则会先结束深度 builder 再往里提交顶点。
+     */
+    private record TintedBufferSource(MultiBufferSource delegate, float alpha, boolean depthPass)
+        implements MultiBufferSource {
+        private static final VertexConsumer DISCARDING = new DiscardingVertexConsumer();
+
+        @Override
+        public VertexConsumer getBuffer(RenderType type) {
+            RenderType colorType = BlueprintProjectionRenderTypes.overlay(type);
+            if (this.depthPass) {
+                if (!BlueprintProjectionRenderTypes.needsSilhouette(type, colorType)) {
+                    return DISCARDING;
+                }
+                return this.delegate.getBuffer(BlueprintProjectionRenderTypes.silhouetteDepth(type));
+            }
+            return new TintedVertexConsumer(this.delegate.getBuffer(colorType), this.alpha);
+        }
+    }
+
+    private record DiscardingVertexConsumer() implements VertexConsumer {
+        @Override
+        public VertexConsumer addVertex(float x, float y, float z) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setColor(int red, int green, int blue, int alpha) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv(float u, float v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv1(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv2(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setNormal(float x, float y, float z) {
+            return this;
+        }
+    }
+
+    /** 只改透明度,保留方块/流体/实体原色,树叶与红石粉才能着色。 */
+    private record TintedVertexConsumer(VertexConsumer delegate, float alpha) implements VertexConsumer {
         @Override
         public VertexConsumer addVertex(float x, float y, float z) {
             this.delegate.addVertex(x, y, z);
@@ -297,14 +764,36 @@ public final class BlueprintProjectionRenderer {
         }
 
         @Override
+        public void addVertex(
+            float x,
+            float y,
+            float z,
+            int color,
+            float u,
+            float v,
+            int overlay,
+            int light,
+            float normalX,
+            float normalY,
+            float normalZ
+        ) {
+            this.delegate.addVertex(x, y, z, withAlpha(color), u, v, overlay, light, normalX, normalY, normalZ);
+        }
+
+        @Override
         public VertexConsumer setColor(int red, int green, int blue, int alpha) {
-            this.delegate.setColor(
-                (int) (red * this.red),
-                (int) (green * this.green),
-                (int) (blue * this.blue),
-                (int) (alpha * this.alpha)
-            );
+            this.delegate.setColor(red, green, blue, (int) (alpha * this.alpha));
             return this;
+        }
+
+        private int withAlpha(int color) {
+            int alpha = (int) (FastColor.ARGB32.alpha(color) * this.alpha);
+            return FastColor.ARGB32.color(
+                alpha,
+                FastColor.ARGB32.red(color),
+                FastColor.ARGB32.green(color),
+                FastColor.ARGB32.blue(color)
+            );
         }
 
         @Override

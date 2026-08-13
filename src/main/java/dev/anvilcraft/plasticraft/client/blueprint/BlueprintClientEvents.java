@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.client.blueprint;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
+import dev.anvilcraft.plasticraft.client.renderer.blueprint.BlueprintProjectionRenderer;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -15,7 +16,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 
-/** 部署会话的客户端输入与生命周期:滚轮切换工具、Shift+滚轮调层、断线清理缓存。 */
+/** 部署会话的客户端输入与生命周期:Ctrl+滚轮切换工具、Alt+滚轮调整参数、断线清理缓存。 */
 @EventBusSubscriber(modid = AnvilcraftPlasticraft.MOD_ID, value = Dist.CLIENT)
 public final class BlueprintClientEvents {
     private BlueprintClientEvents() {
@@ -25,9 +26,6 @@ public final class BlueprintClientEvents {
     public static void onItemTooltip(ItemTooltipEvent event) {
         ConstructionBlueprintData data = ConstructionBlueprintData.get(event.getItemStack()).orElse(null);
         if (data == null) return;
-        event.getToolTip().add(Component
-            .translatable("tooltip.anvilcraftplasticraft.blueprint.summary", data.name())
-            .withStyle(ChatFormatting.AQUA));
         ConstructionJob job = data.jobId().map(ClientBlueprintJobCache::job).orElse(null);
         String stateKey = job == null
             ? "tooltip.anvilcraftplasticraft.blueprint.state_imported"
@@ -37,15 +35,10 @@ public final class BlueprintClientEvents {
         event.getToolTip().add(Component.translatable(stateKey).withStyle(ChatFormatting.GRAY));
         if (!Screen.hasShiftDown()) return;
         event.getToolTip().add(Component
-            .translatable(
-                "tooltip.anvilcraftplasticraft.blueprint.size",
-                data.size().getX(),
-                data.size().getY(),
-                data.size().getZ()
-            )
+            .translatable("tooltip.anvilcraftplasticraft.blueprint.source." + data.source().getSerializedName())
             .withStyle(ChatFormatting.DARK_GRAY));
         event.getToolTip().add(Component
-            .translatable("tooltip.anvilcraftplasticraft.blueprint.source." + data.source().getSerializedName())
+            .translatable("tooltip.anvilcraftplasticraft.blueprint.controls")
             .withStyle(ChatFormatting.DARK_GRAY));
         if (data.hasBlockEntities()) {
             event.getToolTip().add(Component
@@ -67,11 +60,17 @@ public final class BlueprintClientEvents {
     @SubscribeEvent
     public static void onMouseScroll(InputEvent.MouseScrollingEvent event) {
         if (!BlueprintDeploySession.isActive()) return;
-        int delta = event.getScrollDeltaY() > 0 ? 1 : -1;
-        if (Minecraft.getInstance().player != null && Minecraft.getInstance().player.isShiftKeyDown()) {
-            BlueprintDeploySession.stepLayer(delta);
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen != null) return;
+        boolean ctrl = Screen.hasControlDown();
+        boolean alt = Screen.hasAltDown();
+        if (!ctrl && !alt) return;
+        int delta = event.getScrollDeltaY() > 0 ? 1 : event.getScrollDeltaY() < 0 ? -1 : 0;
+        if (delta == 0) return;
+        if (ctrl) {
+            BlueprintDeploySession.cycleTool(-delta);
         } else {
-            BlueprintDeploySession.cycleTool(delta);
+            BlueprintDeploySession.adjustSelectedTool(delta);
         }
         event.setCanceled(true);
     }
@@ -81,5 +80,6 @@ public final class BlueprintClientEvents {
         BlueprintDeploySession.exit();
         ClientBlueprintJobCache.clear();
         ClientBlueprintSnapshotCache.clear();
+        BlueprintProjectionRenderer.clearCache();
     }
 }

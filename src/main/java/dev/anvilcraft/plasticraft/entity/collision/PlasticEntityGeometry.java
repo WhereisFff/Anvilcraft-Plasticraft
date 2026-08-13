@@ -27,6 +27,8 @@ public final class PlasticEntityGeometry {
     private final Vec3 rotationPivot;
     private final Vec3 entityOrigin;
     private final Map<PlasticEntityOrientation, Oriented> orientations = new ConcurrentHashMap<>();
+    private final Map<PlasticEntityOrientation, PlasticConvexCollisionOutline.PackedOutline> packedOutlines =
+        new ConcurrentHashMap<>();
     private final Map<Direction, Vec3> surfaceCenters = new ConcurrentHashMap<>();
 
     private PlasticEntityGeometry(
@@ -219,6 +221,19 @@ public final class PlasticEntityGeometry {
     public Oriented oriented(PlasticEntityOrientation orientation) {
         Objects.requireNonNull(orientation, "orientation");
         return this.orientations.computeIfAbsent(orientation, this::createOriented);
+    }
+
+    /** 轮廓只取决于朝向后的局部凸体，按实体平移复用，避免推动时每 tick 重建。 */
+    public PlasticConvexCollisionOutline.PackedOutline packedOutline(PlasticEntityOrientation orientation) {
+        Objects.requireNonNull(orientation, "orientation");
+        PlasticConvexCollisionOutline.PackedOutline cached = this.packedOutlines.get(orientation);
+        if (cached != null) return cached;
+        List<PlasticConvexShape> shapes = this.oriented(orientation).convexShapes();
+        PlasticConvexCollisionOutline.PackedOutline built = shapes.isEmpty()
+            ? PlasticConvexCollisionOutline.PackedOutline.EMPTY
+            : PlasticConvexCollisionOutline.PackedOutline.of(PlasticConvexCollisionOutline.build(shapes));
+        PlasticConvexCollisionOutline.PackedOutline existing = this.packedOutlines.putIfAbsent(orientation, built);
+        return existing == null ? built : existing;
     }
 
     public PlasticEntityCollisionBox collisionBoxAt(

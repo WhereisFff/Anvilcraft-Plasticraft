@@ -1,6 +1,5 @@
 package dev.anvilcraft.plasticraft.block.piston;
 
-import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import net.minecraft.core.BlockPos;
@@ -8,6 +7,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 
+import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -23,10 +23,18 @@ public final class HighViscosityPistonBudget {
     }
 
     public static boolean withinBudget(Level level, List<BlockPos> toPush) {
-        return effectivePushCount(level, toPush) <= VANILLA_PUSH_BUDGET;
+        return withinBudget(level, toPush, null);
+    }
+
+    public static boolean withinBudget(Level level, List<BlockPos> toPush, @Nullable Direction pushDirection) {
+        return effectivePushCount(level, toPush, pushDirection) <= VANILLA_PUSH_BUDGET;
     }
 
     public static int effectivePushCount(Level level, List<BlockPos> toPush) {
+        return effectivePushCount(level, toPush, null);
+    }
+
+    public static int effectivePushCount(Level level, List<BlockPos> toPush, @Nullable Direction pushDirection) {
         if (toPush.isEmpty()) return 0;
         Map<BlockPos, Integer> indices = new HashMap<>();
         for (int index = 0; index < toPush.size(); index++) {
@@ -52,7 +60,9 @@ public final class HighViscosityPistonBudget {
                 BlockState otherState = level.getBlockState(otherPos);
                 boolean resinBond = resinState.is(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get())
                     && canStickTogether(resinPos, resinState, otherPos, otherState);
-                if (!resinBond && !BondedFallingBlocks.hasBlockBond(level, resinPos, direction)) continue;
+                if (!resinBond && !BondedPistonReactions.hasBlockBond(level, resinPos, direction, pushDirection)) {
+                    continue;
+                }
                 union(parent, index, otherIndex);
             }
         }

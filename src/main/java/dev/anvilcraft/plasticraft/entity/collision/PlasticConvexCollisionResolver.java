@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.entity.collision;
 
 import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
@@ -286,6 +287,7 @@ public final class PlasticConvexCollisionResolver {
             entity,
             targetBox.inflate(CONTACT_EPSILON),
             candidate -> usesEntityCollision(entity, candidate)
+                && !isSupportedByMover(candidate, entity)
         )) {
             List<PlasticConvexShape> obstacleShapes = collisionShapes(
                 obstacle,
@@ -624,6 +626,10 @@ public final class PlasticConvexCollisionResolver {
             && usesEntityCollision(mover, target);
     }
 
+    private static boolean isSupportedByMover(Entity carried, Entity mover) {
+        return carried instanceof AbstractPlasticEntity plastic && plastic.plasticraft$isSupportedBy(mover);
+    }
+
     private static boolean usesEntityCollision(Entity mover, Entity target) {
         return !target.isRemoved()
             && !target.isSpectator()
@@ -678,6 +684,7 @@ public final class PlasticConvexCollisionResolver {
             entity,
             collisionBox.inflate(CONTACT_EPSILON),
             candidate -> usesEntityCollision(entity, candidate)
+                && !isSupportedByMover(candidate, entity)
         )) {
             if (intersects(
                 probe,
@@ -910,7 +917,8 @@ public final class PlasticConvexCollisionResolver {
             return requestedMovement;
         }
         double collisionTime = Math.clamp(entry, 0.0D, 1.0D);
-        double distance = Math.max(0.0D, Math.abs(requestedMovement) * collisionTime - CONTACT_EPSILON);
+        // 满格塑料必须贴面停下；减去 CONTACT_EPSILON 会把对侧顶进邻格，导致看起来完整的一格放不下方块。
+        double distance = Math.abs(requestedMovement) * collisionTime;
         return Math.copySign(distance, requestedMovement);
     }
 

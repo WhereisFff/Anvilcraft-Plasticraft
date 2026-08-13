@@ -148,20 +148,24 @@ public final class PlasticraftBlocks {
             .tag(BlockTags.MINEABLE_WITH_PICKAXE)
             .loot((tables, block) -> tables.dropSelf(block))
             .blockstate((context, provider) -> {
-                // 3D 打印组件占位模型由底座、机身和横向接口组成，统一复用原版铁块材质。
-                ModelBuilder<?> model = provider.models()
-                    .getBuilder(context.getName())
-                    .texture("particle", provider.mcLoc("block/iron_block"))
-                    .texture("all", provider.mcLoc("block/iron_block"));
-                addTexturedBox(model, 2.0F, 0.0F, 2.0F, 14.0F, 3.0F, 14.0F);
-                addTexturedBox(model, 4.0F, 3.0F, 4.0F, 12.0F, 11.0F, 12.0F);
-                addTexturedBox(model, 1.0F, 11.0F, 5.0F, 15.0F, 15.0F, 11.0F);
-                provider.simpleBlock(context.get(), model);
+                // 世界中有电外观只用机身；screen1 由方块实体按全亮半透明绘制，避免超出方块的平滑光照把顶部插值变黑。
+                ModelFile powered = provider.models().getExistingFile(
+                    provider.modLoc("block/print_component_body")
+                );
+                ModelFile unpowered = provider.models().getExistingFile(
+                    provider.modLoc("block/print_component_off")
+                );
+                provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
+                    .modelFile(state.getValue(Plastic3DPrintingComponentBlock.POWERED) ? powered : unpowered)
+                    .rotationY(
+                        ((int) state.getValue(Plastic3DPrintingComponentBlock.FACING).toYRot() + 180) % 360
+                    )
+                    .build());
             })
             .item(BlockItem::new)
             .model((context, provider) -> provider.withExistingParent(
                 context.getName(),
-                provider.modLoc("block/" + context.getName())
+                provider.modLoc("block/print_component")
             ))
             .build()
             .register();
@@ -348,7 +352,11 @@ public final class PlasticraftBlocks {
             .sound(SoundType.BONE_BLOCK)
             .pushReaction(PushReaction.NORMAL))
         .lang("Universal Plastic Block")
-        .tag(BlockTags.MINEABLE_WITH_PICKAXE, PlasticraftBlockTags.PLASTIC_PRODUCTS)
+        .tag(
+            BlockTags.MINEABLE_WITH_PICKAXE,
+            PlasticraftBlockTags.PLASTIC_PRODUCTS,
+            ModBlockTags.END_PORTAL_UNABLE_CHANGE
+        )
         .loot((tables, block) -> tables.dropSelf(block))
         .blockstate((context, provider) -> {
             // 数据生成阶段为十六种熔体颜色分别烘焙模型；所有模型共用公共生成器给出的确定性 UV。
@@ -417,7 +425,8 @@ public final class PlasticraftBlocks {
         .tag(
             BlockTags.MINEABLE_WITH_PICKAXE,
             BlockTags.ANVIL,
-            ModBlockTags.NON_MAGNETIC
+            ModBlockTags.NON_MAGNETIC,
+            ModBlockTags.END_PORTAL_UNABLE_CHANGE
         )
         .blockstate((context, provider) -> {
         })
@@ -441,7 +450,11 @@ public final class PlasticraftBlocks {
             .strength(2.0F, 20.0F)
             .pushReaction(PushReaction.NORMAL))
         .lang("Hardened Resin Cauldron")
-        .tag(BlockTags.MINEABLE_WITH_PICKAXE, BlockTags.CAULDRONS)
+        .tag(
+            BlockTags.MINEABLE_WITH_PICKAXE,
+            BlockTags.CAULDRONS,
+            ModBlockTags.END_PORTAL_UNABLE_CHANGE
+        )
         .blockstate((context, provider) -> {
         })
         .item((block, properties) -> new HardenedResinCauldronItem(
@@ -464,7 +477,7 @@ public final class PlasticraftBlocks {
             .strength(2.0F, 20.0F)
             .pushReaction(PushReaction.NORMAL))
         .lang("Catalytic Press Lid")
-        .tag(BlockTags.MINEABLE_WITH_PICKAXE)
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE, ModBlockTags.END_PORTAL_UNABLE_CHANGE)
         .blockstate((context, provider) -> provider.simpleBlock(
             context.get(),
             provider.models().getExistingFile(provider.modLoc("block/catalytic_press_lid"))
@@ -495,7 +508,8 @@ public final class PlasticraftBlocks {
             BlockTags.MINEABLE_WITH_PICKAXE,
             BlockTags.ANVIL,
             ModBlockTags.NON_MAGNETIC,
-            PlasticraftBlockTags.RESIN_SHOCK_COMPATIBLE
+            PlasticraftBlockTags.RESIN_SHOCK_COMPATIBLE,
+            ModBlockTags.END_PORTAL_UNABLE_CHANGE
         )
         .blockstate((context, provider) -> {
         })
@@ -610,24 +624,6 @@ public final class PlasticraftBlocks {
                 .renderType(renderType);
         }
         return models;
-    }
-
-    private static void addTexturedBox(
-        ModelBuilder<?> model,
-        float fromX,
-        float fromY,
-        float fromZ,
-        float toX,
-        float toY,
-        float toZ
-    ) {
-        ModelBuilder<?>.ElementBuilder element = model.element()
-            .from(fromX, fromY, fromZ)
-            .to(toX, toY, toZ);
-        for (Direction direction : Direction.values()) {
-            element.face(direction).texture("#all").end();
-        }
-        element.end();
     }
 
     public static void register() {

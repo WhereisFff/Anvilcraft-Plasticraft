@@ -7,6 +7,7 @@ import dev.anvilcraft.plasticraft.network.BlueprintCancelPacket;
 import dev.anvilcraft.plasticraft.network.BlueprintDeployPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
@@ -15,6 +16,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -25,9 +27,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * 客户端部署会话:手持已导入磁盘右击进入,投影跟随准星直到锁定锚点,
- * 滚轮在工具间切换,右击执行当前工具,Shift+滚轮快捷调层;确认时把最终
- * 放置参数发给服务端。会话本身不改动世界,服务端只在确认与取消时参与。
+ * 客户端部署会话:手持已导入磁盘右击进入,投影跟随准星直到锁定锚点。
+ * Ctrl+滚轮切换工具,Alt+滚轮调整当前工具的参数,右击执行;普通滚轮仍切换快捷栏。
  */
 public final class BlueprintDeploySession {
     /** 部署工具条,顺序即滚轮循环顺序。 */
@@ -76,6 +77,7 @@ public final class BlueprintDeploySession {
         private boolean anchorLocked;
         private int layerView = LAYERS_ALL;
         private Tool selectedTool = Tool.MOVE;
+        private int yOffset;
 
         private SessionState(
             InteractionHand hand,
@@ -116,6 +118,7 @@ public final class BlueprintDeploySession {
             session.anchorLocked = true;
         }
         state = session;
+        ClientBlueprintSnapshotCache.snapshotOrRequest(data.hash());
     }
 
     public static void exit() {
@@ -155,7 +158,7 @@ public final class BlueprintDeploySession {
         BoundingBox bounds = new BlueprintPlacement(BlockPos.ZERO, session.rotation, session.mirror)
             .bounds(session.size);
         int anchorX = Mth.floor(base.x) - bounds.minX() - bounds.getXSpan() / 2;
-        int anchorY = Mth.floor(base.y) - bounds.minY();
+        int anchorY = Mth.floor(base.y) - bounds.minY() + session.yOffset;
         int anchorZ = Mth.floor(base.z) - bounds.minZ() - bounds.getZSpan() / 2;
         return new BlockPos(anchorX, anchorY, anchorZ);
     }
@@ -176,6 +179,52 @@ public final class BlueprintDeploySession {
         int current = session.layerView;
         int next = current == LAYERS_ALL ? (delta > 0 ? 0 : maxLayer) : current + delta;
         session.layerView = next < 0 || next > maxLayer ? LAYERS_ALL : next;
+    }
+
+    /** Alt+滚轮按当前工具调整:移动改位置/高度,旋转、镜像与分层改对应参数。 */
+    public static void adjustSelectedTool(int delta) {
+        SessionState session = state;
+        if (session == null || delta == 0) return;
+        switch (session.selectedTool) {
+            case MOVE -> nudge(session, delta);
+            case ROTATE -> {
+                Rotation step = delta > 0 ? Rotation.CLOCKWISE_90 : Rotation.COUNTERCLOCKWISE_90;
+                applyTransform(session, session.rotation.getRotated(step), session.mirror);
+            }
+            case FLIP -> applyTransform(
+                session,
+                session.rotation,
+                delta > 0 ? nextMirror(session.mirror) : previousMirror(session.mirror)
+            );
+            case LAYER_DOWN, LAYER_UP -> stepLayer(delta);
+            case CONFIRM, CANCEL -> {
+            }
+        }
+    }
+
+    /** 未锁定时只叠加高度偏移;锁定后沿准星最近轴向平移一格。 */
+    private static void nudge(SessionState session, int delta) {
+        if (!session.anchorLocked) {
+            session.yOffset += delta;
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        Player player = minecraft.player;
+        if (player == null) {
+            session.anchor = session.anchor.above(delta);
+            return;
+        }
+        Vec3 look = player.getLookAngle();
+        Direction direction = Direction.getNearest(look.x, look.y, look.z);
+        session.anchor = session.anchor.relative(direction, delta);
+    }
+
+    private static Mirror previousMirror(Mirror mirror) {
+        return switch (mirror) {
+            case NONE -> Mirror.FRONT_BACK;
+            case FRONT_BACK -> Mirror.LEFT_RIGHT;
+            case LEFT_RIGHT -> Mirror.NONE;
+        };
     }
 
     public static void executeSelectedTool() {
@@ -225,13 +274,52 @@ public final class BlueprintDeploySession {
         exit();
     }
 
-    /** 已部署磁盘的取消会移除世界中的蓝图;未部署时仅退出会话。 */
+    /** 已部署磁盘的取消会移除世界中的蓝图;磁盘已换成其它蓝图时,对准残留投影删除。 */
     private static void cancel(SessionState session) {
-        UUID jobId = session.jobId.orElse(null);
-        if (jobId != null && ClientBlueprintJobCache.job(jobId) != null) {
+        UUID jobId = session.jobId.filter(id -> ClientBlueprintJobCache.job(id) != null)
+            .orElseGet(BlueprintDeploySession::lookedAtOwnedJobId);
+        if (jobId != null) {
             PacketDistributor.sendToServer(new BlueprintCancelPacket(jobId));
         }
         exit();
+    }
+
+    /** 准星射线命中的、属于当前玩家的已放置蓝图,取最近的一份。 */
+    @Nullable
+    public static UUID lookedAtOwnedJobId() {
+        Minecraft minecraft = Minecraft.getInstance();
+        Player player = minecraft.player;
+        if (player == null || minecraft.level == null) return null;
+        Vec3 start = player.getEyePosition();
+        Vec3 end = start.add(player.getLookAngle().scale(PICK_DISTANCE));
+        UUID closestId = null;
+        double closestDistance = Double.MAX_VALUE;
+        for (ConstructionJob job : ClientBlueprintJobCache.jobs()) {
+            if (!job.dimension().equals(minecraft.level.dimension())) continue;
+            if (!job.owner().equals(player.getUUID())) continue;
+            AABB box = AABB.of(new BlueprintPlacement(job.anchor(), job.rotation(), job.mirror())
+                .bounds(job.size()));
+            Optional<Vec3> hit = box.clip(start, end);
+            if (hit.isEmpty()) continue;
+            double distance = start.distanceToSqr(hit.get());
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestId = job.jobId();
+            }
+        }
+        return closestId;
+    }
+
+    /** 取消工具将删除的蓝图名称:优先当前磁盘上的部署,否则对准的残留投影。 */
+    @Nullable
+    public static String pendingCancelName() {
+        SessionState session = state;
+        if (session == null) return null;
+        UUID jobId = session.jobId.filter(id -> ClientBlueprintJobCache.job(id) != null)
+            .orElseGet(BlueprintDeploySession::lookedAtOwnedJobId);
+        if (jobId == null) return null;
+        ConstructionJob job = ClientBlueprintJobCache.job(jobId);
+        return job == null ? null : job.name();
     }
 
     // ==================== 渲染与 HUD 读取的会话视图 ====================
@@ -271,6 +359,12 @@ public final class BlueprintDeploySession {
     public static String activeName() {
         SessionState session = state;
         return session == null ? null : session.name;
+    }
+
+    @Nullable
+    public static Vec3i activeSize() {
+        SessionState session = state;
+        return session == null ? null : session.size;
     }
 
     public static Rotation activeRotation() {

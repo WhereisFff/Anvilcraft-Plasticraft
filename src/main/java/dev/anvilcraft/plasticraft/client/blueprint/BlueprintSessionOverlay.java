@@ -17,8 +17,8 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * 部署会话的屏幕工具条:七个蓝图按钮图标横排在快捷栏上方,滚轮切换选中,
- * 右击执行;上方一行文字显示蓝图名、当前工具与旋转、镜像、分层状态。
+ * 部署会话的屏幕工具条:七个蓝图按钮图标横排在快捷栏上方,
+ * Ctrl+滚轮切换选中,Alt+滚轮调整,右击执行;上方文字显示蓝图名与当前状态。
  */
 @EventBusSubscriber(modid = AnvilcraftPlasticraft.MOD_ID, value = Dist.CLIENT)
 public final class BlueprintSessionOverlay {
@@ -74,6 +74,25 @@ public final class BlueprintSessionOverlay {
             top - 12,
             0xFFFFFF
         );
+        graphics.drawCenteredString(
+            minecraft.font,
+            Component.translatable("screen.anvilcraftplasticraft.blueprint_session.hint"),
+            graphics.guiWidth() / 2,
+            top - 24,
+            0xA0FFFFFF
+        );
+        if (selected == BlueprintDeploySession.Tool.CANCEL) {
+            String cancelName = BlueprintDeploySession.pendingCancelName();
+            if (cancelName != null) {
+                graphics.drawCenteredString(
+                    minecraft.font,
+                    Component.translatable("screen.anvilcraftplasticraft.blueprint_session.cancel_target", cancelName),
+                    graphics.guiWidth() / 2,
+                    top - 36,
+                    0xFFFFC14D
+                );
+            }
+        }
     }
 
     private static Component statusLine(BlueprintDeploySession.Tool selected) {

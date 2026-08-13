@@ -206,7 +206,7 @@ public final class PlasticraftLanguageData {
             "jei.anvilcraftplasticraft.plastic_molding_chamber.forming",
             "Casting fills a clay mold and pumps at 250 mB/gt. For 3D printing, the chamber pumps the complete "
                 + "model batch into the component above it at 250 mB/gt. Once full, the component automatically "
-                + "consumes 1 mB/gt and reveals a closed exact intersection in Y layers with eastward X rows and "
+                + "consumes 1 mB/gt and reveals source-cube faces with construction caps in Y layers with eastward X rows and "
                 + "alternating north-south Z travel, including every positive-volume slope intersection."
         );
         provider.add(
@@ -493,7 +493,7 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.hammer_direction.south", "South");
         provider.add("screen.anvilcraftplasticraft.hammer_direction.west", "West");
 
-        // 结构蓝图磁盘 Tooltip:首行摘要与状态,Shift 展开尺寸、来源与内容标记。
+        // 结构蓝图磁盘 Tooltip:名称和尺寸走本体「结构：」行,这里只追加部署状态;Shift 展开来源与内容标记。
         provider.add("tooltip.anvilcraftplasticraft.blueprint.summary", "Construction blueprint: %s");
         provider.add("tooltip.anvilcraftplasticraft.blueprint.state_imported", "Not placed, right-click to place a projection");
         provider.add("tooltip.anvilcraftplasticraft.blueprint.state_placed", "Placed, right-click this slot to start");
@@ -506,6 +506,10 @@ public final class PlasticraftLanguageData {
         provider.add("tooltip.anvilcraftplasticraft.blueprint.source.litematica_file", "Source: Litematica file");
         provider.add("tooltip.anvilcraftplasticraft.blueprint.has_block_entities", "Contains block entity data");
         provider.add("tooltip.anvilcraftplasticraft.blueprint.has_entities", "Contains entities");
+        provider.add(
+            "tooltip.anvilcraftplasticraft.blueprint.controls",
+            "Ctrl+scroll switches tools, Alt+scroll adjusts the current tool, plain scroll still changes the hotbar"
+        );
 
         // 蓝图文件导入界面。
         provider.add("screen.anvilcraftplasticraft.blueprint_import.title", "Import Blueprint File");
@@ -531,6 +535,11 @@ public final class PlasticraftLanguageData {
             "screen.anvilcraftplasticraft.blueprint_session.status",
             "%1$s | %2$s | Rotation %3$s | Mirror %4$s | Layer %5$s | %6$s"
         );
+        provider.add(
+            "screen.anvilcraftplasticraft.blueprint_session.hint",
+            "Ctrl+scroll: tools  Alt+scroll: adjust  Right-click: execute  Scroll: hotbar"
+        );
+        provider.add("screen.anvilcraftplasticraft.blueprint_session.cancel_target", "Right-click to delete: %s");
 
         // 蓝图操作结果与导入错误消息;detail 由客户端原样追加在冒号后。
         provider.add("message.anvilcraftplasticraft.blueprint.imported", "Blueprint imported");

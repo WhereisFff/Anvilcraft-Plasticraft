@@ -12,6 +12,6 @@ public interface CarrierMovableEntity {
 
     void plasticraft$moveWithCarrier(Entity carrier, Vec3 actualMovement);
 
-    /** 将承载者的请求位移裁剪到此目标及其推链能够共同完成的最大位移。 */
+    /** 侧推和塑料叠放承载会裁剪推动者；玩家或生物头顶承载只限制朝制品的法向位移。 */
     Vec3 plasticraft$clampCarrierMovement(Entity carrier, Vec3 requestedMovement);
 }

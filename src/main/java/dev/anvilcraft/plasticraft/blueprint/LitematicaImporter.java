@@ -161,6 +161,7 @@ public final class LitematicaImporter {
 
     private record ParsedRegion(
         String name,
+        BlockPos origin,
         BlockPos min,
         BlockPos max,
         Vec3i extent,
@@ -225,15 +226,15 @@ public final class LitematicaImporter {
             return overlaps;
         }
 
-        /** 实体坐标从区域最小角相对值平移到并集局部坐标,同步改写 NBT 内的 Pos。 */
+        /** 实体 Pos 相对区域 Position(选区角点,可为任意角),平移到并集局部坐标。 */
         void appendEntities(BlockPos unionMin, ListTag entitiesOut) {
             for (int index = 0; index < this.entities.size(); index++) {
                 CompoundTag entity = this.entities.getCompound(index).copy();
                 ListTag posTag = entity.getList("Pos", Tag.TAG_DOUBLE);
                 if (posTag.size() != 3) continue;
-                double x = posTag.getDouble(0) + this.min.getX() - unionMin.getX();
-                double y = posTag.getDouble(1) + this.min.getY() - unionMin.getY();
-                double z = posTag.getDouble(2) + this.min.getZ() - unionMin.getZ();
+                double x = posTag.getDouble(0) + this.origin.getX() - unionMin.getX();
+                double y = posTag.getDouble(1) + this.origin.getY() - unionMin.getY();
+                double z = posTag.getDouble(2) + this.origin.getZ() - unionMin.getZ();
                 ListTag newPos = new ListTag();
                 newPos.add(DoubleTag.valueOf(x));
                 newPos.add(DoubleTag.valueOf(y));
@@ -312,6 +313,7 @@ public final class LitematicaImporter {
 
         return new ParsedRegion(
             name,
+            position,
             min,
             max,
             extent,

@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContext;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContextHolder;
+import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.EntityGetter;
 import net.minecraft.world.phys.AABB;
@@ -109,12 +110,24 @@ interface EntityGetterMixin {
             !EntityBondManager.areInSameComponent(mover, target)
                 && !EntityBondManager.ignoresPreclippedCollision(mover, target)
                 && original.test(target);
-        if (!(mover instanceof CarrierMoveContextHolder holder)) return withoutBondedMembers;
+        if (!(mover instanceof CarrierMoveContextHolder holder)) {
+            return target -> withoutBondedMembers.test(target)
+                && !PlasticEntityPhysics.isSupportedBy(target, mover);
+        }
         CarrierMoveContext context = holder.plasticraft$getCarrierMoveContext();
-        if (context == null) return withoutBondedMembers;
+        if (context == null) {
+            return target -> withoutBondedMembers.test(target)
+                && !PlasticEntityPhysics.isSupportedBy(target, mover);
+        }
         return target -> {
             boolean collides = withoutBondedMembers.test(target);
             if (!collides) return false;
+            if (PlasticEntityPhysics.isSupportedBy(target, mover)) {
+                if (target instanceof CarrierMovableEntity movable) {
+                    context.addTarget(movable);
+                }
+                return false;
+            }
             if (!(target instanceof CarrierMovableEntity movable)) {
                 if (target instanceof ElasticCollisionEntity elastic) {
                     context.addElasticCollisionTarget(elastic);

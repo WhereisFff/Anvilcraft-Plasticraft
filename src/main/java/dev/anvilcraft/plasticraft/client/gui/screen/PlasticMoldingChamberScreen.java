@@ -6,6 +6,7 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberStructure;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingMachineState;
+import dev.anvilcraft.plasticraft.block.entity.Plastic3DPrintingComponentBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
 import dev.anvilcraft.plasticraft.client.gui.MoldingPropellerTypeIcon;
 import dev.anvilcraft.plasticraft.client.gui.MoldingTrayTypeIcon;
@@ -1038,6 +1039,12 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             componentState = PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get().defaultBlockState();
         }
         PlasticMoldingChamberBlockEntity chamber = clientChamber();
+        FluidStack componentFluid = FluidStack.EMPTY;
+        if (this.minecraft.level != null
+            && this.minecraft.level.getBlockEntity(this.menu.chamberPos().above())
+                instanceof Plastic3DPrintingComponentBlockEntity component) {
+            componentFluid = component.fluid();
+        }
         return new PrintingViewportScene(
             chamberState,
             componentState,
@@ -1046,7 +1053,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 ? MoldingPrinterMotion.DEFAULT_POSITION
                 : chamber.printingMotion().position(this.minecraft.level.getGameTime() + partialTick),
             chamber == null ? 0.0F : chamber.printingDoorProgress(partialTick),
-            controllerPreviewLight()
+            controllerPreviewLight(),
+            componentFluid
         );
     }
 

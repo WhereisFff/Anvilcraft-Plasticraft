@@ -6,9 +6,9 @@ import java.util.TreeSet;
 /**
  * 已验证并按亮度排序的灰度基础贴图。
  *
- * <p>资源可以提供 1 至 16 个真实灰度值，并保留每一级在 {@code 0..255} 中的绝对亮度。
- * 映射不会把资源当前使用的局部亮度范围强行拉伸到完整色板，因而资源作者调整基础图后，
- * 生成结果也会保持相同的亮度方向。</p>
+ * <p>资源可以提供 1 至 16 个真实灰度值，并以每一级在 {@code 0..255} 中的绝对亮度为映射基准。
+ * 映射不会把资源当前使用的局部亮度范围强行拉伸到完整色板；相邻灰度落入同一色阶时，
+ * 则按原有明暗顺序为它们保留独立色阶。</p>
  */
 public final class PlasticGrayscaleImage {
     public static final int MAX_LEVELS = 16;
@@ -16,12 +16,20 @@ public final class PlasticGrayscaleImage {
     private final int width;
     private final int height;
     private final int[] levels;
+    private final byte[] normalizedLevels;
     private final byte[] pixelLevels;
 
-    private PlasticGrayscaleImage(int width, int height, int[] levels, byte[] pixelLevels) {
+    private PlasticGrayscaleImage(
+        int width,
+        int height,
+        int[] levels,
+        byte[] normalizedLevels,
+        byte[] pixelLevels
+    ) {
         this.width = width;
         this.height = height;
         this.levels = levels;
+        this.normalizedLevels = normalizedLevels;
         this.pixelLevels = pixelLevels;
     }
 
@@ -62,7 +70,7 @@ public final class PlasticGrayscaleImage {
             int gray = pixels[index] & 0xFF;
             pixelLevels[index] = (byte) Arrays.binarySearch(levels, gray);
         }
-        return new PlasticGrayscaleImage(width, height, levels, pixelLevels);
+        return new PlasticGrayscaleImage(width, height, levels, orderedNormalizedLevels(levels), pixelLevels);
     }
 
     public int width() {
@@ -82,13 +90,12 @@ public final class PlasticGrayscaleImage {
         return this.levels.length;
     }
 
-    /** 按像素的绝对灰度亮度映射到生成器的 0 至 15 灰度空间。 */
+    /** 按绝对亮度基准与源图灰度顺序映射到生成器的 0 至 15 灰度空间。 */
     public int normalizedLevelAt(int x, int y) {
         int wrappedX = Math.floorMod(x, this.width);
         int wrappedY = Math.floorMod(y, this.height);
         int sourceIndex = Byte.toUnsignedInt(this.pixelLevels[wrappedY * this.width + wrappedX]);
-        int gray = this.levels[sourceIndex];
-        return Math.round((float) gray * (MAX_LEVELS - 1) / 255.0F);
+        return Byte.toUnsignedInt(this.normalizedLevels[sourceIndex]);
     }
 
     /**
@@ -107,6 +114,19 @@ public final class PlasticGrayscaleImage {
         if (targetLength == 1 || sourceLength == 1) return 0;
         int wrapped = Math.floorMod(coordinate, targetLength);
         return (int) Math.round((double) wrapped * (sourceLength - 1) / (targetLength - 1));
+    }
+
+    private static byte[] orderedNormalizedLevels(int[] levels) {
+        byte[] result = new byte[levels.length];
+        int previous = -1;
+        for (int index = 0; index < levels.length; index++) {
+            int absoluteLevel = Math.round((float) levels[index] * (MAX_LEVELS - 1) / 255.0F);
+            int maximumLevel = MAX_LEVELS - levels.length + index;
+            int orderedLevel = Math.min(maximumLevel, Math.max(absoluteLevel, previous + 1));
+            result[index] = (byte) orderedLevel;
+            previous = orderedLevel;
+        }
+        return result;
     }
 
     private static void validateDimensions(int width, int height, int[] pixels) {

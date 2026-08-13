@@ -88,6 +88,8 @@
 		{
 			"from": [0.01, 12, 3],
 			"to": [15.99, 15, 16],
+			"shade": false,
+			"neoforge_data": {"ambient_occlusion": false},
 			"rotation": {"angle": 0, "axis": "y", "origin": [0.01, 12, 16]},
 			"faces": {
 				"east": {"uv": [0, 4.25, 3.25, 5], "texture": "#0"},
@@ -100,6 +102,8 @@
 		{
 			"from": [9.5, 11, 6],
 			"to": [15.5, 12, 12],
+			"shade": false,
+			"neoforge_data": {"ambient_occlusion": false},
 			"rotation": {"angle": 45, "axis": "y", "origin": [12.5, 8, 7]},
 			"faces": {
 				"east": {"uv": [10.25, 1.5, 11.75, 1.75], "texture": "#0"},
@@ -120,6 +124,8 @@
 		{
 			"from": [9.5, 4, 6],
 			"to": [15.5, 5, 12],
+			"shade": false,
+			"neoforge_data": {"ambient_occlusion": false},
 			"rotation": {"angle": 45, "axis": "y", "origin": [12.5, 1, 7]},
 			"faces": {
 				"east": {"uv": [10.25, 1.5, 11.75, 1.75], "texture": "#0"},
@@ -132,6 +138,8 @@
 			"name": "cube_outline",
 			"from": [14.5, 11, 11],
 			"to": [10.5, 5, 7],
+			"shade": false,
+			"neoforge_data": {"ambient_occlusion": false},
 			"rotation": {"angle": 45, "axis": "y", "origin": [12.5, 8, 7]},
 			"faces": {
 				"north": {"uv": [10.5, 1.75, 11.5, 3.25], "rotation": 180, "texture": "#0"},
@@ -189,6 +197,8 @@
 		{
 			"from": [0.5, 11, 6],
 			"to": [6.5, 12, 12],
+			"shade": false,
+			"neoforge_data": {"ambient_occlusion": false},
 			"rotation": {"angle": -45, "axis": "y", "origin": [3.5, 8, 7]},
 			"faces": {
 				"north": {"uv": [1.5, 7.5, 0, 7.75], "texture": "#0"},
@@ -202,6 +212,8 @@
 		{
 			"from": [0.5, 4, 6],
 			"to": [6.5, 5, 12],
+			"shade": false,
+			"neoforge_data": {"ambient_occlusion": false},
 			"rotation": {"angle": -45, "axis": "y", "origin": [3.5, 1, 7]},
 			"faces": {
 				"north": {"uv": [1.5, 7.5, 0, 7.75], "texture": "#0"},
@@ -216,6 +228,8 @@
 			"name": "cube_outline",
 			"from": [2.7, 11, 11.3],
 			"to": [-1.6, 5, 6.9],
+			"shade": false,
+			"neoforge_data": {"ambient_occlusion": false},
 			"rotation": {"angle": 45, "axis": "y", "origin": [0.5, 8, 7]},
 			"faces": {
 				"north": {"uv": [2.5, 2.75, 3.5, 4.25], "rotation": 180, "texture": "#6"},
@@ -228,6 +242,8 @@
 			"name": "cube_outline",
 			"from": [3.67028, 10.8, 10.04957],
 			"to": [0.07028, 5.2, 6.44957],
+			"shade": false,
+			"neoforge_data": {"ambient_occlusion": false},
 			"rotation": {"angle": 45, "axis": "y", "origin": [2.02028, 8, 8.44957]},
 			"faces": {
 				"north": {"uv": [2.5, 5.75, 3.5, 7.25], "rotation": 180, "texture": "#6"},
@@ -242,6 +258,8 @@
 			"name": "cube_outline",
 			"from": [3.27028, 10.6, 9.64957],
 			"to": [0.27028, 5.4, 6.64957],
+			"shade": false,
+			"neoforge_data": {"ambient_occlusion": false},
 			"rotation": {"angle": 45, "axis": "y", "origin": [2.02028, 8, 8.44957]},
 			"faces": {
 				"north": {"uv": [5.5, 4.75, 6.5, 6.25], "rotation": 180, "texture": "#6"},

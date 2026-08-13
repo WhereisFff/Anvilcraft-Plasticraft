@@ -3,8 +3,8 @@ package dev.anvilcraft.plasticraft.client.renderer;
 import com.mojang.blaze3d.platform.NativeImage;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.api.texture.GeneratedPlasticTexture;
+import dev.anvilcraft.plasticraft.api.texture.PlasticBaseTextureSet;
 import dev.anvilcraft.plasticraft.api.texture.PlasticColorPalette;
-import dev.anvilcraft.plasticraft.api.texture.PlasticGrayscaleImage;
 import dev.anvilcraft.plasticraft.api.texture.PlasticSurface;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureCache;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureGenerator;
@@ -76,16 +76,16 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
             PlasticTextureGenerator.VERSION,
             shapeHash,
             surfaces,
-            PlasticTextureSpriteSource.BASE_RESOURCE.toString(),
+            PlasticTextureResourceLoader.BASE_RESOURCE.toString(),
             resourceInputs.baseHash,
-            PlasticTextureSpriteSource.PALETTE_RESOURCE.toString(),
+            PlasticTextureResourceLoader.PALETTE_RESOURCE.toString(),
             resourceInputs.paletteHash,
             color.getId()
         );
         GeneratedPlasticTexture generated = PlasticTextureCache.getOrGenerate(
             input,
             () -> resourceInputs.available()
-                ? PlasticTextureGenerator.generate(input, resourceInputs.base, resourceInputs.palette)
+                ? PlasticTextureGenerator.generate(input, resourceInputs.bases, resourceInputs.palette)
                 : PlasticTextureGenerator.placeholder(input)
         );
         NativeImage image = new NativeImage(
@@ -109,36 +109,13 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
         if (this.resources != null) return this.resources;
         try {
             ResourceManager manager = Minecraft.getInstance().getResourceManager();
-            byte[] baseBytes = PlasticTextureSpriteSource.readResource(
-                manager,
-                PlasticTextureSpriteSource.BASE_RESOURCE
+            PlasticTextureResourceLoader.LoadedResources loaded = PlasticTextureResourceLoader.load(manager);
+            this.resources = new ResourceInputs(
+                loaded.bases(),
+                loaded.palette(),
+                loaded.baseHash(),
+                loaded.paletteHash()
             );
-            byte[] paletteBytes = PlasticTextureSpriteSource.readResource(
-                manager,
-                PlasticTextureSpriteSource.PALETTE_RESOURCE
-            );
-            try (NativeImage baseImage = PlasticTextureSpriteSource.readImage(
-                PlasticTextureSpriteSource.BASE_RESOURCE,
-                baseBytes
-            ); NativeImage paletteImage = PlasticTextureSpriteSource.readImage(
-                PlasticTextureSpriteSource.PALETTE_RESOURCE,
-                paletteBytes
-            )) {
-                this.resources = new ResourceInputs(
-                    PlasticGrayscaleImage.fromArgb(
-                        baseImage.getWidth(),
-                        baseImage.getHeight(),
-                        PlasticTextureSpriteSource.toArgbPixels(baseImage)
-                    ),
-                    PlasticColorPalette.fromArgb(
-                        paletteImage.getHeight(),
-                        paletteImage.getWidth(),
-                        PlasticTextureSpriteSource.toArgbPixels(paletteImage)
-                    ),
-                    PlasticTextureInput.computeResourceHash(baseBytes),
-                    PlasticTextureInput.computeResourceHash(paletteBytes)
-                );
-            }
         } catch (IOException | IllegalArgumentException exception) {
             AnvilcraftPlasticraft.LOGGER.error(
                 "Unable to load dynamic plastic texture resources; using placeholders",
@@ -153,7 +130,7 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
     }
 
     private record ResourceInputs(
-        PlasticGrayscaleImage base,
+        PlasticBaseTextureSet bases,
         PlasticColorPalette palette,
         String baseHash,
         String paletteHash
@@ -163,7 +140,7 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
         }
 
         private boolean available() {
-            return this.base != null && this.palette != null;
+            return this.bases != null && this.palette != null;
         }
     }
 }

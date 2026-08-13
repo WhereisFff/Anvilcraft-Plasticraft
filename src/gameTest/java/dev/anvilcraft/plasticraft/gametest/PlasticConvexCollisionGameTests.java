@@ -16,6 +16,7 @@ import dev.anvilcraft.plasticraft.entity.collision.PlasticCarrierPrediction;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexCollisionResolver;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexShape;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticModelCube;
+import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityGridSnapping;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
@@ -74,6 +75,131 @@ public final class PlasticConvexCollisionGameTests {
     private static final double MODEL_EPSILON = 1.0E-5D;
 
     private PlasticConvexCollisionGameTests() {
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("3x3x3")
+    @TestHolder(description = "Axis-aligned convex cubes stop flush instead of leaving a contact-epsilon gap")
+    static void axisAlignedCubesCollideFlush(ExtendedGameTestHelper helper) {
+        PlasticConvexShape moving = PlasticConvexShape.box(new AABB(0.0D, 2.0D, 0.0D, 1.0D, 3.0D, 1.0D));
+        PlasticConvexShape obstacle = PlasticConvexShape.box(new AABB(0.0D, 0.0D, 0.0D, 1.0D, 1.0D, 1.0D));
+        double downward = PlasticConvexCollisionResolver.collideAxis(
+            List.of(moving),
+            List.of(obstacle),
+            Direction.Axis.Y,
+            -2.0D
+        );
+        check(
+            Math.abs(downward + 1.0D) <= 1.0E-12D,
+            "Y contact left a skin gap: allowed=" + downward
+        );
+
+        PlasticConvexShape eastMoving = PlasticConvexShape.box(new AABB(0.0D, 0.0D, 0.0D, 1.0D, 1.0D, 1.0D));
+        PlasticConvexShape eastWall = PlasticConvexShape.box(new AABB(3.0D, 0.0D, 0.0D, 4.0D, 1.0D, 1.0D));
+        double eastward = PlasticConvexCollisionResolver.collideAxis(
+            List.of(eastMoving),
+            List.of(eastWall),
+            Direction.Axis.X,
+            4.0D
+        );
+        check(
+            Math.abs(eastward - 2.0D) <= 1.0E-12D,
+            "X contact left a skin gap: allowed=" + eastward
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 80)
+    @EmptyTemplate(value = "5x8x5", floor = true)
+    @TestHolder(description = "Stacked 1x1x1 plastic cubes rest on integer planes so the cell above stays placeable")
+    static void stackedUnitCubesLeavePlaceableCellAbove(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity lower = createDynamicPlastic(
+            helper,
+            new Vec3(2.5D, 3.0D, 2.5D),
+            cubeModel(16.0D),
+            false
+        );
+        UniversalPlasticEntity upper = createDynamicPlastic(
+            helper,
+            new Vec3(2.5D, 5.0D, 2.5D),
+            cubeModel(16.0D),
+            false
+        );
+        helper.runAfterDelay(50, () -> {
+            check(lower.isAlive(), "lower stacked cube was discarded");
+            check(upper.isAlive(), "upper stacked cube was discarded");
+            AABB lowerBounds = lower.plasticraft$getCollisionBox().bounds();
+            AABB upperBounds = upper.plasticraft$getCollisionBox().bounds();
+            check(
+                Math.abs(upperBounds.minY - lowerBounds.maxY) <= 1.0E-12D,
+                "stacked cubes were not flush: lowerMaxY=" + lowerBounds.maxY
+                    + " upperMinY=" + upperBounds.minY
+            );
+            assertIntegerPlane(lowerBounds.minY, "lower cube minY");
+            assertIntegerPlane(lowerBounds.maxY, "lower cube maxY");
+            assertIntegerPlane(upperBounds.minY, "upper cube minY");
+            assertIntegerPlane(upperBounds.maxY, "upper cube maxY");
+            BlockPos above = BlockPos.containing(
+                upperBounds.getCenter().x,
+                upperBounds.maxY,
+                upperBounds.getCenter().z
+            );
+            check(
+                helper.getLevel().noCollision(new AABB(above)),
+                "cell above stacked cubes was blocked by a sub-micron protrusion at " + above
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 60)
+    @EmptyTemplate(value = "6x5x5", floor = true)
+    @TestHolder(description = "A 1x1x1 plastic cube pushed into a wall rests flush so the vacated cell stays placeable")
+    static void sidePushedUnitCubeLeavesPlaceableCell(ExtendedGameTestHelper helper) {
+        helper.setBlock(new BlockPos(4, 1, 2), Blocks.STONE);
+        UniversalPlasticEntity cube = createDynamicPlastic(
+            helper,
+            new Vec3(1.5D, 3.0D, 2.5D),
+            cubeModel(16.0D),
+            false
+        );
+        helper.runAfterDelay(30, () -> {
+            check(cube.isAlive(), "side-pushed cube was discarded before the push");
+            Vec3 start = cube.position();
+            Vec3 requested = new Vec3(3.0D, 0.0D, 0.0D);
+            cube.move(MoverType.SELF, requested);
+            PlasticEntityGridSnapping.applyAfterMove(cube, requested, cube.position().subtract(start));
+            AABB bounds = cube.plasticraft$getCollisionBox().bounds();
+            BlockPos wall = helper.absolutePos(new BlockPos(4, 1, 2));
+            check(
+                Math.abs(bounds.maxX - wall.getX()) <= 1.0E-12D,
+                "side contact did not rest flush with the wall: maxX=" + bounds.maxX
+                    + " wallX=" + wall.getX()
+                    + " start=" + start
+                    + " after=" + cube.position()
+                    + " bounds=" + bounds
+            );
+            assertIntegerPlane(bounds.minX, "side-pushed cube minX");
+            assertIntegerPlane(bounds.maxX, "side-pushed cube maxX");
+            check(
+                Math.abs(bounds.maxX - bounds.minX - 1.0D) <= 1.0E-12D,
+                "side-pushed cube was not one block wide: " + bounds
+            );
+            AABB behind = new AABB(
+                bounds.minX - 1.0D + 1.0E-6D,
+                bounds.minY + 1.0E-6D,
+                bounds.minZ + 1.0E-6D,
+                bounds.minX - 1.0E-6D,
+                bounds.maxY - 1.0E-6D,
+                bounds.maxZ - 1.0E-6D
+            );
+            check(
+                helper.getLevel().noCollision(behind),
+                "cell behind the side-pushed cube was blocked by a sub-micron protrusion: bounds="
+                    + bounds + " behind=" + behind
+            );
+            helper.succeed();
+        });
     }
 
     @GameTest(timeoutTicks = 20)
@@ -542,6 +668,170 @@ public final class PlasticConvexCollisionGameTests {
         runUpsideDownCauldronReversalTest(helper, player, cauldron, "inner ceiling");
     }
 
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate(value = "11x10x11", floor = true)
+    @TestHolder(description = "A sloped plastic face on a player's head does not force crouch or crawl")
+    static void slopedPlasticOnPlayerHeadDoesNotForceCrouch(ExtendedGameTestHelper helper) {
+        for (int x = 1; x < 10; x++) {
+            for (int z = 1; z < 10; z++) helper.setBlock(x, 1, z, Blocks.STONE);
+        }
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        Vec3 floorPosition = helper.absoluteVec(new Vec3(4.6D, 2.0D, 5.5D));
+        player.moveTo(floorPosition.x, floorPosition.y, floorPosition.z);
+        player.setOnGround(true);
+
+        UniversalPlasticEntity slope = createDynamicPlastic(
+            helper,
+            new Vec3(5.5D, 5.0D, 5.5D),
+            slopedModel(),
+            true
+        );
+        slope.move(MoverType.SELF, new Vec3(0.0D, -3.0D, 0.0D));
+        slope.setNoGravity(false);
+
+        helper.startSequence()
+            .thenIdle(3)
+            .thenExecute(() -> {
+                check(
+                    PlasticEntityPhysics.hasImmediateEntityContact(slope, player, Direction.DOWN),
+                    "sloped plastic did not settle on the player's head"
+                );
+                check(
+                    slope.getBoundingBox().minY < player.getBoundingBox().maxY - 0.05D,
+                    "sloped plastic rested on its lowest vertex instead of a sloped face"
+                );
+                check(
+                    !intersectsAny(
+                        player.getBoundingBox(),
+                        slope.plasticraft$getCollisionBox().convexComponents()
+                    ),
+                    "sloped plastic SAT overlapped the supporting player"
+                );
+                AABB standingBox = player.getDimensions(Pose.STANDING)
+                    .makeBoundingBox(player.position())
+                    .deflate(1.0E-7D);
+                check(
+                    standingBox.intersects(slope.getBoundingBox()),
+                    "compatibility AABB of the sloped face did not overlap the standing player"
+                );
+                assertPlayerCanStandWithHeadLoad(helper, player, "after the sloped face landed");
+                check(
+                    slope.plasticraft$canMoveWithCarrier(player, new Vec3(0.08D, -0.08D, 0.0D)),
+                    "sloped plastic rejected the player as a head carrier after landing"
+                );
+            })
+            .thenExecuteFor(6, () -> {
+                Vec3 playerStart = player.position();
+                Vec3 slopeStart = slope.position();
+                player.setOnGround(true);
+                player.move(MoverType.SELF, new Vec3(0.08D, -0.08D, 0.0D));
+                check(
+                    player.position().subtract(playerStart).horizontalDistanceSqr() > 0.0025D,
+                    "player could not walk while a sloped plastic face rested on their head"
+                );
+                assertPlayerCanStandWithHeadLoad(helper, player, "while walking under a sloped face");
+                if (PlasticEntityPhysics.hasImmediateEntityContact(slope, player, Direction.DOWN)) {
+                    check(
+                        slope.position().subtract(slopeStart).horizontalDistanceSqr() > 0.0025D,
+                        "sloped plastic did not follow its supporting head"
+                    );
+                }
+            })
+            .thenExecute(() -> {
+                slope.discard();
+                player.discard();
+            })
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 60)
+    @EmptyTemplate(value = "11x8x11", floor = true)
+    @TestHolder(description = "A player carrying a 2x2x2 plastic can walk through a one-block gap")
+    static void playerWalksThroughNarrowGapWhileCarryingLargePlastic(ExtendedGameTestHelper helper) {
+        for (int x = 1; x < 10; x++) {
+            for (int z = 1; z < 10; z++) helper.setBlock(x, 1, z, Blocks.STONE);
+        }
+        for (int z = 5; z < 10; z++) {
+            for (int y = 2; y < 7; y++) {
+                helper.setBlock(4, y, z, Blocks.STONE);
+                helper.setBlock(6, y, z, Blocks.STONE);
+            }
+        }
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        Vec3 floorPosition = helper.absoluteVec(new Vec3(5.5D, 2.0D, 3.5D));
+        player.moveTo(floorPosition.x, floorPosition.y, floorPosition.z);
+        player.setOnGround(true);
+
+        UniversalPlasticEntity cube = createDynamicPlastic(
+            helper,
+            new Vec3(5.5D, 4.0D, 3.5D),
+            cubeModel(32.0D),
+            false
+        );
+        double[] blockedCubeZ = {Double.NaN};
+
+        helper.startSequence()
+            .thenIdle(6)
+            .thenExecute(() -> {
+                check(
+                    PlasticEntityPhysics.hasImmediateEntityContact(cube, player, Direction.DOWN),
+                    "2x2x2 plastic did not settle on the player's head"
+                );
+                check(
+                    cube.getBoundingBox().getXsize() > 1.9D && cube.getBoundingBox().getZsize() > 1.9D,
+                    "narrow-gap test did not spawn a 2x2x2 plastic body"
+                );
+                assertPlayerCanStandWithHeadLoad(helper, player, "after the 2x2x2 settled");
+            })
+            .thenExecuteFor(8, () -> {
+                player.setOnGround(true);
+                player.move(MoverType.SELF, new Vec3(0.0D, -0.08D, 0.16D));
+            })
+            .thenExecute(() -> {
+                blockedCubeZ[0] = cube.getZ();
+                check(
+                    cube.getZ() < helper.absoluteVec(new Vec3(5.5D, 2.0D, 5.2D)).z,
+                    "2x2x2 plastic passed through the one-block gap: z=" + cube.getZ()
+                );
+                check(
+                    player.getZ() > cube.getZ() + 0.15D,
+                    "player was clamped to the blocked 2x2x2 plastic: playerZ="
+                        + player.getZ() + ", cubeZ=" + cube.getZ()
+                );
+            })
+            .thenExecuteFor(10, () -> {
+                player.setOnGround(true);
+                player.move(MoverType.SELF, new Vec3(0.0D, -0.08D, 0.16D));
+            })
+            .thenExecute(() -> {
+                check(
+                    player.getZ() > helper.absoluteVec(new Vec3(5.5D, 2.0D, 6.2D)).z,
+                    "player did not walk into the one-block gap: z=" + player.getZ()
+                );
+                check(
+                    Math.abs(cube.getZ() - blockedCubeZ[0]) < 0.08D,
+                    "blocked 2x2x2 plastic kept following the player through the gap"
+                );
+            })
+            .thenIdle(12)
+            .thenExecute(() -> {
+                check(
+                    !PlasticEntityPhysics.hasImmediateEntityContact(cube, player, Direction.DOWN),
+                    "2x2x2 plastic was still supported after the player entered the gap"
+                );
+                check(
+                    cube.getBoundingBox().minY < player.getBoundingBox().minY + 0.25D,
+                    "2x2x2 plastic did not fall after losing head support: cubeMinY="
+                        + cube.getBoundingBox().minY + ", playerFeet=" + player.getBoundingBox().minY
+                );
+                check(player.getPose() == Pose.STANDING,
+                    "narrow-gap carry changed the player pose to " + player.getPose());
+                cube.discard();
+                player.discard();
+            })
+            .thenSucceed();
+    }
+
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate("5x5x5")
     @TestHolder(description = "Carrier prediction reconciles coalesced server movement without drift")
@@ -822,6 +1112,15 @@ public final class PlasticConvexCollisionGameTests {
         Vec3 relativePosition,
         EditableMoldingModel model
     ) {
+        return createDynamicPlastic(helper, relativePosition, model, true);
+    }
+
+    private static UniversalPlasticEntity createDynamicPlastic(
+        ExtendedGameTestHelper helper,
+        Vec3 relativePosition,
+        EditableMoldingModel model,
+        boolean noGravity
+    ) {
         BakedMoldingModel baked = MoldingModelBaker.bake(model);
         int amount = Math.max(250, (baked.analysis().volume() + 3) / 4);
         FluidStack melt = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), amount);
@@ -841,9 +1140,43 @@ public final class PlasticConvexCollisionGameTests {
             drop,
             PlasticEntityOrientation.DEFAULT
         );
-        product.setNoGravity(true);
+        product.setNoGravity(noGravity);
         check(helper.getLevel().addFreshEntity(product), "failed to add dynamic plastic test product");
         return product;
+    }
+
+    private static EditableMoldingModel cubeModel(double sizePx) {
+        return EditableMoldingModel.empty()
+            .withName("Head Carry Cube")
+            .withElements(List.of(MoldingElement.cube(
+                "Cube",
+                MoldingVec3.ZERO,
+                new MoldingVec3(sizePx, sizePx, sizePx)
+            )));
+    }
+
+    private static void assertPlayerCanStandWithHeadLoad(
+        ExtendedGameTestHelper helper,
+        GameTestPlayer player,
+        String when
+    ) {
+        AABB standingBox = player.getDimensions(Pose.STANDING)
+            .makeBoundingBox(player.position())
+            .deflate(1.0E-7D);
+        check(
+            PlasticConvexCollisionResolver.noCollisionWithExactPlastic(
+                player,
+                standingBox,
+                helper.getLevel()
+            ),
+            "player SAT standing box collided with a head-carried plastic " + when
+        );
+        check(
+            helper.getLevel().noCollision(player, standingBox),
+            "player compatibility standing box collided with a head-carried plastic " + when
+        );
+        check(player.getPose() == Pose.STANDING,
+            "head-carried plastic forced the player into " + player.getPose() + " " + when);
     }
 
     private static BondedPlasticShapeIndex.Entry createBondedSlope(
@@ -1331,6 +1664,13 @@ public final class PlasticConvexCollisionGameTests {
 
     private static void check(boolean condition, String message) {
         if (!condition) throw new GameTestAssertException(message);
+    }
+
+    private static void assertIntegerPlane(double coordinate, String label) {
+        check(
+            Math.abs(coordinate - Math.rint(coordinate)) <= 1.0E-12D,
+            label + " was not on an integer plane: " + coordinate
+        );
     }
 
     private record FacePushFixture(

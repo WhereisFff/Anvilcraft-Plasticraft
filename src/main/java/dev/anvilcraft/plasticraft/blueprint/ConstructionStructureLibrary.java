@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
 /**
  * 世界级结构快照库:规范结构 NBT 以内容哈希为文件名保存在
  * {@code <world>/anvilcraftplasticraft/structures/<sha256>.nbt},内容寻址天然去重。
- * 结构磁盘只保存哈希引用与摘要,不把结构内容写进物品组件。
+ * 导入时另写一份本体可读的 {@code anvilcraft/structures} 文件,供预览和智能方块放置器使用。
  */
 public final class ConstructionStructureLibrary {
     /** 单个库文件解压后允许的最大 NBT 字节数。 */

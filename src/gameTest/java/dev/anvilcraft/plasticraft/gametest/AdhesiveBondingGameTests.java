@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.block.BlockAdhesionState;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlockInfo;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.block.piston.HighViscosityPistonBudget;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
@@ -51,7 +52,9 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.item.FallingBlockEntity;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Zombie;
+import net.minecraft.world.entity.projectile.Snowball;
 import net.minecraft.world.entity.projectile.ThrownPotion;
 import net.minecraft.world.inventory.AnvilMenu;
 import net.minecraft.world.item.Item;
@@ -61,9 +64,11 @@ import net.minecraft.world.item.alchemy.PotionContents;
 import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.level.block.piston.PistonMovingBlockEntity;
 import net.minecraft.world.level.block.piston.PistonStructureResolver;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.AttachFace;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
@@ -82,6 +87,7 @@ import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 import net.neoforged.testframework.gametest.GameTestPlayer;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -286,6 +292,82 @@ public final class AdhesiveBondingGameTests {
                 "giant anvil structure did not retain its bidirectional block bond"
             );
             helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate(value = "12x10x8", floor = true)
+    @TestHolder(description = "A falling giant anvil that scrapes a wall patch already holding a snowball blockifies and does not drop extras")
+    static void fallingGiantAnvilSticksToOccupiedWallPatch(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(7, 5, 4);
+        helper.setBlock(support, Blocks.STONE);
+        BlockPos absoluteSupport = helper.absolutePos(support);
+        check(
+            BondedFallingBlocks.putPatch(helper.getLevel(), absoluteSupport, Direction.WEST),
+            "wall adhesive patch could not be placed"
+        );
+        Snowball snowball = spawnStuckSnowball(helper, new Vec3(6.9D, 5.4D, 4.5D));
+        SurfaceAdhesiveService.tickEntity(snowball);
+        check(snowball.hasData(PlasticraftAttachments.ENTITY_ADHESION), "snowball did not bond to the wall patch");
+
+        FallingGiantAnvilEntity giantAnvil = FallingGiantAnvilEntity.fall(
+            helper.getLevel(),
+            helper.absolutePos(new BlockPos(5, 6, 4)),
+            ModBlocks.GIANT_ANVIL.get().defaultBlockState(),
+            false
+        );
+
+        helper.runAfterDelay(8, () -> {
+            check(!giantAnvil.isAlive(), "giant anvil that scraped the occupied patch was not blockified");
+            GiantAnvilBlock block = ModBlocks.GIANT_ANVIL.get();
+            BlockPos bottomCenter = new BlockPos(5, 5, 4);
+            for (Cube3x3PartHalf part : block.getParts()) {
+                BlockState state = helper.getBlockState(bottomCenter.offset(part.getOffset()));
+                check(
+                    state.is(block) && state.getValue(GiantAnvilBlock.HALF) == part,
+                    "giant anvil part was missing after scraping the occupied patch: " + part
+                );
+            }
+            check(
+                BondedFallingBlocks.hasBlockBond(helper.getLevel(), absoluteSupport, Direction.WEST)
+                    && BondedFallingBlocks.hasBlockBond(
+                        helper.getLevel(),
+                        helper.absolutePos(support.west()),
+                        Direction.EAST
+                    ),
+                "occupied wall patch did not form a bidirectional block bond with the giant anvil"
+            );
+            check(
+                snowball.isAlive()
+                    && snowball.hasData(PlasticraftAttachments.ENTITY_ADHESION)
+                    && BondedFallingBlocks.hasEntityBond(helper.getLevel(), absoluteSupport, Direction.WEST),
+                "blockifying the giant anvil released the snowball"
+            );
+            check(
+                helper.getLevel().getEntitiesOfClass(
+                    ItemEntity.class,
+                    new AABB(helper.absolutePos(bottomCenter)).inflate(6.0D),
+                    item -> item.getItem().is(ModBlocks.GIANT_ANVIL.asItem())
+                ).isEmpty(),
+                "scraping the occupied patch dropped extra giant anvils"
+            );
+            helper.runAfterDelay(6, () -> {
+                for (Cube3x3PartHalf part : block.getParts()) {
+                    check(
+                        helper.getBlockState(bottomCenter.offset(part.getOffset())).is(block),
+                        "blockified giant anvil started falling after bonding: " + part
+                    );
+                }
+                check(
+                    helper.getLevel().getEntitiesOfClass(
+                        ItemEntity.class,
+                        new AABB(helper.absolutePos(bottomCenter)).inflate(6.0D),
+                        item -> item.getItem().is(ModBlocks.GIANT_ANVIL.asItem())
+                    ).isEmpty(),
+                    "bonded giant anvil dropped extras after settling"
+                );
+                helper.succeed();
+            });
         });
     }
 
@@ -762,6 +844,49 @@ public final class AdhesiveBondingGameTests {
             );
             helper.succeed();
         });
+    }
+
+    @GameTest(timeoutTicks = 15)
+    @EmptyTemplate(value = "8x7x7", floor = true)
+    @TestHolder(description = "Placing a block against a patch that already holds an entity still creates a block bond")
+    static void blockPlacedAtOccupiedPatchKeepsEntityAndBondsBlock(ExtendedGameTestHelper helper) {
+        BlockPos support = new BlockPos(4, 3, 3);
+        BlockPos placed = support.west();
+        helper.setBlock(support, Blocks.STONE);
+        check(
+            BondedFallingBlocks.putPatch(helper.getLevel(), helper.absolutePos(support), Direction.WEST),
+            "occupied-patch placement adhesive could not be placed"
+        );
+        Snowball snowball = spawnStuckSnowball(helper, new Vec3(3.9D, 3.4D, 3.5D));
+        SurfaceAdhesiveService.tickEntity(snowball);
+        check(snowball.hasData(PlasticraftAttachments.ENTITY_ADHESION), "snowball did not bond before the block was placed");
+
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(2.5D, 2.0D, 2.5D));
+        BlockPos absolutePlaced = helper.absolutePos(placed);
+        BlockSnapshot snapshot = BlockSnapshot.create(
+            helper.getLevel().dimension(),
+            helper.getLevel(),
+            absolutePlaced
+        );
+        helper.setBlock(placed, Blocks.SAND);
+        BondedFallingBlockEvents.blockPlaced(new BlockEvent.EntityPlaceEvent(
+            snapshot,
+            helper.getBlockState(support),
+            player
+        ));
+
+        check(
+            BondedFallingBlocks.hasBlockBond(helper.getLevel(), helper.absolutePos(support), Direction.WEST)
+                && BondedFallingBlocks.hasBlockBond(helper.getLevel(), absolutePlaced, Direction.EAST),
+            "occupied patch did not record the placed block bond"
+        );
+        check(
+            snowball.isAlive()
+                && snowball.hasData(PlasticraftAttachments.ENTITY_ADHESION)
+                && BondedFallingBlocks.hasEntityBond(helper.getLevel(), helper.absolutePos(support), Direction.WEST),
+            "placing a block against an occupied patch released the snowball"
+        );
+        helper.succeed();
     }
 
     @GameTest(timeoutTicks = 45)
@@ -3822,6 +3947,214 @@ public final class AdhesiveBondingGameTests {
         helper.succeed();
     }
 
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "8x7x7", floor = true)
+    @TestHolder(description = "A piston resolves a bonded lever as a movable member instead of destroying it")
+    static void pistonCollectsBondedLeverWithSupport(ExtendedGameTestHelper helper) {
+        BlockPos piston = new BlockPos(2, 2, 3);
+        BlockPos support = piston.east();
+        BlockPos lever = support.above();
+        helper.setBlock(support, Blocks.STONE);
+        helper.setBlock(lever, floorLever());
+        check(
+            BondedFallingBlocks.connect(helper.getLevel(), helper.absolutePos(support), helper.absolutePos(lever)),
+            "bonded lever resolver test could not connect the blocks"
+        );
+        PistonStructureResolver resolver = new PistonStructureResolver(
+            helper.getLevel(),
+            helper.absolutePos(piston),
+            Direction.EAST,
+            true
+        );
+        check(resolver.resolve(), "bonded lever structure could not be pushed");
+        check(resolver.getToPush().contains(helper.absolutePos(support)), "support was omitted from the bonded lever push");
+        check(resolver.getToPush().contains(helper.absolutePos(lever)), "bonded lever was omitted from the piston push");
+        check(!resolver.getToDestroy().contains(helper.absolutePos(lever)), "bonded lever was marked for destruction");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "8x7x7", floor = true)
+    @TestHolder(description = "A piston still treats a bonded lever as movable after adhesive data has already moved")
+    static void pistonCollectsBondedLeverAfterAdhesionMoved(ExtendedGameTestHelper helper) {
+        BlockPos piston = new BlockPos(2, 2, 3);
+        BlockPos support = piston.east();
+        BlockPos lever = support.above();
+        helper.setBlock(support, Blocks.STONE);
+        helper.setBlock(lever, floorLever());
+        check(
+            BondedFallingBlocks.connect(helper.getLevel(), helper.absolutePos(support), helper.absolutePos(lever)),
+            "pre-moved adhesive lever test could not connect the blocks"
+        );
+        BondedFallingBlocks.moveAll(
+            helper.getLevel(),
+            List.of(helper.absolutePos(support), helper.absolutePos(lever)),
+            Direction.EAST
+        );
+        PistonStructureResolver resolver = new PistonStructureResolver(
+            helper.getLevel(),
+            helper.absolutePos(piston),
+            Direction.EAST,
+            true
+        );
+        check(resolver.resolve(), "pre-moved adhesive data blocked the bonded lever structure");
+        check(
+            resolver.getToPush().contains(helper.absolutePos(support)),
+            "support was omitted after adhesive data moved"
+        );
+        check(
+            resolver.getToPush().contains(helper.absolutePos(lever)),
+            "bonded lever was omitted after adhesive data moved"
+        );
+        check(
+            !resolver.getToDestroy().contains(helper.absolutePos(lever)),
+            "bonded lever was marked for destruction after adhesive data moved"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "18x7x7", floor = true)
+    @TestHolder(description = "A piston still groups more than twelve bonded blocks after adhesive data has already moved")
+    static void pistonCollectsOversizedBondedGroupAfterAdhesionMoved(ExtendedGameTestHelper helper) {
+        BlockPos[] group = oversizedBondedLine(helper, new BlockPos(2, 2, 3), 13);
+        List<BlockPos> absolute = absolutePositions(helper, group);
+        BondedFallingBlocks.moveAll(helper.getLevel(), absolute, Direction.EAST);
+        PistonStructureResolver resolver = new PistonStructureResolver(
+            helper.getLevel(),
+            helper.absolutePos(new BlockPos(1, 2, 3)),
+            Direction.EAST,
+            true
+        );
+        check(resolver.resolve(), "pre-moved adhesive data blocked a bonded group larger than the vanilla push limit");
+        for (BlockPos pos : absolute) {
+            check(
+                resolver.getToPush().contains(pos),
+                "oversized bonded group omitted " + pos + " after adhesive data moved"
+            );
+        }
+        check(
+            resolver.getToPush().size() > HighViscosityPistonBudget.VANILLA_PUSH_BUDGET,
+            "oversized bonded group test did not exceed the physical limit"
+        );
+        check(
+            HighViscosityPistonBudget.effectivePushCount(helper.getLevel(), resolver.getToPush(), Direction.EAST) == 1,
+            "pre-moved adhesive data did not collapse the oversized bonded group"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 25)
+    @EmptyTemplate(value = "18x7x7", floor = true)
+    @TestHolder(description = "A piston interpolates a bonded group larger than twelve blocks")
+    static void pistonMovesOversizedBondedGroup(ExtendedGameTestHelper helper) {
+        BlockPos piston = new BlockPos(1, 2, 3);
+        helper.setBlock(
+            piston,
+            Blocks.PISTON.defaultBlockState().setValue(BlockStateProperties.FACING, Direction.EAST)
+        );
+        BlockPos[] group = oversizedBondedLine(helper, new BlockPos(2, 2, 3), 13);
+        helper.setBlock(piston.west(), Blocks.REDSTONE_BLOCK);
+        helper.runAfterDelay(1, () -> {
+            for (BlockPos pos : group) {
+                check(
+                    helper.getBlockState(pos.east()).is(Blocks.MOVING_PISTON),
+                    "oversized bonded block did not start moving at " + pos
+                );
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 35)
+    @EmptyTemplate(value = "9x7x7", floor = true)
+    @TestHolder(description = "A piston moves a bonded lever with its support without breaking the lever")
+    static void pistonMovesBondedLeverWithSupport(ExtendedGameTestHelper helper) {
+        BlockPos piston = new BlockPos(2, 2, 3);
+        BlockPos support = piston.east();
+        BlockPos lever = support.above();
+        BlockPos movedSupport = support.east();
+        BlockPos movedLever = lever.east();
+        helper.setBlock(
+            piston,
+            Blocks.PISTON.defaultBlockState().setValue(BlockStateProperties.FACING, Direction.EAST)
+        );
+        helper.setBlock(support, Blocks.STONE);
+        helper.setBlock(lever, floorLever());
+        check(
+            BondedFallingBlocks.connect(helper.getLevel(), helper.absolutePos(support), helper.absolutePos(lever)),
+            "bonded lever movement test could not connect the blocks"
+        );
+        helper.setBlock(piston.west(), Blocks.REDSTONE_BLOCK);
+        helper.runAfterDelay(1, () -> {
+            check(helper.getBlockState(movedSupport).is(Blocks.MOVING_PISTON), "lever support did not start moving");
+            check(helper.getBlockState(movedLever).is(Blocks.MOVING_PISTON), "bonded lever did not start moving");
+            check(
+                helper.getBlockEntity(movedSupport) instanceof PistonMovingBlockEntity supportMoving
+                    && supportMoving.getMovedState().is(Blocks.STONE),
+                "moving lever support did not preserve its render state"
+            );
+            check(
+                helper.getBlockEntity(movedLever) instanceof PistonMovingBlockEntity leverMoving
+                    && leverMoving.getMovedState().is(Blocks.LEVER),
+                "bonded lever did not keep a moving-piston render state"
+            );
+            helper.runAfterDelay(5, () -> {
+                check(helper.getBlockState(movedSupport).is(Blocks.STONE), "piston did not move the lever support");
+                check(
+                    helper.getBlockState(movedLever).is(Blocks.LEVER)
+                        && helper.getBlockState(movedLever).getValue(LeverBlock.FACE) == AttachFace.FLOOR,
+                    "piston did not keep the bonded lever intact"
+                );
+                check(
+                    helper.getBlockState(piston).getValue(BlockStateProperties.EXTENDED),
+                    "piston did not stay extended after moving the bonded lever"
+                );
+                check(helper.getBlockState(lever).isAir(), "old lever position was not cleared");
+                check(
+                    helper.getLevel().getEntitiesOfClass(
+                        ItemEntity.class,
+                        new AABB(helper.absolutePos(movedLever)).inflate(3.0D),
+                        item -> item.getItem().is(Items.LEVER)
+                    ).isEmpty(),
+                    "pushing the bonded support dropped a lever"
+                );
+                check(
+                    BondedFallingBlocks.hasBlockBond(
+                        helper.getLevel(),
+                        helper.absolutePos(movedSupport),
+                        Direction.UP
+                    ) && BondedFallingBlocks.hasBlockBond(
+                        helper.getLevel(),
+                        helper.absolutePos(movedLever),
+                        Direction.DOWN
+                    ),
+                    "piston movement broke the lever adhesive bond"
+                );
+                helper.succeed();
+            });
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "8x7x7", floor = true)
+    @TestHolder(description = "An unbonded lever in front of a piston is still destroyed")
+    static void unbondedLeverStillBreaksWhenPushed(ExtendedGameTestHelper helper) {
+        BlockPos piston = new BlockPos(2, 2, 3);
+        BlockPos lever = piston.east();
+        helper.setBlock(lever, floorLever());
+        PistonStructureResolver resolver = new PistonStructureResolver(
+            helper.getLevel(),
+            helper.absolutePos(piston),
+            Direction.EAST,
+            true
+        );
+        check(resolver.resolve(), "unbonded lever push should still resolve as a destroy");
+        check(resolver.getToDestroy().contains(helper.absolutePos(lever)), "unbonded lever was not marked for destruction");
+        check(!resolver.getToPush().contains(helper.absolutePos(lever)), "unbonded lever was treated as movable");
+        helper.succeed();
+    }
+
     @GameTest(timeoutTicks = 40)
     @EmptyTemplate("11x7x7")
     @TestHolder(description = "A sliding rail moves every block in a bidirectionally bonded group")
@@ -3877,6 +4210,88 @@ public final class AdhesiveBondingGameTests {
                 "sliding rail movement did not restore the bidirectional bond"
             );
             helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate("11x7x7")
+    @TestHolder(description = "Plastic glued to a sliding rail ignores that rail and stays a bonded block")
+    static void slidingRailIgnoresPlasticGluedToTheRail(ExtendedGameTestHelper helper) {
+        BlockPos rail = new BlockPos(3, 1, 3);
+        BlockPos occupied = rail.above();
+        for (int x = 2; x < 6; x++) {
+            helper.setBlock(
+                new BlockPos(x, 1, 3),
+                ModBlocks.SLIDING_RAIL.get().defaultBlockState()
+            );
+        }
+        helper.setBlock(
+            new BlockPos(6, 1, 3),
+            ModBlocks.SLIDING_RAIL_STOP.get().defaultBlockState()
+        );
+        UniversalPlasticEntity plastic = createUniversalPlastic(helper, new Vec3(1.5D, 2.0D, 3.5D));
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(3.5D, 2.0D, 1.5D));
+        check(
+            AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, plastic),
+            "universal plastic selection failed"
+        );
+        check(
+            AdhesiveBondingService.bondSelected(
+                player,
+                InteractionHand.MAIN_HAND,
+                helper.absolutePos(rail),
+                Direction.UP
+            ),
+            "universal plastic could not be glued to the sliding rail"
+        );
+
+        helper.runAfterDelay(12, () -> {
+            check(!plastic.isAlive(), "glued plastic entity was not blockified");
+            bondedBlockEntity(helper, occupied);
+            check(
+                helper.getBlockState(occupied).getValue(AbstractPlasticEntityBlock.BONDED),
+                "glued plastic did not remain a bonded block"
+            );
+            check(
+                !ISlidingRail.moveBlocks(helper.getLevel(), helper.absolutePos(occupied), Direction.EAST),
+                "sliding rail treated a glued plastic block as cargo"
+            );
+            helper.runAfterDelay(4, () -> {
+                BondedEntityBlockEntity stillBonded = bondedBlockEntity(helper, occupied);
+                check(stillBonded.isInitialized(), "starting the sliding rail dropped the bonded block entity");
+                check(
+                    helper.getBlockState(occupied).is(PlasticraftBlocks.UNIVERSAL_PLASTIC.get())
+                        && helper.getBlockState(occupied).getValue(AbstractPlasticEntityBlock.BONDED),
+                    "starting the sliding rail released the glued plastic"
+                );
+                check(
+                    helper.getLevel().getEntitiesOfClass(
+                        SlidingBlockEntity.class,
+                        new AABB(helper.absolutePos(occupied)).inflate(3.0D)
+                    ).isEmpty(),
+                    "sliding rail created a sliding block for glued plastic"
+                );
+                check(
+                    helper.getLevel().getEntitiesOfClass(
+                        UniversalPlasticEntity.class,
+                        new AABB(helper.absolutePos(occupied)).inflate(2.0D)
+                    ).isEmpty(),
+                    "starting the sliding rail degraded the glued plastic into an entity"
+                );
+                check(
+                    BondedFallingBlocks.hasBlockBond(
+                        helper.getLevel(),
+                        helper.absolutePos(occupied),
+                        Direction.DOWN
+                    ) && BondedFallingBlocks.hasBlockBond(
+                        helper.getLevel(),
+                        helper.absolutePos(rail),
+                        Direction.UP
+                    ),
+                    "starting the sliding rail broke the glue to the rail"
+                );
+                helper.succeed();
+            });
         });
     }
 
@@ -4062,6 +4477,16 @@ public final class AdhesiveBondingGameTests {
         });
     }
 
+    private static Snowball spawnStuckSnowball(ExtendedGameTestHelper helper, Vec3 relativePosition) {
+        Snowball snowball = new Snowball(helper.getLevel(), 0.0D, 0.0D, 0.0D);
+        Vec3 position = helper.absoluteVec(relativePosition);
+        snowball.moveTo(position.x, position.y, position.z);
+        snowball.setNoGravity(true);
+        snowball.setDeltaMovement(Vec3.ZERO);
+        check(helper.getLevel().addFreshEntity(snowball), "failed to add snowball");
+        return snowball;
+    }
+
     private static GameTestPlayer bucketPlayer(ExtendedGameTestHelper helper, Vec3 relativePosition) {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 position = helper.absoluteVec(relativePosition);
@@ -4153,6 +4578,39 @@ public final class AdhesiveBondingGameTests {
         );
         check(helper.getLevel().addFreshEntity(plastic), "failed to add universal plastic");
         return plastic;
+    }
+
+    private static BlockState floorLever() {
+        return Blocks.LEVER.defaultBlockState()
+            .setValue(LeverBlock.FACE, AttachFace.FLOOR)
+            .setValue(LeverBlock.FACING, Direction.NORTH);
+    }
+
+    private static BlockPos[] oversizedBondedLine(ExtendedGameTestHelper helper, BlockPos start, int length) {
+        BlockPos[] group = new BlockPos[length];
+        for (int index = 0; index < length; index++) {
+            group[index] = start.offset(index, 0, 0);
+            helper.setBlock(group[index], Blocks.STONE);
+        }
+        for (int index = 0; index < length - 1; index++) {
+            check(
+                BondedFallingBlocks.connect(
+                    helper.getLevel(),
+                    helper.absolutePos(group[index]),
+                    helper.absolutePos(group[index + 1])
+                ),
+                "oversized bonded group could not be connected"
+            );
+        }
+        return group;
+    }
+
+    private static List<BlockPos> absolutePositions(ExtendedGameTestHelper helper, BlockPos[] relative) {
+        ArrayList<BlockPos> absolute = new ArrayList<>(relative.length);
+        for (BlockPos pos : relative) {
+            absolute.add(helper.absolutePos(pos));
+        }
+        return List.copyOf(absolute);
     }
 
     private static BondedEntityBlockEntity bondedBlockEntity(ExtendedGameTestHelper helper, BlockPos relativePos) {

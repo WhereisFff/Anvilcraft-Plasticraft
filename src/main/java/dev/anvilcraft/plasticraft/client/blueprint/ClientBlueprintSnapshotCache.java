@@ -16,21 +16,21 @@ import org.jetbrains.annotations.Nullable;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * 客户端结构快照缓存:按内容哈希保存,缺失时向服务端请求分块传输。
- * 同一哈希只保留一次在途请求,分块全部到齐后解析入缓存;缓存按插入顺序做小容量淘汰。
+ * 同一哈希在分块未齐前不重复请求;若服务端静默拒绝,约一秒后重试。
  */
 public final class ClientBlueprintSnapshotCache {
     private static final int MAX_CACHED_SNAPSHOTS = 8;
+    /** 未收到任何分块时的重试间隔(游戏刻)。 */
+    private static final int RETRY_INTERVAL_TICKS = 20;
 
     private static final Map<String, StructureSnapshot> SNAPSHOTS = new LinkedHashMap<>();
     private static final Map<String, byte[][]> PENDING_CHUNKS = new HashMap<>();
-    private static final Set<String> REQUESTED = new HashSet<>();
+    private static final Map<String, Long> LAST_REQUEST_TICK = new HashMap<>();
 
     private ClientBlueprintSnapshotCache() {
     }
@@ -39,10 +39,19 @@ public final class ClientBlueprintSnapshotCache {
     @Nullable
     public static synchronized StructureSnapshot snapshotOrRequest(String hash) {
         StructureSnapshot snapshot = SNAPSHOTS.get(hash);
-        if (snapshot != null) return snapshot;
-        if (ConstructionStructureLibrary.isValidHash(hash) && REQUESTED.add(hash)) {
-            PacketDistributor.sendToServer(new BlueprintSnapshotRequestPacket(hash));
+        if (snapshot != null) {
+            SNAPSHOTS.remove(hash);
+            SNAPSHOTS.put(hash, snapshot);
+            return snapshot;
         }
+        if (!ConstructionStructureLibrary.isValidHash(hash)) return null;
+        if (PENDING_CHUNKS.containsKey(hash)) return null;
+        Minecraft minecraft = Minecraft.getInstance();
+        long now = minecraft.level == null ? 0L : minecraft.level.getGameTime();
+        Long last = LAST_REQUEST_TICK.get(hash);
+        if (last != null && now - last < RETRY_INTERVAL_TICKS) return null;
+        LAST_REQUEST_TICK.put(hash, now);
+        PacketDistributor.sendToServer(new BlueprintSnapshotRequestPacket(hash));
         return null;
     }
 
@@ -63,7 +72,7 @@ public final class ClientBlueprintSnapshotCache {
             if (chunk == null) return;
         }
         PENDING_CHUNKS.remove(hash);
-        REQUESTED.remove(hash);
+        LAST_REQUEST_TICK.remove(hash);
         assemble(hash, chunks, totalBytes);
     }
 
@@ -99,6 +108,6 @@ public final class ClientBlueprintSnapshotCache {
     public static synchronized void clear() {
         SNAPSHOTS.clear();
         PENDING_CHUNKS.clear();
-        REQUESTED.clear();
+        LAST_REQUEST_TICK.clear();
     }
 }

@@ -299,6 +299,12 @@ public final class PlasticEntityPhysics {
         return tangentialMovement.add(normal.scale(Math.min(normalMovement, 0.0D)));
     }
 
+    /** 制品当前是否把该实体记为自己的真实支撑，供姿态和碰撞查询排除头顶承载物。 */
+    public static boolean isSupportedBy(Entity carried, Entity support) {
+        return carried instanceof AbstractPlasticEntity plastic
+            && plastic.plasticraft$isSupportedBy(support);
+    }
+
     /**
      * 返回目标是否仍由该实体支撑并可参与本次承载。
      * 支撑者离开目标的法向分量随后由 {@link #carriedMovement(Vec3, Direction)} 删除。

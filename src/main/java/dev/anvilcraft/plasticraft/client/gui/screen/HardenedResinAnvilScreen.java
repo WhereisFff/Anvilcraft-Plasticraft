@@ -139,8 +139,6 @@ public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAn
                 0,
                 0,
                 this.imageWidth,
-                this.imageHeight,
-                this.imageWidth,
                 this.imageHeight
             );
             graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
@@ -150,8 +148,6 @@ public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAn
                 this.topPos,
                 0,
                 0,
-                this.imageWidth,
-                this.imageHeight,
                 this.imageWidth,
                 this.imageHeight
             );

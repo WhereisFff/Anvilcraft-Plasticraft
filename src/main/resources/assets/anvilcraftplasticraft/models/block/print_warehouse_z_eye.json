@@ -11,11 +11,11 @@
 	"elements": [
 		{
 			"name": "eye",
-			"from": [-1, 29.1, -1],
-			"to": [2, 29.1, 2],
+			"from": [-1, 29.3, -1],
+			"to": [2, 29.3, 2],
 			"shade": false,
 			"light_emission": 15,
-			"rotation": {"angle": -45, "axis": "y", "origin": [0.5, 30.6, 0.5]},
+			"rotation": {"angle": -45, "axis": "y", "origin": [0.5, 30.8, 0.5]},
 			"faces": {
 				"north": {"uv": [1.25, 15, 0.5, 15.75], "texture": "#4"},
 				"east": {"uv": [0.5, 15, 1.25, 15.75], "texture": "#4"},
@@ -27,11 +27,11 @@
 		},
 		{
 			"name": "eye_outline",
-			"from": [2.5, 29.2, 2.5],
-			"to": [-1.5, 29.1, -1.5],
+			"from": [2.5, 29.4, 2.5],
+			"to": [-1.5, 29.2, -1.5],
 			"shade": false,
 			"light_emission": 15,
-			"rotation": {"angle": -45, "axis": "y", "origin": [0.5, 29.6, 0.5]},
+			"rotation": {"angle": -45, "axis": "y", "origin": [0.5, 29.8, 0.5]},
 			"faces": {
 				"north": {"uv": [0.25, 15.75, 0.5, 16], "rotation": 180, "texture": "#4"},
 				"east": {"uv": [0.25, 15.75, 0.5, 16], "rotation": 180, "texture": "#4"},

@@ -4,11 +4,13 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticCollisionOutlineRenderer;
 import dev.anvilcraft.plasticraft.entity.collision.BondedPlasticShapeIndex;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexCollisionOutline;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionBox;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -37,12 +39,16 @@ public final class BondedPlasticHighlightRenderer {
         PlasticEntityCollisionBox collisionBox = entry.collisionBox();
         if (!collisionBox.hasConvexComponents()) return;
 
-        if (collisionBox.convexOutline().isEmpty()) return;
+        PlasticConvexCollisionOutline.PackedOutline outline = collisionBox.packedOutline();
+        if (outline.isEmpty()) return;
+        Vec3 camera = event.getCamera().getPosition();
         PlasticCollisionOutlineRenderer.renderSelectionOutline(
             event.getPoseStack(),
             event.getMultiBufferSource().getBuffer(RenderType.lines()),
-            collisionBox,
-            event.getCamera().getPosition().scale(-1.0D)
+            outline,
+            -camera.x,
+            -camera.y,
+            -camera.z
         );
         event.setCanceled(true);
     }

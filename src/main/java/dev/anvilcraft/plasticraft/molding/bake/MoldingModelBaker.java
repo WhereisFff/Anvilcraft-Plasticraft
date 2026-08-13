@@ -341,17 +341,19 @@ public final class MoldingModelBaker {
     ) {
         MoldingVolumeMask result = sampledVolume.copy();
         for (MoldingConvexHull hull : createManufacturedGeometry(model, 1.0D).collisionHulls()) {
-            MoldingConvexHull.Bounds bounds = hull.bounds();
-            int minX = cellMinimum(bounds.minimum().x(), result.sizeX());
-            int minY = cellMinimum(bounds.minimum().y(), result.sizeY());
-            int minZ = cellMinimum(bounds.minimum().z(), result.sizeZ());
-            int maxX = cellMaximum(bounds.maximum().x(), result.sizeX());
-            int maxY = cellMaximum(bounds.maximum().y(), result.sizeY());
-            int maxZ = cellMaximum(bounds.maximum().z(), result.sizeZ());
+            MoldingPreparedHull prepared = MoldingPreparedHull.prepare(hull);
+            List<FacePolygon> faces = extractFaces(hull);
+            int minX = prepared.cellMinX(result.sizeX());
+            int minY = prepared.cellMinY(result.sizeY());
+            int minZ = prepared.cellMinZ(result.sizeZ());
+            int maxX = prepared.cellMaxX(result.sizeX());
+            int maxY = prepared.cellMaxY(result.sizeY());
+            int maxZ = prepared.cellMaxZ(result.sizeZ());
             for (int y = minY; y <= maxY; y++) {
                 for (int x = minX; x <= maxX; x++) {
                     for (int z = minZ; z <= maxZ; z++) {
-                        if (!result.get(x, y, z) && convexHullIntersectsCell(hull, x, y, z)) {
+                        if (result.get(x, y, z) || !prepared.mayOverlapCell(x, y, z)) continue;
+                        if (hasPositiveVolume(clipFacesToBox(faces, x, y, z, x + 1.0D, y + 1.0D, z + 1.0D))) {
                             result.set(x, y, z);
                         }
                     }
@@ -371,7 +373,7 @@ public final class MoldingModelBaker {
         return clipConvexHull(hull, x, y, z, x + 1.0D, y + 1.0D, z + 1.0D);
     }
 
-    public static List<MoldingQuad> clipConvexHull(
+    private static List<MoldingQuad> clipConvexHull(
         MoldingConvexHull hull,
         double minX,
         double minY,
@@ -392,6 +394,93 @@ public final class MoldingModelBaker {
         return hasPositiveVolume(clipConvexHullToBox(hull, x, y, z, x + 1.0D, y + 1.0D, z + 1.0D));
     }
 
+    public static List<MoldingVec3> clipPolygonToCell(List<MoldingVec3> polygon, int x, int y, int z) {
+        if (polygon.size() < 3) return List.of();
+        List<MoldingVec3> ignored = new ArrayList<>();
+        List<MoldingVec3> clipped = clipPolygon(polygon, 0, x, true, ignored);
+        ignored.clear();
+        clipped = clipPolygon(clipped, 0, x + 1.0D, false, ignored);
+        ignored.clear();
+        clipped = clipPolygon(clipped, 1, y, true, ignored);
+        ignored.clear();
+        clipped = clipPolygon(clipped, 1, y + 1.0D, false, ignored);
+        ignored.clear();
+        clipped = clipPolygon(clipped, 2, z, true, ignored);
+        ignored.clear();
+        clipped = clipPolygon(clipped, 2, z + 1.0D, false, ignored);
+        return clipped.size() >= 3 ? List.copyOf(clipped) : List.of();
+    }
+
+    /** 将多边形裁到凸体内侧；面法线指向外侧。 */
+    public static List<MoldingVec3> clipPolygonToConvexHull(List<MoldingVec3> polygon, MoldingConvexHull hull) {
+        if (polygon.size() < 3) return List.of();
+        List<MoldingVec3> vertices = hull.vertices();
+        List<MoldingVec3> clipped = List.copyOf(polygon);
+        for (MoldingConvexFace face : hull.faces()) {
+            MoldingVec3 origin = vertices.get(face.vertices().getFirst());
+            clipped = clipPolygonByPlane(clipped, origin, face.normal());
+            if (clipped.size() < 3) return List.of();
+        }
+        return clipped;
+    }
+
+    private static List<MoldingVec3> clipPolygonByPlane(
+        List<MoldingVec3> input,
+        MoldingVec3 origin,
+        MoldingVec3 outwardNormal
+    ) {
+        if (input.size() < 2) return List.of();
+        List<MoldingVec3> output = new ArrayList<>(input.size() + 2);
+        MoldingVec3 previous = input.getLast();
+        double previousDot = previous.subtract(origin).dot(outwardNormal);
+        boolean previousInside = previousDot <= EPSILON;
+        for (MoldingVec3 current : input) {
+            double currentDot = current.subtract(origin).dot(outwardNormal);
+            boolean currentInside = currentDot <= EPSILON;
+            if (currentInside != previousInside && Math.abs(currentDot - previousDot) > EPSILON) {
+                double amount = Math.clamp(-previousDot / (currentDot - previousDot), 0.0D, 1.0D);
+                addDistinct(output, previous.add(current.subtract(previous).scale(amount)));
+            }
+            if (currentInside) addDistinct(output, current);
+            previous = current;
+            previousDot = currentDot;
+            previousInside = currentInside;
+        }
+        if (output.size() > 1 && samePoint(output.getFirst(), output.getLast())) output.removeLast();
+        return output.size() >= 3 ? List.copyOf(output) : List.of();
+    }
+
+    private static List<FacePolygon> extractFaces(MoldingConvexHull hull) {
+        List<MoldingVec3> vertices = hull.vertices();
+        List<FacePolygon> faces = new ArrayList<>(hull.faces().size());
+        for (MoldingConvexFace face : hull.faces()) {
+            List<MoldingVec3> polygon = new ArrayList<>(face.vertices().size());
+            for (int index : face.vertices()) {
+                polygon.add(vertices.get(index));
+            }
+            faces.add(new FacePolygon(polygon, face.normal()));
+        }
+        return faces;
+    }
+
+    private static List<FacePolygon> clipFacesToBox(
+        List<FacePolygon> faces,
+        double minX,
+        double minY,
+        double minZ,
+        double maxX,
+        double maxY,
+        double maxZ
+    ) {
+        List<FacePolygon> clipped = faces;
+        clipped = clipPolyhedron(clipped, 0, minX, true);
+        clipped = clipPolyhedron(clipped, 0, maxX, false);
+        clipped = clipPolyhedron(clipped, 1, minY, true);
+        clipped = clipPolyhedron(clipped, 1, maxY, false);
+        clipped = clipPolyhedron(clipped, 2, minZ, true);
+        return clipPolyhedron(clipped, 2, maxZ, false);
+    }
+
     private static List<FacePolygon> clipConvexHullToBox(
         MoldingConvexHull hull,
         double minX,
@@ -407,16 +496,7 @@ public final class MoldingModelBaker {
             || bounds.maximum().z() <= minZ + EPSILON || bounds.minimum().z() >= maxZ - EPSILON) {
             return List.of();
         }
-        List<FacePolygon> faces = hull.faces().stream().map(face -> new FacePolygon(
-            face.vertices().stream().map(hull.vertices()::get).toList(),
-            face.normal()
-        )).toList();
-        faces = clipPolyhedron(faces, 0, minX, true);
-        faces = clipPolyhedron(faces, 0, maxX, false);
-        faces = clipPolyhedron(faces, 1, minY, true);
-        faces = clipPolyhedron(faces, 1, maxY, false);
-        faces = clipPolyhedron(faces, 2, minZ, true);
-        return clipPolyhedron(faces, 2, maxZ, false);
+        return clipFacesToBox(extractFaces(hull), minX, minY, minZ, maxX, maxY, maxZ);
     }
 
     private static List<FacePolygon> clipPolyhedron(
@@ -450,6 +530,7 @@ public final class MoldingModelBaker {
         boolean keepGreater,
         List<MoldingVec3> capVertices
     ) {
+        if (input.size() < 2) return List.of();
         List<MoldingVec3> output = new ArrayList<>(input.size() + 2);
         MoldingVec3 previous = input.getLast();
         double previousCoordinate = coordinate(previous, axis);
@@ -729,7 +810,7 @@ public final class MoldingModelBaker {
         FacePolygon polygon,
         boolean doubleSided
     ) {
-        List<MoldingVec3> vertices = polygon.vertices();
+        List<MoldingVec3> vertices = orientPolygon(polygon.vertices(), polygon.normal());
         if (vertices.size() == 4) {
             output.add(new MoldingQuad(
                 vertices.get(0),
@@ -754,6 +835,18 @@ public final class MoldingModelBaker {
                 doubleSided
             ));
         }
+    }
+
+    private static List<MoldingVec3> orientPolygon(List<MoldingVec3> vertices, MoldingVec3 normal) {
+        if (vertices.size() < 3) return vertices;
+        MoldingVec3 cross = vertices.get(1).subtract(vertices.get(0))
+            .cross(vertices.get(2).subtract(vertices.get(0)));
+        if (cross.lengthSquared() <= EPSILON * EPSILON || cross.dot(normal) >= 0.0D) {
+            return vertices;
+        }
+        List<MoldingVec3> reversed = new ArrayList<>(vertices);
+        Collections.reverse(reversed);
+        return reversed;
     }
 
     private static MoldingConvexHull createConvexHull(List<FacePolygon> polygons) {

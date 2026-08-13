@@ -4,8 +4,6 @@ import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.serialization.MapCodec;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.api.texture.GeneratedPlasticTexture;
-import dev.anvilcraft.plasticraft.api.texture.PlasticColorPalette;
-import dev.anvilcraft.plasticraft.api.texture.PlasticGrayscaleImage;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureCache;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureGenerator;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureInput;
@@ -32,12 +30,6 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
     public static final MapCodec<PlasticTextureSpriteSource> CODEC = MapCodec.unit(INSTANCE);
 
     private static final ResourceLocation TYPE_ID = AnvilcraftPlasticraft.of("generated_plastic");
-    static final ResourceLocation BASE_RESOURCE = AnvilcraftPlasticraft.of(
-        "textures/palette/plastic_base.png"
-    );
-    static final ResourceLocation PALETTE_RESOURCE = AnvilcraftPlasticraft.of(
-        "textures/palette/universal_plastic_palette.png"
-    );
     private static SpriteSourceType sourceType;
 
     private PlasticTextureSpriteSource() {
@@ -56,27 +48,10 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
     public void run(ResourceManager resourceManager, Output output) {
         PlasticTextureCache.clear();
         try {
-            byte[] baseBytes = readResource(resourceManager, BASE_RESOURCE);
-            byte[] paletteBytes = readResource(resourceManager, PALETTE_RESOURCE);
-            try (NativeImage baseImage = readImage(BASE_RESOURCE, baseBytes);
-                 NativeImage paletteImage = readImage(PALETTE_RESOURCE, paletteBytes)) {
-                PlasticGrayscaleImage base = PlasticGrayscaleImage.fromArgb(
-                    baseImage.getWidth(),
-                    baseImage.getHeight(),
-                    toArgbPixels(baseImage)
-                );
-                if (paletteImage.getHeight() != DyeColor.values().length) {
-                    throw new PlasticTextureResourceException(
-                        "Universal plastic palette must contain one row for every DyeColor"
-                    );
-                }
-                PlasticColorPalette palette = PlasticColorPalette.fromArgb(
-                    paletteImage.getHeight(),
-                    paletteImage.getWidth(),
-                    toArgbPixels(paletteImage)
-                );
-                addGeneratedSprites(output, baseBytes, paletteBytes, base, palette);
-            }
+            PlasticTextureResourceLoader.LoadedResources resources = PlasticTextureResourceLoader.load(
+                resourceManager
+            );
+            addGeneratedSprites(output, resources);
         } catch (IOException | IllegalArgumentException exception) {
             AnvilcraftPlasticraft.LOGGER.error(
                 "Unable to generate universal plastic textures; using safe placeholders: {}",
@@ -94,18 +69,13 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
 
     private static void addGeneratedSprites(
         Output output,
-        byte[] baseBytes,
-        byte[] paletteBytes,
-        PlasticGrayscaleImage base,
-        PlasticColorPalette palette
+        PlasticTextureResourceLoader.LoadedResources resources
     ) {
-        String baseHash = PlasticTextureInput.computeResourceHash(baseBytes);
-        String paletteHash = PlasticTextureInput.computeResourceHash(paletteBytes);
         for (DyeColor color : DyeColor.values()) {
-            PlasticTextureInput input = input(baseHash, paletteHash, color);
+            PlasticTextureInput input = input(resources.baseHash(), resources.paletteHash(), color);
             GeneratedPlasticTexture generated = PlasticTextureCache.getOrGenerate(
                 input,
-                () -> PlasticTextureGenerator.generate(input, base, palette)
+                () -> PlasticTextureGenerator.generate(input, resources.bases(), resources.palette())
             );
             addSprite(output, color, generated);
         }
@@ -149,9 +119,9 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
             PlasticTextureGenerator.VERSION,
             UniversalPlasticShape.SHAPE_HASH,
             UniversalPlasticShape.SURFACES,
-            BASE_RESOURCE.toString(),
+            PlasticTextureResourceLoader.BASE_RESOURCE.toString(),
             baseHash,
-            PALETTE_RESOURCE.toString(),
+            PlasticTextureResourceLoader.PALETTE_RESOURCE.toString(),
             paletteHash,
             color.getId()
         );

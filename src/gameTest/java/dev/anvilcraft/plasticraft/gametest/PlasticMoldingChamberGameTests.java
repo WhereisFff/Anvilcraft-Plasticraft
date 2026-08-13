@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.MoldingRegionPart;
+import dev.anvilcraft.plasticraft.block.Plastic3DPrintingComponentBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberStructure;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingMachineState;
@@ -12,6 +13,7 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
+import dev.anvilcraft.plasticraft.inventory.PlasticMoldingChamberMenu;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.item.PlasticMoldingChamberItem;
 import dev.anvilcraft.plasticraft.molding.blueprint.BlueprintException;
@@ -22,11 +24,16 @@ import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintImporter;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintLibrary;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintService;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintSummary;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingConvexFace;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingConvexHull;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingPreparedHull;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingFormingMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingMachineAction;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintedGeometry;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProcessSnapshot;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrinterMotion;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingPlan;
@@ -63,6 +70,7 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -73,6 +81,7 @@ import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -636,6 +645,11 @@ public final class PlasticMoldingChamberGameTests {
         check(helper.getLevel().getBlockEntity(chamber.getBlockPos().above())
                 instanceof Plastic3DPrintingComponentBlockEntity,
             "printing component did not create its internal melt storage");
+        check(
+            helper.getLevel().getBlockState(chamber.getBlockPos().above())
+                .getValue(Plastic3DPrintingComponentBlock.FACING) == Direction.NORTH,
+            "printing component did not copy the chamber facing"
+        );
         check(chamber.formingMode() == MoldingFormingMode.PRINTING,
             "installing the printing component did not select printing");
         assertRegionShapes(chamber, 3);
@@ -652,6 +666,11 @@ public final class PlasticMoldingChamberGameTests {
             new ItemStack(Items.CLAY_BALL, 64)
         );
         chamber.energyStorage().receiveEnergy(MoldingPowerBridge.capacity(), false);
+        check(
+            helper.getLevel().getBlockState(chamber.getBlockPos().above())
+                .getValue(Plastic3DPrintingComponentBlock.POWERED),
+            "printing component did not follow the chamber powered model"
+        );
         check(chamber.requestLock().accepted(), "printing model did not lock with its component");
         check(chamber.requiredClayBalls() == 0 && chamber.moldedClayBalls() == 0,
             "printing reserved clay");
@@ -693,6 +712,47 @@ public final class PlasticMoldingChamberGameTests {
         check(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.CLAY_SLOT).getCount() == 64
                 && chamber.moldedClayBalls() == 0,
             "printing consumed clay after it started");
+        helper.getLevel().setBlockAndUpdate(chamber.getBlockPos().above(), Blocks.AIR.defaultBlockState());
+        check(chamber.machineState() == PlasticMoldingMachineState.EDITABLE
+                && chamber.printingProgress() == 0
+                && chamber.printingTotal() == 0
+                && chamber.activeProcessingSnapshot().isEmpty(),
+            "breaking the active printing component did not stop and clear the interrupted print");
+        helper.getLevel().setBlockAndUpdate(
+            chamber.getBlockPos().above(),
+            PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get().defaultBlockState()
+        );
+        check(chamber.machineState() == PlasticMoldingMachineState.EDITABLE
+                && chamber.requestLock().accepted(),
+            "a replacement printing component could not start a fresh cycle after interruption");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x7x9", floor = true)
+    @TestHolder(description = "Right-clicking the printing component opens the chamber GUI")
+    static void printingComponentOpensChamberMenu(ExtendedGameTestHelper helper) {
+        PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
+        BlockPos componentPos = chamber.getBlockPos().above();
+        helper.getLevel().setBlockAndUpdate(
+            componentPos,
+            PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get().defaultBlockState()
+        );
+        ServerPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        player.setPos(componentPos.getCenter());
+        check(
+            helper.getLevel().getBlockState(componentPos).useWithoutItem(
+                helper.getLevel(),
+                player,
+                new BlockHitResult(componentPos.getCenter(), Direction.NORTH, componentPos, false)
+            ).consumesAction(),
+            "printing component interaction was not consumed"
+        );
+        check(
+            player.containerMenu instanceof PlasticMoldingChamberMenu,
+            "printing component did not open the chamber GUI"
+        );
+        player.discard();
         helper.succeed();
     }
 
@@ -812,6 +872,158 @@ public final class PlasticMoldingChamberGameTests {
     }
 
     @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Printing occupancy SAT reject matches CSG and fully printed faces stay source cubes")
+    static void printingOccupancyAndPrintedSurfaceStayExact(ExtendedGameTestHelper helper) {
+        EditableMoldingModel aligned = EditableMoldingModel.empty().withElements(List.of(MoldingElement.cube(
+            "Aligned",
+            new MoldingVec3(16.0D, 16.0D, 16.0D),
+            new MoldingVec3(24.0D, 24.0D, 24.0D)
+        )));
+        checkIntersectingMaskMatchesCsg(aligned, "aligned cube");
+
+        EditableMoldingModel sloped = rotatedCube(
+            "Sloped",
+            new MoldingVec3(12.0D, 22.5D, 16.0D),
+            new MoldingVec3(36.0D, 25.5D, 32.0D),
+            new MoldingVec3(0.0D, 0.0D, 30.0D)
+        );
+        checkIntersectingMaskMatchesCsg(sloped, "30 degree slope");
+
+        EditableMoldingModel yawed = rotatedCube(
+            "Yawed",
+            new MoldingVec3(18.0D, 18.0D, 18.0D),
+            new MoldingVec3(30.0D, 26.0D, 30.0D),
+            new MoldingVec3(0.0D, 45.0D, 0.0D)
+        );
+        checkIntersectingMaskMatchesCsg(yawed, "yawed cube");
+
+        MoldingConvexHull solidHull = MoldingModelBaker.createManufacturedGeometry(aligned, 1.0D)
+            .collisionHulls()
+            .getFirst();
+        for (MoldingQuad quad : MoldingModelBaker.clipConvexHullToCell(solidHull, 20, 20, 20)) {
+            MoldingVec3 cross = quad.second().subtract(quad.first()).cross(quad.third().subtract(quad.first()));
+            check(cross.dot(quad.normal()) > 0.0D,
+                "clipped interior cell winding disagreed with its face normal");
+        }
+
+        var slopedBaked = MoldingModelBaker.bake(sloped);
+        MoldingPrintingPlan slopedPlan = MoldingPrintingPlan.create(sloped, slopedBaked);
+        MoldingPrintedGeometry printed = MoldingPrintedGeometry.prepare(sloped, slopedPlan);
+        printed.advanceTo(slopedPlan.size());
+        check(printed.surfaceTriangles().size() >= 12 && printed.surfaceTriangles().size() <= 24,
+            "fully printed slope triangle count was " + printed.surfaceTriangles().size());
+        check(printed.capTriangles().isEmpty(),
+            "fully printed slope kept voxel staircase caps on the exterior");
+        double slopedArea = MoldingPrintedGeometry.triangleListArea(printed.surfaceTriangles());
+        double slopedFragments = printedFaceFragmentArea(sloped, slopedPlan, slopedPlan.size());
+        check(
+            Math.abs(slopedArea - slopedFragments) <= Math.max(1.0E-4D, 1.0E-3D * Math.max(slopedArea, slopedFragments)),
+            "fully printed slope area diverged: " + slopedArea + " vs " + slopedFragments
+        );
+        for (MoldingPrintedGeometry.PrintedTriangle triangle : printed.surfaceTriangles()) {
+            MoldingVec3 cross = triangle.second().subtract(triangle.first())
+                .cross(triangle.third().subtract(triangle.first()));
+            check(cross.dot(triangle.normal()) > 0.0D,
+                "printed slope winding disagreed with its face normal");
+        }
+
+        MoldingPrintingPlan alignedPlan = MoldingPrintingPlan.create(aligned, MoldingModelBaker.bake(aligned));
+        MoldingPrintedGeometry alignedPrinted = MoldingPrintedGeometry.prepare(aligned, alignedPlan);
+        alignedPrinted.advanceTo(alignedPlan.size());
+        check(alignedPrinted.surfaceTriangles().size() == 12,
+            "fully printed cube triangle count was " + alignedPrinted.surfaceTriangles().size());
+        check(alignedPrinted.capTriangles().isEmpty(),
+            "fully printed cube kept interior voxel caps");
+        check(
+            Math.abs(MoldingPrintedGeometry.triangleListArea(alignedPrinted.surfaceTriangles()) - 384.0D) <= 0.05D,
+            "fully printed cube lost original faces"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Partial printed slope keeps occupancy fragments without corner webbing")
+    static void printingPartialSlopeKeepsFragmentArea(ExtendedGameTestHelper helper) {
+        EditableMoldingModel sloped = rotatedCube(
+            "Sloped",
+            new MoldingVec3(12.0D, 22.5D, 16.0D),
+            new MoldingVec3(36.0D, 25.5D, 32.0D),
+            new MoldingVec3(0.0D, 0.0D, 30.0D)
+        );
+        MoldingPrintingPlan slopedPlan = MoldingPrintingPlan.create(sloped, MoldingModelBaker.bake(sloped));
+        int partial = Math.max(8, slopedPlan.size() / 3);
+        MoldingPrintedGeometry printed = MoldingPrintedGeometry.prepare(sloped, slopedPlan);
+        printed.advanceTo(partial);
+        double printedArea = MoldingPrintedGeometry.triangleListArea(printed.surfaceTriangles());
+        double fragmentArea = printedFaceFragmentArea(sloped, slopedPlan, partial);
+        check(fragmentArea > 1.0D, "partial slope fragment area was empty: " + fragmentArea);
+        check(
+            printedArea + 1.0E-3D >= 0.98D * fragmentArea,
+            "partial slope printed area was smaller than occupancy fragments: "
+                + printedArea + " vs " + fragmentArea
+        );
+        check(
+            printedArea <= fragmentArea * 1.08D + 0.05D,
+            "partial slope webbed across unprinted face area: " + printedArea + " vs " + fragmentArea
+        );
+        for (MoldingPrintedGeometry.PrintedTriangle triangle : printed.surfaceTriangles()) {
+            MoldingVec3 cross = triangle.second().subtract(triangle.first())
+                .cross(triangle.third().subtract(triangle.first()));
+            check(cross.dot(triangle.normal()) > 0.0D,
+                "partial printed slope winding disagreed with its face normal");
+        }
+
+        EditableMoldingModel concave = EditableMoldingModel.empty().withElements(List.of(
+            MoldingElement.cube("ArmX", new MoldingVec3(16.0D, 20.0D, 16.0D), new MoldingVec3(28.0D, 24.0D, 20.0D)),
+            MoldingElement.cube("ArmZ", new MoldingVec3(16.0D, 20.0D, 16.0D), new MoldingVec3(20.0D, 24.0D, 28.0D))
+        ));
+        MoldingPrintingPlan concavePlan = MoldingPrintingPlan.create(concave, MoldingModelBaker.bake(concave));
+        int concavePartial = Math.max(8, concavePlan.size() / 2);
+        MoldingPrintedGeometry concavePrinted = MoldingPrintedGeometry.prepare(concave, concavePlan);
+        concavePrinted.advanceTo(concavePartial);
+        double concavePrintedArea = MoldingPrintedGeometry.triangleListArea(concavePrinted.surfaceTriangles());
+        double concaveFragments = printedFaceFragmentArea(concave, concavePlan, concavePartial);
+        check(
+            concavePrintedArea + 1.0E-3D >= 0.98D * concaveFragments,
+            "concave occupancy printed area was smaller than fragments: "
+                + concavePrintedArea + " vs " + concaveFragments
+        );
+        check(
+            concavePrintedArea <= concaveFragments * 1.08D + 0.05D,
+            "concave occupancy webbed across unprinted face area: "
+                + concavePrintedArea + " vs " + concaveFragments
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Rotated cube plane-slope dihedrals stay closed without outer voxel caps")
+    static void printingRotatedCubeDihedralsStayClosed(ExtendedGameTestHelper helper) {
+        EditableMoldingModel sloped = rotatedCube(
+            "Sloped",
+            new MoldingVec3(12.0D, 22.5D, 16.0D),
+            new MoldingVec3(36.0D, 25.5D, 32.0D),
+            new MoldingVec3(0.0D, 0.0D, 30.0D)
+        );
+        MoldingPrintingPlan plan = MoldingPrintingPlan.create(sloped, MoldingModelBaker.bake(sloped));
+        MoldingPrintedGeometry full = MoldingPrintedGeometry.prepare(sloped, plan);
+        full.advanceTo(plan.size());
+        check(full.capTriangles().isEmpty(), "fully printed rotated cube kept outer voxel caps");
+        checkDihedralsCovered(sloped, full.surfaceTriangles(), "full print");
+        checkCapsAvoidOriginalFaces(sloped, full.capTriangles(), "full print");
+
+        MoldingPrintedGeometry partial = MoldingPrintedGeometry.prepare(sloped, plan);
+        int partialCount = Math.max(8, plan.size() / 3);
+        partial.advanceTo(partialCount);
+        checkCapsAvoidOriginalFaces(sloped, partial.capTriangles(), "partial print");
+        checkPrintedDihedralCellsCovered(sloped, plan, partialCount, partial.surfaceTriangles());
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "9x7x9", floor = true)
     @TestHolder(description = "Printing accepts only x/z 8..40 and y 1..33")
     static void printingUsesReducedWorkspace(ExtendedGameTestHelper helper) {
@@ -822,6 +1034,24 @@ public final class PlasticMoldingChamberGameTests {
             chamber.getBlockPos().above(),
             PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get().defaultBlockState()
         );
+        Plastic3DPrintingComponentBlockEntity component = helper.getLevel().getBlockEntity(
+            chamber.getBlockPos().above()
+        ) instanceof Plastic3DPrintingComponentBlockEntity result ? result : null;
+        if (component == null) throw new GameTestAssertException("printing component block entity was missing");
+        FluidStack fullComponent = new FluidStack(
+            PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(),
+            Plastic3DPrintingComponentBlockEntity.CAPACITY
+        );
+        check(Plastic3DPrintingComponentBlockEntity.CAPACITY == 8192
+                && component.fillFromChamber(fullComponent, IFluidHandler.FluidAction.EXECUTE) == 8192
+                && component.fluidAmount() == 8192
+                && component.fillFromChamber(
+                    fullComponent.copyWithAmount(1),
+                    IFluidHandler.FluidAction.EXECUTE
+                ) == 0,
+            "printing component did not enforce its exact 8192 mB capacity");
+        check(component.consumeForPrinting(8192, IFluidHandler.FluidAction.EXECUTE).getAmount() == 8192,
+            "printing component could not drain its full 8192 mB capacity");
         EditableMoldingModel maximum = EditableMoldingModel.empty().withElements(List.of(MoldingElement.cube(
             "Maximum Printing Volume",
             new MoldingVec3(8.0D, 1.0D, 8.0D),
@@ -1015,7 +1245,8 @@ public final class PlasticMoldingChamberGameTests {
             Direction.NORTH,
             5,
             5,
-            5
+            5,
+            false
         ));
         ItemStack oversizedDisk = MoldingBlueprintDisk.writeCopy(
             blockStructureDisk,
@@ -1660,6 +1891,277 @@ public final class PlasticMoldingChamberGameTests {
 
     private static void check(boolean condition, String message) {
         if (!condition) throw new GameTestAssertException(message);
+    }
+
+    private static EditableMoldingModel rotatedCube(
+        String name,
+        MoldingVec3 from,
+        MoldingVec3 to,
+        MoldingVec3 rotation
+    ) {
+        MoldingElement source = MoldingElement.cube(name, from, to);
+        MoldingElement rotated = new MoldingElement(
+            source.id(),
+            source.name(),
+            source.groupId(),
+            source.from(),
+            source.to(),
+            new MoldingTransform(
+                MoldingVec3.ZERO,
+                rotation,
+                MoldingVec3.ONE,
+                source.transform().pivot()
+            ),
+            source.visible(),
+            source.locked()
+        );
+        return EditableMoldingModel.empty().withElements(List.of(rotated));
+    }
+
+    private static double printedFaceFragmentArea(
+        EditableMoldingModel model,
+        MoldingPrintingPlan plan,
+        int completed
+    ) {
+        double area = 0.0D;
+        MoldingVolumeMask mask = plan.voxelMask();
+        int limit = Math.clamp(completed, 0, plan.size());
+        List<MoldingConvexHull> hulls = MoldingModelBaker.createManufacturedGeometry(model, 1.0D).collisionHulls();
+        for (int index = 0; index < limit; index++) {
+            int cell = plan.cellAt(index);
+            int x = mask.xOf(cell);
+            int y = mask.yOf(cell);
+            int z = mask.zOf(cell);
+            for (MoldingConvexHull hull : hulls) {
+                if (!MoldingPreparedHull.prepare(hull).mayOverlapCell(x, y, z)) continue;
+                List<MoldingVec3> vertices = hull.vertices();
+                for (MoldingConvexFace face : hull.faces()) {
+                    List<MoldingVec3> polygon = new ArrayList<>(face.vertices().size());
+                    for (int vertex : face.vertices()) polygon.add(vertices.get(vertex));
+                    List<MoldingVec3> clipped = MoldingModelBaker.clipPolygonToCell(polygon, x, y, z);
+                    if (clipped.size() < 3) continue;
+                    MoldingVec3 accumulator = MoldingVec3.ZERO;
+                    for (int vertex = 0; vertex < clipped.size(); vertex++) {
+                        accumulator = accumulator.add(clipped.get(vertex).cross(
+                            clipped.get((vertex + 1) % clipped.size())
+                        ));
+                    }
+                    area += 0.5D * Math.sqrt(accumulator.lengthSquared());
+                }
+            }
+        }
+        return area;
+    }
+
+    private static void checkDihedralsCovered(
+        EditableMoldingModel model,
+        List<MoldingPrintedGeometry.PrintedTriangle> triangles,
+        String label
+    ) {
+        for (EdgeSegment edge : uniqueSourceEdges(model)) {
+            double length = Math.sqrt(edge.span().lengthSquared());
+            if (length <= 1.0E-4D) continue;
+            double covered = coveredLength(edge.start(), edge.end(), triangles);
+            check(covered >= 1.8D * length,
+                label + " dihedral was not closed by both faces: covered " + covered + " of " + length);
+        }
+    }
+
+    private static void checkPrintedDihedralCellsCovered(
+        EditableMoldingModel model,
+        MoldingPrintingPlan plan,
+        int completed,
+        List<MoldingPrintedGeometry.PrintedTriangle> triangles
+    ) {
+        MoldingVolumeMask mask = plan.voxelMask();
+        int limit = Math.clamp(completed, 0, plan.size());
+        List<EdgeSegment> edges = uniqueSourceEdges(model);
+        for (int index = 0; index < limit; index++) {
+            int cell = plan.cellAt(index);
+            int x = mask.xOf(cell);
+            int y = mask.yOf(cell);
+            int z = mask.zOf(cell);
+            for (EdgeSegment edge : edges) {
+                EdgeSegment clipped = clipEdgeToCell(edge.start(), edge.end(), x, y, z);
+                if (clipped == null) continue;
+                double length = Math.sqrt(clipped.span().lengthSquared());
+                if (length <= 1.0E-3D) continue;
+                double covered = coveredLength(clipped.start(), clipped.end(), triangles);
+                check(covered >= 0.9D * length,
+                    "partial dihedral gap in cell " + x + "," + y + "," + z
+                        + ": covered " + covered + " of " + length);
+            }
+        }
+    }
+
+    private static void checkCapsAvoidOriginalFaces(
+        EditableMoldingModel model,
+        List<MoldingPrintedGeometry.PrintedTriangle> caps,
+        String label
+    ) {
+        List<MoldingConvexHull> hulls = MoldingModelBaker.createManufacturedGeometry(model, 1.0D).collisionHulls();
+        for (MoldingPrintedGeometry.PrintedTriangle cap : caps) {
+            for (MoldingConvexHull hull : hulls) {
+                List<MoldingVec3> vertices = hull.vertices();
+                for (MoldingConvexFace face : hull.faces()) {
+                    MoldingVec3 origin = vertices.get(face.vertices().getFirst());
+                    MoldingVec3 normal = face.normal();
+                    if (Math.abs(cap.normal().dot(normal)) < 0.999D) continue;
+                    if (onPlane(cap.first(), origin, normal)
+                        && onPlane(cap.second(), origin, normal)
+                        && onPlane(cap.third(), origin, normal)) {
+                        throw new GameTestAssertException(label + " placed a voxel cap on an original hull face");
+                    }
+                }
+            }
+        }
+    }
+
+    private static boolean onPlane(MoldingVec3 point, MoldingVec3 origin, MoldingVec3 normal) {
+        return Math.abs(point.subtract(origin).dot(normal)) <= 1.0E-4D;
+    }
+
+    private static List<EdgeSegment> uniqueSourceEdges(EditableMoldingModel model) {
+        List<EdgeSegment> unique = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (EdgeSegment edge : sourceEdges(model)) {
+            if (seen.add(canonicalEdgeKey(edge.start(), edge.end()))) unique.add(edge);
+        }
+        return unique;
+    }
+
+    private static String canonicalEdgeKey(MoldingVec3 first, MoldingVec3 second) {
+        String left = roundedVertex(first);
+        String right = roundedVertex(second);
+        return left.compareTo(right) <= 0 ? left + ">" + right : right + ">" + left;
+    }
+
+    private static String roundedVertex(MoldingVec3 point) {
+        return Math.round(point.x() * 1_000_000.0D)
+            + "," + Math.round(point.y() * 1_000_000.0D)
+            + "," + Math.round(point.z() * 1_000_000.0D);
+    }
+
+    private static List<EdgeSegment> sourceEdges(EditableMoldingModel model) {
+        List<EdgeSegment> edges = new ArrayList<>();
+        for (MoldingConvexHull hull : MoldingModelBaker.createManufacturedGeometry(model, 1.0D).collisionHulls()) {
+            List<MoldingVec3> vertices = hull.vertices();
+            for (MoldingConvexFace face : hull.faces()) {
+                List<Integer> indices = face.vertices();
+                for (int index = 0; index < indices.size(); index++) {
+                    MoldingVec3 start = vertices.get(indices.get(index));
+                    MoldingVec3 end = vertices.get(indices.get((index + 1) % indices.size()));
+                    edges.add(new EdgeSegment(start, end));
+                }
+            }
+        }
+        return edges;
+    }
+
+    private static double coveredLength(
+        MoldingVec3 start,
+        MoldingVec3 end,
+        List<MoldingPrintedGeometry.PrintedTriangle> triangles
+    ) {
+        double covered = 0.0D;
+        for (MoldingPrintedGeometry.PrintedTriangle triangle : triangles) {
+            covered += overlapOnSegment(start, end, triangle.first(), triangle.second());
+            covered += overlapOnSegment(start, end, triangle.second(), triangle.third());
+            covered += overlapOnSegment(start, end, triangle.third(), triangle.first());
+        }
+        return covered;
+    }
+
+    private static double overlapOnSegment(
+        MoldingVec3 start,
+        MoldingVec3 end,
+        MoldingVec3 from,
+        MoldingVec3 to
+    ) {
+        MoldingVec3 span = end.subtract(start);
+        double lengthSquared = span.lengthSquared();
+        if (lengthSquared <= 1.0E-12D) return 0.0D;
+        if (from.subtract(start).cross(span).lengthSquared() > 1.0E-8D * lengthSquared) return 0.0D;
+        if (to.subtract(start).cross(span).lengthSquared() > 1.0E-8D * lengthSquared) return 0.0D;
+        double first = Math.clamp(from.subtract(start).dot(span) / lengthSquared, 0.0D, 1.0D);
+        double second = Math.clamp(to.subtract(start).dot(span) / lengthSquared, 0.0D, 1.0D);
+        return Math.abs(second - first) * Math.sqrt(lengthSquared);
+    }
+
+    private static EdgeSegment clipEdgeToCell(MoldingVec3 start, MoldingVec3 end, int x, int y, int z) {
+        double minT = 0.0D;
+        double maxT = 1.0D;
+        minT = Math.max(minT, enterT(start.x(), end.x(), x, x + 1.0D));
+        maxT = Math.min(maxT, leaveT(start.x(), end.x(), x, x + 1.0D));
+        if (minT > maxT) return null;
+        minT = Math.max(minT, enterT(start.y(), end.y(), y, y + 1.0D));
+        maxT = Math.min(maxT, leaveT(start.y(), end.y(), y, y + 1.0D));
+        if (minT > maxT) return null;
+        minT = Math.max(minT, enterT(start.z(), end.z(), z, z + 1.0D));
+        maxT = Math.min(maxT, leaveT(start.z(), end.z(), z, z + 1.0D));
+        if (minT > maxT) return null;
+        MoldingVec3 span = end.subtract(start);
+        return new EdgeSegment(start.add(span.scale(minT)), start.add(span.scale(maxT)));
+    }
+
+    private static double enterT(double start, double end, double min, double max) {
+        double delta = end - start;
+        if (Math.abs(delta) <= 1.0E-12D) {
+            return start >= min - 1.0E-7D && start <= max + 1.0E-7D
+                ? Double.NEGATIVE_INFINITY
+                : Double.POSITIVE_INFINITY;
+        }
+        return delta > 0.0D ? (min - start) / delta : (max - start) / delta;
+    }
+
+    private static double leaveT(double start, double end, double min, double max) {
+        double delta = end - start;
+        if (Math.abs(delta) <= 1.0E-12D) {
+            return start >= min - 1.0E-7D && start <= max + 1.0E-7D
+                ? Double.POSITIVE_INFINITY
+                : Double.NEGATIVE_INFINITY;
+        }
+        return delta > 0.0D ? (max - start) / delta : (min - start) / delta;
+    }
+
+    private record EdgeSegment(MoldingVec3 start, MoldingVec3 end) {
+        private MoldingVec3 span() {
+            return this.end.subtract(this.start);
+        }
+    }
+
+    private static void checkIntersectingMaskMatchesCsg(EditableMoldingModel model, String label) {
+        var baked = MoldingModelBaker.bake(model);
+        MoldingVolumeMask optimized = MoldingModelBaker.createIntersectingVolumeMask(model, baked.volumeMask());
+        MoldingVolumeMask expected = baked.volumeMask().copy();
+        for (MoldingConvexHull hull : MoldingModelBaker.createManufacturedGeometry(model, 1.0D).collisionHulls()) {
+            MoldingConvexHull.Bounds bounds = hull.bounds();
+            int minX = Math.clamp((int) Math.floor(bounds.minimum().x()), 0, expected.sizeX() - 1);
+            int minY = Math.clamp((int) Math.floor(bounds.minimum().y()), 0, expected.sizeY() - 1);
+            int minZ = Math.clamp((int) Math.floor(bounds.minimum().z()), 0, expected.sizeZ() - 1);
+            int maxX = Math.clamp((int) Math.ceil(bounds.maximum().x()) - 1, 0, expected.sizeX() - 1);
+            int maxY = Math.clamp((int) Math.ceil(bounds.maximum().y()) - 1, 0, expected.sizeY() - 1);
+            int maxZ = Math.clamp((int) Math.ceil(bounds.maximum().z()) - 1, 0, expected.sizeZ() - 1);
+            for (int y = minY; y <= maxY; y++) {
+                for (int x = minX; x <= maxX; x++) {
+                    for (int z = minZ; z <= maxZ; z++) {
+                        if (!expected.get(x, y, z) && MoldingModelBaker.convexHullIntersectsCell(hull, x, y, z)) {
+                            expected.set(x, y, z);
+                        }
+                    }
+                }
+            }
+        }
+        check(optimized.volume() == expected.volume(),
+            label + " intersecting volume diverged: " + optimized.volume() + " vs " + expected.volume());
+        for (int y = 0; y < expected.sizeY(); y++) {
+            for (int x = 0; x < expected.sizeX(); x++) {
+                for (int z = 0; z < expected.sizeZ(); z++) {
+                    check(optimized.get(x, y, z) == expected.get(x, y, z),
+                        label + " intersecting cell diverged at " + x + "," + y + "," + z);
+                }
+            }
+        }
     }
 
     private record Placement(BlockPos relativeController, Direction front) {

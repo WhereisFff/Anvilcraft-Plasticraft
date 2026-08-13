@@ -13,6 +13,7 @@ import dev.anvilcraft.plasticraft.client.renderer.blockentity.BondedEntityBlockE
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.CondenserTowerBlockEntityRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.DroneStationRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.HighHeatFuelCauldronBlockEntityRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.blockentity.Plastic3DPrintingComponentRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.PlasticMoldingChamberRenderer;
 
 /** Plasticraft 方块实体注册。 */
@@ -30,6 +31,7 @@ public final class PlasticraftBlockEntities {
                 Plastic3DPrintingComponentBlockEntity::new
             )
             .validBlock(PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT)
+            .renderer(() -> Plastic3DPrintingComponentRenderer::new)
             .register();
 
     public static final BlockEntityEntry<PlasticMoldingChamberBlockEntity> PLASTIC_MOLDING_CHAMBER = AnvilcraftPlasticraft.REGISTRUM

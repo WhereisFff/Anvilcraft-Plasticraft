@@ -307,6 +307,57 @@ public final class PlasticConvexCollisionOutline {
         }
     }
 
+    /** 朝向局部棱线的紧凑顶点，渲染时只叠加平移，避免推动时按世界坐标重建。 */
+    public static final class PackedOutline {
+        public static final PackedOutline EMPTY = new PackedOutline(new float[0]);
+        public static final int STRIDE = 9;
+
+        private final float[] vertices;
+
+        private PackedOutline(float[] vertices) {
+            this.vertices = vertices;
+        }
+
+        public static PackedOutline of(List<Segment> segments) {
+            Objects.requireNonNull(segments, "segments");
+            if (segments.isEmpty()) return EMPTY;
+            float[] vertices = new float[segments.size() * STRIDE];
+            int offset = 0;
+            for (Segment segment : segments) {
+                double deltaX = segment.end().x - segment.start().x;
+                double deltaY = segment.end().y - segment.start().y;
+                double deltaZ = segment.end().z - segment.start().z;
+                double length = Math.sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
+                if (length <= GEOMETRY_EPSILON) continue;
+                vertices[offset] = (float) segment.start().x;
+                vertices[offset + 1] = (float) segment.start().y;
+                vertices[offset + 2] = (float) segment.start().z;
+                vertices[offset + 3] = (float) segment.end().x;
+                vertices[offset + 4] = (float) segment.end().y;
+                vertices[offset + 5] = (float) segment.end().z;
+                vertices[offset + 6] = (float) (deltaX / length);
+                vertices[offset + 7] = (float) (deltaY / length);
+                vertices[offset + 8] = (float) (deltaZ / length);
+                offset += STRIDE;
+            }
+            if (offset == 0) return EMPTY;
+            if (offset != vertices.length) {
+                float[] packed = new float[offset];
+                System.arraycopy(vertices, 0, packed, 0, offset);
+                vertices = packed;
+            }
+            return new PackedOutline(vertices);
+        }
+
+        public boolean isEmpty() {
+            return this.vertices.length == 0;
+        }
+
+        public float[] vertices() {
+            return this.vertices;
+        }
+    }
+
     private record Interval(double minimum, double maximum) {
     }
 }

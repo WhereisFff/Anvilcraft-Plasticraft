@@ -23,6 +23,28 @@ public final class PlasticCollisionOutlineRenderer {
         renderOutline(poseStack, consumer, collisionBox, translation, 0.0F, 0.0F, 0.0F, SELECTION_ALPHA);
     }
 
+    public static void renderSelectionOutline(
+        PoseStack poseStack,
+        VertexConsumer consumer,
+        PlasticConvexCollisionOutline.PackedOutline outline,
+        double translationX,
+        double translationY,
+        double translationZ
+    ) {
+        renderPackedOutline(
+            poseStack,
+            consumer,
+            outline,
+            translationX,
+            translationY,
+            translationZ,
+            0.0F,
+            0.0F,
+            0.0F,
+            SELECTION_ALPHA
+        );
+    }
+
     public static void renderOutline(
         PoseStack poseStack,
         VertexConsumer consumer,
@@ -34,10 +56,62 @@ public final class PlasticCollisionOutlineRenderer {
         float alpha
     ) {
         if (collisionBox.hasConvexComponents()) {
-            renderConvexOutline(poseStack.last(), consumer, collisionBox, translation, red, green, blue, alpha);
+            renderPackedOutline(
+                poseStack,
+                consumer,
+                collisionBox.packedOutline(),
+                translation.x,
+                translation.y,
+                translation.z,
+                red,
+                green,
+                blue,
+                alpha
+            );
             return;
         }
         renderVoxelOutline(poseStack.last(), consumer, collisionBox, translation, red, green, blue, alpha);
+    }
+
+    public static void renderPackedOutline(
+        PoseStack poseStack,
+        VertexConsumer consumer,
+        PlasticConvexCollisionOutline.PackedOutline outline,
+        double translationX,
+        double translationY,
+        double translationZ,
+        float red,
+        float green,
+        float blue,
+        float alpha
+    ) {
+        if (outline.isEmpty()) return;
+        PoseStack.Pose pose = poseStack.last();
+        float offsetX = (float) translationX;
+        float offsetY = (float) translationY;
+        float offsetZ = (float) translationZ;
+        float[] vertices = outline.vertices();
+        for (int offset = 0; offset < vertices.length; offset += PlasticConvexCollisionOutline.PackedOutline.STRIDE) {
+            float normalX = vertices[offset + 6];
+            float normalY = vertices[offset + 7];
+            float normalZ = vertices[offset + 8];
+            consumer.addVertex(
+                    pose,
+                    vertices[offset] + offsetX,
+                    vertices[offset + 1] + offsetY,
+                    vertices[offset + 2] + offsetZ
+                )
+                .setColor(red, green, blue, alpha)
+                .setNormal(pose, normalX, normalY, normalZ);
+            consumer.addVertex(
+                    pose,
+                    vertices[offset + 3] + offsetX,
+                    vertices[offset + 4] + offsetY,
+                    vertices[offset + 5] + offsetZ
+                )
+                .setColor(red, green, blue, alpha)
+                .setNormal(pose, normalX, normalY, normalZ);
+        }
     }
 
     private static void renderVoxelOutline(
@@ -76,31 +150,5 @@ public final class PlasticCollisionOutlineRenderer {
                 .setColor(red, green, blue, alpha)
                 .setNormal(pose, normalX, normalY, normalZ);
         });
-    }
-
-    private static void renderConvexOutline(
-        PoseStack.Pose pose,
-        VertexConsumer consumer,
-        PlasticEntityCollisionBox collisionBox,
-        Vec3 translation,
-        float red,
-        float green,
-        float blue,
-        float alpha
-    ) {
-        for (PlasticConvexCollisionOutline.Segment segment : collisionBox.convexOutline()) {
-            Vec3 start = segment.start().add(translation);
-            Vec3 end = segment.end().add(translation);
-            Vec3 delta = end.subtract(start);
-            double length = delta.length();
-            if (length == 0.0D) continue;
-            Vec3 normal = delta.scale(1.0D / length);
-            consumer.addVertex(pose, (float) start.x, (float) start.y, (float) start.z)
-                .setColor(red, green, blue, alpha)
-                .setNormal(pose, (float) normal.x, (float) normal.y, (float) normal.z);
-            consumer.addVertex(pose, (float) end.x, (float) end.y, (float) end.z)
-                .setColor(red, green, blue, alpha)
-                .setNormal(pose, (float) normal.x, (float) normal.y, (float) normal.z);
-        }
     }
 }

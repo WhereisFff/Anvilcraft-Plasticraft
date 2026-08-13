@@ -1515,18 +1515,31 @@ public final class AdhesiveBondingService {
         if (!placedStates.containsKey(adhesivePart)) return false;
 
         List<BlockPos> placed = new ArrayList<>();
-        for (Map.Entry<BlockPos, BlockState> entry : placedStates.entrySet()) {
-            if (!level.setBlock(entry.getKey(), entry.getValue(), Block.UPDATE_ALL)) {
+        boolean previousSuppressDrops = GiantAnvilBlock.SUPPRESS_DROPS.get();
+        GiantAnvilBlock.SUPPRESS_DROPS.set(true);
+        try {
+            for (Map.Entry<BlockPos, BlockState> entry : placedStates.entrySet()) {
+                if (!level.setBlock(entry.getKey(), entry.getValue(), Block.UPDATE_CLIENTS, 0)) {
+                    rollbackGiantAnvil(level, placed, replacedStates);
+                    return false;
+                }
+                placed.add(entry.getKey());
+            }
+            if (!BondedFallingBlocks.connect(level, supportPos, adhesivePart)) {
                 rollbackGiantAnvil(level, placed, replacedStates);
                 return false;
             }
-            placed.add(entry.getKey());
+            for (BlockPos pos : placed) {
+                BlockState state = level.getBlockState(pos);
+                BlockState replaced = replacedStates.getOrDefault(pos, Blocks.AIR.defaultBlockState());
+                level.sendBlockUpdated(pos, replaced, state, Block.UPDATE_ALL);
+                state.updateNeighbourShapes(level, pos, Block.UPDATE_ALL);
+                level.updateNeighborsAt(pos, state.getBlock());
+            }
+            return true;
+        } finally {
+            GiantAnvilBlock.SUPPRESS_DROPS.set(previousSuppressDrops);
         }
-        if (!BondedFallingBlocks.connect(level, supportPos, adhesivePart)) {
-            rollbackGiantAnvil(level, placed, replacedStates);
-            return false;
-        }
-        return true;
     }
 
     private static void rollbackGiantAnvil(
@@ -1534,9 +1547,25 @@ public final class AdhesiveBondingService {
         List<BlockPos> placed,
         Map<BlockPos, BlockState> replacedStates
     ) {
-        for (BlockPos pos : placed) {
-            BondedFallingBlocks.removeAll(level, pos);
-            level.setBlock(pos, replacedStates.getOrDefault(pos, Blocks.AIR.defaultBlockState()), Block.UPDATE_ALL);
+        boolean previousSuppressDrops = GiantAnvilBlock.SUPPRESS_DROPS.get();
+        GiantAnvilBlock.SUPPRESS_DROPS.set(true);
+        try {
+            for (BlockPos pos : placed) {
+                BondedFallingBlocks.removeAll(level, pos);
+                level.setBlock(
+                    pos,
+                    replacedStates.getOrDefault(pos, Blocks.AIR.defaultBlockState()),
+                    Block.UPDATE_CLIENTS,
+                    0
+                );
+            }
+            for (BlockPos pos : placed) {
+                BlockState state = level.getBlockState(pos);
+                state.updateNeighbourShapes(level, pos, Block.UPDATE_ALL);
+                level.updateNeighborsAt(pos, state.getBlock());
+            }
+        } finally {
+            GiantAnvilBlock.SUPPRESS_DROPS.set(previousSuppressDrops);
         }
     }
 

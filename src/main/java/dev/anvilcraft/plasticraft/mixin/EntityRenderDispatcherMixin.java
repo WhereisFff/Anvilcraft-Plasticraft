@@ -4,6 +4,8 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticCollisionOutlineRenderer;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexCollisionOutline;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
@@ -28,6 +30,28 @@ abstract class EntityRenderDispatcherMixin {
         CallbackInfo ci
     ) {
         if (!(entity instanceof ShapedCollisionEntity shaped)) return;
+
+        if (entity instanceof AbstractPlasticEntity plastic) {
+            PlasticConvexCollisionOutline.PackedOutline outline = plastic.plasticraft$getCollisionOutline();
+            if (!outline.isEmpty()) {
+                Vec3 origin = plastic.plasticraft$getGeometry().entityOrigin();
+                PlasticCollisionOutlineRenderer.renderPackedOutline(
+                    poseStack,
+                    buffer,
+                    outline,
+                    -origin.x,
+                    -origin.y,
+                    -origin.z,
+                    red,
+                    green,
+                    blue,
+                    1.0F
+                );
+                renderDirectionVector(poseStack, buffer, entity, partialTick);
+                ci.cancel();
+                return;
+            }
+        }
 
         PlasticCollisionOutlineRenderer.renderOutline(
             poseStack,

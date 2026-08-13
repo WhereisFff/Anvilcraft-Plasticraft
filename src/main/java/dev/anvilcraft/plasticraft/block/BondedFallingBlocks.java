@@ -103,7 +103,6 @@ public final class BondedFallingBlocks {
         Direction opposite = direction.getOpposite();
         BlockAdhesionState firstState = currentAdhesion(level, first, firstBlock);
         BlockAdhesionState secondState = currentAdhesion(level, second, secondBlock);
-        if (firstState.hasEntityBond(direction) || secondState.hasEntityBond(opposite)) return false;
         boolean invisible = firstState.isInvisible(direction) || secondState.isInvisible(opposite);
         BlockAdhesionState firstBond = firstState.withBlockBond(direction);
         BlockAdhesionState secondBond = secondState.withBlockBond(opposite);
@@ -135,7 +134,6 @@ public final class BondedFallingBlocks {
         BlockState blockState = level.getBlockState(pos);
         if (blockState.isAir()) return false;
         if (state == null || !state.matches(blockState)) state = BlockAdhesionState.empty(blockState);
-        if (state.hasBlockBond(face)) return false;
         putAdhesion(level, pos, state.withEntityBond(face));
         return true;
     }

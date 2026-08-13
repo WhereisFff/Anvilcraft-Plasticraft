@@ -18,6 +18,7 @@ import dev.anvilcraft.plasticraft.client.molding.scene.EditorScenePart;
 import dev.anvilcraft.plasticraft.client.molding.scene.EditorVertex;
 import dev.anvilcraft.plasticraft.client.molding.scene.PrintingViewportScene;
 import dev.anvilcraft.plasticraft.client.molding.scene.ViewportFrame;
+import dev.anvilcraft.plasticraft.client.renderer.blockentity.Plastic3DPrintingComponentRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.PlasticMoldingChamberRenderer;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrinterMotion;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
@@ -246,6 +247,14 @@ public final class MoldingViewportBackend1211 implements MoldingViewportBackend 
             this.blockBuffers,
             scene.packedLight(),
             OverlayTexture.NO_OVERLAY
+        );
+        Plastic3DPrintingComponentRenderer.renderDynamicParts(
+            scene.componentState(),
+            scene.componentFluid(),
+            componentPose,
+            this.blockBuffers,
+            scene.packedLight(),
+            Minecraft.getInstance().getBlockRenderer()
         );
 
         renderPrinterModel(

@@ -10,12 +10,16 @@
 			"parent": "anvilcraftplasticraft:block/plastic_molding_chamber_body",
 			"render_type": "minecraft:cutout"
 		},
+		"light": {
+			"parent": "anvilcraftplasticraft:block/plastic_molding_chamber_light",
+			"render_type": "minecraft:cutout"
+		},
 		"electric": {
 			"parent": "anvilcraftplasticraft:block/plastic_molding_chamber_electric",
 			"render_type": "minecraft:translucent"
 		}
 	},
-	"item_render_order": ["body", "electric"],
+	"item_render_order": ["body", "light", "electric"],
 	"display": {
 		"thirdperson_righthand": {
 			"rotation": [75, 45, 0],

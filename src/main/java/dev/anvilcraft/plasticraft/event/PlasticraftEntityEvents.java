@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.event;
 import dev.anvilcraft.lib.v2.recipe.event.ItemCacheEvent;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
@@ -11,10 +12,12 @@ import dev.anvilcraft.plasticraft.entity.physics.PlasticFluidPhysics;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.anvilcraft.plasticraft.recipe.EscapingVaporEffects;
 import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
+import dev.dubhe.anvilcraft.api.event.EntityThroughPortalEvent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
@@ -22,6 +25,13 @@ import net.neoforged.neoforge.event.tick.EntityTickEvent;
 @EventBusSubscriber(modid = AnvilcraftPlasticraft.MOD_ID)
 public final class PlasticraftEntityEvents {
     private PlasticraftEntityEvents() {
+    }
+
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void keepPlasticEntityThroughPortal(EntityThroughPortalEvent event) {
+        if (event.getEntity() instanceof AbstractPlasticEntity plastic) {
+            plastic.rejectPortalConversion();
+        }
     }
 
     @SubscribeEvent

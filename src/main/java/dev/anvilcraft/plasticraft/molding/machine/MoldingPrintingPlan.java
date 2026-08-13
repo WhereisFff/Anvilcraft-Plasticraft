@@ -6,37 +6,24 @@ import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /** 将烘焙模型转换为打印头逐像素执行的稳定扫描计划。 */
-public record MoldingPrintingPlan(MoldingVolumeMask voxelMask, int[] order) {
+public record MoldingPrintingPlan(String modelHash, MoldingVolumeMask voxelMask, int[] order) {
     private static final double EPSILON = 1.0E-7D;
+    private static final int CACHE_LIMIT = 128;
+    private static final Map<String, MoldingPrintingPlan> CACHE = new LinkedHashMap<>(CACHE_LIMIT, 0.75F, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, MoldingPrintingPlan> eldest) {
+            return this.size() > CACHE_LIMIT;
+        }
+    };
 
     public MoldingPrintingPlan {
+        modelHash = modelHash == null ? "" : modelHash;
         voxelMask = voxelMask.copy();
         order = order.clone();
-    }
-
-    @Override
-    public MoldingVolumeMask voxelMask() {
-        return this.voxelMask.copy();
-    }
-
-    @Override
-    public int[] order() {
-        return this.order.clone();
-    }
-
-    public MoldingVolumeMask prefix(int count) {
-        MoldingVolumeMask result = new MoldingVolumeMask(
-            this.voxelMask.sizeX(),
-            this.voxelMask.sizeY(),
-            this.voxelMask.sizeZ()
-        );
-        int limit = Math.clamp(count, 0, this.order.length);
-        for (int index = 0; index < limit; index++) {
-            int cell = this.order[index];
-            result.set(this.voxelMask.xOf(cell), this.voxelMask.yOf(cell), this.voxelMask.zOf(cell));
-        }
-        return result;
     }
 
     public int size() {
@@ -57,6 +44,13 @@ public record MoldingPrintingPlan(MoldingVolumeMask voxelMask, int[] order) {
     }
 
     public static MoldingPrintingPlan create(EditableMoldingModel model, BakedMoldingModel baked) {
+        String hash = baked.modelHash();
+        if (!hash.isEmpty()) {
+            synchronized (CACHE) {
+                MoldingPrintingPlan cached = CACHE.get(hash);
+                if (cached != null) return cached;
+            }
+        }
         MoldingVolumeMask mask = MoldingModelBaker.createIntersectingVolumeMask(model, baked.volumeMask());
         for (MoldingQuad quad : baked.surfaceMesh()) {
             if (quad.doubleSided()) rasterizeSurface(mask, quad);
@@ -76,7 +70,15 @@ public record MoldingPrintingPlan(MoldingVolumeMask voxelMask, int[] order) {
         if (orderIndex != order.length) {
             throw new IllegalStateException("Molding printing plan volume changed while scanning");
         }
-        return new MoldingPrintingPlan(mask, order);
+        MoldingPrintingPlan plan = new MoldingPrintingPlan(hash, mask, order);
+        if (!hash.isEmpty()) {
+            synchronized (CACHE) {
+                MoldingPrintingPlan cached = CACHE.get(hash);
+                if (cached != null) return cached;
+                CACHE.put(hash, plan);
+            }
+        }
+        return plan;
     }
 
     private static void rasterizeSurface(MoldingVolumeMask mask, MoldingQuad quad) {

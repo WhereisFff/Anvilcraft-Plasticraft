@@ -37,6 +37,7 @@
     "PlasmaJetsBlockMixin",
     "PlasmaJetsBlockEntityMixin",
     "PistonBaseBlockMixin",
+    "PistonMovingBlockEntityMixin",
     "PistonStructureResolverMixin",
     "PulseGeneratorMenuMixin",
     "PlayerEdgeCollisionMixin",
@@ -52,11 +53,13 @@
   "client": [
     "AbstractLiquidCategoryMixin",
     "CreativeModeInventoryScreenMixin",
+    "DiskSlotClickScreenMixin",
     "DiskSlotTintMixin",
     "EntityRenderDispatcherMixin",
     "FishTankBlockEntityRendererMixin",
     "LargeCauldronBlockEntityRendererMixin",
     "PlasmaJetsBlockEntityClientMixin",
+    "PistonHeadRendererMixin",
     "RecipeUtilMixin",
     "StructureDiskPreviewSupportMixin"
   ],

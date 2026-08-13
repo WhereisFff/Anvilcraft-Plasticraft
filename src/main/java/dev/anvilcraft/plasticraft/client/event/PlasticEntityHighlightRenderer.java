@@ -1,8 +1,9 @@
 package dev.anvilcraft.plasticraft.client.event;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticCollisionOutlineRenderer;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexCollisionOutline;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.world.entity.Entity;
@@ -22,19 +23,31 @@ public final class PlasticEntityHighlightRenderer {
     public static void renderEntityHighlight(RenderHighlightEvent.Entity event) {
         if (Minecraft.getInstance().options.hideGui) return;
         Entity entity = event.getTarget().getEntity();
-        if (!(entity instanceof ShapedCollisionEntity shaped)) return;
+        if (!(entity instanceof AbstractPlasticEntity plastic)) return;
 
+        PlasticConvexCollisionOutline.PackedOutline outline = plastic.plasticraft$getCollisionOutline();
         float partialTick = event.getDeltaTracker().getGameTimeDeltaPartialTick(
             !entity.level().tickRateManager().isEntityFrozen(entity)
         );
-        Vec3 translation = entity.getPosition(partialTick)
-            .subtract(entity.position())
-            .subtract(event.getCamera().getPosition());
+        Vec3 interpolated = entity.getPosition(partialTick);
+        Vec3 camera = event.getCamera().getPosition();
+        if (!outline.isEmpty()) {
+            Vec3 origin = plastic.plasticraft$getGeometry().entityOrigin();
+            PlasticCollisionOutlineRenderer.renderSelectionOutline(
+                event.getPoseStack(),
+                event.getMultiBufferSource().getBuffer(RenderType.lines()),
+                outline,
+                interpolated.x - origin.x - camera.x,
+                interpolated.y - origin.y - camera.y,
+                interpolated.z - origin.z - camera.z
+            );
+            return;
+        }
         PlasticCollisionOutlineRenderer.renderSelectionOutline(
             event.getPoseStack(),
             event.getMultiBufferSource().getBuffer(RenderType.lines()),
-            shaped.plasticraft$getCollisionBox(),
-            translation
+            plastic.plasticraft$getCollisionBox(),
+            interpolated.subtract(entity.position()).subtract(camera)
         );
     }
 }

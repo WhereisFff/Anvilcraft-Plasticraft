@@ -13,7 +13,10 @@ import dev.anvilcraft.plasticraft.blueprint.LitematicaImporter;
 import dev.anvilcraft.plasticraft.blueprint.ScannerDiskImporter;
 import dev.anvilcraft.plasticraft.blueprint.StructureSnapshot;
 import dev.anvilcraft.plasticraft.blueprint.StructureSnapshotCodec;
+import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItems;
+import dev.dubhe.anvilcraft.item.property.component.StructureDiskData;
+import dev.dubhe.anvilcraft.util.StructureLoadUtil;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
@@ -45,10 +48,12 @@ import net.neoforged.testframework.gametest.GameTestPlayer;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * 覆盖施工蓝图的数据层与服务层:规范快照哈希的来源无关性、导入校验的显式报错、
  * 结构方块模板导入、扫描器坐标归一化、部署生命周期与每玩家单活动约束。
+ * 告示牌/熔岩/实体进入快照后由客户端投影渲染,本类只锁数据契约。
  */
 public final class BlueprintConstructionGameTests {
     private BlueprintConstructionGameTests() {
@@ -219,6 +224,19 @@ public final class BlueprintConstructionGameTests {
             );
             CompoundTag tag = template.save(new CompoundTag());
             ItemStack disk = new ItemStack(ModItems.STRUCTURE_DISK.get());
+            disk.set(
+                ModComponents.STRUCTURE_DISK_DATA,
+                new StructureDiskData(
+                    "old_scan_00000000-0000-0000-0000-000000000000.nbt",
+                    "structure_1786621645655",
+                    UUID.fromString("00000000-0000-0000-0000-000000000000"),
+                    Direction.SOUTH,
+                    9,
+                    9,
+                    9,
+                    true
+                )
+            );
             try {
                 ConstructionBlueprintService.ImportResult result = ConstructionBlueprintService.importIntoDisk(
                     helper.getLevel().getServer(),
@@ -238,6 +256,25 @@ public final class BlueprintConstructionGameTests {
                 check(
                     ConstructionBlueprintData.get(disk).isPresent(),
                     "blueprint component was not written to the disk"
+                );
+                StructureDiskData vanilla = disk.get(ModComponents.STRUCTURE_DISK_DATA);
+                check(vanilla != null, "vanilla structure disk data missing after import");
+                check(vanilla.name().equals("test_template"), "structure name was " + vanilla.name());
+                check(
+                    vanilla.sizeX() == 1 && vanilla.sizeY() == 1 && vanilla.sizeZ() == 2,
+                    "vanilla size mismatch: " + vanilla.sizeX() + "x" + vanilla.sizeY() + "x" + vanilla.sizeZ()
+                );
+                check(
+                    vanilla.direction() == Direction.NORTH && !vanilla.upsideDown(),
+                    "scanner facing leaked into the blueprint disk"
+                );
+                StructureLoadUtil.StructureData loaded = StructureLoadUtil.loadStructureFromDisk(
+                    helper.getLevel(),
+                    disk
+                );
+                check(
+                    loaded != null && !loaded.isEmpty(),
+                    "vanilla structure file could not be loaded for preview or smart block placer"
                 );
 
                 // 结构库中的规范内容能重新解析,方块实体数据仍在。
@@ -332,6 +369,28 @@ public final class BlueprintConstructionGameTests {
             mirroredPos.equals(anchor.offset(1, 0, -2)),
             "left-right mirror should negate Z: " + mirroredPos.toShortString()
         );
+
+        BlueprintPlacement rotatedPlacement = new BlueprintPlacement(anchor, Rotation.CLOCKWISE_90, Mirror.NONE);
+        BlockPos snapshotLocal = new BlockPos(2, 1, 1);
+        check(
+            rotatedPlacement.worldOf(snapshotLocal).equals(rotatedPlacement.localOf(snapshotLocal).offset(anchor)),
+            "worldOf must equal localOf plus the anchor"
+        );
+
+        // 矿车等实体必须留在变换后方块格内;原版 Vec3 transform 会把格内小数甩到邻格。
+        Vec3 minecart = new Vec3(2.5D, 0.0625D, 3.5D);
+        BlockPos minecartBlock = new BlockPos(2, 0, 3);
+        for (Rotation rotation : Rotation.values()) {
+            for (Mirror mirror : Mirror.values()) {
+                BlueprintPlacement placement = new BlueprintPlacement(BlockPos.ZERO, rotation, mirror);
+                Vec3 local = placement.localOf(minecart, minecartBlock);
+                check(
+                    BlockPos.containing(local).equals(placement.localOf(minecartBlock)),
+                    "entity local " + local + " left block " + placement.localOf(minecartBlock)
+                        + " after " + rotation + "/" + mirror
+                );
+            }
+        }
         helper.succeed();
     }
 
@@ -429,6 +488,93 @@ public final class BlueprintConstructionGameTests {
         }).thenSucceed();
     }
 
+    /** 未部署但手持磁盘的哈希允许读取结构库,随机哈希拒绝,部署后仍可读。 */
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Snapshot reads are allowed for a held imported disk before and after deploy")
+    static void snapshotReadableFromHeldDiskBeforeDeploy(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                ItemStack disk = importSampleDisk(helper, "preview");
+                String hash = ConstructionBlueprintData.get(disk)
+                    .map(ConstructionBlueprintData::hash)
+                    .orElseThrow(() -> new GameTestAssertException("imported disk has no hash"));
+                player.setItemInHand(InteractionHand.MAIN_HAND, disk);
+                check(
+                    ConstructionBlueprintService.canReadSnapshot(player, hash),
+                    "held imported disk must be readable before deploy so the placement preview can load"
+                );
+                check(
+                    !ConstructionBlueprintService.canReadSnapshot(player, "a".repeat(64)),
+                    "an unrelated hash must not be readable"
+                );
+
+                ConstructionJob job = ConstructionBlueprintService.deploy(
+                    player,
+                    InteractionHand.MAIN_HAND,
+                    helper.absolutePos(new BlockPos(1, 2, 1)),
+                    Rotation.NONE,
+                    Mirror.NONE
+                );
+                check(
+                    ConstructionBlueprintService.canReadSnapshot(player, job.hash()),
+                    "deployed job hash must remain readable"
+                );
+                ConstructionBlueprintService.cancel(player, job.jobId());
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException(
+                    "snapshot access failed: " + exception.reason() + " " + exception.detail()
+                );
+            }
+        }).thenSucceed();
+    }
+
+    /** 对已部署磁盘覆盖导入会移除旧投影,磁盘不再引用被删任务。 */
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Re-importing a deployed disk removes the previous world projection")
+    static void reimportingDiskRemovesPreviousDeployment(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                ItemStack disk = importSampleDisk(helper, "first");
+                player.setItemInHand(InteractionHand.MAIN_HAND, disk);
+                ConstructionJob job = ConstructionBlueprintService.deploy(
+                    player,
+                    InteractionHand.MAIN_HAND,
+                    helper.absolutePos(new BlockPos(1, 2, 1)),
+                    Rotation.NONE,
+                    Mirror.NONE
+                );
+                ConstructionJobIndex index = ConstructionJobIndex.get(helper.getLevel().getServer());
+                check(index.job(job.jobId()) != null, "deployed job missing before reimport");
+
+                CompoundTag replacement = sampleStructureNbt(false);
+                replacement.getList("blocks", Tag.TAG_COMPOUND).remove(1);
+                ConstructionBlueprintService.importIntoDisk(
+                    helper.getLevel().getServer(),
+                    player.getItemInHand(InteractionHand.MAIN_HAND),
+                    replacement,
+                    "replacement",
+                    BlueprintSource.VANILLA_FILE
+                );
+                check(index.job(job.jobId()) == null, "reimport left the previous projection in the world");
+                check(
+                    ConstructionBlueprintData.get(player.getItemInHand(InteractionHand.MAIN_HAND))
+                        .flatMap(ConstructionBlueprintData::jobId)
+                        .isEmpty(),
+                    "reimport must not keep the deleted job id on the disk"
+                );
+                check(index.jobs().isEmpty(), "index should have no leftover jobs after reimport");
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException(
+                    "reimport cleanup failed: " + exception.reason() + " " + exception.detail()
+                );
+            }
+        }).thenSucceed();
+    }
+
     private static ItemStack importSampleDisk(ExtendedGameTestHelper helper, String name)
         throws ConstructionBlueprintException {
         ItemStack disk = new ItemStack(ModItems.STRUCTURE_DISK.get());
@@ -474,6 +620,55 @@ public final class BlueprintConstructionGameTests {
             check(
                 fromLitematic.snapshot().size().equals(new Vec3i(3, 2, 2)),
                 "litematic union size wrong: " + fromLitematic.snapshot().size()
+            );
+        } catch (ConstructionBlueprintException exception) {
+            throw new GameTestAssertException(
+                "conversion failed: " + exception.reason() + " " + exception.detail()
+            );
+        }
+        helper.succeed();
+    }
+
+    /** Litematica 实体 Pos 相对区域 Position(选区角点),负尺寸时该角点不是最小角。 */
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Litematica entities stay relative to region origin rather than min corner")
+    static void litematicEntitiesFollowRegionOrigin(ExtendedGameTestHelper helper) {
+        CompoundTag root = new CompoundTag();
+        root.putInt("Version", 6);
+        root.putInt("MinecraftDataVersion", currentDataVersion());
+        CompoundTag region = new CompoundTag();
+        region.put("Position", vecTag(5, 0, 2));
+        region.put("Size", vecTag(-5, 1, 1));
+        ListTag palette = new ListTag();
+        palette.add(namedState("minecraft:stone"));
+        region.put("BlockStatePalette", palette);
+        region.putLongArray("BlockStates", new long[]{0L});
+        region.put("TileEntities", new ListTag());
+        CompoundTag stand = new CompoundTag();
+        stand.putString("id", "minecraft:armor_stand");
+        ListTag pos = new ListTag();
+        pos.add(DoubleTag.valueOf(0.5D));
+        pos.add(DoubleTag.valueOf(0.0D));
+        pos.add(DoubleTag.valueOf(0.5D));
+        stand.put("Pos", pos);
+        ListTag entities = new ListTag();
+        entities.add(stand);
+        region.put("Entities", entities);
+        CompoundTag regions = new CompoundTag();
+        regions.put("a", region);
+        root.put("Regions", regions);
+        try {
+            LitematicaImporter.ConvertedStructure converted = LitematicaImporter.convert(root);
+            StructureSnapshot snapshot = StructureSnapshotCodec.parse(
+                converted.structureTag(),
+                helper.getLevel().registryAccess()
+            ).snapshot();
+            check(snapshot.entities().size() == 1, "expected one entity");
+            Vec3 entityPos = snapshot.entities().getFirst().pos();
+            check(
+                entityPos.equals(new Vec3(4.5D, 0.0D, 0.5D)),
+                "entity should follow region Position, got " + entityPos
             );
         } catch (ConstructionBlueprintException exception) {
             throw new GameTestAssertException(
@@ -660,6 +855,92 @@ public final class BlueprintConstructionGameTests {
         blockPos.add(IntTag.valueOf(0));
         entry.put("blockPos", blockPos);
         entry.put("nbt", armorStandNbt());
+        entities.add(entry);
+        tag.put("entities", entities);
+        return tag;
+    }
+
+    /** 告示牌方块实体、熔岩流体与苦力怕实体都进入规范快照,供投影按原外观绘制。 */
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Snapshots keep wall signs, hanging signs, lava and creeper entities")
+    static void snapshotKeepsSignsFluidsAndEntities(ExtendedGameTestHelper helper) {
+        try {
+            StructureSnapshotCodec.ParsedSnapshot parsed = StructureSnapshotCodec.parse(
+                signsFluidsAndCreeperStructure(),
+                helper.getLevel().registryAccess()
+            );
+            StructureSnapshot snapshot = parsed.snapshot();
+            check(snapshot.hasBlockEntities(), "sign block entity NBT was lost");
+            check(snapshot.hasEntities(), "creeper entity was lost");
+            boolean wallSign = false;
+            boolean hangingSign = false;
+            boolean lava = false;
+            boolean signNbt = false;
+            for (StructureSnapshot.BlockEntry entry : snapshot.blocks()) {
+                BlockState state = snapshot.stateOf(entry);
+                if (state.is(Blocks.OAK_WALL_SIGN)) {
+                    wallSign = true;
+                    signNbt |= entry.nbt().isPresent();
+                }
+                if (state.is(Blocks.OAK_WALL_HANGING_SIGN)) hangingSign = true;
+                if (state.is(Blocks.LAVA)) lava = true;
+            }
+            check(wallSign, "wall sign missing from palette/blocks");
+            check(hangingSign, "hanging sign missing from palette/blocks");
+            check(lava, "lava missing from palette/blocks");
+            check(signNbt, "wall sign lost its block entity NBT");
+            check(
+                snapshot.entities().getFirst().nbt().getString("id").equals("minecraft:creeper"),
+                "creeper id was " + snapshot.entities().getFirst().nbt().getString("id")
+            );
+        } catch (ConstructionBlueprintException exception) {
+            throw new GameTestAssertException("sign/fluid/entity snapshot failed: " + exception.reason());
+        }
+        helper.succeed();
+    }
+
+    private static CompoundTag signsFluidsAndCreeperStructure() {
+        CompoundTag tag = new CompoundTag();
+        ListTag size = new ListTag();
+        size.add(IntTag.valueOf(2));
+        size.add(IntTag.valueOf(2));
+        size.add(IntTag.valueOf(1));
+        tag.put("size", size);
+
+        ListTag palette = new ListTag();
+        palette.add(namedState("minecraft:oak_log"));
+        palette.add(namedState("minecraft:oak_wall_sign"));
+        palette.add(namedState("minecraft:oak_wall_hanging_sign"));
+        palette.add(namedState("minecraft:lava"));
+        tag.put("palette", palette);
+
+        ListTag blocks = new ListTag();
+        blocks.add(blockEntry(0, 0, 0, 0));
+        CompoundTag wallSign = blockEntry(0, 1, 0, 1);
+        CompoundTag signNbt = new CompoundTag();
+        signNbt.putString("id", "minecraft:sign");
+        wallSign.put("nbt", signNbt);
+        blocks.add(wallSign);
+        blocks.add(blockEntry(1, 1, 0, 2));
+        blocks.add(blockEntry(1, 0, 0, 3));
+        tag.put("blocks", blocks);
+
+        ListTag entities = new ListTag();
+        CompoundTag entry = new CompoundTag();
+        ListTag pos = new ListTag();
+        pos.add(DoubleTag.valueOf(0.5D));
+        pos.add(DoubleTag.valueOf(0.0D));
+        pos.add(DoubleTag.valueOf(0.5D));
+        entry.put("pos", pos);
+        ListTag blockPos = new ListTag();
+        blockPos.add(IntTag.valueOf(0));
+        blockPos.add(IntTag.valueOf(0));
+        blockPos.add(IntTag.valueOf(0));
+        entry.put("blockPos", blockPos);
+        CompoundTag creeper = new CompoundTag();
+        creeper.putString("id", "minecraft:creeper");
+        entry.put("nbt", creeper);
         entities.add(entry);
         tag.put("entities", entities);
         return tag;

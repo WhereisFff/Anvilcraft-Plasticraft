@@ -39,6 +39,7 @@ public final class AdhesiveFallingBlockBehavior {
     /** 返回是否应跳过本刻；作为粘合组基准的下落方块仍保留自身运动。 */
     public static boolean beforeTick(FallingBlockEntity entity) {
         if (entity instanceof AbstractPlasticEntity) return false;
+        if (entity.isRemoved()) return true;
 
         boolean hasBonds = EntityBondManager.hasBonds(entity);
         boolean controlled = entity.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
