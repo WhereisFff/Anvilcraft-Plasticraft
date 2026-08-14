@@ -2,14 +2,17 @@ package dev.anvilcraft.plasticraft.allay.tool;
 
 import dev.anvilcraft.plasticraft.allay.AllayFlightState;
 import dev.anvilcraft.plasticraft.allay.AllayWorkMotions;
+import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionDebris;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobIndex;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobProgress;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobStore;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionMaterialAccess;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionWaitReason;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -89,6 +92,7 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
+        if (!ConstructionJobController.canClaimJob(worker, progress)) return false;
         if (worker.isCollectionFull()) return false;
         ItemEntity current = leasedItem(level, progress, worker.getUUID());
         if (current != null) return true;
@@ -264,6 +268,10 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
         for (ItemEntity entity : items) {
             if (!entity.isAlive() || entity.hasPickUpDelay() || entity.getItem().isEmpty()) continue;
             if (worker.distanceTo(entity) > FREE_RANGE) continue;
+            if (progress != null) {
+                ConstructionDebris mark = ConstructionDebris.get(entity.getItem());
+                if (mark == null || !mark.jobId().equals(progress.jobId())) continue;
+            }
             if (!worker.canAcceptCollection(entity.getItem())) continue;
             ConstructionJobController.tryCollect(worker, entity, progress);
             if (worker.isCollectionFull()) return;
@@ -292,6 +300,15 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
     }
 
     private static void leaveSiteThenIdle(WorkingAllayEntity worker, ServerLevel level, ConstructionJob job) {
+        if (worker.homeLoungePos() != null) {
+            if (worker.hasCollectionItems()) {
+                tryUnload(worker, level, job.owner());
+                return;
+            }
+            worker.clearAssignment(false);
+            worker.startDockingTo(worker.homeLoungePos());
+            return;
+        }
         AABB site = ConstructionJobController.worldBox(job);
         ServerPlayer owner = worker.getOwner()
             .map(id -> ConstructionJobController.findOwner(level.getServer(), level, id))
@@ -345,6 +362,25 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
     }
 
     private static void tryUnload(WorkingAllayEntity worker, ServerLevel level, UUID ownerId) {
+        BlockPos home = worker.homeLoungePos();
+        if (home != null) {
+            Vec3 target = level.getBlockEntity(home) instanceof AllayLoungeBlockEntity lounge
+                ? lounge.dockApproachPoint()
+                : Vec3.atCenterOf(home).add(0.0D, 1.05D, 0.0D);
+            double range = isVacuum(worker) ? FREE_RANGE : ConstructionJobController.reach(worker) + 0.5D;
+            if (worker.position().distanceTo(target) > range) {
+                AllayWorkMotions.flyTo(worker, target);
+                return;
+            }
+            if (!worker.prepareAction(target)) {
+                return;
+            }
+            worker.unloadCollectionTo(ConstructionMaterialAccess.below(level, home));
+            if (!worker.hasCollectionItems()) {
+                worker.startDockingTo(home);
+            }
+            return;
+        }
         Player owner = level.getPlayerByUUID(ownerId);
         if (owner == null) return;
         double range = isVacuum(worker) ? FREE_RANGE : ConstructionJobController.reach(worker) + 0.5D;

@@ -6,6 +6,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.items.IItemHandler;
 import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
@@ -51,6 +52,19 @@ public final class FluidSealFill {
 
     /** 先为蓝图 PLACE 预留背包数量,再从剩余物品里选数量最多的合法填充块。 */
     public static ItemStack choose(Player player, ConstructionJobProgress progress) {
+        return chooseFromCounts(countOwned(player), progress);
+    }
+
+    /** 认领后从休息室下方容器选填充块,预留规则与玩家背包相同。 */
+    public static ItemStack choose(IItemHandler items, ConstructionJobProgress progress) {
+        return chooseFromCounts(countOwned(items), progress);
+    }
+
+    public static ItemStack choose(ConstructionMaterialAccess access, ConstructionJobProgress progress) {
+        return chooseFromCounts(access.countItems(), progress);
+    }
+
+    private static ItemStack chooseFromCounts(Map<Item, Integer> owned, ConstructionJobProgress progress) {
         Map<Item, Integer> reserved = new HashMap<>();
         for (ConstructionBuildOp op : progress.operations()) {
             if (op.kind() != ConstructionBuildOp.Kind.PLACE || !op.needsMaterial()) continue;
@@ -60,7 +74,6 @@ public final class FluidSealFill {
             }
             reserved.merge(op.material().getItem(), 1, Integer::sum);
         }
-        Map<Item, Integer> owned = countOwned(player);
         Item best = null;
         int bestLeft = 0;
         for (Map.Entry<Item, Integer> entry : owned.entrySet()) {
@@ -82,6 +95,14 @@ public final class FluidSealFill {
             addCount(owned, stack);
         }
         addCount(owned, inventory.offhand.getFirst());
+        return owned;
+    }
+
+    private static Map<Item, Integer> countOwned(IItemHandler items) {
+        Map<Item, Integer> owned = new HashMap<>();
+        for (int slot = 0; slot < items.getSlots(); slot++) {
+            addCount(owned, items.getStackInSlot(slot));
+        }
         return owned;
     }
 

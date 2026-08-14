@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.allay.tool;
 import dev.anvilcraft.plasticraft.allay.AllayFlightState;
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayWorkMotions;
+import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBuildOp;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
@@ -22,7 +23,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Optional;
 import java.util.UUID;
 
-/** 建设动作:从所有者背包取料,飞到工具触及处交付施工投影。 */
+/** 建设动作:无室从所有者背包取料,认领后从休息室下方容器取料,飞到工具触及处交付施工投影。 */
 public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
     public static final ConstructionAllayToolBehavior INSTANCE = new ConstructionAllayToolBehavior();
 
@@ -31,7 +32,7 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
 
     public static boolean shouldHandle(WorkingAllayEntity worker, @Nullable ConstructionJob job) {
         if (!worker.hostedCarry().isEmpty()) {
-            return isActiveBuildCarry(worker, job) || worker.assignedJobId().isPresent();
+            return true;
         }
         if (worker.assignedJobId().isEmpty() || job == null) return false;
         if (worker.assignedJobId().filter(job.jobId()::equals).isEmpty()) return false;
@@ -54,30 +55,39 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
             return;
         }
         ConstructionJob job = ConstructionJobIndex.get(level).activeJobOf(owner.get()).orElse(null);
+        if (job != null && job.dimension().equals(level.dimension())
+            && job.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE) {
+            worker.setWaitReason(ConstructionWaitReason.SOURCE);
+            if (worker.flightState() == AllayFlightState.FLYING) {
+                AllayWorkMotions.holdStation(worker);
+            }
+            return;
+        }
         if (!worker.hostedCarry().isEmpty() && !isActiveBuildCarry(worker, job)) {
-            returnCarryToOwner(worker, level, owner.get());
+            returnLeftoverCarry(worker, level, owner.get(), job);
             return;
         }
         if (job == null || !job.dimension().equals(level.dimension())) {
-            continueOrIdle(worker);
+            restOrIdle(worker, level);
             return;
         }
         if (job.state() == ConstructionJob.STATE_COMMITTING) {
-            leaveSiteThenIdle(worker, level, job);
+            finishThenRest(worker, level, job);
             return;
         }
         if (job.state() == ConstructionJob.STATE_WAITING_MATERIAL
-            || job.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE
             || job.state() == ConstructionJob.STATE_WAITING_DEMOLITION
             || job.state() == ConstructionJob.STATE_WAITING_PERMISSION) {
             if (job.state() == ConstructionJob.STATE_WAITING_MATERIAL) {
                 worker.setWaitReason(ConstructionWaitReason.MATERIAL);
             } else if (job.state() == ConstructionJob.STATE_WAITING_DEMOLITION) {
                 worker.setWaitReason(ConstructionWaitReason.DEMOLITION);
-            } else if (job.state() == ConstructionJob.STATE_WAITING_PERMISSION) {
-                worker.setWaitReason(ConstructionWaitReason.PERMISSION);
             } else {
-                worker.setWaitReason(ConstructionWaitReason.SOURCE);
+                worker.setWaitReason(ConstructionWaitReason.PERMISSION);
+            }
+            if (job.state() != ConstructionJob.STATE_WAITING_PERMISSION && worker.homeLoungePos() != null) {
+                finishThenRest(worker, level, job);
+                return;
             }
             if (worker.flightState() == AllayFlightState.FLYING && worker.hostedCarry().isEmpty()) {
                 AllayWorkMotions.holdStation(worker);
@@ -96,7 +106,7 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
                 : tryClaim(worker, level, job, progress);
             if (!claimed) {
                 if (!sealing && progress.allPlaceResolved()) {
-                    leaveSiteThenIdle(worker, level, job);
+                    finishThenRest(worker, level, job);
                 }
                 return;
             }
@@ -106,18 +116,20 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
             || op.status() == ConstructionBuildOp.Status.DELIVERED) {
             worker.clearAssignment(false);
             if (!sealing && progress.allPlaceResolved()) {
-                leaveSiteThenIdle(worker, level, job);
+                finishThenRest(worker, level, job);
             }
             return;
         }
-        ServerPlayer player = ConstructionJobController.findOwner(level.getServer(), level, owner.get());
-        if (player == null) {
-            worker.setWaitReason(ConstructionWaitReason.SOURCE);
-            AllayWorkMotions.holdStation(worker);
-            return;
+        if (!progress.hasCoordinator()) {
+            ServerPlayer player = ConstructionJobController.findOwner(level.getServer(), level, owner.get());
+            if (player == null) {
+                worker.setWaitReason(ConstructionWaitReason.SOURCE);
+                AllayWorkMotions.holdStation(worker);
+                return;
+            }
         }
-        if (worker.hostedCarry().isEmpty()) {
-            flyToPickup(worker, player, progress, op, job);
+        if (worker.hostedCarry().isEmpty() && op.needsMaterial()) {
+            flyToPickup(worker, level, progress, op, job);
         } else if (sealing) {
             flyToSeal(worker, level, progress, op);
         } else {
@@ -131,24 +143,7 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
-        ConstructionBuildOp op = ConstructionJobController.nextAssignable(level, progress);
-        if (op == null) return false;
-        BlockPos approach = op.approach().orElse(null);
-        if (approach == null) return false;
-        if (worker.position().distanceTo(Vec3.atCenterOf(op.pos())) > ConstructionJobController.DISCOVERY_RANGE) {
-            return false;
-        }
-        ServerPlayer player = ConstructionJobController.findOwner(level.getServer(), level, job.owner());
-        if (player == null) return false;
-        Vec3 pickup = player.position().add(0.0D, 1.0D, 0.0D);
-        if (worker.position().distanceTo(pickup) > ConstructionJobController.DISCOVERY_RANGE) {
-            return false;
-        }
-        op.setStatus(ConstructionBuildOp.Status.LEASED);
-        op.setLeaseAllay(worker.getUUID());
-        worker.assign(job.jobId(), op.id());
-        ConstructionJobStore.get(level).markDirty();
-        return true;
+        return claimOp(worker, level, job, progress, ConstructionJobController.nextAssignable(level, progress));
     }
 
     public static boolean tryClaimSeal(
@@ -157,24 +152,59 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
-        ConstructionBuildOp op = ConstructionJobController.nextAssignableSeal(level, progress);
+        return claimOp(worker, level, job, progress, ConstructionJobController.nextAssignableSeal(level, progress));
+    }
+
+    private static boolean claimOp(
+        WorkingAllayEntity worker,
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress,
+        @Nullable ConstructionBuildOp op
+    ) {
         if (op == null) return false;
+        if (!ConstructionJobController.canClaimJob(worker, progress)) return false;
         BlockPos approach = op.approach().orElse(null);
         if (approach == null) return false;
-        if (worker.position().distanceTo(Vec3.atCenterOf(op.pos())) > ConstructionJobController.DISCOVERY_RANGE) {
-            return false;
-        }
-        ServerPlayer player = ConstructionJobController.findOwner(level.getServer(), level, job.owner());
-        if (player == null) return false;
-        Vec3 pickup = player.position().add(0.0D, 1.0D, 0.0D);
-        if (worker.position().distanceTo(pickup) > ConstructionJobController.DISCOVERY_RANGE) {
+        if (!ConstructionJobController.isWithinLoungeRange(progress, op.pos())) return false;
+        if (!progress.hasCoordinator()) {
+            if (worker.position().distanceTo(Vec3.atCenterOf(op.pos())) > ConstructionJobController.DISCOVERY_RANGE) {
+                return false;
+            }
+            ServerPlayer player = ConstructionJobController.findOwner(level.getServer(), level, job.owner());
+            if (player == null) return false;
+            Vec3 pickup = player.position().add(0.0D, 1.0D, 0.0D);
+            if (worker.position().distanceTo(pickup) > ConstructionJobController.DISCOVERY_RANGE) {
+                return false;
+            }
+        } else if (!ConstructionJobController.isSourceAvailable(level.getServer(), level, job, progress)) {
             return false;
         }
         op.setStatus(ConstructionBuildOp.Status.LEASED);
         op.setLeaseAllay(worker.getUUID());
         worker.assign(job.jobId(), op.id());
+        if (progress.hasCoordinator() && op.needsMaterial()) {
+            if (!ConstructionJobController.extractMaterialFromLounge(level, progress, op, worker.getUUID())) {
+                releaseLease(progress, op, worker);
+                ConstructionJobController.applyShortage(
+                    level.getServer(),
+                    job,
+                    progress,
+                    worker.shortageStrategy(),
+                    op.material()
+                );
+                return false;
+            }
+        }
         ConstructionJobStore.get(level).markDirty();
         return true;
+    }
+
+    private static void releaseLease(ConstructionJobProgress progress, ConstructionBuildOp op, WorkingAllayEntity worker) {
+        op.setStatus(ConstructionBuildOp.Status.PENDING);
+        op.setLeaseAllay(null);
+        worker.clearAssignment(false);
+        ConstructionJobStore.get(worker.level()).markDirty();
     }
 
     public static boolean isActiveBuildCarry(WorkingAllayEntity worker, @Nullable ConstructionJob job) {
@@ -185,12 +215,41 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
 
     private static void flyToPickup(
         WorkingAllayEntity worker,
-        ServerPlayer player,
+        ServerLevel level,
         ConstructionJobProgress progress,
         ConstructionBuildOp op,
         ConstructionJob job
     ) {
         worker.setActionState((byte) 1);
+        if (progress.hasCoordinator()) {
+            BlockPos loungePos = progress.coordinatorLounge();
+            if (loungePos == null || !approachLounge(worker, level, loungePos)) {
+                return;
+            }
+            ItemStack reserved = progress.carriedBy(worker.getUUID());
+            if (reserved == null || reserved.isEmpty()) {
+                ConstructionJobController.applyShortage(
+                    level.getServer(),
+                    job,
+                    progress,
+                    worker.shortageStrategy(),
+                    op.material()
+                );
+                worker.setWaitReason(ConstructionWaitReason.MATERIAL);
+                worker.clearAssignment(false);
+                return;
+            }
+            worker.setHostedCarry(reserved.copy());
+            worker.setActionState((byte) 4);
+            worker.setWaitReason(ConstructionWaitReason.NONE);
+            return;
+        }
+        ServerPlayer player = ConstructionJobController.findOwner(level.getServer(), level, job.owner());
+        if (player == null) {
+            worker.setWaitReason(ConstructionWaitReason.SOURCE);
+            AllayWorkMotions.holdStation(worker);
+            return;
+        }
         if (worker.distanceTo(player) > ConstructionJobController.reach(worker) + 0.5D) {
             AllayWorkMotions.flyTo(worker, player.position().add(0.0D, 1.0D, 0.0D));
             return;
@@ -218,6 +277,35 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
         worker.setWaitReason(ConstructionWaitReason.NONE);
     }
 
+    private static void returnLeftoverCarry(
+        WorkingAllayEntity worker,
+        ServerLevel level,
+        UUID ownerId,
+        @Nullable ConstructionJob job
+    ) {
+        if (worker.homeLoungePos() == null) {
+            returnCarryToOwner(worker, level, ownerId);
+            return;
+        }
+        if (job != null
+            && (job.state() == ConstructionJob.STATE_BUILDING || job.state() == ConstructionJob.STATE_SEALING_FLUID)) {
+            if (!depositAtLounge(worker, level)) return;
+            ConstructionJobProgress progress = ConstructionJobStore.get(level).get(job.jobId());
+            if (progress == null) {
+                restAtHome(worker);
+                return;
+            }
+            boolean claimed = job.state() == ConstructionJob.STATE_SEALING_FLUID
+                ? tryClaimSeal(worker, level, job, progress)
+                : tryClaim(worker, level, job, progress);
+            if (!claimed && (progress.allPlaceResolved() || progress.allSealResolved())) {
+                restAtHome(worker);
+            }
+            return;
+        }
+        finishThenRest(worker, level, job);
+    }
+
     private static void returnCarryToOwner(WorkingAllayEntity worker, ServerLevel level, UUID ownerId) {
         ServerPlayer player = ConstructionJobController.findOwner(level.getServer(), level, ownerId);
         if (player == null) {
@@ -235,6 +323,66 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
         }
         ConstructionJobController.depositHostedCarry(worker, player);
         AllayWorkMotions.releaseToVanilla(worker);
+    }
+
+    private static void finishThenRest(WorkingAllayEntity worker, ServerLevel level, @Nullable ConstructionJob job) {
+        if (worker.homeLoungePos() != null) {
+            if (!worker.hostedCarry().isEmpty() && !depositAtLounge(worker, level)) {
+                return;
+            }
+            restAtHome(worker);
+            return;
+        }
+        if (job != null) {
+            leaveSiteThenIdle(worker, level, job);
+            return;
+        }
+        continueOrIdle(worker);
+    }
+
+    private static void restOrIdle(WorkingAllayEntity worker, ServerLevel level) {
+        if (worker.homeLoungePos() != null) {
+            if (!worker.hostedCarry().isEmpty() && !depositAtLounge(worker, level)) {
+                return;
+            }
+            restAtHome(worker);
+            return;
+        }
+        continueOrIdle(worker);
+    }
+
+    private static void restAtHome(WorkingAllayEntity worker) {
+        BlockPos home = worker.homeLoungePos();
+        if (home == null) {
+            AllayWorkMotions.releaseToVanilla(worker);
+            return;
+        }
+        worker.clearAssignment(false);
+        worker.startDockingTo(home);
+    }
+
+    private static boolean depositAtLounge(WorkingAllayEntity worker, ServerLevel level) {
+        BlockPos home = worker.homeLoungePos();
+        if (home == null) return true;
+        if (!approachLounge(worker, level, home)) return false;
+        ConstructionJobController.depositHostedCarryToLounge(worker, level, home);
+        return true;
+    }
+
+    private static boolean approachLounge(WorkingAllayEntity worker, ServerLevel level, BlockPos loungePos) {
+        Vec3 target = loungeApproach(level, loungePos);
+        if (worker.position().distanceTo(target) > ConstructionJobController.reach(worker) + 0.5D) {
+            AllayWorkMotions.flyTo(worker, target);
+            return false;
+        }
+        return worker.prepareAction(target);
+    }
+
+    private static Vec3 loungeApproach(ServerLevel level, BlockPos loungePos) {
+        if (level.getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge) {
+            return lounge.dockApproachPoint();
+        }
+        return Vec3.atCenterOf(loungePos).add(0.0D, 1.05D, 0.0D);
     }
 
     private static void leaveSiteThenIdle(WorkingAllayEntity worker, ServerLevel level, ConstructionJob job) {
@@ -339,6 +487,9 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
                 && tryClaimSeal(worker, level, job, progress)) {
                 return;
             }
+            if (job != null && progress.allSealResolved()) {
+                finishThenRest(worker, level, job);
+            }
         } else if (op.status() == ConstructionBuildOp.Status.WAITING_OCCUPIED) {
             worker.setWaitReason(ConstructionWaitReason.OCCUPIED);
         } else if (op.status() == ConstructionBuildOp.Status.WAITING_WORLD) {
@@ -395,9 +546,9 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
                 return;
             }
             if (job != null && (progress.allPlaceResolved() || job.state() == ConstructionJob.STATE_COMMITTING)) {
-                leaveSiteThenIdle(worker, level, job);
+                finishThenRest(worker, level, job);
             } else if (job == null) {
-                continueOrIdle(worker);
+                restOrIdle(worker, level);
             }
         } else if (op.status() == ConstructionBuildOp.Status.WAITING_OCCUPIED) {
             worker.setWaitReason(ConstructionWaitReason.OCCUPIED);

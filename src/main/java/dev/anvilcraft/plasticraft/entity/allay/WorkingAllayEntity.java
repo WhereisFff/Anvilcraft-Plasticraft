@@ -12,6 +12,7 @@ import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinition;
 import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinitions;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionDebris;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionMaterialAccess;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionWaitReason;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import net.minecraft.core.BlockPos;
@@ -33,6 +34,7 @@ import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.ai.control.MoveControl;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.animal.allay.Allay;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -540,7 +542,10 @@ public class WorkingAllayEntity extends Allay {
             ItemStack carry = this.hostedCarry();
             if (carry.isEmpty()) return;
             player.getInventory().add(carry);
-            this.setHostedCarry(carry.isEmpty() ? ItemStack.EMPTY : carry);
+            if (!carry.isEmpty()) {
+                dropBeside(player.level(), player.position(), carry.copy());
+            }
+            this.setHostedCarry(ItemStack.EMPTY);
             return;
         }
         this.ensureCollectionSlots();
@@ -548,10 +553,33 @@ public class WorkingAllayEntity extends Allay {
             ItemStack slot = this.collectionInventory.get(index);
             if (slot.isEmpty()) continue;
             player.getInventory().add(slot);
-            if (slot.isEmpty()) {
-                this.collectionInventory.set(index, ItemStack.EMPTY);
+            if (!slot.isEmpty()) {
+                dropBeside(player.level(), player.position(), slot.copy());
             }
+            this.collectionInventory.set(index, ItemStack.EMPTY);
         }
+    }
+
+    public void unloadCollectionTo(ConstructionMaterialAccess access) {
+        if (this.toolDefinition().inventorySize() <= 0) {
+            ItemStack carry = this.hostedCarry();
+            if (carry.isEmpty()) return;
+            access.insertOrDrop(carry.copy());
+            this.setHostedCarry(ItemStack.EMPTY);
+            return;
+        }
+        this.ensureCollectionSlots();
+        for (int index = 0; index < this.collectionInventory.size(); index++) {
+            ItemStack slot = this.collectionInventory.get(index);
+            if (slot.isEmpty()) continue;
+            access.insertOrDrop(slot.copy());
+            this.collectionInventory.set(index, ItemStack.EMPTY);
+        }
+    }
+
+    private static void dropBeside(Level level, Vec3 pos, ItemStack stack) {
+        if (stack.isEmpty()) return;
+        level.addFreshEntity(new ItemEntity(level, pos.x, pos.y, pos.z, stack));
     }
 
     private void ensureCollectionSlots() {

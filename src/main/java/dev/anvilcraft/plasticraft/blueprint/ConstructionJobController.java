@@ -2,7 +2,10 @@ package dev.anvilcraft.plasticraft.blueprint;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
+import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
 import dev.anvilcraft.plasticraft.allay.tool.AllayCapability;
+import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinitions;
+import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.anvilcraft.plasticraft.init.PlasticraftEntityBuildAdapters;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
@@ -108,17 +111,16 @@ public final class ConstructionJobController {
             return;
         }
         if (job.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE) {
-            if (ownerInLevel(server, job, level) != null) {
-                setState(server, job, nextPhase(progress));
+            if (isSourceAvailable(server, level, job, progress)) {
+                setState(server, job, resumePhase(level, job, progress));
             }
             return;
         }
         if (job.state() == ConstructionJob.STATE_WAITING_MATERIAL) {
-            ServerPlayer owner = ownerInLevel(server, job, level);
-            if (owner != null && playerHasMaterial(owner, progress.missingMaterial())) {
+            if (hasRequiredMaterial(server, level, job, progress)) {
                 progress.setWaitReason(ConstructionWaitReason.NONE);
                 progress.setMissingMaterial(ItemStack.EMPTY);
-                setState(server, job, nextPhase(progress));
+                setState(server, job, resumePhase(level, job, progress));
             }
             return;
         }
@@ -158,11 +160,12 @@ public final class ConstructionJobController {
         }
         if (job.state() != ConstructionJob.STATE_BUILDING) return;
         ensureIndex(level, progress);
-        if (ownerInLevel(server, job, level) == null) {
+        if (!isSourceAvailable(server, level, job, progress)) {
             setWait(server, job, progress, ConstructionWaitReason.SOURCE);
             setState(server, job, ConstructionJob.STATE_SOURCE_UNAVAILABLE);
             return;
         }
+        tryLaunchForJob(level, job, progress);
         refreshWorldWaits(level, progress);
         if (progress.allPlaceResolved()) {
             setState(server, job, ConstructionJob.STATE_COMMITTING);
@@ -355,6 +358,7 @@ public final class ConstructionJobController {
             progress.clearDebrisLeases();
             returnInTransit(server, level, job, progress);
             ConstructionCommitService.commitDelivered(level, progress);
+            clearCoordinatorDisk(level, progress, job.jobId());
         } else if (level != null) {
             ConstructionProjectionIndex.clearJob(level, job.jobId());
             ConstructionEntityProjectionIndex.clearJob(level, job.jobId());
@@ -380,6 +384,7 @@ public final class ConstructionJobController {
         byte terminal = progress.incomplete() || hasSkippedPlace(progress)
             ? ConstructionJob.STATE_COMPLETED_INCOMPLETE
             : ConstructionJob.STATE_COMPLETED;
+        clearCoordinatorDisk(level, progress, job.jobId());
         ConstructionJobStore.get(server).remove(job.jobId());
         ConstructionJobIndex.get(server).remove(job.jobId());
         BlueprintJobSync.syncRemove(server, job.jobId());
@@ -705,6 +710,9 @@ public final class ConstructionJobController {
             return false;
         }
         if (!op.needsMaterial()) return true;
+        if (progress.hasCoordinator()) {
+            return false;
+        }
         ItemStack taken = takeBuildMaterial(player, op);
         if (taken.isEmpty()) return false;
         progress.addLedger(op.id(), taken, allayId);
@@ -713,6 +721,34 @@ public final class ConstructionJobController {
             op.setReturnStack(PlasticraftEntityBuildAdapters.resinReturn(serverLevel));
         }
         ConstructionJobStore.get(player.level()).markDirty();
+        return true;
+    }
+
+    public static boolean extractMaterialFromLounge(
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        ConstructionBuildOp op,
+        UUID allayId
+    ) {
+        if (op.kind() == ConstructionBuildOp.Kind.SEAL
+            && (op.material().isEmpty() || FluidSealFill.stateOf(op.material()) == null)) {
+            return false;
+        }
+        if (!op.needsMaterial()) return true;
+        BlockPos loungePos = progress.coordinatorLounge();
+        if (loungePos == null) return false;
+        ConstructionMaterialAccess access = ConstructionMaterialAccess.below(level, loungePos);
+        if (!access.isAvailable()) return false;
+        ItemStack taken = access.extract(op);
+        if (taken.isEmpty()) return false;
+        progress.addLedger(op.id(), taken, allayId);
+        if (PlasticraftEntityBuildAdapters.returnsResin(taken) && op.returnStack().isEmpty()) {
+            op.setReturnStack(PlasticraftEntityBuildAdapters.resinReturn(level));
+        }
+        if (level.getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge) {
+            lounge.setPickupDisplay(pickupSide(level, loungePos, allayId), taken);
+        }
+        ConstructionJobStore.get(level).markDirty();
         return true;
     }
 
@@ -786,19 +822,39 @@ public final class ConstructionJobController {
     }
 
     public static void onShortageStrategyChanged(ServerPlayer player, AllayShortageStrategy strategy) {
-        if (strategy != AllayShortageStrategy.SKIP) return;
         ConstructionJob job = ConstructionJobIndex.get(player.server).activeJobOf(player.getUUID()).orElse(null);
-        if (job == null) return;
-        ConstructionJobProgress progress = ConstructionJobStore.get(player.server).get(job.jobId());
+        applySkipIfWaiting(player.server, job, strategy);
+    }
+
+    public static void onLoungeShortageStrategyChanged(
+        ServerLevel level,
+        BlockPos loungePos,
+        AllayShortageStrategy strategy
+    ) {
+        if (strategy != AllayShortageStrategy.SKIP) return;
+        if (!(level.getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge)) return;
+        UUID jobId = lounge.diskJobId();
+        if (jobId == null) return;
+        ConstructionJob job = ConstructionJobIndex.get(level.getServer()).job(jobId);
+        applySkipIfWaiting(level.getServer(), job, strategy);
+    }
+
+    private static void applySkipIfWaiting(
+        MinecraftServer server,
+        @Nullable ConstructionJob job,
+        AllayShortageStrategy strategy
+    ) {
+        if (strategy != AllayShortageStrategy.SKIP || job == null) return;
+        ConstructionJobProgress progress = ConstructionJobStore.get(server).get(job.jobId());
         if (progress == null) return;
         if (job.state() == ConstructionJob.STATE_WAITING_DEMOLITION) {
-            applyDemolitionShortage(player.server, job, progress, AllayShortageStrategy.SKIP);
+            applyDemolitionShortage(server, job, progress, AllayShortageStrategy.SKIP);
             return;
         }
         if (job.state() != ConstructionJob.STATE_WAITING_MATERIAL) return;
         ItemStack missing = progress.missingMaterial();
         if (missing.isEmpty()) return;
-        applyShortage(player.server, job, progress, AllayShortageStrategy.SKIP, missing);
+        applyShortage(server, job, progress, AllayShortageStrategy.SKIP, missing);
     }
 
     public static void applyDemolitionShortage(
@@ -996,8 +1052,12 @@ public final class ConstructionJobController {
         for (ConstructionLedgerEntry entry : progress.ledger()) {
             if (entry.state() != ConstructionLedgerEntry.State.CARRIED) continue;
             if (entry.allayId() != null && holding.contains(entry.allayId())) continue;
-            giveOrDrop(owner, level, job, entry.stack().copy());
+            giveOrDrop(owner, level, job, progress, entry.stack().copy());
             entry.setState(ConstructionLedgerEntry.State.RETURNED);
+        }
+        if (progress.hasCoordinator()
+            && level.getBlockEntity(progress.coordinatorLounge()) instanceof AllayLoungeBlockEntity lounge) {
+            lounge.clearPickupDisplays();
         }
     }
 
@@ -1006,8 +1066,31 @@ public final class ConstructionJobController {
         ItemStack carry = drone.hostedCarry();
         if (carry.isEmpty()) return;
         player.getInventory().placeItemBackInInventory(carry.copy());
+        markCarryReturned(drone, player.server);
+        drone.setHostedCarry(ItemStack.EMPTY);
+        drone.clearAssignment(false);
+        drone.setActionState((byte) 0);
+        drone.setWaitReason(ConstructionWaitReason.NONE);
+    }
+
+    public static void depositHostedCarryToLounge(WorkingAllayEntity drone, ServerLevel level, BlockPos loungePos) {
+        ItemStack carry = drone.hostedCarry();
+        if (carry.isEmpty()) return;
+        ConstructionMaterialAccess access = ConstructionMaterialAccess.below(level, loungePos);
+        access.insertOrDrop(carry.copy());
+        markCarryReturned(drone, level.getServer());
+        if (level.getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge) {
+            lounge.clearPickupDisplays();
+        }
+        drone.setHostedCarry(ItemStack.EMPTY);
+        drone.clearAssignment(false);
+        drone.setActionState((byte) 0);
+        drone.setWaitReason(ConstructionWaitReason.NONE);
+    }
+
+    private static void markCarryReturned(WorkingAllayEntity drone, MinecraftServer server) {
         drone.assignedJobId().ifPresent(jobId -> {
-            ConstructionJobProgress progress = ConstructionJobStore.get(player.server).get(jobId);
+            ConstructionJobProgress progress = ConstructionJobStore.get(server).get(jobId);
             if (progress == null) return;
             for (ConstructionLedgerEntry entry : progress.ledger()) {
                 if (entry.state() == ConstructionLedgerEntry.State.CARRIED
@@ -1015,20 +1098,21 @@ public final class ConstructionJobController {
                     entry.setState(ConstructionLedgerEntry.State.RETURNED);
                 }
             }
-            ConstructionJobStore.get(player.server).markDirty();
+            ConstructionJobStore.get(server).markDirty();
         });
-        drone.setHostedCarry(ItemStack.EMPTY);
-        drone.clearAssignment(false);
-        drone.setActionState((byte) 0);
-        drone.setWaitReason(ConstructionWaitReason.NONE);
     }
 
     private static void giveOrDrop(
         @Nullable ServerPlayer owner,
         ServerLevel level,
         ConstructionJob job,
+        ConstructionJobProgress progress,
         ItemStack stack
     ) {
+        if (progress.hasCoordinator()) {
+            ConstructionMaterialAccess.below(level, progress.coordinatorLounge()).insertOrDrop(stack);
+            return;
+        }
         if (owner != null) {
             owner.getInventory().placeItemBackInInventory(stack);
             return;
@@ -1455,14 +1539,14 @@ public final class ConstructionJobController {
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
-        ServerPlayer owner = ownerInLevel(server, job, level);
-        if (owner == null) {
+        if (!isSourceAvailable(server, level, job, progress)) {
             setWait(server, job, progress, ConstructionWaitReason.SOURCE);
             setState(server, job, ConstructionJob.STATE_SOURCE_UNAVAILABLE);
             return;
         }
+        tryLaunchForJob(level, job, progress);
         if (needsFillMaterial(progress)) {
-            FluidSealPlanner.applyFill(progress, FluidSealFill.choose(owner, progress));
+            FluidSealPlanner.applyFill(progress, chooseFill(level, job, progress));
         }
         if (progress.allSealResolved()) {
             setState(server, job, nextPhase(progress));
@@ -1478,11 +1562,12 @@ public final class ConstructionJobController {
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
-        if (ownerInLevel(server, job, level) == null) {
+        if (!isSourceAvailable(server, level, job, progress)) {
             setWait(server, job, progress, ConstructionWaitReason.SOURCE);
             setState(server, job, ConstructionJob.STATE_SOURCE_UNAVAILABLE);
             return;
         }
+        tryLaunchForJob(level, job, progress);
         if (progress.allDemolishResolved()) {
             reconcileDebris(level, job, progress);
             if (hasWorldDebris(level, job, progress) && hasAvailableCollectionAllay(level, job, progress)) {
@@ -1506,11 +1591,12 @@ public final class ConstructionJobController {
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
-        if (ownerInLevel(server, job, level) == null) {
+        if (!isSourceAvailable(server, level, job, progress)) {
             setWait(server, job, progress, ConstructionWaitReason.SOURCE);
             setState(server, job, ConstructionJob.STATE_SOURCE_UNAVAILABLE);
             return;
         }
+        tryLaunchForJob(level, job, progress);
         reconcileDebris(level, job, progress);
         if (!hasWorldDebris(level, job, progress) || !hasAvailableCollectionAllay(level, job, progress)) {
             setState(server, job, ConstructionJob.STATE_BUILDING);
@@ -1525,6 +1611,9 @@ public final class ConstructionJobController {
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
+        if (progress.hasCoordinator()) {
+            return hasBoundCapability(level, job, progress, AllayCapability.DEMOLISH);
+        }
         AABB search = worldBox(job).inflate(DISCOVERY_RANGE);
         for (WorkingAllayEntity drone : level.getEntitiesOfClass(WorkingAllayEntity.class, search)) {
             if (!drone.isAlive() || drone.getOwner().filter(job.owner()::equals).isEmpty()) continue;
@@ -1548,9 +1637,16 @@ public final class ConstructionJobController {
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
+        if (progress.hasCoordinator()) {
+            if (!hasBoundCapability(level, job, progress, AllayCapability.COLLECT_ITEMS)) {
+                return false;
+            }
+            return hasWorldDebris(level, job, progress);
+        }
         AABB search = worldBox(job).inflate(DISCOVERY_RANGE);
         for (WorkingAllayEntity drone : level.getEntitiesOfClass(WorkingAllayEntity.class, search)) {
             if (!isOwnerCollectionAllay(drone, job) || drone.isCollectionFull()) continue;
+            if (progress.hasCoordinator() && !isBoundToCoordinator(drone, progress)) continue;
             ItemEntity nearest = nearestMarkedDebris(level, job, progress, drone.position(), DISCOVERY_RANGE);
             if (nearest != null) return true;
         }
@@ -1594,6 +1690,9 @@ public final class ConstructionJobController {
     ) {
         ItemEntity best = null;
         double bestDistance = Double.MAX_VALUE;
+        Vec3 origin = progress.hasCoordinator()
+            ? Vec3.atCenterOf(progress.coordinatorLounge())
+            : from;
         for (ItemEntity entity : markedDebrisIn(level, job, progress, worldBox(job).inflate(DISCOVERY_RANGE))) {
             if (!entity.isAlive() || entity.hasPickUpDelay()) continue;
             UUID holder = progress.debrisLease(entity.getUUID());
@@ -1603,8 +1702,8 @@ public final class ConstructionJobController {
             if (holder != null) {
                 progress.releaseDebrisLease(entity.getUUID());
             }
+            if (origin.distanceTo(entity.position()) > DISCOVERY_RANGE) continue;
             double distance = from.distanceTo(entity.position());
-            if (distance > DISCOVERY_RANGE) continue;
             if (distance < bestDistance) {
                 best = entity;
                 bestDistance = distance;
@@ -1622,6 +1721,9 @@ public final class ConstructionJobController {
         if (!drone.canAcceptCollection(entity.getItem())) return false;
         ItemStack stack = entity.getItem();
         ConstructionDebris mark = ConstructionDebris.get(stack);
+        if (progress != null && (mark == null || !mark.jobId().equals(progress.jobId()))) {
+            return false;
+        }
         int inserted = drone.tryInsertCollection(stack);
         if (inserted <= 0) return false;
         if (progress != null && mark != null && mark.jobId().equals(progress.jobId())) {
@@ -1688,6 +1790,10 @@ public final class ConstructionJobController {
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
+        if (progress.hasCoordinator()
+            && level.getBlockEntity(progress.coordinatorLounge()) instanceof AllayLoungeBlockEntity lounge) {
+            return lounge.shortageStrategy();
+        }
         AllayShortageStrategy strategy = AllayShortageStrategy.PAUSE;
         AABB search = worldBox(job).inflate(DISCOVERY_RANGE);
         for (WorkingAllayEntity drone : level.getEntitiesOfClass(WorkingAllayEntity.class, search)) {
@@ -1833,9 +1939,212 @@ public final class ConstructionJobController {
         progress.setLastReported(reason);
         ServerPlayer owner = server.getPlayerList().getPlayer(job.owner());
         if (owner == null) return;
-        owner.sendSystemMessage(Component.translatable(
-            "message.anvilcraftplasticraft.construction.wait." + reason.name().toLowerCase(Locale.ROOT)
-        ));
+        String key = "message.anvilcraftplasticraft.construction.wait." + reason.name().toLowerCase(Locale.ROOT);
+        if (reason == ConstructionWaitReason.SOURCE && progress.hasCoordinator()) {
+            key = "message.anvilcraftplasticraft.construction.wait.source_lounge";
+        }
+        owner.sendSystemMessage(Component.translatable(key));
+    }
+
+    public static void claimLounge(ServerLevel level, BlockPos loungePos, UUID jobId) {
+        MinecraftServer server = level.getServer();
+        ConstructionJob job = ConstructionJobIndex.get(server).job(jobId);
+        if (job == null) return;
+        ConstructionBlueprintService.start(server, jobId);
+        job = ConstructionJobIndex.get(server).job(jobId);
+        if (job == null) return;
+        ConstructionJobProgress progress = ConstructionJobStore.get(server).getOrCreate(jobId);
+        progress.setCoordinatorLounge(loungePos.immutable());
+        evictUnhostedWorkers(level, job, progress);
+        ConstructionJobStore.get(server).markDirty();
+    }
+
+    public static void unclaimLounge(ServerLevel level, BlockPos loungePos, @Nullable UUID jobId) {
+        if (jobId == null) return;
+        MinecraftServer server = level.getServer();
+        ConstructionJob job = ConstructionJobIndex.get(server).job(jobId);
+        ConstructionJobProgress progress = ConstructionJobStore.get(server).get(jobId);
+        if (progress != null && loungePos.equals(progress.coordinatorLounge())) {
+            if (job != null && job.isActive()) {
+                pause(server, job);
+                progress = ConstructionJobStore.get(server).get(jobId);
+            }
+            if (progress != null) {
+                progress.setCoordinatorLounge(null);
+                if (level.getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge) {
+                    lounge.clearPickupDisplays();
+                }
+                ConstructionJobStore.get(server).markDirty();
+            }
+        }
+    }
+
+    public static void clearCoordinatorDisk(ServerLevel level, ConstructionJobProgress progress, UUID jobId) {
+        BlockPos loungePos = progress.coordinatorLounge();
+        if (loungePos == null) return;
+        if (level.getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge) {
+            lounge.clearDiskJobId(jobId);
+            lounge.clearPickupDisplays();
+        }
+    }
+
+    public static boolean isBoundToCoordinator(WorkingAllayEntity worker, ConstructionJobProgress progress) {
+        return progress.hasCoordinator() && progress.coordinatorLounge().equals(worker.homeLoungePos());
+    }
+
+    public static boolean canClaimJob(WorkingAllayEntity worker, ConstructionJobProgress progress) {
+        if (!progress.hasCoordinator()) return true;
+        return isBoundToCoordinator(worker, progress);
+    }
+
+    public static boolean isWithinLoungeRange(ConstructionJobProgress progress, BlockPos target) {
+        if (!progress.hasCoordinator()) return true;
+        return Vec3.atCenterOf(progress.coordinatorLounge()).distanceTo(Vec3.atCenterOf(target)) <= DISCOVERY_RANGE;
+    }
+
+    public static boolean isSourceAvailable(
+        MinecraftServer server,
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress
+    ) {
+        if (progress.hasCoordinator()) {
+            return ConstructionMaterialAccess.below(level, progress.coordinatorLounge()).isAvailable();
+        }
+        return ownerInLevel(server, job, level) != null;
+    }
+
+    private static boolean hasRequiredMaterial(
+        MinecraftServer server,
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress
+    ) {
+        ItemStack missing = progress.missingMaterial();
+        if (progress.hasCoordinator()) {
+            ConstructionMaterialAccess access = ConstructionMaterialAccess.below(level, progress.coordinatorLounge());
+            if (!access.isAvailable()) return false;
+            if (missing.isEmpty()) return true;
+            return access.hasMaterial(missing);
+        }
+        ServerPlayer owner = ownerInLevel(server, job, level);
+        return owner != null && playerHasMaterial(owner, missing);
+    }
+
+    public static byte resumePhase(ServerLevel level, ConstructionJob job, ConstructionJobProgress progress) {
+        if (progress.allDemolishResolved()
+            && hasWorldDebris(level, job, progress)
+            && hasAvailableCollectionAllay(level, job, progress)) {
+            return ConstructionJob.STATE_COLLECTING_DEBRIS;
+        }
+        return nextPhase(progress);
+    }
+
+    private static ItemStack chooseFill(ServerLevel level, ConstructionJob job, ConstructionJobProgress progress) {
+        if (progress.hasCoordinator()) {
+            return FluidSealFill.choose(ConstructionMaterialAccess.below(level, progress.coordinatorLounge()), progress);
+        }
+        ServerPlayer owner = ownerInLevel(level.getServer(), job, level);
+        return owner == null ? ItemStack.EMPTY : FluidSealFill.choose(owner, progress);
+    }
+
+    private static void tryLaunchForJob(ServerLevel level, ConstructionJob job, ConstructionJobProgress progress) {
+        if (!progress.hasCoordinator()) return;
+        if (!(level.getBlockEntity(progress.coordinatorLounge()) instanceof AllayLoungeBlockEntity lounge)) return;
+        if (!lounge.isPowered() || lounge.isBayBusy()) return;
+        byte state = job.state();
+        if (state == ConstructionJob.STATE_SEALING_FLUID || state == ConstructionJob.STATE_BUILDING) {
+            launchIfNeeded(level, job, progress, lounge, AllayCapability.PICK_UP_MATERIAL);
+            return;
+        }
+        if (state == ConstructionJob.STATE_DEMOLISHING) {
+            if (!progress.allDemolishResolved()) {
+                launchIfNeeded(level, job, progress, lounge, AllayCapability.DEMOLISH);
+            }
+            if (hasWorldDebris(level, job, progress)) {
+                launchIfNeeded(level, job, progress, lounge, AllayCapability.COLLECT_ITEMS);
+            }
+            return;
+        }
+        if (state == ConstructionJob.STATE_COLLECTING_DEBRIS && hasWorldDebris(level, job, progress)) {
+            launchIfNeeded(level, job, progress, lounge, AllayCapability.COLLECT_ITEMS);
+        }
+    }
+
+    private static void launchIfNeeded(
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress,
+        AllayLoungeBlockEntity lounge,
+        AllayCapability capability
+    ) {
+        if (lounge.isBayBusy()) return;
+        if (hasLoadedBoundCapability(level, job, progress, capability)) return;
+        lounge.tryLaunch(record -> AllayToolDefinitions.fromHeldItem(record.heldTool()).hasCapability(capability));
+    }
+
+    private static boolean hasBoundCapability(
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress,
+        AllayCapability capability
+    ) {
+        if (hasLoadedBoundCapability(level, job, progress, capability)) return true;
+        if (!(level.getBlockEntity(progress.coordinatorLounge()) instanceof AllayLoungeBlockEntity lounge)) {
+            return false;
+        }
+        for (AllayWorkRecord record : lounge.hosted()) {
+            if (AllayToolDefinitions.fromHeldItem(record.heldTool()).hasCapability(capability)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasLoadedBoundCapability(
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress,
+        AllayCapability capability
+    ) {
+        for (Entity entity : level.getAllEntities()) {
+            if (!(entity instanceof WorkingAllayEntity worker) || !worker.isAlive()) continue;
+            if (worker.getOwner().filter(job.owner()::equals).isEmpty()) continue;
+            if (!isBoundToCoordinator(worker, progress)) continue;
+            if (worker.toolDefinition().hasCapability(capability)) return true;
+        }
+        return false;
+    }
+
+    private static void evictUnhostedWorkers(ServerLevel level, ConstructionJob job, ConstructionJobProgress progress) {
+        for (Entity entity : level.getAllEntities()) {
+            if (!(entity instanceof WorkingAllayEntity worker) || !worker.isAlive()) continue;
+            if (worker.getOwner().filter(job.owner()::equals).isEmpty()) continue;
+            if (isBoundToCoordinator(worker, progress)) continue;
+            if (worker.assignedJobId().filter(job.jobId()::equals).isEmpty() && worker.hostedCarry().isEmpty()) {
+                continue;
+            }
+            if (worker.toolDefinition().hasCapability(AllayCapability.COLLECT_ITEMS)
+                && !worker.toolDefinition().hasCapability(AllayCapability.PICK_UP_MATERIAL)) {
+                progress.releaseDebrisLeasesOf(worker.getUUID());
+                worker.clearAssignment(false);
+                continue;
+            }
+            if (worker.hostedCarry().isEmpty()) {
+                worker.clearAssignment(false);
+            } else {
+                worker.clearAssignment(false);
+            }
+        }
+        ConstructionJobStore.get(level).markDirty();
+    }
+
+    private static Direction pickupSide(ServerLevel level, BlockPos loungePos, UUID allayId) {
+        Entity entity = level.getEntity(allayId);
+        if (entity == null) return Direction.NORTH;
+        Vec3 delta = entity.position().subtract(Vec3.atCenterOf(loungePos));
+        Direction side = Direction.getNearest(delta.x, 0.0D, delta.z);
+        return side.getAxis().isVertical() ? Direction.NORTH : side;
     }
 
     @Nullable

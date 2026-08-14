@@ -200,6 +200,28 @@ public final class AllayLoungeGameTests {
             .thenSucceed();
     }
 
+    @GameTest(timeoutTicks = 80)
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "GUI release fails while the top bay is busy")
+    static void releaseHostedFailsWhileBayBusy(ExtendedGameTestHelper helper) {
+        AllayLoungeBlockEntity lounge = placePoweredLounge(helper);
+        helper.startSequence()
+            .thenWaitUntil(() -> check(lounge.isPowered(), "lounge did not connect to the power grid"))
+            .thenExecute(() -> {
+                check(lounge.addHosted(fillerRecord()), "failed to host the first record");
+                check(lounge.addHosted(fillerRecord()), "failed to host the second record");
+                check(lounge.tryLaunch(record -> true), "powered lounge must launch the first hosted allay");
+                check(lounge.isBayBusy(), "launch must occupy the bay");
+                check(!lounge.releaseHosted(0), "GUI release must fail while the bay is busy");
+                check(lounge.hosted().size() == 1, "the remaining hosted record must stay");
+            })
+            .thenExecuteAfter(AllayLoungeBlockEntity.DOCKING_DURATION_TICKS + 1, () -> {
+                check(!lounge.isBayBusy(), "the bay must clear after 20 gt");
+                check(lounge.releaseHosted(0), "GUI release must succeed after the bay is free");
+            })
+            .thenSucceed();
+    }
+
     @GameTest(timeoutTicks = 40)
     @EmptyTemplate(value = "5x4x5", floor = true)
     @TestHolder(description = "Breaking the lounge releases hosted allays and drops the disk")

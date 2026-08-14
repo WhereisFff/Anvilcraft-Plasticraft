@@ -52,6 +52,7 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.allay.wait.occupied", "Construction position occupied");
         provider.add("screen.anvilcraftplasticraft.allay.wait.world", "Waiting for the world block to clear");
         provider.add("screen.anvilcraftplasticraft.allay.wait.source", "Owner is not in this dimension");
+        provider.add("screen.anvilcraftplasticraft.allay.wait.source_lounge", "Below-lounge logistics is unavailable");
         provider.add("screen.anvilcraftplasticraft.allay.wait.demolition", "Waiting for a demolition allay");
         provider.add("screen.anvilcraftplasticraft.allay.wait.permission", "Waiting for world permission");
         provider.add("screen.anvilcraftplasticraft.allay.carry", "Carrying: %s");
@@ -548,6 +549,10 @@ public final class PlasticraftLanguageData {
         provider.add("message.anvilcraftplasticraft.construction.wait.occupied", "A construction position is occupied");
         provider.add("message.anvilcraftplasticraft.construction.wait.world", "A construction position is blocked by the world");
         provider.add("message.anvilcraftplasticraft.construction.wait.source", "Construction is waiting for the owner to return");
+        provider.add(
+            "message.anvilcraftplasticraft.construction.wait.source_lounge",
+            "Construction is waiting for the container below the lounge"
+        );
         provider.add("message.anvilcraftplasticraft.construction.wait.energy", "Construction is waiting");
         provider.add("message.anvilcraftplasticraft.construction.wait.demolition", "Construction is waiting for a demolition allay");
         provider.add("message.anvilcraftplasticraft.construction.wait.permission", "Construction is waiting for world permission");

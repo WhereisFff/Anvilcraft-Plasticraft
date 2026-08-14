@@ -36,19 +36,33 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
         }
         ConstructionJob job = ConstructionJobIndex.get(level).activeJobOf(owner.get()).orElse(null);
         if (job == null || !job.dimension().equals(level.dimension())) {
+            if (worker.homeLoungePos() != null) {
+                restAtHome(worker);
+                return;
+            }
             continueOrIdle(worker);
+            return;
+        }
+        if (job.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE) {
+            worker.setWaitReason(ConstructionWaitReason.SOURCE);
+            if (worker.flightState() == AllayFlightState.FLYING) {
+                AllayWorkMotions.holdStation(worker);
+            }
             return;
         }
         if (job.state() == ConstructionJob.STATE_WAITING_DEMOLITION
             || job.state() == ConstructionJob.STATE_WAITING_PERMISSION
-            || job.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE
             || job.state() == ConstructionJob.STATE_WAITING_MATERIAL) {
             if (job.state() == ConstructionJob.STATE_WAITING_DEMOLITION) {
                 worker.setWaitReason(ConstructionWaitReason.DEMOLITION);
             } else if (job.state() == ConstructionJob.STATE_WAITING_PERMISSION) {
                 worker.setWaitReason(ConstructionWaitReason.PERMISSION);
-            } else if (job.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE) {
-                worker.setWaitReason(ConstructionWaitReason.SOURCE);
+            } else {
+                worker.setWaitReason(ConstructionWaitReason.MATERIAL);
+            }
+            if (job.state() != ConstructionJob.STATE_WAITING_PERMISSION && worker.homeLoungePos() != null) {
+                restAtHome(worker);
+                return;
             }
             if (worker.flightState() == AllayFlightState.FLYING) {
                 AllayWorkMotions.holdStation(worker);
@@ -57,7 +71,7 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
         }
         if (job.state() != ConstructionJob.STATE_DEMOLISHING) {
             if (job.state() == ConstructionJob.STATE_COMMITTING || job.state() == ConstructionJob.STATE_BUILDING) {
-                leaveSiteThenIdle(worker, job);
+                finishThenRest(worker, job);
             }
             return;
         }
@@ -66,7 +80,7 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
         if (worker.assignedJobId().filter(job.jobId()::equals).isEmpty() || worker.taskOpId() < 0) {
             if (!tryClaim(worker, level, job, progress)) {
                 if (progress.allDemolishResolved()) {
-                    leaveSiteThenIdle(worker, job);
+                    finishThenRest(worker, job);
                 }
                 return;
             }
@@ -77,7 +91,7 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
             worker.clearAssignment(false);
             worker.setActionState((byte) 0);
             if (progress.allDemolishResolved()) {
-                leaveSiteThenIdle(worker, job);
+                finishThenRest(worker, job);
             }
             return;
         }
@@ -90,11 +104,14 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
+        if (!ConstructionJobController.canClaimJob(worker, progress)) return false;
         ConstructionBuildOp op = ConstructionJobController.nextAssignableDemolish(level, progress);
         if (op == null) return false;
         BlockPos approach = op.approach().orElse(null);
         if (approach == null) return false;
-        if (worker.position().distanceTo(Vec3.atCenterOf(op.pos())) > ConstructionJobController.DISCOVERY_RANGE) {
+        if (!ConstructionJobController.isWithinLoungeRange(progress, op.pos())) return false;
+        if (!progress.hasCoordinator()
+            && worker.position().distanceTo(Vec3.atCenterOf(op.pos())) > ConstructionJobController.DISCOVERY_RANGE) {
             return false;
         }
         op.setStatus(ConstructionBuildOp.Status.LEASED);
@@ -142,9 +159,27 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
                 return;
             }
             if (current != null && progress.allDemolishResolved()) {
-                leaveSiteThenIdle(worker, current);
+                finishThenRest(worker, current);
             }
         }
+    }
+
+    private static void finishThenRest(WorkingAllayEntity worker, ConstructionJob job) {
+        if (worker.homeLoungePos() != null) {
+            restAtHome(worker);
+            return;
+        }
+        leaveSiteThenIdle(worker, job);
+    }
+
+    private static void restAtHome(WorkingAllayEntity worker) {
+        BlockPos home = worker.homeLoungePos();
+        if (home == null) {
+            AllayWorkMotions.releaseToVanilla(worker);
+            return;
+        }
+        worker.clearAssignment(false);
+        worker.startDockingTo(home);
     }
 
     private static void leaveSiteThenIdle(WorkingAllayEntity worker, ConstructionJob job) {

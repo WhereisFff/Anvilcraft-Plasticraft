@@ -6,6 +6,7 @@ import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
 import dev.anvilcraft.plasticraft.block.AllayLoungeBlock;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.anvilcraft.plasticraft.init.PlasticraftMenuTypes;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
@@ -14,9 +15,11 @@ import dev.dubhe.anvilcraft.api.power.IPowerConsumer;
 import dev.dubhe.anvilcraft.api.power.PowerGrid;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.level.ServerLevel;
@@ -38,8 +41,12 @@ import net.neoforged.neoforge.items.ItemStackHandler;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 /**
  * 悦灵休息室。最多托管 16 只戴帽悦灵,另有 1 个结构磁盘槽。
@@ -65,12 +72,14 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
 
         @Override
         protected void onContentsChanged(int slot) {
+            AllayLoungeBlockEntity.this.onDiskChanged();
             AllayLoungeBlockEntity.this.setChanged();
         }
     };
     private final List<AllayWorkRecord> hosted = new ArrayList<>();
     private final List<Player> viewers = new ArrayList<>();
     private final List<UUID> dockingQueue = new ArrayList<>();
+    private final EnumMap<Direction, ItemStack> pickupDisplays = new EnumMap<>(Direction.class);
     @Nullable
     private PowerGrid grid;
     @Nullable
@@ -79,6 +88,9 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
     private boolean dockingRunning;
     private long dockingSyncGameTime;
     private AllayShortageStrategy shortageStrategy = AllayShortageStrategy.PAUSE;
+    private boolean loading;
+    @Nullable
+    private UUID lastDiskJobId;
 
     public AllayLoungeBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState blockState) {
         super(type, pos, blockState);
@@ -98,9 +110,9 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
     }
 
     private void tickDocking() {
-        if (this.dockingRecord == null) return;
+        if (this.dockingRecord == null && !this.dockingRunning) return;
         if (!this.isPowered()) {
-            if (this.dockingRunning) {
+            if (this.dockingRunning && this.dockingRecord != null) {
                 this.dockingRunning = false;
                 this.sendDockingUpdate();
             }
@@ -113,6 +125,13 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
         this.dockingProgress++;
         this.setChanged();
         if (this.dockingProgress < DOCKING_DURATION_TICKS) return;
+        if (this.dockingRecord == null) {
+            this.dockingProgress = 0;
+            this.dockingRunning = false;
+            this.sendDockingUpdate();
+            this.setChanged();
+            return;
+        }
         this.finishDocking();
     }
 
@@ -182,7 +201,7 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
     public boolean tryDock(WorkingAllayEntity worker) {
         if (this.level == null || this.level.isClientSide) return false;
         if (!this.isPowered()) return false;
-        if (this.dockingRecord != null) return false;
+        if (this.isBayBusy()) return false;
         if (this.hosted.size() >= HOST_CAPACITY) return false;
         this.dockingQueue.remove(worker.getUUID());
         this.dockingRecord = worker.toWorkRecord();
@@ -202,7 +221,11 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
     }
 
     public boolean canAcceptDocking() {
-        return this.isPowered() && this.dockingRecord == null && this.hosted.size() < HOST_CAPACITY;
+        return this.isPowered() && !this.isBayBusy() && this.hosted.size() < HOST_CAPACITY;
+    }
+
+    public boolean isBayBusy() {
+        return this.dockingRecord != null || this.dockingRunning;
     }
 
     public int recallNearbyWorkers() {
@@ -218,15 +241,41 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
 
     public boolean releaseHosted(int index) {
         if (!(this.level instanceof ServerLevel serverLevel) || !this.isPowered()) return false;
+        if (this.isBayBusy()) return false;
         if (index < 0 || index >= this.hosted.size()) return false;
         AllayWorkRecord record = this.hosted.remove(index);
         this.spawnBound(serverLevel, this.releasePoint(), record);
-        this.setChanged();
-        this.sendDockingUpdate();
+        this.occupyOutboundBay();
         return true;
     }
 
+    public boolean tryLaunch(Predicate<AllayWorkRecord> match) {
+        if (!(this.level instanceof ServerLevel serverLevel) || !this.isPowered()) return false;
+        if (this.isBayBusy()) return false;
+        for (int index = 0; index < this.hosted.size(); index++) {
+            AllayWorkRecord record = this.hosted.get(index);
+            if (!match.test(record)) continue;
+            this.hosted.remove(index);
+            this.spawnBound(serverLevel, this.releasePoint(), record);
+            this.occupyOutboundBay();
+            return true;
+        }
+        return false;
+    }
+
+    private void occupyOutboundBay() {
+        this.dockingRecord = null;
+        this.dockingProgress = 0;
+        this.dockingRunning = true;
+        this.setChanged();
+        this.sendDockingUpdate();
+    }
+
     public void releaseAllToWorld() {
+        if (this.level instanceof ServerLevel serverLevel) {
+            ConstructionJobController.unclaimLounge(serverLevel, this.worldPosition, this.diskJobId());
+        }
+        this.lastDiskJobId = null;
         if (!(this.level instanceof ServerLevel serverLevel)) {
             this.dropDisk();
             return;
@@ -265,6 +314,76 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
         this.shortageStrategy = strategy == null ? AllayShortageStrategy.PAUSE : strategy;
         this.setChanged();
         this.sendDockingUpdate();
+        if (this.level instanceof ServerLevel serverLevel) {
+            ConstructionJobController.onLoungeShortageStrategyChanged(
+                serverLevel,
+                this.worldPosition,
+                this.shortageStrategy
+            );
+        }
+    }
+
+    public void setPickupDisplay(Direction side, ItemStack stack) {
+        if (!side.getAxis().isHorizontal()) return;
+        this.pickupDisplays.put(side, stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
+        this.sendDockingUpdate();
+        this.setChanged();
+    }
+
+    public void clearPickupDisplays() {
+        this.pickupDisplays.clear();
+        this.sendDockingUpdate();
+        this.setChanged();
+    }
+
+    public ItemStack pickupDisplay(Direction side) {
+        if (!this.shouldShowPickup()) return ItemStack.EMPTY;
+        return this.pickupDisplays.getOrDefault(side, ItemStack.EMPTY);
+    }
+
+    private boolean shouldShowPickup() {
+        if (this.level == null) return false;
+        BlockState state = this.getBlockState();
+        if (state.hasProperty(AllayLoungeBlock.POWERED)) {
+            return state.getValue(AllayLoungeBlock.POWERED);
+        }
+        return this.isPowered();
+    }
+
+    public Map<Direction, ItemStack> pickupDisplays() {
+        return Map.copyOf(this.pickupDisplays);
+    }
+
+    @Nullable
+    public UUID diskJobId() {
+        return ConstructionBlueprintData.get(this.items.getStackInSlot(DISK_SLOT))
+            .flatMap(ConstructionBlueprintData::jobId)
+            .orElse(null);
+    }
+
+    public void clearDiskJobId(UUID jobId) {
+        ItemStack disk = this.items.getStackInSlot(DISK_SLOT);
+        ConstructionBlueprintData data = ConstructionBlueprintData.get(disk).orElse(null);
+        if (data == null || data.jobId().filter(jobId::equals).isEmpty()) return;
+        this.lastDiskJobId = null;
+        ConstructionBlueprintData.set(disk, data.withoutJobId());
+        this.setChanged();
+        this.sendDockingUpdate();
+    }
+
+    private void onDiskChanged() {
+        if (this.loading || this.level == null || this.level.isClientSide) return;
+        if (!(this.level instanceof ServerLevel serverLevel)) return;
+        UUID now = this.diskJobId();
+        if (Objects.equals(now, this.lastDiskJobId)) return;
+        UUID previous = this.lastDiskJobId;
+        this.lastDiskJobId = now;
+        if (previous != null) {
+            ConstructionJobController.unclaimLounge(serverLevel, this.worldPosition, previous);
+        }
+        if (now != null) {
+            ConstructionJobController.claimLounge(serverLevel, this.worldPosition, now);
+        }
     }
 
     public Vec3 dockApproachPoint() {
@@ -395,22 +514,30 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
             .resultOrPartial(error -> AnvilcraftPlasticraft.LOGGER.error("Failed to save lounge hosts: {}", error))
             .ifPresent(encoded -> tag.put("Hosted", encoded));
         this.saveDockingState(tag, registries);
+        this.savePickupDisplays(tag, registries);
     }
 
     private void saveDockingState(CompoundTag tag, HolderLookup.Provider registries) {
-        if (this.dockingRecord == null) return;
-        AllayWorkRecord.CODEC
-            .encodeStart(registries.createSerializationContext(NbtOps.INSTANCE), this.dockingRecord)
-            .resultOrPartial(error -> AnvilcraftPlasticraft.LOGGER.error("Failed to save docking allay: {}", error))
-            .ifPresent(encoded -> tag.put("DockingAllay", encoded));
-        tag.putInt("DockingProgress", this.dockingProgress);
-        tag.putBoolean("DockingRunning", this.dockingRunning);
+        if (this.dockingRecord != null) {
+            AllayWorkRecord.CODEC
+                .encodeStart(registries.createSerializationContext(NbtOps.INSTANCE), this.dockingRecord)
+                .resultOrPartial(error -> AnvilcraftPlasticraft.LOGGER.error("Failed to save docking allay: {}", error))
+                .ifPresent(encoded -> tag.put("DockingAllay", encoded));
+        }
+        if (this.dockingRecord != null || this.dockingRunning) {
+            tag.putInt("DockingProgress", this.dockingProgress);
+            tag.putBoolean("DockingRunning", this.dockingRunning);
+        }
     }
 
     @Override
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
+        this.loading = true;
         if (tag.contains("Items")) this.items.deserializeNBT(registries, tag.getCompound("Items"));
+        this.lastDiskJobId = this.diskJobId();
+        this.loadPickupDisplays(tag, registries);
+        this.loading = false;
         this.shortageStrategy = AllayShortageStrategy.SKIP.getSerializedName().equals(tag.getString("ShortageStrategy"))
             ? AllayShortageStrategy.SKIP
             : AllayShortageStrategy.PAUSE;
@@ -428,6 +555,8 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
                 .parse(registries.createSerializationContext(NbtOps.INSTANCE), tag.get("DockingAllay"))
                 .resultOrPartial(error -> AnvilcraftPlasticraft.LOGGER.error("Failed to load docking allay: {}", error))
                 .ifPresent(record -> this.dockingRecord = record);
+        }
+        if (tag.contains("DockingProgress") || tag.contains("DockingRunning")) {
             this.dockingProgress = tag.getInt("DockingProgress");
             this.dockingRunning = tag.getBoolean("DockingRunning");
         }
@@ -441,7 +570,30 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
         HOSTS_CODEC.encodeStart(registries.createSerializationContext(NbtOps.INSTANCE), this.hosted)
             .resultOrPartial(error -> AnvilcraftPlasticraft.LOGGER.error("Failed to sync lounge hosts: {}", error))
             .ifPresent(encoded -> tag.put("Hosted", encoded));
+        this.savePickupDisplays(tag, registries);
         return tag;
+    }
+
+    private void savePickupDisplays(CompoundTag tag, HolderLookup.Provider registries) {
+        CompoundTag displays = new CompoundTag();
+        for (Map.Entry<Direction, ItemStack> entry : this.pickupDisplays.entrySet()) {
+            if (entry.getValue().isEmpty()) continue;
+            displays.put(entry.getKey().getSerializedName(), entry.getValue().save(registries));
+        }
+        if (!displays.isEmpty()) {
+            tag.put("PickupDisplays", displays);
+        }
+    }
+
+    private void loadPickupDisplays(CompoundTag tag, HolderLookup.Provider registries) {
+        this.pickupDisplays.clear();
+        if (!tag.contains("PickupDisplays", Tag.TAG_COMPOUND)) return;
+        CompoundTag displays = tag.getCompound("PickupDisplays");
+        for (Direction side : Direction.Plane.HORIZONTAL) {
+            if (!displays.contains(side.getSerializedName())) continue;
+            ItemStack.parse(registries, displays.getCompound(side.getSerializedName()))
+                .ifPresent(stack -> this.pickupDisplays.put(side, stack));
+        }
     }
 
     @Override

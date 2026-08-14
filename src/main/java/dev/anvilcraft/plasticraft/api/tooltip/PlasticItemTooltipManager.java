@@ -167,7 +167,8 @@ public final class PlasticItemTooltipManager {
                 Breaking the lounge releases every hosted allay back into the world
                 Temporary cards show each allay hat and held tool
                 Pause and skip for missing materials or demolition are set here, not on each allay
-                The bottom face is its only logistics side; later systems will pull materials from below"""
+                The bottom face takes and unloads items; leftovers that do not fit drop beside the lounge
+                Inserting a deployed disk claims that job, starts it, and excludes unhosted workers"""
         );
     }
 

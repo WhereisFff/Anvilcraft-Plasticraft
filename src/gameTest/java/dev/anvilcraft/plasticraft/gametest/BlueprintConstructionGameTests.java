@@ -395,7 +395,7 @@ public final class BlueprintConstructionGameTests {
     }
 
     /** 部署生命周期:创建任务、锚点移动、启动切换、单活动约束与取消清理。 */
-    @GameTest(timeoutTicks = 60)
+    @GameTest(timeoutTicks = 60, batch = "zzz_blueprint_lifecycle")
     @EmptyTemplate(value = "4x4x4", floor = true)
     @TestHolder(description = "Deploy, move, single-active toggle and cancel keep index and disk consistent")
     static void deployLifecycleKeepsSingleActiveJob(ExtendedGameTestHelper helper) {
@@ -489,7 +489,7 @@ public final class BlueprintConstructionGameTests {
     }
 
     /** 未部署但手持磁盘的哈希允许读取结构库,随机哈希拒绝,部署后仍可读。 */
-    @GameTest(timeoutTicks = 40)
+    @GameTest(timeoutTicks = 40, batch = "zzz_blueprint_snapshot")
     @EmptyTemplate(value = "3x3x3", floor = true)
     @TestHolder(description = "Snapshot reads are allowed for a held imported disk before and after deploy")
     static void snapshotReadableFromHeldDiskBeforeDeploy(ExtendedGameTestHelper helper) {
@@ -531,7 +531,7 @@ public final class BlueprintConstructionGameTests {
     }
 
     /** 对已部署磁盘覆盖导入会移除旧投影,磁盘不再引用被删任务。 */
-    @GameTest(timeoutTicks = 40)
+    @GameTest(timeoutTicks = 40, batch = "zzz_blueprint_reimport")
     @EmptyTemplate(value = "3x3x3", floor = true)
     @TestHolder(description = "Re-importing a deployed disk removes the previous world projection")
     static void reimportingDiskRemovesPreviousDeployment(ExtendedGameTestHelper helper) {

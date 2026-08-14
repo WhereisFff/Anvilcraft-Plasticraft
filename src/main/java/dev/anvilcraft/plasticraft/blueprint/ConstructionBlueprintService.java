@@ -268,6 +268,19 @@ public final class ConstructionBlueprintService {
             throw new ConstructionBlueprintException("job_missing", "");
         }
         requireOwner(player, job);
+        start(server, jobId);
+    }
+
+    /** 磁盘入室等无在线玩家入口:用任务已有所有者暂停其其他活动任务。 */
+    public static void start(MinecraftServer server, UUID jobId) {
+        ConstructionJobIndex index = ConstructionJobIndex.get(server);
+        ConstructionJob job = index.job(jobId);
+        if (job == null) {
+            return;
+        }
+        if (job.isActive()) {
+            return;
+        }
         List<ConstructionJob> paused = index.activate(jobId);
         for (ConstructionJob pausedJob : paused) {
             ConstructionJobController.pause(server, pausedJob);

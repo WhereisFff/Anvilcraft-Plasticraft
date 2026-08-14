@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.allay.tool;
 import dev.anvilcraft.plasticraft.allay.AllayFlightState;
 import dev.anvilcraft.plasticraft.allay.AllayWorkMotions;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobIndex;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobProgress;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobStore;
@@ -108,6 +109,7 @@ public final class GeneralAllayToolBehavior implements AllayToolBehavior {
     ) {
         ConstructionJobProgress progress = ConstructionJobStore.get(level).get(job.jobId());
         if (progress == null) return false;
+        if (!ConstructionJobController.canClaimJob(worker, progress)) return false;
         if (definition.hasCapability(AllayCapability.DEMOLISH)
             && job.state() == ConstructionJob.STATE_DEMOLISHING
             && DemolitionAllayToolBehavior.tryClaim(worker, level, job, progress)) {

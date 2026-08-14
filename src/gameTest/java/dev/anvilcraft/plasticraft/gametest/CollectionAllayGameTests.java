@@ -1,11 +1,16 @@
 package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.allay.tool.CollectionAllayToolBehavior;
+import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionMaterialAccess;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.dubhe.anvilcraft.init.item.ModItems;
+import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.Container;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -13,6 +18,8 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
@@ -63,7 +70,7 @@ public final class CollectionAllayGameTests {
 
     @GameTest(timeoutTicks = 20, batch = "zzz_collection")
     @EmptyTemplate(value = "5x4x5", floor = true)
-    @TestHolder(description = "Unload inserts what the owner can hold and leaves the rest on the allay")
+    @TestHolder(description = "Unload inserts what the owner can hold and drops the rest beside them")
     static void unloadLeavesOverflowOnAllay(ExtendedGameTestHelper helper) {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         WorkingAllayEntity worker = spawnCollectionAllay(helper, new Vec3(2.5D, 2.0D, 2.5D), player);
@@ -74,7 +81,49 @@ public final class CollectionAllayGameTests {
         }
         worker.unloadCollectionTo(player);
         check(player.getInventory().getItem(0).getCount() == 64, "owner must receive one dirt");
-        check(countInAllay(worker, Items.DIRT) == 4, "the four dirt that did not fit must stay on the allay");
+        check(countInAllay(worker, Items.DIRT) == 0, "unload must empty the allay even when the owner is full");
+        int dropped = helper.getLevel().getEntitiesOfClass(
+            ItemEntity.class,
+            player.getBoundingBox().inflate(2.0D),
+            item -> item.getItem().is(Items.DIRT)
+        ).stream().mapToInt(item -> item.getItem().getCount()).sum();
+        check(dropped == 4, "the four dirt that did not fit must drop beside the owner");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20, batch = "zzz_collection")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A lounge-bound collector unloads into the chest below and drops leftovers beside the lounge")
+    static void unloadToLoungeChestBelow(ExtendedGameTestHelper helper) {
+        WorkingAllayEntity worker = spawnCollectionAllay(helper, new Vec3(2.5D, 3.0D, 2.5D), null);
+        BlockPos loungePos = new BlockPos(1, 2, 1);
+        helper.setBlock(loungePos, PlasticraftBlocks.ALLAY_LOUNGE.get());
+        helper.setBlock(loungePos.below(), Blocks.CHEST);
+        if (!(helper.getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge)) {
+            throw new GameTestAssertException("allay lounge block entity is missing");
+        }
+        if (!(helper.getBlockEntity(loungePos.below()) instanceof Container chest)) {
+            throw new GameTestAssertException("chest below the lounge is missing");
+        }
+        worker.setHomeLounge(lounge.getBlockPos());
+        check(worker.tryInsertCollection(new ItemStack(Items.DIRT, 5)) == 5, "allay must accept five dirt");
+        worker.unloadCollectionTo(ConstructionMaterialAccess.below(helper.getLevel(), lounge.getBlockPos()));
+        check(chest.getItem(0).is(Items.DIRT) && chest.getItem(0).getCount() == 5,
+            "the chest below must receive the five dirt");
+        check(countInAllay(worker, Items.DIRT) == 0, "lounge unload must empty the allay");
+
+        for (int slot = 0; slot < chest.getContainerSize(); slot++) {
+            chest.setItem(slot, new ItemStack(Items.COBBLESTONE, 64));
+        }
+        check(worker.tryInsertCollection(new ItemStack(Items.DIRT, 3)) == 3, "allay must accept overflow dirt");
+        worker.unloadCollectionTo(ConstructionMaterialAccess.below(helper.getLevel(), lounge.getBlockPos()));
+        check(countInAllay(worker, Items.DIRT) == 0, "a full chest must still empty the allay");
+        int dropped = helper.getLevel().getEntitiesOfClass(
+            ItemEntity.class,
+            new AABB(lounge.getBlockPos()).inflate(2.0D),
+            item -> item.getItem().is(Items.DIRT)
+        ).stream().mapToInt(item -> item.getItem().getCount()).sum();
+        check(dropped == 3, "overflow dirt must drop beside the lounge");
         helper.succeed();
     }
 

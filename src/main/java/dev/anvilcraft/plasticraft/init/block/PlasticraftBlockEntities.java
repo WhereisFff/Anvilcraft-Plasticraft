@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.block.entity.HighHeatFuelCauldronBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.Plastic3DPrintingComponentBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
+import dev.anvilcraft.plasticraft.client.renderer.blockentity.AllayLoungeRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.BondedEntityBlockEntityRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.CondenserTowerBlockEntityRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.HighHeatFuelCauldronBlockEntityRenderer;
@@ -20,6 +21,7 @@ public final class PlasticraftBlockEntities {
     public static final BlockEntityEntry<AllayLoungeBlockEntity> ALLAY_LOUNGE = AnvilcraftPlasticraft.REGISTRUM
         .<AllayLoungeBlockEntity>blockEntity("allay_lounge", AllayLoungeBlockEntity::new)
         .validBlock(PlasticraftBlocks.ALLAY_LOUNGE)
+        .renderer(() -> AllayLoungeRenderer::new)
         .register();
 
     public static final BlockEntityEntry<Plastic3DPrintingComponentBlockEntity> PLASTIC_3D_PRINTING_COMPONENT =

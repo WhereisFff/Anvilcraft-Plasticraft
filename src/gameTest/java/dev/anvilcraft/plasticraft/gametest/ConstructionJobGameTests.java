@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.blueprint.BlueprintSource;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintException;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintService;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBuildOp;
@@ -21,12 +22,19 @@ import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
+import dev.anvilcraft.plasticraft.allay.AllayDefaultHardHat;
 import dev.anvilcraft.plasticraft.allay.AllayFlightState;
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
+import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
+import dev.anvilcraft.plasticraft.allay.tool.AllayCapability;
+import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinitions;
 import dev.anvilcraft.plasticraft.allay.tool.CollectionAllayToolBehavior;
 import dev.anvilcraft.plasticraft.allay.tool.ConstructionAllayToolBehavior;
 import dev.anvilcraft.plasticraft.allay.tool.DemolitionAllayToolBehavior;
+import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionMaterialAccess;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.block.RedstoneWireBlock;
@@ -83,11 +91,13 @@ import net.neoforged.testframework.gametest.GameTestPlayer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
  * 覆盖单架无站建设/拆除/收集无人机施工闭环的服务器契约:台账、假方块碰撞、占用、安静提交、
- * 缺料策略、电量拒派、停止后飞回还物、同模板短时序交付,以及封堵、拆除与任务掉落回收。不扫描 128 格实体。
+ * 缺料策略、电量拒派、停止后飞回还物、同模板短时序交付,以及封堵、拆除与任务掉落回收。
+ * `zzz_construction_lounge` 另锁单休息室认领、下方物流与 20 gt 出库窄接口。不扫描 128 格实体。
  */
 public final class ConstructionJobGameTests {
     private ConstructionJobGameTests() {
@@ -1979,6 +1989,260 @@ public final class ConstructionJobGameTests {
         );
     }
 
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_lounge")
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "Inserting a deployed disk starts that job, pauses the owner's other job, and writes the coordinator")
+    static void loungeDiskInsertStartsAndPausesOther(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob first = startCobbleJob(helper, player, 2, new BlockPos(4, 2, 4));
+                ItemStack secondDisk = deployDisk(helper, player, 1, new BlockPos(5, 2, 4));
+                UUID secondId = ConstructionBlueprintData.get(secondDisk).flatMap(ConstructionBlueprintData::jobId).orElse(null);
+                check(secondId != null, "deployed disk must carry a job id");
+                AllayLoungeBlockEntity lounge = placeLounge(helper, new BlockPos(2, 2, 2));
+                lounge.items().setStackInSlot(AllayLoungeBlockEntity.DISK_SLOT, secondDisk);
+                MinecraftServer server = helper.getLevel().getServer();
+                ConstructionJob second = ConstructionJobIndex.get(server).job(secondId);
+                ConstructionJob paused = ConstructionJobIndex.get(server).job(first.job().jobId());
+                ConstructionJobProgress progress = ConstructionJobStore.get(server).get(secondId);
+                check(second != null && second.isActive(), "inserting the disk must start that job");
+                check(paused != null && !paused.isActive(), "the owner's other job must pause");
+                check(progress != null && lounge.getBlockPos().equals(progress.coordinatorLounge()),
+                    "claimed progress must record this lounge");
+                ConstructionBlueprintService.cancel(player, secondId);
+                ConstructionBlueprintService.cancel(player, first.job().jobId());
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("lounge disk claim setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_lounge")
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "After a lounge claim, unhosted construction cannot claim or extract from the player")
+    static void claimedJobRejectsUnhostedExtract(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob started = claimCobbleAtLounge(helper, player, 2);
+                player.getInventory().add(new ItemStack(Items.COBBLESTONE, 4));
+                WorkingAllayEntity worker = spawnConstructionAllay(helper, new Vec3(4.5D, 2.0D, 4.5D), player, 0);
+                check(
+                    !ConstructionAllayToolBehavior.tryClaim(worker, helper.getLevel(), started.job(), started.progress()),
+                    "unhosted construction must not claim a lounge job"
+                );
+                check(
+                    !ConstructionJobController.extractMaterial(
+                        player,
+                        started.progress(),
+                        firstPlace(started.progress()),
+                        worker.getUUID()
+                    ),
+                    "claimed jobs must not extract from the player"
+                );
+                ConstructionBlueprintService.cancel(player, started.job().jobId());
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("unhosted reject setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_lounge")
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "A carrying unhosted builder is evicted and returns the item to the owner")
+    static void claimedJobEvictsCarryingUnhosted(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob started = startCobbleJob(helper, player, 2, new BlockPos(4, 2, 4));
+                player.getInventory().add(new ItemStack(Items.COBBLESTONE, 4));
+                WorkingAllayEntity worker = spawnConstructionAllay(helper, new Vec3(4.5D, 2.0D, 4.5D), player, 0);
+                ConstructionBuildOp first = firstPlace(started.progress());
+                check(
+                    ConstructionJobController.extractMaterial(player, started.progress(), first, worker.getUUID()),
+                    "unhosted extract must succeed before the claim"
+                );
+                worker.setHostedCarry(new ItemStack(Items.COBBLESTONE));
+                worker.assign(started.job().jobId(), first.id());
+                int before = countCobble(player);
+                AllayLoungeBlockEntity lounge = placeLounge(helper, new BlockPos(2, 2, 2));
+                lounge.items().setStackInSlot(AllayLoungeBlockEntity.DISK_SLOT, player.getMainHandItem().copy());
+                check(worker.assignedJobId().isEmpty(), "eviction must clear the unhosted assignment");
+                check(!worker.hostedCarry().isEmpty(), "eviction must keep the carried cobble");
+                ConstructionJobController.depositHostedCarry(worker, player);
+                check(countCobble(player) == before + 1, "the evicted carry must return to the owner");
+                check(worker.hostedCarry().isEmpty(), "returning to the owner must empty the carry");
+                ConstructionBlueprintService.cancel(player, started.job().jobId());
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("evict carry setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_lounge")
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "Claimed extract takes cobble from the chest below, and creative players cannot bypass it")
+    static void claimedExtractUsesChestNotCreative(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.CREATIVE);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                AllayLoungeBlockEntity lounge = placeLoungeWithChest(helper, new BlockPos(2, 2, 2), new ItemStack(Items.COBBLESTONE, 2));
+                StartedJob started = claimCobbleAtLounge(helper, player, 2, lounge);
+                ConstructionBuildOp first = firstPlace(started.progress());
+                check(
+                    !ConstructionJobController.extractMaterial(player, started.progress(), first, UUID.randomUUID()),
+                    "claimed extract from the creative player must fail"
+                );
+                check(countCobble(player) == 0, "creative inventory must stay empty");
+                check(
+                    ConstructionJobController.extractMaterialFromLounge(
+                        helper.getLevel(),
+                        started.progress(),
+                        first,
+                        UUID.randomUUID()
+                    ),
+                    "claimed extract must take cobble from the chest below"
+                );
+                check(countInChest(helper, lounge.getBlockPos().below(), Items.COBBLESTONE) == 1,
+                    "the chest must lose exactly one cobble");
+                check(carriedCount(started.progress()) == 1, "the ledger must record the reserved cobble");
+                check(countCobble(player) == 0, "creative extract must not invent cobble in the inventory");
+                ConstructionBlueprintService.cancel(player, started.job().jobId());
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("lounge extract setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_lounge")
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "Removing the disk returns a carried ledger entry to the chest, or drops it beside when full")
+    static void diskRemoveReturnsOrDropsBeside(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                AllayLoungeBlockEntity lounge = placeLoungeWithChest(helper, new BlockPos(2, 2, 2), new ItemStack(Items.COBBLESTONE, 2));
+                StartedJob started = claimCobbleAtLounge(helper, player, 2, lounge);
+                ConstructionBuildOp first = firstPlace(started.progress());
+                check(
+                    ConstructionJobController.extractMaterialFromLounge(
+                        helper.getLevel(),
+                        started.progress(),
+                        first,
+                        UUID.randomUUID()
+                    ),
+                    "setup extract must take one cobble"
+                );
+                lounge.items().setStackInSlot(AllayLoungeBlockEntity.DISK_SLOT, ItemStack.EMPTY);
+                check(countInChest(helper, lounge.getBlockPos().below(), Items.COBBLESTONE) == 2,
+                    "removing the disk must insert the carried cobble back into the chest");
+                check(carriedCount(started.progress()) == 0, "returned ledger entries must leave the carried state");
+
+                lounge.items().setStackInSlot(AllayLoungeBlockEntity.DISK_SLOT, player.getMainHandItem().copy());
+                ConstructionJob claimed = ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId());
+                ConstructionJobProgress progress = ConstructionJobStore.get(helper.getLevel()).get(started.job().jobId());
+                check(claimed != null && claimed.isActive() && progress != null, "reinserting the disk must reclaim the job");
+                ConstructionBuildOp next = firstOpenPlace(progress);
+                check(
+                    ConstructionJobController.extractMaterialFromLounge(helper.getLevel(), progress, next, UUID.randomUUID()),
+                    "second extract must take another cobble"
+                );
+                fillChest(helper, lounge.getBlockPos().below(), Items.COBBLESTONE);
+                ConstructionJobController.pause(helper.getLevel().getServer(), claimed);
+                check(countInChest(helper, lounge.getBlockPos().below(), Items.COBBLESTONE) == 27 * 64,
+                    "a full chest must not receive a duplicate cobble");
+                List<ItemEntity> drops = helper.getLevel().getEntitiesOfClass(
+                    ItemEntity.class,
+                    new AABB(lounge.getBlockPos()).inflate(2.0D),
+                    item -> item.getItem().is(Items.COBBLESTONE)
+                );
+                check(!drops.isEmpty(), "overflow must drop beside the lounge");
+                ConstructionBlueprintService.cancel(player, started.job().jobId());
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("disk return setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_lounge")
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "Removing the chest below marks source unavailable; a leased allay hovers and keeps its carry")
+    static void missingChestMarksSourceUnavailable(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                AllayLoungeBlockEntity lounge = placeLoungeWithChest(helper, new BlockPos(2, 2, 2), new ItemStack(Items.COBBLESTONE, 2));
+                StartedJob started = claimCobbleAtLounge(helper, player, 2, lounge);
+                WorkingAllayEntity worker = spawnConstructionAllay(helper, new Vec3(2.5D, 3.0D, 2.5D), player, 0);
+                worker.setHomeLounge(lounge.getBlockPos());
+                ConstructionBuildOp first = firstPlace(started.progress());
+                check(
+                    ConstructionJobController.extractMaterialFromLounge(
+                        helper.getLevel(),
+                        started.progress(),
+                        first,
+                        worker.getUUID()
+                    ),
+                    "setup extract must reserve cobble"
+                );
+                first.setStatus(ConstructionBuildOp.Status.LEASED);
+                first.setLeaseAllay(worker.getUUID());
+                worker.assign(started.job().jobId(), first.id());
+                worker.setHostedCarry(new ItemStack(Items.COBBLESTONE));
+                helper.setBlock(new BlockPos(2, 1, 2), Blocks.AIR);
+                ConstructionJob current = ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId());
+                check(current != null, "claimed job must still exist before the chest is removed");
+                ConstructionJobController.tickJob(helper.getLevel().getServer(), helper.getLevel(), current);
+                ConstructionJob waiting = ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId());
+                check(waiting != null && waiting.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE,
+                    "removing the chest must mark source unavailable");
+                ConstructionAllayToolBehavior.INSTANCE.serverTick(worker);
+                check(!worker.hostedCarry().isEmpty(), "source wait must keep the carried item");
+                check(worker.assignedJobId().filter(started.job().jobId()::equals).isPresent(),
+                    "source wait must keep the lease");
+                helper.setBlock(new BlockPos(2, 1, 2), Blocks.CHEST);
+                ConstructionJobController.tickJob(helper.getLevel().getServer(), helper.getLevel(), waiting);
+                ConstructionJob resumed = ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId());
+                check(resumed != null && resumed.state() != ConstructionJob.STATE_SOURCE_UNAVAILABLE,
+                    "replacing the chest must resume the job");
+                ConstructionBlueprintService.cancel(player, started.job().jobId());
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("source unavailable setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 80, batch = "zzz_construction_lounge")
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "tryLaunch releases one hosted builder and occupies the 20 gt bay")
+    static void tryLaunchOccupiesBay(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        AllayLoungeBlockEntity lounge = placePoweredLounge(helper, new BlockPos(2, 2, 2));
+        helper.startSequence()
+            .thenWaitUntil(() -> check(lounge.isPowered(), "lounge did not connect to the power grid"))
+            .thenExecute(() -> {
+                check(lounge.addHosted(constructionRecord(player.getUUID())), "failed to host a construction record");
+                check(lounge.addHosted(constructionRecord(player.getUUID())), "failed to host a second record");
+                check(
+                    lounge.tryLaunch(record -> AllayToolDefinitions.fromHeldItem(record.heldTool())
+                        .hasCapability(AllayCapability.PICK_UP_MATERIAL)),
+                    "powered lounge must launch a hosted builder"
+                );
+                check(lounge.hosted().size() == 1, "tryLaunch must remove exactly one hosted record");
+                check(lounge.isBayBusy(), "outbound launch must occupy the bay");
+                check(!lounge.releaseHosted(0), "GUI release must fail while the bay is busy");
+                check(
+                    !lounge.tryLaunch(record -> true),
+                    "a second launch must fail while the bay is busy"
+                );
+            })
+            .thenExecuteAfter(AllayLoungeBlockEntity.DOCKING_DURATION_TICKS + 1, () -> {
+                check(!lounge.isBayBusy(), "the outbound bay must clear after 20 gt");
+            })
+            .thenSucceed();
+    }
+
     private static StartedJob startCobbleJob(ExtendedGameTestHelper helper, GameTestPlayer player, int count)
         throws ConstructionBlueprintException {
         return startCobbleJob(helper, player, count, new BlockPos(3, 2, 1));
@@ -2024,6 +2288,117 @@ public final class ConstructionJobGameTests {
         ConstructionJobProgress progress = ConstructionJobStore.get(server).get(job.jobId());
         check(progress != null && progress.planned(), "started " + name + " job must be planned");
         return new StartedJob(started, progress);
+    }
+
+    private static ItemStack deployDisk(
+        ExtendedGameTestHelper helper,
+        GameTestPlayer player,
+        int count,
+        BlockPos relativeAnchor
+    ) throws ConstructionBlueprintException {
+        ItemStack disk = new ItemStack(ModItems.STRUCTURE_DISK.get());
+        ConstructionBlueprintService.importIntoDisk(
+            helper.getLevel().getServer(),
+            disk,
+            cobbleStructure(count),
+            "cobble-wall-" + count,
+            BlueprintSource.VANILLA_FILE
+        );
+        player.setItemInHand(InteractionHand.MAIN_HAND, disk);
+        ConstructionBlueprintService.deploy(
+            player,
+            InteractionHand.MAIN_HAND,
+            helper.absolutePos(relativeAnchor),
+            Rotation.NONE,
+            Mirror.NONE
+        );
+        return player.getMainHandItem().copy();
+    }
+
+    private static StartedJob claimCobbleAtLounge(
+        ExtendedGameTestHelper helper,
+        GameTestPlayer player,
+        int count
+    ) throws ConstructionBlueprintException {
+        return claimCobbleAtLounge(helper, player, count, placeLounge(helper, new BlockPos(2, 2, 2)));
+    }
+
+    private static StartedJob claimCobbleAtLounge(
+        ExtendedGameTestHelper helper,
+        GameTestPlayer player,
+        int count,
+        AllayLoungeBlockEntity lounge
+    ) throws ConstructionBlueprintException {
+        ItemStack disk = deployDisk(helper, player, count, new BlockPos(4, 2, 4));
+        UUID jobId = ConstructionBlueprintData.get(disk).flatMap(ConstructionBlueprintData::jobId).orElse(null);
+        check(jobId != null, "deployed lounge disk must carry a job id");
+        lounge.items().setStackInSlot(AllayLoungeBlockEntity.DISK_SLOT, disk);
+        MinecraftServer server = helper.getLevel().getServer();
+        ConstructionJob started = ConstructionJobIndex.get(server).job(jobId);
+        check(started != null && started.isActive(), "inserting the disk must start the job");
+        ConstructionJobProgress progress = ConstructionJobStore.get(server).get(jobId);
+        check(progress != null && progress.planned(), "claimed job must be planned");
+        return new StartedJob(started, progress);
+    }
+
+    private static AllayLoungeBlockEntity placeLounge(ExtendedGameTestHelper helper, BlockPos relativePos) {
+        helper.setBlock(relativePos, PlasticraftBlocks.ALLAY_LOUNGE.get());
+        if (!(helper.getBlockEntity(relativePos) instanceof AllayLoungeBlockEntity lounge)) {
+            throw new GameTestAssertException("allay lounge block entity is missing");
+        }
+        return lounge;
+    }
+
+    private static AllayLoungeBlockEntity placePoweredLounge(ExtendedGameTestHelper helper, BlockPos relativePos) {
+        AllayLoungeBlockEntity lounge = placeLounge(helper, relativePos);
+        helper.setBlock(relativePos.east(), ModBlocks.CREATIVE_GENERATOR.get());
+        return lounge;
+    }
+
+    private static AllayLoungeBlockEntity placeLoungeWithChest(
+        ExtendedGameTestHelper helper,
+        BlockPos relativePos,
+        ItemStack contents
+    ) {
+        AllayLoungeBlockEntity lounge = placeLounge(helper, relativePos);
+        helper.setBlock(relativePos.below(), Blocks.CHEST);
+        if (!(helper.getBlockEntity(relativePos.below()) instanceof Container container)) {
+            throw new GameTestAssertException("chest below the lounge is missing");
+        }
+        container.setItem(0, contents);
+        return lounge;
+    }
+
+    private static int countInChest(ExtendedGameTestHelper helper, BlockPos absolutePos, Item item) {
+        BlockEntity blockEntity = helper.getLevel().getBlockEntity(absolutePos);
+        if (!(blockEntity instanceof Container container)) {
+            return 0;
+        }
+        return countContainer(container, item);
+    }
+
+    private static void fillChest(ExtendedGameTestHelper helper, BlockPos absolutePos, Item item) {
+        BlockEntity blockEntity = helper.getLevel().getBlockEntity(absolutePos);
+        if (!(blockEntity instanceof Container container)) {
+            throw new GameTestAssertException("chest to fill is missing");
+        }
+        for (int slot = 0; slot < container.getContainerSize(); slot++) {
+            container.setItem(slot, new ItemStack(item, 64));
+        }
+    }
+
+    private static AllayWorkRecord constructionRecord(UUID owner) {
+        return new AllayWorkRecord(
+            UUID.randomUUID(),
+            AllayDefaultHardHat.stack(),
+            new ItemStack(ModItems.CRAB_CLAW.get()),
+            Optional.of(owner),
+            AllayShortageStrategy.PAUSE,
+            List.of(),
+            Optional.empty(),
+            ItemStack.EMPTY,
+            Optional.empty()
+        );
     }
 
     private static CompoundTag cobbleStructure(int count) {

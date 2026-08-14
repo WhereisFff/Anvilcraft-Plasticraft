@@ -28,6 +28,8 @@ public final class ConstructionJobProgress {
     private final List<ConstructionDebrisAccount> debris = new ArrayList<>();
     private final Map<UUID, UUID> debrisLeases = new HashMap<>();
     private final ConstructionCommitLog commitLog = new ConstructionCommitLog();
+    @Nullable
+    private BlockPos coordinatorLounge;
     private int nextOpId;
     private int nextLedgerId;
 
@@ -243,6 +245,30 @@ public final class ConstructionJobProgress {
     }
 
     @Nullable
+    public BlockPos coordinatorLounge() {
+        return this.coordinatorLounge;
+    }
+
+    public boolean hasCoordinator() {
+        return this.coordinatorLounge != null;
+    }
+
+    public void setCoordinatorLounge(@Nullable BlockPos loungePos) {
+        this.coordinatorLounge = loungePos == null ? null : loungePos.immutable();
+    }
+
+    @Nullable
+    public ItemStack carriedBy(UUID allayId) {
+        for (ConstructionLedgerEntry entry : this.ledger) {
+            if (entry.state() == ConstructionLedgerEntry.State.CARRIED
+                && allayId.equals(entry.allayId())) {
+                return entry.stack();
+            }
+        }
+        return null;
+    }
+
+    @Nullable
     public ConstructionBuildOp parentOf(ConstructionBuildOp child) {
         if (child.parentId() < 0) {
             return null;
@@ -385,6 +411,9 @@ public final class ConstructionJobProgress {
         }
         tag.put("Debris", debrisTag);
         tag.put("CommitLog", this.commitLog.save());
+        if (this.coordinatorLounge != null) {
+            tag.putLong("CoordinatorLounge", this.coordinatorLounge.asLong());
+        }
         return tag;
     }
 
@@ -417,6 +446,9 @@ public final class ConstructionJobProgress {
             progress.commitLog.setPhase(loaded.phase());
             progress.commitLog.setNextIndex(loaded.nextIndex());
             progress.commitLog.written().addAll(loaded.written());
+        }
+        if (tag.contains("CoordinatorLounge")) {
+            progress.coordinatorLounge = BlockPos.of(tag.getLong("CoordinatorLounge"));
         }
         return progress;
     }
