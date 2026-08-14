@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.blueprint;
 import dev.anvilcraft.plasticraft.entity.drone.DroneEntity;
 import dev.anvilcraft.plasticraft.network.ConstructionProjectionSectionPacket;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -35,8 +36,42 @@ import java.util.WeakHashMap;
  */
 public final class ConstructionProjectionIndex {
     private static final Map<Level, LevelIndex> LEVELS = new WeakHashMap<>();
+    private static OverlayLookup overlayLookup = (level, jobId) -> Map.of();
 
     private ConstructionProjectionIndex() {
+    }
+
+    @FunctionalInterface
+    public interface OverlayLookup {
+        Map<Long, BlockState> plannedOverlay(Level level, UUID jobId);
+    }
+
+    /** 客户端用已缓存快照补规划目标,公共类不引用 client 包。 */
+    public static void setOverlayLookup(OverlayLookup lookup) {
+        overlayLookup = lookup == null ? (level, jobId) -> Map.of() : lookup;
+    }
+
+    public static VoxelShape projectionShape(BlockState state, BlockGetter view, BlockPos pos) {
+        return connect(state, view, pos).getCollisionShape(view, pos, CollisionContext.empty());
+    }
+
+    /** 用覆盖邻居补栅栏/墙/门的连接属性,再取碰撞;不写回世界。 */
+    static BlockState connect(BlockState state, BlockGetter view, BlockPos pos) {
+        if (!(view instanceof ConstructionOverlayView overlay)) {
+            return state;
+        }
+        BlockState connected = state;
+        for (Direction direction : Direction.values()) {
+            BlockPos neighbor = pos.relative(direction);
+            connected = connected.updateShape(
+                direction,
+                overlay.getBlockState(neighbor),
+                overlay.level(),
+                pos,
+                neighbor
+            );
+        }
+        return connected;
     }
 
     public record Collision(BlockPos pos, VoxelShape worldShape, BlockState state, UUID jobId) {
@@ -60,11 +95,7 @@ public final class ConstructionProjectionIndex {
         Map<Long, BlockState> overlay,
         @Nullable Entity ignore
     ) {
-        VoxelShape local = state.getCollisionShape(
-            new ConstructionOverlayView(level, overlay),
-            pos,
-            CollisionContext.empty()
-        );
+        VoxelShape local = projectionShape(state, new ConstructionOverlayView(level, overlay), pos);
         VoxelShape worldShape = local.isEmpty() ? Shapes.empty() : local.move(pos.getX(), pos.getY(), pos.getZ());
         if (!worldShape.isEmpty() && isOccupied(level, worldShape, ignore)) {
             return false;
@@ -94,6 +125,23 @@ public final class ConstructionProjectionIndex {
             }
         }
         return false;
+    }
+
+    public static void refreshNeighbors(Level level, BlockPos pos, Map<Long, BlockState> overlay) {
+        ConstructionOverlayView view = new ConstructionOverlayView(level, overlay);
+        for (Direction direction : Direction.values()) {
+            BlockPos neighbor = pos.relative(direction);
+            Collision existing = at(level, neighbor);
+            if (existing == null) continue;
+            VoxelShape local = projectionShape(existing.state(), view, neighbor);
+            VoxelShape worldShape = local.isEmpty()
+                ? Shapes.empty()
+                : local.move(neighbor.getX(), neighbor.getY(), neighbor.getZ());
+            put(level, existing.jobId(), neighbor, existing.state(), worldShape);
+            if (level instanceof ServerLevel serverLevel) {
+                syncSection(serverLevel, existing.jobId(), SectionPos.asLong(neighbor));
+            }
+        }
     }
 
     public static void put(Level level, UUID jobId, BlockPos pos, BlockState state, VoxelShape worldShape) {
@@ -365,11 +413,18 @@ public final class ConstructionProjectionIndex {
         ) {
             Map<Long, Collision> entries = this.bySection.computeIfAbsent(section, ignored -> new HashMap<>());
             entries.values().removeIf(collision -> collision.jobId().equals(jobId));
-            ConstructionOverlayView view = new ConstructionOverlayView(level, Map.of());
+            Map<Long, BlockState> overlay = new HashMap<>(overlayLookup.plannedOverlay(level, jobId));
+            for (Map.Entry<BlockPos, BlockState> delivered : this.delivered(jobId).entrySet()) {
+                overlay.put(delivered.getKey().asLong(), delivered.getValue());
+            }
+            for (int index = 0; index < positions.size(); index++) {
+                overlay.put(positions.get(index).asLong(), states.get(index));
+            }
+            ConstructionOverlayView view = new ConstructionOverlayView(level, overlay);
             for (int index = 0; index < positions.size(); index++) {
                 BlockPos pos = positions.get(index);
                 BlockState state = states.get(index);
-                VoxelShape local = state.getCollisionShape(view, pos, CollisionContext.empty());
+                VoxelShape local = projectionShape(state, view, pos);
                 VoxelShape worldShape = local.isEmpty()
                     ? Shapes.empty()
                     : local.move(pos.getX(), pos.getY(), pos.getZ());

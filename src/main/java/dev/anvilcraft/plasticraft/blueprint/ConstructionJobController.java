@@ -6,6 +6,7 @@ import dev.anvilcraft.plasticraft.drone.tool.DroneCapability;
 import dev.anvilcraft.plasticraft.entity.drone.DroneEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -34,6 +35,7 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -122,7 +124,11 @@ public final class ConstructionJobController {
             return;
         }
         if (job.state() == ConstructionJob.STATE_COMMITTING) {
-            finish(server, level, job, progress);
+            if (ConstructionCommitService.tick(level, progress)) {
+                complete(server, level, job, progress);
+            } else {
+                store.markDirty();
+            }
             return;
         }
         if (job.state() == ConstructionJob.STATE_SEALING_FLUID) {
@@ -147,7 +153,11 @@ public final class ConstructionJobController {
         refreshWorldWaits(level, progress);
         if (progress.allPlaceResolved()) {
             setState(server, job, ConstructionJob.STATE_COMMITTING);
-            finish(server, level, job, progress);
+            if (ConstructionCommitService.tick(level, progress)) {
+                complete(server, level, job, progress);
+            } else {
+                store.markDirty();
+            }
             return;
         }
         ConstructionWaitReason reason = currentWait(level, progress);
@@ -168,6 +178,7 @@ public final class ConstructionJobController {
             BlueprintPlacement placement = BlueprintPlacement.of(job);
             boolean incomplete = !snapshot.entities().isEmpty();
             Set<BlockPos> declared = new HashSet<>();
+            Map<Long, CompoundTag> blockEntities = new HashMap<>();
             for (StructureSnapshot.BlockEntry entry : snapshot.blocks()) {
                 BlockState local = snapshot.stateOf(entry);
                 BlockState target = placement.stateOf(local);
@@ -176,6 +187,39 @@ public final class ConstructionJobController {
                     continue;
                 }
                 declared.add(worldPos);
+                entry.nbt().ifPresent(nbt -> blockEntities.put(worldPos.asLong(), nbt.copy()));
+                if (MultiblockBuildAdapter.isMultiPart(target)) {
+                    if (MultiblockBuildAdapter.isCore(worldPos, target)) {
+                        ItemStack material = MultiblockBuildAdapter.coreMaterial(target);
+                        if (material.isEmpty()) {
+                            progress.addOperation(
+                                worldPos,
+                                target,
+                                ItemStack.EMPTY,
+                                ConstructionBuildOp.Kind.UNSUPPORTED,
+                                ConstructionBuildOp.Status.SKIPPED
+                            );
+                            incomplete = true;
+                        } else {
+                            progress.addOperation(
+                                worldPos,
+                                target,
+                                material,
+                                ConstructionBuildOp.Kind.PLACE,
+                                ConstructionBuildOp.Status.PENDING
+                            );
+                        }
+                    } else {
+                        progress.addOperation(
+                            worldPos,
+                            target,
+                            ItemStack.EMPTY,
+                            ConstructionBuildOp.Kind.ATTACHED,
+                            ConstructionBuildOp.Status.PENDING
+                        );
+                    }
+                    continue;
+                }
                 OrdinaryBlockAdapter.Mapping mapping = OrdinaryBlockAdapter.mapping(target);
                 switch (mapping) {
                     case AIR -> {
@@ -206,6 +250,8 @@ public final class ConstructionJobController {
                     }
                 }
             }
+            linkParents(progress);
+            incomplete |= extractBlockEntityContents(progress, blockEntities, level.registryAccess());
             FluidSealPlanner.plan(level, declared, progress);
             DemolitionPlanner.plan(level, declared, progress);
             ConstructionAssembler.assignBuildOrder(level, progress);
@@ -254,6 +300,15 @@ public final class ConstructionJobController {
 
     public static void finish(MinecraftServer server, ServerLevel level, ConstructionJob job, ConstructionJobProgress progress) {
         ConstructionCommitService.commitDelivered(level, progress);
+        complete(server, level, job, progress);
+    }
+
+    private static void complete(
+        MinecraftServer server,
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress
+    ) {
         smashRemainingShells(level, progress);
         byte terminal = progress.incomplete() || hasSkippedPlace(progress)
             ? ConstructionJob.STATE_COMPLETED_INCOMPLETE
@@ -357,11 +412,29 @@ public final class ConstructionJobController {
     @Nullable
     public static ConstructionBuildOp nextAssignable(ServerLevel level, ConstructionJobProgress progress) {
         ConstructionBuildOp best = null;
+        Map<Long, BlockState> overlay = progress.overlayStates();
+        ConstructionOverlayView view = new ConstructionOverlayView(level, overlay);
         for (ConstructionBuildOp op : progress.operations()) {
-            if (op.kind() != ConstructionBuildOp.Kind.PLACE) continue;
+            if (op.kind() != ConstructionBuildOp.Kind.PLACE && op.kind() != ConstructionBuildOp.Kind.CONTENT) {
+                continue;
+            }
             if (op.status() == ConstructionBuildOp.Status.LEASED
                 || op.status() == ConstructionBuildOp.Status.DELIVERED
                 || op.status() == ConstructionBuildOp.Status.SKIPPED) {
+                continue;
+            }
+            if (op.kind() == ConstructionBuildOp.Kind.CONTENT) {
+                ConstructionBuildOp parent = progress.parentOf(op);
+                if (parent == null || parent.status() != ConstructionBuildOp.Status.DELIVERED) {
+                    continue;
+                }
+                BlockPos approach = chooseApproach(level, progress, op);
+                if (approach == null) continue;
+                op.setStatus(ConstructionBuildOp.Status.PENDING);
+                op.setApproach(approach);
+                if (best == null || op.order() < best.order()) {
+                    best = op;
+                }
                 continue;
             }
             if (!level.getBlockState(op.pos()).isAir()) {
@@ -370,16 +443,7 @@ public final class ConstructionJobController {
             }
             BlockPos approach = chooseApproach(level, progress, op);
             if (approach == null) continue;
-            Map<Long, BlockState> overlay = progress.overlayStates();
-            VoxelShape local = op.target().getCollisionShape(
-                new ConstructionOverlayView(level, overlay),
-                op.pos(),
-                CollisionContext.empty()
-            );
-            VoxelShape worldShape = local.isEmpty()
-                ? Shapes.empty()
-                : local.move(op.pos().getX(), op.pos().getY(), op.pos().getZ());
-            if (!worldShape.isEmpty() && ConstructionProjectionIndex.isOccupied(level, worldShape, null)) {
+            if (groupOccupied(level, progress, op, overlay, view, null)) {
                 op.setStatus(ConstructionBuildOp.Status.WAITING_OCCUPIED);
                 continue;
             }
@@ -402,12 +466,20 @@ public final class ConstructionJobController {
         ConstructionBuildOp op,
         @Nullable Entity ignore
     ) {
+        if (op.kind() == ConstructionBuildOp.Kind.CONTENT) {
+            return tryDeliverContent(level, progress, op);
+        }
         if (!op.writesProjection()) return false;
         if (!level.getBlockState(op.pos()).isAir()) {
             op.setStatus(ConstructionBuildOp.Status.WAITING_WORLD);
             return false;
         }
         Map<Long, BlockState> overlay = progress.overlayStates();
+        ConstructionOverlayView view = new ConstructionOverlayView(level, overlay);
+        if (groupOccupied(level, progress, op, overlay, view, ignore)) {
+            op.setStatus(ConstructionBuildOp.Status.WAITING_OCCUPIED);
+            return false;
+        }
         if (!ConstructionProjectionIndex.tryDeliver(
             level,
             progress.jobId(),
@@ -419,15 +491,22 @@ public final class ConstructionJobController {
             op.setStatus(ConstructionBuildOp.Status.WAITING_OCCUPIED);
             return false;
         }
-        op.setStatus(ConstructionBuildOp.Status.DELIVERED);
-        op.setLeaseDrone(null);
-        for (ConstructionLedgerEntry entry : progress.ledger()) {
-            if (entry.operationId() == op.id() && entry.state() == ConstructionLedgerEntry.State.CARRIED) {
-                entry.setState(ConstructionLedgerEntry.State.DELIVERED);
-            }
-        }
+        markOpDone(level, progress, op);
         deliverAttached(level, progress, op, overlay);
-        ConstructionJobStore.get(level).markDirty();
+        ConstructionProjectionIndex.refreshNeighbors(level, op.pos(), overlay);
+        return true;
+    }
+
+    private static boolean tryDeliverContent(
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        ConstructionBuildOp op
+    ) {
+        ConstructionBuildOp parent = progress.parentOf(op);
+        if (parent == null || parent.status() != ConstructionBuildOp.Status.DELIVERED) {
+            return false;
+        }
+        markOpDone(level, progress, op);
         return true;
     }
 
@@ -493,7 +572,7 @@ public final class ConstructionJobController {
             return false;
         }
         if (!op.needsMaterial()) return true;
-        if (!takeOne(player, op.material())) return false;
+        if (!takeMatching(player, op.material())) return false;
         progress.addLedger(op.id(), op.material(), droneId);
         ConstructionJobStore.get(player.level()).markDirty();
         return true;
@@ -513,17 +592,19 @@ public final class ConstructionJobController {
                     || op.status() == ConstructionBuildOp.Status.SKIPPED) {
                     continue;
                 }
-                boolean sameItem = missing.isEmpty() || ItemStack.isSameItem(op.material(), missing);
+                boolean sameItem = missing.isEmpty() || matchesMaterial(op.material(), missing);
                 if (op.kind() == ConstructionBuildOp.Kind.SEAL && sameItem) {
                     op.setStatus(ConstructionBuildOp.Status.SKIPPED);
                     op.setLeaseDrone(null);
                     continue;
                 }
-                if (op.kind() == ConstructionBuildOp.Kind.PLACE && sameItem) {
+                if ((op.kind() == ConstructionBuildOp.Kind.PLACE || op.kind() == ConstructionBuildOp.Kind.CONTENT)
+                    && sameItem) {
                     op.setStatus(ConstructionBuildOp.Status.SKIPPED);
                     op.setLeaseDrone(null);
                 }
             }
+            skipOrphanedChildren(progress);
             if (level != null) {
                 skipPlaceOnRemainingFluids(level, progress);
             }
@@ -616,32 +697,38 @@ public final class ConstructionJobController {
             center.y + 0.5D,
             center.z + 0.25D
         );
-        return droneBox.intersects(new AABB(op.pos()).inflate(REACH));
+        for (BlockPos target : approachTargets(progress, op)) {
+            if (droneBox.intersects(new AABB(target).inflate(REACH))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Nullable
     public static BlockPos chooseApproach(ServerLevel level, ConstructionJobProgress progress, ConstructionBuildOp op) {
         BlockPos best = null;
         double bestScore = Double.MAX_VALUE;
-        for (Direction direction : Direction.values()) {
-            BlockPos candidate = op.pos().relative(direction);
-            if (isReservedBuildCell(progress, candidate)) continue;
-            if (!fitsDrone(level, candidate)) continue;
-            Vec3 center = Vec3.atBottomCenterOf(candidate);
-            AABB droneBox = new AABB(
-                center.x - 0.25D,
-                center.y,
-                center.z - 0.25D,
-                center.x + 0.25D,
-                center.y + 0.5D,
-                center.z + 0.25D
-            );
-            AABB target = new AABB(op.pos());
-            if (!droneBox.intersects(target.inflate(REACH))) continue;
-            double score = candidate.getY() + candidate.distManhattan(op.pos()) * 0.01D;
-            if (score < bestScore) {
-                bestScore = score;
-                best = candidate;
+        for (BlockPos target : approachTargets(progress, op)) {
+            for (Direction direction : Direction.values()) {
+                BlockPos candidate = target.relative(direction);
+                if (isReservedBuildCell(progress, candidate)) continue;
+                if (!fitsDrone(level, candidate)) continue;
+                Vec3 center = Vec3.atBottomCenterOf(candidate);
+                AABB droneBox = new AABB(
+                    center.x - 0.25D,
+                    center.y,
+                    center.z - 0.25D,
+                    center.x + 0.25D,
+                    center.y + 0.5D,
+                    center.z + 0.25D
+                );
+                if (!droneBox.intersects(new AABB(target).inflate(REACH))) continue;
+                double score = candidate.getY() + candidate.distManhattan(op.pos()) * 0.01D;
+                if (score < bestScore) {
+                    bestScore = score;
+                    best = candidate;
+                }
             }
         }
         return best;
@@ -649,11 +736,7 @@ public final class ConstructionJobController {
 
     public static boolean playerHasMaterial(Player player, ItemStack needed) {
         if (needed.isEmpty()) return true;
-        Inventory inventory = player.getInventory();
-        for (ItemStack stack : inventory.items) {
-            if (ItemStack.isSameItem(stack, needed) && !stack.isEmpty()) return true;
-        }
-        return ItemStack.isSameItem(inventory.offhand.getFirst(), needed) && !inventory.offhand.getFirst().isEmpty();
+        return countMatching(player, needed) >= needed.getCount();
     }
 
     private static void deliverAttached(
@@ -662,18 +745,15 @@ public final class ConstructionJobController {
         ConstructionBuildOp parent,
         Map<Long, BlockState> overlay
     ) {
-        for (Direction direction : Direction.values()) {
-            BlockPos neighbor = parent.pos().relative(direction);
-            for (ConstructionBuildOp op : progress.operations()) {
-                if (op.kind() != ConstructionBuildOp.Kind.ATTACHED) continue;
-                if (!op.pos().equals(neighbor)) continue;
-                if (op.status() == ConstructionBuildOp.Status.DELIVERED
-                    || op.status() == ConstructionBuildOp.Status.SKIPPED) {
-                    continue;
-                }
-                if (ConstructionProjectionIndex.tryDeliver(level, progress.jobId(), op.pos(), op.target(), overlay)) {
-                    op.setStatus(ConstructionBuildOp.Status.DELIVERED);
-                }
+        for (ConstructionBuildOp op : childrenOf(progress, parent)) {
+            if (op.kind() != ConstructionBuildOp.Kind.ATTACHED) continue;
+            if (op.status() == ConstructionBuildOp.Status.DELIVERED
+                || op.status() == ConstructionBuildOp.Status.SKIPPED) {
+                continue;
+            }
+            if (ConstructionProjectionIndex.tryDeliver(level, progress.jobId(), op.pos(), op.target(), overlay)) {
+                op.setStatus(ConstructionBuildOp.Status.DELIVERED);
+                ConstructionProjectionIndex.refreshNeighbors(level, op.pos(), overlay);
             }
         }
     }
@@ -798,34 +878,76 @@ public final class ConstructionJobController {
         }
     }
 
-    private static boolean takeOne(Player player, ItemStack needed) {
-        Inventory inventory = player.getInventory();
-        if (takeFromList(inventory.items, needed)) return true;
-        return takeFromList(inventory.offhand, needed);
+    private static boolean takeMatching(Player player, ItemStack needed) {
+        if (needed.isEmpty()) return true;
+        int remaining = needed.getCount();
+        remaining -= takeFromList(player.getInventory().items, needed, remaining);
+        if (remaining > 0) {
+            remaining -= takeFromList(player.getInventory().offhand, needed, remaining);
+        }
+        return remaining <= 0;
     }
 
-    private static boolean takeFromList(List<ItemStack> slots, ItemStack needed) {
+    private static int takeFromList(List<ItemStack> slots, ItemStack needed, int remaining) {
+        int taken = 0;
         for (ItemStack stack : slots) {
-            if (ItemStack.isSameItem(stack, needed) && !stack.isEmpty()) {
-                stack.shrink(1);
+            if (remaining - taken <= 0) break;
+            if (!matchesMaterial(stack, needed)) continue;
+            int remove = Math.min(stack.getCount(), remaining - taken);
+            stack.shrink(remove);
+            taken += remove;
+        }
+        return taken;
+    }
+
+    private static int countMatching(Player player, ItemStack needed) {
+        int count = 0;
+        for (ItemStack stack : player.getInventory().items) {
+            if (matchesMaterial(stack, needed)) count += stack.getCount();
+        }
+        if (matchesMaterial(player.getInventory().offhand.getFirst(), needed)) {
+            count += player.getInventory().offhand.getFirst().getCount();
+        }
+        return count;
+    }
+
+    static boolean matchesMaterial(ItemStack have, ItemStack needed) {
+        return !have.isEmpty() && !needed.isEmpty() && ItemStack.isSameItemSameComponents(have, needed);
+    }
+
+    private static boolean isReservedBuildCell(ConstructionJobProgress progress, BlockPos pos) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.status() == ConstructionBuildOp.Status.SKIPPED) {
+                continue;
+            }
+            if (op.kind() == ConstructionBuildOp.Kind.PLACE || op.kind() == ConstructionBuildOp.Kind.SEAL) {
+                if (op.status() == ConstructionBuildOp.Status.DELIVERED) {
+                    continue;
+                }
+                if (op.pos().equals(pos)) return true;
+            }
+            if (op.kind() == ConstructionBuildOp.Kind.ATTACHED
+                && op.status() != ConstructionBuildOp.Status.DELIVERED
+                && op.pos().equals(pos)) {
                 return true;
             }
         }
         return false;
     }
 
-    private static boolean isReservedBuildCell(ConstructionJobProgress progress, BlockPos pos) {
-        for (ConstructionBuildOp op : progress.operations()) {
-            if (op.kind() != ConstructionBuildOp.Kind.PLACE && op.kind() != ConstructionBuildOp.Kind.SEAL) {
-                continue;
-            }
-            if (op.status() == ConstructionBuildOp.Status.SKIPPED
-                || op.status() == ConstructionBuildOp.Status.DELIVERED) {
-                continue;
-            }
-            if (op.pos().equals(pos)) return true;
+    private static List<BlockPos> approachTargets(ConstructionJobProgress progress, ConstructionBuildOp op) {
+        List<BlockPos> targets = new ArrayList<>();
+        targets.add(op.pos());
+        if (op.kind() != ConstructionBuildOp.Kind.PLACE) {
+            return targets;
         }
-        return false;
+        for (ConstructionBuildOp child : childrenOf(progress, op)) {
+            if (child.kind() == ConstructionBuildOp.Kind.ATTACHED
+                && child.status() != ConstructionBuildOp.Status.SKIPPED) {
+                targets.add(child.pos());
+            }
+        }
+        return targets;
     }
 
     private static boolean fitsDrone(ServerLevel level, BlockPos pos) {
@@ -851,12 +973,128 @@ public final class ConstructionJobController {
 
     private static boolean hasSkippedPlace(ConstructionJobProgress progress) {
         for (ConstructionBuildOp op : progress.operations()) {
-            if (op.kind() == ConstructionBuildOp.Kind.PLACE
+            if ((op.kind() == ConstructionBuildOp.Kind.PLACE || op.kind() == ConstructionBuildOp.Kind.CONTENT)
                 && op.status() == ConstructionBuildOp.Status.SKIPPED) {
                 return true;
             }
         }
         return progress.incomplete();
+    }
+
+    private static void linkParents(ConstructionJobProgress progress) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() != ConstructionBuildOp.Kind.ATTACHED || op.parentId() >= 0) {
+                continue;
+            }
+            BlockPos core = MultiblockBuildAdapter.coreOf(op.pos(), op.target());
+            for (ConstructionBuildOp candidate : progress.operations()) {
+                if (candidate.kind() == ConstructionBuildOp.Kind.PLACE && candidate.pos().equals(core)) {
+                    op.setParentId(candidate.id());
+                    break;
+                }
+            }
+        }
+    }
+
+    private static boolean extractBlockEntityContents(
+        ConstructionJobProgress progress,
+        Map<Long, CompoundTag> blockEntities,
+        HolderLookup.Provider registries
+    ) {
+        boolean incomplete = false;
+        List<ConstructionBuildOp> places = new ArrayList<>();
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() == ConstructionBuildOp.Kind.PLACE) {
+                places.add(op);
+            }
+        }
+        for (ConstructionBuildOp place : places) {
+            CompoundTag nbt = blockEntities.get(place.pos().asLong());
+            if (nbt == null) continue;
+            BlockEntityContentAdapter.Extracted extracted =
+                BlockEntityContentAdapter.extract(place.target(), nbt, registries);
+            place.setBlockEntity(extracted.config());
+            if (extracted.unmapped()) {
+                progress.addOperation(
+                    place.pos(),
+                    place.target(),
+                    ItemStack.EMPTY,
+                    ConstructionBuildOp.Kind.UNSUPPORTED,
+                    ConstructionBuildOp.Status.SKIPPED
+                ).setParentId(place.id());
+                incomplete = true;
+                continue;
+            }
+            for (BlockEntityContentAdapter.SlotStack content : extracted.contents()) {
+                ConstructionBuildOp child = progress.addOperation(
+                    place.pos(),
+                    place.target(),
+                    content.stack(),
+                    ConstructionBuildOp.Kind.CONTENT,
+                    ConstructionBuildOp.Status.PENDING
+                );
+                child.setParentId(place.id());
+                child.setSlot(content.slot());
+            }
+        }
+        return incomplete;
+    }
+
+    private static List<ConstructionBuildOp> childrenOf(ConstructionJobProgress progress, ConstructionBuildOp parent) {
+        List<ConstructionBuildOp> children = new ArrayList<>();
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.parentId() == parent.id()) {
+                children.add(op);
+            }
+        }
+        return children;
+    }
+
+    private static void skipOrphanedChildren(ConstructionJobProgress progress) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.parentId() < 0 || op.status() == ConstructionBuildOp.Status.DELIVERED) {
+                continue;
+            }
+            ConstructionBuildOp parent = progress.parentOf(op);
+            if (parent != null && parent.status() == ConstructionBuildOp.Status.SKIPPED) {
+                op.setStatus(ConstructionBuildOp.Status.SKIPPED);
+                op.setLeaseDrone(null);
+            }
+        }
+    }
+
+    private static boolean groupOccupied(
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        ConstructionBuildOp parent,
+        Map<Long, BlockState> overlay,
+        ConstructionOverlayView view,
+        @Nullable Entity ignore
+    ) {
+        if (shapeOccupied(level, parent, view, ignore)) {
+            return true;
+        }
+        for (ConstructionBuildOp child : childrenOf(progress, parent)) {
+            if (child.kind() != ConstructionBuildOp.Kind.ATTACHED) continue;
+            if (child.status() == ConstructionBuildOp.Status.SKIPPED) continue;
+            if (shapeOccupied(level, child, view, ignore)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean shapeOccupied(
+        ServerLevel level,
+        ConstructionBuildOp op,
+        ConstructionOverlayView view,
+        @Nullable Entity ignore
+    ) {
+        VoxelShape local = ConstructionProjectionIndex.projectionShape(op.target(), view, op.pos());
+        VoxelShape worldShape = local.isEmpty()
+            ? Shapes.empty()
+            : local.move(op.pos().getX(), op.pos().getY(), op.pos().getZ());
+        return !worldShape.isEmpty() && ConstructionProjectionIndex.isOccupied(level, worldShape, ignore);
     }
 
     private static void tickSealing(
@@ -1193,6 +1431,7 @@ public final class ConstructionJobController {
                 op.setLeaseDrone(null);
             }
         }
+        skipOrphanedChildren(progress);
     }
 
     private static void storeDirty(ServerLevel level) {

@@ -5,6 +5,7 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
+import net.minecraft.nbt.Tag;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
@@ -19,7 +20,8 @@ public final class ConstructionBuildOp {
         ATTACHED,
         UNSUPPORTED,
         SEAL,
-        DEMOLISH
+        DEMOLISH,
+        CONTENT
     }
 
     public enum Status {
@@ -43,6 +45,10 @@ public final class ConstructionBuildOp {
     @Nullable
     private BlockPos approach;
     private boolean shell;
+    private int parentId = -1;
+    private int slot = -1;
+    @Nullable
+    private CompoundTag blockEntity;
 
     public ConstructionBuildOp(
         int id,
@@ -126,8 +132,38 @@ public final class ConstructionBuildOp {
         this.shell = shell;
     }
 
+    public int parentId() {
+        return this.parentId;
+    }
+
+    public void setParentId(int parentId) {
+        this.parentId = parentId;
+    }
+
+    public int slot() {
+        return this.slot;
+    }
+
+    public void setSlot(int slot) {
+        this.slot = slot;
+    }
+
+    @Nullable
+    public CompoundTag blockEntity() {
+        return this.blockEntity;
+    }
+
+    public void setBlockEntity(@Nullable CompoundTag blockEntity) {
+        this.blockEntity = blockEntity == null || blockEntity.isEmpty() ? null : blockEntity.copy();
+    }
+
     public boolean needsMaterial() {
-        return (this.kind == Kind.PLACE || this.kind == Kind.SEAL) && !this.material.isEmpty();
+        return (this.kind == Kind.PLACE || this.kind == Kind.SEAL || this.kind == Kind.CONTENT)
+            && !this.material.isEmpty();
+    }
+
+    public boolean isBuildMaterial() {
+        return this.kind == Kind.PLACE || this.kind == Kind.ATTACHED || this.kind == Kind.CONTENT;
     }
 
     /** PLACE/ATTACHED 才写入施工投影;SEAL/DEMOLISH 的 DELIVERED 只表示该阶段完成。 */
@@ -162,6 +198,15 @@ public final class ConstructionBuildOp {
         if (this.shell) {
             tag.putBoolean("Shell", true);
         }
+        if (this.parentId >= 0) {
+            tag.putInt("ParentId", this.parentId);
+        }
+        if (this.blockEntity != null) {
+            tag.put("BlockEntity", this.blockEntity.copy());
+        }
+        if (this.slot >= 0) {
+            tag.putInt("Slot", this.slot);
+        }
         return tag;
     }
 
@@ -191,6 +236,15 @@ public final class ConstructionBuildOp {
             op.approach = BlockPos.of(tag.getLong("Approach"));
         }
         op.shell = tag.getBoolean("Shell");
+        if (tag.contains("ParentId")) {
+            op.parentId = tag.getInt("ParentId");
+        }
+        if (tag.contains("BlockEntity", Tag.TAG_COMPOUND)) {
+            op.blockEntity = tag.getCompound("BlockEntity").copy();
+        }
+        if (tag.contains("Slot")) {
+            op.slot = tag.getInt("Slot");
+        }
         return op;
     }
 }

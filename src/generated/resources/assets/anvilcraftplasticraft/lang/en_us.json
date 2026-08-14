@@ -378,7 +378,7 @@
   "screen.anvilcraftplasticraft.molding.wait.structure_incomplete": "Chamber structure incomplete",
   "screen.anvilcraftplasticraft.molding.wait.waiting_for_clear_region": "Waiting for region to clear",
   "screen.anvilcraftplasticraft.molding.writer": "Editing: %s",
-  "tooltip.anvilcraftplasticraft.blueprint.cancel_commits": "Cancel quietly commits delivered blocks and returns in-transit items",
+  "tooltip.anvilcraftplasticraft.blueprint.cancel_commits": "Cancel quietly commits delivered blocks and contents and returns in-transit items",
   "tooltip.anvilcraftplasticraft.blueprint.controls": "Ctrl+scroll switches tools, Alt+scroll adjusts the current tool, plain scroll still changes the hotbar",
   "tooltip.anvilcraftplasticraft.blueprint.has_block_entities": "Contains block entity data",
   "tooltip.anvilcraftplasticraft.blueprint.has_entities": "Contains entities",

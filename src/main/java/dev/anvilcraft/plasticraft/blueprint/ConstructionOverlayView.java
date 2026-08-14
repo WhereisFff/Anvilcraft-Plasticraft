@@ -23,6 +23,10 @@ public final class ConstructionOverlayView implements BlockGetter {
         this.overlay = overlay;
     }
 
+    public Level level() {
+        return this.level;
+    }
+
     @Override
     public @Nullable BlockEntity getBlockEntity(BlockPos pos) {
         return this.overlay.containsKey(pos.asLong()) ? null : this.level.getBlockEntity(pos);

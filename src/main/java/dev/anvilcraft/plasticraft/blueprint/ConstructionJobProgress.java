@@ -27,6 +27,7 @@ public final class ConstructionJobProgress {
     private final List<ConstructionLedgerEntry> ledger = new ArrayList<>();
     private final List<ConstructionDebrisAccount> debris = new ArrayList<>();
     private final Map<UUID, UUID> debrisLeases = new HashMap<>();
+    private final ConstructionCommitLog commitLog = new ConstructionCommitLog();
     private int nextOpId;
     private int nextLedgerId;
 
@@ -75,7 +76,7 @@ public final class ConstructionJobProgress {
     }
 
     public void setMissingMaterial(ItemStack missing) {
-        this.missingMaterial = missing.isEmpty() ? ItemStack.EMPTY : missing.copyWithCount(1);
+        this.missingMaterial = missing.isEmpty() ? ItemStack.EMPTY : missing.copy();
     }
 
     public List<ConstructionBuildOp> operations() {
@@ -237,10 +238,22 @@ public final class ConstructionJobProgress {
         return null;
     }
 
+    public ConstructionCommitLog commitLog() {
+        return this.commitLog;
+    }
+
+    @Nullable
+    public ConstructionBuildOp parentOf(ConstructionBuildOp child) {
+        if (child.parentId() < 0) {
+            return null;
+        }
+        return this.operation(child.parentId());
+    }
+
     public Map<Long, BlockState> overlayStates() {
         Map<Long, BlockState> overlay = new HashMap<>();
         for (ConstructionBuildOp op : this.operations) {
-            if (!op.writesProjection()) {
+            if (!op.writesProjection() || op.status() == ConstructionBuildOp.Status.SKIPPED) {
                 continue;
             }
             overlay.put(op.pos().asLong(), op.target());
@@ -311,7 +324,7 @@ public final class ConstructionJobProgress {
 
     public boolean allPlaceResolved() {
         for (ConstructionBuildOp op : this.operations) {
-            if (!op.writesProjection()) {
+            if (!op.isBuildMaterial()) {
                 continue;
             }
             if (op.status() == ConstructionBuildOp.Status.PENDING
@@ -333,7 +346,10 @@ public final class ConstructionJobProgress {
 
     public boolean hasOpenPlace() {
         for (ConstructionBuildOp op : this.operations) {
-            if (op.kind() == ConstructionBuildOp.Kind.PLACE && op.isOpen()) return true;
+            if ((op.kind() == ConstructionBuildOp.Kind.PLACE || op.kind() == ConstructionBuildOp.Kind.CONTENT)
+                && op.isOpen()) {
+                return true;
+            }
         }
         return false;
     }
@@ -365,6 +381,7 @@ public final class ConstructionJobProgress {
             debrisTag.add(account.save());
         }
         tag.put("Debris", debrisTag);
+        tag.put("CommitLog", this.commitLog.save());
         return tag;
     }
 
@@ -391,6 +408,12 @@ public final class ConstructionJobProgress {
         ListTag debrisTag = tag.getList("Debris", Tag.TAG_COMPOUND);
         for (int index = 0; index < debrisTag.size(); index++) {
             progress.debris.add(ConstructionDebrisAccount.load(debrisTag.getCompound(index)));
+        }
+        if (tag.contains("CommitLog", Tag.TAG_COMPOUND)) {
+            ConstructionCommitLog loaded = ConstructionCommitLog.load(tag.getCompound("CommitLog"));
+            progress.commitLog.setPhase(loaded.phase());
+            progress.commitLog.setNextIndex(loaded.nextIndex());
+            progress.commitLog.written().addAll(loaded.written());
         }
         return progress;
     }

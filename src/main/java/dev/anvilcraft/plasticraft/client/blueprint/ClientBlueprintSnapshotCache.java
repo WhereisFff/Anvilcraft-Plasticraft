@@ -35,6 +35,11 @@ public final class ClientBlueprintSnapshotCache {
     private ClientBlueprintSnapshotCache() {
     }
 
+    @Nullable
+    public static synchronized StructureSnapshot cached(String hash) {
+        return SNAPSHOTS.get(hash);
+    }
+
     /** 取缓存的快照;缺失时发起一次请求并返回 null,内容到齐后自然可用。 */
     @Nullable
     public static synchronized StructureSnapshot snapshotOrRequest(String hash) {

@@ -218,7 +218,7 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
             }
             return;
         }
-        drone.setHostedCarry(op.material().copyWithCount(1));
+        drone.setHostedCarry(op.material().copy());
         drone.setActionState((byte) 4);
         drone.setWaitReason(ConstructionWaitReason.NONE);
     }

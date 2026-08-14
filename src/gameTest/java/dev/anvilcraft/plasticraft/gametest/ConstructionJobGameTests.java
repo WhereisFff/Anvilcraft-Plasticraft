@@ -4,12 +4,15 @@ import dev.anvilcraft.plasticraft.blueprint.BlueprintSource;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintException;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintService;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBuildOp;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionCommitLog;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionCommitService;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobIndex;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobProgress;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobStore;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionLedgerEntry;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionOverlayView;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionProjectionIndex;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionDebris;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionWaitReason;
@@ -25,13 +28,20 @@ import dev.anvilcraft.plasticraft.drone.tool.DemolitionDroneToolBehavior;
 import dev.anvilcraft.plasticraft.drone.tool.DroneToolDefinitions;
 import dev.anvilcraft.plasticraft.entity.drone.DroneEntity;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
+import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
+import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.Vec3i;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.IntTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtUtils;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
@@ -43,10 +53,16 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.Container;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.Mirror;
+import net.minecraft.world.level.block.RedStoneWireBlock;
+import net.minecraft.world.level.block.RepeaterBlock;
 import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.piston.PistonBaseBlock;
+import net.minecraft.world.level.block.piston.PistonHeadBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.phys.AABB;
@@ -57,6 +73,8 @@ import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 import net.neoforged.testframework.gametest.GameTestPlayer;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -1112,6 +1130,367 @@ public final class ConstructionJobGameTests {
         }).thenSucceed();
     }
 
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A chest with three diamonds plans PLACE plus CONTENT, deducts both, and commit writes the diamonds once")
+    static void chestContentsDeductAndCommitOnce(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob started = startStructureJob(
+                    helper,
+                    player,
+                    chestWithDiamonds(helper.getLevel().registryAccess()),
+                    "chest-diamonds",
+                    new BlockPos(2, 2, 2)
+                );
+                player.getInventory().add(new ItemStack(Items.CHEST));
+                player.getInventory().add(new ItemStack(Items.DIAMOND, 3));
+                ConstructionBuildOp place = firstPlace(started.progress());
+                ConstructionBuildOp content = firstKind(started.progress(), ConstructionBuildOp.Kind.CONTENT);
+                check(content.parentId() == place.id(), "CONTENT must hang on the chest PLACE");
+                check(content.material().getCount() == 3 && content.material().is(Items.DIAMOND),
+                    "CONTENT must ask for the three diamonds");
+                check(
+                    ConstructionJobController.extractMaterial(player, started.progress(), place, UUID.randomUUID()),
+                    "extracting the chest must succeed"
+                );
+                check(
+                    ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), place),
+                    "delivering the chest projection must succeed"
+                );
+                check(
+                    ConstructionJobController.extractMaterial(player, started.progress(), content, UUID.randomUUID()),
+                    "extracting the diamond stack must succeed"
+                );
+                check(countItem(player, Items.DIAMOND) == 0, "CONTENT extract must take the full diamond stack");
+                check(
+                    ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), content),
+                    "delivering CONTENT must succeed after the parent PLACE"
+                );
+                ConstructionJobController.finish(
+                    helper.getLevel().getServer(),
+                    helper.getLevel(),
+                    started.job(),
+                    started.progress()
+                );
+                check(helper.getLevel().getBlockState(place.pos()).is(Blocks.CHEST), "commit must write the chest");
+                BlockEntity blockEntity = helper.getLevel().getBlockEntity(place.pos());
+                check(blockEntity instanceof Container, "committed chest must have a container");
+                check(
+                    countContainer((Container) blockEntity, Items.DIAMOND) == 3,
+                    "committed chest must contain the deducted diamonds, not a copied NBT stack"
+                );
+                check(countItem(player, Items.DIAMOND) == 0, "commit must not return the diamonds");
+                check(countItem(player, Items.CHEST) == 0, "commit must keep the chest consumed");
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("chest content setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Cancel after a delivered chest and undelivered contents returns the items without copying them")
+    static void cancelDeliveredChestReturnsUndeliveredContents(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob started = startStructureJob(
+                    helper,
+                    player,
+                    chestWithDiamonds(helper.getLevel().registryAccess()),
+                    "chest-cancel",
+                    new BlockPos(2, 2, 2)
+                );
+                player.getInventory().add(new ItemStack(Items.CHEST));
+                player.getInventory().add(new ItemStack(Items.DIAMOND, 3));
+                ConstructionBuildOp place = firstPlace(started.progress());
+                ConstructionBuildOp content = firstKind(started.progress(), ConstructionBuildOp.Kind.CONTENT);
+                check(
+                    ConstructionJobController.extractMaterial(player, started.progress(), place, UUID.randomUUID()),
+                    "extracting the chest before cancel must succeed"
+                );
+                check(
+                    ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), place),
+                    "the chest must be delivered before cancel"
+                );
+                check(
+                    ConstructionJobController.extractMaterial(player, started.progress(), content, UUID.randomUUID()),
+                    "extracting undelivered contents must succeed"
+                );
+                ConstructionBlueprintService.cancel(player, started.job().jobId());
+                check(helper.getLevel().getBlockState(place.pos()).is(Blocks.CHEST), "cancel must commit the delivered chest");
+                BlockEntity blockEntity = helper.getLevel().getBlockEntity(place.pos());
+                check(blockEntity instanceof Container, "cancelled chest must exist");
+                check(
+                    countContainer((Container) blockEntity, Items.DIAMOND) == 0,
+                    "undelivered contents must not be copied into the committed chest"
+                );
+                check(countItem(player, Items.DIAMOND) == 3, "cancel must return the in-transit diamonds once");
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("chest cancel setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Adjacent delivered fences use the connected OverlayView collision instead of a lone post")
+    static void adjacentFencesUseConnectedCollision(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob started = startStructureJob(
+                    helper,
+                    player,
+                    fencePairStructure(),
+                    "fence-pair",
+                    new BlockPos(1, 2, 2)
+                );
+                player.getInventory().add(new ItemStack(Items.OAK_FENCE, 2));
+                for (ConstructionBuildOp op : started.progress().operations()) {
+                    if (op.kind() != ConstructionBuildOp.Kind.PLACE) continue;
+                    check(
+                        ConstructionJobController.extractMaterial(player, started.progress(), op, UUID.randomUUID()),
+                        "extracting a fence must succeed"
+                    );
+                    check(
+                        ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), op),
+                        "delivering a fence must succeed"
+                    );
+                }
+                ConstructionBuildOp first = firstPlace(started.progress());
+                ConstructionProjectionIndex.Collision collision = ConstructionProjectionIndex.at(
+                    helper.getLevel(),
+                    first.pos()
+                );
+                check(collision != null, "delivered fence must have a projection collision");
+                check(
+                    collision.worldShape().bounds().getXsize() > 0.4D,
+                    "adjacent fences must use the connected collision, not a lone post"
+                );
+                VoxelShape expected = ConstructionProjectionIndex.projectionShape(
+                    first.target(),
+                    new ConstructionOverlayView(helper.getLevel(), started.progress().overlayStates()),
+                    first.pos()
+                );
+                check(
+                    Math.abs(expected.bounds().getXsize() - collision.worldShape().bounds().getXsize()) < 1.0E-4D,
+                    "delivered fence collision must match the OverlayView connected shape"
+                );
+                cancelQuietly(player, started.job().jobId());
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("fence collision setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction")
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "A giant anvil plans one core PLACE plus ATTACHED parts, consumes one item, and commits every part")
+    static void giantAnvilFoldsToOneCore(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob started = startStructureJob(
+                    helper,
+                    player,
+                    giantAnvilStructure(),
+                    "giant-anvil",
+                    new BlockPos(2, 2, 2)
+                );
+                int places = countKind(started.progress(), ConstructionBuildOp.Kind.PLACE);
+                int attached = countKind(started.progress(), ConstructionBuildOp.Kind.ATTACHED);
+                check(places == 1, "giant anvil must fold to one core PLACE, was " + places);
+                check(
+                    attached == Cube3x3PartHalf.values().length - 1,
+                    "remaining giant anvil parts must be ATTACHED, was " + attached
+                );
+                player.getInventory().add(new ItemStack(ModBlocks.GIANT_ANVIL.asItem()));
+                ConstructionBuildOp core = firstPlace(started.progress());
+                check(
+                    ConstructionJobController.extractMaterial(player, started.progress(), core, UUID.randomUUID()),
+                    "extracting the giant anvil core must succeed once"
+                );
+                check(countItem(player, ModBlocks.GIANT_ANVIL.asItem()) == 0, "parts must not deduct extra cores");
+                check(
+                    ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), core),
+                    "delivering the core must activate the whole multipart"
+                );
+                for (ConstructionBuildOp op : started.progress().operations()) {
+                    if (op.kind() == ConstructionBuildOp.Kind.ATTACHED) {
+                        check(
+                            op.status() == ConstructionBuildOp.Status.DELIVERED,
+                            "core delivery must deliver corner ATTACHED parts too: " + op.pos()
+                        );
+                    }
+                }
+                ConstructionJobController.finish(
+                    helper.getLevel().getServer(),
+                    helper.getLevel(),
+                    started.job(),
+                    started.progress()
+                );
+                GiantAnvilBlock block = ModBlocks.GIANT_ANVIL.get();
+                BlockPos bottom = core.pos().subtract(core.target().getValue(GiantAnvilBlock.HALF).getOffset());
+                for (Cube3x3PartHalf part : block.getParts()) {
+                    BlockState state = helper.getLevel().getBlockState(bottom.offset(part.getOffset()));
+                    check(
+                        state.is(block) && state.getValue(GiantAnvilBlock.HALF) == part,
+                        "committed giant anvil is missing part " + part
+                    );
+                }
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("giant anvil setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction")
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "Quiet commit restores redstone, locked repeater and extended piston without breaking a cactus neighbour")
+    static void quietCommitRestoresRedstoneWithoutBreakingCactus(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob started = startStructureJob(
+                    helper,
+                    player,
+                    redstoneMachineStructure(),
+                    "redstone-machine",
+                    new BlockPos(2, 2, 2)
+                );
+                player.getInventory().add(new ItemStack(Items.REDSTONE, 2));
+                player.getInventory().add(new ItemStack(Items.REPEATER));
+                player.getInventory().add(new ItemStack(Items.PISTON));
+                player.getInventory().add(new ItemStack(Items.COBBLESTONE));
+                ConstructionBuildOp cobble = null;
+                for (ConstructionBuildOp op : started.progress().operations()) {
+                    if (op.kind() != ConstructionBuildOp.Kind.PLACE) continue;
+                    check(
+                        ConstructionJobController.extractMaterial(player, started.progress(), op, UUID.randomUUID()),
+                        "extracting " + op.material() + " must succeed"
+                    );
+                    check(
+                        ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), op),
+                        "delivering " + op.target().getBlock() + " must succeed"
+                    );
+                    if (op.target().is(Blocks.COBBLESTONE)) {
+                        cobble = op;
+                    }
+                }
+                check(cobble != null, "redstone fixture must include a cobble cell for the cactus");
+                helper.getLevel().setBlock(cobble.pos().west().below(), Blocks.SAND.defaultBlockState(), 3);
+                helper.getLevel().setBlock(cobble.pos().west(), Blocks.CACTUS.defaultBlockState(), 3);
+                ConstructionJobController.finish(
+                    helper.getLevel().getServer(),
+                    helper.getLevel(),
+                    started.job(),
+                    started.progress()
+                );
+                check(
+                    helper.getLevel().getBlockState(cobble.pos().west()).is(Blocks.CACTUS),
+                    "quiet commit must not break the adjacent cactus"
+                );
+                boolean sawPower = false;
+                boolean sawLocked = false;
+                boolean sawExtended = false;
+                for (ConstructionBuildOp op : started.progress().operations()) {
+                    if (op.status() != ConstructionBuildOp.Status.DELIVERED || !op.writesProjection()) {
+                        continue;
+                    }
+                    BlockState written = helper.getLevel().getBlockState(op.pos());
+                    if (written.hasProperty(RedStoneWireBlock.POWER)) {
+                        check(
+                            written.getValue(RedStoneWireBlock.POWER) == op.target().getValue(RedStoneWireBlock.POWER),
+                            "committed redstone dust must keep blueprint power"
+                        );
+                        sawPower = true;
+                    }
+                    if (written.hasProperty(RepeaterBlock.LOCKED)) {
+                        check(written.getValue(RepeaterBlock.LOCKED), "committed repeater must stay locked");
+                        sawLocked = true;
+                    }
+                    if (written.hasProperty(PistonBaseBlock.EXTENDED)) {
+                        check(written.getValue(PistonBaseBlock.EXTENDED), "committed piston must stay extended");
+                        sawExtended = true;
+                    }
+                }
+                check(sawPower && sawLocked && sawExtended, "fixture must commit dust, locked repeater and extended piston");
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("redstone commit setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A commit budget of one block per tick writes a recoverable log and publishes only once")
+    static void commitLogPublishesOnceWithBudgetOne(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            int previous = ConstructionCommitService.blocksPerTick;
+            ConstructionCommitService.blocksPerTick = 1;
+            try {
+                StartedJob started = startCobbleJob(helper, player, 2);
+                player.getInventory().add(new ItemStack(Items.COBBLESTONE, 2));
+                for (ConstructionBuildOp op : started.progress().operations()) {
+                    if (op.kind() != ConstructionBuildOp.Kind.PLACE) continue;
+                    check(
+                        ConstructionJobController.extractMaterial(player, started.progress(), op, UUID.randomUUID()),
+                        "extract before partitioned commit must succeed"
+                    );
+                    check(
+                        ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), op),
+                        "deliver before partitioned commit must succeed"
+                    );
+                }
+                check(
+                    !ConstructionCommitService.tick(helper.getLevel(), started.progress()),
+                    "budget 1 must not finish on the first tick"
+                );
+                check(
+                    started.progress().commitLog().phase() == ConstructionCommitLog.Phase.STATES,
+                    "first tick must stay in STATES"
+                );
+                int written = 0;
+                for (ConstructionBuildOp op : started.progress().operations()) {
+                    if (op.writesProjection() && helper.getLevel().getBlockState(op.pos()).is(Blocks.COBBLESTONE)) {
+                        written++;
+                    }
+                }
+                check(written == 1, "budget 1 must write exactly one block on the first tick, was " + written);
+                check(
+                    ConstructionProjectionIndex.has(helper.getLevel(), firstPlace(started.progress()).pos()),
+                    "projections must stay until the publish phase"
+                );
+                int ticks = 0;
+                while (!ConstructionCommitService.tick(helper.getLevel(), started.progress()) && ticks++ < 32) {
+                    // 分 tick 续写
+                }
+                check(
+                    started.progress().commitLog().phase() == ConstructionCommitLog.Phase.DONE,
+                    "partitioned commit must reach DONE"
+                );
+                check(
+                    !ConstructionProjectionIndex.has(helper.getLevel(), firstPlace(started.progress()).pos()),
+                    "publish must clear projections only once at the end"
+                );
+                ConstructionJobController.finish(
+                    helper.getLevel().getServer(),
+                    helper.getLevel(),
+                    started.job(),
+                    started.progress()
+                );
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("commit log setup failed: " + exception.reason());
+            } finally {
+                ConstructionCommitService.blocksPerTick = previous;
+            }
+        }).thenSucceed();
+    }
+
     private static StartedJob startCobbleJob(ExtendedGameTestHelper helper, GameTestPlayer player, int count)
         throws ConstructionBlueprintException {
         return startCobbleJob(helper, player, count, new BlockPos(3, 2, 1));
@@ -1123,12 +1502,22 @@ public final class ConstructionJobGameTests {
         int count,
         BlockPos relativeAnchor
     ) throws ConstructionBlueprintException {
+        return startStructureJob(helper, player, cobbleStructure(count), "cobble-wall", relativeAnchor);
+    }
+
+    private static StartedJob startStructureJob(
+        ExtendedGameTestHelper helper,
+        GameTestPlayer player,
+        CompoundTag structure,
+        String name,
+        BlockPos relativeAnchor
+    ) throws ConstructionBlueprintException {
         ItemStack disk = new ItemStack(ModItems.STRUCTURE_DISK.get());
         ConstructionBlueprintService.importIntoDisk(
             helper.getLevel().getServer(),
             disk,
-            cobbleStructure(count),
-            "cobble-wall",
+            structure,
+            name,
             BlueprintSource.VANILLA_FILE
         );
         player.setItemInHand(InteractionHand.MAIN_HAND, disk);
@@ -1143,9 +1532,9 @@ public final class ConstructionJobGameTests {
         ConstructionBlueprintService.start(player, job.jobId());
         MinecraftServer server = helper.getLevel().getServer();
         ConstructionJob started = ConstructionJobIndex.get(server).job(job.jobId());
-        check(started != null && started.isActive(), "started cobble job must be active");
+        check(started != null && started.isActive(), "started " + name + " job must be active");
         ConstructionJobProgress progress = ConstructionJobStore.get(server).get(job.jobId());
-        check(progress != null && progress.planned(), "started cobble job must be planned");
+        check(progress != null && progress.planned(), "started " + name + " job must be planned");
         return new StartedJob(started, progress);
     }
 
@@ -1170,6 +1559,130 @@ public final class ConstructionJobGameTests {
             pos.add(IntTag.valueOf(0));
             entry.put("pos", pos);
             entry.putInt("state", 0);
+            blocks.add(entry);
+        }
+        tag.put("blocks", blocks);
+        tag.put("entities", new ListTag());
+        return tag;
+    }
+
+    private static CompoundTag chestWithDiamonds(HolderLookup.Provider registries) {
+        CompoundTag item = (CompoundTag) new ItemStack(Items.DIAMOND, 3).save(registries);
+        item.putByte("Slot", (byte) 0);
+        CompoundTag nbt = new CompoundTag();
+        nbt.putString("id", "minecraft:chest");
+        ListTag items = new ListTag();
+        items.add(item);
+        nbt.put("Items", items);
+        return singleBlockStructure(Blocks.CHEST.defaultBlockState(), nbt);
+    }
+
+    private static CompoundTag fencePairStructure() {
+        return multiBlockStructure(List.of(
+            new BlockPos(0, 0, 0),
+            new BlockPos(1, 0, 0)
+        ), List.of(
+            Blocks.OAK_FENCE.defaultBlockState(),
+            Blocks.OAK_FENCE.defaultBlockState()
+        ));
+    }
+
+    private static CompoundTag giantAnvilStructure() {
+        GiantAnvilBlock block = ModBlocks.GIANT_ANVIL.get();
+        int minX = Integer.MAX_VALUE;
+        int minY = Integer.MAX_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int maxY = Integer.MIN_VALUE;
+        int maxZ = Integer.MIN_VALUE;
+        List<BlockPos> positions = new ArrayList<>();
+        List<BlockState> states = new ArrayList<>();
+        for (Cube3x3PartHalf part : block.getParts()) {
+            Vec3i offset = part.getOffset();
+            minX = Math.min(minX, offset.getX());
+            minY = Math.min(minY, offset.getY());
+            minZ = Math.min(minZ, offset.getZ());
+            maxX = Math.max(maxX, offset.getX());
+            maxY = Math.max(maxY, offset.getY());
+            maxZ = Math.max(maxZ, offset.getZ());
+            positions.add(new BlockPos(offset.getX(), offset.getY(), offset.getZ()));
+            states.add(block.placedState(part, block.defaultBlockState()));
+        }
+        List<BlockPos> shifted = new ArrayList<>();
+        for (BlockPos pos : positions) {
+            shifted.add(pos.offset(-minX, -minY, -minZ));
+        }
+        return sizedStructure(maxX - minX + 1, maxY - minY + 1, maxZ - minZ + 1, shifted, states, List.of());
+    }
+
+    private static CompoundTag redstoneMachineStructure() {
+        return multiBlockStructure(List.of(
+            new BlockPos(1, 0, 0),
+            new BlockPos(1, 0, 1),
+            new BlockPos(1, 0, 2),
+            new BlockPos(2, 0, 1),
+            new BlockPos(3, 0, 1)
+        ), List.of(
+            Blocks.COBBLESTONE.defaultBlockState(),
+            Blocks.REDSTONE_WIRE.defaultBlockState().setValue(RedStoneWireBlock.POWER, 15),
+            Blocks.REPEATER.defaultBlockState()
+                .setValue(RepeaterBlock.LOCKED, true)
+                .setValue(RepeaterBlock.FACING, Direction.EAST),
+            Blocks.PISTON.defaultBlockState()
+                .setValue(PistonBaseBlock.EXTENDED, true)
+                .setValue(PistonBaseBlock.FACING, Direction.EAST),
+            Blocks.PISTON_HEAD.defaultBlockState().setValue(PistonHeadBlock.FACING, Direction.EAST)
+        ));
+    }
+
+    private static CompoundTag singleBlockStructure(BlockState state, CompoundTag nbt) {
+        return sizedStructure(1, 1, 1, List.of(BlockPos.ZERO), List.of(state), List.of(nbt));
+    }
+
+    private static CompoundTag multiBlockStructure(List<BlockPos> positions, List<BlockState> states) {
+        int maxX = 0;
+        int maxY = 0;
+        int maxZ = 0;
+        for (BlockPos pos : positions) {
+            maxX = Math.max(maxX, pos.getX());
+            maxY = Math.max(maxY, pos.getY());
+            maxZ = Math.max(maxZ, pos.getZ());
+        }
+        return sizedStructure(maxX + 1, maxY + 1, maxZ + 1, positions, states, List.of());
+    }
+
+    private static CompoundTag sizedStructure(
+        int sizeX,
+        int sizeY,
+        int sizeZ,
+        List<BlockPos> positions,
+        List<BlockState> states,
+        List<CompoundTag> blockEntities
+    ) {
+        CompoundTag tag = new CompoundTag();
+        ListTag size = new ListTag();
+        size.add(IntTag.valueOf(sizeX));
+        size.add(IntTag.valueOf(sizeY));
+        size.add(IntTag.valueOf(sizeZ));
+        tag.put("size", size);
+        ListTag palette = new ListTag();
+        for (BlockState state : states) {
+            palette.add(NbtUtils.writeBlockState(state));
+        }
+        tag.put("palette", palette);
+        ListTag blocks = new ListTag();
+        for (int index = 0; index < positions.size(); index++) {
+            BlockPos pos = positions.get(index);
+            CompoundTag entry = new CompoundTag();
+            ListTag posTag = new ListTag();
+            posTag.add(IntTag.valueOf(pos.getX()));
+            posTag.add(IntTag.valueOf(pos.getY()));
+            posTag.add(IntTag.valueOf(pos.getZ()));
+            entry.put("pos", posTag);
+            entry.putInt("state", index);
+            if (index < blockEntities.size() && blockEntities.get(index) != null) {
+                entry.put("nbt", blockEntities.get(index));
+            }
             blocks.add(entry);
         }
         tag.put("blocks", blocks);
@@ -1260,6 +1773,17 @@ public final class ConstructionJobGameTests {
         int count = 0;
         for (ConstructionBuildOp op : progress.operations()) {
             if (op.kind() == kind) count++;
+        }
+        return count;
+    }
+
+    private static int countContainer(Container container, Item item) {
+        int count = 0;
+        for (int slot = 0; slot < container.getContainerSize(); slot++) {
+            ItemStack stack = container.getItem(slot);
+            if (stack.is(item)) {
+                count += stack.getCount();
+            }
         }
         return count;
     }

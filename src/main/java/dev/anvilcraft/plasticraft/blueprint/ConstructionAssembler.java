@@ -74,13 +74,27 @@ public final class ConstructionAssembler {
             op.setOrder(order++);
         }
         for (ConstructionBuildOp op : progress.operations()) {
-            if (op.kind() != ConstructionBuildOp.Kind.ATTACHED) continue;
-            ConstructionBuildOp parent = parentOf(progress, op);
+            if (op.kind() != ConstructionBuildOp.Kind.ATTACHED && op.kind() != ConstructionBuildOp.Kind.CONTENT) {
+                continue;
+            }
+            ConstructionBuildOp parent = progress.parentOf(op);
+            if (parent == null) {
+                parent = parentOf(progress, op);
+            }
             op.setOrder(parent == null ? order++ : parent.order());
         }
     }
 
     private static ConstructionBuildOp parentOf(ConstructionJobProgress progress, ConstructionBuildOp attached) {
+        if (attached.parentId() >= 0) {
+            return progress.parentOf(attached);
+        }
+        BlockPos core = MultiblockBuildAdapter.coreOf(attached.pos(), attached.target());
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() == ConstructionBuildOp.Kind.PLACE && op.pos().equals(core)) {
+                return op;
+            }
+        }
         for (Direction direction : Direction.values()) {
             BlockPos neighbor = attached.pos().relative(direction);
             for (ConstructionBuildOp op : progress.operations()) {

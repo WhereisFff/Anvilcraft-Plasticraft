@@ -1,6 +1,8 @@
 package dev.anvilcraft.plasticraft.client;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionProjectionIndex;
+import dev.anvilcraft.plasticraft.client.blueprint.ClientConstructionOverlayLookup;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureCache;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.client.hud.AdhesiveBondHud;
@@ -104,6 +106,7 @@ public final class AnvilcraftPlasticraftClient {
                 AnvilcraftPlasticraft.of("plastic_color"),
                 (stack, level, entity, seed) -> PlasticMeltColor.get(stack).getId()
             );
+            ConstructionProjectionIndex.setOverlayLookup(ClientConstructionOverlayLookup::plannedOverlay);
         });
     }
 

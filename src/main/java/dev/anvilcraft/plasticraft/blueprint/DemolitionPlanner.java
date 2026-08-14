@@ -88,7 +88,9 @@ public final class DemolitionPlanner {
 
     public static void skipPlaceAt(ConstructionJobProgress progress, BlockPos pos) {
         for (ConstructionBuildOp op : progress.operations()) {
-            if (op.kind() != ConstructionBuildOp.Kind.PLACE && op.kind() != ConstructionBuildOp.Kind.ATTACHED) {
+            if (op.kind() != ConstructionBuildOp.Kind.PLACE
+                && op.kind() != ConstructionBuildOp.Kind.ATTACHED
+                && op.kind() != ConstructionBuildOp.Kind.CONTENT) {
                 continue;
             }
             if (!op.pos().equals(pos)) continue;
