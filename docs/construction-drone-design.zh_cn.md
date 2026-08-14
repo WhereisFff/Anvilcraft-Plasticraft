@@ -489,7 +489,7 @@ AnvilCraft 大型方块在解析阶段识别核心控制器和全部 `part`：
 
 ### TODO 06：单架建设无人机的完整施工闭环
 
-- [ ] 完成 TODO 06
+- [x] 完成 TODO 06
 
 依赖：TODO 01、TODO 02、TODO 04。
 

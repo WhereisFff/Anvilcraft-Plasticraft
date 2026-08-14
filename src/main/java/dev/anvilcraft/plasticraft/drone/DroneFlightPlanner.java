@@ -28,12 +28,23 @@ public final class DroneFlightPlanner {
     }
 
     public static List<Vec3> plan(Entity drone, Vec3 goal) {
-        Vec3 start = drone.position();
-        if (start.distanceToSqr(goal) < 0.04D) return List.of(goal);
-        if (start.distanceTo(goal) > MAX_STRAIGHT) return List.of(goal);
-        if (isClear(drone, start, goal)) return List.of(goal);
-        List<Vec3> path = astar(drone, start, goal);
-        return path.isEmpty() ? List.of(goal) : path;
+        Vec3 actual = drone.position();
+        Vec3 start = snapToFree(drone, actual);
+        Vec3 safeGoal = snapToFree(drone, goal);
+        List<Vec3> path;
+        if (start.distanceToSqr(safeGoal) < 0.04D) {
+            path = List.of(safeGoal);
+        } else if (start.distanceTo(safeGoal) > MAX_STRAIGHT) {
+            path = isClear(drone, start, safeGoal) ? List.of(safeGoal) : List.of();
+        } else if (isClear(drone, start, safeGoal)) {
+            path = List.of(safeGoal);
+        } else {
+            path = astar(drone, start, safeGoal);
+            if (path.isEmpty()) {
+                path = elevate(drone, start, safeGoal);
+            }
+        }
+        return escape(actual, start, path);
     }
 
     public static double length(List<Vec3> path, Vec3 from) {
@@ -50,6 +61,65 @@ public final class DroneFlightPlanner {
         double distance = length(path, from);
         int airTicks = (int) Math.ceil(distance / SPEED) + 20;
         return new DroneEnergyModel.Quote(airTicks, distance, instantActions);
+    }
+
+    /**
+     * 把目标挪到无人机碰撞箱能放下的最近格,避免玩家走进已交付假方块后把接近点定进墙里。
+     */
+    private static Vec3 snapToFree(Entity drone, Vec3 goal) {
+        if (drone.level().noCollision(drone, boxAt(drone, goal))) return goal;
+        BlockPos origin = BlockPos.containing(goal);
+        Vec3 best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (int y = -1; y <= 4; y++) {
+            for (int x = -3; x <= 3; x++) {
+                for (int z = -3; z <= 3; z++) {
+                    if (x == 0 && y == 0 && z == 0) continue;
+                    Vec3 candidate = new Vec3(
+                        origin.getX() + x + 0.5D,
+                        origin.getY() + y,
+                        origin.getZ() + z + 0.5D
+                    );
+                    if (!drone.level().noCollision(drone, boxAt(drone, candidate))) continue;
+                    double dist = candidate.distanceToSqr(goal);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        best = candidate;
+                    }
+                }
+            }
+        }
+        return best != null ? best : goal;
+    }
+
+    /**
+     * 当前碰撞箱已经嵌进假方块时,先飞到腾挪点再走后续路点,避免对着墙死顶。
+     */
+    private static List<Vec3> escape(Vec3 actual, Vec3 start, List<Vec3> path) {
+        if (path.isEmpty() || start.distanceToSqr(actual) < 0.04D) return path;
+        List<Vec3> escaped = new ArrayList<>(path.size() + 1);
+        escaped.add(start);
+        escaped.addAll(path);
+        return escaped;
+    }
+
+    /**
+     * A* 失败时先抬升再越过,禁止再退回「对着墙直线飞」。
+     */
+    private static List<Vec3> elevate(Entity drone, Vec3 start, Vec3 goal) {
+        for (int rise = 2; rise <= 8; rise++) {
+            Vec3 up = start.add(0.0D, rise, 0.0D);
+            Vec3 aboveGoal = goal.add(0.0D, rise, 0.0D);
+            if (!isClear(drone, start, up)) continue;
+            if (isClear(drone, up, aboveGoal) && isClear(drone, aboveGoal, goal)) {
+                return List.of(up, aboveGoal, goal);
+            }
+            Vec3 over = new Vec3(goal.x, start.y + rise, goal.z);
+            if (isClear(drone, up, over) && isClear(drone, over, aboveGoal) && isClear(drone, aboveGoal, goal)) {
+                return List.of(up, over, aboveGoal, goal);
+            }
+        }
+        return List.of();
     }
 
     /**

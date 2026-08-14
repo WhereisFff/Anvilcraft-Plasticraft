@@ -9,6 +9,7 @@ import java.util.List;
 
 /** 为创造物品栏的公共十六色选择器提供完整物品栈变体。 */
 public interface CreativeColorVariantItem extends CreativeVariantPickerItem {
+    /** 创造物品栏 4x4 叠加层与通用塑料色板行共用的十六色顺序。 */
     List<DyeColor> CREATIVE_COLOR_ORDER = List.of(
         DyeColor.WHITE,
         DyeColor.LIGHT_GRAY,
@@ -27,6 +28,15 @@ public interface CreativeColorVariantItem extends CreativeVariantPickerItem {
         DyeColor.MAGENTA,
         DyeColor.PINK
     );
+
+    /** 色板从上到下与创造物品栏十六色顺序一致。 */
+    static int paletteRow(DyeColor color) {
+        int row = CREATIVE_COLOR_ORDER.indexOf(color);
+        if (row < 0) {
+            throw new IllegalArgumentException("Unsupported plastic palette colour: " + color);
+        }
+        return row;
+    }
 
     default ItemStack createCreativeColorVariant(ItemStack source, DyeColor color) {
         ItemStack variant = source.copyWithCount(1);

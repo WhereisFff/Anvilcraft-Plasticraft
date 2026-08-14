@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.api.texture.PlasticTextureGenerator;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureInput;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureResourceException;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticShape;
+import dev.anvilcraft.plasticraft.item.CreativeColorVariantItem;
 import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.atlas.SpriteSource;
 import net.minecraft.client.renderer.texture.atlas.SpriteSourceType;
@@ -123,7 +124,7 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
             baseHash,
             PlasticTextureResourceLoader.PALETTE_RESOURCE.toString(),
             paletteHash,
-            color.getId()
+            CreativeColorVariantItem.paletteRow(color)
         );
     }
 

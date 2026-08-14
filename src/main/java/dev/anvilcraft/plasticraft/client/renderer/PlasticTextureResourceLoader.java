@@ -18,6 +18,7 @@ final class PlasticTextureResourceLoader {
     static final ResourceLocation BASE_RESOURCE = AnvilcraftPlasticraft.of(
         "textures/palette/universal_plastic_base_16x16.png"
     );
+    /** 各行从上到下对应创造物品栏十六色顺序。 */
     static final ResourceLocation PALETTE_RESOURCE = AnvilcraftPlasticraft.of(
         "textures/palette/universal_plastic_palette.png"
     );

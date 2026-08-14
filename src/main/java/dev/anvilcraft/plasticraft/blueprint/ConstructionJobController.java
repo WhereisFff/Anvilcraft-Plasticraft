@@ -28,9 +28,12 @@ import net.neoforged.neoforge.event.level.ChunkWatchEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -42,6 +45,11 @@ public final class ConstructionJobController {
     /** 无站无人机发现范围:到最近可执行目标的直线距离。 */
     public static final double DISCOVERY_RANGE = 128.0D;
     public static final double REACH = 1.0D;
+
+    /** 已放置蓝图在世界中的方块包围盒,用于完工后把无人机带离工地。 */
+    public static AABB worldBox(ConstructionJob job) {
+        return AABB.of(BlueprintPlacement.of(job).bounds(job.size()));
+    }
 
     private ConstructionJobController() {
     }
@@ -363,6 +371,27 @@ public final class ConstructionJobController {
         }
     }
 
+    public static boolean isUsableApproach(
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        ConstructionBuildOp op,
+        @Nullable BlockPos approach
+    ) {
+        if (approach == null) return false;
+        if (isReservedBuildCell(progress, approach)) return false;
+        if (!fitsDrone(level, approach)) return false;
+        Vec3 center = Vec3.atBottomCenterOf(approach);
+        AABB droneBox = new AABB(
+            center.x - 0.25D,
+            center.y,
+            center.z - 0.25D,
+            center.x + 0.25D,
+            center.y + 0.5D,
+            center.z + 0.25D
+        );
+        return droneBox.intersects(new AABB(op.pos()).inflate(REACH));
+    }
+
     @Nullable
     public static BlockPos chooseApproach(ServerLevel level, ConstructionJobProgress progress, ConstructionBuildOp op) {
         BlockPos best = null;
@@ -464,33 +493,73 @@ public final class ConstructionJobController {
         return ConstructionWaitReason.NONE;
     }
 
+    /**
+     * 已加载且仍拿着材料的无人机自己飞回玩家再还物;没有对应实体的台账条目才当场返还,避免复制。
+     */
     private static void returnInTransit(
         MinecraftServer server,
         ServerLevel level,
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
+        List<DroneEntity> loaded = new ArrayList<>();
+        for (Entity entity : level.getAllEntities()) {
+            if (!(entity instanceof DroneEntity drone)) continue;
+            if (drone.assignedJobId().filter(job.jobId()::equals).isEmpty()) continue;
+            loaded.add(drone);
+        }
+        Set<UUID> holding = new HashSet<>();
+        for (DroneEntity drone : loaded) {
+            drone.navigator().clear();
+            if (drone.hostedCarry().isEmpty()) {
+                drone.clearAssignment(false);
+            } else {
+                holding.add(drone.getUUID());
+            }
+        }
         ServerPlayer owner = findOwner(server, level, job.owner());
         for (ConstructionLedgerEntry entry : progress.ledger()) {
             if (entry.state() != ConstructionLedgerEntry.State.CARRIED) continue;
-            ItemStack stack = entry.stack().copy();
-            if (owner != null) {
-                owner.getInventory().placeItemBackInInventory(stack);
-            } else {
-                Vec3 drop = Vec3.atCenterOf(job.anchor());
-                level.addFreshEntity(new ItemEntity(level, drop.x, drop.y, drop.z, stack));
-            }
+            if (entry.droneId() != null && holding.contains(entry.droneId())) continue;
+            giveOrDrop(owner, level, job, entry.stack().copy());
             entry.setState(ConstructionLedgerEntry.State.RETURNED);
         }
-        releaseLoadedDrones(level, job.jobId());
     }
 
-    private static void releaseLoadedDrones(ServerLevel level, UUID jobId) {
-        for (var entity : level.getAllEntities()) {
-            if (!(entity instanceof DroneEntity drone)) continue;
-            if (drone.assignedJobId().filter(jobId::equals).isEmpty()) continue;
-            drone.clearAssignment(true);
+    /** 无人机飞到所有者触及范围后把托管携带物塞回背包,并勾掉对应台账。 */
+    public static void depositHostedCarry(DroneEntity drone, ServerPlayer player) {
+        ItemStack carry = drone.hostedCarry();
+        if (carry.isEmpty()) return;
+        player.getInventory().placeItemBackInInventory(carry.copy());
+        drone.assignedJobId().ifPresent(jobId -> {
+            ConstructionJobProgress progress = ConstructionJobStore.get(player.server).get(jobId);
+            if (progress == null) return;
+            for (ConstructionLedgerEntry entry : progress.ledger()) {
+                if (entry.state() == ConstructionLedgerEntry.State.CARRIED
+                    && drone.getUUID().equals(entry.droneId())) {
+                    entry.setState(ConstructionLedgerEntry.State.RETURNED);
+                }
+            }
+            ConstructionJobStore.get(player.server).markDirty();
+        });
+        drone.setHostedCarry(ItemStack.EMPTY);
+        drone.clearAssignment(false);
+        drone.setActionState((byte) 0);
+        drone.setWaitReason(ConstructionWaitReason.NONE);
+    }
+
+    private static void giveOrDrop(
+        @Nullable ServerPlayer owner,
+        ServerLevel level,
+        ConstructionJob job,
+        ItemStack stack
+    ) {
+        if (owner != null) {
+            owner.getInventory().placeItemBackInInventory(stack);
+            return;
         }
+        Vec3 drop = Vec3.atCenterOf(job.anchor());
+        level.addFreshEntity(new ItemEntity(level, drop.x, drop.y, drop.z, stack));
     }
 
     private static void releaseLeases(ConstructionJobProgress progress) {
@@ -537,7 +606,13 @@ public final class ConstructionJobController {
             center.y + 0.5D,
             center.z + 0.25D
         );
-        return level.noCollision(box);
+        if (!level.noBlockCollision(null, box)) return false;
+        for (Entity entity : level.getEntities(null, box)) {
+            if (!entity.isAlive() || entity.isSpectator()) continue;
+            if (entity instanceof DroneEntity) continue;
+            return false;
+        }
+        return true;
     }
 
     private static boolean hasSkippedPlace(ConstructionJobProgress progress) {

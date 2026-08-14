@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.api.texture.PlasticSurface;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureCache;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureGenerator;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureInput;
+import dev.anvilcraft.plasticraft.item.CreativeColorVariantItem;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import net.minecraft.client.Minecraft;
@@ -80,7 +81,7 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
             resourceInputs.baseHash,
             PlasticTextureResourceLoader.PALETTE_RESOURCE.toString(),
             resourceInputs.paletteHash,
-            color.getId()
+            CreativeColorVariantItem.paletteRow(color)
         );
         GeneratedPlasticTexture generated = PlasticTextureCache.getOrGenerate(
             input,

@@ -51,7 +51,7 @@ import java.util.UUID;
 
 /**
  * 覆盖单架无站建设无人机施工闭环的服务器契约:台账、假方块碰撞、占用、安静提交、
- * 缺料策略、电量拒派与同模板短时序交付。不扫描 128 格实体。
+ * 缺料策略、电量拒派、停止后飞回还物与同模板短时序交付。不扫描 128 格实体。
  */
 public final class ConstructionJobGameTests {
     private ConstructionJobGameTests() {
@@ -328,6 +328,64 @@ public final class ConstructionJobGameTests {
         }).thenSucceed();
     }
 
+    @GameTest(timeoutTicks = 200, batch = "zzz_construction_return")
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "Stopping a job makes a loaded drone fly back and insert carry beside the owner")
+    static void pauseReturnsCarryByFlyingToOwner(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        player.setNoGravity(true);
+        player.moveTo(helper.absoluteVec(new Vec3(1.5D, 2.0D, 1.5D)));
+        DroneEntity[] droneSlot = new DroneEntity[1];
+        int[] beforeSlot = new int[1];
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                player.setNoGravity(true);
+                player.moveTo(helper.absoluteVec(new Vec3(1.5D, 2.0D, 1.5D)));
+                StartedJob started = startCobbleJob(helper, player, 2, new BlockPos(5, 2, 5));
+                player.getInventory().add(new ItemStack(Items.COBBLESTONE, 4));
+                ConstructionBuildOp first = firstPlace(started.progress());
+                DroneEntity drone = spawnConstructionDrone(
+                    helper,
+                    new Vec3(5.5D, 3.0D, 5.5D),
+                    player,
+                    DroneEnergyModel.capacity()
+                );
+                drone.setNoGravity(true);
+                check(
+                    ConstructionJobController.extractMaterial(player, started.progress(), first, drone.getUUID()),
+                    "extract before pause must succeed"
+                );
+                drone.setHostedCarry(first.material().copyWithCount(1));
+                first.setStatus(ConstructionBuildOp.Status.LEASED);
+                first.setLeaseDrone(drone.getUUID());
+                drone.assign(started.job().jobId(), first.id());
+                droneSlot[0] = drone;
+                beforeSlot[0] = countCobble(player);
+                check(
+                    drone.distanceTo(player) > ConstructionJobController.REACH + 0.5D,
+                    "setup must place the drone away from the owner"
+                );
+                ConstructionBlueprintService.toggleActive(player, started.job().jobId());
+                check(countCobble(player) == beforeSlot[0], "pause must not teleport carry into the inventory");
+                check(!drone.hostedCarry().isEmpty(), "drone must keep hosted carry after pause");
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("pause return setup failed: " + exception.reason());
+            }
+        }).thenWaitUntil(() -> {
+            DroneEntity drone = droneSlot[0];
+            check(drone != null, "construction drone missing after pause");
+            check(drone.hostedCarry().isEmpty(), "drone must empty carry after flying back");
+            check(
+                countCobble(player) == beforeSlot[0] + 1,
+                "owner must receive the returned cobble after the drone arrives"
+            );
+            check(
+                drone.distanceTo(player) <= ConstructionJobController.REACH + 1.0D,
+                "drone must return beside the owner"
+            );
+        }).thenSucceed();
+    }
+
     @GameTest(timeoutTicks = 400, batch = "zzz_construction_live")
     @EmptyTemplate(value = "7x6x7", floor = true)
     @TestHolder(description = "A construction drone takes cobble from the owner and delivers a short air wall")
@@ -337,12 +395,14 @@ public final class ConstructionJobGameTests {
         player.moveTo(helper.absoluteVec(new Vec3(2.5D, 2.0D, 2.5D)));
         DroneEntity[] droneSlot = new DroneEntity[1];
         UUID[] jobSlot = new UUID[1];
+        AABB[] siteSlot = new AABB[1];
         helper.startSequence().thenExecuteAfter(5, () -> {
             try {
                 player.setNoGravity(true);
                 player.moveTo(helper.absoluteVec(new Vec3(2.5D, 2.0D, 2.5D)));
                 StartedJob started = startCobbleJob(helper, player, 2, new BlockPos(3, 2, 3));
                 jobSlot[0] = started.job().jobId();
+                siteSlot[0] = ConstructionJobController.worldBox(started.job());
                 player.getInventory().add(new ItemStack(Items.COBBLESTONE, 8));
                 DroneEntity drone = spawnConstructionDrone(
                     helper,
@@ -400,6 +460,13 @@ public final class ConstructionJobGameTests {
                 "second cobble wall cell was not committed"
             );
             check(countCobble(player) < 8, "owner inventory must lose cobble used for delivery");
+            check(siteSlot[0] != null, "construction site bounds missing");
+            check(
+                drone != null && !siteSlot[0].intersects(drone.getBoundingBox()),
+                "drone must leave the construction site before landing"
+                    + (drone == null ? "" : "; pos=" + drone.blockPosition()
+                    + " flight=" + drone.flightState())
+            );
         }).thenSucceed();
     }
 

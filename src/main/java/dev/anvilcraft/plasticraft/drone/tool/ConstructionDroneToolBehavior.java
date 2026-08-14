@@ -18,7 +18,9 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -39,20 +41,23 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
             return;
         }
         ConstructionJob job = ConstructionJobIndex.get(level).activeJobOf(owner.get()).orElse(null);
+        if (!drone.hostedCarry().isEmpty() && !isActiveBuildCarry(drone, job)) {
+            returnCarryToOwner(drone, level, owner.get());
+            return;
+        }
         if (job == null || !job.dimension().equals(level.dimension())) {
-            if (!drone.hostedCarry().isEmpty()) return;
-            drone.clearAssignment(false);
-            if (drone.flightState() == DroneFlightState.FLYING) {
-                drone.setFlightState(DroneFlightState.LANDING);
-            }
+            continueOrLand(drone);
+            return;
+        }
+        if (job.state() == ConstructionJob.STATE_COMMITTING) {
+            leaveSiteThenLand(drone, level, job);
             return;
         }
         if (job.state() == ConstructionJob.STATE_WAITING_MATERIAL
-            || job.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE
-            || job.state() == ConstructionJob.STATE_COMMITTING) {
+            || job.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE) {
             if (job.state() == ConstructionJob.STATE_WAITING_MATERIAL) {
                 drone.setWaitReason(ConstructionWaitReason.MATERIAL);
-            } else if (job.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE) {
+            } else {
                 drone.setWaitReason(ConstructionWaitReason.SOURCE);
             }
             if (drone.flightState() == DroneFlightState.FLYING && drone.hostedCarry().isEmpty()) {
@@ -65,12 +70,20 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
         ConstructionJobProgress progress = ConstructionJobStore.get(level).get(job.jobId());
         if (progress == null) return;
         if (drone.assignedJobId().filter(job.jobId()::equals).isEmpty() || drone.taskOpId() < 0) {
-            if (!tryClaim(drone, level, job, progress)) return;
+            if (!tryClaim(drone, level, job, progress)) {
+                if (progress.allPlaceResolved()) {
+                    leaveSiteThenLand(drone, level, job);
+                }
+                return;
+            }
         }
         ConstructionBuildOp op = progress.operation(drone.taskOpId());
         if (op == null || op.status() == ConstructionBuildOp.Status.SKIPPED
             || op.status() == ConstructionBuildOp.Status.DELIVERED) {
             drone.clearAssignment(false);
+            if (progress.allPlaceResolved()) {
+                leaveSiteThenLand(drone, level, job);
+            }
             return;
         }
         ServerPlayer player = ConstructionJobController.findOwner(level.getServer(), level, owner.get());
@@ -159,6 +172,101 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
         drone.setWaitReason(ConstructionWaitReason.NONE);
     }
 
+    private static boolean isActiveBuildCarry(DroneEntity drone, @Nullable ConstructionJob job) {
+        return job != null
+            && job.state() == ConstructionJob.STATE_BUILDING
+            && drone.assignedJobId().filter(job.jobId()::equals).isPresent();
+    }
+
+    private static void returnCarryToOwner(DroneEntity drone, ServerLevel level, UUID ownerId) {
+        ServerPlayer player = ConstructionJobController.findOwner(level.getServer(), level, ownerId);
+        if (player == null) {
+            drone.setWaitReason(ConstructionWaitReason.SOURCE);
+            drone.setNoGravity(false);
+            drone.setFlightState(DroneFlightState.LANDING);
+            return;
+        }
+        drone.setActionState((byte) 1);
+        if (drone.distanceTo(player) > ConstructionJobController.REACH + 0.5D) {
+            flyTo(drone, player.position().add(0.0D, 1.0D, 0.0D));
+            return;
+        }
+        ConstructionJobController.depositHostedCarry(drone, player);
+        drone.setNoGravity(false);
+        drone.setFlightState(DroneFlightState.LANDING);
+    }
+
+    /**
+     * 完工后先离开蓝图包围盒再落地。所有者在工地外时飞回其身边,否则飞到工地外侧空位。
+     */
+    private static void leaveSiteThenLand(DroneEntity drone, ServerLevel level, ConstructionJob job) {
+        AABB site = ConstructionJobController.worldBox(job);
+        ServerPlayer owner = drone.getOwner()
+            .map(id -> ConstructionJobController.findOwner(level.getServer(), level, id))
+            .orElse(null);
+        Vec3 goal = evacuateGoal(drone, site, owner);
+        if (goal == null || arrivedOutside(drone, site, goal)) {
+            drone.clearAssignment(false);
+            drone.setNoGravity(false);
+            drone.setFlightState(DroneFlightState.LANDING);
+            return;
+        }
+        flyTo(drone, goal);
+    }
+
+    private static void continueOrLand(DroneEntity drone) {
+        if (drone.navigator().hasPath()) {
+            drone.setNoGravity(true);
+            drone.setFlightState(DroneFlightState.FLYING);
+            return;
+        }
+        drone.clearAssignment(false);
+        if (drone.flightState() == DroneFlightState.FLYING) {
+            drone.setNoGravity(false);
+            drone.setFlightState(DroneFlightState.LANDING);
+        }
+    }
+
+    @Nullable
+    private static Vec3 evacuateGoal(DroneEntity drone, AABB site, @Nullable ServerPlayer owner) {
+        if (owner != null && !site.intersects(owner.getBoundingBox())) {
+            return owner.position().add(0.0D, 1.0D, 0.0D);
+        }
+        if (!site.inflate(2.0D).intersects(drone.getBoundingBox())) {
+            return null;
+        }
+        return pushOutside(drone, site);
+    }
+
+    private static boolean arrivedOutside(DroneEntity drone, AABB site, Vec3 goal) {
+        return drone.position().distanceTo(goal) <= ConstructionJobController.REACH + 0.5D
+            && !site.intersects(drone.getBoundingBox());
+    }
+
+    private static Vec3 pushOutside(DroneEntity drone, AABB site) {
+        double cx = (site.minX + site.maxX) * 0.5D;
+        double cz = (site.minZ + site.maxZ) * 0.5D;
+        int[][] sides = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        Vec3 best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (int distance = 2; distance <= 4; distance++) {
+            for (int[] side : sides) {
+                double x = side[0] == 0 ? cx : (side[0] > 0 ? site.maxX : site.minX) + side[0] * distance;
+                double z = side[1] == 0 ? cz : (side[1] > 0 ? site.maxZ : site.minZ) + side[1] * distance;
+                Vec3 candidate = new Vec3(x, Math.max(drone.getY(), site.maxY), z);
+                if (!drone.level().noCollision(drone, drone.getBoundingBox().move(candidate.subtract(drone.position())))) {
+                    continue;
+                }
+                double dist = drone.position().distanceToSqr(candidate);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = candidate;
+                }
+            }
+        }
+        return best != null ? best : drone.position().add(2.0D, 1.0D, 0.0D);
+    }
+
     private static void flyToDeliver(
         DroneEntity drone,
         ServerLevel level,
@@ -166,10 +274,17 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
         ConstructionBuildOp op
     ) {
         drone.setActionState((byte) 4);
-        BlockPos approach = op.approach().orElseGet(
-            () -> ConstructionJobController.chooseApproach(level, progress, op)
-        );
-        if (approach == null) return;
+        BlockPos approach = op.approach().orElse(null);
+        if (!ConstructionJobController.isUsableApproach(level, progress, op, approach)) {
+            approach = ConstructionJobController.chooseApproach(level, progress, op);
+            if (approach != null) {
+                op.setApproach(approach);
+            }
+        }
+        if (approach == null) {
+            flyTo(drone, Vec3.atBottomCenterOf(op.pos().above(2)));
+            return;
+        }
         Vec3 target = Vec3.atBottomCenterOf(approach);
         AABB droneBox = drone.getBoundingBox();
         AABB block = new AABB(op.pos());
@@ -185,10 +300,14 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
             drone.setActionState((byte) 0);
             drone.setWaitReason(ConstructionWaitReason.NONE);
             ConstructionJob job = ConstructionJobIndex.get(level).job(progress.jobId());
-            if (job == null || job.state() != ConstructionJob.STATE_BUILDING
-                || !tryClaim(drone, level, job, progress)) {
-                drone.setNoGravity(false);
-                drone.setFlightState(DroneFlightState.LANDING);
+            if (job != null && job.state() == ConstructionJob.STATE_BUILDING
+                && tryClaim(drone, level, job, progress)) {
+                return;
+            }
+            if (job != null && (progress.allPlaceResolved() || job.state() == ConstructionJob.STATE_COMMITTING)) {
+                leaveSiteThenLand(drone, level, job);
+            } else if (job == null) {
+                continueOrLand(drone);
             }
         } else if (op.status() == ConstructionBuildOp.Status.WAITING_OCCUPIED) {
             drone.setWaitReason(ConstructionWaitReason.OCCUPIED);
@@ -199,10 +318,21 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
 
     private static void flyTo(DroneEntity drone, Vec3 goal) {
         drone.setNoGravity(true);
+        if (drone.horizontalCollision) {
+            drone.navigator().clear();
+        }
         if (drone.flightState() != DroneFlightState.FLYING
             || !drone.navigator().hasPath()
             || !drone.navigator().endsNear(goal)) {
-            drone.navigator().setPath(DroneFlightPlanner.plan(drone, goal));
+            List<Vec3> path = DroneFlightPlanner.plan(drone, goal);
+            if (path.isEmpty()) {
+                boolean blocked = drone.horizontalCollision
+                    || !drone.level().noCollision(drone, drone.getBoundingBox());
+                drone.setDeltaMovement(blocked ? new Vec3(0.0D, 0.12D, 0.0D) : Vec3.ZERO);
+                drone.setFlightState(DroneFlightState.FLYING);
+                return;
+            }
+            drone.navigator().setPath(path);
         }
         drone.setFlightState(DroneFlightState.FLYING);
     }

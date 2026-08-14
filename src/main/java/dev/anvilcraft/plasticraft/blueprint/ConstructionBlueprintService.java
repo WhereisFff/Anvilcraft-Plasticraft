@@ -259,7 +259,7 @@ public final class ConstructionBlueprintService {
         }
     }
 
-    /** 启动一份任务并暂停该玩家的其他活动任务;暂停时返还在途材料并保留已交付投影。 */
+    /** 启动一份任务并暂停该玩家的其他活动任务;已取料的无人机飞回玩家再还物,已交付投影保留。 */
     public static void start(ServerPlayer player, UUID jobId) throws ConstructionBlueprintException {
         MinecraftServer server = player.server;
         ConstructionJobIndex index = ConstructionJobIndex.get(server);
