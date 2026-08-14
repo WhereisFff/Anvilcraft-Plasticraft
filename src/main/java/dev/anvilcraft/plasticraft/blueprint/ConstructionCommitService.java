@@ -1,9 +1,11 @@
 package dev.anvilcraft.plasticraft.blueprint;
 
+import dev.dubhe.anvilcraft.api.fluid.IFluidHandlerHolder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.ButtonBlock;
@@ -18,6 +20,9 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -70,11 +75,13 @@ public final class ConstructionCommitService {
                 case BOUNDARY -> {
                     updateBoundaryShapes(level, progress);
                     restorePreservedStates(level, progress);
-                    log.setPhase(ConstructionCommitLog.Phase.PUBLISH);
+                    log.setPhase(ConstructionCommitLog.Phase.ENTITIES);
                     yield false;
                 }
+                case ENTITIES -> writeEntities(level, progress, log);
                 case PUBLISH -> {
                     ConstructionProjectionIndex.clearJob(level, progress.jobId());
+                    ConstructionEntityProjectionIndex.clearJob(level, progress.jobId());
                     log.setPhase(ConstructionCommitLog.Phase.DONE);
                     yield true;
                 }
@@ -133,6 +140,15 @@ public final class ConstructionCommitService {
                     contents.add(new BlockEntityContentAdapter.SlotStack(child.slot(), child.material()));
                 }
                 BlockEntityContentAdapter.insert(blockEntity, contents, registries);
+                List<FluidBuildAdapter.TankFluid> fluids = new ArrayList<>();
+                for (ConstructionBuildOp child : progress.operations()) {
+                    if (child.kind() != ConstructionBuildOp.Kind.FLUID) continue;
+                    if (child.parentId() != op.id() || child.status() != ConstructionBuildOp.Status.DELIVERED) {
+                        continue;
+                    }
+                    fluids.add(new FluidBuildAdapter.TankFluid(child.slot(), child.fluid()));
+                }
+                FluidBuildAdapter.insert(blockEntity, fluids);
                 blockEntity.setChanged();
             }
             index++;
@@ -141,6 +157,62 @@ public final class ConstructionCommitService {
         log.setNextIndex(index);
         if (index >= ops.size()) {
             log.setPhase(ConstructionCommitLog.Phase.MULTIBLOCK);
+        }
+        return false;
+    }
+
+    private static boolean writeEntities(
+        Level level,
+        ConstructionJobProgress progress,
+        ConstructionCommitLog log
+    ) {
+        if (!(level instanceof ServerLevel serverLevel)) {
+            log.setPhase(ConstructionCommitLog.Phase.PUBLISH);
+            return false;
+        }
+        List<ConstructionBuildOp> ops = new ArrayList<>();
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() == ConstructionBuildOp.Kind.ENTITY
+                && op.status() == ConstructionBuildOp.Status.DELIVERED) {
+                ops.add(op);
+            }
+        }
+        int budget = Math.max(1, blocksPerTick);
+        int index = log.nextIndex();
+        while (index < ops.size() && budget > 0) {
+            ConstructionBuildOp op = ops.get(index);
+            if (!log.isWritten(op.id())) {
+                Entity entity = EntityBuildAdapters.spawn(serverLevel, op);
+                if (entity != null) {
+                    List<EntityBuildAdapter.SlotStack> contents = new ArrayList<>();
+                    for (ConstructionBuildOp child : progress.operations()) {
+                        if (child.parentId() != op.id() || child.status() != ConstructionBuildOp.Status.DELIVERED) {
+                            continue;
+                        }
+                        if (child.kind() == ConstructionBuildOp.Kind.CONTENT) {
+                            contents.add(new EntityBuildAdapter.SlotStack(child.slot(), child.material()));
+                        }
+                    }
+                    EntityBuildAdapters.insertContents(entity, contents, serverLevel.registryAccess());
+                    IFluidHandler fluidsHandler = fluidHandlerOf(entity);
+                    if (fluidsHandler != null) {
+                        for (ConstructionBuildOp child : progress.operations()) {
+                            if (child.kind() != ConstructionBuildOp.Kind.FLUID) continue;
+                            if (child.parentId() != op.id() || child.status() != ConstructionBuildOp.Status.DELIVERED) {
+                                continue;
+                            }
+                            fluidsHandler.fill(child.fluid(), IFluidHandler.FluidAction.EXECUTE);
+                        }
+                    }
+                }
+                log.markWritten(op.id());
+                budget--;
+            }
+            index++;
+        }
+        log.setNextIndex(index);
+        if (index >= ops.size()) {
+            log.setPhase(ConstructionCommitLog.Phase.PUBLISH);
         }
         return false;
     }
@@ -250,6 +322,14 @@ public final class ConstructionCommitService {
             || state.getBlock() instanceof ButtonBlock
             || state.getBlock() instanceof PistonBaseBlock
             || state.getBlock() instanceof PistonHeadBlock;
+    }
+
+    @Nullable
+    private static IFluidHandler fluidHandlerOf(Entity entity) {
+        if (entity instanceof IFluidHandlerHolder holder) {
+            return holder.getFluidHandler();
+        }
+        return entity.getCapability(Capabilities.FluidHandler.ENTITY, null);
     }
 
     private static List<ConstructionBuildOp> deliveredProjections(ConstructionJobProgress progress) {

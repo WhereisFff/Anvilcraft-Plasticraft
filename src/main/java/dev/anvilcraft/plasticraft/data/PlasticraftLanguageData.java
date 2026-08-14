@@ -47,7 +47,7 @@ public final class PlasticraftLanguageData {
         );
         provider.add(
             "tooltip.anvilcraftplasticraft.drone.construction",
-            "Takes materials from the owner's inventory to seal fluids and deliver construction projections"
+            "Takes materials from the owner's inventory to seal fluids and deliver blocks, contents, fluids and entities"
         );
         provider.add(
             "tooltip.anvilcraftplasticraft.drone.demolition",
@@ -511,7 +511,7 @@ public final class PlasticraftLanguageData {
         provider.add("tooltip.anvilcraftplasticraft.blueprint.state_active", "Building, green slot");
         provider.add(
             "tooltip.anvilcraftplasticraft.blueprint.cancel_commits",
-            "Cancel quietly commits delivered blocks and contents and returns in-transit items"
+            "Cancel quietly commits delivered blocks, contents, fluids and entities and returns in-transit items"
         );
         provider.add("tooltip.anvilcraftplasticraft.blueprint.size", "Size: %1$s x %2$s x %3$s");
         provider.add("tooltip.anvilcraftplasticraft.blueprint.source.vanilla_template", "Source: structure block template");

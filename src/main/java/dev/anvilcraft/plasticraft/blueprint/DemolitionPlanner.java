@@ -90,7 +90,8 @@ public final class DemolitionPlanner {
         for (ConstructionBuildOp op : progress.operations()) {
             if (op.kind() != ConstructionBuildOp.Kind.PLACE
                 && op.kind() != ConstructionBuildOp.Kind.ATTACHED
-                && op.kind() != ConstructionBuildOp.Kind.CONTENT) {
+                && op.kind() != ConstructionBuildOp.Kind.CONTENT
+                && op.kind() != ConstructionBuildOp.Kind.FLUID) {
                 continue;
             }
             if (!op.pos().equals(pos)) continue;

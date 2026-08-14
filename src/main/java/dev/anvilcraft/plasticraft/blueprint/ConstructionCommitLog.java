@@ -14,6 +14,7 @@ public final class ConstructionCommitLog {
         BLOCK_ENTITIES,
         MULTIBLOCK,
         BOUNDARY,
+        ENTITIES,
         PUBLISH,
         DONE
     }

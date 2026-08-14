@@ -74,7 +74,10 @@ public final class ConstructionAssembler {
             op.setOrder(order++);
         }
         for (ConstructionBuildOp op : progress.operations()) {
-            if (op.kind() != ConstructionBuildOp.Kind.ATTACHED && op.kind() != ConstructionBuildOp.Kind.CONTENT) {
+            if (op.kind() != ConstructionBuildOp.Kind.ATTACHED
+                && op.kind() != ConstructionBuildOp.Kind.CONTENT
+                && op.kind() != ConstructionBuildOp.Kind.FLUID
+                && op.kind() != ConstructionBuildOp.Kind.ENTITY) {
                 continue;
             }
             ConstructionBuildOp parent = progress.parentOf(op);

@@ -4,20 +4,28 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.drone.DroneShortageStrategy;
 import dev.anvilcraft.plasticraft.drone.tool.DroneCapability;
 import dev.anvilcraft.plasticraft.entity.drone.DroneEntity;
+import dev.anvilcraft.plasticraft.init.PlasticraftEntityBuildAdapters;
+import dev.dubhe.anvilcraft.init.item.ModComponents;
+import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.neoforged.neoforge.fluids.FluidStack;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.StructureVoidBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -78,12 +86,14 @@ public final class ConstructionJobController {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         if (player.level() instanceof ServerLevel level) {
             ConstructionProjectionIndex.syncNearby(level, player);
+            ConstructionEntityProjectionIndex.syncNearby(level, player);
         }
     }
 
     @SubscribeEvent
     public static void onChunkSent(ChunkWatchEvent.Sent event) {
         ConstructionProjectionIndex.syncChunk(event.getLevel(), event.getPlayer(), event.getPos());
+        ConstructionEntityProjectionIndex.syncChunk(event.getLevel(), event.getPlayer(), event.getPos());
     }
 
     public static void tickJob(MinecraftServer server, ServerLevel level, ConstructionJob job) {
@@ -176,7 +186,7 @@ public final class ConstructionJobController {
             CompoundTag tag = ConstructionStructureLibrary.load(level.getServer(), job.hash());
             StructureSnapshot snapshot = StructureSnapshotCodec.parse(tag, level.registryAccess()).snapshot();
             BlueprintPlacement placement = BlueprintPlacement.of(job);
-            boolean incomplete = !snapshot.entities().isEmpty();
+            boolean incomplete = false;
             Set<BlockPos> declared = new HashSet<>();
             Map<Long, CompoundTag> blockEntities = new HashMap<>();
             for (StructureSnapshot.BlockEntry entry : snapshot.blocks()) {
@@ -220,6 +230,56 @@ public final class ConstructionJobController {
                     }
                     continue;
                 }
+                if (FluidBuildAdapter.isLiquidBlock(target)) {
+                    FluidStack fluid = FluidBuildAdapter.liquidOf(target);
+                    ItemStack bucket = FluidBuildAdapter.bucketOf(fluid);
+                    if (fluid.isEmpty() || bucket.isEmpty()) {
+                        progress.addOperation(
+                            worldPos,
+                            target,
+                            ItemStack.EMPTY,
+                            ConstructionBuildOp.Kind.UNSUPPORTED,
+                            ConstructionBuildOp.Status.SKIPPED
+                        );
+                        incomplete = true;
+                    } else {
+                        ConstructionBuildOp place = progress.addOperation(
+                            worldPos,
+                            target,
+                            bucket,
+                            ConstructionBuildOp.Kind.PLACE,
+                            ConstructionBuildOp.Status.PENDING
+                        );
+                        place.setFluid(fluid);
+                        place.setReturnStack(FluidBuildAdapter.emptyBucket());
+                    }
+                    continue;
+                }
+                if (FluidBuildAdapter.isFilledCauldron(target)) {
+                    FluidStack fluid = FluidBuildAdapter.cauldronFluidOf(target);
+                    ConstructionBuildOp place = progress.addOperation(
+                        worldPos,
+                        target,
+                        FluidBuildAdapter.cauldronItem(target),
+                        ConstructionBuildOp.Kind.PLACE,
+                        ConstructionBuildOp.Status.PENDING
+                    );
+                    if (!fluid.isEmpty()) {
+                        ConstructionBuildOp child = progress.addOperation(
+                            worldPos,
+                            target,
+                            FluidBuildAdapter.bucketOf(fluid),
+                            ConstructionBuildOp.Kind.FLUID,
+                            ConstructionBuildOp.Status.PENDING
+                        );
+                        child.setParentId(place.id());
+                        child.setFluid(fluid);
+                        if (!FluidBuildAdapter.bucketOf(fluid).isEmpty()) {
+                            child.setReturnStack(FluidBuildAdapter.emptyBucket());
+                        }
+                    }
+                    continue;
+                }
                 OrdinaryBlockAdapter.Mapping mapping = OrdinaryBlockAdapter.mapping(target);
                 switch (mapping) {
                     case AIR -> {
@@ -252,6 +312,8 @@ public final class ConstructionJobController {
             }
             linkParents(progress);
             incomplete |= extractBlockEntityContents(progress, blockEntities, level.registryAccess());
+            incomplete |= extractBlockEntityFluids(progress, blockEntities, level.registryAccess());
+            incomplete |= planEntities(level, snapshot, placement, progress);
             FluidSealPlanner.plan(level, declared, progress);
             DemolitionPlanner.plan(level, declared, progress);
             ConstructionAssembler.assignBuildOrder(level, progress);
@@ -292,6 +354,7 @@ public final class ConstructionJobController {
             ConstructionCommitService.commitDelivered(level, progress);
         } else if (level != null) {
             ConstructionProjectionIndex.clearJob(level, job.jobId());
+            ConstructionEntityProjectionIndex.clearJob(level, job.jobId());
         }
         store.remove(job.jobId());
         ConstructionJobIndex.get(server).remove(job.jobId());
@@ -415,7 +478,10 @@ public final class ConstructionJobController {
         Map<Long, BlockState> overlay = progress.overlayStates();
         ConstructionOverlayView view = new ConstructionOverlayView(level, overlay);
         for (ConstructionBuildOp op : progress.operations()) {
-            if (op.kind() != ConstructionBuildOp.Kind.PLACE && op.kind() != ConstructionBuildOp.Kind.CONTENT) {
+            if (op.kind() != ConstructionBuildOp.Kind.PLACE
+                && op.kind() != ConstructionBuildOp.Kind.CONTENT
+                && op.kind() != ConstructionBuildOp.Kind.FLUID
+                && op.kind() != ConstructionBuildOp.Kind.ENTITY) {
                 continue;
             }
             if (op.status() == ConstructionBuildOp.Status.LEASED
@@ -423,13 +489,27 @@ public final class ConstructionJobController {
                 || op.status() == ConstructionBuildOp.Status.SKIPPED) {
                 continue;
             }
-            if (op.kind() == ConstructionBuildOp.Kind.CONTENT) {
+            if (op.kind() == ConstructionBuildOp.Kind.CONTENT || op.kind() == ConstructionBuildOp.Kind.FLUID) {
                 ConstructionBuildOp parent = progress.parentOf(op);
                 if (parent == null || parent.status() != ConstructionBuildOp.Status.DELIVERED) {
                     continue;
                 }
                 BlockPos approach = chooseApproach(level, progress, op);
                 if (approach == null) continue;
+                op.setStatus(ConstructionBuildOp.Status.PENDING);
+                op.setApproach(approach);
+                if (best == null || op.order() < best.order()) {
+                    best = op;
+                }
+                continue;
+            }
+            if (op.kind() == ConstructionBuildOp.Kind.ENTITY) {
+                BlockPos approach = chooseApproach(level, progress, op);
+                if (approach == null) continue;
+                if (entityOccupied(level, op, null)) {
+                    op.setStatus(ConstructionBuildOp.Status.WAITING_OCCUPIED);
+                    continue;
+                }
                 op.setStatus(ConstructionBuildOp.Status.PENDING);
                 op.setApproach(approach);
                 if (best == null || op.order() < best.order()) {
@@ -466,8 +546,11 @@ public final class ConstructionJobController {
         ConstructionBuildOp op,
         @Nullable Entity ignore
     ) {
-        if (op.kind() == ConstructionBuildOp.Kind.CONTENT) {
+        if (op.kind() == ConstructionBuildOp.Kind.CONTENT || op.kind() == ConstructionBuildOp.Kind.FLUID) {
             return tryDeliverContent(level, progress, op);
+        }
+        if (op.kind() == ConstructionBuildOp.Kind.ENTITY) {
+            return tryDeliverEntity(level, progress, op, ignore);
         }
         if (!op.writesProjection()) return false;
         if (!level.getBlockState(op.pos()).isAir()) {
@@ -508,6 +591,52 @@ public final class ConstructionJobController {
         }
         markOpDone(level, progress, op);
         return true;
+    }
+
+    private static boolean tryDeliverEntity(
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        ConstructionBuildOp op,
+        @Nullable Entity ignore
+    ) {
+        if (entityOccupied(level, op, ignore)) {
+            op.setStatus(ConstructionBuildOp.Status.WAITING_OCCUPIED);
+            return false;
+        }
+        CompoundTag nbt = op.entityNbt();
+        if (nbt == null) {
+            return false;
+        }
+        Vec3 pos = posOf(nbt, op.pos());
+        ConstructionEntityProjectionIndex.deliver(level, progress.jobId(), op.id(), pos, nbt);
+        markOpDone(level, progress, op);
+        if (op.returnStack().isEmpty()) {
+            ItemStack extra = EntityBuildAdapters.returnAfterDeliver(level, op);
+            if (!extra.isEmpty()) {
+                op.setReturnStack(extra);
+            }
+        }
+        return true;
+    }
+
+    private static boolean entityOccupied(ServerLevel level, ConstructionBuildOp op, @Nullable Entity ignore) {
+        AABB box = new AABB(op.pos()).inflate(0.1D);
+        CompoundTag nbt = op.entityNbt();
+        if (nbt != null) {
+            Vec3 pos = posOf(nbt, op.pos());
+            box = new AABB(pos.x - 0.4D, pos.y, pos.z - 0.4D, pos.x + 0.4D, pos.y + 1.8D, pos.z + 0.4D);
+        }
+        return ConstructionProjectionIndex.isOccupied(level, Shapes.create(box), ignore);
+    }
+
+    private static Vec3 posOf(CompoundTag nbt, BlockPos fallback) {
+        if (nbt.contains("Pos")) {
+            ListTag pos = nbt.getList("Pos", Tag.TAG_DOUBLE);
+            if (pos.size() == 3) {
+                return new Vec3(pos.getDouble(0), pos.getDouble(1), pos.getDouble(2));
+            }
+        }
+        return Vec3.atBottomCenterOf(fallback);
     }
 
     public static boolean tryPlaceSeal(
@@ -572,10 +701,34 @@ public final class ConstructionJobController {
             return false;
         }
         if (!op.needsMaterial()) return true;
-        if (!takeMatching(player, op.material())) return false;
-        progress.addLedger(op.id(), op.material(), droneId);
+        ItemStack taken = takeBuildMaterial(player, op);
+        if (taken.isEmpty()) return false;
+        progress.addLedger(op.id(), taken, droneId);
+        if (PlasticraftEntityBuildAdapters.isResinCapture(taken) && op.returnStack().isEmpty()
+            && player.level() instanceof ServerLevel serverLevel) {
+            op.setReturnStack(PlasticraftEntityBuildAdapters.resinReturn(serverLevel));
+        }
         ConstructionJobStore.get(player.level()).markDirty();
         return true;
+    }
+
+    private static ItemStack takeBuildMaterial(Player player, ConstructionBuildOp op) {
+        if (op.kind() == ConstructionBuildOp.Kind.FLUID && !op.fluid().isEmpty()) {
+            if (!op.material().isEmpty() && takeMatching(player, op.material())) {
+                return op.material().copy();
+            }
+            if (takeExactFluid(player, op.fluid())) {
+                return op.material().isEmpty() ? new ItemStack(Items.BUCKET) : op.material().copy();
+            }
+            return ItemStack.EMPTY;
+        }
+        if (takeMatching(player, op.material())) {
+            return op.material().copy();
+        }
+        if (op.kind() == ConstructionBuildOp.Kind.ENTITY) {
+            return takeMatchingResin(player, op);
+        }
+        return ItemStack.EMPTY;
     }
 
     public static void applyShortage(
@@ -598,7 +751,10 @@ public final class ConstructionJobController {
                     op.setLeaseDrone(null);
                     continue;
                 }
-                if ((op.kind() == ConstructionBuildOp.Kind.PLACE || op.kind() == ConstructionBuildOp.Kind.CONTENT)
+                if ((op.kind() == ConstructionBuildOp.Kind.PLACE
+                    || op.kind() == ConstructionBuildOp.Kind.CONTENT
+                    || op.kind() == ConstructionBuildOp.Kind.FLUID
+                    || op.kind() == ConstructionBuildOp.Kind.ENTITY)
                     && sameItem) {
                     op.setStatus(ConstructionBuildOp.Status.SKIPPED);
                     op.setLeaseDrone(null);
@@ -915,6 +1071,65 @@ public final class ConstructionJobController {
         return !have.isEmpty() && !needed.isEmpty() && ItemStack.isSameItemSameComponents(have, needed);
     }
 
+    private static boolean takeExactFluid(Player player, FluidStack needed) {
+        if (needed.isEmpty()) {
+            return false;
+        }
+        if (takeExactFluidFrom(player.getInventory().items, needed)) {
+            return true;
+        }
+        return takeExactFluidFrom(player.getInventory().offhand, needed);
+    }
+
+    private static boolean takeExactFluidFrom(List<ItemStack> slots, FluidStack needed) {
+        for (int index = 0; index < slots.size(); index++) {
+            ItemStack stack = slots.get(index);
+            ItemStack copy = stack.copy();
+            if (!FluidBuildAdapter.takeExactFluid(copy, needed)) {
+                continue;
+            }
+            slots.set(index, copy);
+            return true;
+        }
+        return false;
+    }
+
+    private static ItemStack takeMatchingResin(Player player, ConstructionBuildOp op) {
+        ItemStack taken = takeResinFrom(player.getInventory().items, op, player);
+        if (!taken.isEmpty()) {
+            return taken;
+        }
+        return takeResinFrom(player.getInventory().offhand, op, player);
+    }
+
+    private static ItemStack takeResinFrom(List<ItemStack> slots, ConstructionBuildOp op, Player player) {
+        for (ItemStack stack : slots) {
+            if (!isMatchingResin(stack, op, player)) {
+                continue;
+            }
+            ItemStack taken = stack.copyWithCount(1);
+            stack.shrink(1);
+            return taken;
+        }
+        return ItemStack.EMPTY;
+    }
+
+    private static boolean isMatchingResin(ItemStack stack, ConstructionBuildOp op, Player player) {
+        if (!PlasticraftEntityBuildAdapters.isResinCapture(stack) || op.entityNbt() == null) {
+            return false;
+        }
+        EntityType<?> needed = EntityType.by(op.entityNbt()).orElse(null);
+        SavedEntity saved = stack.get(ModComponents.SAVED_ENTITY);
+        if (needed == null || saved == null) {
+            return false;
+        }
+        Entity captured = saved.toEntity(player.level());
+        if (captured != null && captured.getType() == needed) {
+            return true;
+        }
+        return EntityType.by(saved.tag()).orElse(null) == needed;
+    }
+
     private static boolean isReservedBuildCell(ConstructionJobProgress progress, BlockPos pos) {
         for (ConstructionBuildOp op : progress.operations()) {
             if (op.status() == ConstructionBuildOp.Status.SKIPPED) {
@@ -973,7 +1188,10 @@ public final class ConstructionJobController {
 
     private static boolean hasSkippedPlace(ConstructionJobProgress progress) {
         for (ConstructionBuildOp op : progress.operations()) {
-            if ((op.kind() == ConstructionBuildOp.Kind.PLACE || op.kind() == ConstructionBuildOp.Kind.CONTENT)
+            if ((op.kind() == ConstructionBuildOp.Kind.PLACE
+                || op.kind() == ConstructionBuildOp.Kind.CONTENT
+                || op.kind() == ConstructionBuildOp.Kind.FLUID
+                || op.kind() == ConstructionBuildOp.Kind.ENTITY)
                 && op.status() == ConstructionBuildOp.Status.SKIPPED) {
                 return true;
             }
@@ -1035,6 +1253,120 @@ public final class ConstructionJobController {
                 );
                 child.setParentId(place.id());
                 child.setSlot(content.slot());
+            }
+        }
+        return incomplete;
+    }
+
+    private static boolean extractBlockEntityFluids(
+        ConstructionJobProgress progress,
+        Map<Long, CompoundTag> blockEntities,
+        HolderLookup.Provider registries
+    ) {
+        boolean incomplete = false;
+        List<ConstructionBuildOp> places = new ArrayList<>();
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() == ConstructionBuildOp.Kind.PLACE) {
+                places.add(op);
+            }
+        }
+        for (ConstructionBuildOp place : places) {
+            CompoundTag nbt = blockEntities.get(place.pos().asLong());
+            if (nbt == null) continue;
+            FluidBuildAdapter.Extracted extracted =
+                FluidBuildAdapter.extractTanks(place.target(), nbt, registries);
+            if (extracted.unmapped()) {
+                progress.addOperation(
+                    place.pos(),
+                    place.target(),
+                    ItemStack.EMPTY,
+                    ConstructionBuildOp.Kind.UNSUPPORTED,
+                    ConstructionBuildOp.Status.SKIPPED
+                ).setParentId(place.id());
+                incomplete = true;
+                continue;
+            }
+            for (FluidBuildAdapter.TankFluid tank : extracted.tanks()) {
+                ConstructionBuildOp child = progress.addOperation(
+                    place.pos(),
+                    place.target(),
+                    FluidBuildAdapter.bucketOf(tank.fluid()),
+                    ConstructionBuildOp.Kind.FLUID,
+                    ConstructionBuildOp.Status.PENDING
+                );
+                child.setParentId(place.id());
+                child.setSlot(tank.tank());
+                child.setFluid(tank.fluid());
+                if (!FluidBuildAdapter.bucketOf(tank.fluid()).isEmpty()) {
+                    child.setReturnStack(FluidBuildAdapter.emptyBucket());
+                }
+            }
+        }
+        return incomplete;
+    }
+
+    private static boolean planEntities(
+        ServerLevel level,
+        StructureSnapshot snapshot,
+        BlueprintPlacement placement,
+        ConstructionJobProgress progress
+    ) {
+        boolean incomplete = false;
+        for (StructureSnapshot.EntityEntry entry : snapshot.entities()) {
+            CompoundTag nbt = entry.nbt().copy();
+            EntityType<?> type = EntityType.by(nbt).orElse(null);
+            if (type == null || EntityBuildAdapters.isTransient(type)) {
+                incomplete = true;
+                continue;
+            }
+            Vec3 world = placement.localOf(entry.pos(), entry.blockPos())
+                .add(placement.anchor().getX(), placement.anchor().getY(), placement.anchor().getZ());
+            CompoundTag transformed = EntityBuildAdapters.withWorldPos(nbt, world);
+            EntityBuildAdapter adapter = EntityBuildAdapters.find(type, transformed).orElse(null);
+            if (adapter == null) {
+                incomplete = true;
+                continue;
+            }
+            EntityBuildAdapter.Planned planned = adapter.plan(level, entry, transformed);
+            if (planned.unsupported()) {
+                incomplete = true;
+                continue;
+            }
+            BlockPos blockPos = placement.worldOf(entry.blockPos());
+            ConstructionBuildOp entityOp = progress.addOperation(
+                blockPos,
+                level.getBlockState(blockPos),
+                planned.material(),
+                ConstructionBuildOp.Kind.ENTITY,
+                ConstructionBuildOp.Status.PENDING
+            );
+            entityOp.setEntityNbt(planned.entityNbt());
+            entityOp.setReturnStack(planned.returned());
+            for (EntityBuildAdapter.SlotStack content : planned.contents()) {
+                ConstructionBuildOp child = progress.addOperation(
+                    blockPos,
+                    entityOp.target(),
+                    content.stack(),
+                    ConstructionBuildOp.Kind.CONTENT,
+                    ConstructionBuildOp.Status.PENDING
+                );
+                child.setParentId(entityOp.id());
+                child.setSlot(content.slot());
+            }
+            for (FluidBuildAdapter.TankFluid tank : planned.fluids()) {
+                ConstructionBuildOp child = progress.addOperation(
+                    blockPos,
+                    entityOp.target(),
+                    FluidBuildAdapter.bucketOf(tank.fluid()),
+                    ConstructionBuildOp.Kind.FLUID,
+                    ConstructionBuildOp.Status.PENDING
+                );
+                child.setParentId(entityOp.id());
+                child.setSlot(tank.tank());
+                child.setFluid(tank.fluid());
+                if (!FluidBuildAdapter.bucketOf(tank.fluid()).isEmpty()) {
+                    child.setReturnStack(FluidBuildAdapter.emptyBucket());
+                }
             }
         }
         return incomplete;

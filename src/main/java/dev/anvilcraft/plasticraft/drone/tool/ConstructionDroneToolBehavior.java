@@ -390,10 +390,14 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
         drone.setActionState((byte) 5);
         if (ConstructionJobController.tryDeliver(level, progress, op, drone)) {
             drone.consumeEnergy(drone.toolDefinition().instantActionEnergyCost());
-            drone.setHostedCarry(ItemStack.EMPTY);
+            ItemStack returned = op.returnStack().copy();
+            drone.setHostedCarry(returned);
             drone.clearAssignment(false);
             drone.setActionState((byte) 0);
             drone.setWaitReason(ConstructionWaitReason.NONE);
+            if (!returned.isEmpty()) {
+                return;
+            }
             ConstructionJob job = ConstructionJobIndex.get(level).job(progress.jobId());
             if (job != null && job.state() == ConstructionJob.STATE_BUILDING
                 && tryClaim(drone, level, job, progress)) {

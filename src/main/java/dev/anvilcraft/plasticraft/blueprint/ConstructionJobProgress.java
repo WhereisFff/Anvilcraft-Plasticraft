@@ -346,7 +346,10 @@ public final class ConstructionJobProgress {
 
     public boolean hasOpenPlace() {
         for (ConstructionBuildOp op : this.operations) {
-            if ((op.kind() == ConstructionBuildOp.Kind.PLACE || op.kind() == ConstructionBuildOp.Kind.CONTENT)
+            if ((op.kind() == ConstructionBuildOp.Kind.PLACE
+                || op.kind() == ConstructionBuildOp.Kind.CONTENT
+                || op.kind() == ConstructionBuildOp.Kind.FLUID
+                || op.kind() == ConstructionBuildOp.Kind.ENTITY)
                 && op.isOpen()) {
                 return true;
             }

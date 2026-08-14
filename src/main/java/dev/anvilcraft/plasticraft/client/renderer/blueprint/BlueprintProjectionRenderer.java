@@ -6,6 +6,7 @@ import com.mojang.math.Axis;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.blueprint.BlueprintPlacement;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionEntityProjectionIndex;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionProjectionIndex;
 import dev.anvilcraft.plasticraft.blueprint.StructureSnapshot;
 import dev.anvilcraft.plasticraft.client.blueprint.BlueprintDeploySession;
@@ -158,6 +159,7 @@ public final class BlueprintProjectionRenderer {
                     renderBlockEntities(minecraft, poseStack, depthBuffers, prepared, item);
                     renderEntities(minecraft, poseStack, depthBuffers, prepared);
                 });
+                renderDeliveredEntities(minecraft, poseStack, depthBuffers, item);
             }
             BlueprintProjectionRenderTypes.endSilhouetteDepth(buffers);
             for (RenderItem item : items) {
@@ -167,6 +169,7 @@ public final class BlueprintProjectionRenderer {
                     renderBlockEntities(minecraft, poseStack, colorBuffers, prepared, item);
                     renderEntities(minecraft, poseStack, colorBuffers, prepared);
                 });
+                renderDeliveredEntities(minecraft, poseStack, colorBuffers, item);
             }
             buffers.endBatch();
             for (RenderItem item : items) {
@@ -694,6 +697,62 @@ public final class BlueprintProjectionRenderer {
                 } finally {
                     restorePose(poseStack, origin);
                 }
+            }
+        } finally {
+            dispatcher.setRenderShadow(true);
+        }
+    }
+
+    private static void renderDeliveredEntities(
+        Minecraft minecraft,
+        PoseStack poseStack,
+        MultiBufferSource buffers,
+        RenderItem item
+    ) {
+        ClientLevel level = minecraft.level;
+        if (level == null || item.jobId() == null) {
+            return;
+        }
+        EntityRenderDispatcher dispatcher = minecraft.getEntityRenderDispatcher();
+        dispatcher.setRenderShadow(false);
+        try {
+            for (ConstructionEntityProjectionIndex.Entry entry
+                : ConstructionEntityProjectionIndex.delivered(level, item.jobId())) {
+                CompoundTag nbt = entry.nbt().copy();
+                nbt.remove("UUID");
+                ListTag posTag = new ListTag();
+                posTag.add(DoubleTag.valueOf(0.0D));
+                posTag.add(DoubleTag.valueOf(4096.0D));
+                posTag.add(DoubleTag.valueOf(0.0D));
+                nbt.put("Pos", posTag);
+                EntityType.create(nbt, level)
+                    .filter(entity -> !(entity instanceof Player))
+                    .ifPresent(entity -> {
+                        entity.moveTo(0.0D, 4096.0D, 0.0D, entity.getYRot(), entity.getXRot());
+                        if (entity instanceof Mob mob) {
+                            mob.setNoAi(true);
+                        }
+                        PoseStack.Pose origin = poseStack.last();
+                        poseStack.pushPose();
+                        poseStack.translate(entry.pos().x, entry.pos().y, entry.pos().z);
+                        try {
+                            dispatcher.render(
+                                entity,
+                                0.0D,
+                                0.0D,
+                                0.0D,
+                                entity.getYRot(),
+                                0.0F,
+                                poseStack,
+                                buffers,
+                                LightTexture.FULL_BRIGHT
+                            );
+                        } catch (RuntimeException exception) {
+                            skipOnce("delivered-entity:" + entity.getType(), exception);
+                        } finally {
+                            restorePose(poseStack, origin);
+                        }
+                    });
             }
         } finally {
             dispatcher.setRenderShadow(true);

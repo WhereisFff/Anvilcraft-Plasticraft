@@ -23,6 +23,7 @@ import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.init.PlasticraftEntityBuildAdapters;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemGroups;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
@@ -64,6 +65,7 @@ public final class AnvilcraftPlasticraft {
         PlasticraftItems.register();
         PlasticItemTooltipManager.init();
         PlasticraftEntities.register();
+        PlasticraftEntityBuildAdapters.register();
         PlasticraftMenuTypes.register();
         PlasticraftParticles.register(modEventBus);
         PlasticraftRecipeTypes.register(modEventBus);

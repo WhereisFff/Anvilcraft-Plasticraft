@@ -18,6 +18,10 @@ import dev.anvilcraft.plasticraft.blueprint.ConstructionDebris;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionWaitReason;
 import dev.anvilcraft.plasticraft.blueprint.DemolitionPlanner;
 import dev.anvilcraft.plasticraft.blueprint.StonecutterSmashAdapter;
+import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.dubhe.anvilcraft.init.item.ModComponents;
+import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
 import dev.anvilcraft.plasticraft.drone.DroneData;
 import dev.anvilcraft.plasticraft.drone.DroneEnergyModel;
 import dev.anvilcraft.plasticraft.drone.DroneFlightState;
@@ -39,16 +43,20 @@ import net.minecraft.core.Vec3i;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.DoubleTag;
 import net.minecraft.nbt.IntTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.animal.Pig;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.entity.vehicle.Boat;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -56,6 +64,7 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.Container;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.LayeredCauldronBlock;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.RedStoneWireBlock;
 import net.minecraft.world.level.block.RepeaterBlock;
@@ -1491,6 +1500,359 @@ public final class ConstructionJobGameTests {
         }).thenSucceed();
     }
 
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A water source takes a full bucket, writes water on commit, and returns the empty bucket")
+    static void waterBucketDeductsAndReturnsEmpty(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob started = startStructureJob(
+                    helper,
+                    player,
+                    multiBlockStructure(List.of(BlockPos.ZERO), List.of(Blocks.WATER.defaultBlockState())),
+                    "water-source",
+                    new BlockPos(2, 2, 2)
+                );
+                player.getInventory().add(new ItemStack(Items.WATER_BUCKET));
+                ConstructionBuildOp place = firstPlace(started.progress());
+                check(
+                    ConstructionJobController.extractMaterial(player, started.progress(), place, UUID.randomUUID()),
+                    "a water bucket must supply the source cell"
+                );
+                check(countItem(player, Items.WATER_BUCKET) == 0, "the filled bucket must be consumed");
+                check(
+                    ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), place),
+                    "delivering the water projection must succeed"
+                );
+                player.getInventory().add(place.returnStack().copy());
+                ConstructionJobController.finish(
+                    helper.getLevel().getServer(),
+                    helper.getLevel(),
+                    started.job(),
+                    started.progress()
+                );
+                check(helper.getLevel().getBlockState(place.pos()).is(Blocks.WATER), "commit must write the water source");
+                check(countItem(player, Items.BUCKET) == 1, "the empty bucket must come back");
+                check(countItem(player, Items.WATER_BUCKET) == 0, "the filled bucket must stay consumed");
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("water bucket setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A partial cauldron keeps its exact millibuckets and does not accept a full bucket")
+    static void partialCauldronDoesNotRoundToBucket(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob started = startStructureJob(
+                    helper,
+                    player,
+                    multiBlockStructure(
+                        List.of(BlockPos.ZERO),
+                        List.of(Blocks.WATER_CAULDRON.defaultBlockState().setValue(LayeredCauldronBlock.LEVEL, 1))
+                    ),
+                    "partial-cauldron",
+                    new BlockPos(2, 2, 2)
+                );
+                ConstructionBuildOp fluid = firstKind(started.progress(), ConstructionBuildOp.Kind.FLUID);
+                check(fluid.fluid().getAmount() > 0 && fluid.fluid().getAmount() < 1000, "level 1 must be a partial bucket");
+                player.getInventory().add(new ItemStack(Items.WATER_BUCKET));
+                check(
+                    !ConstructionJobController.extractMaterial(player, started.progress(), fluid, UUID.randomUUID()),
+                    "a full water bucket must not satisfy a partial millibucket fluid"
+                );
+                check(countItem(player, Items.WATER_BUCKET) == 1, "the unused bucket must stay in the inventory");
+                ConstructionBlueprintService.cancel(player, started.job().jobId());
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("partial cauldron setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A boat entity takes the boat item and spawns on commit")
+    static void boatUsesRealBoatItem(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                assertBoatJob(helper, player);
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("boat adapter setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A creeper takes a spawn egg and appears only after commit")
+    static void creeperUsesSpawnEgg(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                assertCreeperEggJob(helper, player);
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("creeper egg setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A matching resin capture supplies a creeper and returns 1-3 resin")
+    static void resinCaptureReturnsResinThenSpawns(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                assertResinCreeperJob(helper, player);
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("resin capture setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A plastic entity deducts its item and contents separately")
+    static void plasticEntityContentsUseRealMaterials(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                assertPlasticContentJob(helper, player);
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("plastic entity setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Players and item entities stay skipped and do not create ENTITY operations")
+    static void transientEntitiesStaySkipped(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                CompoundTag item = new CompoundTag();
+                item.putString("id", "minecraft:item");
+                CompoundTag playerTag = new CompoundTag();
+                playerTag.putString("id", "minecraft:player");
+                StartedJob started = startStructureJob(
+                    helper,
+                    player,
+                    entityOnlyStructure(List.of(item, playerTag)),
+                    "transient-entities",
+                    new BlockPos(2, 2, 2)
+                );
+                check(countKind(started.progress(), ConstructionBuildOp.Kind.ENTITY) == 0, "transient entries must not plan ENTITY ops");
+                check(started.progress().incomplete(), "skipped transients must mark the job incomplete");
+                ConstructionBlueprintService.cancel(player, started.job().jobId());
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("transient entity setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Cancel before delivering a water bucket returns the filled bucket and does not write water")
+    static void cancelInTransitWaterReturnsFilledBucket(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob started = startStructureJob(
+                    helper,
+                    player,
+                    multiBlockStructure(List.of(BlockPos.ZERO), List.of(Blocks.WATER.defaultBlockState())),
+                    "water-cancel",
+                    new BlockPos(2, 2, 2)
+                );
+                player.getInventory().add(new ItemStack(Items.WATER_BUCKET));
+                ConstructionBuildOp place = firstPlace(started.progress());
+                check(
+                    ConstructionJobController.extractMaterial(player, started.progress(), place, UUID.randomUUID()),
+                    "extracting the water bucket before cancel must succeed"
+                );
+                ConstructionBlueprintService.cancel(player, started.job().jobId());
+                check(!helper.getLevel().getBlockState(place.pos()).is(Blocks.WATER), "undelivered water must not be written");
+                check(countItem(player, Items.WATER_BUCKET) == 1, "cancel must return the filled bucket");
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("in-transit water cancel setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    private static void assertBoatJob(ExtendedGameTestHelper helper, GameTestPlayer player)
+        throws ConstructionBlueprintException {
+        CompoundTag nbt = new CompoundTag();
+        nbt.putString("id", "minecraft:boat");
+        StartedJob started = startStructureJob(
+            helper,
+            player,
+            entityOnlyStructure(List.of(nbt)),
+            "oak-boat",
+            new BlockPos(2, 2, 2)
+        );
+        ConstructionBuildOp entity = firstKind(started.progress(), ConstructionBuildOp.Kind.ENTITY);
+        player.getInventory().add(new ItemStack(Items.OAK_BOAT));
+        check(
+            ConstructionJobController.extractMaterial(player, started.progress(), entity, UUID.randomUUID()),
+            "the oak boat item must supply the boat entity"
+        );
+        check(
+            ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), entity),
+            "delivering the boat projection must succeed"
+        );
+        ConstructionJobController.finish(
+            helper.getLevel().getServer(),
+            helper.getLevel(),
+            started.job(),
+            started.progress()
+        );
+        check(
+            !helper.getLevel().getEntitiesOfClass(Boat.class, new AABB(entity.pos()).inflate(1.0D)).isEmpty(),
+            "commit must spawn the oak boat"
+        );
+        discardNearby(helper, entity.pos());
+    }
+
+    private static void assertCreeperEggJob(ExtendedGameTestHelper helper, GameTestPlayer player)
+        throws ConstructionBlueprintException {
+        CompoundTag nbt = new CompoundTag();
+        nbt.putString("id", "minecraft:creeper");
+        StartedJob started = startStructureJob(
+            helper,
+            player,
+            entityOnlyStructure(List.of(nbt)),
+            "creeper-egg",
+            new BlockPos(2, 2, 2)
+        );
+        ConstructionBuildOp entity = firstKind(started.progress(), ConstructionBuildOp.Kind.ENTITY);
+        player.getInventory().add(new ItemStack(Items.CREEPER_SPAWN_EGG));
+        check(
+            ConstructionJobController.extractMaterial(player, started.progress(), entity, UUID.randomUUID()),
+            "a creeper spawn egg must supply the creeper"
+        );
+        check(
+            ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), entity),
+            "delivering the creeper projection must succeed"
+        );
+        ConstructionJobController.finish(
+            helper.getLevel().getServer(),
+            helper.getLevel(),
+            started.job(),
+            started.progress()
+        );
+        check(
+            !helper.getLevel().getEntities(EntityType.CREEPER, new AABB(entity.pos()).inflate(1.0D), creeper -> true).isEmpty(),
+            "commit must spawn the creeper from the egg"
+        );
+        discardNearby(helper, entity.pos());
+    }
+
+    private static void assertResinCreeperJob(ExtendedGameTestHelper helper, GameTestPlayer player)
+        throws ConstructionBlueprintException {
+        CompoundTag nbt = new CompoundTag();
+        nbt.putString("id", "minecraft:creeper");
+        StartedJob started = startStructureJob(
+            helper,
+            player,
+            entityOnlyStructure(List.of(nbt)),
+            "resin-creeper",
+            new BlockPos(2, 2, 2)
+        );
+        ConstructionBuildOp entity = firstKind(started.progress(), ConstructionBuildOp.Kind.ENTITY);
+        CompoundTag captured = new CompoundTag();
+        captured.putString("id", "minecraft:creeper");
+        ItemStack resin = new ItemStack(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK);
+        resin.set(ModComponents.SAVED_ENTITY, new SavedEntity(captured, true));
+        player.getInventory().add(resin);
+        check(
+            ConstructionJobController.extractMaterial(player, started.progress(), entity, UUID.randomUUID()),
+            "a matching resin capture must supply the creeper when no egg is taken"
+        );
+        check(
+            ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), entity),
+            "delivering the resin creeper projection must succeed"
+        );
+        int resinBefore = countItem(player, ModItems.RESIN.get());
+        player.getInventory().add(entity.returnStack().copy());
+        int returned = countItem(player, ModItems.RESIN.get()) - resinBefore;
+        check(returned >= 1 && returned <= 3, "resin delivery must return 1-3 resin");
+        ConstructionJobController.finish(
+            helper.getLevel().getServer(),
+            helper.getLevel(),
+            started.job(),
+            started.progress()
+        );
+        check(
+            !helper.getLevel().getEntities(EntityType.CREEPER, new AABB(entity.pos()).inflate(1.0D), found -> true).isEmpty(),
+            "the real creeper must appear only after commit"
+        );
+        discardNearby(helper, entity.pos());
+    }
+
+    private static void assertPlasticContentJob(ExtendedGameTestHelper helper, GameTestPlayer player)
+        throws ConstructionBlueprintException {
+        HardenedResinCauldronEntity cauldron = PlasticraftEntities.HARDEND_RESIN_CAULDRON.get().create(helper.getLevel());
+        check(cauldron != null, "failed to create a hardened resin cauldron entity");
+        cauldron.getItemHandler().setStackInSlot(0, new ItemStack(Items.DIAMOND, 2));
+        CompoundTag nbt = new CompoundTag();
+        cauldron.saveWithoutId(nbt);
+        nbt.putString("id", "anvilcraftplasticraft:hardend_resin_cauldron");
+        if (cauldron.isAlive()) {
+            cauldron.discard();
+        }
+        StartedJob started = startStructureJob(
+            helper,
+            player,
+            entityOnlyStructure(List.of(nbt)),
+            "plastic-cauldron",
+            new BlockPos(2, 2, 2)
+        );
+        ConstructionBuildOp entity = firstKind(started.progress(), ConstructionBuildOp.Kind.ENTITY);
+        ConstructionBuildOp content = firstKind(started.progress(), ConstructionBuildOp.Kind.CONTENT);
+        player.getInventory().add(entity.material().copy());
+        player.getInventory().add(new ItemStack(Items.DIAMOND, 2));
+        check(
+            ConstructionJobController.extractMaterial(player, started.progress(), entity, UUID.randomUUID()),
+            "the plastic item must supply the cauldron entity"
+        );
+        check(
+            ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), entity),
+            "delivering the plastic entity projection must succeed"
+        );
+        check(
+            ConstructionJobController.extractMaterial(player, started.progress(), content, UUID.randomUUID()),
+            "the diamond contents must be deducted separately"
+        );
+        check(countItem(player, Items.DIAMOND) == 0, "plastic contents must come from the inventory");
+        check(
+            ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), content),
+            "delivering plastic contents must succeed after the parent entity"
+        );
+        ConstructionJobController.finish(
+            helper.getLevel().getServer(),
+            helper.getLevel(),
+            started.job(),
+            started.progress()
+        );
+        HardenedResinCauldronEntity spawned = helper.getLevel().getEntities(
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
+            new AABB(entity.pos()).inflate(1.5D),
+            found -> true
+        ).stream().findFirst().orElse(null);
+        check(spawned != null, "commit must spawn the hardened resin cauldron entity");
+        check(
+            spawned.getItemHandler().getStackInSlot(0).is(Items.DIAMOND)
+                && spawned.getItemHandler().getStackInSlot(0).getCount() == 2,
+            "committed plastic contents must be the deducted diamonds"
+        );
+    }
+
     private static StartedJob startCobbleJob(ExtendedGameTestHelper helper, GameTestPlayer player, int count)
         throws ConstructionBlueprintException {
         return startCobbleJob(helper, player, count, new BlockPos(3, 2, 1));
@@ -1690,6 +2052,28 @@ public final class ConstructionJobGameTests {
         return tag;
     }
 
+    private static CompoundTag entityOnlyStructure(List<CompoundTag> entities) {
+        CompoundTag tag = sizedStructure(1, 1, 1, List.of(BlockPos.ZERO), List.of(Blocks.AIR.defaultBlockState()), List.of());
+        ListTag list = new ListTag();
+        for (CompoundTag nbt : entities) {
+            CompoundTag entry = new CompoundTag();
+            ListTag pos = new ListTag();
+            pos.add(DoubleTag.valueOf(0.5D));
+            pos.add(DoubleTag.valueOf(0.0D));
+            pos.add(DoubleTag.valueOf(0.5D));
+            entry.put("pos", pos);
+            ListTag blockPos = new ListTag();
+            blockPos.add(IntTag.valueOf(0));
+            blockPos.add(IntTag.valueOf(0));
+            blockPos.add(IntTag.valueOf(0));
+            entry.put("blockPos", blockPos);
+            entry.put("nbt", nbt);
+            list.add(entry);
+        }
+        tag.put("entities", list);
+        return tag;
+    }
+
     private static DroneEntity spawnConstructionDrone(
         ExtendedGameTestHelper helper,
         Vec3 relativePos,
@@ -1753,6 +2137,15 @@ public final class ConstructionJobGameTests {
         drone.setPos(position.x, position.y, position.z);
         check(helper.getLevel().addFreshEntity(drone), "failed to add demolition drone");
         return drone;
+    }
+
+    private static void discardNearby(ExtendedGameTestHelper helper, BlockPos pos) {
+        for (Entity entity : helper.getLevel().getEntities(null, new AABB(pos).inflate(1.5D))) {
+            if (entity instanceof GameTestPlayer) {
+                continue;
+            }
+            entity.discard();
+        }
     }
 
     private static ConstructionBuildOp firstKind(ConstructionJobProgress progress, ConstructionBuildOp.Kind kind) {

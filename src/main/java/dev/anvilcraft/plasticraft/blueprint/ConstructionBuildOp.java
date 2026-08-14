@@ -8,6 +8,7 @@ import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.neoforge.fluids.FluidStack;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Optional;
@@ -21,7 +22,9 @@ public final class ConstructionBuildOp {
         UNSUPPORTED,
         SEAL,
         DEMOLISH,
-        CONTENT
+        CONTENT,
+        FLUID,
+        ENTITY
     }
 
     public enum Status {
@@ -49,6 +52,10 @@ public final class ConstructionBuildOp {
     private int slot = -1;
     @Nullable
     private CompoundTag blockEntity;
+    private FluidStack fluid = FluidStack.EMPTY;
+    @Nullable
+    private CompoundTag entityNbt;
+    private ItemStack returnStack = ItemStack.EMPTY;
 
     public ConstructionBuildOp(
         int id,
@@ -157,13 +164,48 @@ public final class ConstructionBuildOp {
         this.blockEntity = blockEntity == null || blockEntity.isEmpty() ? null : blockEntity.copy();
     }
 
+    public FluidStack fluid() {
+        return this.fluid.copy();
+    }
+
+    public void setFluid(FluidStack fluid) {
+        this.fluid = fluid == null || fluid.isEmpty() ? FluidStack.EMPTY : fluid.copy();
+    }
+
+    @Nullable
+    public CompoundTag entityNbt() {
+        return this.entityNbt;
+    }
+
+    public void setEntityNbt(@Nullable CompoundTag entityNbt) {
+        this.entityNbt = entityNbt == null || entityNbt.isEmpty() ? null : entityNbt.copy();
+    }
+
+    public ItemStack returnStack() {
+        return this.returnStack;
+    }
+
+    public void setReturnStack(ItemStack returnStack) {
+        this.returnStack = returnStack == null || returnStack.isEmpty() ? ItemStack.EMPTY : returnStack.copy();
+    }
+
     public boolean needsMaterial() {
-        return (this.kind == Kind.PLACE || this.kind == Kind.SEAL || this.kind == Kind.CONTENT)
+        if (this.kind == Kind.FLUID && !this.fluid.isEmpty()) {
+            return true;
+        }
+        return (this.kind == Kind.PLACE
+            || this.kind == Kind.SEAL
+            || this.kind == Kind.CONTENT
+            || this.kind == Kind.ENTITY)
             && !this.material.isEmpty();
     }
 
     public boolean isBuildMaterial() {
-        return this.kind == Kind.PLACE || this.kind == Kind.ATTACHED || this.kind == Kind.CONTENT;
+        return this.kind == Kind.PLACE
+            || this.kind == Kind.ATTACHED
+            || this.kind == Kind.CONTENT
+            || this.kind == Kind.FLUID
+            || this.kind == Kind.ENTITY;
     }
 
     /** PLACE/ATTACHED 才写入施工投影;SEAL/DEMOLISH 的 DELIVERED 只表示该阶段完成。 */
@@ -207,6 +249,15 @@ public final class ConstructionBuildOp {
         if (this.slot >= 0) {
             tag.putInt("Slot", this.slot);
         }
+        if (!this.fluid.isEmpty()) {
+            tag.put("Fluid", this.fluid.save(registries));
+        }
+        if (this.entityNbt != null) {
+            tag.put("EntityNbt", this.entityNbt.copy());
+        }
+        if (!this.returnStack.isEmpty()) {
+            tag.put("Return", this.returnStack.save(registries));
+        }
         return tag;
     }
 
@@ -244,6 +295,15 @@ public final class ConstructionBuildOp {
         }
         if (tag.contains("Slot")) {
             op.slot = tag.getInt("Slot");
+        }
+        if (tag.contains("Fluid")) {
+            op.fluid = FluidStack.parse(registries, tag.get("Fluid")).orElse(FluidStack.EMPTY);
+        }
+        if (tag.contains("EntityNbt", Tag.TAG_COMPOUND)) {
+            op.entityNbt = tag.getCompound("EntityNbt").copy();
+        }
+        if (tag.contains("Return")) {
+            op.returnStack = ItemStack.parse(registries, tag.getCompound("Return")).orElse(ItemStack.EMPTY);
         }
         return op;
     }
