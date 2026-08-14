@@ -13,19 +13,14 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** 成型制品的稀疏物品槽和稳定顺序多流体内容。 */
+/** 托盘元件与储罐渲染用流体快照。箱子物品不再随制品数据展开。 */
 public record MoldedPlasticContents(
     List<StoredItem> items,
     List<FluidStack> fluids,
     List<MoldedTrayComponentPlacement> trayComponents
 ) {
-    public static final int MAX_STORED_ITEMS = 1728;
     public static final int MAX_STORED_FLUIDS = 1024;
     public static final MoldedPlasticContents EMPTY = new MoldedPlasticContents(List.of(), List.of());
-    private static final Codec<List<StoredItem>> ITEMS_CODEC = StoredItem.CODEC.listOf()
-        .validate(items -> items.size() <= MAX_STORED_ITEMS
-            ? DataResult.success(items)
-            : DataResult.error(() -> "Too many molded plastic item entries"));
     private static final Codec<List<FluidStack>> FLUIDS_CODEC = FluidStack.CODEC.listOf()
         .validate(fluids -> fluids.size() <= MAX_STORED_FLUIDS
             ? DataResult.success(fluids)
@@ -37,7 +32,6 @@ public record MoldedPlasticContents(
                 : DataResult.error(() -> "Too many molded tray component entries")
         );
     public static final Codec<MoldedPlasticContents> CODEC = RecordCodecBuilder.create(instance -> instance.group(
-        ITEMS_CODEC.optionalFieldOf("items", List.of()).forGetter(MoldedPlasticContents::items),
         FLUIDS_CODEC.optionalFieldOf("fluids", List.of()).forGetter(MoldedPlasticContents::fluids),
         TRAY_COMPONENTS_CODEC.optionalFieldOf("tray_components", List.of())
             .forGetter(MoldedPlasticContents::trayComponents),
@@ -73,9 +67,7 @@ public record MoldedPlasticContents(
             .toList();
         fluids = fluids.stream().filter(fluid -> !fluid.isEmpty()).map(FluidStack::copy).toList();
         trayComponents = trayComponents.stream().sorted().toList();
-        if (items.size() > MAX_STORED_ITEMS
-            || fluids.size() > MAX_STORED_FLUIDS
-            || trayComponents.size() > MoldedTrayCell.CELL_COUNT) {
+        if (fluids.size() > MAX_STORED_FLUIDS || trayComponents.size() > MoldedTrayCell.CELL_COUNT) {
             throw new IllegalArgumentException("Molded plastic contents exceed their entry limits");
         }
         int previousSlot = -1;
@@ -157,21 +149,24 @@ public record MoldedPlasticContents(
             : new MoldedPlasticContents(List.of(), this.fluids, this.trayComponents);
     }
 
+    public boolean hasInlineStorage() {
+        return !this.items.isEmpty() || !this.fluids.isEmpty();
+    }
+
     private Optional<MoldedTrayComponent> legacyTrayComponent() {
         return Optional.empty();
     }
 
-    /** 格式 4 只保存中心单元件，读取后统一转换为格式 5 的格位列表。 */
+    /** 格式 4 只保存中心单元件，读取后统一转换为格位列表。物品列表不再从制品 NBT 读取。 */
     private static MoldedPlasticContents decodePersistent(
-        List<StoredItem> items,
         List<FluidStack> fluids,
         List<MoldedTrayComponentPlacement> trayComponents,
         Optional<MoldedTrayComponent> legacyTrayComponent
     ) {
         if (!trayComponents.isEmpty() || legacyTrayComponent.isEmpty()) {
-            return new MoldedPlasticContents(items, fluids, trayComponents);
+            return new MoldedPlasticContents(List.of(), fluids, trayComponents);
         }
-        return new MoldedPlasticContents(items, fluids, legacyTrayComponent);
+        return new MoldedPlasticContents(List.of(), fluids, legacyTrayComponent);
     }
 
     /** 保留中心格辅助入口，供单格调用方使用。 */
@@ -206,11 +201,6 @@ public record MoldedPlasticContents(
     }
 
     public static void encode(RegistryFriendlyByteBuf buffer, MoldedPlasticContents contents) {
-        buffer.writeVarInt(contents.items.size());
-        for (StoredItem item : contents.items) {
-            buffer.writeVarInt(item.slot);
-            ItemStack.STREAM_CODEC.encode(buffer, item.stack);
-        }
         buffer.writeVarInt(contents.fluids.size());
         for (FluidStack fluid : contents.fluids) FluidStack.STREAM_CODEC.encode(buffer, fluid);
         buffer.writeVarInt(contents.trayComponents.size());
@@ -220,11 +210,6 @@ public record MoldedPlasticContents(
     }
 
     public static MoldedPlasticContents decode(RegistryFriendlyByteBuf buffer) {
-        int itemCount = boundedCount(buffer, MAX_STORED_ITEMS, "molded plastic items");
-        List<StoredItem> items = new ArrayList<>(itemCount);
-        for (int index = 0; index < itemCount; index++) {
-            items.add(new StoredItem(buffer.readVarInt(), ItemStack.STREAM_CODEC.decode(buffer)));
-        }
         int fluidCount = boundedCount(buffer, MAX_STORED_FLUIDS, "molded plastic fluids");
         List<FluidStack> fluids = new ArrayList<>(fluidCount);
         for (int index = 0; index < fluidCount; index++) {
@@ -235,7 +220,7 @@ public record MoldedPlasticContents(
         for (int index = 0; index < trayComponentCount; index++) {
             trayComponents.add(MoldedTrayComponentPlacement.STREAM_CODEC.decode(buffer));
         }
-        return new MoldedPlasticContents(items, fluids, trayComponents);
+        return new MoldedPlasticContents(List.of(), fluids, trayComponents);
     }
 
     private static int boundedCount(RegistryFriendlyByteBuf buffer, int maximum, String name) {
@@ -251,7 +236,7 @@ public record MoldedPlasticContents(
         ).apply(instance, StoredItem::new));
 
         public StoredItem {
-            if (slot < 0 || slot >= MAX_STORED_ITEMS) {
+            if (slot < 0) {
                 throw new IllegalArgumentException("Molded plastic item slot is outside its limit");
             }
             if (stack.isEmpty()) throw new IllegalArgumentException("Molded plastic stored item must not be empty");

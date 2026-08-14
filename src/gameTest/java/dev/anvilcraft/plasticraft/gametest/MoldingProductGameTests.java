@@ -1,7 +1,11 @@
 package dev.anvilcraft.plasticraft.gametest;
 
+import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingBarrierFace;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingAnvilShapeAnalysis;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingAnvilShapeAnalyzer;
@@ -16,22 +20,38 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import dev.anvilcraft.plasticraft.molding.model.MoldingTransform;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContentSummary;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContents;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticFluidHandler;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticItemHandler;
-import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContents;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTankFluidGeometry;
+import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticStorage;
+import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticStorageHandle;
+import dev.anvilcraft.plasticraft.molding.product.storage.PlasticraftStorages;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductPreview;
 import dev.anvilcraft.plasticraft.molding.type.MoldingPropellerIconModel;
 import dev.anvilcraft.plasticraft.molding.type.MoldingTypeValidation;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.context.UseOnContext;
+import net.minecraft.world.level.GameType;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -289,7 +309,10 @@ public final class MoldingProductGameTests {
         check(fluids.fill(new FluidStack(Fluids.WATER, 1500), IFluidHandler.FluidAction.EXECUTE) == 1500,
             "forced tank did not retain its fluid capability");
         check(stored[0].limitOverride(), "updating forced tank contents cleared its limit-override marker");
-        check(stored[0].contents().fluids().getFirst().getAmount() == 1500,
+        check(stored[0].storageId().isPresent(), "forced tank did not allocate an external storage id");
+        check(stored[0].contents().fluids().isEmpty(),
+            "forced tank kept a render fluid snapshot after inserting fluid");
+        check(handleFluids(stored).getFirst().getAmount() == 1500,
             "forced tank did not persist the inserted fluid");
         check(MoldedTankFluidGeometry.solve(stored[0], new Vec3(0.0D, 1.0D, 0.0D)).isEmpty(),
             "forced tank generated internal fluid or free-surface geometry");
@@ -297,8 +320,13 @@ public final class MoldingProductGameTests {
         var encoded = MoldedPlasticData.CODEC.encodeStart(ops, stored[0]).getOrThrow();
         MoldedPlasticData decoded = MoldedPlasticData.CODEC.parse(ops, encoded).getOrThrow();
         check(decoded.limitOverride(), "forced tank codec round trip cleared its limit-override marker");
-        check(decoded.contents().fluids().getFirst().getAmount() == 1500,
-            "forced tank codec round trip changed its stored fluid");
+        check(decoded.storageId().equals(stored[0].storageId()),
+            "forced tank codec round trip changed its storage id");
+        check(decoded.contents().fluids().isEmpty(),
+            "forced tank codec round trip restored a render fluid snapshot");
+        final MoldedPlasticData[] decodedHolder = {decoded};
+        check(handleFluids(decodedHolder).getFirst().getAmount() == 1500,
+            "forced tank codec round trip lost the stored fluid");
         check(MoldedTankFluidGeometry.solve(decoded, new Vec3(0.0D, 1.0D, 0.0D)).isEmpty(),
             "decoded forced tank generated internal fluid or free-surface geometry");
         helper.succeed();
@@ -365,6 +393,9 @@ public final class MoldingProductGameTests {
         check(items.insertItem(0, new ItemStack(Items.DIAMOND, 3), false).isEmpty(),
             "chest capability rejected a valid item");
         check(items.getStackInSlot(0).getCount() == 3, "chest item was not retained");
+        check(chest[0].storageId().isPresent(), "chest capability did not allocate an external storage id");
+        check(chest[0].contents().items().isEmpty(), "chest capability kept inline item contents");
+        check(chest[0].summary().occupiedSlots() == 1, "chest capability did not refresh its content summary");
 
         EditableMoldingModel tankModel = model(MoldingProductTypes.TANK_ID);
         MoldedPlasticData tankData = fullData(tankModel);
@@ -427,21 +458,192 @@ public final class MoldingProductGameTests {
         ItemStack chest = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
         MoldedPlasticData.set(chest, chestData);
         check(chest.getMaxStackSize() > 1, "empty molded chest could not stack");
-        MoldedPlasticData.set(chest, chestData.withContents(new MoldedPlasticContents(
-            List.of(new MoldedPlasticContents.StoredItem(0, new ItemStack(Items.DIAMOND))),
-            List.of()
-        )));
+        MoldedPlasticItemHandler items = new MoldedPlasticItemHandler(
+            () -> MoldedPlasticData.get(chest),
+            replacement -> MoldedPlasticData.set(chest, replacement)
+        );
+        check(items.insertItem(0, new ItemStack(Items.DIAMOND), false).isEmpty(),
+            "stacking chest rejected a valid item");
         check(chest.getMaxStackSize() == 1, "non-empty molded chest remained stackable");
 
         MoldedPlasticData tankData = fullData(model(MoldingProductTypes.TANK_ID));
         ItemStack tank = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
         MoldedPlasticData.set(tank, tankData);
         check(tank.getMaxStackSize() > 1, "empty molded tank could not stack");
-        MoldedPlasticData.set(tank, tankData.withContents(new MoldedPlasticContents(
-            List.of(),
-            List.of(new FluidStack(Fluids.WATER, 1000))
-        )));
+        MoldedPlasticFluidHandler fluids = new MoldedPlasticFluidHandler(
+            () -> MoldedPlasticData.get(tank),
+            replacement -> MoldedPlasticData.set(tank, replacement),
+            () -> tank
+        );
+        check(fluids.fill(new FluidStack(Fluids.WATER, 1000), IFluidHandler.FluidAction.EXECUTE) == 1000,
+            "stacking tank rejected a valid fluid");
         check(tank.getMaxStackSize() == 1, "non-empty molded tank remained stackable");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Hammer recovery and placement keep the same molded storage id")
+    static void storageIdSurvivesHammerAndPlace(ExtendedGameTestHelper helper) {
+        ItemStack stack = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        MoldedPlasticData.set(stack, fullData(model(MoldingProductTypes.CHEST_ID)));
+        MoldedPlasticItemHandler items = new MoldedPlasticItemHandler(
+            () -> MoldedPlasticData.get(stack),
+            replacement -> MoldedPlasticData.set(stack, replacement)
+        );
+        check(items.insertItem(0, new ItemStack(Items.DIAMOND, 2), false).isEmpty(),
+            "placed chest rejected a valid item");
+        UUID storageId = MoldedPlasticData.get(stack).flatMap(MoldedPlasticData::storageId).orElseThrow(
+            () -> new GameTestAssertException("filled chest did not allocate a storage id")
+        );
+
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+        BlockPos clicked = helper.absolutePos(new BlockPos(2, 1, 2));
+        InteractionResult placed = stack.useOn(new UseOnContext(
+            helper.getLevel(),
+            player,
+            InteractionHand.MAIN_HAND,
+            stack,
+            new BlockHitResult(clicked.getCenter().add(0.0D, 0.5D, 0.0D), Direction.UP, clicked, false)
+        ));
+        check(placed.consumesAction(), "filled chest item was not placed");
+        UniversalPlasticEntity entity = helper.getLevel().getEntitiesOfClass(
+            UniversalPlasticEntity.class,
+            new AABB(clicked.above()).inflate(0.2D)
+        ).stream().findFirst().orElseThrow(() ->
+            new GameTestAssertException("placed chest entity was not created")
+        );
+        check(entity.getMoldedData().flatMap(MoldedPlasticData::storageId).equals(Optional.of(storageId)),
+            "placing a filled chest allocated a new storage id");
+        check(entity.getMoldedItemHandler().getStackInSlot(0).is(Items.DIAMOND),
+            "placed chest lost its stored item");
+
+        player.setShiftKeyDown(true);
+        player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.RESIN_ANVIL_HAMMER.asStack());
+        check(entity.interact(player, InteractionHand.MAIN_HAND).consumesAction(),
+            "hammer did not recover the placed chest");
+        final ItemStack[] recovered = {ItemStack.EMPTY};
+        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+            ItemStack candidate = player.getInventory().getItem(slot);
+            if (MoldedPlasticData.get(candidate).isPresent()) {
+                recovered[0] = candidate;
+                break;
+            }
+        }
+        check(!recovered[0].isEmpty(), "hammer recovery did not return a molded chest");
+        check(MoldedPlasticData.get(recovered[0]).flatMap(MoldedPlasticData::storageId).equals(Optional.of(storageId)),
+            "hammer recovery allocated a new storage id");
+        check(new MoldedPlasticItemHandler(
+            () -> MoldedPlasticData.get(recovered[0]),
+            replacement -> MoldedPlasticData.set(recovered[0], replacement)
+        ).getStackInSlot(0).getCount() == 2, "hammer recovery lost the stored item");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Entity summary sync omits full chest slots")
+    static void summarySyncOmitsFullSlots(ExtendedGameTestHelper helper) {
+        ItemStack stack = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        EditableMoldingModel chestModel = largeModel(MoldingProductTypes.CHEST_ID);
+        var baked = MoldingModelBaker.bake(chestModel);
+        int melt = baked.analysis().minimumMeltMillibuckets();
+        MoldedPlasticData.set(stack, MoldedPlasticData.manufacture(
+            chestModel,
+            baked,
+            new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), melt),
+            melt
+        ));
+        MoldedPlasticItemHandler items = new MoldedPlasticItemHandler(
+            () -> MoldedPlasticData.get(stack),
+            replacement -> MoldedPlasticData.set(stack, replacement)
+        );
+        List<Item> samples = List.of(
+            Items.DIRT,
+            Items.COBBLESTONE,
+            Items.SAND,
+            Items.GRAVEL,
+            Items.OAK_LOG,
+            Items.SPRUCE_LOG,
+            Items.BIRCH_LOG,
+            Items.JUNGLE_LOG,
+            Items.ACACIA_LOG
+        );
+        for (int slot = 0; slot < samples.size(); slot++) {
+            check(items.insertItem(slot, new ItemStack(samples.get(slot)), false).isEmpty(),
+                "summary chest rejected " + samples.get(slot));
+        }
+        UniversalPlasticEntity entity = createProduct(helper, new BlockPos(2, 2, 2), stack);
+        MoldedPlasticContentSummary summary = entity.getMoldedContentSummary();
+        check(summary.occupiedSlots() == samples.size(),
+            "entity summary lost occupied slot count: " + summary.occupiedSlots());
+        check(summary.items().size() == MoldedPlasticContentSummary.MAX_VISIBLE_ENTRIES,
+            "entity summary did not cap visible item types");
+        check(summary.omittedItemTypes() == 1, "entity summary did not report omitted item types");
+        check(entity.getMoldedData().orElseThrow().contents().items().isEmpty(),
+            "entity synced the complete chest slot list");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Recursive molded containers are rejected and debug chests keep 15625 compact slots")
+    static void debugChestStorageContract(ExtendedGameTestHelper helper) {
+        EditableMoldingModel model = new EditableMoldingModel(
+            EditableMoldingModel.CURRENT_FORMAT_VERSION,
+            "Creative oversized chest",
+            MoldingProductTypes.CHEST_ID,
+            List.of(MoldingElement.cube("Solid", vec(0, 0, 0), vec(100, 100, 100))),
+            List.of()
+        );
+        MoldedPlasticData product = MoldedPlasticData.manufacture(
+            model,
+            MoldingModelBaker.bake(model),
+            FluidStack.EMPTY,
+            0,
+            false,
+            true
+        );
+        check(product.capacity() == 15_625, "debug chest lost its 15625 slot capacity");
+        ItemStack chest = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        MoldedPlasticData.set(chest, product);
+        var ops = helper.getLevel().registryAccess().createSerializationContext(NbtOps.INSTANCE);
+        CompoundTag emptyTag = (CompoundTag) MoldedPlasticData.CODEC.encodeStart(ops, product).getOrThrow();
+        check(!emptyTag.contains("storage_id"), "empty debug chest allocated a storage id");
+        check(!emptyTag.getCompound("contents").contains("items"),
+            "empty debug chest persisted an inline item list");
+
+        MoldedPlasticItemHandler items = new MoldedPlasticItemHandler(
+            () -> MoldedPlasticData.get(chest),
+            replacement -> MoldedPlasticData.set(chest, replacement)
+        );
+        ItemStack nested = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        MoldedPlasticData.set(nested, fullData(model(MoldingProductTypes.CHEST_ID)));
+        check(ItemStack.matches(items.insertItem(0, nested, false), nested),
+            "debug chest accepted a recursive molded container");
+        check(items.insertItem(15_624, new ItemStack(Items.DIAMOND, 4), false).isEmpty(),
+            "debug chest truncated the highest slot");
+        check(items.getStackInSlot(15_624).getCount() == 4, "debug chest did not retain the highest slot");
+        UUID storageId = MoldedPlasticData.get(chest).flatMap(MoldedPlasticData::storageId).orElseThrow(
+            () -> new GameTestAssertException("occupied debug chest did not allocate a storage id")
+        );
+        var server = helper.getLevel().getServer();
+        check(server != null, "game test level has no server");
+        MoldedPlasticStorage storage = PlasticraftStorages.get(server)
+            .get(storageId)
+            .orElseThrow(() -> new GameTestAssertException("occupied debug chest missing SavedData"));
+        ListTag storedItems = storage.save(helper.getLevel().registryAccess())
+            .getCompound("items")
+            .getList("Items", 10);
+        check(storedItems.size() == 1, "occupied debug chest persisted every empty slot");
+        check(storedItems.getCompound(0).getInt("Slot") == 15_624,
+            "occupied debug chest persisted the wrong sparse slot");
+        check(items.extractItem(15_624, 4, false).getCount() == 4, "debug chest could not empty the highest slot");
+        check(MoldedPlasticData.get(chest).flatMap(MoldedPlasticData::storageId).isEmpty(),
+            "emptied debug chest kept its storage id");
+        check(PlasticraftStorages.get(server).get(storageId).isEmpty(),
+            "emptied debug chest leaked its SavedData record");
         helper.succeed();
     }
 
@@ -807,6 +1009,35 @@ public final class MoldingProductGameTests {
 
     private static MoldingVec3 vec(double x, double y, double z) {
         return new MoldingVec3(x, y, z);
+    }
+
+    private static List<FluidStack> handleFluids(MoldedPlasticData[] holder) {
+        return new MoldedPlasticStorageHandle(
+            () -> Optional.of(holder[0]),
+            replacement -> holder[0] = replacement
+        ).fluids();
+    }
+
+    private static UniversalPlasticEntity createProduct(
+        ExtendedGameTestHelper helper,
+        BlockPos occupiedPos,
+        ItemStack stack
+    ) {
+        MoldedPlasticData data = MoldedPlasticData.get(stack).orElseThrow(
+            () -> new GameTestAssertException("product stack lost molded data")
+        );
+        BlockPos absolutePos = helper.absolutePos(occupiedPos);
+        UniversalPlasticEntity entity = new UniversalPlasticEntity(
+            PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
+            helper.getLevel(),
+            data.geometry().placementPosition(absolutePos, PlasticEntityOrientation.DEFAULT),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            stack.copy(),
+            PlasticEntityOrientation.DEFAULT
+        );
+        entity.setNoGravity(true);
+        check(helper.getLevel().addFreshEntity(entity), "failed to add molded plastic product");
+        return entity;
     }
 
     private static MoldedPlasticData fullData(EditableMoldingModel model) {

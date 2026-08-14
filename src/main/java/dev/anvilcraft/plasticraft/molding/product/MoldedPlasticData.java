@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.molding.product;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
+import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import dev.anvilcraft.plasticraft.api.texture.PlasticSurface;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureInput;
@@ -26,7 +27,9 @@ import dev.anvilcraft.plasticraft.molding.type.MoldingProductType;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
+import net.minecraft.core.UUIDUtil;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
@@ -40,6 +43,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 /** 单一动态制品 ID 携带的版本化制造结果。 */
 public record MoldedPlasticData(
@@ -57,9 +61,11 @@ public record MoldedPlasticData(
     MoldingVec3 entityOrigin,
     PlasticEntityOrientation orientation,
     List<MoldingConvexHull> collisionHulls,
-    boolean limitOverride
+    boolean limitOverride,
+    Optional<UUID> storageId,
+    MoldedPlasticContentSummary summary
 ) {
-    public static final int CURRENT_FORMAT_VERSION = 5;
+    public static final int CURRENT_FORMAT_VERSION = 6;
     private static final int SINGLE_TRAY_COMPONENT_FORMAT_VERSION = 4;
     public static final int MAX_SURFACE_QUADS = MoldedPlasticSurfaceAdapter.MAX_SURFACES;
     public static final int MAX_COLLISION_HULLS = EditableMoldingModel.MAX_ELEMENTS;
@@ -74,7 +80,7 @@ public record MoldedPlasticData(
         PlasticEntityOrientation::unpack,
         orientation -> Byte.toUnsignedInt(orientation.pack())
     );
-    // 格式 4 与格式 5 的持久化结构可定向迁移，网络流仍只接受当前格式。
+    // 格式 4–5 的外形与托盘可定向迁移；物品/流体改走仓储 UUID，网络流只接受当前格式。
     private static final Codec<Integer> FORMAT_VERSION_CODEC = Codec.intRange(
         SINGLE_TRAY_COMPONENT_FORMAT_VERSION,
         CURRENT_FORMAT_VERSION
@@ -119,8 +125,44 @@ public record MoldedPlasticData(
         MoldingVec3.CODEC.fieldOf("entity_origin").forGetter(MoldedPlasticData::entityOrigin),
         ORIENTATION_CODEC.fieldOf("orientation").forGetter(MoldedPlasticData::orientation),
         COLLISION_HULLS_CODEC.fieldOf("collision_hulls").forGetter(MoldedPlasticData::collisionHulls),
-        Codec.BOOL.fieldOf("limit_override").forGetter(MoldedPlasticData::limitOverride)
-    ).apply(instance, MoldedPlasticData::new));
+        Codec.BOOL.fieldOf("limit_override").forGetter(MoldedPlasticData::limitOverride),
+        StorageFields.MAP_CODEC.forGetter(StorageFields::from)
+    ).apply(instance, (
+        formatVersion,
+        modelHash,
+        volumeMask,
+        cavityMask,
+        surfaceMesh,
+        material,
+        finalType,
+        capacity,
+        contents,
+        name,
+        rotationPivot,
+        entityOrigin,
+        orientation,
+        collisionHulls,
+        limitOverride,
+        storage
+    ) -> new MoldedPlasticData(
+        formatVersion,
+        modelHash,
+        volumeMask,
+        cavityMask,
+        surfaceMesh,
+        material,
+        finalType,
+        capacity,
+        contents,
+        name,
+        rotationPivot,
+        entityOrigin,
+        orientation,
+        collisionHulls,
+        limitOverride,
+        storage.storageId(),
+        storage.summary()
+    )));
     public static final StreamCodec<RegistryFriendlyByteBuf, MoldedPlasticData> STREAM_CODEC = StreamCodec.of(
         MoldedPlasticData::encode,
         MoldedPlasticData::decode
@@ -154,6 +196,8 @@ public record MoldedPlasticData(
         material = material.copyWithAmount(1);
         Objects.requireNonNull(finalType, "finalType");
         Objects.requireNonNull(contents, "contents");
+        storageId = Objects.requireNonNull(storageId, "storageId");
+        summary = Objects.requireNonNull(summary, "summary");
         MoldingProductType productType = MoldingProductTypes.get(finalType)
             .orElseThrow(() -> new IllegalArgumentException("Unknown molded plastic product type " + finalType));
         if (capacity < 0) throw new IllegalArgumentException("Molded plastic capacity must not be negative");
@@ -164,7 +208,7 @@ public record MoldedPlasticData(
         }
         switch (productType.storageKind()) {
             case NONE -> {
-                if (capacity != 0 || !contents.isEmpty()) {
+                if (capacity != 0 || !contents.isEmpty() || storageId.isPresent()) {
                     throw new IllegalArgumentException("Normal molded plastic cannot carry storage contents");
                 }
             }
@@ -188,7 +232,8 @@ public record MoldedPlasticData(
                 }
             }
             case TRAY -> {
-                if (capacity != 0 || !contents.items().isEmpty() || !contents.fluids().isEmpty()) {
+                if (capacity != 0 || !contents.items().isEmpty() || !contents.fluids().isEmpty()
+                    || storageId.isPresent()) {
                     throw new IllegalArgumentException("Molded tray can only carry its redstone component");
                 }
                 int supportedCells = MoldingTrayShapeAnalyzer.supportedCellMask(volumeMask);
@@ -215,6 +260,44 @@ public record MoldedPlasticData(
         derivedData(
             new ShapeKey(modelHash, volumeMask.volume(), volumeMask.sizeX(), volumeMask.sizeY(), volumeMask.sizeZ()),
             surfaceMesh
+        );
+    }
+
+    public MoldedPlasticData(
+        int formatVersion,
+        String modelHash,
+        MoldingVolumeMask volumeMask,
+        MoldingVolumeMask cavityMask,
+        List<MoldingQuad> surfaceMesh,
+        FluidStack material,
+        ResourceLocation finalType,
+        int capacity,
+        MoldedPlasticContents contents,
+        String name,
+        MoldingVec3 rotationPivot,
+        MoldingVec3 entityOrigin,
+        PlasticEntityOrientation orientation,
+        List<MoldingConvexHull> collisionHulls,
+        boolean limitOverride
+    ) {
+        this(
+            formatVersion,
+            modelHash,
+            volumeMask,
+            cavityMask,
+            surfaceMesh,
+            material,
+            finalType,
+            capacity,
+            contents,
+            name,
+            rotationPivot,
+            entityOrigin,
+            orientation,
+            collisionHulls,
+            limitOverride,
+            Optional.empty(),
+            MoldedPlasticContentSummary.EMPTY
         );
     }
 
@@ -298,7 +381,9 @@ public record MoldedPlasticData(
             this.entityOrigin,
             replacement,
             this.collisionHulls,
-            this.limitOverride
+            this.limitOverride,
+            this.storageId,
+            this.summary
         );
     }
 
@@ -337,7 +422,9 @@ public record MoldedPlasticData(
             this.entityOrigin,
             this.orientation,
             this.collisionHulls,
-            this.limitOverride
+            this.limitOverride,
+            Optional.empty(),
+            MoldedPlasticContentSummary.EMPTY
         );
     }
 
@@ -358,8 +445,62 @@ public record MoldedPlasticData(
             this.entityOrigin,
             this.orientation,
             this.collisionHulls,
-            this.limitOverride
+            this.limitOverride,
+            this.storageId,
+            this.summary
         );
+    }
+
+    public MoldedPlasticData withStorageId(Optional<UUID> replacement) {
+        Optional<UUID> id = Objects.requireNonNull(replacement, "replacement");
+        if (this.storageId.equals(id)) return this;
+        return new MoldedPlasticData(
+            this.formatVersion,
+            this.modelHash,
+            this.volumeMask,
+            this.cavityMask,
+            this.surfaceMesh,
+            this.material,
+            this.finalType,
+            this.capacity,
+            this.contents,
+            this.name,
+            this.rotationPivot,
+            this.entityOrigin,
+            this.orientation,
+            this.collisionHulls,
+            this.limitOverride,
+            id,
+            this.summary
+        );
+    }
+
+    public MoldedPlasticData withSummary(MoldedPlasticContentSummary replacement) {
+        MoldedPlasticContentSummary value = Objects.requireNonNull(replacement, "replacement");
+        if (this.summary.equals(value)) return this;
+        return new MoldedPlasticData(
+            this.formatVersion,
+            this.modelHash,
+            this.volumeMask,
+            this.cavityMask,
+            this.surfaceMesh,
+            this.material,
+            this.finalType,
+            this.capacity,
+            this.contents,
+            this.name,
+            this.rotationPivot,
+            this.entityOrigin,
+            this.orientation,
+            this.collisionHulls,
+            this.limitOverride,
+            this.storageId,
+            value
+        );
+    }
+
+    public boolean hasStoredContents() {
+        return this.storageId.isPresent() || this.contents.hasInlineStorage() || !this.summary.isVacant();
     }
 
     public MoldedPlasticData withMaterial(FluidStack replacement) {
@@ -378,7 +519,9 @@ public record MoldedPlasticData(
             this.entityOrigin,
             this.orientation,
             this.collisionHulls,
-            this.limitOverride
+            this.limitOverride,
+            this.storageId,
+            this.summary
         );
     }
 
@@ -475,6 +618,8 @@ public record MoldedPlasticData(
         writeMask(buffer, data.cavityMask);
         MoldedPlasticContents.encode(buffer, data.contents);
         buffer.writeBoolean(data.limitOverride);
+        ByteBufCodecs.optional(UUIDUtil.STREAM_CODEC).encode(buffer, data.storageId);
+        MoldedPlasticContentSummary.STREAM_CODEC.encode(buffer, data.summary);
     }
 
     private static MoldedPlasticData decode(RegistryFriendlyByteBuf buffer) {
@@ -497,6 +642,8 @@ public record MoldedPlasticData(
         MoldingVolumeMask cavity = readMask(buffer, "molding cavity");
         MoldedPlasticContents contents = MoldedPlasticContents.decode(buffer);
         boolean limitOverride = buffer.readBoolean();
+        Optional<UUID> storageId = ByteBufCodecs.optional(UUIDUtil.STREAM_CODEC).decode(buffer);
+        MoldedPlasticContentSummary summary = MoldedPlasticContentSummary.STREAM_CODEC.decode(buffer);
         return new MoldedPlasticData(
             formatVersion,
             modelHash,
@@ -512,7 +659,9 @@ public record MoldedPlasticData(
             entityOrigin,
             orientation,
             collisionHulls,
-            limitOverride
+            limitOverride,
+            storageId,
+            summary
         );
     }
 
@@ -653,6 +802,8 @@ public record MoldedPlasticData(
             && FluidStack.matches(this.material, data.material)
             && this.finalType.equals(data.finalType)
             && this.contents.equals(data.contents)
+            && this.storageId.equals(data.storageId)
+            && this.summary.equals(data.summary)
             && this.name.equals(data.name)
             && this.rotationPivot.equals(data.rotationPivot)
             && this.entityOrigin.equals(data.entityOrigin)
@@ -671,6 +822,8 @@ public record MoldedPlasticData(
             this.finalType,
             this.capacity,
             this.contents,
+            this.storageId,
+            this.summary,
             this.name,
             this.rotationPivot,
             this.entityOrigin,
@@ -731,5 +884,18 @@ public record MoldedPlasticData(
     }
 
     record ShapeKey(String modelHash, int formedCells, int sizeX, int sizeY, int sizeZ) {
+    }
+
+    /** 把仓储 UUID 与摘要编进同一层 NBT，避免 RecordCodecBuilder 超过 16 个字段。 */
+    private record StorageFields(Optional<UUID> storageId, MoldedPlasticContentSummary summary) {
+        private static final MapCodec<StorageFields> MAP_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
+            UUIDUtil.CODEC.optionalFieldOf("storage_id").forGetter(StorageFields::storageId),
+            MoldedPlasticContentSummary.CODEC.optionalFieldOf("summary", MoldedPlasticContentSummary.EMPTY)
+                .forGetter(StorageFields::summary)
+        ).apply(instance, StorageFields::new));
+
+        private static StorageFields from(MoldedPlasticData data) {
+            return new StorageFields(data.storageId(), data.summary());
+        }
     }
 }

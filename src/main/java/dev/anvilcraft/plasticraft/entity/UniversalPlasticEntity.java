@@ -19,6 +19,7 @@ import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContentSummary;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticFluidHandler;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticItemHandler;
+import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticStorageHandle;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticNames;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayCell;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponent;
@@ -380,7 +381,9 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
             .orElse(ItemStack.EMPTY);
         this.entityData.set(MOLDED_STACK, synchronizedStack);
         CompoundTag summary = MoldedPlasticData.get(stack)
-            .map(MoldedPlasticContentSummary::create)
+            .map(data -> this.level().isClientSide
+                ? data.summary()
+                : new MoldedPlasticStorageHandle(() -> Optional.of(data), ignored -> {}).summary())
             .map(value -> value.toTag(this.registryAccess()))
             .orElseGet(CompoundTag::new);
         this.entityData.set(MOLDED_SUMMARY, summary);

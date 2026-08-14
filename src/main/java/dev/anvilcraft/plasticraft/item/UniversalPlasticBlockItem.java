@@ -44,7 +44,9 @@ public class UniversalPlasticBlockItem extends AbstractPlasticEntityItem<Univers
 
     @Override
     public int getMaxStackSize(ItemStack stack) {
-        return MoldedPlasticData.get(stack).filter(data -> !data.contents().isEmpty()).isPresent()
+        return MoldedPlasticData.get(stack)
+            .filter(data -> data.hasStoredContents() || !data.contents().isEmpty())
+            .isPresent()
             ? 1
             : super.getMaxStackSize(stack);
     }

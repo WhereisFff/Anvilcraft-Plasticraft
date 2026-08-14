@@ -30,7 +30,10 @@ public final class MoldedPlasticItemTooltipRenderer {
     public static void render(RenderTooltipEvent.Pre event) {
         MoldedPlasticData data = MoldedPlasticData.get(event.getItemStack()).orElse(null);
         if (data == null) return;
-        List<Component> lines = MoldedPlasticContentTooltip.create(MoldedPlasticContentSummary.create(data));
+        MoldedPlasticContentSummary summary = data.summary().isVacant()
+            ? MoldedPlasticContentSummary.create(data.finalType(), data.capacity(), List.of(), List.of())
+            : data.summary();
+        List<Component> lines = MoldedPlasticContentTooltip.create(summary);
         if (lines.isEmpty()) return;
 
         int mouseX = event.getX();
