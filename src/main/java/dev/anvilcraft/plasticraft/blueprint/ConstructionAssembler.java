@@ -38,7 +38,11 @@ public final class ConstructionAssembler {
                 colliding.add(op);
             }
         }
-        List<BlockPos> removal = peel(colliding);
+        List<BlockPos> collidingPos = new ArrayList<>();
+        for (ConstructionBuildOp op : colliding) {
+            collidingPos.add(op.pos());
+        }
+        List<BlockPos> removal = peelOrder(collidingPos);
         int order = 0;
         for (int index = removal.size() - 1; index >= 0; index--) {
             BlockPos pos = removal.get(index);
@@ -88,7 +92,8 @@ public final class ConstructionAssembler {
         return null;
     }
 
-    private static List<BlockPos> peel(List<ConstructionBuildOp> colliding) {
+    /** 由外向内剥离顺序;拆除用正向,建造用其逆序。 */
+    public static List<BlockPos> peelOrder(List<BlockPos> cells) {
         Set<Long> remaining = new HashSet<>();
         int minX = Integer.MAX_VALUE;
         int minY = Integer.MAX_VALUE;
@@ -96,14 +101,14 @@ public final class ConstructionAssembler {
         int maxX = Integer.MIN_VALUE;
         int maxY = Integer.MIN_VALUE;
         int maxZ = Integer.MIN_VALUE;
-        for (ConstructionBuildOp op : colliding) {
-            remaining.add(op.pos().asLong());
-            minX = Math.min(minX, op.pos().getX());
-            minY = Math.min(minY, op.pos().getY());
-            minZ = Math.min(minZ, op.pos().getZ());
-            maxX = Math.max(maxX, op.pos().getX());
-            maxY = Math.max(maxY, op.pos().getY());
-            maxZ = Math.max(maxZ, op.pos().getZ());
+        for (BlockPos pos : cells) {
+            remaining.add(pos.asLong());
+            minX = Math.min(minX, pos.getX());
+            minY = Math.min(minY, pos.getY());
+            minZ = Math.min(minZ, pos.getZ());
+            maxX = Math.max(maxX, pos.getX());
+            maxY = Math.max(maxY, pos.getY());
+            maxZ = Math.max(maxZ, pos.getZ());
         }
         if (remaining.isEmpty()) return List.of();
         minX--;
@@ -115,36 +120,36 @@ public final class ConstructionAssembler {
         Set<Long> exterior = floodExterior(remaining, minX, minY, minZ, maxX, maxY, maxZ);
         List<BlockPos> removal = new ArrayList<>();
         while (!remaining.isEmpty()) {
-            ConstructionBuildOp best = null;
-            for (ConstructionBuildOp op : colliding) {
-                if (!remaining.contains(op.pos().asLong())) continue;
-                if (!touchesExterior(op.pos(), remaining, exterior)) continue;
-                if (betterPeel(best, op)) {
-                    best = op;
+            BlockPos best = null;
+            for (BlockPos pos : cells) {
+                if (!remaining.contains(pos.asLong())) continue;
+                if (!touchesExterior(pos, remaining, exterior)) continue;
+                if (betterPeel(best, pos)) {
+                    best = pos;
                 }
             }
             if (best == null) {
-                for (ConstructionBuildOp op : colliding) {
-                    if (remaining.contains(op.pos().asLong()) && betterPeel(best, op)) {
-                        best = op;
+                for (BlockPos pos : cells) {
+                    if (remaining.contains(pos.asLong()) && betterPeel(best, pos)) {
+                        best = pos;
                     }
                 }
             }
             if (best == null) break;
-            remaining.remove(best.pos().asLong());
-            removal.add(best.pos());
-            expandExterior(best.pos(), remaining, exterior, minX, minY, minZ, maxX, maxY, maxZ);
+            remaining.remove(best.asLong());
+            removal.add(best);
+            expandExterior(best, remaining, exterior, minX, minY, minZ, maxX, maxY, maxZ);
         }
         return removal;
     }
 
-    private static boolean betterPeel(@Nullable ConstructionBuildOp current, ConstructionBuildOp candidate) {
+    private static boolean betterPeel(@Nullable BlockPos current, BlockPos candidate) {
         if (current == null) return true;
-        int y = Integer.compare(candidate.pos().getY(), current.pos().getY());
+        int y = Integer.compare(candidate.getY(), current.getY());
         if (y != 0) return y > 0;
-        int z = Integer.compare(candidate.pos().getZ(), current.pos().getZ());
+        int z = Integer.compare(candidate.getZ(), current.getZ());
         if (z != 0) return z < 0;
-        return candidate.pos().getX() < current.pos().getX();
+        return candidate.getX() < current.getX();
     }
 
     private static boolean touchesExterior(BlockPos pos, Set<Long> remaining, Set<Long> exterior) {

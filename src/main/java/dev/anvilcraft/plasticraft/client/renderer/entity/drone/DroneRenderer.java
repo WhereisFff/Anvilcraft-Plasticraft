@@ -41,6 +41,8 @@ public class DroneRenderer extends EntityRenderer<DroneEntity> {
             drone.getRightPropeller(),
             drone.hostedCarry(),
             spin,
+            drone.getActionState(),
+            drone.tickCount + partialTick,
             poseStack,
             buffers,
             packedLight,

@@ -8,6 +8,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.ExperienceOrb;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
@@ -84,7 +86,9 @@ public final class ConstructionProjectionIndex {
         List<Entity> entities = level.getEntities(ignore, bounds);
         for (Entity entity : entities) {
             if (!entity.isAlive() || entity.isSpectator()) continue;
-            if (entity instanceof DroneEntity) continue;
+            if (entity instanceof DroneEntity || entity instanceof ItemEntity || entity instanceof ExperienceOrb) {
+                continue;
+            }
             if (Shapes.joinIsNotEmpty(worldShape, Shapes.create(entity.getBoundingBox()), BooleanOp.AND)) {
                 return true;
             }

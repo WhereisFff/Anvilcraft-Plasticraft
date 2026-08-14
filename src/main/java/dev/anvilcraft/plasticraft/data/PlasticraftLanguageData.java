@@ -47,11 +47,11 @@ public final class PlasticraftLanguageData {
         );
         provider.add(
             "tooltip.anvilcraftplasticraft.drone.construction",
-            "Takes materials from the owner's inventory and delivers construction projections"
+            "Takes materials from the owner's inventory to seal fluids and deliver construction projections"
         );
         provider.add(
             "tooltip.anvilcraftplasticraft.drone.demolition",
-            "Mechanical drone fitted with a stonecutter attachment"
+            "Instantly demolishes blocks with AnvilCraft stonecutter-smash semantics"
         );
         provider.add(
             "tooltip.anvilcraftplasticraft.drone.collection",
@@ -83,6 +83,8 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.drone.wait.world", "Waiting for the world block to clear");
         provider.add("screen.anvilcraftplasticraft.drone.wait.source", "Owner is not in this dimension");
         provider.add("screen.anvilcraftplasticraft.drone.wait.energy", "Not enough energy for the next delivery");
+        provider.add("screen.anvilcraftplasticraft.drone.wait.demolition", "Waiting for a demolition drone");
+        provider.add("screen.anvilcraftplasticraft.drone.wait.permission", "Waiting for world permission");
         provider.add("screen.anvilcraftplasticraft.drone.carry", "Carrying: %s");
         provider.add("screen.anvilcraftplasticraft.drone.strategy", "Shortage strategy");
         provider.add("screen.anvilcraftplasticraft.drone.strategy.pause", "Pause and wait");
@@ -574,6 +576,8 @@ public final class PlasticraftLanguageData {
         provider.add("message.anvilcraftplasticraft.construction.wait.world", "A construction position is blocked by the world");
         provider.add("message.anvilcraftplasticraft.construction.wait.source", "Construction is waiting for the owner to return");
         provider.add("message.anvilcraftplasticraft.construction.wait.energy", "A construction drone does not have enough energy");
+        provider.add("message.anvilcraftplasticraft.construction.wait.demolition", "Construction is waiting for a demolition drone");
+        provider.add("message.anvilcraftplasticraft.construction.wait.permission", "Construction is waiting for world permission");
         provider.add("message.anvilcraftplasticraft.blueprint.not_structure_disk", "Hold a structure disk to import");
         provider.add(
             "message.anvilcraftplasticraft.blueprint.disk_in_molding_use",

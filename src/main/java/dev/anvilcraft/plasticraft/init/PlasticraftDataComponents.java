@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.init;
 import com.mojang.serialization.Codec;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionDebris;
 import dev.anvilcraft.plasticraft.drone.DroneData;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import net.minecraft.core.component.DataComponentType;
@@ -51,6 +52,15 @@ public final class PlasticraftDataComponents {
         () -> DataComponentType.<ConstructionBlueprintData>builder()
             .persistent(ConstructionBlueprintData.CODEC)
             .networkSynchronized(ConstructionBlueprintData.STREAM_CODEC)
+            .build()
+    );
+
+    /** 拆除掉落物的任务来源标记,参与物品合并判定。 */
+    public static final Supplier<DataComponentType<ConstructionDebris>> CONSTRUCTION_DEBRIS = COMPONENTS.register(
+        "construction_debris",
+        () -> DataComponentType.<ConstructionDebris>builder()
+            .persistent(ConstructionDebris.CODEC)
+            .networkSynchronized(ConstructionDebris.STREAM_CODEC)
             .build()
     );
 

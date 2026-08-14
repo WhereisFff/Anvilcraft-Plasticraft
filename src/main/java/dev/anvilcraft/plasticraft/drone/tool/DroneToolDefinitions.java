@@ -54,7 +54,7 @@ public final class DroneToolDefinitions {
         0,
         INSTANT_ACTION_ENERGY_COST,
         List.of("idle", "cut"),
-        DroneToolBehavior.NONE
+        DemolitionDroneToolBehavior.INSTANCE
     ));
 
     public static final DroneToolDefinition COLLECTION = register(new DroneToolDefinition(

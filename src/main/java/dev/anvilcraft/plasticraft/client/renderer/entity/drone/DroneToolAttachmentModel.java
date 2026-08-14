@@ -45,6 +45,15 @@ public class DroneToolAttachmentModel {
         this.root.render(poseStack, buffer, packedLight, packedOverlay);
     }
 
+    /** 只读取已同步的动作字节;cut 时旋转切石机刀片,其它附件保持静止。 */
+    public void setupAction(byte actionState, float animationTime) {
+        if (!this.root.hasChild("demolition_attachment")) return;
+        ModelPart attachment = this.root.getChild("demolition_attachment");
+        if (!attachment.hasChild("stonecutter_blade")) return;
+        ModelPart blade = attachment.getChild("stonecutter_blade");
+        blade.xRot = actionState == 1 ? animationTime * 0.8F : 0.0F;
+    }
+
     /** 蟹钳附件:臂基、左右钳指与持物锚点;静止姿态保持半开。 */
     public static LayerDefinition createConstructionClawLayer() {
         MeshDefinition mesh = new MeshDefinition();

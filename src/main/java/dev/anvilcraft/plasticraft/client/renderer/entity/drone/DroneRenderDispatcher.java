@@ -109,6 +109,8 @@ public final class DroneRenderDispatcher {
             rightPropeller,
             ItemStack.EMPTY,
             propellerSpinDegrees,
+            (byte) 0,
+            0.0F,
             poseStack,
             buffers,
             packedLight,
@@ -122,6 +124,34 @@ public final class DroneRenderDispatcher {
         ItemStack rightPropeller,
         ItemStack carried,
         float propellerSpinDegrees,
+        PoseStack poseStack,
+        MultiBufferSource buffers,
+        int packedLight,
+        int packedOverlay
+    ) {
+        this.render(
+            toolId,
+            leftPropeller,
+            rightPropeller,
+            carried,
+            propellerSpinDegrees,
+            (byte) 0,
+            0.0F,
+            poseStack,
+            buffers,
+            packedLight,
+            packedOverlay
+        );
+    }
+
+    public void render(
+        ResourceLocation toolId,
+        ItemStack leftPropeller,
+        ItemStack rightPropeller,
+        ItemStack carried,
+        float propellerSpinDegrees,
+        byte actionState,
+        float animationTime,
         PoseStack poseStack,
         MultiBufferSource buffers,
         int packedLight,
@@ -142,6 +172,7 @@ public final class DroneRenderDispatcher {
         if (attachment != null) {
             poseStack.pushPose();
             this.model.translateToToolMount(poseStack);
+            attachment.model().setupAction(actionState, animationTime);
             VertexConsumer attachmentBuffer =
                 buffers.getBuffer(RenderType.entityCutoutNoCull(attachment.texture()));
             attachment.model().render(poseStack, attachmentBuffer, packedLight, packedOverlay);

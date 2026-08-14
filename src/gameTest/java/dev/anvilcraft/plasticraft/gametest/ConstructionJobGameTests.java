@@ -11,11 +11,15 @@ import dev.anvilcraft.plasticraft.blueprint.ConstructionJobProgress;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobStore;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionLedgerEntry;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionProjectionIndex;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionDebris;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionWaitReason;
+import dev.anvilcraft.plasticraft.blueprint.DemolitionPlanner;
+import dev.anvilcraft.plasticraft.blueprint.StonecutterSmashAdapter;
 import dev.anvilcraft.plasticraft.drone.DroneData;
 import dev.anvilcraft.plasticraft.drone.DroneEnergyModel;
 import dev.anvilcraft.plasticraft.drone.DroneShortageStrategy;
 import dev.anvilcraft.plasticraft.drone.tool.ConstructionDroneToolBehavior;
+import dev.anvilcraft.plasticraft.drone.tool.DemolitionDroneToolBehavior;
 import dev.anvilcraft.plasticraft.drone.tool.DroneToolDefinitions;
 import dev.anvilcraft.plasticraft.entity.drone.DroneEntity;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
@@ -30,14 +34,19 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.animal.Pig;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
@@ -50,8 +59,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 覆盖单架无站建设无人机施工闭环的服务器契约:台账、假方块碰撞、占用、安静提交、
- * 缺料策略、电量拒派、停止后飞回还物与同模板短时序交付。不扫描 128 格实体。
+ * 覆盖单架无站建设/拆除无人机施工闭环的服务器契约:台账、假方块碰撞、占用、安静提交、
+ * 缺料策略、电量拒派、停止后飞回还物、同模板短时序交付,以及封堵与拆除。不扫描 128 格实体。
  */
 public final class ConstructionJobGameTests {
     private ConstructionJobGameTests() {
@@ -470,6 +479,359 @@ public final class ConstructionJobGameTests {
         }).thenSucceed();
     }
 
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Stonecutter smash clears cobble with marked drops, awards no XP, and rejects bedrock")
+    static void stonecutterSmashMatchesAnvilSemantics(ExtendedGameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos cobble = helper.absolutePos(new BlockPos(2, 2, 2));
+        BlockPos bedrock = helper.absolutePos(new BlockPos(3, 2, 2));
+        level.setBlockAndUpdate(cobble, Blocks.COBBLESTONE.defaultBlockState());
+        level.setBlockAndUpdate(bedrock, Blocks.BEDROCK.defaultBlockState());
+        UUID jobId = UUID.randomUUID();
+        check(
+            StonecutterSmashAdapter.smash(level, cobble, jobId, 1),
+            "cobble must be smashable"
+        );
+        check(level.getBlockState(cobble).isAir(), "smashed cobble must become air");
+        check(
+            !StonecutterSmashAdapter.smash(level, bedrock, jobId, 2),
+            "bedrock must be rejected as a permanent obstacle"
+        );
+        check(level.getBlockState(bedrock).is(Blocks.BEDROCK), "bedrock must remain");
+        boolean marked = false;
+        for (ItemEntity item : level.getEntitiesOfClass(ItemEntity.class, new AABB(cobble).inflate(1.5D))) {
+            if (item.getItem().is(Items.COBBLESTONE) && ConstructionDebris.isMarked(item.getItem())) {
+                marked = true;
+            }
+        }
+        check(marked, "cobble smash must drop a job-marked cobble");
+        check(
+            level.getEntitiesOfClass(ExperienceOrb.class, new AABB(cobble).inflate(2.0D)).isEmpty(),
+            "ordinary stonecutter smash must not drop experience"
+        );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Job-marked cobble drops do not merge with unmarked cobble drops")
+    static void jobMarkedDropsDoNotMerge(ExtendedGameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        Vec3 pos = helper.absoluteVec(new Vec3(2.5D, 2.2D, 2.5D));
+        ItemStack marked = new ItemStack(Items.COBBLESTONE);
+        ConstructionDebris.mark(marked, UUID.randomUUID(), 3);
+        ItemEntity first = new ItemEntity(level, pos.x, pos.y, pos.z, marked);
+        ItemEntity second = new ItemEntity(level, pos.x, pos.y, pos.z, new ItemStack(Items.COBBLESTONE));
+        first.setDeltaMovement(Vec3.ZERO);
+        second.setDeltaMovement(Vec3.ZERO);
+        check(level.addFreshEntity(first), "failed to spawn marked drop");
+        check(level.addFreshEntity(second), "failed to spawn unmarked drop");
+        helper.startSequence().thenExecuteAfter(10, () -> {
+            int markedCount = 0;
+            int unmarkedCount = 0;
+            for (ItemEntity item : level.getEntitiesOfClass(ItemEntity.class, new AABB(pos, pos).inflate(2.0D))) {
+                if (!item.getItem().is(Items.COBBLESTONE)) continue;
+                if (ConstructionDebris.isMarked(item.getItem())) {
+                    markedCount += item.getItem().getCount();
+                } else {
+                    unmarkedCount += item.getItem().getCount();
+                }
+            }
+            check(markedCount == 1, "marked cobble must stay a separate stack, was " + markedCount);
+            check(unmarkedCount == 1, "unmarked cobble must stay a separate stack, was " + unmarkedCount);
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A world stone cell is demolished before its PLACE op becomes assignable")
+    static void worldStoneIsDemolishedBeforePlace(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                player.moveTo(helper.absoluteVec(new Vec3(1.5D, 2.0D, 3.5D)));
+                helper.setBlock(new BlockPos(3, 2, 1), Blocks.STONE);
+                StartedJob started = startCobbleJob(helper, player, 1);
+                try {
+                    check(
+                        started.job().state() == ConstructionJob.STATE_DEMOLISHING,
+                        "occupied cobble cell must start in DEMOLISHING, was " + started.job().state()
+                    );
+                    ConstructionBuildOp demolish = firstKind(started.progress(), ConstructionBuildOp.Kind.DEMOLISH);
+                    check(
+                        ConstructionJobController.tryDemolish(helper.getLevel(), started.progress(), demolish),
+                        "demolish of the world stone must succeed"
+                    );
+                    check(helper.getBlockState(new BlockPos(3, 2, 1)).isAir(), "demolished stone must become air");
+                    ConstructionBuildOp place = firstPlace(started.progress());
+                    ConstructionBuildOp assignable = ConstructionJobController.nextAssignable(
+                        helper.getLevel(),
+                        started.progress()
+                    );
+                    check(
+                        assignable != null,
+                        "PLACE must become assignable only after the world block is gone"
+                            + "; status=" + place.status()
+                            + " approach=" + ConstructionJobController.chooseApproach(
+                                helper.getLevel(),
+                                started.progress(),
+                                place
+                            )
+                    );
+                } finally {
+                    cancelQuietly(player, started.job().jobId());
+                }
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("demolish-before-place setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Bedrock skips its PLACE op and leaves the remaining air cell buildable")
+    static void permanentObstacleSkipsPlaceAndContinues(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                helper.setBlock(new BlockPos(3, 2, 1), Blocks.BEDROCK);
+                StartedJob started = startCobbleJob(helper, player, 2);
+                try {
+                    check(
+                        started.job().state() == ConstructionJob.STATE_BUILDING,
+                        "bedrock must not stall the job in demolition, was " + started.job().state()
+                    );
+                    ConstructionBuildOp first = firstPlace(started.progress());
+                    check(
+                        first.status() == ConstructionBuildOp.Status.SKIPPED,
+                        "bedrock cell PLACE must be skipped"
+                    );
+                    ConstructionBuildOp open = firstOpenPlace(started.progress());
+                    check(open.pos().equals(helper.absolutePos(new BlockPos(4, 2, 1))),
+                        "the remaining air cobble cell must stay assignable");
+                } finally {
+                    cancelQuietly(player, started.job().jobId());
+                }
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("permanent obstacle setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Missing demolition drones pause or skip remaining breakable cells")
+    static void missingDemolitionPauseAndSkip(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                helper.setBlock(new BlockPos(3, 2, 1), Blocks.STONE);
+                StartedJob started = startCobbleJob(helper, player, 1);
+                try {
+                    ConstructionJobController.applyDemolitionShortage(
+                        helper.getLevel().getServer(),
+                        started.job(),
+                        started.progress(),
+                        DroneShortageStrategy.PAUSE
+                    );
+                    ConstructionJob paused = ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId());
+                    check(
+                        paused != null && paused.state() == ConstructionJob.STATE_WAITING_DEMOLITION,
+                        "PAUSE must enter WAITING_DEMOLITION"
+                    );
+                    ConstructionJobController.applyDemolitionShortage(
+                        helper.getLevel().getServer(),
+                        paused,
+                        started.progress(),
+                        DroneShortageStrategy.SKIP
+                    );
+                    ConstructionJob afterSkip = ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId());
+                    check(
+                        afterSkip != null && afterSkip.state() == ConstructionJob.STATE_BUILDING,
+                        "SKIP must leave demolition and continue, was "
+                            + (afterSkip == null ? "cleared" : afterSkip.state())
+                    );
+                    check(started.progress().incomplete(), "skipped demolition must mark the job incomplete");
+                    check(
+                        firstPlace(started.progress()).status() == ConstructionBuildOp.Status.SKIPPED,
+                        "the still-occupied PLACE cell must be skipped"
+                    );
+                } finally {
+                    cancelQuietly(player, started.job().jobId());
+                }
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("demolition shortage setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "7x4x7", floor = true)
+    @TestHolder(description = "Fluid sealing fills the declared cell plus a one-block shell and does not chase the pool")
+    static void fluidSealPlacesDeclaredAndOneBlockShell(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                for (int x = 1; x <= 3; x++) {
+                    for (int z = 1; z <= 3; z++) {
+                        helper.setBlock(new BlockPos(x, 2, z), Blocks.WATER);
+                    }
+                }
+                player.getInventory().add(new ItemStack(Items.COBBLESTONE, 8));
+                StartedJob started = startCobbleJob(helper, player, 1, new BlockPos(2, 2, 2));
+                try {
+                    check(
+                        started.job().state() == ConstructionJob.STATE_SEALING_FLUID,
+                        "a flooded declared cell must start in SEALING_FLUID, was " + started.job().state()
+                    );
+                    int seals = countKind(started.progress(), ConstructionBuildOp.Kind.SEAL);
+                    int shells = 0;
+                    for (ConstructionBuildOp op : started.progress().operations()) {
+                        if (op.kind() == ConstructionBuildOp.Kind.SEAL && op.shell()) shells++;
+                    }
+                    check(seals == 5, "declared water plus four face-neighbors must be sealed, was " + seals);
+                    check(shells == 4, "exactly four shell cells must be planned, was " + shells);
+                    check(
+                        helper.getBlockState(new BlockPos(1, 2, 1)).is(Blocks.WATER),
+                        "diagonal pool water must not be chased"
+                    );
+                } finally {
+                    cancelQuietly(player, started.job().jobId());
+                }
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("fluid seal setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Cancel during sealing keeps placed fills and returns in-transit fill material")
+    static void cancelDuringSealKeepsFills(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                helper.setBlock(new BlockPos(3, 2, 1), Blocks.WATER);
+                player.getInventory().add(new ItemStack(Items.DIRT, 8));
+                player.getInventory().add(new ItemStack(Items.COBBLESTONE, 2));
+                StartedJob started = startCobbleJob(helper, player, 1);
+                try {
+                    ConstructionBuildOp seal = firstKind(started.progress(), ConstructionBuildOp.Kind.SEAL);
+                    int dirtBefore = countItem(player, Items.DIRT);
+                    check(
+                        ConstructionJobController.extractMaterial(player, started.progress(), seal, UUID.randomUUID()),
+                        "extracting seal fill must succeed"
+                    );
+                    check(
+                        ConstructionJobController.tryPlaceSeal(helper.getLevel(), started.progress(), seal, null),
+                        "placing the first fill must succeed"
+                    );
+                    check(helper.getBlockState(new BlockPos(3, 2, 1)).is(Blocks.DIRT), "placed fill must be real dirt");
+                    ConstructionBuildOp next = firstOpenKind(started.progress(), ConstructionBuildOp.Kind.SEAL);
+                    int during = countItem(player, Items.DIRT);
+                    if (next != null) {
+                        check(
+                            ConstructionJobController.extractMaterial(player, started.progress(), next, UUID.randomUUID()),
+                            "second extract must succeed"
+                        );
+                        during = countItem(player, Items.DIRT);
+                    }
+                    ConstructionBlueprintService.cancel(player, started.job().jobId());
+                    check(helper.getBlockState(new BlockPos(3, 2, 1)).is(Blocks.DIRT), "cancel must keep the placed fill");
+                    if (next != null) {
+                        check(
+                            countItem(player, Items.DIRT) == during + 1,
+                            "cancel must return the in-transit fill once"
+                        );
+                    } else {
+                        check(countItem(player, Items.DIRT) == dirtBefore - 1, "placed fill must stay consumed");
+                    }
+                } finally {
+                    cancelQuietly(player, started.job().jobId());
+                }
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("cancel-during-seal setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "5x5x5", floor = true)
+    @TestHolder(description = "Smashing a door core drops one door and clears both halves")
+    static void doorDemolishDropsOnce(ExtendedGameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos lower = helper.absolutePos(new BlockPos(2, 2, 2));
+        BlockPos upper = helper.absolutePos(new BlockPos(2, 3, 2));
+        level.setBlockAndUpdate(lower, Blocks.OAK_DOOR.defaultBlockState());
+        level.setBlockAndUpdate(
+            upper,
+            Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER)
+        );
+        check(
+            StonecutterSmashAdapter.smash(level, lower, UUID.randomUUID(), 4),
+            "door core must be smashable"
+        );
+        DemolitionPlanner.clearAttachedResidue(level, lower);
+        check(level.getBlockState(lower).isAir(), "door lower half must be air");
+        check(level.getBlockState(upper).isAir(), "door upper half must be cleared without a second smash");
+        int doors = 0;
+        for (ItemEntity item : level.getEntitiesOfClass(ItemEntity.class, new AABB(lower).inflate(2.0D))) {
+            if (item.getItem().is(Items.OAK_DOOR)) {
+                doors += item.getItem().getCount();
+            }
+        }
+        check(doors == 1, "door smash must drop exactly one door, was " + doors);
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 400, batch = "zzz_construction_demolish_live")
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "A demolition drone flies to a stone cell and smashes it")
+    static void demolitionDroneClearsShortWall(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        player.setNoGravity(true);
+        player.moveTo(helper.absoluteVec(new Vec3(2.5D, 2.0D, 2.5D)));
+        UUID[] jobSlot = new UUID[1];
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                player.setNoGravity(true);
+                player.moveTo(helper.absoluteVec(new Vec3(2.5D, 2.0D, 2.5D)));
+                helper.setBlock(new BlockPos(3, 2, 3), Blocks.STONE);
+                DroneEntity drone = spawnDemolitionDrone(
+                    helper,
+                    new Vec3(2.5D, 2.0D, 3.5D),
+                    player,
+                    DroneEnergyModel.capacity()
+                );
+                drone.setNoGravity(true);
+                StartedJob started = startCobbleJob(helper, player, 1, new BlockPos(3, 2, 3));
+                jobSlot[0] = started.job().jobId();
+                if (!DemolitionDroneToolBehavior.tryClaim(
+                    drone,
+                    helper.getLevel(),
+                    started.job(),
+                    started.progress()
+                )) {
+                    cancelQuietly(player, started.job().jobId());
+                    jobSlot[0] = null;
+                    throw new GameTestAssertException("demolition drone failed to claim: wait=" + drone.waitReason());
+                }
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("live demolish setup failed: " + exception.reason());
+            }
+        }).thenWaitUntil(() -> {
+            check(
+                helper.getBlockState(new BlockPos(3, 2, 3)).isAir(),
+                "demolition drone must smash the stone cell to air"
+            );
+        }).thenExecute(() -> {
+            if (jobSlot[0] != null) {
+                cancelQuietly(player, jobSlot[0]);
+            }
+        }).thenSucceed();
+    }
+
     private static StartedJob startCobbleJob(ExtendedGameTestHelper helper, GameTestPlayer player, int count)
         throws ConstructionBlueprintException {
         return startCobbleJob(helper, player, count, new BlockPos(3, 2, 1));
@@ -554,6 +916,58 @@ public final class ConstructionJobGameTests {
         return drone;
     }
 
+    private static DroneEntity spawnDemolitionDrone(
+        ExtendedGameTestHelper helper,
+        Vec3 relativePos,
+        GameTestPlayer player,
+        int energy
+    ) {
+        DroneEntity drone = PlasticraftEntities.DRONE.get().create(helper.getLevel());
+        check(drone != null, "failed to create demolition drone");
+        drone.applyDroneData(DroneData.assembled(
+            DroneToolDefinitions.DEMOLITION.id(),
+            ItemStack.EMPTY,
+            ItemStack.EMPTY
+        ).withOwner(player.getUUID()).withEnergy(energy));
+        Vec3 position = helper.absoluteVec(relativePos);
+        drone.setPos(position.x, position.y, position.z);
+        check(helper.getLevel().addFreshEntity(drone), "failed to add demolition drone");
+        return drone;
+    }
+
+    private static ConstructionBuildOp firstKind(ConstructionJobProgress progress, ConstructionBuildOp.Kind kind) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() == kind) return op;
+        }
+        throw new GameTestAssertException("planned job has no " + kind + " operation");
+    }
+
+    private static ConstructionBuildOp firstOpenKind(ConstructionJobProgress progress, ConstructionBuildOp.Kind kind) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() == kind && op.isOpen()) return op;
+        }
+        return null;
+    }
+
+    private static int countKind(ConstructionJobProgress progress, ConstructionBuildOp.Kind kind) {
+        int count = 0;
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() == kind) count++;
+        }
+        return count;
+    }
+
+    private static int countItem(GameTestPlayer player, Item item) {
+        int count = 0;
+        for (ItemStack stack : player.getInventory().items) {
+            if (stack.is(item)) count += stack.getCount();
+        }
+        if (player.getOffhandItem().is(item)) {
+            count += player.getOffhandItem().getCount();
+        }
+        return count;
+    }
+
     private static ConstructionBuildOp firstPlace(ConstructionJobProgress progress) {
         for (ConstructionBuildOp op : progress.operations()) {
             if (op.kind() == ConstructionBuildOp.Kind.PLACE) return op;
@@ -601,6 +1015,13 @@ public final class ConstructionJobGameTests {
             if (!shape.isEmpty()) return true;
         }
         return false;
+    }
+
+    private static void cancelQuietly(GameTestPlayer player, UUID jobId) {
+        try {
+            ConstructionBlueprintService.cancel(player, jobId);
+        } catch (ConstructionBlueprintException ignored) {
+        }
     }
 
     private static void check(boolean condition, String message) {

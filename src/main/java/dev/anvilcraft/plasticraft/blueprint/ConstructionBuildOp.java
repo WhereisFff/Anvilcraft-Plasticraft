@@ -17,7 +17,9 @@ public final class ConstructionBuildOp {
     public enum Kind {
         PLACE,
         ATTACHED,
-        UNSUPPORTED
+        UNSUPPORTED,
+        SEAL,
+        DEMOLISH
     }
 
     public enum Status {
@@ -32,7 +34,7 @@ public final class ConstructionBuildOp {
     private final int id;
     private final BlockPos pos;
     private final BlockState target;
-    private final ItemStack material;
+    private ItemStack material;
     private final Kind kind;
     private Status status;
     private int order;
@@ -40,6 +42,7 @@ public final class ConstructionBuildOp {
     private UUID leaseDrone;
     @Nullable
     private BlockPos approach;
+    private boolean shell;
 
     public ConstructionBuildOp(
         int id,
@@ -73,6 +76,10 @@ public final class ConstructionBuildOp {
 
     public ItemStack material() {
         return this.material;
+    }
+
+    public void setMaterial(ItemStack material) {
+        this.material = material.isEmpty() ? ItemStack.EMPTY : material.copy();
     }
 
     public Kind kind() {
@@ -111,8 +118,16 @@ public final class ConstructionBuildOp {
         this.approach = approach == null ? null : approach.immutable();
     }
 
+    public boolean shell() {
+        return this.shell;
+    }
+
+    public void setShell(boolean shell) {
+        this.shell = shell;
+    }
+
     public boolean needsMaterial() {
-        return this.kind == Kind.PLACE && !this.material.isEmpty();
+        return (this.kind == Kind.PLACE || this.kind == Kind.SEAL) && !this.material.isEmpty();
     }
 
     public boolean isOpen() {
@@ -138,6 +153,9 @@ public final class ConstructionBuildOp {
         }
         if (this.approach != null) {
             tag.putLong("Approach", this.approach.asLong());
+        }
+        if (this.shell) {
+            tag.putBoolean("Shell", true);
         }
         return tag;
     }
@@ -167,6 +185,7 @@ public final class ConstructionBuildOp {
         if (tag.contains("Approach")) {
             op.approach = BlockPos.of(tag.getLong("Approach"));
         }
+        op.shell = tag.getBoolean("Shell");
         return op;
     }
 }

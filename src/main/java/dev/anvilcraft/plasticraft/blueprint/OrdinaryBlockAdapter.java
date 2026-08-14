@@ -50,7 +50,7 @@ public final class OrdinaryBlockAdapter {
         return new ItemStack(state.getBlock().asItem());
     }
 
-    private static boolean isAttachedHalf(BlockState state) {
+    public static boolean isAttachedHalf(BlockState state) {
         if (state.hasProperty(BlockStateProperties.DOUBLE_BLOCK_HALF)
             && state.getValue(BlockStateProperties.DOUBLE_BLOCK_HALF) == DoubleBlockHalf.UPPER) {
             return true;

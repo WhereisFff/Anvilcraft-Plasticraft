@@ -19,6 +19,9 @@ public final class ConstructionCommitService {
     public static void commitDelivered(Level level, ConstructionJobProgress progress) {
         for (ConstructionBuildOp op : progress.operations()) {
             if (op.status() != ConstructionBuildOp.Status.DELIVERED) continue;
+            if (op.kind() != ConstructionBuildOp.Kind.PLACE && op.kind() != ConstructionBuildOp.Kind.ATTACHED) {
+                continue;
+            }
             BlockPos pos = op.pos();
             BlockState target = op.target();
             level.setBlock(pos, target, QUIET_FLAGS);

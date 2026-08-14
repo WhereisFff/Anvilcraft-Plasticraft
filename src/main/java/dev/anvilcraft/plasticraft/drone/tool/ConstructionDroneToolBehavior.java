@@ -54,9 +54,15 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
             return;
         }
         if (job.state() == ConstructionJob.STATE_WAITING_MATERIAL
-            || job.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE) {
+            || job.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE
+            || job.state() == ConstructionJob.STATE_WAITING_DEMOLITION
+            || job.state() == ConstructionJob.STATE_WAITING_PERMISSION) {
             if (job.state() == ConstructionJob.STATE_WAITING_MATERIAL) {
                 drone.setWaitReason(ConstructionWaitReason.MATERIAL);
+            } else if (job.state() == ConstructionJob.STATE_WAITING_DEMOLITION) {
+                drone.setWaitReason(ConstructionWaitReason.DEMOLITION);
+            } else if (job.state() == ConstructionJob.STATE_WAITING_PERMISSION) {
+                drone.setWaitReason(ConstructionWaitReason.PERMISSION);
             } else {
                 drone.setWaitReason(ConstructionWaitReason.SOURCE);
             }
@@ -66,12 +72,18 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
             }
             return;
         }
-        if (job.state() != ConstructionJob.STATE_BUILDING) return;
+        if (job.state() != ConstructionJob.STATE_BUILDING && job.state() != ConstructionJob.STATE_SEALING_FLUID) {
+            return;
+        }
         ConstructionJobProgress progress = ConstructionJobStore.get(level).get(job.jobId());
         if (progress == null) return;
+        boolean sealing = job.state() == ConstructionJob.STATE_SEALING_FLUID;
         if (drone.assignedJobId().filter(job.jobId()::equals).isEmpty() || drone.taskOpId() < 0) {
-            if (!tryClaim(drone, level, job, progress)) {
-                if (progress.allPlaceResolved()) {
+            boolean claimed = sealing
+                ? tryClaimSeal(drone, level, job, progress)
+                : tryClaim(drone, level, job, progress);
+            if (!claimed) {
+                if (!sealing && progress.allPlaceResolved()) {
                     leaveSiteThenLand(drone, level, job);
                 }
                 return;
@@ -81,7 +93,7 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
         if (op == null || op.status() == ConstructionBuildOp.Status.SKIPPED
             || op.status() == ConstructionBuildOp.Status.DELIVERED) {
             drone.clearAssignment(false);
-            if (progress.allPlaceResolved()) {
+            if (!sealing && progress.allPlaceResolved()) {
                 leaveSiteThenLand(drone, level, job);
             }
             return;
@@ -95,6 +107,8 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
         }
         if (drone.hostedCarry().isEmpty()) {
             flyToPickup(drone, player, progress, op, job);
+        } else if (sealing) {
+            flyToSeal(drone, level, progress, op);
         } else {
             flyToDeliver(drone, level, progress, op);
         }
@@ -120,6 +134,43 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
         if (drone.position().distanceTo(pickup) > ConstructionJobController.DISCOVERY_RANGE) {
             return false;
         }
+        double distance = drone.position().distanceTo(pickup) + pickup.distanceTo(target);
+        DroneEnergyModel.Quote quote = new DroneEnergyModel.Quote(
+            (int) Math.ceil(distance / DroneFlightPlanner.SPEED) + 20,
+            distance,
+            1
+        );
+        if (!drone.canAcceptQuote(quote)) {
+            drone.setWaitReason(ConstructionWaitReason.ENERGY);
+            return false;
+        }
+        op.setStatus(ConstructionBuildOp.Status.LEASED);
+        op.setLeaseDrone(drone.getUUID());
+        drone.assign(job.jobId(), op.id());
+        ConstructionJobStore.get(level).markDirty();
+        return true;
+    }
+
+    public static boolean tryClaimSeal(
+        DroneEntity drone,
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress
+    ) {
+        ConstructionBuildOp op = ConstructionJobController.nextAssignableSeal(level, progress);
+        if (op == null) return false;
+        BlockPos approach = op.approach().orElse(null);
+        if (approach == null) return false;
+        if (drone.position().distanceTo(Vec3.atCenterOf(op.pos())) > ConstructionJobController.DISCOVERY_RANGE) {
+            return false;
+        }
+        ServerPlayer player = ConstructionJobController.findOwner(level.getServer(), level, job.owner());
+        if (player == null) return false;
+        Vec3 pickup = player.position().add(0.0D, 1.0D, 0.0D);
+        if (drone.position().distanceTo(pickup) > ConstructionJobController.DISCOVERY_RANGE) {
+            return false;
+        }
+        Vec3 target = Vec3.atBottomCenterOf(approach);
         double distance = drone.position().distanceTo(pickup) + pickup.distanceTo(target);
         DroneEnergyModel.Quote quote = new DroneEnergyModel.Quote(
             (int) Math.ceil(distance / DroneFlightPlanner.SPEED) + 20,
@@ -174,7 +225,7 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
 
     private static boolean isActiveBuildCarry(DroneEntity drone, @Nullable ConstructionJob job) {
         return job != null
-            && job.state() == ConstructionJob.STATE_BUILDING
+            && (job.state() == ConstructionJob.STATE_BUILDING || job.state() == ConstructionJob.STATE_SEALING_FLUID)
             && drone.assignedJobId().filter(job.jobId()::equals).isPresent();
     }
 
@@ -265,6 +316,50 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
             }
         }
         return best != null ? best : drone.position().add(2.0D, 1.0D, 0.0D);
+    }
+
+    private static void flyToSeal(
+        DroneEntity drone,
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        ConstructionBuildOp op
+    ) {
+        drone.setActionState((byte) 4);
+        BlockPos approach = op.approach().orElse(null);
+        if (!ConstructionJobController.isUsableApproach(level, progress, op, approach)) {
+            approach = ConstructionJobController.chooseApproach(level, progress, op);
+            if (approach != null) {
+                op.setApproach(approach);
+            }
+        }
+        if (approach == null) {
+            flyTo(drone, Vec3.atBottomCenterOf(op.pos().above(2)));
+            return;
+        }
+        Vec3 target = Vec3.atBottomCenterOf(approach);
+        AABB droneBox = drone.getBoundingBox();
+        AABB block = new AABB(op.pos());
+        if (droneBox.intersects(block) || !droneBox.intersects(block.inflate(ConstructionJobController.REACH))) {
+            flyTo(drone, target);
+            return;
+        }
+        drone.setActionState((byte) 5);
+        if (ConstructionJobController.tryPlaceSeal(level, progress, op, drone)) {
+            drone.consumeEnergy(drone.toolDefinition().instantActionEnergyCost());
+            drone.setHostedCarry(ItemStack.EMPTY);
+            drone.clearAssignment(false);
+            drone.setActionState((byte) 0);
+            drone.setWaitReason(ConstructionWaitReason.NONE);
+            ConstructionJob job = ConstructionJobIndex.get(level).job(progress.jobId());
+            if (job != null && job.state() == ConstructionJob.STATE_SEALING_FLUID
+                && tryClaimSeal(drone, level, job, progress)) {
+                return;
+            }
+        } else if (op.status() == ConstructionBuildOp.Status.WAITING_OCCUPIED) {
+            drone.setWaitReason(ConstructionWaitReason.OCCUPIED);
+        } else if (op.status() == ConstructionBuildOp.Status.WAITING_WORLD) {
+            drone.setWaitReason(ConstructionWaitReason.WORLD);
+        }
     }
 
     private static void flyToDeliver(

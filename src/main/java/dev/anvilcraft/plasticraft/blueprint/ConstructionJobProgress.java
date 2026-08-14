@@ -104,6 +104,19 @@ public final class ConstructionJobProgress {
         return op;
     }
 
+    public ConstructionBuildOp addOperation(
+        BlockPos pos,
+        BlockState target,
+        ItemStack material,
+        ConstructionBuildOp.Kind kind,
+        ConstructionBuildOp.Status status,
+        boolean shell
+    ) {
+        ConstructionBuildOp op = this.addOperation(pos, target, material, kind, status);
+        op.setShell(shell);
+        return op;
+    }
+
     public ConstructionLedgerEntry addLedger(int operationId, ItemStack stack, @Nullable UUID droneId) {
         ConstructionLedgerEntry entry = new ConstructionLedgerEntry(
             this.nextLedgerId++,
@@ -138,7 +151,9 @@ public final class ConstructionJobProgress {
     public Map<Long, BlockState> overlayStates() {
         Map<Long, BlockState> overlay = new HashMap<>();
         for (ConstructionBuildOp op : this.operations) {
-            if (op.kind() == ConstructionBuildOp.Kind.UNSUPPORTED) continue;
+            if (op.kind() != ConstructionBuildOp.Kind.PLACE && op.kind() != ConstructionBuildOp.Kind.ATTACHED) {
+                continue;
+            }
             overlay.put(op.pos().asLong(), op.target());
         }
         return overlay;
@@ -154,6 +169,53 @@ public final class ConstructionJobProgress {
         }
         for (ConstructionLedgerEntry entry : this.ledger) {
             if (entry.state() == ConstructionLedgerEntry.State.CARRIED) return true;
+        }
+        return false;
+    }
+
+    public boolean allSealResolved() {
+        return this.allResolved(ConstructionBuildOp.Kind.SEAL, true);
+    }
+
+    public boolean allDemolishResolved() {
+        return this.allResolved(ConstructionBuildOp.Kind.DEMOLISH, false);
+    }
+
+    public boolean hasOpenSeal() {
+        return this.hasOpen(ConstructionBuildOp.Kind.SEAL, true);
+    }
+
+    public boolean hasOpenDemolish() {
+        return this.hasOpen(ConstructionBuildOp.Kind.DEMOLISH, false);
+    }
+
+    public boolean hasLeasedDemolish() {
+        for (ConstructionBuildOp op : this.operations) {
+            if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH || op.shell()) continue;
+            if (op.status() == ConstructionBuildOp.Status.LEASED) return true;
+        }
+        return false;
+    }
+
+    private boolean allResolved(ConstructionBuildOp.Kind kind, boolean includeShell) {
+        for (ConstructionBuildOp op : this.operations) {
+            if (op.kind() != kind) continue;
+            if (op.shell() && !includeShell) continue;
+            if (op.status() == ConstructionBuildOp.Status.PENDING
+                || op.status() == ConstructionBuildOp.Status.WAITING_WORLD
+                || op.status() == ConstructionBuildOp.Status.WAITING_OCCUPIED
+                || op.status() == ConstructionBuildOp.Status.LEASED) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean hasOpen(ConstructionBuildOp.Kind kind, boolean includeShell) {
+        for (ConstructionBuildOp op : this.operations) {
+            if (op.kind() != kind) continue;
+            if (op.shell() && !includeShell) continue;
+            if (op.isOpen()) return true;
         }
         return false;
     }

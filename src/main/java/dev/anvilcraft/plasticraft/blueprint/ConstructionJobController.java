@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.blueprint;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.drone.DroneShortageStrategy;
+import dev.anvilcraft.plasticraft.drone.tool.DroneCapability;
 import dev.anvilcraft.plasticraft.entity.drone.DroneEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -11,10 +12,13 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.LiquidBlock;
+import net.minecraft.world.level.block.StructureVoidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -23,6 +27,7 @@ import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.ChunkWatchEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
@@ -89,7 +94,7 @@ public final class ConstructionJobController {
         }
         if (job.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE) {
             if (ownerInLevel(server, job, level) != null) {
-                setState(server, job, ConstructionJob.STATE_BUILDING);
+                setState(server, job, nextPhase(progress));
             }
             return;
         }
@@ -98,12 +103,35 @@ public final class ConstructionJobController {
             if (owner != null && playerHasMaterial(owner, progress.missingMaterial())) {
                 progress.setWaitReason(ConstructionWaitReason.NONE);
                 progress.setMissingMaterial(ItemStack.EMPTY);
-                setState(server, job, ConstructionJob.STATE_BUILDING);
+                setState(server, job, nextPhase(progress));
+            }
+            return;
+        }
+        if (job.state() == ConstructionJob.STATE_WAITING_DEMOLITION) {
+            if (hasAvailableDemolitionDrone(level, job, progress)) {
+                progress.setWaitReason(ConstructionWaitReason.NONE);
+                setState(server, job, ConstructionJob.STATE_DEMOLISHING);
+            }
+            return;
+        }
+        if (job.state() == ConstructionJob.STATE_WAITING_PERMISSION) {
+            if (permissionRestored(level, job, progress)) {
+                progress.setWaitReason(ConstructionWaitReason.NONE);
+                setState(server, job, nextPhase(progress));
             }
             return;
         }
         if (job.state() == ConstructionJob.STATE_COMMITTING) {
             finish(server, level, job, progress);
+            return;
+        }
+        if (job.state() == ConstructionJob.STATE_SEALING_FLUID) {
+            tickSealing(server, level, job, progress);
+            return;
+        }
+        if (job.state() == ConstructionJob.STATE_DEMOLISHING
+            || job.state() == ConstructionJob.STATE_COLLECTING_DEBRIS) {
+            tickDemolishing(server, level, job, progress);
             return;
         }
         if (job.state() != ConstructionJob.STATE_BUILDING) return;
@@ -127,7 +155,7 @@ public final class ConstructionJobController {
 
     public static void plan(ServerLevel level, ConstructionJob job, ConstructionJobProgress progress) {
         if (progress.planned() && !progress.operations().isEmpty()) {
-            setState(level.getServer(), job, ConstructionJob.STATE_BUILDING);
+            setState(level.getServer(), job, nextPhase(progress));
             return;
         }
         progress.operations().clear();
@@ -136,10 +164,15 @@ public final class ConstructionJobController {
             StructureSnapshot snapshot = StructureSnapshotCodec.parse(tag, level.registryAccess()).snapshot();
             BlueprintPlacement placement = BlueprintPlacement.of(job);
             boolean incomplete = !snapshot.entities().isEmpty();
+            Set<BlockPos> declared = new HashSet<>();
             for (StructureSnapshot.BlockEntry entry : snapshot.blocks()) {
                 BlockState local = snapshot.stateOf(entry);
                 BlockState target = placement.stateOf(local);
                 BlockPos worldPos = placement.worldOf(entry.pos());
+                if (target.getBlock() instanceof StructureVoidBlock) {
+                    continue;
+                }
+                declared.add(worldPos);
                 OrdinaryBlockAdapter.Mapping mapping = OrdinaryBlockAdapter.mapping(target);
                 switch (mapping) {
                     case AIR -> {
@@ -170,10 +203,16 @@ public final class ConstructionJobController {
                     }
                 }
             }
+            FluidSealPlanner.plan(level, declared, progress);
+            DemolitionPlanner.plan(level, declared, progress);
             ConstructionAssembler.assignBuildOrder(level, progress);
+            ServerPlayer owner = ownerInLevel(level.getServer(), job, level);
+            if (owner != null) {
+                FluidSealPlanner.applyFill(progress, FluidSealFill.choose(owner, progress));
+            }
             progress.setPlanned(true);
             progress.setIncomplete(incomplete);
-            setState(level.getServer(), job, ConstructionJob.STATE_BUILDING);
+            setState(level.getServer(), job, nextPhase(progress));
         } catch (ConstructionBlueprintException exception) {
             AnvilcraftPlasticraft.LOGGER.error("Construction planning failed: {}", exception.reason());
             setState(level.getServer(), job, ConstructionJob.STATE_FAILED);
@@ -211,6 +250,7 @@ public final class ConstructionJobController {
 
     public static void finish(MinecraftServer server, ServerLevel level, ConstructionJob job, ConstructionJobProgress progress) {
         ConstructionCommitService.commitDelivered(level, progress);
+        smashRemainingShells(level, progress);
         byte terminal = progress.incomplete() || hasSkippedPlace(progress)
             ? ConstructionJob.STATE_COMPLETED_INCOMPLETE
             : ConstructionJob.STATE_COMPLETED;
@@ -233,6 +273,81 @@ public final class ConstructionJobController {
         if (job != null && job.isActive()) return true;
         ConstructionJobProgress progress = ConstructionJobStore.get(server).get(jobId);
         return progress != null && progress.hasNonEmptyProgress();
+    }
+
+    public static byte nextPhase(ConstructionJobProgress progress) {
+        if (!progress.allSealResolved()) return ConstructionJob.STATE_SEALING_FLUID;
+        if (!progress.allDemolishResolved()) return ConstructionJob.STATE_DEMOLISHING;
+        return ConstructionJob.STATE_BUILDING;
+    }
+
+    @Nullable
+    public static ConstructionBuildOp nextAssignableSeal(ServerLevel level, ConstructionJobProgress progress) {
+        ConstructionBuildOp best = null;
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() != ConstructionBuildOp.Kind.SEAL) continue;
+            if (op.status() == ConstructionBuildOp.Status.LEASED
+                || op.status() == ConstructionBuildOp.Status.DELIVERED
+                || op.status() == ConstructionBuildOp.Status.SKIPPED) {
+                continue;
+            }
+            if (op.material().isEmpty() || FluidSealFill.stateOf(op.material()) == null) continue;
+            BlockState current = level.getBlockState(op.pos());
+            if (!canReplaceWithFill(current)) {
+                op.setStatus(ConstructionBuildOp.Status.WAITING_WORLD);
+                continue;
+            }
+            BlockPos approach = chooseApproach(level, progress, op);
+            if (approach == null) continue;
+            op.setStatus(ConstructionBuildOp.Status.PENDING);
+            op.setApproach(approach);
+            if (best == null || op.order() < best.order()) {
+                best = op;
+            }
+        }
+        return best;
+    }
+
+    @Nullable
+    public static ConstructionBuildOp nextAssignableDemolish(ServerLevel level, ConstructionJobProgress progress) {
+        List<BlockPos> remaining = new ArrayList<>();
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH || op.shell()) continue;
+            if (op.status() == ConstructionBuildOp.Status.DELIVERED
+                || op.status() == ConstructionBuildOp.Status.SKIPPED
+                || op.status() == ConstructionBuildOp.Status.LEASED) {
+                continue;
+            }
+            remaining.add(op.pos());
+        }
+        List<BlockPos> peel = ConstructionAssembler.peelOrder(remaining);
+        ConstructionBuildOp best = null;
+        int bestIndex = Integer.MAX_VALUE;
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH || op.shell()) continue;
+            if (op.status() == ConstructionBuildOp.Status.LEASED
+                || op.status() == ConstructionBuildOp.Status.DELIVERED
+                || op.status() == ConstructionBuildOp.Status.SKIPPED) {
+                continue;
+            }
+            BlockState current = level.getBlockState(op.pos());
+            if (current.isAir()) {
+                op.setStatus(ConstructionBuildOp.Status.DELIVERED);
+                op.setLeaseDrone(null);
+                continue;
+            }
+            BlockPos approach = chooseApproach(level, progress, op);
+            if (approach == null) continue;
+            op.setStatus(ConstructionBuildOp.Status.PENDING);
+            op.setApproach(approach);
+            int index = peel.indexOf(op.pos());
+            if (index < 0) index = Integer.MAX_VALUE - 1;
+            if (best == null || index < bestIndex) {
+                best = op;
+                bestIndex = index;
+            }
+        }
+        return best;
     }
 
     @Nullable
@@ -311,7 +426,67 @@ public final class ConstructionJobController {
         return true;
     }
 
+    public static boolean tryPlaceSeal(
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        ConstructionBuildOp op,
+        @Nullable Entity ignore
+    ) {
+        if (op.kind() != ConstructionBuildOp.Kind.SEAL) return false;
+        if (!enterIfDenied(level, progress, op.pos())) return false;
+        BlockState fill = FluidSealFill.stateOf(op.material());
+        if (fill == null) return false;
+        BlockState current = level.getBlockState(op.pos());
+        if (current.is(fill.getBlock())) {
+            markOpDone(level, progress, op);
+            return true;
+        }
+        if (!canReplaceWithFill(current)) {
+            op.setStatus(ConstructionBuildOp.Status.WAITING_WORLD);
+            return false;
+        }
+        VoxelShape local = fill.getCollisionShape(level, op.pos(), CollisionContext.empty());
+        VoxelShape worldShape = local.isEmpty()
+            ? Shapes.empty()
+            : local.move(op.pos().getX(), op.pos().getY(), op.pos().getZ());
+        if (!worldShape.isEmpty() && ConstructionProjectionIndex.isOccupied(level, worldShape, ignore)) {
+            op.setStatus(ConstructionBuildOp.Status.WAITING_OCCUPIED);
+            return false;
+        }
+        level.setBlockAndUpdate(op.pos(), fill);
+        markOpDone(level, progress, op);
+        return true;
+    }
+
+    public static boolean tryDemolish(ServerLevel level, ConstructionJobProgress progress, ConstructionBuildOp op) {
+        if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH) return false;
+        if (!enterIfDenied(level, progress, op.pos())) return false;
+        BlockState current = level.getBlockState(op.pos());
+        if (current.isAir()) {
+            markOpDone(level, progress, op);
+            return true;
+        }
+        if (StonecutterSmashAdapter.isPermanentObstacle(level, op.pos(), current)) {
+            op.setStatus(ConstructionBuildOp.Status.SKIPPED);
+            op.setLeaseDrone(null);
+            DemolitionPlanner.skipPlaceAt(progress, op.pos());
+            ConstructionJobStore.get(level).markDirty();
+            return false;
+        }
+        BlockPos smashPos = StonecutterSmashAdapter.mainPartOf(level, op.pos());
+        if (!StonecutterSmashAdapter.smash(level, smashPos, progress.jobId(), op.id())) {
+            return false;
+        }
+        DemolitionPlanner.clearAttachedResidue(level, smashPos);
+        markOpDone(level, progress, op);
+        return true;
+    }
+
     public static boolean extractMaterial(Player player, ConstructionJobProgress progress, ConstructionBuildOp op, UUID droneId) {
+        if (op.kind() == ConstructionBuildOp.Kind.SEAL
+            && (op.material().isEmpty() || FluidSealFill.stateOf(op.material()) == null)) {
+            return false;
+        }
         if (!op.needsMaterial()) return true;
         if (!takeOne(player, op.material())) return false;
         progress.addLedger(op.id(), op.material(), droneId);
@@ -327,24 +502,31 @@ public final class ConstructionJobController {
         ItemStack missing
     ) {
         if (strategy == DroneShortageStrategy.SKIP) {
+            ServerLevel level = server.getLevel(job.dimension());
             for (ConstructionBuildOp op : progress.operations()) {
-                if (op.kind() != ConstructionBuildOp.Kind.PLACE) continue;
                 if (op.status() == ConstructionBuildOp.Status.DELIVERED
                     || op.status() == ConstructionBuildOp.Status.SKIPPED) {
                     continue;
                 }
-                if (ItemStack.isSameItem(op.material(), missing)) {
+                boolean sameItem = missing.isEmpty() || ItemStack.isSameItem(op.material(), missing);
+                if (op.kind() == ConstructionBuildOp.Kind.SEAL && sameItem) {
+                    op.setStatus(ConstructionBuildOp.Status.SKIPPED);
+                    op.setLeaseDrone(null);
+                    continue;
+                }
+                if (op.kind() == ConstructionBuildOp.Kind.PLACE && sameItem) {
                     op.setStatus(ConstructionBuildOp.Status.SKIPPED);
                     op.setLeaseDrone(null);
                 }
+            }
+            if (level != null) {
+                skipPlaceOnRemainingFluids(level, progress);
             }
             progress.setIncomplete(true);
             progress.setWaitReason(ConstructionWaitReason.NONE);
             progress.setMissingMaterial(ItemStack.EMPTY);
             ConstructionJobStore.get(server).markDirty();
-            if (job.state() == ConstructionJob.STATE_WAITING_MATERIAL) {
-                setState(server, job, ConstructionJob.STATE_BUILDING);
-            }
+            setState(server, job, nextPhase(progress));
             return;
         }
         progress.setWaitReason(ConstructionWaitReason.MATERIAL);
@@ -357,17 +539,57 @@ public final class ConstructionJobController {
     public static void onShortageStrategyChanged(ServerPlayer player, DroneShortageStrategy strategy) {
         if (strategy != DroneShortageStrategy.SKIP) return;
         ConstructionJob job = ConstructionJobIndex.get(player.server).activeJobOf(player.getUUID()).orElse(null);
-        if (job == null || job.state() != ConstructionJob.STATE_WAITING_MATERIAL) return;
+        if (job == null) return;
         ConstructionJobProgress progress = ConstructionJobStore.get(player.server).get(job.jobId());
         if (progress == null) return;
+        if (job.state() == ConstructionJob.STATE_WAITING_DEMOLITION) {
+            applyDemolitionShortage(player.server, job, progress, DroneShortageStrategy.SKIP);
+            return;
+        }
+        if (job.state() != ConstructionJob.STATE_WAITING_MATERIAL) return;
         ItemStack missing = progress.missingMaterial();
         if (missing.isEmpty()) return;
         applyShortage(player.server, job, progress, DroneShortageStrategy.SKIP, missing);
     }
 
+    public static void applyDemolitionShortage(
+        MinecraftServer server,
+        ConstructionJob job,
+        ConstructionJobProgress progress,
+        DroneShortageStrategy strategy
+    ) {
+        if (strategy == DroneShortageStrategy.SKIP) {
+            ServerLevel level = server.getLevel(job.dimension());
+            for (ConstructionBuildOp op : progress.operations()) {
+                if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH || op.shell()) continue;
+                if (op.status() == ConstructionBuildOp.Status.DELIVERED
+                    || op.status() == ConstructionBuildOp.Status.SKIPPED) {
+                    continue;
+                }
+                op.setStatus(ConstructionBuildOp.Status.SKIPPED);
+                op.setLeaseDrone(null);
+                if (level != null && !level.getBlockState(op.pos()).isAir()) {
+                    DemolitionPlanner.skipPlaceAt(progress, op.pos());
+                }
+            }
+            progress.setIncomplete(true);
+            progress.setWaitReason(ConstructionWaitReason.NONE);
+            ConstructionJobStore.get(server).markDirty();
+            setState(server, job, nextPhase(progress));
+            return;
+        }
+        progress.setWaitReason(ConstructionWaitReason.DEMOLITION);
+        reportOnce(server, job, progress, ConstructionWaitReason.DEMOLITION);
+        setState(server, job, ConstructionJob.STATE_WAITING_DEMOLITION);
+        ConstructionJobStore.get(server).markDirty();
+    }
+
     public static void resumeFromSkipWait(MinecraftServer server, ConstructionJob job) {
-        if (job.state() == ConstructionJob.STATE_WAITING_MATERIAL) {
-            setState(server, job, ConstructionJob.STATE_BUILDING);
+        ConstructionJobProgress progress = ConstructionJobStore.get(server).get(job.jobId());
+        if (progress == null) return;
+        if (job.state() == ConstructionJob.STATE_WAITING_MATERIAL
+            || job.state() == ConstructionJob.STATE_WAITING_DEMOLITION) {
+            setState(server, job, nextPhase(progress));
         }
     }
 
@@ -589,8 +811,13 @@ public final class ConstructionJobController {
 
     private static boolean isReservedBuildCell(ConstructionJobProgress progress, BlockPos pos) {
         for (ConstructionBuildOp op : progress.operations()) {
-            if (op.kind() != ConstructionBuildOp.Kind.PLACE) continue;
-            if (op.status() == ConstructionBuildOp.Status.SKIPPED) continue;
+            if (op.kind() != ConstructionBuildOp.Kind.PLACE && op.kind() != ConstructionBuildOp.Kind.SEAL) {
+                continue;
+            }
+            if (op.status() == ConstructionBuildOp.Status.SKIPPED
+                || op.status() == ConstructionBuildOp.Status.DELIVERED) {
+                continue;
+            }
             if (op.pos().equals(pos)) return true;
         }
         return false;
@@ -609,7 +836,9 @@ public final class ConstructionJobController {
         if (!level.noBlockCollision(null, box)) return false;
         for (Entity entity : level.getEntities(null, box)) {
             if (!entity.isAlive() || entity.isSpectator()) continue;
-            if (entity instanceof DroneEntity) continue;
+            if (entity instanceof DroneEntity || entity instanceof ItemEntity || entity instanceof ExperienceOrb) {
+                continue;
+            }
             return false;
         }
         return true;
@@ -623,6 +852,187 @@ public final class ConstructionJobController {
             }
         }
         return progress.incomplete();
+    }
+
+    private static void tickSealing(
+        MinecraftServer server,
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress
+    ) {
+        ServerPlayer owner = ownerInLevel(server, job, level);
+        if (owner == null) {
+            setWait(server, job, progress, ConstructionWaitReason.SOURCE);
+            setState(server, job, ConstructionJob.STATE_SOURCE_UNAVAILABLE);
+            return;
+        }
+        if (needsFillMaterial(progress)) {
+            FluidSealPlanner.applyFill(progress, FluidSealFill.choose(owner, progress));
+        }
+        if (progress.allSealResolved()) {
+            setState(server, job, nextPhase(progress));
+            storeDirty(level);
+            return;
+        }
+        storeDirty(level);
+    }
+
+    private static void tickDemolishing(
+        MinecraftServer server,
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress
+    ) {
+        if (ownerInLevel(server, job, level) == null) {
+            setWait(server, job, progress, ConstructionWaitReason.SOURCE);
+            setState(server, job, ConstructionJob.STATE_SOURCE_UNAVAILABLE);
+            return;
+        }
+        if (progress.allDemolishResolved()) {
+            setState(server, job, ConstructionJob.STATE_COLLECTING_DEBRIS);
+            setState(server, job, ConstructionJob.STATE_BUILDING);
+            storeDirty(level);
+            return;
+        }
+        if (!progress.hasLeasedDemolish() && !hasAvailableDemolitionDrone(level, job, progress)) {
+            applyDemolitionShortage(server, job, progress, ownerShortageStrategy(level, job, progress));
+            return;
+        }
+        storeDirty(level);
+    }
+
+    public static boolean hasAvailableDemolitionDrone(
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress
+    ) {
+        AABB search = worldBox(job).inflate(DISCOVERY_RANGE);
+        for (DroneEntity drone : level.getEntitiesOfClass(DroneEntity.class, search)) {
+            if (!drone.isAlive() || drone.getOwner().filter(job.owner()::equals).isEmpty()) continue;
+            if (!drone.toolDefinition().hasCapability(DroneCapability.DEMOLISH)) continue;
+            for (ConstructionBuildOp op : progress.operations()) {
+                if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH || op.shell()) continue;
+                if (op.status() == ConstructionBuildOp.Status.DELIVERED
+                    || op.status() == ConstructionBuildOp.Status.SKIPPED) {
+                    continue;
+                }
+                if (drone.position().distanceTo(Vec3.atCenterOf(op.pos())) <= DISCOVERY_RANGE) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static DroneShortageStrategy ownerShortageStrategy(
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress
+    ) {
+        DroneShortageStrategy strategy = DroneShortageStrategy.PAUSE;
+        AABB search = worldBox(job).inflate(DISCOVERY_RANGE);
+        for (DroneEntity drone : level.getEntitiesOfClass(DroneEntity.class, search)) {
+            if (!drone.isAlive() || drone.getOwner().filter(job.owner()::equals).isEmpty()) continue;
+            if (drone.toolDefinition().hasCapability(DroneCapability.DEMOLISH)) {
+                return drone.shortageStrategy();
+            }
+            if (drone.toolDefinition().hasCapability(DroneCapability.PICK_UP_MATERIAL)) {
+                strategy = drone.shortageStrategy();
+            }
+        }
+        return strategy;
+    }
+
+    private static boolean permissionRestored(ServerLevel level, ConstructionJob job, ConstructionJobProgress progress) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (!op.isOpen()) continue;
+            if (op.kind() != ConstructionBuildOp.Kind.SEAL && op.kind() != ConstructionBuildOp.Kind.DEMOLISH) {
+                continue;
+            }
+            if (!ConstructionPermission.canModify(level, op.pos(), job.owner())) return false;
+        }
+        return true;
+    }
+
+    private static boolean enterIfDenied(ServerLevel level, ConstructionJobProgress progress, BlockPos pos) {
+        ConstructionJob job = ConstructionJobIndex.get(level.getServer()).job(progress.jobId());
+        if (job == null) return true;
+        if (ConstructionPermission.canModify(level, pos, job.owner())) return true;
+        progress.setWaitReason(ConstructionWaitReason.PERMISSION);
+        reportOnce(level.getServer(), job, progress, ConstructionWaitReason.PERMISSION);
+        setState(level.getServer(), job, ConstructionJob.STATE_WAITING_PERMISSION);
+        ConstructionJobStore.get(level).markDirty();
+        return false;
+    }
+
+    private static void markOpDone(ServerLevel level, ConstructionJobProgress progress, ConstructionBuildOp op) {
+        op.setStatus(ConstructionBuildOp.Status.DELIVERED);
+        op.setLeaseDrone(null);
+        for (ConstructionLedgerEntry entry : progress.ledger()) {
+            if (entry.operationId() == op.id() && entry.state() == ConstructionLedgerEntry.State.CARRIED) {
+                entry.setState(ConstructionLedgerEntry.State.DELIVERED);
+            }
+        }
+        ConstructionJobStore.get(level).markDirty();
+    }
+
+    private static void smashRemainingShells(ServerLevel level, ConstructionJobProgress progress) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH || !op.shell()) continue;
+            if (op.status() == ConstructionBuildOp.Status.SKIPPED
+                || op.status() == ConstructionBuildOp.Status.DELIVERED) {
+                continue;
+            }
+            if (level.getBlockState(op.pos()).isAir()) {
+                op.setStatus(ConstructionBuildOp.Status.DELIVERED);
+                continue;
+            }
+            if (StonecutterSmashAdapter.smash(level, op.pos(), progress.jobId(), op.id())) {
+                DemolitionPlanner.clearAttachedResidue(level, op.pos());
+                op.setStatus(ConstructionBuildOp.Status.DELIVERED);
+            }
+        }
+    }
+
+    private static boolean canReplaceWithFill(BlockState state) {
+        return state.isAir()
+            || state.getBlock() instanceof LiquidBlock
+            || state.canBeReplaced()
+            || FluidSealPlanner.isSealableFluid(state);
+    }
+
+    private static boolean needsFillMaterial(ConstructionJobProgress progress) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() == ConstructionBuildOp.Kind.SEAL
+                && op.status() != ConstructionBuildOp.Status.SKIPPED
+                && op.material().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void skipPlaceOnRemainingFluids(ServerLevel level, ConstructionJobProgress progress) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() != ConstructionBuildOp.Kind.PLACE) continue;
+            if (op.status() == ConstructionBuildOp.Status.DELIVERED
+                || op.status() == ConstructionBuildOp.Status.SKIPPED) {
+                continue;
+            }
+            if (FluidSealPlanner.isSealableFluid(level.getBlockState(op.pos()))) {
+                op.setStatus(ConstructionBuildOp.Status.SKIPPED);
+                op.setLeaseDrone(null);
+            }
+        }
+    }
+
+    private static void storeDirty(ServerLevel level) {
+        ConstructionJobStore.get(level).markDirty();
+    }
+
+    @SubscribeEvent
+    public static void onItemPickup(ItemEntityPickupEvent.Pre event) {
+        ConstructionDebris.clear(event.getItemEntity().getItem());
     }
 
     private static void setState(MinecraftServer server, ConstructionJob job, byte state) {
