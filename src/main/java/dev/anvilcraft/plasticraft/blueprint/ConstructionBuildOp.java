@@ -44,7 +44,7 @@ public final class ConstructionBuildOp {
     private Status status;
     private int order;
     @Nullable
-    private UUID leaseDrone;
+    private UUID leaseAllay;
     @Nullable
     private BlockPos approach;
     private boolean shell;
@@ -115,12 +115,12 @@ public final class ConstructionBuildOp {
         this.order = order;
     }
 
-    public Optional<UUID> leaseDrone() {
-        return Optional.ofNullable(this.leaseDrone);
+    public Optional<UUID> leaseAllay() {
+        return Optional.ofNullable(this.leaseAllay);
     }
 
-    public void setLeaseDrone(@Nullable UUID droneId) {
-        this.leaseDrone = droneId;
+    public void setLeaseAllay(@Nullable UUID allayId) {
+        this.leaseAllay = allayId;
     }
 
     public Optional<BlockPos> approach() {
@@ -231,8 +231,8 @@ public final class ConstructionBuildOp {
         tag.putString("Kind", this.kind.name());
         tag.putString("Status", this.status.name());
         tag.putInt("Order", this.order);
-        if (this.leaseDrone != null) {
-            tag.putUUID("LeaseDrone", this.leaseDrone);
+        if (this.leaseAllay != null) {
+            tag.putUUID("LeaseAllay", this.leaseAllay);
         }
         if (this.approach != null) {
             tag.putLong("Approach", this.approach.asLong());
@@ -280,8 +280,8 @@ public final class ConstructionBuildOp {
             status,
             tag.getInt("Order")
         );
-        if (tag.hasUUID("LeaseDrone")) {
-            op.leaseDrone = tag.getUUID("LeaseDrone");
+        if (tag.hasUUID("LeaseAllay")) {
+            op.leaseAllay = tag.getUUID("LeaseAllay");
         }
         if (tag.contains("Approach")) {
             op.approach = BlockPos.of(tag.getLong("Approach"));

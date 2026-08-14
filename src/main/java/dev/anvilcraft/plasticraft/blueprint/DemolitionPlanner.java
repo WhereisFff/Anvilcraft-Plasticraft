@@ -97,7 +97,7 @@ public final class DemolitionPlanner {
             if (!op.pos().equals(pos)) continue;
             if (op.status() == ConstructionBuildOp.Status.DELIVERED) continue;
             op.setStatus(ConstructionBuildOp.Status.SKIPPED);
-            op.setLeaseDrone(null);
+            op.setLeaseAllay(null);
             progress.setIncomplete(true);
         }
     }

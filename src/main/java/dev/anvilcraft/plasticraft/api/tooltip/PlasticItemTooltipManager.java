@@ -159,15 +159,15 @@ public final class PlasticItemTooltipManager {
                 Can be placed in any direction; only impacts on its bottom face can process recipes"""
         );
         register(
-            AnvilcraftPlasticraft.of("drone_station"),
-            "Docks, stores and charges a mixed fleet of up to 16 drones",
+            AnvilcraftPlasticraft.of("allay_lounge"),
+            "Hosts up to 16 hatted allays and sets their pause or skip mode",
             """
-                Holds 16 drones, 1 structure disk and 1 capacitor slot with no material storage
-                Stores up to 160,000,000 FE, requests 256 kW from the grid until full and keeps its FE when broken
-                Consumes fully charged capacitors like the Plastic Molding Chamber and returns the empty shells
-                Charges every docked drone at the 8 kW rate from its internal FE
-                The recall button in its screen orders nearby drones to dock through the single top bay, one per second
-                The bottom face is its only logistics side; task material flows are handled by later systems"""
+                Stores 16 hosted allay records plus 1 structure disk
+                Always requests 16 kW from the grid and only recalls or docks while powered
+                Breaking the lounge releases every hosted allay back into the world
+                Temporary cards show each allay hat and held tool
+                Pause and skip for missing materials or demolition are set here, not on each allay
+                The bottom face is its only logistics side; later systems will pull materials from below"""
         );
     }
 

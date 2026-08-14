@@ -82,6 +82,10 @@ import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -763,15 +767,11 @@ public final class PlasticMoldingChamberGameTests {
     @TestHolder(description = "High-precision products require the printing component and need no forming-mode action")
     static void highPrecisionTypeUsesInstalledPrintingComponent(ExtendedGameTestHelper helper) {
         PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
-        EditableMoldingModel propeller = EditableMoldingModel.empty().withElements(List.of(
-            MoldingElement.cube("Core", new MoldingVec3(23, 24, 23), new MoldingVec3(25, 25, 25)),
-            MoldingElement.cube("West", new MoldingVec3(16, 24, 23), new MoldingVec3(23, 25, 25)),
-            MoldingElement.cube("East", new MoldingVec3(25, 24, 23), new MoldingVec3(32, 25, 25)),
-            MoldingElement.cube("North", new MoldingVec3(23, 24, 16), new MoldingVec3(25, 25, 23)),
-            MoldingElement.cube("South", new MoldingVec3(23, 24, 25), new MoldingVec3(25, 25, 32))
-        )).withRequestedType(MoldingProductTypes.PROPELLER_ID);
-        check(chamber.replaceEditableModel(propeller, chamber.revision()).accepted(),
-            "valid propeller model was rejected");
+        EditableMoldingModel hardHat = EditableMoldingModel.empty().withElements(List.of(
+            MoldingElement.cube("Hat", new MoldingVec3(23, 24, 23), new MoldingVec3(25, 25, 25))
+        )).withRequestedType(MoldingProductTypes.ALLAY_HARD_HAT_ID);
+        check(chamber.replaceEditableModel(hardHat, chamber.revision()).accepted(),
+            "valid hard hat model was rejected");
         PlasticMoldingChamberBlockEntity.MachineOutcome missingComponent = chamber.requestLock();
         check(!missingComponent.accepted() && missingComponent.reason().equals("missing_printing_component"),
             "high-precision product locked without a printing component");
@@ -1576,8 +1576,8 @@ public final class PlasticMoldingChamberGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "Shared blueprint owners, revisions, copies and pinned ordering remain player-specific")
-    static void sharedBlueprintOwnershipAndPins(ExtendedGameTestHelper helper) throws BlueprintException {
+    @TestHolder(description = "Shared blueprint owners, revisions, copies, pins and filename-synced renames remain player-specific")
+    static void sharedBlueprintOwnershipAndPins(ExtendedGameTestHelper helper) throws BlueprintException, IOException {
         ServerPlayer owner = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         ServerPlayer reader = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         String suffix = owner.getUUID().toString().substring(0, 8);
@@ -1597,6 +1597,7 @@ public final class PlasticMoldingChamberGameTests {
         );
         MoldingBlueprintLibrary.StoredBlueprint firstFile = MoldingBlueprintLibrary.saveNew(owner.getServer(), first);
         MoldingBlueprintLibrary.StoredBlueprint secondFile = MoldingBlueprintLibrary.saveNew(owner.getServer(), second);
+        MoldingBlueprintLibrary.StoredBlueprint currentFirst = firstFile;
         MoldingBlueprintLibrary.StoredBlueprint copy = null;
         try {
             check(MoldingBlueprintLibrary.togglePin(owner, firstFile.fileId(), firstFile.blueprint().fileRevision()),
@@ -1608,14 +1609,17 @@ public final class PlasticMoldingChamberGameTests {
             int secondIndex = summaryIndex(ownerList, secondFile.fileId());
             check(firstIndex >= 0 && secondIndex > firstIndex, "multiple pins did not keep their stable insertion order");
             check(ownerList.get(firstIndex).pinned() && ownerList.get(secondIndex).pinned(), "owner pins were not persisted");
+            String firstId = firstFile.fileId();
+            String secondId = secondFile.fileId();
             check(MoldingBlueprintLibrary.list(reader).stream()
-                .filter(summary -> summary.fileId().equals(firstFile.fileId()) || summary.fileId().equals(secondFile.fileId()))
+                .filter(summary -> summary.fileId().equals(firstId) || summary.fileId().equals(secondId))
                 .noneMatch(MoldingBlueprintSummary::pinned), "one player's pins changed another player's ordering");
 
+            long firstRevision = firstFile.blueprint().fileRevision();
             BlueprintException denied = expectBlueprintFailure(() -> MoldingBlueprintLibrary.delete(
                 reader,
-                firstFile.fileId(),
-                firstFile.blueprint().fileRevision()
+                firstId,
+                firstRevision
             ));
             check(denied.reason().equals("permission_denied"), "non-owner delete did not fail its permission check");
 
@@ -1627,12 +1631,72 @@ public final class PlasticMoldingChamberGameTests {
                 MoldingBlueprintLibrary.read(owner.getServer(), "../escape.json", 0L)
             );
             check(unsafe.reason().equals("unsafe_filename"), "path traversal did not return a filename error");
+
+            String originalFirstId = firstFile.fileId();
+            String renamedId = "renamed-hat-" + suffix + ".json";
+            MoldingBlueprintLibrary.StoredBlueprint renamed = MoldingBlueprintLibrary.rename(
+                owner,
+                firstFile.fileId(),
+                firstFile.blueprint().fileRevision(),
+                "Renamed Hat " + suffix
+            );
+            currentFirst = renamed;
+            check(renamed.fileId().equals(renamedId), "rename did not use the sanitized filename: " + renamed.fileId());
+            check(renamed.blueprint().name().equals(MoldingBlueprintLibrary.displayName(renamedId)),
+                "rename did not sync the blueprint name to the filename");
+            check(MoldingBlueprintLibrary.list(owner).stream().anyMatch(summary ->
+                    summary.fileId().equals(renamedId) && summary.displayName().equals(MoldingBlueprintLibrary.displayName(renamedId))),
+                "list did not show the renamed filename");
+            check(MoldingBlueprintLibrary.list(owner).stream().noneMatch(summary -> summary.fileId().equals(originalFirstId)),
+                "list still showed the old filename after rename");
+            check(MoldingBlueprintLibrary.list(owner).stream()
+                    .filter(summary -> summary.fileId().equals(renamedId))
+                    .allMatch(MoldingBlueprintSummary::pinned),
+                "rename dropped the owner's pin");
+            BlueprintException deniedRename = expectBlueprintFailure(() -> MoldingBlueprintLibrary.rename(
+                reader,
+                renamed.fileId(),
+                renamed.blueprint().fileRevision(),
+                "stolen-hat"
+            ));
+            check(deniedRename.reason().equals("permission_denied"), "non-owner rename did not fail its permission check");
+            BlueprintException taken = expectBlueprintFailure(() -> MoldingBlueprintLibrary.rename(
+                owner,
+                secondFile.fileId(),
+                secondFile.blueprint().fileRevision(),
+                "Renamed Hat " + suffix
+            ));
+            check(taken.reason().equals("blueprint_name_taken"), "conflicting rename did not report a taken filename");
+
+            Path root = MoldingBlueprintLibrary.libraryRoot(owner.getServer());
+            String diskRenamedId = "disk-renamed-" + suffix + ".json";
+            Files.move(root.resolve(renamed.fileId()), root.resolve(diskRenamedId), StandardCopyOption.ATOMIC_MOVE);
+            currentFirst = new MoldingBlueprintLibrary.StoredBlueprint(
+                diskRenamedId,
+                MoldingBlueprintLibrary.read(owner.getServer(), diskRenamedId, 0L)
+            );
+            check(MoldingBlueprintLibrary.list(owner).stream().anyMatch(summary -> summary.fileId().equals(diskRenamedId)),
+                "list did not pick up a filesystem rename");
+            check(MoldingBlueprintLibrary.list(owner).stream().noneMatch(summary -> summary.fileId().equals(renamedId)),
+                "list still showed the old filename after a filesystem rename");
         } finally {
             if (copy != null) MoldingBlueprintLibrary.delete(reader, copy.fileId(), copy.blueprint().fileRevision());
-            MoldingBlueprintLibrary.togglePin(owner, firstFile.fileId(), firstFile.blueprint().fileRevision());
-            MoldingBlueprintLibrary.togglePin(owner, secondFile.fileId(), secondFile.blueprint().fileRevision());
-            MoldingBlueprintLibrary.delete(owner, firstFile.fileId(), firstFile.blueprint().fileRevision());
-            MoldingBlueprintLibrary.delete(owner, secondFile.fileId(), secondFile.blueprint().fileRevision());
+            try {
+                MoldingBlueprintLibrary.togglePin(owner, currentFirst.fileId(), currentFirst.blueprint().fileRevision());
+            } catch (BlueprintException ignored) {
+            }
+            try {
+                MoldingBlueprintLibrary.togglePin(owner, secondFile.fileId(), secondFile.blueprint().fileRevision());
+            } catch (BlueprintException ignored) {
+            }
+            try {
+                MoldingBlueprintLibrary.delete(owner, currentFirst.fileId(), currentFirst.blueprint().fileRevision());
+            } catch (BlueprintException ignored) {
+            }
+            try {
+                MoldingBlueprintLibrary.delete(owner, secondFile.fileId(), secondFile.blueprint().fileRevision());
+            } catch (BlueprintException ignored) {
+            }
             owner.discard();
             reader.discard();
         }

@@ -10,12 +10,9 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
-import dev.anvilcraft.plasticraft.item.DroneItem;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.recipe.CondenserGas;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
-import dev.anvilcraft.plasticraft.recipe.DroneAssemblyRecipe;
-import dev.anvilcraft.plasticraft.recipe.DronePropellerIngredient;
 import dev.anvilcraft.plasticraft.recipe.FluidFastCookingRecipe;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
 import dev.anvilcraft.plasticraft.recipe.PlasticMoldingChamberRecipe;
@@ -411,40 +408,6 @@ public final class PlasticraftRecipeData {
         generatePlasticMeltSolidLiquidRecipes(provider);
 
         generateResinTimeWarpRecipes(provider);
-        generateDroneRecipes(provider);
-    }
-
-    private static void generateDroneRecipes(RegistrumRecipeProvider provider) {
-        // 无人机装配配方:四种无人机使用同一 3x3 布局,只替换第三行第一格的工具;
-        // 螺旋桨格按制品类型匹配,装配时两格螺旋桨的完整物品堆写入成品数据组件。
-        generateDroneRecipe(provider, PlasticraftItems.CONSTRUCTION_DRONE.get(), Ingredient.of(ModItems.CRAB_CLAW.get()));
-        generateDroneRecipe(provider, PlasticraftItems.DEMOLITION_DRONE.get(), Ingredient.of(Items.STONECUTTER));
-        generateDroneRecipe(provider, PlasticraftItems.COLLECTION_DRONE.get(), Ingredient.of(ModItems.MAGNET.get()));
-        generateDroneRecipe(provider, PlasticraftItems.OBSERVATION_DRONE.get(), Ingredient.of(Items.SPYGLASS));
-    }
-
-    private static void generateDroneRecipe(RegistrumRecipeProvider provider, DroneItem result, Ingredient tool) {
-        Map<Character, Ingredient> key = new LinkedHashMap<>();
-        key.put('P', DronePropellerIngredient.INSTANCE.toVanilla());
-        key.put('I', Ingredient.of(ModItems.IONOCRAFT.get()));
-        key.put('M', Ingredient.of(ModBlocks.MAGNETO_ELECTRIC_CORE_BLOCK.asItem()));
-        key.put('R', Ingredient.of(ModItems.PROCESSOR.get()));
-        key.put('T', tool);
-        key.put('E', Ingredient.of(ModItems.CAPACITOR.get()));
-        ResourceLocation id = AnvilcraftPlasticraft.of(result.definition().id().getPath() + "_drone");
-        DroneAssemblyRecipe recipe = new DroneAssemblyRecipe(
-            "",
-            CraftingBookCategory.MISC,
-            ShapedRecipePattern.of(key, List.of("PIP", " MR", "TE ")),
-            new ItemStack(result),
-            true
-        );
-        Advancement.Builder advancement = provider.advancement()
-            .addCriterion("has_ionocraft", RegistrumRecipeProvider.has(ModItems.IONOCRAFT))
-            .addCriterion("has_capacitor", RegistrumRecipeProvider.has(ModItems.CAPACITOR))
-            .rewards(AdvancementRewards.Builder.recipe(id))
-            .requirements(AdvancementRequirements.Strategy.OR);
-        provider.accept(id, recipe, advancement.build(id.withPrefix("recipes/misc/")));
     }
 
     private static RecipeOutput moldingChamberRecipeOutput(RecipeOutput output) {

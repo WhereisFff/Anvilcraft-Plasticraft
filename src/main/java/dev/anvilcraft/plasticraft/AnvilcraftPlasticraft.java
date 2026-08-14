@@ -7,6 +7,7 @@ import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
 import dev.anvilcraft.plasticraft.data.PlasticraftDatagen;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveInvisibilityService;
+import dev.anvilcraft.plasticraft.event.AllayHardHatEvents;
 import dev.anvilcraft.plasticraft.event.AnvilCraftApiBootstrap;
 import dev.anvilcraft.plasticraft.event.HighViscosityResinEvents;
 import dev.anvilcraft.plasticraft.event.PlasticVillagerTrades;
@@ -36,6 +37,7 @@ import dev.anvilcraft.plasticraft.vapor.VaporizationSources;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.animal.allay.Allay;
 import net.minecraft.world.item.CreativeModeTab;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -43,6 +45,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import org.slf4j.Logger;
@@ -73,6 +76,7 @@ public final class AnvilcraftPlasticraft {
         VaporizationSources.register(PlasmaJetVaporizationSource.INSTANCE);
         AnvilCraftApiBootstrap.register();
         NeoForge.EVENT_BUS.addListener(AnvilcraftPlasticraft::addItemTooltips);
+        NeoForge.EVENT_BUS.addListener(AllayHardHatEvents::entityInteract);
         NeoForge.EVENT_BUS.addListener(HighViscosityResinEvents::useEntity);
         NeoForge.EVENT_BUS.addListener(AdhesiveInvisibilityService::projectileImpact);
         NeoForge.EVENT_BUS.addListener(CondenserTowerProcess::onLargeCauldronProcess);
@@ -83,6 +87,7 @@ public final class AnvilcraftPlasticraft {
         modEventBus.addListener(PlasticraftBlocks::registerDispenserBehavior);
         modEventBus.addListener(AnvilcraftPlasticraft::registerCapabilities);
         modEventBus.addListener(AnvilcraftPlasticraft::registerPayloads);
+        modEventBus.addListener(AnvilcraftPlasticraft::registerEntityAttributes);
         LOGGER.info("Loading {}", MOD_NAME);
     }
 
@@ -92,6 +97,10 @@ public final class AnvilcraftPlasticraft {
 
     private static void addItemTooltips(ItemTooltipEvent event) {
         PlasticItemTooltipManager.addTooltip(event.getItemStack(), event.getContext(), event.getToolTip());
+    }
+
+    private static void registerEntityAttributes(EntityAttributeCreationEvent event) {
+        event.put(PlasticraftEntities.WORKING_ALLAY.get(), Allay.createAttributes().build());
     }
 
     private static void registerCapabilities(RegisterCapabilitiesEvent event) {

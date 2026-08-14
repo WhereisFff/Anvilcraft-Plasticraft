@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.blueprint;
 
-import dev.anvilcraft.plasticraft.entity.drone.DroneEntity;
+import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.anvilcraft.plasticraft.network.ConstructionProjectionSectionPacket;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -120,7 +120,7 @@ public final class ConstructionProjectionIndex {
         List<Entity> entities = level.getEntities(ignore, bounds);
         for (Entity entity : entities) {
             if (!entity.isAlive() || entity.isSpectator()) continue;
-            if (entity instanceof DroneEntity || entity instanceof ItemEntity || entity instanceof ExperienceOrb) {
+            if (entity instanceof WorkingAllayEntity || entity instanceof ItemEntity || entity instanceof ExperienceOrb) {
                 continue;
             }
             if (Shapes.joinIsNotEmpty(worldShape, Shapes.create(entity.getBoundingBox()), BooleanOp.AND)) {

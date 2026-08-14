@@ -1,9 +1,9 @@
 package dev.anvilcraft.plasticraft.blueprint;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.drone.DroneShortageStrategy;
-import dev.anvilcraft.plasticraft.drone.tool.DroneCapability;
-import dev.anvilcraft.plasticraft.entity.drone.DroneEntity;
+import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
+import dev.anvilcraft.plasticraft.allay.tool.AllayCapability;
+import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.anvilcraft.plasticraft.init.PlasticraftEntityBuildAdapters;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
@@ -59,6 +59,10 @@ public final class ConstructionJobController {
     /** 无站无人机发现范围:到最近可执行目标的直线距离。 */
     public static final double DISCOVERY_RANGE = 128.0D;
     public static final double REACH = 1.0D;
+
+    public static double reach(WorkingAllayEntity worker) {
+        return worker.toolDefinition().reachDistance();
+    }
 
     /** 已放置蓝图在世界中的方块包围盒,用于完工后把无人机带离工地。 */
     public static AABB worldBox(ConstructionJob job) {
@@ -119,7 +123,7 @@ public final class ConstructionJobController {
             return;
         }
         if (job.state() == ConstructionJob.STATE_WAITING_DEMOLITION) {
-            if (hasAvailableDemolitionDrone(level, job, progress)) {
+            if (hasAvailableDemolitionAllay(level, job, progress)) {
                 progress.setWaitReason(ConstructionWaitReason.NONE);
                 setState(server, job, ConstructionJob.STATE_DEMOLISHING);
             }
@@ -455,7 +459,7 @@ public final class ConstructionJobController {
             BlockState current = level.getBlockState(op.pos());
             if (current.isAir()) {
                 op.setStatus(ConstructionBuildOp.Status.DELIVERED);
-                op.setLeaseDrone(null);
+                op.setLeaseAllay(null);
                 continue;
             }
             BlockPos approach = chooseApproach(level, progress, op);
@@ -681,7 +685,7 @@ public final class ConstructionJobController {
         }
         if (StonecutterSmashAdapter.isPermanentObstacle(level, op.pos(), current)) {
             op.setStatus(ConstructionBuildOp.Status.SKIPPED);
-            op.setLeaseDrone(null);
+            op.setLeaseAllay(null);
             DemolitionPlanner.skipPlaceAt(progress, op.pos());
             ConstructionJobStore.get(level).markDirty();
             return false;
@@ -695,7 +699,7 @@ public final class ConstructionJobController {
         return true;
     }
 
-    public static boolean extractMaterial(Player player, ConstructionJobProgress progress, ConstructionBuildOp op, UUID droneId) {
+    public static boolean extractMaterial(Player player, ConstructionJobProgress progress, ConstructionBuildOp op, UUID allayId) {
         if (op.kind() == ConstructionBuildOp.Kind.SEAL
             && (op.material().isEmpty() || FluidSealFill.stateOf(op.material()) == null)) {
             return false;
@@ -703,7 +707,7 @@ public final class ConstructionJobController {
         if (!op.needsMaterial()) return true;
         ItemStack taken = takeBuildMaterial(player, op);
         if (taken.isEmpty()) return false;
-        progress.addLedger(op.id(), taken, droneId);
+        progress.addLedger(op.id(), taken, allayId);
         if (PlasticraftEntityBuildAdapters.returnsResin(taken) && op.returnStack().isEmpty()
             && player.level() instanceof ServerLevel serverLevel) {
             op.setReturnStack(PlasticraftEntityBuildAdapters.resinReturn(serverLevel));
@@ -713,6 +717,9 @@ public final class ConstructionJobController {
     }
 
     private static ItemStack takeBuildMaterial(Player player, ConstructionBuildOp op) {
+        if (player.isCreative()) {
+            return creativeSupply(op);
+        }
         if (op.kind() == ConstructionBuildOp.Kind.FLUID && !op.fluid().isEmpty()) {
             if (!op.material().isEmpty() && takeMatching(player, op.material())) {
                 return op.material().copy();
@@ -735,10 +742,10 @@ public final class ConstructionJobController {
         MinecraftServer server,
         ConstructionJob job,
         ConstructionJobProgress progress,
-        DroneShortageStrategy strategy,
+        AllayShortageStrategy strategy,
         ItemStack missing
     ) {
-        if (strategy == DroneShortageStrategy.SKIP) {
+        if (strategy == AllayShortageStrategy.SKIP) {
             ServerLevel level = server.getLevel(job.dimension());
             for (ConstructionBuildOp op : progress.operations()) {
                 if (op.status() == ConstructionBuildOp.Status.DELIVERED
@@ -748,7 +755,7 @@ public final class ConstructionJobController {
                 boolean sameItem = missing.isEmpty() || matchesMaterial(op.material(), missing);
                 if (op.kind() == ConstructionBuildOp.Kind.SEAL && sameItem) {
                     op.setStatus(ConstructionBuildOp.Status.SKIPPED);
-                    op.setLeaseDrone(null);
+                    op.setLeaseAllay(null);
                     continue;
                 }
                 if ((op.kind() == ConstructionBuildOp.Kind.PLACE
@@ -757,7 +764,7 @@ public final class ConstructionJobController {
                     || op.kind() == ConstructionBuildOp.Kind.ENTITY)
                     && sameItem) {
                     op.setStatus(ConstructionBuildOp.Status.SKIPPED);
-                    op.setLeaseDrone(null);
+                    op.setLeaseAllay(null);
                 }
             }
             skipOrphanedChildren(progress);
@@ -778,29 +785,29 @@ public final class ConstructionJobController {
         ConstructionJobStore.get(server).markDirty();
     }
 
-    public static void onShortageStrategyChanged(ServerPlayer player, DroneShortageStrategy strategy) {
-        if (strategy != DroneShortageStrategy.SKIP) return;
+    public static void onShortageStrategyChanged(ServerPlayer player, AllayShortageStrategy strategy) {
+        if (strategy != AllayShortageStrategy.SKIP) return;
         ConstructionJob job = ConstructionJobIndex.get(player.server).activeJobOf(player.getUUID()).orElse(null);
         if (job == null) return;
         ConstructionJobProgress progress = ConstructionJobStore.get(player.server).get(job.jobId());
         if (progress == null) return;
         if (job.state() == ConstructionJob.STATE_WAITING_DEMOLITION) {
-            applyDemolitionShortage(player.server, job, progress, DroneShortageStrategy.SKIP);
+            applyDemolitionShortage(player.server, job, progress, AllayShortageStrategy.SKIP);
             return;
         }
         if (job.state() != ConstructionJob.STATE_WAITING_MATERIAL) return;
         ItemStack missing = progress.missingMaterial();
         if (missing.isEmpty()) return;
-        applyShortage(player.server, job, progress, DroneShortageStrategy.SKIP, missing);
+        applyShortage(player.server, job, progress, AllayShortageStrategy.SKIP, missing);
     }
 
     public static void applyDemolitionShortage(
         MinecraftServer server,
         ConstructionJob job,
         ConstructionJobProgress progress,
-        DroneShortageStrategy strategy
+        AllayShortageStrategy strategy
     ) {
-        if (strategy == DroneShortageStrategy.SKIP) {
+        if (strategy == AllayShortageStrategy.SKIP) {
             ServerLevel level = server.getLevel(job.dimension());
             for (ConstructionBuildOp op : progress.operations()) {
                 if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH || op.shell()) continue;
@@ -809,7 +816,7 @@ public final class ConstructionJobController {
                     continue;
                 }
                 op.setStatus(ConstructionBuildOp.Status.SKIPPED);
-                op.setLeaseDrone(null);
+                op.setLeaseAllay(null);
                 if (level != null && !level.getBlockState(op.pos()).isAir()) {
                     DemolitionPlanner.skipPlaceAt(progress, op.pos());
                 }
@@ -843,18 +850,18 @@ public final class ConstructionJobController {
     ) {
         if (approach == null) return false;
         if (isReservedBuildCell(progress, approach)) return false;
-        if (!fitsDrone(level, approach)) return false;
+        if (!fitsWorker(level, approach)) return false;
         Vec3 center = Vec3.atBottomCenterOf(approach);
-        AABB droneBox = new AABB(
-            center.x - 0.25D,
+        AABB workerBox = new AABB(
+            center.x - 0.175D,
             center.y,
-            center.z - 0.25D,
-            center.x + 0.25D,
-            center.y + 0.5D,
-            center.z + 0.25D
+            center.z - 0.175D,
+            center.x + 0.175D,
+            center.y + 0.6D,
+            center.z + 0.175D
         );
         for (BlockPos target : approachTargets(progress, op)) {
-            if (droneBox.intersects(new AABB(target).inflate(REACH))) {
+            if (workerBox.intersects(new AABB(target).inflate(REACH))) {
                 return true;
             }
         }
@@ -869,17 +876,17 @@ public final class ConstructionJobController {
             for (Direction direction : Direction.values()) {
                 BlockPos candidate = target.relative(direction);
                 if (isReservedBuildCell(progress, candidate)) continue;
-                if (!fitsDrone(level, candidate)) continue;
+                if (!fitsWorker(level, candidate)) continue;
                 Vec3 center = Vec3.atBottomCenterOf(candidate);
-                AABB droneBox = new AABB(
-                    center.x - 0.25D,
+                AABB workerBox = new AABB(
+                    center.x - 0.175D,
                     center.y,
-                    center.z - 0.25D,
-                    center.x + 0.25D,
-                    center.y + 0.5D,
-                    center.z + 0.25D
+                    center.z - 0.175D,
+                    center.x + 0.175D,
+                    center.y + 0.6D,
+                    center.z + 0.175D
                 );
-                if (!droneBox.intersects(new AABB(target).inflate(REACH))) continue;
+                if (!workerBox.intersects(new AABB(target).inflate(REACH))) continue;
                 double score = candidate.getY() + candidate.distManhattan(op.pos()) * 0.01D;
                 if (score < bestScore) {
                     bestScore = score;
@@ -889,7 +896,7 @@ public final class ConstructionJobController {
         }
         if (best == null && !op.writesProjection()
             && !isReservedBuildCell(progress, op.pos())
-            && fitsDrone(level, op.pos())) {
+            && fitsWorker(level, op.pos())) {
             return op.pos();
         }
         return best;
@@ -970,14 +977,14 @@ public final class ConstructionJobController {
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
-        List<DroneEntity> loaded = new ArrayList<>();
+        List<WorkingAllayEntity> loaded = new ArrayList<>();
         for (Entity entity : level.getAllEntities()) {
-            if (!(entity instanceof DroneEntity drone)) continue;
+            if (!(entity instanceof WorkingAllayEntity drone)) continue;
             if (drone.assignedJobId().filter(job.jobId()::equals).isEmpty()) continue;
             loaded.add(drone);
         }
         Set<UUID> holding = new HashSet<>();
-        for (DroneEntity drone : loaded) {
+        for (WorkingAllayEntity drone : loaded) {
             drone.navigator().clear();
             if (drone.hostedCarry().isEmpty()) {
                 drone.clearAssignment(false);
@@ -988,14 +995,14 @@ public final class ConstructionJobController {
         ServerPlayer owner = findOwner(server, level, job.owner());
         for (ConstructionLedgerEntry entry : progress.ledger()) {
             if (entry.state() != ConstructionLedgerEntry.State.CARRIED) continue;
-            if (entry.droneId() != null && holding.contains(entry.droneId())) continue;
+            if (entry.allayId() != null && holding.contains(entry.allayId())) continue;
             giveOrDrop(owner, level, job, entry.stack().copy());
             entry.setState(ConstructionLedgerEntry.State.RETURNED);
         }
     }
 
     /** 无人机飞到所有者触及范围后把托管携带物塞回背包,并勾掉对应台账。 */
-    public static void depositHostedCarry(DroneEntity drone, ServerPlayer player) {
+    public static void depositHostedCarry(WorkingAllayEntity drone, ServerPlayer player) {
         ItemStack carry = drone.hostedCarry();
         if (carry.isEmpty()) return;
         player.getInventory().placeItemBackInInventory(carry.copy());
@@ -1004,7 +1011,7 @@ public final class ConstructionJobController {
             if (progress == null) return;
             for (ConstructionLedgerEntry entry : progress.ledger()) {
                 if (entry.state() == ConstructionLedgerEntry.State.CARRIED
-                    && drone.getUUID().equals(entry.droneId())) {
+                    && drone.getUUID().equals(entry.allayId())) {
                     entry.setState(ConstructionLedgerEntry.State.RETURNED);
                 }
             }
@@ -1034,9 +1041,17 @@ public final class ConstructionJobController {
         for (ConstructionBuildOp op : progress.operations()) {
             if (op.status() == ConstructionBuildOp.Status.LEASED) {
                 op.setStatus(ConstructionBuildOp.Status.PENDING);
-                op.setLeaseDrone(null);
+                op.setLeaseAllay(null);
             }
         }
+    }
+
+    /** 创造模式不扣背包,按蓝图需要直接给出材料。 */
+    private static ItemStack creativeSupply(ConstructionBuildOp op) {
+        if (op.kind() == ConstructionBuildOp.Kind.FLUID && !op.fluid().isEmpty()) {
+            return op.material().isEmpty() ? new ItemStack(Items.BUCKET) : op.material().copy();
+        }
+        return op.material().isEmpty() ? ItemStack.EMPTY : op.material().copy();
     }
 
     private static boolean takeMatching(Player player, ItemStack needed) {
@@ -1170,20 +1185,20 @@ public final class ConstructionJobController {
         return targets;
     }
 
-    private static boolean fitsDrone(ServerLevel level, BlockPos pos) {
+    private static boolean fitsWorker(ServerLevel level, BlockPos pos) {
         Vec3 center = Vec3.atBottomCenterOf(pos);
         AABB box = new AABB(
-            center.x - 0.25D,
+            center.x - 0.175D,
             center.y,
-            center.z - 0.25D,
-            center.x + 0.25D,
-            center.y + 0.5D,
-            center.z + 0.25D
+            center.z - 0.175D,
+            center.x + 0.175D,
+            center.y + 0.6D,
+            center.z + 0.175D
         );
         if (!level.noBlockCollision(null, box)) return false;
         for (Entity entity : level.getEntities(null, box)) {
             if (!entity.isAlive() || entity.isSpectator()) continue;
-            if (entity instanceof DroneEntity || entity instanceof ItemEntity || entity instanceof ExperienceOrb) {
+            if (entity instanceof WorkingAllayEntity || entity instanceof ItemEntity || entity instanceof ExperienceOrb) {
                 continue;
             }
             return false;
@@ -1395,7 +1410,7 @@ public final class ConstructionJobController {
             ConstructionBuildOp parent = progress.parentOf(op);
             if (parent != null && parent.status() == ConstructionBuildOp.Status.SKIPPED) {
                 op.setStatus(ConstructionBuildOp.Status.SKIPPED);
-                op.setLeaseDrone(null);
+                op.setLeaseAllay(null);
             }
         }
     }
@@ -1470,7 +1485,7 @@ public final class ConstructionJobController {
         }
         if (progress.allDemolishResolved()) {
             reconcileDebris(level, job, progress);
-            if (hasWorldDebris(level, job, progress) && hasAvailableCollectionDrone(level, job, progress)) {
+            if (hasWorldDebris(level, job, progress) && hasAvailableCollectionAllay(level, job, progress)) {
                 setState(server, job, ConstructionJob.STATE_COLLECTING_DEBRIS);
             } else {
                 setState(server, job, ConstructionJob.STATE_BUILDING);
@@ -1478,7 +1493,7 @@ public final class ConstructionJobController {
             storeDirty(level);
             return;
         }
-        if (!progress.hasLeasedDemolish() && !hasAvailableDemolitionDrone(level, job, progress)) {
+        if (!progress.hasLeasedDemolish() && !hasAvailableDemolitionAllay(level, job, progress)) {
             applyDemolitionShortage(server, job, progress, ownerShortageStrategy(level, job, progress));
             return;
         }
@@ -1497,7 +1512,7 @@ public final class ConstructionJobController {
             return;
         }
         reconcileDebris(level, job, progress);
-        if (!hasWorldDebris(level, job, progress) || !hasAvailableCollectionDrone(level, job, progress)) {
+        if (!hasWorldDebris(level, job, progress) || !hasAvailableCollectionAllay(level, job, progress)) {
             setState(server, job, ConstructionJob.STATE_BUILDING);
             storeDirty(level);
             return;
@@ -1505,15 +1520,15 @@ public final class ConstructionJobController {
         storeDirty(level);
     }
 
-    public static boolean hasAvailableDemolitionDrone(
+    public static boolean hasAvailableDemolitionAllay(
         ServerLevel level,
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
         AABB search = worldBox(job).inflate(DISCOVERY_RANGE);
-        for (DroneEntity drone : level.getEntitiesOfClass(DroneEntity.class, search)) {
+        for (WorkingAllayEntity drone : level.getEntitiesOfClass(WorkingAllayEntity.class, search)) {
             if (!drone.isAlive() || drone.getOwner().filter(job.owner()::equals).isEmpty()) continue;
-            if (!drone.toolDefinition().hasCapability(DroneCapability.DEMOLISH)) continue;
+            if (!drone.toolDefinition().hasCapability(AllayCapability.DEMOLISH)) continue;
             for (ConstructionBuildOp op : progress.operations()) {
                 if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH || op.shell()) continue;
                 if (op.status() == ConstructionBuildOp.Status.DELIVERED
@@ -1528,14 +1543,14 @@ public final class ConstructionJobController {
         return false;
     }
 
-    public static boolean hasAvailableCollectionDrone(
+    public static boolean hasAvailableCollectionAllay(
         ServerLevel level,
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
         AABB search = worldBox(job).inflate(DISCOVERY_RANGE);
-        for (DroneEntity drone : level.getEntitiesOfClass(DroneEntity.class, search)) {
-            if (!isOwnerCollectionDrone(drone, job) || drone.isCollectionFull()) continue;
+        for (WorkingAllayEntity drone : level.getEntitiesOfClass(WorkingAllayEntity.class, search)) {
+            if (!isOwnerCollectionAllay(drone, job) || drone.isCollectionFull()) continue;
             ItemEntity nearest = nearestMarkedDebris(level, job, progress, drone.position(), DISCOVERY_RANGE);
             if (nearest != null) return true;
         }
@@ -1582,7 +1597,7 @@ public final class ConstructionJobController {
         for (ItemEntity entity : markedDebrisIn(level, job, progress, worldBox(job).inflate(DISCOVERY_RANGE))) {
             if (!entity.isAlive() || entity.hasPickUpDelay()) continue;
             UUID holder = progress.debrisLease(entity.getUUID());
-            if (holder != null && level.getEntity(holder) instanceof DroneEntity leased && leased.isAlive()) {
+            if (holder != null && level.getEntity(holder) instanceof WorkingAllayEntity leased && leased.isAlive()) {
                 continue;
             }
             if (holder != null) {
@@ -1599,7 +1614,7 @@ public final class ConstructionJobController {
     }
 
     public static boolean tryCollect(
-        DroneEntity drone,
+        WorkingAllayEntity drone,
         ItemEntity entity,
         @Nullable ConstructionJobProgress progress
     ) {
@@ -1662,25 +1677,25 @@ public final class ConstructionJobController {
         return best;
     }
 
-    private static boolean isOwnerCollectionDrone(DroneEntity drone, ConstructionJob job) {
+    private static boolean isOwnerCollectionAllay(WorkingAllayEntity drone, ConstructionJob job) {
         return drone.isAlive()
             && drone.getOwner().filter(job.owner()::equals).isPresent()
-            && drone.toolDefinition().hasCapability(DroneCapability.COLLECT_ITEMS);
+            && drone.toolDefinition().hasCapability(AllayCapability.COLLECT_ITEMS);
     }
 
-    private static DroneShortageStrategy ownerShortageStrategy(
+    private static AllayShortageStrategy ownerShortageStrategy(
         ServerLevel level,
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
-        DroneShortageStrategy strategy = DroneShortageStrategy.PAUSE;
+        AllayShortageStrategy strategy = AllayShortageStrategy.PAUSE;
         AABB search = worldBox(job).inflate(DISCOVERY_RANGE);
-        for (DroneEntity drone : level.getEntitiesOfClass(DroneEntity.class, search)) {
+        for (WorkingAllayEntity drone : level.getEntitiesOfClass(WorkingAllayEntity.class, search)) {
             if (!drone.isAlive() || drone.getOwner().filter(job.owner()::equals).isEmpty()) continue;
-            if (drone.toolDefinition().hasCapability(DroneCapability.DEMOLISH)) {
+            if (drone.toolDefinition().hasCapability(AllayCapability.DEMOLISH)) {
                 return drone.shortageStrategy();
             }
-            if (drone.toolDefinition().hasCapability(DroneCapability.PICK_UP_MATERIAL)) {
+            if (drone.toolDefinition().hasCapability(AllayCapability.PICK_UP_MATERIAL)) {
                 strategy = drone.shortageStrategy();
             }
         }
@@ -1711,7 +1726,7 @@ public final class ConstructionJobController {
 
     private static void markOpDone(ServerLevel level, ConstructionJobProgress progress, ConstructionBuildOp op) {
         op.setStatus(ConstructionBuildOp.Status.DELIVERED);
-        op.setLeaseDrone(null);
+        op.setLeaseAllay(null);
         for (ConstructionLedgerEntry entry : progress.ledger()) {
             if (entry.operationId() == op.id() && entry.state() == ConstructionLedgerEntry.State.CARRIED) {
                 entry.setState(ConstructionLedgerEntry.State.DELIVERED);
@@ -1765,7 +1780,7 @@ public final class ConstructionJobController {
             }
             if (FluidSealPlanner.isSealableFluid(level.getBlockState(op.pos()))) {
                 op.setStatus(ConstructionBuildOp.Status.SKIPPED);
-                op.setLeaseDrone(null);
+                op.setLeaseAllay(null);
             }
         }
         skipOrphanedChildren(progress);

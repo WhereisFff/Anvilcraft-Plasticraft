@@ -18,7 +18,6 @@ import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
-import dev.anvilcraft.plasticraft.molding.model.MoldingTransform;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContentSummary;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContents;
@@ -31,7 +30,7 @@ import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticStorageHa
 import dev.anvilcraft.plasticraft.molding.product.storage.PlasticraftStorages;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductPreview;
-import dev.anvilcraft.plasticraft.molding.type.MoldingPropellerIconModel;
+import dev.anvilcraft.plasticraft.molding.type.MoldingHardHatIconModel;
 import dev.anvilcraft.plasticraft.molding.type.MoldingTypeValidation;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -162,30 +161,31 @@ public final class MoldingProductGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "Propellers accept narrow zero-thickness blades and the inclusive two-pixel thickness limit")
-    static void propellerSurfaceAndThicknessBoundaries(ExtendedGameTestHelper helper) {
-        checkPropellerValid(twoBladePropeller(), "two-blade zero-thickness propeller");
-        checkPropellerValid(MoldingPropellerIconModel.model(), "bundled four-blade propeller icon");
-        checkPropellerValid(sixBladePropeller(), "six-blade zero-thickness propeller");
-        checkPropellerValid(thickPropeller(2.0D), "two-pixel-thick propeller");
-        checkPropellerReason(thickPropeller(2.001D), "propeller_too_thick");
+    @TestHolder(description = "Hard hats accept the bundled icon and reject models wider than 11 px or taller than 16 px")
+    static void hardHatSurfaceAndHeightBoundaries(ExtendedGameTestHelper helper) {
+        checkHardHatValid(MoldingHardHatIconModel.model(), "bundled hard hat icon");
+        checkHardHatValid(centerHat(8.0D), "eight-pixel-tall hat");
+        checkHardHatValid(centerHat(16.0D), "sixteen-pixel-tall hat");
+        checkHardHatValid(offCenterHat(), "off-center hat inside the 11 x 11 footprint");
+        checkHardHatReason(centerHat(16.001D), "allay_hard_hat_too_tall");
+        checkHardHatReason(tooWideHat(), "allay_hard_hat_too_wide");
+        checkHardHatReason(emptyHat(), "allay_hard_hat_empty");
 
-        EditableMoldingModel icon = MoldingPropellerIconModel.model();
+        EditableMoldingModel icon = MoldingHardHatIconModel.model();
         MoldingModelBounds bounds = MoldingModelBounds.visible(icon).orElseThrow();
-        check(bounds.minimum().y() == 20.0D && bounds.maximum().y() == 21.0D,
-            "bundled propeller icon was not moved upward as one model: " + bounds);
-        check(icon.elements().size() == 3, "bundled propeller icon no longer has three cubes");
-        checkIconElement(icon, icon.elements().get(0), vec(23, 21, 18), vec(25, 21, 30));
-        checkIconElement(icon, icon.elements().get(1), vec(23, 20, 23), vec(25, 21, 25));
-        checkIconElement(icon, icon.elements().get(2), vec(18, 21, 23), vec(30, 21, 25));
+        check(bounds.minimum().equals(vec(18.5, 22, 18.5)) && bounds.maximum().equals(vec(29.5, 28, 29.5)),
+            "bundled hard hat icon bounds drifted: " + bounds);
+        check(icon.elements().size() == 2, "bundled hard hat icon no longer has two cubes");
+        checkIconElement(icon, icon.elements().get(0), vec(18.5, 22, 18.5), vec(29.5, 23, 29.5));
+        checkIconElement(icon, icon.elements().get(1), vec(20, 23, 20), vec(28, 28, 28));
         for (MoldingElement element : icon.elements()) {
             MoldingVec3 pivot = MoldingModelBaker.transformedPoint(
                 icon,
                 element,
                 element.transform().pivot()
             );
-            check(pivot.equals(vec(24, 21, 24)),
-                "bundled propeller icon element has a different common pivot: " + pivot);
+            check(pivot.equals(vec(24, 22, 24)),
+                "bundled hard hat icon element has a different common pivot: " + pivot);
         }
         helper.succeed();
     }
@@ -199,7 +199,7 @@ public final class MoldingProductGameTests {
         MoldingVec3 actualFrom = MoldingModelBaker.transformedPoint(model, element, element.from());
         MoldingVec3 actualTo = MoldingModelBaker.transformedPoint(model, element, element.to());
         check(actualFrom.equals(expectedFrom) && actualTo.equals(expectedTo),
-            "bundled propeller icon cube was not moved upward with the complete model: "
+            "bundled hard hat icon cube drifted from the complete model: "
                 + element.name() + " " + actualFrom + " -> " + actualTo);
     }
 
@@ -782,125 +782,46 @@ public final class MoldingProductGameTests {
         }
     }
 
-    private static EditableMoldingModel twoBladePropeller() {
-        return propellerModel(List.of(
-            transformedElement(
-                1,
-                "North south blade",
-                vec(23, 16, 18),
-                vec(25, 16, 30),
-                vec(0, 1, 0),
-                MoldingVec3.ZERO,
-                vec(24, 16, 24)
-            ),
-            transformedElement(
-                2,
-                "Core",
-                vec(16, 16, 16),
-                vec(18, 17, 18),
-                vec(7, 0, 7),
-                MoldingVec3.ZERO,
-                vec(17, 16.5D, 17)
-            )
-        ));
+    private static EditableMoldingModel centerHat(double height) {
+        return hatModel(List.of(MoldingElement.cube("Crown", vec(18.5, 20, 18.5), vec(29.5, 20 + height, 29.5))));
     }
 
-    private static EditableMoldingModel sixBladePropeller() {
-        return propellerModel(List.of(
-            transformedElement(
-                3,
-                "North south blade",
-                vec(23, 16, 18),
-                vec(25, 16, 30),
-                vec(0, 1, 0),
-                MoldingVec3.ZERO,
-                vec(24, 16, 24)
-            ),
-            transformedElement(
-                4,
-                "Positive blade",
-                vec(16, 16, 16),
-                vec(28, 16, 18),
-                vec(2, 1, 7),
-                vec(0, 30, 0),
-                vec(22, 16, 17)
-            ),
-            transformedElement(
-                5,
-                "Core",
-                vec(16, 16, 16),
-                vec(18, 17, 18),
-                vec(7, 0, 7),
-                MoldingVec3.ZERO,
-                vec(17, 16.5D, 17)
-            ),
-            transformedElement(
-                6,
-                "Negative blade",
-                vec(11, 16, 16),
-                vec(23, 16, 18),
-                vec(7, 1, 7),
-                vec(0, -30, 0),
-                vec(17, 16, 17)
-            )
-        ));
+    private static EditableMoldingModel offCenterHat() {
+        return hatModel(List.of(MoldingElement.cube("Crown", vec(0, 20, 0), vec(11, 28, 11))));
     }
 
-    private static EditableMoldingModel thickPropeller(double thickness) {
-        return propellerModel(List.of(
-            MoldingElement.cube("Core", vec(23, 20, 23), vec(25, 20 + thickness, 25)),
-            MoldingElement.cube("West", vec(16, 20, 23), vec(23, 20 + thickness, 25)),
-            MoldingElement.cube("East", vec(25, 20, 23), vec(32, 20 + thickness, 25)),
-            MoldingElement.cube("North", vec(23, 20, 16), vec(25, 20 + thickness, 23)),
-            MoldingElement.cube("South", vec(23, 20, 25), vec(25, 20 + thickness, 32))
-        ));
+    private static EditableMoldingModel tooWideHat() {
+        return hatModel(List.of(MoldingElement.cube("Brim", vec(18.5, 20, 18.5), vec(29.501, 24, 29.501))));
     }
 
-    private static EditableMoldingModel propellerModel(List<MoldingElement> elements) {
+    private static EditableMoldingModel emptyHat() {
+        return hatModel(List.of());
+    }
+
+    private static EditableMoldingModel hatModel(List<MoldingElement> elements) {
         return new EditableMoldingModel(
             EditableMoldingModel.CURRENT_FORMAT_VERSION,
-            "Propeller shape test",
-            MoldingProductTypes.PROPELLER_ID,
+            "Hard hat shape test",
+            MoldingProductTypes.ALLAY_HARD_HAT_ID,
             elements,
             List.of()
         );
     }
 
-    private static MoldingElement transformedElement(
-        long id,
-        String name,
-        MoldingVec3 from,
-        MoldingVec3 to,
-        MoldingVec3 translation,
-        MoldingVec3 rotation,
-        MoldingVec3 pivot
-    ) {
-        return new MoldingElement(
-            new UUID(0L, id),
-            name,
-            Optional.empty(),
-            from,
-            to,
-            new MoldingTransform(translation, rotation, MoldingVec3.ONE, pivot),
-            true,
-            false
-        );
-    }
-
-    private static void checkPropellerValid(EditableMoldingModel model, String description) {
+    private static void checkHardHatValid(EditableMoldingModel model, String description) {
         var baked = MoldingModelBaker.bake(model);
         MoldingTypeValidation validation = MoldingProductTypes.validate(
-            MoldingProductTypes.PROPELLER_ID,
+            MoldingProductTypes.ALLAY_HARD_HAT_ID,
             model,
             baked
         );
         check(validation.valid(), description + " was rejected: " + validation.reason());
     }
 
-    private static void checkPropellerReason(EditableMoldingModel model, String reason) {
+    private static void checkHardHatReason(EditableMoldingModel model, String reason) {
         var baked = MoldingModelBaker.bake(model);
         MoldingTypeValidation validation = MoldingProductTypes.validate(
-            MoldingProductTypes.PROPELLER_ID,
+            MoldingProductTypes.ALLAY_HARD_HAT_ID,
             model,
             baked
         );

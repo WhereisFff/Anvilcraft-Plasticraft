@@ -1,7 +1,7 @@
 # 防自封：Smarter Construction 算法对照
 
 > 来源：[dhultgren/rimworld-smarter-construction](https://github.com/dhultgren/rimworld-smarter-construction)（RimWorld 1.6）
-> 目的：抽出可迁移算法，让建设无人机交付假碰撞后仍能飞出结构，且不把其他无人机、玩家或未完成操作封在腔内。
+> 目的：抽出可迁移算法，让建设悦灵交付假碰撞后仍能飞出结构，且不把其他悦灵、玩家或未完成操作封在腔内。
 > 不是实现计划。落地应挂在现有 `ConstructionAssembler` / `chooseApproach` / `tryDeliver` 上，不要另起一套 Harmony 式作业补丁。
 
 ## 1. 对方实际在做什么
@@ -78,12 +78,12 @@ ClosedRegionCreatedByAddingImpassable(walkable, addedBlockers):
 
 - `peelOrder` 只看“有碰撞的整格”，不看台阶、半砖、栅栏的真实 `VoxelShape`，也不在每次交付后重算连通。
 - `chooseApproach` 不验证“这块放下后，接近点是否还属于外包络”。
-- `nextAssignable` / `tryDeliver` 不拒绝“会把未完成 PLACE 或其他无人机封进空腔”的候选。
+- `nextAssignable` / `tryDeliver` 不拒绝“会把未完成 PLACE 或其他悦灵封进空腔”的候选。
 - 多机同时补两个最后缺口时，静态 `order` 挡不住互封。这是 TODO 12 的硬约束，不是寻路细节。
 
 ## 4. 迁移成三维飞行版
 
-不要复用二维四连通步行。无人机可以飞过未封顶的墙，只有下面两类才算“被包住”：
+不要复用二维四连通步行。悦灵可以飞过未封顶的墙，只有下面两类才算“被包住”：
 
 1. 机身已经和即将出现的 `VoxelShape` 相交（站进墙里）。
 2. 假设加上这块碰撞后，从接近点出发的可飞空间变成有界空腔，到不了蓝图外包络。
@@ -93,17 +93,17 @@ ClosedRegionCreatedByAddingImpassable(walkable, addedBlockers):
 建议的窄接口（名字可再定，逻辑应集中在一个小公共类里）：
 
 ```text
-wouldEnclose(progress, op, drone):
+wouldEnclose(progress, op, worker):
   blockers = 已交付有碰撞格 ∪ {op 的有碰撞格}
   从 op 的六邻中当前可飞的格子做洪泛
     墙 = 真实碰撞 ∪ 已交付假碰撞 ∪ 假设中的 op
-    可飞 = 0.5³ 放得下（与 fitsDrone 同一套）
+    可飞 = 0.35×0.6 放得下（与 fitsWorker 同一套）
   若洪泛碰到 peel 外包络或蓝图盒外一格 → 开放
   否则得到 closed[]
 
   EnclosesWork    = closed 里还有未交付 PLACE/ATTACHED
-  EnclosesOthers  = closed 里有其他无人机或玩家
-  EnclosesSelf    = 只有执行机在 closed 里
+  EnclosesOthers  = closed 里有其他悦灵或玩家
+  EnclosesSelf    = 只有执行悦灵在 closed 里
   approachSafe    = 接近点 ∉ closed，且从接近点能洪泛到外包络
 ```
 
@@ -128,13 +128,13 @@ flowchart TD
   F -->|否| E
 ```
 
-并发时同一安全前沿可以多机并行，但**同一空腔的最后若干封口必须串行**，并且每块封口都重新跑一遍假设洪泛。对方用“邻居最多的墙优先”自然把最后缺口留到后面；我们已有 `order`，邻居数只适合做同 `order` 的并列打分，不能替代封闭检测。
+并发时同一安全前沿可以多只悦灵并行，但**同一空腔的最后若干封口必须串行**，并且每块封口都重新跑一遍假设洪泛。对方用“邻居最多的墙优先”自然把最后缺口留到后面；我们已有 `order`，邻居数只适合做同 `order` 的并列打分，不能替代封闭检测。
 
-卡住救援可以学，但不要瞬移：同一接近点寻路失败或原地超过约定 tick，就取消租约、重算接近点。`DroneFlightPlanner.snapToFree` 已经处理“嵌进假方块”，应继续作为几何逃生，而不是逻辑逃生。
+卡住救援可以学，但不要瞬移：同一接近点寻路失败或原地超过约定 tick，就取消租约、重算接近点。`AllayFlightPlanner.snapToFree` 已经处理“嵌进假方块”，应继续作为几何逃生，而不是逻辑逃生。
 
 ## 5. 明确不要抄的部分
 
-- **瞬移出房间**。我们的假方块有真实碰撞，玩家也能站上去；无人机必须先飞到腔外再封口。
+- **瞬移出房间**。我们的假方块有真实碰撞，玩家也能站上去；悦灵必须先飞到腔外再封口。
 - **“大于 N 格即开放”**。对方用它躲室外洪泛；我们有明确外包络，不需要这条错误近似。
 - **只做二维墙圈检测**。未封顶的盒子、只有顶板的棚子、只有地板的平台，对飞行器都不是封闭。
 - **用邻居数代替装配顺序**。`peelOrder` 已经给出由内向外的正确骨架。
@@ -153,8 +153,8 @@ flowchart TD
 
 最小验收（可做成 GameTest 窄接口，不要 `inflate(128)`）：
 
-1. `3×3×3` 空心立方：内部 1 格先交付，最后 6 个面的中心最后封；封顶时无人机接近点在盒外。
+1. `3×3×3` 空心立方：内部 1 格先交付，最后 6 个面的中心最后封；封顶时悦灵接近点在盒外。
 2. 只剩门洞：门作为有碰撞 PLACE 时，腔内未交付物会让门被推迟。
-3. 两架机同时盯着最后两个缺口：第二架必须等第一架交付并撤离后再封。
-4. 半砖/台阶造成的“整格 peel 看不出来的口袋”：以 `VoxelShape` + `fitsDrone` 为准，不以整格占用为准。
+3. 两只悦灵同时盯着最后两个缺口：第二只必须等第一只交付并撤离后再封。
+4. 半砖/台阶造成的“整格 peel 看不出来的口袋”：以 `VoxelShape` + `fitsWorker` 为准，不以整格占用为准。
 5. 玩家站在目标格：继续走现有 `WAITING_OCCUPIED`，不和封闭检测混成一条失败原因。

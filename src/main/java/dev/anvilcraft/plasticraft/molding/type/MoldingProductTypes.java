@@ -22,7 +22,7 @@ public final class MoldingProductTypes {
     public static final ResourceLocation TANK_ID = AnvilcraftPlasticraft.of("tank");
     public static final ResourceLocation ANVIL_ID = AnvilcraftPlasticraft.of("anvil");
     public static final ResourceLocation TRAY_ID = AnvilcraftPlasticraft.of("tray");
-    public static final ResourceLocation PROPELLER_ID = AnvilcraftPlasticraft.of("propeller");
+    public static final ResourceLocation ALLAY_HARD_HAT_ID = AnvilcraftPlasticraft.of("allay_hard_hat");
     private static final Map<ResourceLocation, MoldingProductType> TYPES = createTypes();
 
     private MoldingProductTypes() {
@@ -143,7 +143,7 @@ public final class MoldingProductTypes {
         ));
         register(types, new AnvilType());
         register(types, new TrayType());
-        register(types, new PropellerType());
+        register(types, new AllayHardHatType());
         return types;
     }
 
@@ -254,25 +254,25 @@ public final class MoldingProductTypes {
         }
     }
 
-    private record PropellerType() implements MoldingProductType {
+    private record AllayHardHatType() implements MoldingProductType {
         @Override
         public ResourceLocation id() {
-            return PROPELLER_ID;
+            return ALLAY_HARD_HAT_ID;
         }
 
         @Override
         public String translationKey() {
-            return typeTranslationKey(PROPELLER_ID);
+            return typeTranslationKey(ALLAY_HARD_HAT_ID);
         }
 
         @Override
         public MoldingTypeValidation validate(MoldingFunctionalAnalysis analysis) {
-            return MoldingTypeValidation.invalid("propeller_model_required");
+            return MoldingTypeValidation.invalid("allay_hard_hat_model_required");
         }
 
         @Override
         public MoldingTypeValidation validate(EditableMoldingModel model, BakedMoldingModel baked) {
-            return MoldingPropellerShapeValidator.validate(model, baked);
+            return MoldingHardHatShapeValidator.validate(model, baked);
         }
 
         @Override

@@ -1,0 +1,86 @@
+{
+  "requested_type": "anvilcraftplasticraft:allay_hard_hat",
+  "elements": [
+    {
+      "to": {
+        "x": 36.0,
+        "y": 17.0,
+        "z": 30.0
+      },
+      "transform": {
+        "translation": {
+          "x": -6.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "pivot": {
+          "x": 16.0,
+          "y": 16.0,
+          "z": 16.0
+        }
+      },
+      "id": "028bd8db-8193-4ce9-8ceb-cdadedfae76c",
+      "name": "Cube 2",
+      "from": {
+        "x": 28.0,
+        "y": 16.0,
+        "z": 22.0
+      }
+    },
+    {
+      "to": {
+        "x": 22.0,
+        "y": 20.0,
+        "z": 22.0
+      },
+      "transform": {
+        "translation": {
+          "x": 7.0,
+          "y": 0.0,
+          "z": 7.0
+        },
+        "pivot": {
+          "x": 16.0,
+          "y": 16.0,
+          "z": 16.0
+        }
+      },
+      "id": "6504eb36-4ba0-4897-ad77-50811d5a5ec1",
+      "name": "Cube 1",
+      "from": {
+        "x": 16.0,
+        "y": 17.0,
+        "z": 16.0
+      }
+    },
+    {
+      "to": {
+        "x": 22.0,
+        "y": 19.0,
+        "z": 21.0
+      },
+      "transform": {
+        "translation": {
+          "x": 5.0,
+          "y": 2.0,
+          "z": 9.0
+        },
+        "pivot": {
+          "x": 16.0,
+          "y": 16.0,
+          "z": 16.0
+        }
+      },
+      "id": "2c82e4ae-0017-434b-84e9-8a5ceaa07444",
+      "name": "Cube 3",
+      "from": {
+        "x": 20.0,
+        "y": 15.0,
+        "z": 13.0
+      }
+    }
+  ],
+  "format_version": 3,
+  "name": "Allay hard hat type icon",
+  "groups": []
+}

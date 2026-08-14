@@ -8,7 +8,7 @@ import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberStructure;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingMachineState;
 import dev.anvilcraft.plasticraft.block.entity.Plastic3DPrintingComponentBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
-import dev.anvilcraft.plasticraft.client.gui.MoldingPropellerTypeIcon;
+import dev.anvilcraft.plasticraft.client.gui.MoldingHardHatTypeIcon;
 import dev.anvilcraft.plasticraft.client.gui.MoldingTrayTypeIcon;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingAxis;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingCamera;
@@ -58,6 +58,7 @@ import dev.anvilcraft.plasticraft.molding.type.MoldingTypeValidation;
 import dev.anvilcraft.plasticraft.network.MoldingBlueprintDiskPacket;
 import dev.anvilcraft.plasticraft.network.MoldingBlueprintLibraryPacket;
 import dev.anvilcraft.plasticraft.network.MoldingBlueprintListRequestPacket;
+import dev.anvilcraft.plasticraft.network.MoldingBlueprintRenamePacket;
 import dev.anvilcraft.plasticraft.network.MoldingEditPacket;
 import dev.anvilcraft.plasticraft.network.MoldingHeartbeatPacket;
 import dev.anvilcraft.plasticraft.network.MoldingMachinePacket;
@@ -294,6 +295,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private EditBox rightSearch;
     @Nullable
     private EditBox renameField;
+    @Nullable
+    private EditBox blueprintRenameField;
+    private String renamingBlueprintFileId = "";
+    private long renamingBlueprintRevision;
     private boolean contextMenuOpen;
     private int contextMenuX;
     private int contextMenuY;
@@ -372,9 +377,19 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         );
         this.renameField.setMaxLength(MoldingElement.MAX_NAME_LENGTH);
         this.renameField.setVisible(false);
+        this.blueprintRenameField = new VerticallyOffsetEditBox(
+            this.font,
+            48,
+            11,
+            Component.translatable("screen.anvilcraftplasticraft.molding.rename")
+        );
+        this.blueprintRenameField.setMaxLength(MoldingElement.MAX_NAME_LENGTH);
+        this.blueprintRenameField.setBordered(false);
+        this.blueprintRenameField.setVisible(false);
         this.addRenderableWidget(this.leftSearch);
         this.addRenderableWidget(this.rightSearch);
         this.addRenderableWidget(this.renameField);
+        this.addRenderableWidget(this.blueprintRenameField);
         updateLayout();
         refreshNumericFields();
     }
@@ -573,12 +588,20 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             this.lockClayRequirement = 0;
         }
         if (button == 0 && !isDiskConfirmationControl(logicalX, logicalY)) this.diskConfirmation = null;
+        if (this.blueprintRenameField != null
+            && this.blueprintRenameField.isVisible()
+            && !this.blueprintRenameField.isMouseOver(logicalX, logicalY)) {
+            commitBlueprintRename();
+        }
         if (!isOverSearchField(logicalX, logicalY)) clearSearchFocus();
+        NumericField focusedNumeric = focusedNumeric();
+        if (button == 0 && focusedNumeric != null && !focusedNumeric.box.isMouseOver(logicalX, logicalY)) {
+            commitFocusedNumeric();
+        }
         if (isOverTextField(logicalX, logicalY)) {
             this.contextMenuOpen = false;
             return super.mouseClicked(logicalX, logicalY, button);
         }
-        if (button == 0) commitFocusedNumeric();
         if (handleContextClick(logicalX, logicalY, button)) return true;
         if (handleElementScrollbarClick(logicalX, logicalY, button)) return true;
         if (handleFixedControlClick(logicalX, logicalY, button)) return true;
@@ -738,6 +761,19 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (this.blueprintRenameField != null
+            && this.blueprintRenameField.isVisible()
+            && this.blueprintRenameField.isFocused()) {
+            if (keyCode == InputConstants.KEY_RETURN || keyCode == InputConstants.KEY_NUMPADENTER) {
+                commitBlueprintRename();
+                return true;
+            }
+            if (keyCode == InputConstants.KEY_ESCAPE) {
+                closeBlueprintRename();
+                return true;
+            }
+            return this.blueprintRenameField.keyPressed(keyCode, scanCode, modifiers);
+        }
         if (this.renameField != null && this.renameField.isVisible() && this.renameField.isFocused()) {
             if (keyCode == InputConstants.KEY_RETURN || keyCode == InputConstants.KEY_NUMPADENTER) {
                 commitRename();
@@ -1735,7 +1771,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                     entry.y + 2,
                     10
                 );
-                String label = this.font.plainSubstrByWidth(
+                String label = marqueeLabel(
                     Component.translatable(type.translationKey()).getString(),
                     35
                 );
@@ -1953,7 +1989,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         if (MoldingProductTypes.TANK_ID.equals(type)) return ModBlocks.FLUID_TANK.asStack();
         if (MoldingProductTypes.ANVIL_ID.equals(type)) return Items.ANVIL.getDefaultInstance();
         if (MoldingProductTypes.TRAY_ID.equals(type)) return MoldingTrayTypeIcon.stack();
-        if (MoldingProductTypes.PROPELLER_ID.equals(type)) return MoldingPropellerTypeIcon.stack();
+        if (MoldingProductTypes.ALLAY_HARD_HAT_ID.equals(type)) return MoldingHardHatTypeIcon.stack();
         return PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
     }
 
@@ -1965,23 +2001,28 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             Math.max(0, filtered.size() - this.blueprintScrollRow)
         );
         for (int row = 0; row < visibleRows; row++) {
-            GuiRect entry = new GuiRect(357, 90 + row * 15, 52, 15);
+            GuiRect entry = blueprintEntryRect(row);
             int index = this.blueprintScrollRow + row;
             MoldingBlueprintSummary summary = filtered.get(index);
             boolean selected = summary.fileId().equals(this.selectedBlueprintFileId);
+            boolean renaming = summary.fileId().equals(this.renamingBlueprintFileId)
+                && this.blueprintRenameField != null
+                && this.blueprintRenameField.isVisible();
             drawThreeFrameAtlas(graphics, entry, MODEL_ENTRY_BUTTON, selected, true, mouseX, mouseY);
-            String label = marqueeLabel(summary.name(), 48);
-            graphics.drawString(
-                this.font,
-                label,
-                this.leftPos + entry.x + 2,
-                this.topPos + entry.y + 4,
-                summary.pinned() ? 0xFFFFD56A : 0xFFF0F0F0,
-                false
-            );
-            if (entry.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
+            if (!renaming) {
+                String label = marqueeLabel(summary.displayName(), 48);
+                graphics.drawString(
+                    this.font,
+                    label,
+                    this.leftPos + entry.x + 2,
+                    this.topPos + entry.y + 4,
+                    summary.pinned() ? 0xFFFFD56A : 0xFFF0F0F0,
+                    false
+                );
+            }
+            if (!renaming && entry.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
                 this.hoveredControlTooltip = List.of(
-                    Component.literal(summary.name()),
+                    Component.literal(summary.displayName()),
                     Component.translatable(
                         "screen.anvilcraftplasticraft.molding.blueprint.owner",
                         summary.ownerName()
@@ -2398,18 +2439,23 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private boolean handleBlueprintOverlayClick(double mouseX, double mouseY, int button) {
-        if (!this.rightOverlayOpen || button != 0) return false;
+        if (!this.rightOverlayOpen || button != 0 && button != 1) return false;
         List<MoldingBlueprintSummary> filtered = filteredBlueprints();
         for (int row = 0; row < BLUEPRINT_VISIBLE_ROWS; row++) {
-            GuiRect entry = new GuiRect(357, 90 + row * 15, 52, 15);
+            GuiRect entry = blueprintEntryRect(row);
             if (!entry.contains(this.leftPos, this.topPos, mouseX, mouseY)) continue;
             int index = this.blueprintScrollRow + row;
             if (index >= filtered.size()) return true;
             MoldingBlueprintSummary summary = filtered.get(index);
+            if (button == 1) {
+                openBlueprintRename(summary);
+                return true;
+            }
             this.selectedBlueprintFileId = summary.fileId();
             writeSelectedBlueprintToDisk(summary);
             return true;
         }
+        if (button != 0) return false;
 
         Optional<MoldingBlueprintSummary> selected = selectedBlueprint();
         GuiRect pin = new GuiRect(358, 184, 13, 13);
@@ -2503,7 +2549,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                     ? Component.translatable("screen.anvilcraftplasticraft.molding.disk.other_data").getString()
                     : existing.name(),
                 existing == null ? null : existing.model(),
-                summary.name(),
+                summary.displayName(),
                 summary.modelHash()
             );
             return;
@@ -3251,6 +3297,15 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             if (!this.rightOverlayOpen) this.rightSearch.setFocused(false);
         }
         if (this.renameField != null && this.renameField.isVisible()) positionRenameField();
+        if (this.blueprintRenameField != null) {
+            this.blueprintRenameField.setVisible(this.rightOverlayOpen && !this.renamingBlueprintFileId.isEmpty());
+            if (this.blueprintRenameField.isVisible()) positionBlueprintRenameField();
+            else if (!this.rightOverlayOpen) closeBlueprintRename();
+        }
+    }
+
+    private static GuiRect blueprintEntryRect(int row) {
+        return new GuiRect(357, 90 + row * 15, 52, 15);
     }
 
     private boolean canDisplayBothOverlays() {
@@ -3311,6 +3366,65 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         this.contextMenuOpen = false;
     }
 
+    private void openBlueprintRename(MoldingBlueprintSummary summary) {
+        if (this.blueprintRenameField == null) return;
+        closeRename();
+        this.renamingBlueprintFileId = summary.fileId();
+        this.renamingBlueprintRevision = summary.fileRevision();
+        this.blueprintRenameField.setValue(summary.displayName());
+        this.blueprintRenameField.setVisible(true);
+        positionBlueprintRenameField();
+        this.blueprintRenameField.setFocused(true);
+        this.setFocused(this.blueprintRenameField);
+        this.blueprintRenameField.moveCursorToEnd(false);
+    }
+
+    private void positionBlueprintRenameField() {
+        if (this.blueprintRenameField == null || this.renamingBlueprintFileId.isEmpty()) return;
+        List<MoldingBlueprintSummary> filtered = filteredBlueprints();
+        for (int row = 0; row < BLUEPRINT_VISIBLE_ROWS; row++) {
+            int index = this.blueprintScrollRow + row;
+            if (index >= filtered.size()) break;
+            if (!filtered.get(index).fileId().equals(this.renamingBlueprintFileId)) continue;
+            GuiRect entry = blueprintEntryRect(row);
+            this.blueprintRenameField.setX(this.leftPos + entry.x + 2);
+            this.blueprintRenameField.setY(this.topPos + entry.y + 2);
+            return;
+        }
+    }
+
+    private void commitBlueprintRename() {
+        if (this.blueprintRenameField == null || !this.blueprintRenameField.isVisible()) return;
+        String fileId = this.renamingBlueprintFileId;
+        long revision = this.renamingBlueprintRevision;
+        String requested = this.blueprintRenameField.getValue().strip();
+        closeBlueprintRename();
+        if (fileId.isEmpty() || requested.isEmpty()) return;
+        Optional<MoldingBlueprintSummary> current = this.menu.blueprints().stream()
+            .filter(summary -> summary.fileId().equals(fileId))
+            .findFirst();
+        if (current.isEmpty()) return;
+        MoldingBlueprintSummary summary = current.get();
+        if (requested.equals(summary.displayName()) && requested.equals(summary.name())) return;
+        PacketDistributor.sendToServer(new MoldingBlueprintRenamePacket(
+            this.menu.chamberPos(),
+            this.menu.sessionId(),
+            this.menu.revision(),
+            fileId,
+            revision,
+            requested
+        ));
+    }
+
+    private void closeBlueprintRename() {
+        this.renamingBlueprintFileId = "";
+        this.renamingBlueprintRevision = 0L;
+        if (this.blueprintRenameField == null) return;
+        this.blueprintRenameField.setFocused(false);
+        if (this.getFocused() == this.blueprintRenameField) this.setFocused(null);
+        this.blueprintRenameField.setVisible(false);
+    }
+
     private void synchronizeMenuSnapshot() {
         boolean editable = this.menu.modelEditable();
         if (this.seenMenuModel == this.menu.model()
@@ -3349,6 +3463,11 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         boolean selectionStillExists = this.menu.blueprints().stream()
             .anyMatch(summary -> summary.fileId().equals(this.selectedBlueprintFileId));
         if (!selectionStillExists) this.selectedBlueprintFileId = "";
+        if (!this.renamingBlueprintFileId.isEmpty()
+            && this.menu.blueprints().stream()
+                .noneMatch(summary -> summary.fileId().equals(this.renamingBlueprintFileId))) {
+            closeBlueprintRename();
+        }
         this.diskConfirmation = null;
         List<MoldingBlueprintSummary> filtered = filteredBlueprints();
         clampBlueprintScroll(filtered.size());
@@ -3360,6 +3479,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         if (query.isEmpty()) return this.menu.blueprints();
         return this.menu.blueprints().stream()
             .filter(summary -> summary.fileId().toLowerCase(Locale.ROOT).contains(query)
+                || summary.displayName().toLowerCase(Locale.ROOT).contains(query)
                 || summary.name().toLowerCase(Locale.ROOT).contains(query)
                 || summary.ownerName().toLowerCase(Locale.ROOT).contains(query))
             .toList();
@@ -3763,7 +3883,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         }
         return this.leftSearch != null && this.leftSearch.isVisible() && this.leftSearch.isMouseOver(mouseX, mouseY)
             || this.rightSearch != null && this.rightSearch.isVisible() && this.rightSearch.isMouseOver(mouseX, mouseY)
-            || this.renameField != null && this.renameField.isVisible() && this.renameField.isMouseOver(mouseX, mouseY);
+            || this.renameField != null && this.renameField.isVisible() && this.renameField.isMouseOver(mouseX, mouseY)
+            || this.blueprintRenameField != null
+                && this.blueprintRenameField.isVisible()
+                && this.blueprintRenameField.isMouseOver(mouseX, mouseY);
     }
 
     private boolean isOverSearchField(double mouseX, double mouseY) {

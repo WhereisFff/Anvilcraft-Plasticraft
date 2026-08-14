@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.item;
 
+import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.dubhe.anvilcraft.block.item.HasMobBlockItem;
 import dev.dubhe.anvilcraft.block.item.ResinBlockItem;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
@@ -36,6 +37,7 @@ public class HighViscosityResinBlockItem extends ResinBlockItem {
     }
 
     public static boolean canMobBeSaved(Mob mob, @Nullable Player player, @Nullable ItemStack stack) {
+        if (mob instanceof WorkingAllayEntity) return false;
         if (player != null && player.getAbilities().instabuild) return true;
         if (stack != null && stack.has(ModComponents.SAVED_ENTITY)) return false;
         return !(mob instanceof Monster monster && !monster.hasEffect(MobEffects.WEAKNESS));

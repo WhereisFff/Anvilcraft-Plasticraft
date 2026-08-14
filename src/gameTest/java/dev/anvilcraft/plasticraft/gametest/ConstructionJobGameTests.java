@@ -15,22 +15,18 @@ import dev.anvilcraft.plasticraft.blueprint.ConstructionLedgerEntry;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionOverlayView;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionProjectionIndex;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionDebris;
-import dev.anvilcraft.plasticraft.blueprint.ConstructionWaitReason;
 import dev.anvilcraft.plasticraft.blueprint.DemolitionPlanner;
 import dev.anvilcraft.plasticraft.blueprint.StonecutterSmashAdapter;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
-import dev.anvilcraft.plasticraft.drone.DroneData;
-import dev.anvilcraft.plasticraft.drone.DroneEnergyModel;
-import dev.anvilcraft.plasticraft.drone.DroneFlightState;
-import dev.anvilcraft.plasticraft.drone.DroneShortageStrategy;
-import dev.anvilcraft.plasticraft.drone.tool.CollectionDroneToolBehavior;
-import dev.anvilcraft.plasticraft.drone.tool.ConstructionDroneToolBehavior;
-import dev.anvilcraft.plasticraft.drone.tool.DemolitionDroneToolBehavior;
-import dev.anvilcraft.plasticraft.drone.tool.DroneToolDefinitions;
-import dev.anvilcraft.plasticraft.entity.drone.DroneEntity;
+import dev.anvilcraft.plasticraft.allay.AllayFlightState;
+import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
+import dev.anvilcraft.plasticraft.allay.tool.CollectionAllayToolBehavior;
+import dev.anvilcraft.plasticraft.allay.tool.ConstructionAllayToolBehavior;
+import dev.anvilcraft.plasticraft.allay.tool.DemolitionAllayToolBehavior;
+import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.block.RedstoneWireBlock;
@@ -53,6 +49,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.animal.Pig;
@@ -133,6 +130,39 @@ public final class ConstructionJobGameTests {
                     "cancelled job must not keep a carried ledger entry");
             } catch (ConstructionBlueprintException exception) {
                 throw new GameTestAssertException("ledger setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A creative owner supplies any blueprint item without consuming inventory")
+    static void creativeOwnerSuppliesAnyMaterial(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.CREATIVE);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob started = startCobbleJob(helper, player, 2);
+                check(countCobble(player) == 0, "creative setup must start without cobble");
+                ConstructionBuildOp first = firstPlace(started.progress());
+                check(
+                    ConstructionJobController.extractMaterial(player, started.progress(), first, UUID.randomUUID()),
+                    "creative extract must succeed without cobble in the inventory"
+                );
+                check(countCobble(player) == 0, "creative extract must not consume inventory");
+                check(carriedCount(started.progress()) == 1, "ledger must still record the supplied cobble");
+                check(
+                    ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), first),
+                    "creative deliver after extract must succeed"
+                );
+                ConstructionBuildOp second = firstOpenPlace(started.progress());
+                check(
+                    ConstructionJobController.extractMaterial(player, started.progress(), second, UUID.randomUUID()),
+                    "creative extract must succeed again for the next block"
+                );
+                check(countCobble(player) == 0, "second creative extract must still leave inventory empty");
+                ConstructionBlueprintService.cancel(player, started.job().jobId());
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("creative extract setup failed: " + exception.reason());
             }
         }).thenSucceed();
     }
@@ -306,7 +336,7 @@ public final class ConstructionJobGameTests {
                     helper.getLevel().getServer(),
                     started.job(),
                     started.progress(),
-                    DroneShortageStrategy.PAUSE,
+                    AllayShortageStrategy.PAUSE,
                     new ItemStack(Items.COBBLESTONE)
                 );
                 ConstructionJob paused = ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId());
@@ -317,7 +347,7 @@ public final class ConstructionJobGameTests {
                     helper.getLevel().getServer(),
                     paused,
                     started.progress(),
-                    DroneShortageStrategy.SKIP,
+                    AllayShortageStrategy.SKIP,
                     new ItemStack(Items.COBBLESTONE)
                 );
                 ConstructionJob skipped = ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId());
@@ -338,35 +368,6 @@ public final class ConstructionJobGameTests {
         }).thenSucceed();
     }
 
-    @GameTest(timeoutTicks = 40, batch = "zzz_construction")
-    @EmptyTemplate(value = "5x4x5", floor = true)
-    @TestHolder(description = "A drone that cannot accept the energy quote is not assigned a construction lease")
-    static void insufficientEnergyDoesNotClaim(ExtendedGameTestHelper helper) {
-        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        helper.startSequence().thenExecuteAfter(5, () -> {
-            try {
-                player.moveTo(helper.absoluteVec(new Vec3(1.5D, 2.0D, 1.5D)));
-                StartedJob started = startCobbleJob(helper, player, 1);
-                DroneEntity drone = spawnConstructionDrone(helper, new Vec3(2.5D, 2.0D, 1.5D), player, 100);
-                check(
-                    !ConstructionDroneToolBehavior.tryClaim(
-                        drone,
-                        helper.getLevel(),
-                        started.job(),
-                        started.progress()
-                    ),
-                    "a drone below the quote plus landing reserve must not claim a lease"
-                );
-                check(drone.waitReason() == ConstructionWaitReason.ENERGY,
-                    "rejected claim must record ENERGY, was " + drone.waitReason());
-                check(drone.assignedJobId().isEmpty(), "rejected claim must leave the drone unassigned");
-                ConstructionBlueprintService.cancel(player, started.job().jobId());
-            } catch (ConstructionBlueprintException exception) {
-                throw new GameTestAssertException("energy claim setup failed: " + exception.reason());
-            }
-        }).thenSucceed();
-    }
-
     @GameTest(timeoutTicks = 200, batch = "zzz_construction_return")
     @EmptyTemplate(value = "7x6x7", floor = true)
     @TestHolder(description = "Stopping a job makes a loaded drone fly back and insert carry beside the owner")
@@ -374,7 +375,7 @@ public final class ConstructionJobGameTests {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         player.setNoGravity(true);
         player.moveTo(helper.absoluteVec(new Vec3(1.5D, 2.0D, 1.5D)));
-        DroneEntity[] droneSlot = new DroneEntity[1];
+        WorkingAllayEntity[] droneSlot = new WorkingAllayEntity[1];
         int[] beforeSlot = new int[1];
         helper.startSequence().thenExecuteAfter(5, () -> {
             try {
@@ -383,11 +384,11 @@ public final class ConstructionJobGameTests {
                 StartedJob started = startCobbleJob(helper, player, 2, new BlockPos(5, 2, 5));
                 player.getInventory().add(new ItemStack(Items.COBBLESTONE, 4));
                 ConstructionBuildOp first = firstPlace(started.progress());
-                DroneEntity drone = spawnConstructionDrone(
+                WorkingAllayEntity drone = spawnConstructionAllay(
                     helper,
                     new Vec3(5.5D, 3.0D, 5.5D),
                     player,
-                    DroneEnergyModel.capacity()
+                    0
                 );
                 drone.setNoGravity(true);
                 check(
@@ -396,12 +397,12 @@ public final class ConstructionJobGameTests {
                 );
                 drone.setHostedCarry(first.material().copyWithCount(1));
                 first.setStatus(ConstructionBuildOp.Status.LEASED);
-                first.setLeaseDrone(drone.getUUID());
+                first.setLeaseAllay(drone.getUUID());
                 drone.assign(started.job().jobId(), first.id());
                 droneSlot[0] = drone;
                 beforeSlot[0] = countCobble(player);
                 check(
-                    drone.distanceTo(player) > ConstructionJobController.REACH + 0.5D,
+                    drone.distanceTo(player) > ConstructionJobController.reach(drone) + 0.5D,
                     "setup must place the drone away from the owner"
                 );
                 ConstructionBlueprintService.toggleActive(player, started.job().jobId());
@@ -411,7 +412,7 @@ public final class ConstructionJobGameTests {
                 throw new GameTestAssertException("pause return setup failed: " + exception.reason());
             }
         }).thenWaitUntil(() -> {
-            DroneEntity drone = droneSlot[0];
+            WorkingAllayEntity drone = droneSlot[0];
             check(drone != null, "construction drone missing after pause");
             check(drone.hostedCarry().isEmpty(), "drone must empty carry after flying back");
             check(
@@ -419,7 +420,7 @@ public final class ConstructionJobGameTests {
                 "owner must receive the returned cobble after the drone arrives"
             );
             check(
-                drone.distanceTo(player) <= ConstructionJobController.REACH + 1.0D,
+                drone.distanceTo(player) <= ConstructionJobController.reach(drone) + 1.0D,
                 "drone must return beside the owner"
             );
         }).thenSucceed();
@@ -432,7 +433,7 @@ public final class ConstructionJobGameTests {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         player.setNoGravity(true);
         player.moveTo(helper.absoluteVec(new Vec3(2.5D, 2.0D, 2.5D)));
-        DroneEntity[] droneSlot = new DroneEntity[1];
+        WorkingAllayEntity[] droneSlot = new WorkingAllayEntity[1];
         UUID[] jobSlot = new UUID[1];
         AABB[] siteSlot = new AABB[1];
         helper.startSequence().thenExecuteAfter(5, () -> {
@@ -443,23 +444,23 @@ public final class ConstructionJobGameTests {
                 jobSlot[0] = started.job().jobId();
                 siteSlot[0] = ConstructionJobController.worldBox(started.job());
                 player.getInventory().add(new ItemStack(Items.COBBLESTONE, 8));
-                DroneEntity drone = spawnConstructionDrone(
+                WorkingAllayEntity drone = spawnConstructionAllay(
                     helper,
                     new Vec3(2.5D, 2.0D, 3.5D),
                     player,
-                    DroneEnergyModel.capacity()
+                    0
                 );
                 drone.setNoGravity(true);
                 droneSlot[0] = drone;
                 check(
-                    ConstructionDroneToolBehavior.tryClaim(
+                    ConstructionAllayToolBehavior.tryClaim(
                         drone,
                         helper.getLevel(),
                         started.job(),
                         started.progress()
                     ),
                     "construction drone failed to claim: wait=" + drone.waitReason()
-                        + " energy=" + drone.getEnergy()
+
                         + " ownerListed=" + (helper.getLevel().getServer().getPlayerList().getPlayer(player.getUUID()) != null)
                         + " ownerInLevel=" + (ConstructionJobController.findOwner(
                             helper.getLevel().getServer(),
@@ -471,7 +472,7 @@ public final class ConstructionJobGameTests {
                 throw new GameTestAssertException("live loop setup failed: " + exception.reason());
             }
         }).thenWaitUntil(() -> {
-            DroneEntity drone = droneSlot[0];
+            WorkingAllayEntity drone = droneSlot[0];
             UUID jobId = jobSlot[0];
             ConstructionJob job = jobId == null ? null : ConstructionJobIndex.get(helper.getLevel()).job(jobId);
             ConstructionJobProgress progress = jobId == null
@@ -502,7 +503,7 @@ public final class ConstructionJobGameTests {
             check(siteSlot[0] != null, "construction site bounds missing");
             check(
                 drone != null && !siteSlot[0].intersects(drone.getBoundingBox()),
-                "drone must leave the construction site before landing"
+                "allay must leave the construction site before hovering"
                     + (drone == null ? "" : "; pos=" + drone.blockPosition()
                     + " flight=" + drone.flightState())
             );
@@ -680,7 +681,7 @@ public final class ConstructionJobGameTests {
                         helper.getLevel().getServer(),
                         started.job(),
                         started.progress(),
-                        DroneShortageStrategy.PAUSE
+                        AllayShortageStrategy.PAUSE
                     );
                     ConstructionJob paused = ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId());
                     check(
@@ -691,7 +692,7 @@ public final class ConstructionJobGameTests {
                         helper.getLevel().getServer(),
                         paused,
                         started.progress(),
-                        DroneShortageStrategy.SKIP
+                        AllayShortageStrategy.SKIP
                     );
                     ConstructionJob afterSkip = ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId());
                     check(
@@ -845,16 +846,16 @@ public final class ConstructionJobGameTests {
                 player.setNoGravity(true);
                 player.moveTo(helper.absoluteVec(new Vec3(2.5D, 2.0D, 2.5D)));
                 helper.setBlock(new BlockPos(3, 2, 3), Blocks.STONE);
-                DroneEntity drone = spawnDemolitionDrone(
+                WorkingAllayEntity drone = spawnDemolitionAllay(
                     helper,
                     new Vec3(2.5D, 2.0D, 3.5D),
                     player,
-                    DroneEnergyModel.capacity()
+                    0
                 );
                 drone.setNoGravity(true);
                 StartedJob started = startCobbleJob(helper, player, 1, new BlockPos(3, 2, 3));
                 jobSlot[0] = started.job().jobId();
-                if (!DemolitionDroneToolBehavior.tryClaim(
+                if (!DemolitionAllayToolBehavior.tryClaim(
                     drone,
                     helper.getLevel(),
                     started.job(),
@@ -894,11 +895,11 @@ public final class ConstructionJobGameTests {
                         ConstructionJobController.tryDemolish(helper.getLevel(), started.progress(), demolish),
                         "demolish must spawn marked drops"
                     );
-                    DroneEntity drone = spawnCollectionDrone(
+                    WorkingAllayEntity drone = spawnCollectionAllay(
                         helper,
                         new Vec3(2.5D, 2.0D, 1.5D),
                         player,
-                        DroneEnergyModel.capacity()
+                        0
                     );
                     ConstructionJobController.tickJob(
                         helper.getLevel().getServer(),
@@ -939,7 +940,7 @@ public final class ConstructionJobGameTests {
                         "task mode must select a marked drop");
                     check(claimed != unmarked, "task mode must not claim the unmarked cobble");
                     check(
-                        CollectionDroneToolBehavior.tryClaim(drone, helper.getLevel(), collecting, started.progress()),
+                        CollectionAllayToolBehavior.tryClaim(drone, helper.getLevel(), collecting, started.progress()),
                         "collection drone must claim the marked drop"
                     );
                     check(unmarked.isAlive() && !ConstructionDebris.isMarked(unmarked.getItem()),
@@ -1079,11 +1080,11 @@ public final class ConstructionJobGameTests {
                         ConstructionJobController.tryDemolish(helper.getLevel(), started.progress(), demolish),
                         "demolish must spawn marked drops"
                     );
-                    DroneEntity drone = spawnCollectionDrone(
+                    WorkingAllayEntity drone = spawnCollectionAllay(
                         helper,
                         new Vec3(2.5D, 2.0D, 1.5D),
                         player,
-                        DroneEnergyModel.capacity()
+                        0
                     );
                     ConstructionJobController.tickJob(
                         helper.getLevel().getServer(),
@@ -1119,14 +1120,14 @@ public final class ConstructionJobGameTests {
                     );
                     check(
                         started.progress().debrisSettled() > 0
-                            || countInDrone(drone, Items.COBBLESTONE) + countInDrone(drone, Items.STONE) > 0,
+                            || countInAllay(drone, Items.COBBLESTONE) + countInAllay(drone, Items.STONE) > 0,
                         "the collector must keep the inhaled items"
                     );
-                    CollectionDroneToolBehavior.INSTANCE.serverTick(drone);
+                    CollectionAllayToolBehavior.INSTANCE.serverTick(drone);
                     AABB site = ConstructionJobController.worldBox(building);
                     if (site.inflate(2.0D).intersects(drone.getBoundingBox())) {
                         check(
-                            drone.flightState() == DroneFlightState.FLYING,
+                            drone.flightState() == AllayFlightState.FLYING,
                             "a collector still on site after the sweep must evacuate, was "
                                 + drone.flightState()
                         );
@@ -2244,69 +2245,45 @@ public final class ConstructionJobGameTests {
         return tag;
     }
 
-    private static DroneEntity spawnConstructionDrone(
+    private static WorkingAllayEntity spawnConstructionAllay(
         ExtendedGameTestHelper helper,
         Vec3 relativePos,
         GameTestPlayer player,
-        int energy
+        int ignoredEnergy
     ) {
-        DroneEntity drone = PlasticraftEntities.DRONE.get().create(helper.getLevel());
-        check(drone != null, "failed to create construction drone");
-        drone.applyDroneData(DroneData.assembled(
-            DroneToolDefinitions.CONSTRUCTION.id(),
-            ItemStack.EMPTY,
-            ItemStack.EMPTY
-        ).withOwner(player.getUUID()).withEnergy(energy));
-        Vec3 position = helper.absoluteVec(relativePos);
-        drone.setPos(position.x, position.y, position.z);
-        check(helper.getLevel().addFreshEntity(drone), "failed to add construction drone");
-        return drone;
+        WorkingAllayEntity worker = AllayGameTests.spawnHatted(helper, relativePos, player);
+        worker.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(ModItems.CRAB_CLAW.get()));
+        return worker;
     }
 
-    private static DroneEntity spawnCollectionDrone(
+    private static WorkingAllayEntity spawnCollectionAllay(
         ExtendedGameTestHelper helper,
         Vec3 relativePos,
         GameTestPlayer player,
-        int energy
+        int ignoredEnergy
     ) {
-        DroneEntity drone = PlasticraftEntities.DRONE.get().create(helper.getLevel());
-        check(drone != null, "failed to create collection drone");
-        drone.applyDroneData(DroneData.assembled(
-            DroneToolDefinitions.COLLECTION.id(),
-            ItemStack.EMPTY,
-            ItemStack.EMPTY
-        ).withOwner(player.getUUID()).withEnergy(energy));
-        Vec3 position = helper.absoluteVec(relativePos);
-        drone.setPos(position.x, position.y, position.z);
-        check(helper.getLevel().addFreshEntity(drone), "failed to add collection drone");
-        return drone;
+        WorkingAllayEntity worker = AllayGameTests.spawnHatted(helper, relativePos, player);
+        worker.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(ModItems.MAGNET.get()));
+        return worker;
     }
 
-    private static int countInDrone(DroneEntity drone, Item item) {
+    private static int countInAllay(WorkingAllayEntity worker, Item item) {
         int count = 0;
-        for (ItemStack stack : drone.collectionInventory()) {
+        for (ItemStack stack : worker.collectionInventory()) {
             if (stack.is(item)) count += stack.getCount();
         }
         return count;
     }
 
-    private static DroneEntity spawnDemolitionDrone(
+    private static WorkingAllayEntity spawnDemolitionAllay(
         ExtendedGameTestHelper helper,
         Vec3 relativePos,
         GameTestPlayer player,
-        int energy
+        int ignoredEnergy
     ) {
-        DroneEntity drone = PlasticraftEntities.DRONE.get().create(helper.getLevel());
-        check(drone != null, "failed to create demolition drone");
-        drone.applyDroneData(DroneData.assembled(
-            DroneToolDefinitions.DEMOLITION.id(),
-            ItemStack.EMPTY,
-            ItemStack.EMPTY
-        ).withOwner(player.getUUID()).withEnergy(energy));
-        Vec3 position = helper.absoluteVec(relativePos);
-        drone.setPos(position.x, position.y, position.z);
-        check(helper.getLevel().addFreshEntity(drone), "failed to add demolition drone");
-        return drone;
+        WorkingAllayEntity worker = AllayGameTests.spawnHatted(helper, relativePos, player);
+        worker.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONECUTTER));
+        return worker;
     }
 
     private static void discardNearby(ExtendedGameTestHelper helper, BlockPos pos) {

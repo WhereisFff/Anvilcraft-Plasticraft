@@ -73,7 +73,7 @@ public final class MoldingBlueprintLibrary {
         for (int index = 0; index < pins.size(); index++) pinOrder.putIfAbsent(pins.get(index), index);
         summaries.sort(Comparator
             .comparingInt((MoldingBlueprintSummary summary) -> pinOrder.getOrDefault(summary.fileId(), Integer.MAX_VALUE))
-            .thenComparing(summary -> summary.name().toLowerCase(Locale.ROOT))
+            .thenComparing(summary -> displayName(summary.fileId()).toLowerCase(Locale.ROOT))
             .thenComparing(MoldingBlueprintSummary::fileId));
         return List.copyOf(summaries);
     }
@@ -169,14 +169,109 @@ public final class MoldingBlueprintLibrary {
         return revised;
     }
 
-    public static MoldingBlueprint rename(
+    /**
+     * 按显示名重命名共享文件,并让蓝图 JSON 的 name 与文件名去掉扩展名后保持一致。
+     * 文件夹里直接改文件名只影响列表显示;这里会同时改磁盘文件名和 JSON。
+     */
+    public static StoredBlueprint rename(
         ServerPlayer player,
         String fileId,
         long expectedRevision,
-        String newName
+        String requestedName
     ) throws BlueprintException {
-        MoldingBlueprint current = read(requireServer(player), fileId, expectedRevision);
-        return overwrite(player, fileId, expectedRevision, new EditableBlueprint(newName, current.model()));
+        MinecraftServer server = requireServer(player);
+        MoldingBlueprint current = read(server, fileId, expectedRevision);
+        requireManagePermission(player, current);
+        String stem = stripJsonSuffix(requestedName == null ? "" : requestedName.strip());
+        if (stem.isBlank()) {
+            throw new BlueprintException("invalid_blueprint_name", "Blueprint name is blank");
+        }
+        String newFileId = fileIdFromDisplayName(stem);
+        String newName = displayName(newFileId);
+        if (newName.isBlank() || newName.length() > 64) {
+            throw new BlueprintException("invalid_blueprint_name", "Blueprint name is invalid");
+        }
+        Path root = libraryRoot(server);
+        Path oldPath = resolveFile(root, fileId);
+        Path newPath = resolveFile(root, newFileId);
+        if (!newFileId.equals(fileId) && Files.exists(newPath, LinkOption.NOFOLLOW_LINKS)) {
+            throw new BlueprintException("blueprint_name_taken", "A shared model already uses that filename");
+        }
+        if (newFileId.equals(fileId) && current.name().equals(newName)) {
+            return new StoredBlueprint(fileId, current);
+        }
+        MoldingBlueprint revised = current.revise(newName, current.model(), System.currentTimeMillis());
+        if (newFileId.equals(fileId)) {
+            writeAtomic(newPath, MoldingBlueprintCodec.encode(revised), true);
+            return new StoredBlueprint(fileId, revised);
+        }
+        writeAtomic(newPath, MoldingBlueprintCodec.encode(revised), false);
+        try {
+            if (!Files.deleteIfExists(oldPath)) {
+                Files.deleteIfExists(newPath);
+                throw new BlueprintException("blueprint_missing", "Shared blueprint no longer exists");
+            }
+        } catch (BlueprintException exception) {
+            throw exception;
+        } catch (IOException exception) {
+            try {
+                Files.deleteIfExists(newPath);
+            } catch (IOException ignored) {
+            }
+            throw ioFailure("delete_failed", oldPath, exception);
+        }
+        retargetPins(server, fileId, newFileId);
+        return new StoredBlueprint(newFileId, revised);
+    }
+
+    /** 列表和改名输入框显示的名称就是文件名去掉 {@code .json}。 */
+    public static String displayName(String fileId) {
+        if (fileId != null && fileId.endsWith(".json")) {
+            return fileId.substring(0, fileId.length() - 5);
+        }
+        return fileId == null ? "" : fileId;
+    }
+
+    public static String fileIdFromDisplayName(String name) {
+        String stem = stripJsonSuffix(name == null ? "" : name.strip());
+        if (stem.length() > 64) {
+            stem = stem.substring(0, 64);
+        }
+        String candidate = stem + ".json";
+        if (isSafeFileId(candidate)) return candidate;
+        return safeStem(stem) + ".json";
+    }
+
+    private static String stripJsonSuffix(String name) {
+        if (name.toLowerCase(Locale.ROOT).endsWith(".json")) {
+            return name.substring(0, name.length() - 5).strip();
+        }
+        return name;
+    }
+
+    private static void retargetPins(MinecraftServer server, String oldFileId, String newFileId)
+        throws BlueprintException {
+        if (oldFileId.equals(newFileId)) return;
+        Path root = ensureOwnedDirectory(server, PREFERENCE_DIRECTORY);
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(root, "*.json")) {
+            for (Path path : stream) {
+                String filename = path.getFileName().toString();
+                if (filename.length() != 41 || !filename.endsWith(".json")) continue;
+                UUID playerId;
+                try {
+                    playerId = UUID.fromString(filename.substring(0, filename.length() - 5));
+                } catch (IllegalArgumentException ignored) {
+                    continue;
+                }
+                List<String> pins = new ArrayList<>(readPins(server, playerId));
+                int index = pins.indexOf(oldFileId);
+                if (index < 0) continue;
+                pins.set(index, newFileId);
+                writePins(server, playerId, pins);
+            }
+        } catch (IOException exception) {
+            throw ioFailure("preferences_read_failed", root, exception);
+        }
     }
 
     public static void delete(ServerPlayer player, String fileId, long expectedRevision)

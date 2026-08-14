@@ -1,8 +1,6 @@
 package dev.anvilcraft.plasticraft.init;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.recipe.DroneAssemblyRecipe;
-import dev.anvilcraft.plasticraft.recipe.DronePropellerIngredient;
 import dev.anvilcraft.plasticraft.recipe.FluidFastCookingRecipe;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
@@ -62,14 +60,6 @@ public final class PlasticraftRecipeTypes {
         });
     public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<CondenserRecipe>> CONDENSER_SERIALIZER =
         SERIALIZERS.register("condenser", CondenserRecipe.Serializer::new);
-
-    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<DroneAssemblyRecipe>> DRONE_ASSEMBLY =
-        SERIALIZERS.register("drone_assembly", DroneAssemblyRecipe.Serializer::new);
-    public static final DeferredHolder<IngredientType<?>, IngredientType<DronePropellerIngredient>>
-        DRONE_PROPELLER_INGREDIENT = INGREDIENT_TYPES.register(
-            "drone_propeller",
-            () -> new IngredientType<>(DronePropellerIngredient.CODEC)
-        );
 
     private PlasticraftRecipeTypes() {
     }

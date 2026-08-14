@@ -231,7 +231,7 @@ public final class ConstructionJobProgress {
     public ConstructionBuildOp leasedBy(UUID droneId) {
         for (ConstructionBuildOp op : this.operations) {
             if (op.status() == ConstructionBuildOp.Status.LEASED
-                && op.leaseDrone().filter(droneId::equals).isPresent()) {
+                && op.leaseAllay().filter(droneId::equals).isPresent()) {
                 return op;
             }
         }

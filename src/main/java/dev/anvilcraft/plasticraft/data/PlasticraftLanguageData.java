@@ -40,61 +40,35 @@ public final class PlasticraftLanguageData {
         provider.add("item.anvilcraftplasticraft.molded_product_name", "%1$s %2$s");
         provider.add("item.anvilcraftplasticraft.molded_product_suffix.block", "Block");
 
-        // 无人机物品说明与螺旋桨信息行的语言文件生成。
-        provider.add(
-            "tooltip.anvilcraftplasticraft.drone.none",
-            "Mechanical drone without an installed tool"
-        );
-        provider.add(
-            "tooltip.anvilcraftplasticraft.drone.construction",
-            "Takes materials from the owner's inventory to seal fluids and deliver blocks, contents, fluids and entities"
-        );
-        provider.add(
-            "tooltip.anvilcraftplasticraft.drone.demolition",
-            "Instantly demolishes blocks with AnvilCraft stonecutter-smash semantics"
-        );
-        provider.add(
-            "tooltip.anvilcraftplasticraft.drone.collection",
-            "Inhales item drops within 16 blocks into a nine-slot inventory"
-        );
-        provider.add(
-            "tooltip.anvilcraftplasticraft.drone.observation",
-            "Mechanical drone fitted with a spyglass attachment"
-        );
-        provider.add("tooltip.anvilcraftplasticraft.drone.propeller.left", "Left propeller: %s");
-        provider.add("tooltip.anvilcraftplasticraft.drone.propeller.right", "Right propeller: %s");
-        provider.add("tooltip.anvilcraftplasticraft.drone.propeller.missing", "Missing");
-        provider.add("tooltip.anvilcraftplasticraft.drone.energy", "Energy: %1$s / %2$s FE");
+        // 戴帽悦灵设置界面。
+        provider.add("screen.anvilcraftplasticraft.allay.tool", "Tool: %s");
+        provider.add("screen.anvilcraftplasticraft.allay.tool.none", "None");
+        provider.add("screen.anvilcraftplasticraft.allay.owner", "Owner: %s");
+        provider.add("screen.anvilcraftplasticraft.allay.state.hovering", "Hovering");
+        provider.add("screen.anvilcraftplasticraft.allay.state.docking", "Docking");
+        provider.add("screen.anvilcraftplasticraft.allay.state.flying", "Flying");
+        provider.add("screen.anvilcraftplasticraft.allay.wait.none", "");
+        provider.add("screen.anvilcraftplasticraft.allay.wait.material", "Waiting for materials");
+        provider.add("screen.anvilcraftplasticraft.allay.wait.occupied", "Construction position occupied");
+        provider.add("screen.anvilcraftplasticraft.allay.wait.world", "Waiting for the world block to clear");
+        provider.add("screen.anvilcraftplasticraft.allay.wait.source", "Owner is not in this dimension");
+        provider.add("screen.anvilcraftplasticraft.allay.wait.demolition", "Waiting for a demolition allay");
+        provider.add("screen.anvilcraftplasticraft.allay.wait.permission", "Waiting for world permission");
+        provider.add("screen.anvilcraftplasticraft.allay.carry", "Carrying: %s");
+        provider.add("screen.anvilcraftplasticraft.allay.strategy", "Shortage strategy");
+        provider.add("screen.anvilcraftplasticraft.allay.strategy.pause", "Pause and wait");
+        provider.add("screen.anvilcraftplasticraft.allay.strategy.skip", "Skip");
+        provider.add("screen.anvilcraftplasticraft.allay.coverage.inactive", "No chunk loading");
+        provider.add("screen.anvilcraftplasticraft.allay.inventory", "Cargo");
+        provider.add("screen.anvilcraftplasticraft.allay.unequip", "Remove hat");
+        provider.add("screen.anvilcraftplasticraft.allay.unequip.blocked", "Return the carried item first");
 
-        // 无人机单机设置界面。
-        provider.add("screen.anvilcraftplasticraft.drone.energy", "%1$s / %2$s FE");
-        provider.add("screen.anvilcraftplasticraft.drone.tool", "Tool: %s");
-        provider.add("screen.anvilcraftplasticraft.drone.tool.none", "None");
-        provider.add("screen.anvilcraftplasticraft.drone.owner", "Owner: %s");
-        provider.add("screen.anvilcraftplasticraft.drone.state.landed", "Landed");
-        provider.add("screen.anvilcraftplasticraft.drone.state.taking_off", "Taking off");
-        provider.add("screen.anvilcraftplasticraft.drone.state.hovering", "Hovering");
-        provider.add("screen.anvilcraftplasticraft.drone.state.landing", "Landing");
-        provider.add("screen.anvilcraftplasticraft.drone.state.docking", "Docking");
-        provider.add("screen.anvilcraftplasticraft.drone.state.flying", "Flying");
-        provider.add("screen.anvilcraftplasticraft.drone.wait.none", "");
-        provider.add("screen.anvilcraftplasticraft.drone.wait.material", "Waiting for materials");
-        provider.add("screen.anvilcraftplasticraft.drone.wait.occupied", "Construction position occupied");
-        provider.add("screen.anvilcraftplasticraft.drone.wait.world", "Waiting for the world block to clear");
-        provider.add("screen.anvilcraftplasticraft.drone.wait.source", "Owner is not in this dimension");
-        provider.add("screen.anvilcraftplasticraft.drone.wait.energy", "Not enough energy for the next delivery");
-        provider.add("screen.anvilcraftplasticraft.drone.wait.demolition", "Waiting for a demolition drone");
-        provider.add("screen.anvilcraftplasticraft.drone.wait.permission", "Waiting for world permission");
-        provider.add("screen.anvilcraftplasticraft.drone.carry", "Carrying: %s");
-        provider.add("screen.anvilcraftplasticraft.drone.strategy", "Shortage strategy");
-        provider.add("screen.anvilcraftplasticraft.drone.strategy.pause", "Pause and wait");
-        provider.add("screen.anvilcraftplasticraft.drone.strategy.skip", "Skip");
-        provider.add("screen.anvilcraftplasticraft.drone.coverage.inactive", "No chunk loading");
-        provider.add("screen.anvilcraftplasticraft.drone.inventory", "Cargo");
-
-        // 无人机站界面。
-        provider.add("container.anvilcraftplasticraft.drone_station", "Drone Station");
-        provider.add("screen.anvilcraftplasticraft.drone_station.recall", "Recall nearby drones to dock");
+        // 悦灵休息室界面。
+        provider.add("container.anvilcraftplasticraft.allay_lounge", "Allay Lounge");
+        provider.add("screen.anvilcraftplasticraft.allay_lounge.recall", "Recall nearby working allays");
+        provider.add("screen.anvilcraftplasticraft.allay_lounge.powered", "Connected to a working grid");
+        provider.add("screen.anvilcraftplasticraft.allay_lounge.unpowered", "Not connected to a working grid");
+        provider.add("screen.anvilcraftplasticraft.allay_lounge.strategy", "Shortage strategy for hosted allays");
 
         // 塑料成型舱物品说明、容器标题和建模器界面语言文件生成。
         provider.add(
@@ -132,7 +106,7 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.molding.type.tank", "Tank");
         provider.add("screen.anvilcraftplasticraft.molding.type.anvil", "Anvil");
         provider.add("screen.anvilcraftplasticraft.molding.type.tray", "Tray");
-        provider.add("screen.anvilcraftplasticraft.molding.type.propeller", "Propeller");
+        provider.add("screen.anvilcraftplasticraft.molding.type.allay_hard_hat", "Allay Hard Hat");
         provider.add("screen.anvilcraftplasticraft.molding.type_invalid", "This shape does not seem able to do that");
         provider.add("screen.anvilcraftplasticraft.molding.model_too_large", "Model is too large to process");
         provider.add("screen.anvilcraftplasticraft.molding.type_override_active", "Type limit bypass active");
@@ -342,14 +316,10 @@ public final class PlasticraftLanguageData {
         provider.add("message.anvilcraftplasticraft.molding.type_tray_top_not_flat", "A tray needs a completely flat top face");
         provider.add("message.anvilcraftplasticraft.molding.type_tray_center_missing", "A tray needs a volumetric cube in its 3 x 3 modeling area");
         provider.add("message.anvilcraftplasticraft.molding.type_tray_shape_unavailable", "The tray shape analysis is unavailable");
-        provider.add("message.anvilcraftplasticraft.molding.type_propeller_model_required", "Propeller validation requires the complete editable model");
-        provider.add("message.anvilcraftplasticraft.molding.type_propeller_empty", "A propeller model cannot be empty");
-        provider.add("message.anvilcraftplasticraft.molding.type_propeller_too_small", "A propeller must span at least 8 px along one horizontal axis");
-        provider.add("message.anvilcraftplasticraft.molding.type_propeller_outside_center", "A propeller must fit inside the central 16 x 16 px area");
-        provider.add("message.anvilcraftplasticraft.molding.type_propeller_too_thick", "A propeller may be at most 2 px thick");
-        provider.add("message.anvilcraftplasticraft.molding.type_propeller_center_missing", "A propeller needs a solid 2 x 2 px center");
-        provider.add("message.anvilcraftplasticraft.molding.type_propeller_branches_missing", "A propeller needs at least two separated branches of 2 px or longer");
-        provider.add("message.anvilcraftplasticraft.molding.type_propeller_branches_touching", "A propeller needs open gaps between its branches");
+        provider.add("message.anvilcraftplasticraft.molding.type_allay_hard_hat_model_required", "Hard hat validation requires the complete editable model");
+        provider.add("message.anvilcraftplasticraft.molding.type_allay_hard_hat_empty", "A hard hat model cannot be empty");
+        provider.add("message.anvilcraftplasticraft.molding.type_allay_hard_hat_too_wide", "A hard hat may be at most 11 x 11 px across");
+        provider.add("message.anvilcraftplasticraft.molding.type_allay_hard_hat_too_tall", "A hard hat may be at most 16 px tall");
         provider.add("message.anvilcraftplasticraft.molding.type_unknown_type", "The selected type is unavailable");
         provider.add("message.anvilcraftplasticraft.molding.missing_printing_component", "Install a 3D Printing Component directly above the chamber");
         provider.add("message.anvilcraftplasticraft.molding.not_locked", "Model is not locked");
@@ -371,6 +341,9 @@ public final class PlasticraftLanguageData {
         provider.add("message.anvilcraftplasticraft.molding.blueprint_unpinned", "Model unpinned");
         provider.add("message.anvilcraftplasticraft.molding.blueprint_copied", "Model copied");
         provider.add("message.anvilcraftplasticraft.molding.blueprint_deleted", "Model deleted");
+        provider.add("message.anvilcraftplasticraft.molding.blueprint_renamed", "Model renamed");
+        provider.add("message.anvilcraftplasticraft.molding.blueprint_name_taken", "A shared model already uses that filename");
+        provider.add("message.anvilcraftplasticraft.molding.invalid_blueprint_name", "That model name cannot be used as a filename");
         provider.add("message.anvilcraftplasticraft.molding.blueprint_loaded", "Structure Disk model loaded for editing");
         provider.add("message.anvilcraftplasticraft.molding.blueprint_saved", "Model stored on the Structure Disk and in the shared library");
         provider.add("message.anvilcraftplasticraft.molding.blueprint_disk_written", "Shared model written to the Structure Disk");
@@ -575,8 +548,8 @@ public final class PlasticraftLanguageData {
         provider.add("message.anvilcraftplasticraft.construction.wait.occupied", "A construction position is occupied");
         provider.add("message.anvilcraftplasticraft.construction.wait.world", "A construction position is blocked by the world");
         provider.add("message.anvilcraftplasticraft.construction.wait.source", "Construction is waiting for the owner to return");
-        provider.add("message.anvilcraftplasticraft.construction.wait.energy", "A construction drone does not have enough energy");
-        provider.add("message.anvilcraftplasticraft.construction.wait.demolition", "Construction is waiting for a demolition drone");
+        provider.add("message.anvilcraftplasticraft.construction.wait.energy", "Construction is waiting");
+        provider.add("message.anvilcraftplasticraft.construction.wait.demolition", "Construction is waiting for a demolition allay");
         provider.add("message.anvilcraftplasticraft.construction.wait.permission", "Construction is waiting for world permission");
         provider.add("message.anvilcraftplasticraft.blueprint.not_structure_disk", "Hold a structure disk to import");
         provider.add(

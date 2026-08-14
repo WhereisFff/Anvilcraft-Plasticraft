@@ -1,6 +1,0 @@
-{
-  "parent": "minecraft:block/cube_all",
-  "textures": {
-    "all": "anvilcraftplasticraft:block/drone_station_off"
-  }
-}

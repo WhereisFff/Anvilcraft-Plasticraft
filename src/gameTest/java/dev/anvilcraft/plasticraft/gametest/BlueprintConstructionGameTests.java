@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.gametest;
 
-import dev.anvilcraft.plasticraft.block.entity.DroneStationBlockEntity;
+import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.blueprint.BlueprintPlacement;
 import dev.anvilcraft.plasticraft.blueprint.BlueprintSource;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
@@ -946,21 +946,21 @@ public final class BlueprintConstructionGameTests {
         return tag;
     }
 
-    /** 站点磁盘槽只接受带施工蓝图的结构磁盘。 */
+    /** 休息室磁盘槽只接受带施工蓝图的结构磁盘。 */
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "The station disk slot only accepts disks carrying a construction blueprint")
-    static void stationDiskSlotRequiresBlueprint(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "The lounge disk slot only accepts disks carrying a construction blueprint")
+    static void loungeDiskSlotRequiresBlueprint(ExtendedGameTestHelper helper) {
         ItemStack emptyDisk = new ItemStack(ModItems.STRUCTURE_DISK.get());
         check(
-            !DroneStationBlockEntity.isValidForSlot(DroneStationBlockEntity.DISK_SLOT, emptyDisk),
-            "empty structure disk must not enter the station disk slot"
+            !AllayLoungeBlockEntity.isValidDisk(emptyDisk),
+            "empty structure disk must not enter the lounge disk slot"
         );
         try {
             ItemStack imported = importSampleDisk(helper, "first");
             check(
-                DroneStationBlockEntity.isValidForSlot(DroneStationBlockEntity.DISK_SLOT, imported),
-                "imported blueprint disk should enter the station disk slot"
+                AllayLoungeBlockEntity.isValidDisk(imported),
+                "imported blueprint disk should enter the lounge disk slot"
             );
         } catch (ConstructionBlueprintException exception) {
             throw new GameTestAssertException("sample import failed: " + exception.reason());

@@ -12,7 +12,6 @@ import dev.anvilcraft.plasticraft.blueprint.StructureSnapshot;
 import dev.anvilcraft.plasticraft.client.blueprint.BlueprintDeploySession;
 import dev.anvilcraft.plasticraft.client.blueprint.ClientBlueprintJobCache;
 import dev.anvilcraft.plasticraft.client.blueprint.ClientBlueprintSnapshotCache;
-import dev.anvilcraft.plasticraft.client.blueprint.ClientConstructionOverlayLookup;
 import dev.anvilcraft.plasticraft.client.renderer.ThickLineRenderer;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
@@ -64,7 +63,6 @@ import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -604,7 +602,7 @@ public final class BlueprintProjectionRenderer {
                 dispatcher.renderBatched(
                     state,
                     pos,
-                    new DeliveredRenderView(level, item.jobId()),
+                    new DeliveredRenderView(level),
                     poseStack,
                     buffers.getBuffer(type),
                     true,
@@ -641,7 +639,7 @@ public final class BlueprintProjectionRenderer {
             if (item.jobId() == null) {
                 continue;
             }
-            DeliveredRenderView view = new DeliveredRenderView(level, item.jobId());
+            DeliveredRenderView view = new DeliveredRenderView(level);
             for (Map.Entry<BlockPos, BlockState> entry
                 : ConstructionProjectionIndex.deliveredIn(level, item.jobId()).entrySet()) {
                 BlockPos pos = entry.getKey();
@@ -834,35 +832,20 @@ public final class BlueprintProjectionRenderer {
     }
 
     /**
-     * 已交付格按索引里的目标状态做邻接剔除,未交付邻居读规划覆盖,
-     * 红石粉才能按蓝图连接和等级显示,而不是对着空气重算成点。
+     * 已交付格按索引里的目标状态做邻接剔除。
+     * 未交付全息格对玩家是透明的,不能当实心邻居,否则已交付假方块会缺面;
+     * 红石粉等连接形状已写在交付状态里,不靠规划覆盖重算。
      */
     private record DeliveredRenderView(
         ClientLevel level,
-        UUID jobId,
-        Map<Long, BlockState> planned,
         BlockPos origin
     ) implements BlockAndTintGetter {
-        private DeliveredRenderView(ClientLevel level, UUID jobId) {
-            this(level, jobId, plannedOverlay(level, jobId), BlockPos.ZERO);
-        }
-
-        private static Map<Long, BlockState> plannedOverlay(ClientLevel level, UUID jobId) {
-            Map<Long, BlockState> overlay = new HashMap<>(ClientConstructionOverlayLookup.plannedOverlay(level, jobId));
-            overlay.putAll(toLongMap(ConstructionProjectionIndex.deliveredIn(level, jobId)));
-            return overlay;
-        }
-
-        private static Map<Long, BlockState> toLongMap(Map<BlockPos, BlockState> delivered) {
-            Map<Long, BlockState> result = new HashMap<>();
-            for (Map.Entry<BlockPos, BlockState> entry : delivered.entrySet()) {
-                result.put(entry.getKey().asLong(), entry.getValue());
-            }
-            return result;
+        private DeliveredRenderView(ClientLevel level) {
+            this(level, BlockPos.ZERO);
         }
 
         private DeliveredRenderView shifted(BlockPos origin) {
-            return new DeliveredRenderView(this.level, this.jobId, this.planned, origin.immutable());
+            return new DeliveredRenderView(this.level, origin.immutable());
         }
 
         private BlockPos map(BlockPos pos) {
@@ -876,8 +859,7 @@ public final class BlueprintProjectionRenderer {
             if (collision != null) {
                 return collision.state();
             }
-            BlockState planned = this.planned.get(world.asLong());
-            return planned != null ? planned : this.level.getBlockState(world);
+            return this.level.getBlockState(world);
         }
 
         @Override

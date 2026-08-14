@@ -40,6 +40,10 @@ public record MoldingBlueprintSummary(
         );
     }
 
+    public String displayName() {
+        return MoldingBlueprintLibrary.displayName(this.fileId);
+    }
+
     public void write(RegistryFriendlyByteBuf buffer) {
         buffer.writeUtf(this.fileId, MAX_FILE_ID_LENGTH);
         buffer.writeVarLong(this.fileRevision);

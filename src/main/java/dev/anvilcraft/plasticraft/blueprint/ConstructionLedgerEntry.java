@@ -19,14 +19,14 @@ public final class ConstructionLedgerEntry {
     private final int operationId;
     private final ItemStack stack;
     @Nullable
-    private final UUID droneId;
+    private final UUID allayId;
     private State state;
 
-    public ConstructionLedgerEntry(int id, int operationId, ItemStack stack, @Nullable UUID droneId, State state) {
+    public ConstructionLedgerEntry(int id, int operationId, ItemStack stack, @Nullable UUID allayId, State state) {
         this.id = id;
         this.operationId = operationId;
         this.stack = stack.copy();
-        this.droneId = droneId;
+        this.allayId = allayId;
         this.state = state;
     }
 
@@ -43,8 +43,8 @@ public final class ConstructionLedgerEntry {
     }
 
     @Nullable
-    public UUID droneId() {
-        return this.droneId;
+    public UUID allayId() {
+        return this.allayId;
     }
 
     public State state() {
@@ -60,8 +60,8 @@ public final class ConstructionLedgerEntry {
         tag.putInt("Id", this.id);
         tag.putInt("OperationId", this.operationId);
         tag.put("Stack", this.stack.save(registries));
-        if (this.droneId != null) {
-            tag.putUUID("DroneId", this.droneId);
+        if (this.allayId != null) {
+            tag.putUUID("AllayId", this.allayId);
         }
         tag.putString("State", this.state.name());
         return tag;
@@ -69,12 +69,12 @@ public final class ConstructionLedgerEntry {
 
     public static ConstructionLedgerEntry load(CompoundTag tag, HolderLookup.Provider registries) {
         ItemStack stack = ItemStack.parse(registries, tag.getCompound("Stack")).orElse(ItemStack.EMPTY);
-        UUID droneId = tag.hasUUID("DroneId") ? tag.getUUID("DroneId") : null;
+        UUID allayId = tag.hasUUID("AllayId") ? tag.getUUID("AllayId") : null;
         return new ConstructionLedgerEntry(
             tag.getInt("Id"),
             tag.getInt("OperationId"),
             stack,
-            droneId,
+            allayId,
             State.valueOf(tag.getString("State"))
         );
     }
