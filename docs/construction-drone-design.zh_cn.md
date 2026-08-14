@@ -509,7 +509,7 @@ AnvilCraft 大型方块在解析阶段识别核心控制器和全部 `part`：
 
 ### TODO 08：收集无人机自由模式与施工掉落物回收
 
-- [ ] 完成 TODO 08
+- [x] 完成 TODO 08
 
 依赖：TODO 01、TODO 02、TODO 03、TODO 07。
 

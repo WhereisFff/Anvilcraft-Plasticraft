@@ -12,6 +12,7 @@ import dev.anvilcraft.plasticraft.drone.DroneFlightPlanner;
 import dev.anvilcraft.plasticraft.drone.DroneFlightState;
 import dev.anvilcraft.plasticraft.entity.drone.DroneEntity;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
@@ -40,17 +41,25 @@ public final class CollectionDroneToolBehavior implements DroneToolBehavior {
             drone.clearAssignment(false);
             return;
         }
+        ConstructionJob job = ConstructionJobIndex.get(level).activeJobOf(owner.get()).orElse(null);
+        boolean sameSite = job != null && job.dimension().equals(level.dimension());
         if (drone.isCollectionFull()) {
             drone.setActionState((byte) 0);
-            landIfFlying(drone);
+            if (sameSite && onSite(drone, job)) {
+                leaveSiteThenLand(drone, level, job);
+            } else {
+                landIfFlying(drone);
+            }
             tryUnload(drone, level, owner.get());
             return;
         }
-        ConstructionJob job = ConstructionJobIndex.get(level).activeJobOf(owner.get()).orElse(null);
-        if (job != null
-            && job.dimension().equals(level.dimension())
-            && ConstructionJobController.isTaskCollectPhase(job)) {
+        if (sameSite && ConstructionJobController.isTaskCollectPhase(job)) {
             tickTask(drone, level, job, owner.get());
+            return;
+        }
+        if (sameSite && onSite(drone, job) && shouldEvacuateFinishedJob(job)) {
+            leaveSiteThenLand(drone, level, job);
+            tryUnload(drone, level, owner.get());
             return;
         }
         tickFree(drone, level, owner.get());
@@ -108,14 +117,16 @@ public final class CollectionDroneToolBehavior implements DroneToolBehavior {
             drone.clearAssignment(false);
             if (!tryClaim(drone, level, job, progress)) {
                 drone.setActionState((byte) 0);
-                landIfFlying(drone);
+                if (job.state() == ConstructionJob.STATE_COLLECTING_DEBRIS || progress.allDemolishResolved()) {
+                    leaveSiteThenLand(drone, level, job);
+                }
                 tryUnload(drone, level, ownerId);
                 return;
             }
             target = leasedItem(level, progress, drone.getUUID());
             if (target == null) return;
         }
-        pursue(drone, level, target, progress, ownerId);
+        pursue(drone, level, target, progress, job, ownerId);
     }
 
     private static void tickFree(DroneEntity drone, ServerLevel level, UUID ownerId) {
@@ -135,7 +146,7 @@ public final class CollectionDroneToolBehavior implements DroneToolBehavior {
                 return;
             }
         }
-        pursue(drone, level, target, null, ownerId);
+        pursue(drone, level, target, null, null, ownerId);
     }
 
     private static void pursue(
@@ -143,6 +154,7 @@ public final class CollectionDroneToolBehavior implements DroneToolBehavior {
         ServerLevel level,
         ItemEntity target,
         @Nullable ConstructionJobProgress progress,
+        @Nullable ConstructionJob job,
         UUID ownerId
     ) {
         if (!target.isAlive() || target.getItem().isEmpty()) {
@@ -172,7 +184,11 @@ public final class CollectionDroneToolBehavior implements DroneToolBehavior {
             ConstructionJobStore.get(level).markDirty();
         }
         if (drone.isCollectionFull()) {
-            landIfFlying(drone);
+            if (job != null && onSite(drone, job)) {
+                leaveSiteThenLand(drone, level, job);
+            } else {
+                landIfFlying(drone);
+            }
             tryUnload(drone, level, ownerId);
         }
     }
@@ -202,6 +218,70 @@ public final class CollectionDroneToolBehavior implements DroneToolBehavior {
         }
         progress.releaseDebrisLease(entityId);
         return null;
+    }
+
+    private static boolean shouldEvacuateFinishedJob(ConstructionJob job) {
+        return job.state() == ConstructionJob.STATE_BUILDING
+            || job.state() == ConstructionJob.STATE_COMMITTING;
+    }
+
+    private static boolean onSite(DroneEntity drone, ConstructionJob job) {
+        return ConstructionJobController.worldBox(job).inflate(2.0D).intersects(drone.getBoundingBox());
+    }
+
+    /** 任务收完或满载后先离开蓝图包围盒再落地,避免落在即将建造的格子里。 */
+    private static void leaveSiteThenLand(DroneEntity drone, ServerLevel level, ConstructionJob job) {
+        AABB site = ConstructionJobController.worldBox(job);
+        ServerPlayer owner = drone.getOwner()
+            .map(id -> ConstructionJobController.findOwner(level.getServer(), level, id))
+            .orElse(null);
+        Vec3 goal = evacuateGoal(drone, site, owner);
+        if (goal == null || arrivedOutside(drone, site, goal)) {
+            drone.clearAssignment(false);
+            landIfFlying(drone);
+            return;
+        }
+        flyTo(drone, goal);
+    }
+
+    @Nullable
+    private static Vec3 evacuateGoal(DroneEntity drone, AABB site, @Nullable ServerPlayer owner) {
+        if (owner != null && !site.intersects(owner.getBoundingBox())) {
+            return owner.position().add(0.0D, 1.0D, 0.0D);
+        }
+        if (!site.inflate(2.0D).intersects(drone.getBoundingBox())) {
+            return null;
+        }
+        return pushOutside(drone, site);
+    }
+
+    private static boolean arrivedOutside(DroneEntity drone, AABB site, Vec3 goal) {
+        return drone.position().distanceTo(goal) <= ConstructionJobController.REACH + 0.5D
+            && !site.intersects(drone.getBoundingBox());
+    }
+
+    private static Vec3 pushOutside(DroneEntity drone, AABB site) {
+        double cx = (site.minX + site.maxX) * 0.5D;
+        double cz = (site.minZ + site.maxZ) * 0.5D;
+        int[][] sides = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        Vec3 best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (int distance = 2; distance <= 4; distance++) {
+            for (int[] side : sides) {
+                double x = side[0] == 0 ? cx : (side[0] > 0 ? site.maxX : site.minX) + side[0] * distance;
+                double z = side[1] == 0 ? cz : (side[1] > 0 ? site.maxZ : site.minZ) + side[1] * distance;
+                Vec3 candidate = new Vec3(x, Math.max(drone.getY(), site.maxY), z);
+                if (!drone.level().noCollision(drone, drone.getBoundingBox().move(candidate.subtract(drone.position())))) {
+                    continue;
+                }
+                double dist = drone.position().distanceToSqr(candidate);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = candidate;
+                }
+            }
+        }
+        return best != null ? best : drone.position().add(2.0D, 1.0D, 0.0D);
     }
 
     private static void tryUnload(DroneEntity drone, ServerLevel level, UUID ownerId) {

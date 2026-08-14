@@ -1,8 +1,8 @@
-# 无人机系统交接(TODO 01 ~ 07)
+# 无人机系统交接(TODO 01 ~ 08)
 
 > 交接时间:2026-08-14;设计规格见 `docs/construction-drone-design.zh_cn.md`(以下简称"设计文档")。
 > 接手后续任务前,必须完整阅读设计文档与仓库 `AGENTS.md`,并先写该 TODO 的实施 Plan 再动手。
-> TODO 01 至 TODO 07 均已实现,且玩家已完成游戏内验收并勾选设计文档复选框。下一任务是 TODO 08。
+> TODO 01 至 TODO 08 均已实现,且玩家已完成游戏内验收并勾选设计文档复选框。下一任务是 TODO 09。
 
 ## 1. 当前进度
 
@@ -14,9 +14,9 @@
 | TODO 04 原版结构蓝图、世界部署与结构磁盘交互 | 已实现,游戏内验收通过,复选框已勾选(`feat(blueprint)` 79c6c23) |
 | TODO 05 Create 与 Litematica 蓝图导入兼容 | 已实现,游戏内验收通过,复选框已勾选(`feat(blueprint)` f960eb6) |
 | TODO 06 单架建设无人机的完整施工闭环 | 已实现,游戏内验收通过,复选框已勾选(`feat(drone)` 39d7e34 + `fix` 6b6e243) |
-| TODO 07 流体封堵与真实拆除阶段 | 已实现,游戏内验收通过,复选框已勾选(`feat(drone)` 364cf37 + 本提交的投影修正) |
-| TODO 08 收集无人机自由模式与施工掉落物回收 | **未开始;下一任务** |
-| TODO 09+ | 未开始 |
+| TODO 07 流体封堵与真实拆除阶段 | 已实现,游戏内验收通过,复选框已勾选(`feat(drone)` 364cf37 + `fix(drone)` 006612a) |
+| TODO 08 收集无人机自由模式与施工掉落物回收 | 已实现,游戏内验收通过,复选框已勾选(`feat(drone)` 1c22fbe + 本提交的清场离场) |
+| TODO 09+ | 未开始;下一任务是 TODO 09 |
 
 工作流程约定(与玩家确认过):每个 TODO 完成"范围 + 自动化验证"后按 conventional-commits(中文 subject,scope 用 `drone` 或 `blueprint`)提交一次,然后暂停等待玩家游戏内验收,验收通过才继续下一个;验收通过后勾选设计文档中的复选框。玩家已声明后续会自制全新贴图模型并配套改代码,当前程序生成资产只是可用占位。
 
@@ -64,6 +64,16 @@
 6. 切石机附件在砸击时刀片转动(物品栏静态即可)
 7. 验收修正:拆除不得把该格写成已交付实心投影;未交付格子仍是蓝图目标的半透明预览
 
+### TODO 08 游戏内验收清单(已通过,2026-08-14)
+
+1. 地上连续掉落链:每次吸入后重扫当前 16 格,不飞向更远未扫到的堆
+2. 九格装满后降落不再吸;所有者走进 16 格按背包卸货,装不下的留机内
+3. 不吸经验球;磁铁无耐久损耗;吸入时磁铁微动(物品栏静态即可)
+4. 拆除施工无收集机:掉落留世界,任务照常建造
+5. 有收集机:只收带任务标记的掉落,不与玩家原有掉落混淆或复制
+6. 满载或卸不完不阻塞建设/拆除继续
+7. 验收修正:任务收完或工地满载后先飞离蓝图范围再降落,不在即将被建造机占用的格子里落地
+
 ## 2. 代码地图
 
 ### 公共玩法层 `drone/`
@@ -78,12 +88,12 @@
 | `DroneFlightNavigator` | 沿路点移动;到达后悬停等执行器。`clearAssignment` 会清路点,完工撤离途中不要先清再指望旧路径 |
 | `DroneDefaultPropeller` | 从 jar 资源 `assets/anvilcraftplasticraft/drone/default_propeller.json` 加载默认白色螺旋桨(创造条目与配方展示用),与世界蓝图库无关 |
 | `DronePropellerTraits` | 螺旋桨材料能力并集注册表;当前只有 `FIRE_RESISTANT` 判定边界,耐热塑料尚未加入游戏 |
-| `drone/tool/DroneToolDefinition(+s)` | 工具定义注册边界。`CONSTRUCTION` / `DEMOLITION` 只换了 `behavior`,注册名和触及距离未改;`COLLECTION` / `OBSERVATION` 仍是 `DroneToolBehavior.NONE` |
+| `drone/tool/DroneToolDefinition(+s)` | 工具定义注册边界。`CONSTRUCTION` / `DEMOLITION` / `COLLECTION` 只换了 `behavior`,注册名、触及距离和收集九格容量未改;`OBSERVATION` 仍是 `DroneToolBehavior.NONE` |
 
 ### 实体与物品
 
-- `entity/drone/DroneEntity`:唯一无人机实体。0.5³ 硬碰撞/可站立/推动;`canBeCollidedWith()==true`。电网充电经 AnvilCraft `DynamicPowerComponent`(未满电申报 8 kW);状态机与能耗计费在 `serverFlightTick`/`serverEnergyCostTick`;工具执行器在飞行刻之前调用;`startDockingTo(BlockPos)` 进入 DOCKING;`Shift+铁砧锤` 回收时 `DroneData` 带着 `hostedCarry` 走,不会吞托管物;`canAcceptQuote` 是任务分配的能量资格入口
-- `item/DroneItem`:五个物品注册共用一类;建设无人机 Tooltip 仍是一句定性用途,数值在手册
+- `entity/drone/DroneEntity`:唯一无人机实体。0.5³ 硬碰撞/可站立/推动;`canBeCollidedWith()==true`。电网充电经 AnvilCraft `DynamicPowerComponent`(未满电申报 8 kW);状态机与能耗计费在 `serverFlightTick`/`serverEnergyCostTick`;工具执行器在飞行刻之前调用;`startDockingTo(BlockPos)` 进入 DOCKING;`Shift+铁砧锤` 回收时 `DroneData` 带着 `hostedCarry` 走,不会吞托管物;`canAcceptQuote` 是任务分配的能量资格入口。收集库存:`tryInsertCollection` / `canAcceptCollection` / `isCollectionFull` / `unloadCollectionTo`;装入前剥标记,卸货用 `Inventory.add`(不要 `placeItemBackInInventory`,那会把溢出丢地上)。`applyDroneData` 不得把空列表垫成九个空槽,否则物品/NBT 往返会改变 `collection_inventory` 长度
+- `item/DroneItem`:五个物品注册共用一类;Tooltip 仍是一句定性用途,数值在手册。收集机现为「在16格内吸入掉落物并装入九格库存」
 - `recipe/DroneAssemblyRecipe` + `DronePropellerIngredient`:装配配方把两格螺旋桨完整 ItemStack 写入成品
 
 ### 无人机站
@@ -96,30 +106,33 @@
 | --- | --- |
 | `ConstructionJob` | 服务端任务条目。`state` 字节:`0` INACTIVE、`1` ACTIVE(冻结兼容值)、`2` PLANNING … `16` FAILED。`isActive()` = 非 INACTIVE 且非终态。`activate()` 写入 `PLANNING` 而不是 `1`。新状态只能追加 |
 | `ConstructionJobIndex` | 主世界 SavedData 任务索引;`activeJobOf` 只返回进行中任务 |
-| `ConstructionJobStore` / `ConstructionJobProgress` | 与索引分开的世界级进度库:操作、台账、已交付集合。文件名 `anvilcraftplasticraft_construction_job_progress` |
+| `ConstructionJobStore` / `ConstructionJobProgress` | 与索引分开的世界级进度库:操作、台账、已交付集合。文件名 `anvilcraftplasticraft_construction_job_progress`。进度 NBT **末尾追加** `Debris` 列表,不改既有字段序。运行时租约 `entityUUID → droneUUID` 不落盘,实体合并消失则作废重领 |
 | `ConstructionBuildOp` | 单格规范操作:既有 `PLACE` / `ATTACHED` / `UNSUPPORTED`,TODO 07 末尾追加 `SEAL` / `DEMOLISH`(按名存盘)。状态未改。NBT 追加 `Shell`(布尔,默认 false)。`writesProjection()` 只有 PLACE/ATTACHED 为真;`DELIVERED` 对 SEAL/DEMOLISH 只表示该阶段完成 |
 | `OrdinaryBlockAdapter` | 普通方块映射:有放置物品则 `PLACE` 扣一份;门上半/床头/活塞头 `ATTACHED` 不重复扣料;流体与无物品状态 `UNSUPPORTED`(蓝图目标流体仍跳过,不要扩成通用放置器) |
 | `ConstructionLedgerEntry` | 托管台账:`CARRIED` / `DELIVERED` / `RETURNED`。取出的资源在交付或物理返还前只存在一份。封堵在途材料走同一套 |
 | `ConstructionAssembler` | `peelOrder` 抽出共用:拆除用正向(由外向内,砸开后重算表面),建造顺序仍用逆序 |
 | `FluidSealPlanner` / `FluidSealFill` | 只在声明格内洪泛可替换纯流体,区外一格壳切断流入,不追海洋。含水固体不替换。填充料先预留 PLACE 数量,再从剩余物品选最多的合法稳定实心块 |
 | `DemolitionPlanner` | 声明格固体 + 封堵位 → `DEMOLISH`;`destroySpeed < 0` 永久障碍跳过对应 PLACE。多方块/门/床/活塞头折到核心。壳 DEMOLISH 标 `shell=true`,拆除阶段不派发 |
-| `StonecutterSmashAdapter` | 对齐普通铁砧砸切石机:`BreakBlockUtil` + `spawnAfterBreak(..., false)` + `IHasMultiBlock.onRemove` + 标记掉落 + `AnvilUtil.dropItems` + 置空气。禁止 `destroyBlock` / 假玩家。爆炸抗性 ≥ 1200 只伤铁砧,无人机忽略,黑曜石可拆 |
-| `ConstructionDebris` | 数据组件 `construction_debris`(job UUID + op id)。原版合并看组件,任务掉落不与玩家掉落合堆。玩家捡起时剥掉组件(外部结算);吸入是 TODO 08 |
+| `StonecutterSmashAdapter` | 对齐普通铁砧砸切石机:`BreakBlockUtil` + `spawnAfterBreak(..., false)` + `IHasMultiBlock.onRemove` + 标记掉落 + 按实际堆叠累加 `Debris` 已生成 + `AnvilUtil.dropItems` + 置空气。禁止 `destroyBlock` / 假玩家。爆炸抗性 ≥ 1200 只伤铁砧,无人机忽略,黑曜石可拆 |
+| `ConstructionDebris` | 数据组件 `construction_debris`(job UUID + op id)。原版合并看组件,任务掉落不与玩家掉落合堆。玩家捡起剥组件并记外部结算;收集机吸入也剥组件再入九格 |
+| `ConstructionDebrisAccount` | 按拆除 op 对账:已生成 / 已收集 / 外部。砸击累加生成,吸入累加收集,玩家/漏斗/消失记外部。盒内标记 + 已收集 + 外部 < 已生成的差额记外部,不复制补发 |
 | `ConstructionPermission` | 窄接口,本项恒为允许。拒绝时必须 `WAITING_PERMISSION` 且忽略 SKIP。领地/FTB 留给 TODO 13 |
 | `ConstructionProjectionIndex` | 已交付假方块的区块段索引。世界格保持空气,不放占位方块实体;碰撞与客户端渲染读这里的目标状态和世界 `VoxelShape`。`isOccupied` 忽略无人机、掉落物和经验球 |
 | `ConstructionOverlayView` | 只读覆盖视图,已交付/规划目标优先于世界,用于栅栏等邻接形状 |
 | `ConstructionCommitService` | 安静提交:只写 PLACE/ATTACHED 已交付格。`finish()` 在提交后再用砸击适配器拆剩余壳 |
-| `ConstructionJobController` | 规划、阶段恢复、封堵/拆除窄接口、缺拆除策略与权限桩。`nextPhase()` 按剩余 SEAL/DEMOLISH/PLACE 回到对应阶段,禁止一律写回 `BUILDING`。`ensureIndex` 只恢复 `writesProjection()` 的已交付格。无人机自行领取,派发不 `inflate(128)` 扫实体;缺拆除机存在性判断按 owner 过滤。`fitsDrone` 忽略无人机、掉落物和经验球 |
+| `ConstructionJobController` | 规划、阶段恢复、封堵/拆除/收集窄接口、缺拆除策略与权限桩。`nextPhase()` 按剩余 SEAL/DEMOLISH/PLACE 回到对应阶段,收集不是必经阶段。`allDemolishResolved()` 后仅当工地盒内仍有本任务标记掉落、且存在所有者本维度到最近标记物 ≤ 128、库存未满的已加载收集机时进入 `COLLECTING_DEBRIS`,否则直接 `BUILDING`。`tickCollecting` 对账后若已无世界标记或已无还能装的收集机 → `BUILDING`。`reconcileDebris` 只扫 `worldBox`,禁止 `inflate(128)`。`tryCollect` / `nextAssignableDebris` / `markedDebrisIn` 是收集窄接口。`ensureIndex` 只恢复 `writesProjection()` 的已交付格。缺拆除机存在性判断按 owner 过滤。`fitsDrone` 忽略无人机、掉落物和经验球。缺收集机**不**走 PAUSE/SKIP,不追加 `WaitReason` |
 | `ConstructionBlueprintService` | 导入/部署/启动停止/取消仍走这里;启动第二份会 `pause` 旧任务。取消仍删除任务并安静提交已交付投影,已放真实填充块不删 |
 | `ConstructionWaitReason` | 既有 `NONE/MATERIAL/OCCUPIED/WORLD/SOURCE/ENERGY`,末尾追加 `DEMOLITION` / `PERMISSION`;`byId` 按序,只能追加 |
 | `network/ConstructionProjectionSectionPacket` | 按区块段同步已交付格子;字段顺序冻结,只能追加 |
 
-### 建设与拆除执行器
+### 建设、拆除与收集执行器
 
-- `drone/tool/ConstructionDroneToolBehavior`:无站建设闭环,并在 `SEALING_FLUID` 下按同一取料路径真实 `setBlock` 填充(不是投影)。`isActiveBuildCarry` 含封堵,取消时在途填充料飞回返还而不是就地落地。非 `BUILDING` / `SEALING_FLUID` 不领 PLACE
+- `drone/tool/ConstructionDroneToolBehavior`:无站建设闭环,并在 `SEALING_FLUID` 下按同一取料路径真实 `setBlock` 填充(不是投影)。`isActiveBuildCarry` 含封堵,取消时在途填充料飞回返还而不是就地落地。非 `BUILDING` / `SEALING_FLUID` 不领 PLACE。`COLLECTING_DEBRIS` 期间不领建造
 - `drone/tool/DemolitionDroneToolBehavior`:无携带物。自领非壳、表面可达的 `DEMOLISH`,128 发现、一格触及,到位砸击扣 `2,560 FE`,`DATA_ACTION_STATE = cut`。不吸取掉落物
+- `drone/tool/CollectionDroneToolBehavior`:只换 `COLLECTION.behavior`。自由模式每次吸入后重扫当前 16 格任意 `ItemEntity`,不吸经验,不预锁 16 格外目标。任务模式(`DEMOLISHING` / `COLLECTING_DEBRIS`)只领本任务标记掉落,128 发现、1 格触及,每个实体一次 `2,560 FE`,`DATA_ACTION_STATE = attract`。满载或清场结束后按建设机同一套 `leaveSiteThenLand` 飞离蓝图再降落;拆除仍在进行且还没掉落时留在现场等。卸货只向所有者 `Inventory.add`,站点下表面容器留给 TODO 11。直到 TODO 11「磁盘入站后排除无站工人」生效前,所有者的无站收集机在拆除/清场阶段自领,与建设/拆除无站工人同一套
 - 接近点每 tick 用 `isUsableApproach` 刷新;已预约的 PLACE/SEAL 格不能当落脚点;无人机 AABB 若还插在目标格里,先飞到接近点再执行
 - 缺拆除机:无本主人、本维度、到最近拆除目标 ≤ 128 的已加载拆除实体时,读建设/拆除机策略。PAUSE → `WAITING_DEMOLITION`;SKIP → 跳过剩余可拆与仍被占的 PLACE,残缺进入建造。基岩类永久障碍不走该策略。`onShortageStrategyChanged` 对 `WAITING_DEMOLITION` 同样响应 SKIP
+- 缺收集机不阻塞:不暂停、不跳过、不加 `WaitReason`;掉落留世界,任务进建造
 
 ### 碰撞 Mixin
 
@@ -130,7 +143,8 @@
 - `client/renderer/blueprint/BlueprintProjectionRenderer`:未交付仍走全息层(不写深度、半透明)。已交付格跳过全息,改用 `RenderType.solid()` / `cutoutMipped()` 按真实方块烘焙,写深度、不染色、不加绿色遮罩。`DeliveredRenderView` 用索引状态做邻接剔除,光照读真实世界。拆除不得往索引里写格子,否则未交付预览会变成被拆方块的实心外观
 - 设计文档 §0 的 `construction_projection.png` 遮罩仍留在资源里,但验收要求已交付必须看起来像世界方块,因此不再叠绿色遮罩。后续 TODO 若要给「活动/受阻/跳过」加状态色,不要把已交付实心块重新洗成全息
 - `BlueprintProjectionRenderTypes`:全息方块层与箱子/矿车深度预通道仍在;已删除未再使用的 `constructionMask()` 层
-- `DroneRenderer` / `DroneRenderDispatcher` / `DroneToolAttachmentModel`:实体把 `getActionState()` 传入;`cut` 时转切石机刀片。物品/站点渲染传 `0`。不接磁铁/望远镜,不重做蟹钳全套抓取
+- `DroneRenderer` / `DroneRenderDispatcher` / `DroneToolAttachmentModel`:实体把 `getActionState()` 传入;`cut` 时转切石机刀片,`attract` 时微摆 `magnet_body`。物品/站点渲染传 `0`。不接望远镜,不重做蟹钳全套抓取
+- `inventory/DroneMenu`:收集九格仍只读(`mayPickup`/`mayPlace` 为 false);实体打开时 `broadcastChanges` 每 tick 从机内刷新展示
 
 ### 菜单/网络注册
 
@@ -139,10 +153,10 @@
 ## 3. 稳定契约(不得破坏)
 
 - 注册名:实体 `drone`;物品 `drone, construction_drone, demolition_drone, collection_drone, observation_drone`;方块 `drone_station`;配方 ID 与物品同名;组件 `molded_plastic, drone_data, station_energy, blueprint_task, construction_debris`
-- `DroneData` 字段顺序、`DroneFlightState` 字节值(`FLYING` 已占用追加位)、`ConstructionJob.state` 既有字节值(`0`/`1` 冻结,`2`–`16` 已占用,其中 `5/6/7/8` 已用于封堵/拆除/收集瞬过/等待拆除)、模型部件名、贴图/GUI 资源路径(设计文档 §0 冻结清单)
+- `DroneData` 字段顺序、`DroneFlightState` 字节值(`FLYING` 已占用追加位)、`ConstructionJob.state` 既有字节值(`0`/`1` 冻结,`2`–`16` 已占用,其中 `5/6/7/8` 为封堵/拆除/收集清场/等待拆除)、模型部件名、贴图/GUI 资源路径(设计文档 §0 冻结清单)。`DroneData` 只加了 `withCollectionInventory` wither,未改字段序
 - `ConstructionProjectionSectionPacket` 字段顺序冻结
-- `DroneToolDefinitions.CONSTRUCTION` / `DEMOLITION` 只允许换 `behavior`,不要改注册名或触及距离
-- 只追加过:`Kind.SEAL/DEMOLISH`、`WaitReason.DEMOLITION/PERMISSION`、组件 `construction_debris`、操作 NBT `Shell`。不要改既有字段序或重排 enum
+- `DroneToolDefinitions.CONSTRUCTION` / `DEMOLITION` / `COLLECTION` 只允许换 `behavior`,不要改注册名、触及距离或收集九格容量
+- 只追加过:`Kind.SEAL/DEMOLISH`、`WaitReason.DEMOLITION/PERMISSION`、组件 `construction_debris`、操作 NBT `Shell`、进度 NBT `Debris`。不要改既有字段序或重排 enum
 - 无人机站**没有合成配方**:设计文档未定义站的配方,未擅自发明
 - 能量数值全部引用 AnvilCraft 常量(`CapacitorItem.ENERGY`、`SuperCapacitorItem.ENERGY`、`powerConverterEfficiency`),不复制魔法数
 - 不考虑旧存档兼容,也不添加迁移代码或旧 NBT 读取逻辑
@@ -166,32 +180,32 @@
 7. 接近点不能落在仍预约的 PLACE 格上;交付前若无人机 AABB 还与目标格相交,先飞到接近点
 8. A* 失败禁止 `List.of(goal)` 对着墙直线冲。先抬升绕行,再不行返回空路径并悬停/爬升
 9. 水平碰撞才强制重规划;`verticalCollision` 在贴地滑行时很常见,不能当撞墙
-10. 瞬时断言(`zzz_construction` / `zzz_construction_demolish`)与短时序飞行(`zzz_construction_live` / `_return` / `_demolish_live`)必须分 batch,避免和蓝图索引生命周期测试并行抢世界级 SavedData,也避免 20 gt 窗口打死 400 gt 交付。封堵、拆除、空气建造失败条件不同,不要合成一条空气墙测试
+10. 瞬时断言(`zzz_construction` / `zzz_construction_demolish` / `zzz_collection`)与短时序飞行(`zzz_construction_live` / `_return` / `_demolish_live` / `zzz_collection_live`)必须分 batch,避免和蓝图索引生命周期测试并行抢世界级 SavedData,也避免 20 gt 窗口打死 400 gt 交付。封堵、拆除、空气建造、收集清场失败条件不同,不要合成一条空气墙或拆除 live 测试
 11. 无实体的台账取消仍当场返还(防复制);有加载无人机拿着材料时必须飞回再还,GameTest 用 `pauseReturnsCarryByFlyingToOwner` 锁这条
 12. 全量验证命令:`./gradlew runData`(资产变化时,检查 `src/generated` 差异)→ `./gradlew build` → `./gradlew runGameTestServer`;严禁 UI 自动化操作 Minecraft 客户端。渲染与资源改动只做静态检查,游戏内视觉由玩家验收
 13. `ensureIndex` / `tryDeliver` 只能写 PLACE/ATTACHED。DEMOLISH/SEAL 的 `DELIVERED` 若进投影索引,拆除后该格会变成被拆方块的实心外观。`writesProjection()` 是这条边界
 14. 拆除 live 测试必须在断言后取消任务,否则 `BUILDING` 残留会污染下次蓝图生命周期测试。缺拆除机会在数 tick 内把任务打进 `WAITING_DEMOLITION`,live 测试应先刷拆除机再 `start`
-15. `COLLECTING_DEBRIS` 本项只瞬过、不派收集机;不要在 TODO 08 之前让拆除机吸物品
+15. 拆除机必须继续不吸物品。收集机任务收完或满载后必须先离场再降落,不要在工地原地落地
+16. `applyDroneData` 不要把空的 `collection_inventory` 垫成九个空槽;`droneDataSurvivesReloadAndHammerRecovery` 用收集机 + 一格圆石锁这条往返
+17. 自由拾取测试放 `CollectionDroneGameTests`,不要启动施工任务。任务掉落路径仍进 `ConstructionJobGameTests`。收集 live 不要并进拆除/空气墙 live batch
 
-## 6. TODO 08 切入点提示
+## 6. TODO 09 切入点提示
 
-- 依赖:TODO 01、TODO 02、TODO 03、TODO 07。不要顺带做站点物流调度(TODO 11)、分层 A*/多机预约(TODO 12)、观察加载(TODO 15)、方块实体建造(TODO 09)
-- 拆除掉落已带 `construction_debris`,留在世界;玩家捡起已剥组件(外部结算)。收集吸入才是本项。拆除无人机必须继续不吸物品
-- 无收集机时不阻塞施工:`COLLECTING_DEBRIS` 现在瞬过进入建造,本项若要真正停留收集,必须保持「无收集机则继续」这条契约
-- 自由模式:无站收集机逐次重扫当前 16 格,每个 `ItemEntity` 一次瞬时费,九格真实库存;满载降落,所有者靠近后按背包规则卸货,背包装不下则留机内
-- 中央任务模式只领本任务掉落租约,支持实体合并台账、外部拿走结算;向任务站下方容器卸货可先做窄接口,完整站点调度仍属 TODO 11
-- `COLLECTION` 仍是 `DroneToolBehavior.NONE`,只换 `behavior`,不要改注册名、触及距离或九格库存容量
-- 磁铁附件只接本项需要的吸附动作,不要重做蟹钳全套或望远镜
-- 先写 TODO 08 实施 Plan,再改代码。GameTest 继续放 `ConstructionJobGameTests` 或现有无人机测试能归入的地方,不要 `inflate(128)` 扫实体,也不要把收集失败条件合成进拆除/空气墙 live batch
+- 依赖:TODO 06、TODO 07。不要顺带做收集卸货到站点(TODO 11)、分层 A*(TODO 12)、观察加载(TODO 15)、流体/实体材料(TODO 10)
+- `OrdinaryBlockAdapter` 继续只映射普通方块;`ATTACHED` 已覆盖门上半/床头/活塞头,不要偷偷扩成通用放置器或方块实体复制器
+- `ensureIndex` / `tryDeliver` / `ConstructionCommitService` 仍只写 PLACE/ATTACHED。方块实体内容、真实容器、AnvilCraft 大型多方块核心/`part` 折叠走明确适配器,不要让 DEMOLISH/SEAL 的 `DELIVERED` 进投影索引
+- 连接形状(栅栏、红石粉、中继器)的投影碰撞必须读 `ConstructionOverlayView`,不要只按单格默认形状
+- 安静提交要可恢复:分区提交日志、内部静默写入、受控边界更新、红石稳定状态复原;通用路径禁止假玩家
+- 先写 TODO 09 实施 Plan,再改代码。GameTest 继续放 `ConstructionJobGameTests` 能归入的窄接口,不要 `inflate(128)` 扫实体,也不要把方块实体/红石失败条件合成进拆除或收集 live batch
 
 ## 7. 已知待办与注意点
 
-- 切石机 `cut` 刀片已转;蟹钳张开/抓取、磁铁吸附、望远镜伸缩仍是静态姿态与 `DATA_ACTION_STATE` 占位
+- 切石机 `cut` 与磁铁 `attract` 已接动作;蟹钳张开/抓取、望远镜伸缩仍是静态姿态与 `DATA_ACTION_STATE` 占位
 - 无人机 GUI 的观察类"区块加载状态"是占位文案,TODO 15 接入真实覆盖状态
-- 收集无人机九格库存在菜单中只读展示,取放与吸入语义由 TODO 08 决定
-- 站点 `recallNearbyDrones` 是管理/测试入口;任务化的入出库调度(站属无人机、低电自动返站)属 TODO 11
+- 收集九格只读展示,玩家不能从 GUI 取放;向站点下表面容器卸货、出库/回库、低电自动返站属 TODO 11
+- 站点 `recallNearbyDrones` 是管理/测试入口;任务化的入出库调度(站属无人机、磁盘入站后排除无站工人)属 TODO 11
 - DOCKING 飞行仍是无寻路直线 + 遇阻爬升的基础版,TODO 12 升级为分层规划器时替换;单机三维寻路不要提前做成 64 机预约或走廊 A*
-- 方块实体内容、真实容器、多方块折叠、实体生成属 TODO 09/10;`OrdinaryBlockAdapter` 不要偷偷扩成通用放置器
-- 权限桩恒为允许,领地/FTB Teams 属 TODO 13;`WAITING_PERMISSION` 已占位且忽略 SKIP
+- 方块实体内容、真实容器、多方块折叠、实体生成属 TODO 09/10
+- 权限桩恒为允许,领地/FTB Teams 属 TODO 13;`WAITING_PERMISSION` 已占位且忽略 SKIP。自由收集物的团队共享也属 TODO 13,本项只对所有者卸货
 - JEI 中装配配方的成品无人机显示为无桨机体(配方 result 不带组件);如需展示默认桨,改 `PlasticraftRecipeData.generateDroneRecipe` 的 result 构造(注意配方 JSON 体积)
 - 已交付投影的世界格是空气:指向时 Jade 显示空气是当前契约,不是渲染 bug。若后续要让准星识别假方块,应走独立查询,不要改 `Level#getBlockState`

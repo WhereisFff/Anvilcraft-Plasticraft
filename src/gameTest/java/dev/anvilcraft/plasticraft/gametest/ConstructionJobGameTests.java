@@ -17,6 +17,7 @@ import dev.anvilcraft.plasticraft.blueprint.DemolitionPlanner;
 import dev.anvilcraft.plasticraft.blueprint.StonecutterSmashAdapter;
 import dev.anvilcraft.plasticraft.drone.DroneData;
 import dev.anvilcraft.plasticraft.drone.DroneEnergyModel;
+import dev.anvilcraft.plasticraft.drone.DroneFlightState;
 import dev.anvilcraft.plasticraft.drone.DroneShortageStrategy;
 import dev.anvilcraft.plasticraft.drone.tool.CollectionDroneToolBehavior;
 import dev.anvilcraft.plasticraft.drone.tool.ConstructionDroneToolBehavior;
@@ -1093,6 +1094,15 @@ public final class ConstructionJobGameTests {
                             || countInDrone(drone, Items.COBBLESTONE) + countInDrone(drone, Items.STONE) > 0,
                         "the collector must keep the inhaled items"
                     );
+                    CollectionDroneToolBehavior.INSTANCE.serverTick(drone);
+                    AABB site = ConstructionJobController.worldBox(building);
+                    if (site.inflate(2.0D).intersects(drone.getBoundingBox())) {
+                        check(
+                            drone.flightState() == DroneFlightState.FLYING,
+                            "a collector still on site after the sweep must evacuate, was "
+                                + drone.flightState()
+                        );
+                    }
                 } finally {
                     cancelQuietly(player, started.job().jobId());
                 }
