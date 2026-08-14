@@ -53,7 +53,7 @@ import java.util.UUID;
 /**
  * 覆盖施工蓝图的数据层与服务层:规范快照哈希的来源无关性、导入校验的显式报错、
  * 结构方块模板导入、扫描器坐标归一化、部署生命周期与每玩家单活动约束。
- * 告示牌/熔岩/实体进入快照后由客户端投影渲染,本类只锁数据契约。
+ * 告示牌/熔岩/实体进入快照后由客户端投影渲染,本类只锁数据契约;红石粉连接方向在规范化时写入快照。
  */
 public final class BlueprintConstructionGameTests {
     private BlueprintConstructionGameTests() {

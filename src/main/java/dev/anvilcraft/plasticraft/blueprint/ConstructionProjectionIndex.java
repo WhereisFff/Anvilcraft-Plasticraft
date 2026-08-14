@@ -55,9 +55,12 @@ public final class ConstructionProjectionIndex {
         return connect(state, view, pos).getCollisionShape(view, pos, CollisionContext.empty());
     }
 
-    /** 用覆盖邻居补栅栏/墙/门的连接属性,再取碰撞;不写回世界。 */
+    /** 用覆盖邻居补栅栏/墙/门的连接属性;红石导线保持蓝图原样,不按邻居重算。 */
     static BlockState connect(BlockState state, BlockGetter view, BlockPos pos) {
         if (!(view instanceof ConstructionOverlayView overlay)) {
+            return state;
+        }
+        if (ConstructionCommitService.preservesExactState(state)) {
             return state;
         }
         BlockState connected = state;

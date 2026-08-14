@@ -12,6 +12,7 @@ import dev.anvilcraft.plasticraft.blueprint.StructureSnapshot;
 import dev.anvilcraft.plasticraft.client.blueprint.BlueprintDeploySession;
 import dev.anvilcraft.plasticraft.client.blueprint.ClientBlueprintJobCache;
 import dev.anvilcraft.plasticraft.client.blueprint.ClientBlueprintSnapshotCache;
+import dev.anvilcraft.plasticraft.client.blueprint.ClientConstructionOverlayLookup;
 import dev.anvilcraft.plasticraft.client.renderer.ThickLineRenderer;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
@@ -63,6 +64,7 @@ import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -84,6 +86,8 @@ public final class BlueprintProjectionRenderer {
     private static final double VIEW_DISTANCE = 160.0D;
     /** 投影统一着色:把方块原色向全息青略洗,避免直接乘青把红石和树叶滤成灰褐。 */
     private static final float TINT_ALPHA = 0.55F;
+    /** 流体本身已半透明,全息再乘 0.55 会变成纯透明;单独提高一档。 */
+    private static final float FLUID_TINT_ALPHA = 0.85F;
     private static final float BOX_RED = 0.25F;
     private static final float BOX_GREEN = 0.85F;
     private static final float BOX_BLUE = 1.0F;
@@ -134,7 +138,9 @@ public final class BlueprintProjectionRenderer {
         TintedBufferSource depthBuffers = new TintedBufferSource(buffers, TINT_ALPHA, true);
         TintedBufferSource colorBuffers = new TintedBufferSource(buffers, TINT_ALPHA, false);
         RenderType blockType = BlueprintProjectionRenderTypes.hologramBlock();
-        VertexConsumer tintedBlocks = new TintedVertexConsumer(buffers.getBuffer(blockType), TINT_ALPHA);
+        VertexConsumer hologramBuffer = buffers.getBuffer(blockType);
+        VertexConsumer tintedBlocks = new TintedVertexConsumer(hologramBuffer, TINT_ALPHA);
+        VertexConsumer tintedFluids = new TintedVertexConsumer(hologramBuffer, FLUID_TINT_ALPHA);
 
         poseStack.pushPose();
         try {
@@ -146,12 +152,14 @@ public final class BlueprintProjectionRenderer {
                     minecraft,
                     poseStack,
                     tintedBlocks,
+                    tintedFluids,
                     prepared,
                     item
                 ));
             }
             buffers.endBatch(blockType);
             renderDeliveredBlocks(minecraft, poseStack, buffers, items);
+            renderDeliveredFluids(minecraft, poseStack, buffers, items);
             for (RenderItem item : items) {
                 PreparedProjection prepared = preparedOrNull(minecraft, item, poseOf(item, sessionPose));
                 if (prepared == null) continue;
@@ -495,6 +503,7 @@ public final class BlueprintProjectionRenderer {
         Minecraft minecraft,
         PoseStack poseStack,
         VertexConsumer tintedBlocks,
+        VertexConsumer tintedFluids,
         PreparedProjection prepared,
         RenderItem item
     ) {
@@ -517,7 +526,7 @@ public final class BlueprintProjectionRenderer {
                 poseStack.pushPose();
                 poseStack.translate(pos.getX(), pos.getY(), pos.getZ());
                 Matrix4f matrix = new Matrix4f(poseStack.last().pose());
-                VertexConsumer fluidConsumer = new PoseVertexConsumer(tintedBlocks, matrix);
+                VertexConsumer fluidConsumer = new PoseVertexConsumer(tintedFluids, matrix);
                 dispatcher.renderLiquid(BlockPos.ZERO, prepared.view().shifted(pos), fluidConsumer, state, fluid);
                 poseStack.popPose();
             }
@@ -595,7 +604,7 @@ public final class BlueprintProjectionRenderer {
                 dispatcher.renderBatched(
                     state,
                     pos,
-                    new DeliveredRenderView(level),
+                    new DeliveredRenderView(level, item.jobId()),
                     poseStack,
                     buffers.getBuffer(type),
                     true,
@@ -607,6 +616,50 @@ public final class BlueprintProjectionRenderer {
             }
         }
         for (RenderType type : used) {
+            buffers.endBatch(type);
+        }
+    }
+
+    /**
+     * 已交付流体是 INVISIBLE 方块,不能走 MODEL 批次;按真实流体画,避免交付后变成纯透明。
+     */
+    private static void renderDeliveredFluids(
+        Minecraft minecraft,
+        PoseStack poseStack,
+        MultiBufferSource.BufferSource buffers,
+        List<RenderItem> items
+    ) {
+        ClientLevel level = minecraft.level;
+        if (level == null) {
+            return;
+        }
+        BlockRenderDispatcher dispatcher = minecraft.getBlockRenderer();
+        RenderType type = RenderType.translucent();
+        VertexConsumer buffer = buffers.getBuffer(type);
+        boolean any = false;
+        for (RenderItem item : items) {
+            if (item.jobId() == null) {
+                continue;
+            }
+            DeliveredRenderView view = new DeliveredRenderView(level, item.jobId());
+            for (Map.Entry<BlockPos, BlockState> entry
+                : ConstructionProjectionIndex.deliveredIn(level, item.jobId()).entrySet()) {
+                BlockPos pos = entry.getKey();
+                BlockState state = entry.getValue();
+                FluidState fluid = state.getFluidState();
+                if (fluid.isEmpty()) {
+                    continue;
+                }
+                any = true;
+                poseStack.pushPose();
+                poseStack.translate(pos.getX(), pos.getY(), pos.getZ());
+                Matrix4f matrix = new Matrix4f(poseStack.last().pose());
+                VertexConsumer fluidConsumer = new PoseVertexConsumer(buffer, matrix);
+                dispatcher.renderLiquid(BlockPos.ZERO, view.shifted(pos), fluidConsumer, state, fluid);
+                poseStack.popPose();
+            }
+        }
+        if (any) {
             buffers.endBatch(type);
         }
     }
@@ -781,13 +834,50 @@ public final class BlueprintProjectionRenderer {
     }
 
     /**
-     * 已交付格按索引里的目标状态做邻接剔除,光照仍读真实世界,看起来才像已经砌上的方块。
+     * 已交付格按索引里的目标状态做邻接剔除,未交付邻居读规划覆盖,
+     * 红石粉才能按蓝图连接和等级显示,而不是对着空气重算成点。
      */
-    private record DeliveredRenderView(ClientLevel level) implements BlockAndTintGetter {
+    private record DeliveredRenderView(
+        ClientLevel level,
+        UUID jobId,
+        Map<Long, BlockState> planned,
+        BlockPos origin
+    ) implements BlockAndTintGetter {
+        private DeliveredRenderView(ClientLevel level, UUID jobId) {
+            this(level, jobId, plannedOverlay(level, jobId), BlockPos.ZERO);
+        }
+
+        private static Map<Long, BlockState> plannedOverlay(ClientLevel level, UUID jobId) {
+            Map<Long, BlockState> overlay = new HashMap<>(ClientConstructionOverlayLookup.plannedOverlay(level, jobId));
+            overlay.putAll(toLongMap(ConstructionProjectionIndex.deliveredIn(level, jobId)));
+            return overlay;
+        }
+
+        private static Map<Long, BlockState> toLongMap(Map<BlockPos, BlockState> delivered) {
+            Map<Long, BlockState> result = new HashMap<>();
+            for (Map.Entry<BlockPos, BlockState> entry : delivered.entrySet()) {
+                result.put(entry.getKey().asLong(), entry.getValue());
+            }
+            return result;
+        }
+
+        private DeliveredRenderView shifted(BlockPos origin) {
+            return new DeliveredRenderView(this.level, this.jobId, this.planned, origin.immutable());
+        }
+
+        private BlockPos map(BlockPos pos) {
+            return this.origin.equals(BlockPos.ZERO) ? pos : pos.offset(this.origin);
+        }
+
         @Override
         public BlockState getBlockState(BlockPos pos) {
-            ConstructionProjectionIndex.Collision collision = ConstructionProjectionIndex.at(this.level, pos);
-            return collision != null ? collision.state() : this.level.getBlockState(pos);
+            BlockPos world = this.map(pos);
+            ConstructionProjectionIndex.Collision collision = ConstructionProjectionIndex.at(this.level, world);
+            if (collision != null) {
+                return collision.state();
+            }
+            BlockState planned = this.planned.get(world.asLong());
+            return planned != null ? planned : this.level.getBlockState(world);
         }
 
         @Override
@@ -798,7 +888,7 @@ public final class BlueprintProjectionRenderer {
         @Override
         @Nullable
         public BlockEntity getBlockEntity(BlockPos pos) {
-            return this.level.getBlockEntity(pos);
+            return this.level.getBlockEntity(this.map(pos));
         }
 
         @Override
@@ -828,17 +918,17 @@ public final class BlueprintProjectionRenderer {
 
         @Override
         public int getBlockTint(BlockPos pos, ColorResolver colorResolver) {
-            return this.level.getBlockTint(pos, colorResolver);
+            return this.level.getBlockTint(this.map(pos), colorResolver);
         }
 
         @Override
         public int getBrightness(LightLayer type, BlockPos pos) {
-            return this.level.getBrightness(type, pos);
+            return this.level.getBrightness(type, this.map(pos));
         }
 
         @Override
         public int getRawBrightness(BlockPos pos, int amount) {
-            return this.level.getRawBrightness(pos, amount);
+            return this.level.getRawBrightness(this.map(pos), amount);
         }
 
         @Override

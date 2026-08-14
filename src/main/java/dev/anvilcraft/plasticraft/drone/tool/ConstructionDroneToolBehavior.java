@@ -376,15 +376,19 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
                 op.setApproach(approach);
             }
         }
-        if (approach == null) {
-            flyTo(drone, Vec3.atBottomCenterOf(op.pos().above(2)));
-            return;
-        }
-        Vec3 target = Vec3.atBottomCenterOf(approach);
         AABB droneBox = drone.getBoundingBox();
         AABB block = new AABB(op.pos());
-        if (droneBox.intersects(block) || !droneBox.intersects(block.inflate(ConstructionJobController.REACH))) {
-            flyTo(drone, target);
+        boolean inReach = droneBox.intersects(block.inflate(ConstructionJobController.REACH));
+        boolean inside = droneBox.intersects(block);
+        if (approach == null) {
+            if (op.writesProjection() || !inReach) {
+                flyTo(drone, op.writesProjection()
+                    ? Vec3.atBottomCenterOf(op.pos().above(2))
+                    : entityFallback(op));
+                return;
+            }
+        } else if (!inReach || (op.writesProjection() && inside)) {
+            flyTo(drone, Vec3.atBottomCenterOf(approach));
             return;
         }
         drone.setActionState((byte) 5);
@@ -413,6 +417,11 @@ public final class ConstructionDroneToolBehavior implements DroneToolBehavior {
         } else if (op.status() == ConstructionBuildOp.Status.WAITING_WORLD) {
             drone.setWaitReason(ConstructionWaitReason.WORLD);
         }
+    }
+
+    /** 实体等不写假碰撞的目标允许在格内交付,回退点必须落在 inflate(REACH) 内。 */
+    private static Vec3 entityFallback(ConstructionBuildOp op) {
+        return Vec3.atBottomCenterOf(op.pos());
     }
 
     private static void flyTo(DroneEntity drone, Vec3 goal) {

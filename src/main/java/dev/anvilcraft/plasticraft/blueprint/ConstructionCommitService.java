@@ -1,6 +1,8 @@
 package dev.anvilcraft.plasticraft.blueprint;
 
 import dev.dubhe.anvilcraft.api.fluid.IFluidHandlerHolder;
+import dev.dubhe.anvilcraft.block.RedstoneWireBlock;
+import dev.dubhe.anvilcraft.block.RedstoneWireNetworkManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -31,6 +33,7 @@ import java.util.Set;
 
 /**
  * 安静提交:分区静默写入已交付状态,再恢复方块实体与多方块,最后只更新非红石边界形状。
+ * 本体红石导线另把蓝图四向写入端口覆盖表,之后网络更新也遵守这些端口。
  * 通用路径不发邻居更新、不掉落、不调用假玩家。
  */
 public final class ConstructionCommitService {
@@ -74,12 +77,13 @@ public final class ConstructionCommitService {
                 }
                 case BOUNDARY -> {
                     updateBoundaryShapes(level, progress);
-                    restorePreservedStates(level, progress);
+                    pasteDeliveredRegion(level, progress);
                     log.setPhase(ConstructionCommitLog.Phase.ENTITIES);
                     yield false;
                 }
                 case ENTITIES -> writeEntities(level, progress, log);
                 case PUBLISH -> {
+                    pasteDeliveredRegion(level, progress);
                     ConstructionProjectionIndex.clearJob(level, progress.jobId());
                     ConstructionEntityProjectionIndex.clearJob(level, progress.jobId());
                     log.setPhase(ConstructionCommitLog.Phase.DONE);
@@ -248,18 +252,7 @@ public final class ConstructionCommitService {
     }
 
     static void quietSet(Level level, BlockPos pos, BlockState state) {
-        BlockState previous = level.getBlockState(pos);
-        if (previous == state) {
-            return;
-        }
-        if (preservesExactState(state) || preservesExactState(previous)) {
-            writeWithoutCallbacks(level, pos, state);
-            return;
-        }
-        level.getChunk(pos).setBlockState(pos, state, false);
-        if (level instanceof ServerLevel serverLevel) {
-            serverLevel.sendBlockUpdated(pos, previous, state, QUIET_FLAGS);
-        }
+        writeWithoutCallbacks(level, pos, state);
     }
 
     /**
@@ -271,6 +264,9 @@ public final class ConstructionCommitService {
             return;
         }
         LevelChunk chunk = level.getChunkAt(pos);
+        if (previous.getBlock() instanceof RedstoneWireBlock && !(state.getBlock() instanceof RedstoneWireBlock)) {
+            RedstoneWireNetworkManager.wireRemoved(level, pos);
+        }
         if (previous.hasBlockEntity() && previous.getBlock() != state.getBlock()) {
             chunk.removeBlockEntity(pos);
         }
@@ -302,21 +298,44 @@ public final class ConstructionCommitService {
         }
     }
 
-    private static void restorePreservedStates(Level level, ConstructionJobProgress progress) {
+    /** 按投影模组粘贴:整区再写一遍蓝图状态,只通知客户端,不跑邻居重算。 */
+    private static void pasteDeliveredRegion(Level level, ConstructionJobProgress progress) {
         for (ConstructionBuildOp op : deliveredProjections(progress)) {
-            if (!preservesExactState(op.target())) {
+            writeWithoutCallbacks(level, op.pos(), op.target());
+        }
+        restoreWirePorts(level, progress);
+    }
+
+    /** 先按邻居建网,再用本体端口编辑把蓝图四向写入覆盖表,之后更新也不会把平行线并上。 */
+    public static void restoreWirePorts(Level level, ConstructionJobProgress progress) {
+        if (!(level instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        List<ConstructionBuildOp> wires = new ArrayList<>();
+        for (ConstructionBuildOp op : deliveredProjections(progress)) {
+            if (!AnvilCraftRedstoneWirePorts.isWire(op.target())) {
                 continue;
             }
-            writeWithoutCallbacks(level, op.pos(), op.target());
+            if (!AnvilCraftRedstoneWirePorts.isWire(serverLevel.getBlockState(op.pos()))) {
+                continue;
+            }
+            wires.add(op);
+        }
+        for (ConstructionBuildOp op : wires) {
+            RedstoneWireNetworkManager.topologyChanged(serverLevel, op.pos());
+        }
+        for (ConstructionBuildOp op : wires) {
+            AnvilCraftRedstoneWirePorts.reconcile(serverLevel, op.pos(), op.target());
         }
     }
 
-    private static boolean preservesExactState(BlockState state) {
+    static boolean preservesExactState(BlockState state) {
         return skipsBoundaryUpdate(state);
     }
 
     private static boolean skipsBoundaryUpdate(BlockState state) {
         return state.getBlock() instanceof RedStoneWireBlock
+            || state.getBlock() instanceof RedstoneWireBlock
             || state.getBlock() instanceof DiodeBlock
             || state.getBlock() instanceof LeverBlock
             || state.getBlock() instanceof ButtonBlock

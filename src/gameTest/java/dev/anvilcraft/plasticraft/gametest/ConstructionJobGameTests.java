@@ -33,6 +33,8 @@ import dev.anvilcraft.plasticraft.drone.tool.DroneToolDefinitions;
 import dev.anvilcraft.plasticraft.entity.drone.DroneEntity;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
+import dev.dubhe.anvilcraft.block.RedstoneWireBlock;
+import dev.dubhe.anvilcraft.block.RedstoneWireNetworkManager;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModItems;
@@ -55,7 +57,6 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.animal.Pig;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.vehicle.Boat;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -63,10 +64,10 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.Container;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ComparatorBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.LayeredCauldronBlock;
 import net.minecraft.world.level.block.Mirror;
-import net.minecraft.world.level.block.RedStoneWireBlock;
 import net.minecraft.world.level.block.RepeaterBlock;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -1356,11 +1357,12 @@ public final class ConstructionJobGameTests {
         }).thenSucceed();
     }
 
-    @GameTest(timeoutTicks = 40, batch = "zzz_construction")
+    @GameTest(timeoutTicks = 80, batch = "zzz_construction")
     @EmptyTemplate(value = "7x6x7", floor = true)
-    @TestHolder(description = "Quiet commit restores redstone, locked repeater and extended piston without breaking a cactus neighbour")
+    @TestHolder(description = "Quiet commit writes AnvilCraft wire port overrides so topology updates keep blueprint arms")
     static void quietCommitRestoresRedstoneWithoutBreakingCactus(ExtendedGameTestHelper helper) {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        List<ConstructionBuildOp> wireOps = new ArrayList<>();
         helper.startSequence().thenExecuteAfter(5, () -> {
             try {
                 StartedJob started = startStructureJob(
@@ -1370,8 +1372,9 @@ public final class ConstructionJobGameTests {
                     "redstone-machine",
                     new BlockPos(2, 2, 2)
                 );
-                player.getInventory().add(new ItemStack(Items.REDSTONE, 2));
+                player.getInventory().add(new ItemStack(ModBlocks.REDSTONE_WIRE.asItem(), 3));
                 player.getInventory().add(new ItemStack(Items.REPEATER));
+                player.getInventory().add(new ItemStack(Items.COMPARATOR));
                 player.getInventory().add(new ItemStack(Items.PISTON));
                 player.getInventory().add(new ItemStack(Items.COBBLESTONE));
                 ConstructionBuildOp cobble = null;
@@ -1390,6 +1393,29 @@ public final class ConstructionJobGameTests {
                     }
                 }
                 check(cobble != null, "redstone fixture must include a cobble cell for the cactus");
+                boolean sawWire = false;
+                for (ConstructionBuildOp op : started.progress().operations()) {
+                    if (!(op.target().getBlock() instanceof RedstoneWireBlock)) {
+                        continue;
+                    }
+                    ConstructionProjectionIndex.Collision collision = ConstructionProjectionIndex.at(
+                        helper.getLevel(),
+                        op.pos()
+                    );
+                    check(collision != null, "delivered wire must stay in the projection index");
+                    check(
+                        sameAnvilCraftWirePorts(collision.state(), op.target()),
+                        "delivered wire must keep the blueprint ports and must not grow extras toward the comparator"
+                    );
+                    sawWire = true;
+                }
+                check(sawWire, "fixture must deliver AnvilCraft redstone wire");
+                wireOps.clear();
+                for (ConstructionBuildOp op : started.progress().operations()) {
+                    if (op.target().getBlock() instanceof RedstoneWireBlock) {
+                        wireOps.add(op);
+                    }
+                }
                 helper.getLevel().setBlock(cobble.pos().west().below(), Blocks.SAND.defaultBlockState(), 3);
                 helper.getLevel().setBlock(cobble.pos().west(), Blocks.CACTUS.defaultBlockState(), 3);
                 ConstructionJobController.finish(
@@ -1402,33 +1428,62 @@ public final class ConstructionJobGameTests {
                     helper.getLevel().getBlockState(cobble.pos().west()).is(Blocks.CACTUS),
                     "quiet commit must not break the adjacent cactus"
                 );
-                boolean sawPower = false;
+                boolean sawPorts = false;
                 boolean sawLocked = false;
+                boolean sawComparator = false;
                 boolean sawExtended = false;
                 for (ConstructionBuildOp op : started.progress().operations()) {
                     if (op.status() != ConstructionBuildOp.Status.DELIVERED || !op.writesProjection()) {
                         continue;
                     }
                     BlockState written = helper.getLevel().getBlockState(op.pos());
-                    if (written.hasProperty(RedStoneWireBlock.POWER)) {
+                    if (written.getBlock() instanceof RedstoneWireBlock) {
                         check(
-                            written.getValue(RedStoneWireBlock.POWER) == op.target().getValue(RedStoneWireBlock.POWER),
-                            "committed redstone dust must keep blueprint power"
+                            sameAnvilCraftWirePorts(written, op.target()),
+                            "committed wire must restore the blueprint ports, not neighbour-inferred extras"
                         );
-                        sawPower = true;
+                        sawPorts = true;
                     }
                     if (written.hasProperty(RepeaterBlock.LOCKED)) {
                         check(written.getValue(RepeaterBlock.LOCKED), "committed repeater must stay locked");
                         sawLocked = true;
+                    }
+                    if (written.hasProperty(ComparatorBlock.MODE)) {
+                        check(
+                            written.getValue(ComparatorBlock.FACING) == Direction.WEST,
+                            "committed comparator must keep its facing"
+                        );
+                        sawComparator = true;
                     }
                     if (written.hasProperty(PistonBaseBlock.EXTENDED)) {
                         check(written.getValue(PistonBaseBlock.EXTENDED), "committed piston must stay extended");
                         sawExtended = true;
                     }
                 }
-                check(sawPower && sawLocked && sawExtended, "fixture must commit dust, locked repeater and extended piston");
+                check(
+                    sawPorts && sawLocked && sawComparator && sawExtended,
+                    "fixture must commit AnvilCraft wire, comparator, locked repeater and extended piston"
+                );
             } catch (ConstructionBlueprintException exception) {
                 throw new GameTestAssertException("redstone commit setup failed: " + exception.reason());
+            }
+        }).thenExecute(() -> {
+            check(!wireOps.isEmpty(), "fixture must keep wire ops for the post-commit settle");
+            for (ConstructionBuildOp op : wireOps) {
+                helper.getLevel().updateNeighborsAt(op.pos(), ModBlocks.REDSTONE_WIRE.get());
+                RedstoneWireNetworkManager.topologyChanged(helper.getLevel(), op.pos());
+            }
+        }).thenExecuteAfter(25, () -> {
+            for (ConstructionBuildOp op : wireOps) {
+                BlockState written = helper.getLevel().getBlockState(op.pos());
+                check(
+                    written.getBlock() instanceof RedstoneWireBlock,
+                    "settled cell must still be AnvilCraft redstone wire"
+                );
+                check(
+                    sameAnvilCraftWirePorts(written, op.target()),
+                    "settled wire must keep blueprint ports after topology updates, not merge parallel lines"
+                );
             }
         }).thenSucceed();
     }
@@ -1608,9 +1663,66 @@ public final class ConstructionJobGameTests {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         helper.startSequence().thenExecuteAfter(5, () -> {
             try {
-                assertResinCreeperJob(helper, player);
+                assertResinCreeperJob(
+                    helper,
+                    player,
+                    captureStack(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem()),
+                    true,
+                    "resin-creeper"
+                );
+                assertResinCreeperJob(
+                    helper,
+                    player,
+                    captureStack(ModBlocks.RESIN_BLOCK.asItem()),
+                    true,
+                    "plain-resin-creeper"
+                );
+                assertResinCreeperJob(
+                    helper,
+                    player,
+                    captureStack(PlasticraftBlocks.RESIN_ANVIL.asItem()),
+                    false,
+                    "resin-anvil-creeper"
+                );
             } catch (ConstructionBlueprintException exception) {
                 throw new GameTestAssertException("resin capture setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
+    @EmptyTemplate(value = "5x6x5", floor = true)
+    @TestHolder(description = "An enclosed entity uses its own cell as the drone approach when every neighbour is a reserved PLACE")
+    static void enclosedEntityUsesOwnCellApproach(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                CompoundTag nbt = new CompoundTag();
+                nbt.putString("id", "minecraft:boat");
+                StartedJob started = startStructureJob(
+                    helper,
+                    player,
+                    enclosedEntityStructure(nbt),
+                    "enclosed-entity",
+                    new BlockPos(1, 2, 1)
+                );
+                ConstructionBuildOp entity = firstKind(started.progress(), ConstructionBuildOp.Kind.ENTITY);
+                int reservedNeighbors = 0;
+                for (Direction direction : Direction.values()) {
+                    if (isUndeliveredPlace(started.progress(), entity.pos().relative(direction))) {
+                        reservedNeighbors++;
+                    }
+                }
+                check(reservedNeighbors == 6, "the boat must be enclosed by six undelivered PLACE cells");
+                BlockPos approach = ConstructionJobController.chooseApproach(
+                    helper.getLevel(),
+                    started.progress(),
+                    entity
+                );
+                check(entity.pos().equals(approach), "an enclosed entity must use its own cell as the approach");
+                ConstructionBlueprintService.cancel(player, started.job().jobId());
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("enclosed entity setup failed: " + exception.reason());
             }
         }).thenSucceed();
     }
@@ -1753,23 +1865,32 @@ public final class ConstructionJobGameTests {
         discardNearby(helper, entity.pos());
     }
 
-    private static void assertResinCreeperJob(ExtendedGameTestHelper helper, GameTestPlayer player)
-        throws ConstructionBlueprintException {
+    private static ItemStack captureStack(Item item) {
+        CompoundTag captured = new CompoundTag();
+        captured.putString("id", "minecraft:creeper");
+        ItemStack stack = new ItemStack(item);
+        stack.set(ModComponents.SAVED_ENTITY, new SavedEntity(captured, true));
+        return stack;
+    }
+
+    private static void assertResinCreeperJob(
+        ExtendedGameTestHelper helper,
+        GameTestPlayer player,
+        ItemStack capture,
+        boolean expectResinReturn,
+        String name
+    ) throws ConstructionBlueprintException {
         CompoundTag nbt = new CompoundTag();
         nbt.putString("id", "minecraft:creeper");
         StartedJob started = startStructureJob(
             helper,
             player,
             entityOnlyStructure(List.of(nbt)),
-            "resin-creeper",
+            name,
             new BlockPos(2, 2, 2)
         );
         ConstructionBuildOp entity = firstKind(started.progress(), ConstructionBuildOp.Kind.ENTITY);
-        CompoundTag captured = new CompoundTag();
-        captured.putString("id", "minecraft:creeper");
-        ItemStack resin = new ItemStack(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK);
-        resin.set(ModComponents.SAVED_ENTITY, new SavedEntity(captured, true));
-        player.getInventory().add(resin);
+        player.getInventory().add(capture);
         check(
             ConstructionJobController.extractMaterial(player, started.progress(), entity, UUID.randomUUID()),
             "a matching resin capture must supply the creeper when no egg is taken"
@@ -1781,7 +1902,11 @@ public final class ConstructionJobGameTests {
         int resinBefore = countItem(player, ModItems.RESIN.get());
         player.getInventory().add(entity.returnStack().copy());
         int returned = countItem(player, ModItems.RESIN.get()) - resinBefore;
-        check(returned >= 1 && returned <= 3, "resin delivery must return 1-3 resin");
+        if (expectResinReturn) {
+            check(returned >= 1 && returned <= 3, "resin block delivery must return 1-3 resin");
+        } else {
+            check(returned == 0, "a captured resin anvil must be consumed without returning resin");
+        }
         ConstructionJobController.finish(
             helper.getLevel().getServer(),
             helper.getLevel(),
@@ -1978,22 +2103,29 @@ public final class ConstructionJobGameTests {
     }
 
     private static CompoundTag redstoneMachineStructure() {
+        BlockState northSouthWire = ModBlocks.REDSTONE_WIRE.getDefaultState();
         return multiBlockStructure(List.of(
             new BlockPos(1, 0, 0),
             new BlockPos(1, 0, 1),
+            new BlockPos(0, 0, 1),
             new BlockPos(1, 0, 2),
             new BlockPos(2, 0, 1),
-            new BlockPos(3, 0, 1)
+            new BlockPos(3, 0, 1),
+            new BlockPos(2, 0, 0),
+            new BlockPos(3, 0, 0)
         ), List.of(
             Blocks.COBBLESTONE.defaultBlockState(),
-            Blocks.REDSTONE_WIRE.defaultBlockState().setValue(RedStoneWireBlock.POWER, 15),
+            northSouthWire,
+            Blocks.COMPARATOR.defaultBlockState().setValue(ComparatorBlock.FACING, Direction.WEST),
             Blocks.REPEATER.defaultBlockState()
                 .setValue(RepeaterBlock.LOCKED, true)
-                .setValue(RepeaterBlock.FACING, Direction.EAST),
+                .setValue(RepeaterBlock.FACING, Direction.SOUTH),
             Blocks.PISTON.defaultBlockState()
                 .setValue(PistonBaseBlock.EXTENDED, true)
                 .setValue(PistonBaseBlock.FACING, Direction.EAST),
-            Blocks.PISTON_HEAD.defaultBlockState().setValue(PistonHeadBlock.FACING, Direction.EAST)
+            Blocks.PISTON_HEAD.defaultBlockState().setValue(PistonHeadBlock.FACING, Direction.EAST),
+            northSouthWire,
+            northSouthWire
         ));
     }
 
@@ -2050,6 +2182,44 @@ public final class ConstructionJobGameTests {
         tag.put("blocks", blocks);
         tag.put("entities", new ListTag());
         return tag;
+    }
+
+    private static CompoundTag enclosedEntityStructure(CompoundTag entityNbt) {
+        List<BlockPos> positions = new ArrayList<>();
+        List<BlockState> states = new ArrayList<>();
+        for (Direction direction : Direction.values()) {
+            positions.add(BlockPos.ZERO.relative(direction).offset(1, 1, 1));
+            states.add(Blocks.SANDSTONE.defaultBlockState());
+        }
+        CompoundTag tag = sizedStructure(3, 3, 3, positions, states, List.of());
+        CompoundTag entry = new CompoundTag();
+        ListTag pos = new ListTag();
+        pos.add(DoubleTag.valueOf(1.5D));
+        pos.add(DoubleTag.valueOf(1.0D));
+        pos.add(DoubleTag.valueOf(1.5D));
+        entry.put("pos", pos);
+        ListTag blockPos = new ListTag();
+        blockPos.add(IntTag.valueOf(1));
+        blockPos.add(IntTag.valueOf(1));
+        blockPos.add(IntTag.valueOf(1));
+        entry.put("blockPos", blockPos);
+        entry.put("nbt", entityNbt);
+        ListTag entities = new ListTag();
+        entities.add(entry);
+        tag.put("entities", entities);
+        return tag;
+    }
+
+    private static boolean isUndeliveredPlace(ConstructionJobProgress progress, BlockPos pos) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() == ConstructionBuildOp.Kind.PLACE
+                && op.status() != ConstructionBuildOp.Status.DELIVERED
+                && op.status() != ConstructionBuildOp.Status.SKIPPED
+                && op.pos().equals(pos)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static CompoundTag entityOnlyStructure(List<CompoundTag> entities) {
@@ -2246,6 +2416,20 @@ public final class ConstructionJobGameTests {
             ConstructionBlueprintService.cancel(player, jobId);
         } catch (ConstructionBlueprintException ignored) {
         }
+    }
+
+    private static boolean sameAnvilCraftWirePorts(BlockState written, BlockState target) {
+        if (!(written.getBlock() instanceof RedstoneWireBlock)
+            || !(target.getBlock() instanceof RedstoneWireBlock)) {
+            return false;
+        }
+        for (int index = 0; index < RedstoneWireBlock.CONNECTION_PROPERTIES.size(); index++) {
+            if (written.getValue(RedstoneWireBlock.CONNECTION_PROPERTIES.get(index)).isConnected()
+                != target.getValue(RedstoneWireBlock.CONNECTION_PROPERTIES.get(index)).isConnected()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static void check(boolean condition, String message) {

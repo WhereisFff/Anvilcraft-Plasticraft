@@ -21,7 +21,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -373,6 +372,7 @@ public final class ConstructionJobController {
         ConstructionJobProgress progress
     ) {
         smashRemainingShells(level, progress);
+        ConstructionCommitService.restoreWirePorts(level, progress);
         byte terminal = progress.incomplete() || hasSkippedPlace(progress)
             ? ConstructionJob.STATE_COMPLETED_INCOMPLETE
             : ConstructionJob.STATE_COMPLETED;
@@ -704,7 +704,7 @@ public final class ConstructionJobController {
         ItemStack taken = takeBuildMaterial(player, op);
         if (taken.isEmpty()) return false;
         progress.addLedger(op.id(), taken, droneId);
-        if (PlasticraftEntityBuildAdapters.isResinCapture(taken) && op.returnStack().isEmpty()
+        if (PlasticraftEntityBuildAdapters.returnsResin(taken) && op.returnStack().isEmpty()
             && player.level() instanceof ServerLevel serverLevel) {
             op.setReturnStack(PlasticraftEntityBuildAdapters.resinReturn(serverLevel));
         }
@@ -886,6 +886,11 @@ public final class ConstructionJobController {
                     best = candidate;
                 }
             }
+        }
+        if (best == null && !op.writesProjection()
+            && !isReservedBuildCell(progress, op.pos())
+            && fitsDrone(level, op.pos())) {
+            return op.pos();
         }
         return best;
     }

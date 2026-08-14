@@ -46,7 +46,7 @@ public final class ClientConstructionOverlayLookup {
             return false;
         }
         if (target.getBlock() instanceof LiquidBlock) {
-            return false;
+            return true;
         }
         if (MultiblockBuildAdapter.isMultiPart(target) || OrdinaryBlockAdapter.isAttachedHalf(target)) {
             return true;

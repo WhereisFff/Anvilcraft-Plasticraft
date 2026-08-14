@@ -1,6 +1,5 @@
 package dev.anvilcraft.plasticraft.init;
 
-import dev.anvilcraft.plasticraft.blueprint.ConstructionBuildOp;
 import dev.anvilcraft.plasticraft.blueprint.EntityBuildAdapter;
 import dev.anvilcraft.plasticraft.blueprint.EntityBuildAdapters;
 import dev.anvilcraft.plasticraft.blueprint.FluidBuildAdapter;
@@ -13,6 +12,7 @@ import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContents;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.dubhe.anvilcraft.api.fluid.IFluidHandlerHolder;
 import dev.dubhe.anvilcraft.api.itemhandler.IItemHandlerHolder;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
@@ -60,8 +60,17 @@ public final class PlasticraftEntityBuildAdapters {
     }
 
     public static boolean isResinCapture(ItemStack stack) {
-        return stack.is(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
-            && stack.has(ModComponents.SAVED_ENTITY);
+        return stack.has(ModComponents.SAVED_ENTITY)
+            && (stack.is(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
+                || stack.is(ModBlocks.RESIN_BLOCK.asItem())
+                || stack.is(PlasticraftBlocks.RESIN_ANVIL.asItem()));
+    }
+
+    /** 只有树脂块 / 高粘块释放后掉 1–3 树脂;树脂铁砧整砧消耗。 */
+    public static boolean returnsResin(ItemStack stack) {
+        return stack.has(ModComponents.SAVED_ENTITY)
+            && (stack.is(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
+                || stack.is(ModBlocks.RESIN_BLOCK.asItem()));
     }
 
     public static ItemStack resinReturn(ServerLevel level) {
@@ -287,13 +296,6 @@ public final class PlasticraftEntityBuildAdapters {
             return new Planned(resin, ItemStack.EMPTY, sanitized, List.of(), List.of(), false);
         }
 
-        @Override
-        public ItemStack returnAfterDeliver(ServerLevel level, ConstructionBuildOp op) {
-            if (!op.returnStack().isEmpty()) {
-                return op.returnStack().copy();
-            }
-            return resinReturn(level);
-        }
     }
 
     private static final class PlasticEntityAdapter implements EntityBuildAdapter {
