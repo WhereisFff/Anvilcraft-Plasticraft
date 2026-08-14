@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.entity.drone;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionDebris;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionWaitReason;
 import dev.anvilcraft.plasticraft.block.entity.DroneStationBlockEntity;
 import dev.anvilcraft.plasticraft.drone.DroneData;
@@ -513,6 +514,84 @@ public class DroneEntity extends Entity {
         this.navigator.clear();
         if (clearCarry) {
             this.setHostedCarry(ItemStack.EMPTY);
+        }
+    }
+
+    public List<ItemStack> collectionInventory() {
+        this.ensureCollectionSlots();
+        return this.collectionInventory;
+    }
+
+    public boolean isCollectionFull() {
+        int size = this.toolDefinition().inventorySize();
+        if (size <= 0) return true;
+        this.ensureCollectionSlots();
+        for (ItemStack stack : this.collectionInventory) {
+            if (stack.isEmpty() || stack.getCount() < stack.getMaxStackSize()) return false;
+        }
+        return true;
+    }
+
+    public boolean canAcceptCollection(ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        this.ensureCollectionSlots();
+        ItemStack probe = stack.copy();
+        ConstructionDebris.clear(probe);
+        for (ItemStack slot : this.collectionInventory) {
+            if (slot.isEmpty()) return true;
+            if (ItemStack.isSameItemSameComponents(slot, probe) && slot.getCount() < slot.getMaxStackSize()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 按堆叠规则插入收集库存,返回实际装入数量;装入前剥掉任务标记。 */
+    public int tryInsertCollection(ItemStack incoming) {
+        if (incoming.isEmpty()) return 0;
+        this.ensureCollectionSlots();
+        ItemStack moving = incoming.copy();
+        ConstructionDebris.clear(moving);
+        int before = moving.getCount();
+        for (int index = 0; index < this.collectionInventory.size() && !moving.isEmpty(); index++) {
+            ItemStack slot = this.collectionInventory.get(index);
+            if (slot.isEmpty() || !ItemStack.isSameItemSameComponents(slot, moving)) continue;
+            int space = slot.getMaxStackSize() - slot.getCount();
+            if (space <= 0) continue;
+            int take = Math.min(space, moving.getCount());
+            slot.grow(take);
+            moving.shrink(take);
+        }
+        for (int index = 0; index < this.collectionInventory.size() && !moving.isEmpty(); index++) {
+            if (!this.collectionInventory.get(index).isEmpty()) continue;
+            int take = Math.min(moving.getCount(), moving.getMaxStackSize());
+            this.collectionInventory.set(index, moving.copyWithCount(take));
+            moving.shrink(take);
+        }
+        return before - moving.getCount();
+    }
+
+    /** 向玩家背包卸货;塞不下的留在原槽,不丢到地上。 */
+    public void unloadCollectionTo(Player player) {
+        this.ensureCollectionSlots();
+        for (int index = 0; index < this.collectionInventory.size(); index++) {
+            ItemStack slot = this.collectionInventory.get(index);
+            if (slot.isEmpty()) continue;
+            player.getInventory().add(slot);
+            if (slot.isEmpty()) {
+                this.collectionInventory.set(index, ItemStack.EMPTY);
+            }
+        }
+    }
+
+    private void ensureCollectionSlots() {
+        int size = this.toolDefinition().inventorySize();
+        if (size <= 0) return;
+        while (this.collectionInventory.size() < size) {
+            this.collectionInventory.add(ItemStack.EMPTY);
+        }
+        if (this.collectionInventory.size() > size) {
+            this.collectionInventory = new ArrayList<>(this.collectionInventory.subList(0, size));
         }
     }
 

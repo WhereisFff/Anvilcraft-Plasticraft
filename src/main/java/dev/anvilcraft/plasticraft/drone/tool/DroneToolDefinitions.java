@@ -65,7 +65,7 @@ public final class DroneToolDefinitions {
         9,
         INSTANT_ACTION_ENERGY_COST,
         List.of("idle", "attract"),
-        DroneToolBehavior.NONE
+        CollectionDroneToolBehavior.INSTANCE
     ));
 
     public static final DroneToolDefinition OBSERVATION = register(new DroneToolDefinition(

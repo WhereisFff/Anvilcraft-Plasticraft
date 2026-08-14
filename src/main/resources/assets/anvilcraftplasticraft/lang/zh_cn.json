@@ -108,7 +108,7 @@
   "tooltip.anvilcraftplasticraft.drone.none": "未安装工具的机械无人机",
   "tooltip.anvilcraftplasticraft.drone.construction": "从所有者背包取料以封堵流体并交付施工投影的机械无人机",
   "tooltip.anvilcraftplasticraft.drone.demolition": "按铁砧砸切石机语义瞬间拆除方块的机械无人机",
-  "tooltip.anvilcraftplasticraft.drone.collection": "装有定制手持磁铁附件的机械无人机",
+  "tooltip.anvilcraftplasticraft.drone.collection": "在16格内吸入掉落物并装入九格库存",
   "tooltip.anvilcraftplasticraft.drone.observation": "装有定制望远镜附件的机械无人机",
   "tooltip.anvilcraftplasticraft.drone.propeller.left": "左螺旋桨：%s",
   "tooltip.anvilcraftplasticraft.drone.propeller.right": "右螺旋桨：%s",

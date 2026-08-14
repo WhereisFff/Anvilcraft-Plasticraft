@@ -129,8 +129,11 @@ public final class ConstructionJobController {
             tickSealing(server, level, job, progress);
             return;
         }
-        if (job.state() == ConstructionJob.STATE_DEMOLISHING
-            || job.state() == ConstructionJob.STATE_COLLECTING_DEBRIS) {
+        if (job.state() == ConstructionJob.STATE_COLLECTING_DEBRIS) {
+            tickCollecting(server, level, job, progress);
+            return;
+        }
+        if (job.state() == ConstructionJob.STATE_DEMOLISHING) {
             tickDemolishing(server, level, job, progress);
             return;
         }
@@ -238,6 +241,7 @@ public final class ConstructionJobController {
         ConstructionJobStore store = ConstructionJobStore.get(server);
         ConstructionJobProgress progress = store.get(job.jobId());
         if (progress != null && level != null) {
+            progress.clearDebrisLeases();
             returnInTransit(server, level, job, progress);
             ConstructionCommitService.commitDelivered(level, progress);
         } else if (level != null) {
@@ -475,7 +479,7 @@ public final class ConstructionJobController {
             return false;
         }
         BlockPos smashPos = StonecutterSmashAdapter.mainPartOf(level, op.pos());
-        if (!StonecutterSmashAdapter.smash(level, smashPos, progress.jobId(), op.id())) {
+        if (!StonecutterSmashAdapter.smash(level, smashPos, progress.jobId(), op.id(), progress)) {
             return false;
         }
         DemolitionPlanner.clearAttachedResidue(level, smashPos);
@@ -890,13 +894,37 @@ public final class ConstructionJobController {
             return;
         }
         if (progress.allDemolishResolved()) {
-            setState(server, job, ConstructionJob.STATE_COLLECTING_DEBRIS);
-            setState(server, job, ConstructionJob.STATE_BUILDING);
+            reconcileDebris(level, job, progress);
+            if (hasWorldDebris(level, job, progress) && hasAvailableCollectionDrone(level, job, progress)) {
+                setState(server, job, ConstructionJob.STATE_COLLECTING_DEBRIS);
+            } else {
+                setState(server, job, ConstructionJob.STATE_BUILDING);
+            }
             storeDirty(level);
             return;
         }
         if (!progress.hasLeasedDemolish() && !hasAvailableDemolitionDrone(level, job, progress)) {
             applyDemolitionShortage(server, job, progress, ownerShortageStrategy(level, job, progress));
+            return;
+        }
+        storeDirty(level);
+    }
+
+    private static void tickCollecting(
+        MinecraftServer server,
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress
+    ) {
+        if (ownerInLevel(server, job, level) == null) {
+            setWait(server, job, progress, ConstructionWaitReason.SOURCE);
+            setState(server, job, ConstructionJob.STATE_SOURCE_UNAVAILABLE);
+            return;
+        }
+        reconcileDebris(level, job, progress);
+        if (!hasWorldDebris(level, job, progress) || !hasAvailableCollectionDrone(level, job, progress)) {
+            setState(server, job, ConstructionJob.STATE_BUILDING);
+            storeDirty(level);
             return;
         }
         storeDirty(level);
@@ -923,6 +951,146 @@ public final class ConstructionJobController {
             }
         }
         return false;
+    }
+
+    public static boolean hasAvailableCollectionDrone(
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress
+    ) {
+        AABB search = worldBox(job).inflate(DISCOVERY_RANGE);
+        for (DroneEntity drone : level.getEntitiesOfClass(DroneEntity.class, search)) {
+            if (!isOwnerCollectionDrone(drone, job) || drone.isCollectionFull()) continue;
+            ItemEntity nearest = nearestMarkedDebris(level, job, progress, drone.position(), DISCOVERY_RANGE);
+            if (nearest != null) return true;
+        }
+        return false;
+    }
+
+    public static boolean hasWorldDebris(ServerLevel level, ConstructionJob job, ConstructionJobProgress progress) {
+        return !markedDebrisIn(level, job, progress, worldBox(job)).isEmpty();
+    }
+
+    public static void reconcileDebris(ServerLevel level, ConstructionJob job, ConstructionJobProgress progress) {
+        Set<Integer> seen = new HashSet<>();
+        for (ItemEntity entity : markedDebrisIn(level, job, progress, worldBox(job))) {
+            ConstructionDebris mark = ConstructionDebris.get(entity.getItem());
+            if (mark != null) seen.add(mark.operationId());
+        }
+        for (ConstructionDebrisAccount account : progress.debris()) {
+            seen.add(account.operationId());
+        }
+        for (int operationId : seen) {
+            int worldCount = 0;
+            for (ItemEntity entity : markedDebrisIn(level, job, progress, worldBox(job))) {
+                ConstructionDebris mark = ConstructionDebris.get(entity.getItem());
+                if (mark != null && mark.operationId() == operationId) {
+                    worldCount += entity.getItem().getCount();
+                }
+            }
+            int accounted = progress.debrisSettled(operationId) + worldCount;
+            int spawned = progress.debrisSpawned(operationId);
+            if (spawned > accounted) {
+                progress.addDebrisExternal(operationId, spawned - accounted);
+            }
+        }
+    }
+
+    public static @Nullable ItemEntity nextAssignableDebris(
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress,
+        Vec3 from
+    ) {
+        ItemEntity best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (ItemEntity entity : markedDebrisIn(level, job, progress, worldBox(job).inflate(DISCOVERY_RANGE))) {
+            if (!entity.isAlive() || entity.hasPickUpDelay()) continue;
+            UUID holder = progress.debrisLease(entity.getUUID());
+            if (holder != null && level.getEntity(holder) instanceof DroneEntity leased && leased.isAlive()) {
+                continue;
+            }
+            if (holder != null) {
+                progress.releaseDebrisLease(entity.getUUID());
+            }
+            double distance = from.distanceTo(entity.position());
+            if (distance > DISCOVERY_RANGE) continue;
+            if (distance < bestDistance) {
+                best = entity;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    public static boolean tryCollect(
+        DroneEntity drone,
+        ItemEntity entity,
+        @Nullable ConstructionJobProgress progress
+    ) {
+        if (!entity.isAlive() || entity.getItem().isEmpty()) return false;
+        if (!drone.canAcceptCollection(entity.getItem())) return false;
+        ItemStack stack = entity.getItem();
+        ConstructionDebris mark = ConstructionDebris.get(stack);
+        int inserted = drone.tryInsertCollection(stack);
+        if (inserted <= 0) return false;
+        if (progress != null && mark != null && mark.jobId().equals(progress.jobId())) {
+            progress.addDebrisCollected(mark.operationId(), inserted);
+            progress.releaseDebrisLease(entity.getUUID());
+        }
+        stack.shrink(inserted);
+        if (stack.isEmpty()) {
+            entity.discard();
+        }
+        return true;
+    }
+
+    public static boolean isTaskCollectPhase(ConstructionJob job) {
+        return job.state() == ConstructionJob.STATE_DEMOLISHING
+            || job.state() == ConstructionJob.STATE_COLLECTING_DEBRIS;
+    }
+
+    public static List<ItemEntity> markedDebrisIn(
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress,
+        AABB box
+    ) {
+        List<ItemEntity> found = new ArrayList<>();
+        for (ItemEntity entity : level.getEntitiesOfClass(ItemEntity.class, box)) {
+            if (!entity.isAlive()) continue;
+            ConstructionDebris mark = ConstructionDebris.get(entity.getItem());
+            if (mark != null && mark.jobId().equals(progress.jobId())) {
+                found.add(entity);
+            }
+        }
+        return found;
+    }
+
+    private static @Nullable ItemEntity nearestMarkedDebris(
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress,
+        Vec3 from,
+        double range
+    ) {
+        ItemEntity best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (ItemEntity entity : markedDebrisIn(level, job, progress, worldBox(job).inflate(range))) {
+            if (!entity.isAlive()) continue;
+            double distance = from.distanceTo(entity.position());
+            if (distance <= range && distance < bestDistance) {
+                best = entity;
+                bestDistance = distance;
+            }
+        }
+        return best;
+    }
+
+    private static boolean isOwnerCollectionDrone(DroneEntity drone, ConstructionJob job) {
+        return drone.isAlive()
+            && drone.getOwner().filter(job.owner()::equals).isPresent()
+            && drone.toolDefinition().hasCapability(DroneCapability.COLLECT_ITEMS);
     }
 
     private static DroneShortageStrategy ownerShortageStrategy(
@@ -988,7 +1156,7 @@ public final class ConstructionJobController {
                 op.setStatus(ConstructionBuildOp.Status.DELIVERED);
                 continue;
             }
-            if (StonecutterSmashAdapter.smash(level, op.pos(), progress.jobId(), op.id())) {
+            if (StonecutterSmashAdapter.smash(level, op.pos(), progress.jobId(), op.id(), progress)) {
                 DemolitionPlanner.clearAttachedResidue(level, op.pos());
                 op.setStatus(ConstructionBuildOp.Status.DELIVERED);
             }
@@ -1033,7 +1201,18 @@ public final class ConstructionJobController {
 
     @SubscribeEvent
     public static void onItemPickup(ItemEntityPickupEvent.Pre event) {
-        ConstructionDebris.clear(event.getItemEntity().getItem());
+        ItemStack stack = event.getItemEntity().getItem();
+        ConstructionDebris mark = ConstructionDebris.get(stack);
+        if (mark == null) return;
+        MinecraftServer server = event.getPlayer().getServer();
+        if (server != null) {
+            ConstructionJobProgress progress = ConstructionJobStore.get(server).get(mark.jobId());
+            if (progress != null) {
+                progress.addDebrisExternal(mark.operationId(), stack.getCount());
+                progress.releaseDebrisLease(event.getItemEntity().getUUID());
+            }
+        }
+        ConstructionDebris.clear(stack);
     }
 
     private static void setState(MinecraftServer server, ConstructionJob job, byte state) {

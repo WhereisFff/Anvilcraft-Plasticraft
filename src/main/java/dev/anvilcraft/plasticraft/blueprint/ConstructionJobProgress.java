@@ -25,6 +25,8 @@ public final class ConstructionJobProgress {
     private ItemStack missingMaterial = ItemStack.EMPTY;
     private final List<ConstructionBuildOp> operations = new ArrayList<>();
     private final List<ConstructionLedgerEntry> ledger = new ArrayList<>();
+    private final List<ConstructionDebrisAccount> debris = new ArrayList<>();
+    private final Map<UUID, UUID> debrisLeases = new HashMap<>();
     private int nextOpId;
     private int nextLedgerId;
 
@@ -82,6 +84,93 @@ public final class ConstructionJobProgress {
 
     public List<ConstructionLedgerEntry> ledger() {
         return this.ledger;
+    }
+
+    public List<ConstructionDebrisAccount> debris() {
+        return this.debris;
+    }
+
+    public ConstructionDebrisAccount debrisAccount(int operationId) {
+        for (ConstructionDebrisAccount account : this.debris) {
+            if (account.operationId() == operationId) return account;
+        }
+        ConstructionDebrisAccount created = new ConstructionDebrisAccount(operationId);
+        this.debris.add(created);
+        return created;
+    }
+
+    public void addDebrisSpawned(int operationId, int count) {
+        this.debrisAccount(operationId).addSpawned(count);
+    }
+
+    public void addDebrisCollected(int operationId, int count) {
+        this.debrisAccount(operationId).addCollected(count);
+    }
+
+    public void addDebrisExternal(int operationId, int count) {
+        this.debrisAccount(operationId).addExternal(count);
+    }
+
+    public int debrisSpawned() {
+        int total = 0;
+        for (ConstructionDebrisAccount account : this.debris) {
+            total += account.spawned();
+        }
+        return total;
+    }
+
+    public int debrisSpawned(int operationId) {
+        for (ConstructionDebrisAccount account : this.debris) {
+            if (account.operationId() == operationId) return account.spawned();
+        }
+        return 0;
+    }
+
+    public int debrisSettled() {
+        int total = 0;
+        for (ConstructionDebrisAccount account : this.debris) {
+            total += account.collected() + account.external();
+        }
+        return total;
+    }
+
+    public int debrisSettled(int operationId) {
+        for (ConstructionDebrisAccount account : this.debris) {
+            if (account.operationId() == operationId) return account.collected() + account.external();
+        }
+        return 0;
+    }
+
+    @Nullable
+    public UUID leasedDebrisEntity(UUID droneId) {
+        for (Map.Entry<UUID, UUID> entry : this.debrisLeases.entrySet()) {
+            if (droneId.equals(entry.getValue())) return entry.getKey();
+        }
+        return null;
+    }
+
+    public boolean leaseDebris(UUID entityId, UUID droneId) {
+        UUID current = this.debrisLeases.get(entityId);
+        if (current != null && !current.equals(droneId)) return false;
+        this.debrisLeases.put(entityId, droneId);
+        return true;
+    }
+
+    public void releaseDebrisLease(UUID entityId) {
+        this.debrisLeases.remove(entityId);
+    }
+
+    public void releaseDebrisLeasesOf(UUID droneId) {
+        this.debrisLeases.entrySet().removeIf(entry -> droneId.equals(entry.getValue()));
+    }
+
+    public void clearDebrisLeases() {
+        this.debrisLeases.clear();
+    }
+
+    @Nullable
+    public UUID debrisLease(UUID entityId) {
+        return this.debrisLeases.get(entityId);
     }
 
     public ConstructionBuildOp addOperation(
@@ -271,6 +360,11 @@ public final class ConstructionJobProgress {
             ledgerTag.add(entry.save(registries));
         }
         tag.put("Ledger", ledgerTag);
+        ListTag debrisTag = new ListTag();
+        for (ConstructionDebrisAccount account : this.debris) {
+            debrisTag.add(account.save());
+        }
+        tag.put("Debris", debrisTag);
         return tag;
     }
 
@@ -293,6 +387,10 @@ public final class ConstructionJobProgress {
         ListTag ledgerTag = tag.getList("Ledger", Tag.TAG_COMPOUND);
         for (int index = 0; index < ledgerTag.size(); index++) {
             progress.ledger.add(ConstructionLedgerEntry.load(ledgerTag.getCompound(index), registries));
+        }
+        ListTag debrisTag = tag.getList("Debris", Tag.TAG_COMPOUND);
+        for (int index = 0; index < debrisTag.size(); index++) {
+            progress.debris.add(ConstructionDebrisAccount.load(debrisTag.getCompound(index)));
         }
         return progress;
     }

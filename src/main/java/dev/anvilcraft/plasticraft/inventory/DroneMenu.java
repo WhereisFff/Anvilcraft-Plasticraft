@@ -54,6 +54,8 @@ public class DroneMenu extends AbstractContainerMenu {
     private final String ownerName;
     private final int droneEntityId;
     private final ContainerData data;
+    @Nullable
+    private final SimpleContainer collectionView;
 
     private DroneMenu(
         MenuType<?> type,
@@ -75,9 +77,9 @@ public class DroneMenu extends AbstractContainerMenu {
         this.ownerName = ownerName;
         this.droneEntityId = droneEntityId;
         this.data = data;
-        if (this.toolDefinition().inventorySize() > 0) {
-            this.addCollectionSlots(collectionInventory);
-        }
+        this.collectionView = this.toolDefinition().inventorySize() > 0
+            ? this.addCollectionSlots(collectionInventory)
+            : null;
         this.addDataSlots(data);
     }
 
@@ -255,8 +257,8 @@ public class DroneMenu extends AbstractContainerMenu {
         return ownerId.toString().substring(0, 8);
     }
 
-    /** 收集无人机的九格库存只读展示;取出与装载语义由收集任务 TODO 决定。 */
-    private void addCollectionSlots(List<ItemStack> items) {
+    /** 收集无人机的九格库存只读展示;玩家不能从 GUI 取放,实体打开时每 tick 从机内刷新。 */
+    private SimpleContainer addCollectionSlots(List<ItemStack> items) {
         SimpleContainer view = new SimpleContainer(this.toolDefinition().inventorySize());
         for (int index = 0; index < items.size() && index < view.getContainerSize(); index++) {
             view.setItem(index, items.get(index).copy());
@@ -276,6 +278,22 @@ public class DroneMenu extends AbstractContainerMenu {
                 }
             });
         }
+        return view;
+    }
+
+    @Override
+    public void broadcastChanges() {
+        if (this.drone != null && this.collectionView != null) {
+            List<ItemStack> items = this.drone.collectionInventory();
+            for (int index = 0; index < this.collectionView.getContainerSize(); index++) {
+                ItemStack next = index < items.size() ? items.get(index) : ItemStack.EMPTY;
+                ItemStack current = this.collectionView.getItem(index);
+                if (!ItemStack.matches(current, next)) {
+                    this.collectionView.setItem(index, next.copy());
+                }
+            }
+        }
+        super.broadcastChanges();
     }
 
     /** 缺料与缺拆除能力策略切换;实体与物品两种目标写入同一份数据。 */

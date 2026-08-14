@@ -8,6 +8,7 @@ import net.minecraft.core.UUIDUtil;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.item.ItemStack;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.UUID;
 
@@ -32,7 +33,13 @@ public record ConstructionDebris(UUID jobId, int operationId) {
     }
 
     public static boolean isMarked(ItemStack stack) {
-        return !stack.isEmpty() && stack.has(PlasticraftDataComponents.CONSTRUCTION_DEBRIS.get());
+        return get(stack) != null;
+    }
+
+    @Nullable
+    public static ConstructionDebris get(ItemStack stack) {
+        if (stack.isEmpty()) return null;
+        return stack.get(PlasticraftDataComponents.CONSTRUCTION_DEBRIS.get());
     }
 
     public static void clear(ItemStack stack) {

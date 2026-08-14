@@ -394,7 +394,7 @@
   "tooltip.anvilcraftplasticraft.blueprint.summary": "Construction blueprint: %s",
   "tooltip.anvilcraftplasticraft.bonded": "Bonded in place",
   "tooltip.anvilcraftplasticraft.color": "Color: %s",
-  "tooltip.anvilcraftplasticraft.drone.collection": "Mechanical drone fitted with a handheld magnet attachment",
+  "tooltip.anvilcraftplasticraft.drone.collection": "Inhales item drops within 16 blocks into a nine-slot inventory",
   "tooltip.anvilcraftplasticraft.drone.construction": "Takes materials from the owner's inventory to seal fluids and deliver construction projections",
   "tooltip.anvilcraftplasticraft.drone.demolition": "Instantly demolishes blocks with AnvilCraft stonecutter-smash semantics",
   "tooltip.anvilcraftplasticraft.drone.energy": "Energy: %1$s / %2$s FE",

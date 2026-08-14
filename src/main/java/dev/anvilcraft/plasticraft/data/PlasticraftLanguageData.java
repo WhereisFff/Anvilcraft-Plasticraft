@@ -55,7 +55,7 @@ public final class PlasticraftLanguageData {
         );
         provider.add(
             "tooltip.anvilcraftplasticraft.drone.collection",
-            "Mechanical drone fitted with a handheld magnet attachment"
+            "Inhales item drops within 16 blocks into a nine-slot inventory"
         );
         provider.add(
             "tooltip.anvilcraftplasticraft.drone.observation",

@@ -10,6 +10,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.UUID;
@@ -27,6 +28,16 @@ public final class StonecutterSmashAdapter {
     }
 
     public static boolean smash(ServerLevel level, BlockPos pos, UUID jobId, int operationId) {
+        return smash(level, pos, jobId, operationId, null);
+    }
+
+    public static boolean smash(
+        ServerLevel level,
+        BlockPos pos,
+        UUID jobId,
+        int operationId,
+        @Nullable ConstructionJobProgress progress
+    ) {
         BlockPos breakPos = mainPartOf(level, pos);
         BlockState state = level.getBlockState(breakPos);
         if (state.isAir()) return true;
@@ -37,8 +48,13 @@ public final class StonecutterSmashAdapter {
             multiBlock.onRemove(level, breakPos, state);
         }
         List<ItemStack> drops = BreakBlockUtil.drop(level, breakPos, BlockMiningEffect.NORMAL);
+        int spawned = 0;
         for (ItemStack drop : drops) {
             ConstructionDebris.mark(drop, jobId, operationId);
+            spawned += drop.getCount();
+        }
+        if (progress != null && spawned > 0) {
+            progress.addDebrisSpawned(operationId, spawned);
         }
         AnvilUtil.dropItems(drops, level, breakPos.getCenter());
         level.setBlockAndUpdate(breakPos, Blocks.AIR.defaultBlockState());

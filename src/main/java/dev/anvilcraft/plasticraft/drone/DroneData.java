@@ -152,6 +152,20 @@ public record DroneData(
         );
     }
 
+    public DroneData withCollectionInventory(List<ItemStack> inventory) {
+        return new DroneData(
+            this.toolId,
+            this.leftPropeller,
+            this.rightPropeller,
+            this.energy,
+            this.owner,
+            this.shortageStrategy,
+            inventory,
+            this.assignedJobId,
+            this.hostedCarry
+        );
+    }
+
     public DroneData withAssignment(Optional<UUID> jobId, ItemStack carry) {
         return new DroneData(
             this.toolId,

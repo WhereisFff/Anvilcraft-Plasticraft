@@ -18,6 +18,7 @@ import dev.anvilcraft.plasticraft.blueprint.StonecutterSmashAdapter;
 import dev.anvilcraft.plasticraft.drone.DroneData;
 import dev.anvilcraft.plasticraft.drone.DroneEnergyModel;
 import dev.anvilcraft.plasticraft.drone.DroneShortageStrategy;
+import dev.anvilcraft.plasticraft.drone.tool.CollectionDroneToolBehavior;
 import dev.anvilcraft.plasticraft.drone.tool.ConstructionDroneToolBehavior;
 import dev.anvilcraft.plasticraft.drone.tool.DemolitionDroneToolBehavior;
 import dev.anvilcraft.plasticraft.drone.tool.DroneToolDefinitions;
@@ -59,8 +60,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 覆盖单架无站建设/拆除无人机施工闭环的服务器契约:台账、假方块碰撞、占用、安静提交、
- * 缺料策略、电量拒派、停止后飞回还物、同模板短时序交付,以及封堵与拆除。不扫描 128 格实体。
+ * 覆盖单架无站建设/拆除/收集无人机施工闭环的服务器契约:台账、假方块碰撞、占用、安静提交、
+ * 缺料策略、电量拒派、停止后飞回还物、同模板短时序交付,以及封堵、拆除与任务掉落回收。不扫描 128 格实体。
  */
 public final class ConstructionJobGameTests {
     private ConstructionJobGameTests() {
@@ -849,6 +850,258 @@ public final class ConstructionJobGameTests {
         }).thenSucceed();
     }
 
+    @GameTest(timeoutTicks = 40, batch = "zzz_collection")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Task collection claims only this job's marked drops and leaves unmarked stacks")
+    static void taskCollectionClaimsOnlyMarkedDrops(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                helper.setBlock(new BlockPos(3, 2, 1), Blocks.STONE);
+                StartedJob started = startCobbleJob(helper, player, 1);
+                try {
+                    ConstructionBuildOp demolish = firstKind(started.progress(), ConstructionBuildOp.Kind.DEMOLISH);
+                    check(
+                        ConstructionJobController.tryDemolish(helper.getLevel(), started.progress(), demolish),
+                        "demolish must spawn marked drops"
+                    );
+                    DroneEntity drone = spawnCollectionDrone(
+                        helper,
+                        new Vec3(2.5D, 2.0D, 1.5D),
+                        player,
+                        DroneEnergyModel.capacity()
+                    );
+                    ConstructionJobController.tickJob(
+                        helper.getLevel().getServer(),
+                        helper.getLevel(),
+                        ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId())
+                    );
+                    ConstructionJob collecting = ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId());
+                    check(
+                        collecting != null && collecting.state() == ConstructionJob.STATE_COLLECTING_DEBRIS,
+                        "a ready collector plus marked drops must enter COLLECTING_DEBRIS"
+                    );
+                    Vec3 unmarkedPos = helper.absoluteVec(new Vec3(3.5D, 2.2D, 1.5D));
+                    ItemEntity unmarked = new ItemEntity(
+                        helper.getLevel(),
+                        unmarkedPos.x,
+                        unmarkedPos.y,
+                        unmarkedPos.z,
+                        new ItemStack(Items.COBBLESTONE)
+                    );
+                    unmarked.setDeltaMovement(Vec3.ZERO);
+                    unmarked.setPickUpDelay(0);
+                    check(helper.getLevel().addFreshEntity(unmarked), "failed to spawn unmarked cobble");
+                    for (ItemEntity item : ConstructionJobController.markedDebrisIn(
+                        helper.getLevel(),
+                        collecting,
+                        started.progress(),
+                        ConstructionJobController.worldBox(collecting)
+                    )) {
+                        item.setPickUpDelay(0);
+                    }
+                    ItemEntity claimed = ConstructionJobController.nextAssignableDebris(
+                        helper.getLevel(),
+                        collecting,
+                        started.progress(),
+                        drone.position()
+                    );
+                    check(claimed != null && ConstructionDebris.isMarked(claimed.getItem()),
+                        "task mode must select a marked drop");
+                    check(claimed != unmarked, "task mode must not claim the unmarked cobble");
+                    check(
+                        CollectionDroneToolBehavior.tryClaim(drone, helper.getLevel(), collecting, started.progress()),
+                        "collection drone must claim the marked drop"
+                    );
+                    check(unmarked.isAlive() && !ConstructionDebris.isMarked(unmarked.getItem()),
+                        "unmarked cobble must stay in the world");
+                    check(
+                        !ItemStack.isSameItemSameComponents(unmarked.getItem(), claimed.getItem()),
+                        "marked and unmarked cobble must not share components"
+                    );
+                } finally {
+                    cancelQuietly(player, started.job().jobId());
+                }
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("marked-only collection setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_collection")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Player pickup strips the mark, records external settlement, and does not reissue drops")
+    static void playerPickupSettlesExternallyWithoutReissue(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                helper.setBlock(new BlockPos(3, 2, 1), Blocks.STONE);
+                StartedJob started = startCobbleJob(helper, player, 1);
+                try {
+                    ConstructionBuildOp demolish = firstKind(started.progress(), ConstructionBuildOp.Kind.DEMOLISH);
+                    check(
+                        ConstructionJobController.tryDemolish(helper.getLevel(), started.progress(), demolish),
+                        "demolish must spawn marked drops"
+                    );
+                    int spawned = started.progress().debrisSpawned();
+                    check(spawned > 0, "smash must record spawned debris");
+                    ItemEntity drop = null;
+                    Item dropItem = Items.COBBLESTONE;
+                    int worldBefore = 0;
+                    for (ItemEntity item : ConstructionJobController.markedDebrisIn(
+                        helper.getLevel(),
+                        started.job(),
+                        started.progress(),
+                        ConstructionJobController.worldBox(started.job())
+                    )) {
+                        item.setPickUpDelay(0);
+                        drop = item;
+                        dropItem = item.getItem().getItem();
+                        worldBefore += item.getItem().getCount();
+                    }
+                    check(drop != null, "demolish must leave a marked drop");
+                    drop.setPos(player.getX(), player.getY(), player.getZ());
+                    drop.playerTouch(player);
+                    for (ItemStack stack : player.getInventory().items) {
+                        check(!ConstructionDebris.isMarked(stack), "picked items must lose the construction mark");
+                    }
+                    check(
+                        countItem(player, dropItem) >= worldBefore,
+                        "the player must receive the demolished drop"
+                    );
+                    check(
+                        started.progress().debrisSettled() >= worldBefore,
+                        "player pickup must count as external settlement"
+                    );
+                    int stillMarked = 0;
+                    for (ItemEntity item : helper.getLevel().getEntitiesOfClass(
+                        ItemEntity.class,
+                        ConstructionJobController.worldBox(started.job())
+                    )) {
+                        if (ConstructionDebris.isMarked(item.getItem())) {
+                            stillMarked += item.getItem().getCount();
+                        }
+                    }
+                    check(
+                        started.progress().debrisSpawned() == spawned,
+                        "player pickup must not reissue extra spawned debris"
+                    );
+                    check(stillMarked == 0, "player pickup must not leave a marked copy in the world");
+                } finally {
+                    cancelQuietly(player, started.job().jobId());
+                }
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("player pickup settlement setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_collection")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Demolition without a collection drone still enters BUILDING")
+    static void missingCollectorDoesNotBlockBuilding(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                helper.setBlock(new BlockPos(3, 2, 1), Blocks.STONE);
+                StartedJob started = startCobbleJob(helper, player, 1);
+                try {
+                    ConstructionBuildOp demolish = firstKind(started.progress(), ConstructionBuildOp.Kind.DEMOLISH);
+                    check(
+                        ConstructionJobController.tryDemolish(helper.getLevel(), started.progress(), demolish),
+                        "demolish must succeed without a collector"
+                    );
+                    ConstructionJobController.tickJob(
+                        helper.getLevel().getServer(),
+                        helper.getLevel(),
+                        ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId())
+                    );
+                    ConstructionJob live = ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId());
+                    check(
+                        live != null && live.state() == ConstructionJob.STATE_BUILDING,
+                        "missing collectors must not block BUILDING, was "
+                            + (live == null ? "cleared" : live.state())
+                    );
+                    check(
+                        ConstructionJobController.hasWorldDebris(helper.getLevel(), live, started.progress()),
+                        "marked drops must remain in the world"
+                    );
+                } finally {
+                    cancelQuietly(player, started.job().jobId());
+                }
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("missing-collector setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_collection")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A ready collector enters COLLECTING_DEBRIS and leaves for BUILDING after the marks are gone")
+    static void collectorSweepsThenBuilds(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                helper.setBlock(new BlockPos(3, 2, 1), Blocks.STONE);
+                StartedJob started = startCobbleJob(helper, player, 1);
+                try {
+                    ConstructionBuildOp demolish = firstKind(started.progress(), ConstructionBuildOp.Kind.DEMOLISH);
+                    check(
+                        ConstructionJobController.tryDemolish(helper.getLevel(), started.progress(), demolish),
+                        "demolish must spawn marked drops"
+                    );
+                    DroneEntity drone = spawnCollectionDrone(
+                        helper,
+                        new Vec3(2.5D, 2.0D, 1.5D),
+                        player,
+                        DroneEnergyModel.capacity()
+                    );
+                    ConstructionJobController.tickJob(
+                        helper.getLevel().getServer(),
+                        helper.getLevel(),
+                        ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId())
+                    );
+                    ConstructionJob collecting = ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId());
+                    check(
+                        collecting != null && collecting.state() == ConstructionJob.STATE_COLLECTING_DEBRIS,
+                        "a ready collector must enter COLLECTING_DEBRIS"
+                    );
+                    for (ItemEntity item : ConstructionJobController.markedDebrisIn(
+                        helper.getLevel(),
+                        collecting,
+                        started.progress(),
+                        ConstructionJobController.worldBox(collecting)
+                    )) {
+                        item.setPickUpDelay(0);
+                        check(
+                            ConstructionJobController.tryCollect(drone, item, started.progress()),
+                            "collector must inhale the marked drop"
+                        );
+                    }
+                    ConstructionJobController.tickJob(
+                        helper.getLevel().getServer(),
+                        helper.getLevel(),
+                        ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId())
+                    );
+                    ConstructionJob building = ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId());
+                    check(
+                        building != null && building.state() == ConstructionJob.STATE_BUILDING,
+                        "clearing or filling collectors must continue to BUILDING"
+                    );
+                    check(
+                        started.progress().debrisSettled() > 0
+                            || countInDrone(drone, Items.COBBLESTONE) + countInDrone(drone, Items.STONE) > 0,
+                        "the collector must keep the inhaled items"
+                    );
+                } finally {
+                    cancelQuietly(player, started.job().jobId());
+                }
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("collector sweep setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
     private static StartedJob startCobbleJob(ExtendedGameTestHelper helper, GameTestPlayer player, int count)
         throws ConstructionBlueprintException {
         return startCobbleJob(helper, player, count, new BlockPos(3, 2, 1));
@@ -931,6 +1184,33 @@ public final class ConstructionJobGameTests {
         drone.setPos(position.x, position.y, position.z);
         check(helper.getLevel().addFreshEntity(drone), "failed to add construction drone");
         return drone;
+    }
+
+    private static DroneEntity spawnCollectionDrone(
+        ExtendedGameTestHelper helper,
+        Vec3 relativePos,
+        GameTestPlayer player,
+        int energy
+    ) {
+        DroneEntity drone = PlasticraftEntities.DRONE.get().create(helper.getLevel());
+        check(drone != null, "failed to create collection drone");
+        drone.applyDroneData(DroneData.assembled(
+            DroneToolDefinitions.COLLECTION.id(),
+            ItemStack.EMPTY,
+            ItemStack.EMPTY
+        ).withOwner(player.getUUID()).withEnergy(energy));
+        Vec3 position = helper.absoluteVec(relativePos);
+        drone.setPos(position.x, position.y, position.z);
+        check(helper.getLevel().addFreshEntity(drone), "failed to add collection drone");
+        return drone;
+    }
+
+    private static int countInDrone(DroneEntity drone, Item item) {
+        int count = 0;
+        for (ItemStack stack : drone.collectionInventory()) {
+            if (stack.is(item)) count += stack.getCount();
+        }
+        return count;
     }
 
     private static DroneEntity spawnDemolitionDrone(

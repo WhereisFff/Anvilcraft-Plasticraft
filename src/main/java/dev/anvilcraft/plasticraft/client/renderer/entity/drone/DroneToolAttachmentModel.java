@@ -10,6 +10,7 @@ import net.minecraft.client.model.geom.builders.CubeListBuilder;
 import net.minecraft.client.model.geom.builders.LayerDefinition;
 import net.minecraft.client.model.geom.builders.MeshDefinition;
 import net.minecraft.client.model.geom.builders.PartDefinition;
+import net.minecraft.util.Mth;
 
 /**
  * 四种可动工具附件的分离模型层。附件原点对齐主体的 tool_mount 枢轴,
@@ -45,13 +46,21 @@ public class DroneToolAttachmentModel {
         this.root.render(poseStack, buffer, packedLight, packedOverlay);
     }
 
-    /** 只读取已同步的动作字节;cut 时旋转切石机刀片,其它附件保持静止。 */
+    /** 只读取已同步的动作字节;cut 转刀片,attract 微摆磁铁,物品与站点形态传入 0。 */
     public void setupAction(byte actionState, float animationTime) {
-        if (!this.root.hasChild("demolition_attachment")) return;
-        ModelPart attachment = this.root.getChild("demolition_attachment");
-        if (!attachment.hasChild("stonecutter_blade")) return;
-        ModelPart blade = attachment.getChild("stonecutter_blade");
-        blade.xRot = actionState == 1 ? animationTime * 0.8F : 0.0F;
+        if (this.root.hasChild("demolition_attachment")) {
+            ModelPart attachment = this.root.getChild("demolition_attachment");
+            if (attachment.hasChild("stonecutter_blade")) {
+                attachment.getChild("stonecutter_blade").xRot = actionState == 1 ? animationTime * 0.8F : 0.0F;
+            }
+        }
+        if (this.root.hasChild("collection_attachment")) {
+            ModelPart attachment = this.root.getChild("collection_attachment");
+            if (attachment.hasChild("magnet_body")) {
+                attachment.getChild("magnet_body").xRot =
+                    actionState == 1 ? Mth.sin(animationTime * 0.6F) * 0.15F : 0.0F;
+            }
+        }
     }
 
     /** 蟹钳附件:臂基、左右钳指与持物锚点;静止姿态保持半开。 */
