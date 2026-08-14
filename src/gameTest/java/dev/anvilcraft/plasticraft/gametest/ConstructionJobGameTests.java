@@ -579,6 +579,23 @@ public final class ConstructionJobGameTests {
                                 place
                             )
                     );
+                    ConstructionJobIndex index = ConstructionJobIndex.get(helper.getLevel());
+                    ConstructionJob live = index.job(started.job().jobId());
+                    check(live != null, "demolished job must still be indexed");
+                    index.put(live.withState(ConstructionJob.STATE_BUILDING));
+                    ConstructionJobController.tickJob(
+                        helper.getLevel().getServer(),
+                        helper.getLevel(),
+                        index.job(started.job().jobId())
+                    );
+                    check(
+                        !ConstructionProjectionIndex.has(helper.getLevel(), place.pos()),
+                        "demolish must not write a delivered solid projection"
+                    );
+                    check(
+                        place.status() != ConstructionBuildOp.Status.DELIVERED,
+                        "PLACE must stay undelivered after demolish"
+                    );
                 } finally {
                     cancelQuietly(player, started.job().jobId());
                 }

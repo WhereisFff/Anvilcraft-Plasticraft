@@ -130,6 +130,11 @@ public final class ConstructionBuildOp {
         return (this.kind == Kind.PLACE || this.kind == Kind.SEAL) && !this.material.isEmpty();
     }
 
+    /** PLACE/ATTACHED 才写入施工投影;SEAL/DEMOLISH 的 DELIVERED 只表示该阶段完成。 */
+    public boolean writesProjection() {
+        return this.kind == Kind.PLACE || this.kind == Kind.ATTACHED;
+    }
+
     public boolean isOpen() {
         return this.status == Status.PENDING
             || this.status == Status.WAITING_WORLD

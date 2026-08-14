@@ -398,6 +398,7 @@ public final class ConstructionJobController {
         ConstructionBuildOp op,
         @Nullable Entity ignore
     ) {
+        if (!op.writesProjection()) return false;
         if (!level.getBlockState(op.pos()).isAir()) {
             op.setStatus(ConstructionBuildOp.Status.WAITING_WORLD);
             return false;
@@ -675,7 +676,7 @@ public final class ConstructionJobController {
 
     private static void ensureIndex(ServerLevel level, ConstructionJobProgress progress) {
         for (ConstructionBuildOp op : progress.operations()) {
-            if (op.status() != ConstructionBuildOp.Status.DELIVERED) continue;
+            if (op.status() != ConstructionBuildOp.Status.DELIVERED || !op.writesProjection()) continue;
             if (ConstructionProjectionIndex.has(level, op.pos())) continue;
             ConstructionProjectionIndex.tryDeliver(
                 level,

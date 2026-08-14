@@ -151,7 +151,7 @@ public final class ConstructionJobProgress {
     public Map<Long, BlockState> overlayStates() {
         Map<Long, BlockState> overlay = new HashMap<>();
         for (ConstructionBuildOp op : this.operations) {
-            if (op.kind() != ConstructionBuildOp.Kind.PLACE && op.kind() != ConstructionBuildOp.Kind.ATTACHED) {
+            if (!op.writesProjection()) {
                 continue;
             }
             overlay.put(op.pos().asLong(), op.target());
@@ -222,7 +222,7 @@ public final class ConstructionJobProgress {
 
     public boolean allPlaceResolved() {
         for (ConstructionBuildOp op : this.operations) {
-            if (op.kind() != ConstructionBuildOp.Kind.PLACE && op.kind() != ConstructionBuildOp.Kind.ATTACHED) {
+            if (!op.writesProjection()) {
                 continue;
             }
             if (op.status() == ConstructionBuildOp.Status.PENDING
