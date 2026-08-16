@@ -9,11 +9,12 @@ import net.minecraft.world.level.block.piston.PistonHeadBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 
 /**
  * 建造侧多方块折叠:核心 PLACE 只消耗一份控制器物品,其余 part 为 ATTACHED。
- * 门上半/床头/活塞头仍由 OrdinaryBlockAdapter 识别,这里只提供核心坐标。
+ * 门上半/床头/活塞头/成对大箱子左半仍由 OrdinaryBlockAdapter 识别,这里只提供核心坐标。
  */
 public final class MultiblockBuildAdapter {
     private MultiblockBuildAdapter() {
@@ -42,6 +43,10 @@ public final class MultiblockBuildAdapter {
         }
         if (state.getBlock() instanceof PistonHeadBlock && state.hasProperty(BlockStateProperties.FACING)) {
             return pos.relative(state.getValue(BlockStateProperties.FACING).getOpposite());
+        }
+        if (OrdinaryBlockAdapter.isDoubleChestHalf(state)
+            && state.getValue(BlockStateProperties.CHEST_TYPE) == ChestType.LEFT) {
+            return OrdinaryBlockAdapter.partnerPos(pos, state);
         }
         return pos;
     }

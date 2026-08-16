@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.blueprint;
 
+import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.dubhe.anvilcraft.api.fluid.IFluidHandlerHolder;
 import dev.dubhe.anvilcraft.block.RedstoneWireBlock;
 import dev.dubhe.anvilcraft.block.RedstoneWireNetworkManager;
@@ -27,7 +28,6 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -70,20 +70,46 @@ public final class ConstructionCommitService {
             boolean done = switch (log.phase()) {
                 case STATES -> writeStates(level, progress, log);
                 case BLOCK_ENTITIES -> writeBlockEntities(level, progress, log);
-                case MULTIBLOCK -> {
-                    MultiblockBuildAdapter.restore(level, progress);
-                    log.setPhase(ConstructionCommitLog.Phase.BOUNDARY);
-                    yield false;
-                }
-                case BOUNDARY -> {
-                    updateBoundaryShapes(level, progress);
-                    pasteDeliveredRegion(level, progress);
-                    log.setPhase(ConstructionCommitLog.Phase.ENTITIES);
-                    yield false;
-                }
+                case MULTIBLOCK -> restoreMultiblocks(level, progress, log);
+                case BOUNDARY -> updateBoundaryShapes(level, progress, log);
+                case PASTE -> pasteDeliveredRegion(
+                    level,
+                    progress,
+                    log,
+                    ConstructionCommitLog.Phase.WIRE_TOPOLOGY
+                );
+                case WIRE_TOPOLOGY -> updateWireTopology(
+                    level,
+                    progress,
+                    log,
+                    ConstructionCommitLog.Phase.WIRE_PORTS
+                );
+                case WIRE_PORTS -> reconcileWirePorts(
+                    level,
+                    progress,
+                    log,
+                    ConstructionCommitLog.Phase.ENTITIES
+                );
                 case ENTITIES -> writeEntities(level, progress, log);
+                case FINAL_PASTE -> pasteDeliveredRegion(
+                    level,
+                    progress,
+                    log,
+                    ConstructionCommitLog.Phase.FINAL_WIRE_TOPOLOGY
+                );
+                case FINAL_WIRE_TOPOLOGY -> updateWireTopology(
+                    level,
+                    progress,
+                    log,
+                    ConstructionCommitLog.Phase.FINAL_WIRE_PORTS
+                );
+                case FINAL_WIRE_PORTS -> reconcileWirePorts(
+                    level,
+                    progress,
+                    log,
+                    ConstructionCommitLog.Phase.PUBLISH
+                );
                 case PUBLISH -> {
-                    pasteDeliveredRegion(level, progress);
                     ConstructionProjectionIndex.clearJob(level, progress.jobId());
                     ConstructionEntityProjectionIndex.clearJob(level, progress.jobId());
                     log.setPhase(ConstructionCommitLog.Phase.DONE);
@@ -101,12 +127,26 @@ public final class ConstructionCommitService {
 
     private static boolean writeStates(Level level, ConstructionJobProgress progress, ConstructionCommitLog log) {
         List<ConstructionBuildOp> ops = deliveredProjections(progress);
+        Set<Long> delivered = progress.deliveredProjectionPositions();
         int budget = Math.max(1, blocksPerTick);
         int index = log.nextIndex();
         while (index < ops.size() && budget > 0) {
             ConstructionBuildOp op = ops.get(index);
             if (!log.isWritten(op.id())) {
-                quietSet(level, op.pos(), op.target());
+                try {
+                    if (level.isInWorldBounds(op.pos())) {
+                        quietSet(level, op.pos(), committedState(op, delivered));
+                    } else {
+                        progress.setIncomplete(true);
+                    }
+                } catch (RuntimeException exception) {
+                    progress.setIncomplete(true);
+                    AnvilcraftPlasticraft.LOGGER.error(
+                        "Failed to write construction state for operation {}",
+                        op.id(),
+                        exception
+                    );
+                }
                 log.markWritten(op.id());
                 budget--;
             }
@@ -130,30 +170,39 @@ public final class ConstructionCommitService {
         int index = log.nextIndex();
         while (index < ops.size() && budget > 0) {
             ConstructionBuildOp op = ops.get(index);
-            BlockEntity blockEntity = level.getBlockEntity(op.pos());
-            if (blockEntity != null) {
-                if (op.blockEntity() != null) {
-                    blockEntity.loadWithComponents(op.blockEntity(), registries);
-                }
+            try {
                 List<BlockEntityContentAdapter.SlotStack> contents = new ArrayList<>();
-                for (ConstructionBuildOp child : progress.operations()) {
-                    if (child.kind() != ConstructionBuildOp.Kind.CONTENT) continue;
-                    if (child.parentId() != op.id() || child.status() != ConstructionBuildOp.Status.DELIVERED) {
-                        continue;
-                    }
-                    contents.add(new BlockEntityContentAdapter.SlotStack(child.slot(), child.material()));
-                }
-                BlockEntityContentAdapter.insert(blockEntity, contents, registries);
                 List<FluidBuildAdapter.TankFluid> fluids = new ArrayList<>();
-                for (ConstructionBuildOp child : progress.operations()) {
-                    if (child.kind() != ConstructionBuildOp.Kind.FLUID) continue;
-                    if (child.parentId() != op.id() || child.status() != ConstructionBuildOp.Status.DELIVERED) {
-                        continue;
+                for (ConstructionBuildOp child : progress.childrenOf(op)) {
+                    if (child.status() != ConstructionBuildOp.Status.DELIVERED) continue;
+                    if (child.kind() == ConstructionBuildOp.Kind.CONTENT) {
+                        contents.add(new BlockEntityContentAdapter.SlotStack(child.slot(), child.material()));
+                    } else if (child.kind() == ConstructionBuildOp.Kind.FLUID) {
+                        fluids.add(new FluidBuildAdapter.TankFluid(child.slot(), child.fluid()));
                     }
-                    fluids.add(new FluidBuildAdapter.TankFluid(child.slot(), child.fluid()));
                 }
-                FluidBuildAdapter.insert(blockEntity, fluids);
-                blockEntity.setChanged();
+                BlockEntity blockEntity = level.isInWorldBounds(op.pos()) ? level.getBlockEntity(op.pos()) : null;
+                boolean expected = op.target().hasBlockEntity()
+                    || op.blockEntity() != null
+                    || !contents.isEmpty()
+                    || !fluids.isEmpty();
+                if (blockEntity == null) {
+                    if (expected) progress.setIncomplete(true);
+                } else {
+                    if (op.blockEntity() != null) {
+                        blockEntity.loadWithComponents(op.blockEntity(), registries);
+                    }
+                    BlockEntityContentAdapter.insert(blockEntity, contents, registries);
+                    FluidBuildAdapter.insert(blockEntity, fluids);
+                    blockEntity.setChanged();
+                }
+            } catch (RuntimeException exception) {
+                progress.setIncomplete(true);
+                AnvilcraftPlasticraft.LOGGER.error(
+                    "Failed to restore construction block entity for operation {}",
+                    op.id(),
+                    exception
+                );
             }
             index++;
             budget--;
@@ -171,43 +220,51 @@ public final class ConstructionCommitService {
         ConstructionCommitLog log
     ) {
         if (!(level instanceof ServerLevel serverLevel)) {
-            log.setPhase(ConstructionCommitLog.Phase.PUBLISH);
+            log.setPhase(ConstructionCommitLog.Phase.FINAL_PASTE);
             return false;
         }
-        List<ConstructionBuildOp> ops = new ArrayList<>();
-        for (ConstructionBuildOp op : progress.operations()) {
-            if (op.kind() == ConstructionBuildOp.Kind.ENTITY
-                && op.status() == ConstructionBuildOp.Status.DELIVERED) {
-                ops.add(op);
-            }
-        }
+        List<ConstructionBuildOp> ops = progress.deliveredEntityOperations();
         int budget = Math.max(1, blocksPerTick);
         int index = log.nextIndex();
         while (index < ops.size() && budget > 0) {
             ConstructionBuildOp op = ops.get(index);
             if (!log.isWritten(op.id())) {
-                Entity entity = EntityBuildAdapters.spawn(serverLevel, op);
-                if (entity != null) {
-                    List<EntityBuildAdapter.SlotStack> contents = new ArrayList<>();
-                    for (ConstructionBuildOp child : progress.operations()) {
-                        if (child.parentId() != op.id() || child.status() != ConstructionBuildOp.Status.DELIVERED) {
-                            continue;
-                        }
-                        if (child.kind() == ConstructionBuildOp.Kind.CONTENT) {
-                            contents.add(new EntityBuildAdapter.SlotStack(child.slot(), child.material()));
-                        }
-                    }
-                    EntityBuildAdapters.insertContents(entity, contents, serverLevel.registryAccess());
-                    IFluidHandler fluidsHandler = fluidHandlerOf(entity);
-                    if (fluidsHandler != null) {
-                        for (ConstructionBuildOp child : progress.operations()) {
-                            if (child.kind() != ConstructionBuildOp.Kind.FLUID) continue;
-                            if (child.parentId() != op.id() || child.status() != ConstructionBuildOp.Status.DELIVERED) {
+                try {
+                    Entity entity = EntityBuildAdapters.spawn(serverLevel, op);
+                    if (entity == null) {
+                        progress.setIncomplete(true);
+                    } else {
+                        List<EntityBuildAdapter.SlotStack> contents = new ArrayList<>();
+                        for (ConstructionBuildOp child : progress.childrenOf(op)) {
+                            if (child.status() != ConstructionBuildOp.Status.DELIVERED) {
                                 continue;
                             }
-                            fluidsHandler.fill(child.fluid(), IFluidHandler.FluidAction.EXECUTE);
+                            if (child.kind() == ConstructionBuildOp.Kind.CONTENT) {
+                                contents.add(new EntityBuildAdapter.SlotStack(child.slot(), child.material()));
+                            }
+                        }
+                        EntityBuildAdapters.insertContents(entity, contents, serverLevel.registryAccess());
+                        IFluidHandler fluidsHandler = fluidHandlerOf(entity);
+                        if (fluidsHandler != null) {
+                            for (ConstructionBuildOp child : progress.childrenOf(op)) {
+                                if (child.kind() != ConstructionBuildOp.Kind.FLUID) continue;
+                                if (child.status() != ConstructionBuildOp.Status.DELIVERED) {
+                                    continue;
+                                }
+                                int filled = fluidsHandler.fill(child.fluid(), IFluidHandler.FluidAction.EXECUTE);
+                                if (filled < child.fluid().getAmount()) {
+                                    progress.setIncomplete(true);
+                                }
+                            }
                         }
                     }
+                } catch (RuntimeException exception) {
+                    progress.setIncomplete(true);
+                    AnvilcraftPlasticraft.LOGGER.error(
+                        "Failed to restore construction entity for operation {}",
+                        op.id(),
+                        exception
+                    );
                 }
                 log.markWritten(op.id());
                 budget--;
@@ -216,39 +273,97 @@ public final class ConstructionCommitService {
         }
         log.setNextIndex(index);
         if (index >= ops.size()) {
-            log.setPhase(ConstructionCommitLog.Phase.PUBLISH);
+            log.setPhase(ConstructionCommitLog.Phase.FINAL_PASTE);
         }
         return false;
     }
 
-    private static void updateBoundaryShapes(Level level, ConstructionJobProgress progress) {
-        Set<Long> committed = new HashSet<>();
-        for (ConstructionBuildOp op : deliveredProjections(progress)) {
-            committed.add(op.pos().asLong());
-        }
-        for (ConstructionBuildOp op : deliveredProjections(progress)) {
-            BlockState state = level.getBlockState(op.pos());
-            if (skipsBoundaryUpdate(state)) {
-                continue;
-            }
-            BlockState updated = state;
-            for (Direction direction : Direction.values()) {
-                BlockPos neighbor = op.pos().relative(direction);
-                if (committed.contains(neighbor.asLong())) {
-                    continue;
+    private static boolean restoreMultiblocks(
+        Level level,
+        ConstructionJobProgress progress,
+        ConstructionCommitLog log
+    ) {
+        List<ConstructionBuildOp> ops = deliveredProjections(progress);
+        int budget = Math.max(1, blocksPerTick);
+        int index = log.nextIndex();
+        while (index < ops.size() && budget > 0) {
+            ConstructionBuildOp op = ops.get(index);
+            try {
+                if (!level.isInWorldBounds(op.pos())) {
+                    progress.setIncomplete(true);
+                } else if (MultiblockBuildAdapter.isMultiPart(op.target())
+                    && MultiblockBuildAdapter.isCore(op.pos(), op.target())
+                    && !level.getBlockState(op.pos()).is(op.target().getBlock())) {
+                    quietSet(level, op.pos(), op.target());
                 }
-                updated = updated.updateShape(
-                    direction,
-                    level.getBlockState(neighbor),
-                    level,
-                    op.pos(),
-                    neighbor
+            } catch (RuntimeException exception) {
+                progress.setIncomplete(true);
+                AnvilcraftPlasticraft.LOGGER.error(
+                    "Failed to restore construction multiblock for operation {}",
+                    op.id(),
+                    exception
                 );
             }
-            if (updated != state) {
-                quietSet(level, op.pos(), updated);
-            }
+            index++;
+            budget--;
         }
+        log.setNextIndex(index);
+        if (index >= ops.size()) {
+            log.setPhase(ConstructionCommitLog.Phase.BOUNDARY);
+        }
+        return false;
+    }
+
+    private static boolean updateBoundaryShapes(
+        Level level,
+        ConstructionJobProgress progress,
+        ConstructionCommitLog log
+    ) {
+        List<ConstructionBuildOp> ops = deliveredProjections(progress);
+        Set<Long> committed = progress.deliveredProjectionPositions();
+        int budget = Math.max(1, blocksPerTick);
+        int index = log.nextIndex();
+        while (index < ops.size() && budget > 0) {
+            ConstructionBuildOp op = ops.get(index);
+            try {
+                if (!level.isInWorldBounds(op.pos())) {
+                    progress.setIncomplete(true);
+                } else {
+                    BlockState state = level.getBlockState(op.pos());
+                    if (!skipsBoundaryUpdate(state)) {
+                        BlockState updated = state;
+                        for (Direction direction : Direction.values()) {
+                            BlockPos neighbor = op.pos().relative(direction);
+                            if (committed.contains(neighbor.asLong())) continue;
+                            updated = updated.updateShape(
+                                direction,
+                                level.getBlockState(neighbor),
+                                level,
+                                op.pos(),
+                                neighbor
+                            );
+                        }
+                        if (updated != state) {
+                            quietSet(level, op.pos(), updated);
+                        }
+                    }
+                }
+            } catch (RuntimeException exception) {
+                progress.setIncomplete(true);
+                AnvilcraftPlasticraft.LOGGER.error(
+                    "Failed to update construction boundary for operation {}",
+                    op.id(),
+                    exception
+                );
+            }
+            index++;
+            budget--;
+        }
+        log.setNextIndex(index);
+        if (index >= ops.size()) {
+            log.setPhase(ConstructionCommitLog.Phase.PASTE);
+        }
+        return false;
     }
 
     static void quietSet(Level level, BlockPos pos, BlockState state) {
@@ -259,6 +374,7 @@ public final class ConstructionCommitService {
      * 红石粉 onPlace 会重算功率,活塞 onPlace 会伸缩;这些格子只写区块段,不走回调。
      */
     private static void writeWithoutCallbacks(Level level, BlockPos pos, BlockState state) {
+        if (!level.isInWorldBounds(pos)) return;
         BlockState previous = level.getBlockState(pos);
         if (previous == state) {
             return;
@@ -299,33 +415,148 @@ public final class ConstructionCommitService {
     }
 
     /** 按投影模组粘贴:整区再写一遍蓝图状态,只通知客户端,不跑邻居重算。 */
-    private static void pasteDeliveredRegion(Level level, ConstructionJobProgress progress) {
-        for (ConstructionBuildOp op : deliveredProjections(progress)) {
-            writeWithoutCallbacks(level, op.pos(), op.target());
+    private static boolean pasteDeliveredRegion(
+        Level level,
+        ConstructionJobProgress progress,
+        ConstructionCommitLog log,
+        ConstructionCommitLog.Phase nextPhase
+    ) {
+        List<ConstructionBuildOp> ops = deliveredProjections(progress);
+        Set<Long> delivered = progress.deliveredProjectionPositions();
+        int budget = Math.max(1, blocksPerTick);
+        int index = log.nextIndex();
+        while (index < ops.size() && budget > 0) {
+            ConstructionBuildOp op = ops.get(index);
+            try {
+                if (level.isInWorldBounds(op.pos())) {
+                    writeWithoutCallbacks(level, op.pos(), committedState(op, delivered));
+                } else {
+                    progress.setIncomplete(true);
+                }
+            } catch (RuntimeException exception) {
+                progress.setIncomplete(true);
+                AnvilcraftPlasticraft.LOGGER.error(
+                    "Failed to paste construction state for operation {}",
+                    op.id(),
+                    exception
+                );
+            }
+            index++;
+            budget--;
         }
-        restoreWirePorts(level, progress);
+        log.setNextIndex(index);
+        if (index >= ops.size()) {
+            log.setPhase(nextPhase);
+        }
+        return false;
     }
 
-    /** 先按邻居建网,再用本体端口编辑把蓝图四向写入覆盖表,之后更新也不会把平行线并上。 */
-    public static void restoreWirePorts(Level level, ConstructionJobProgress progress) {
-        if (!(level instanceof ServerLevel serverLevel)) {
-            return;
+    private static boolean updateWireTopology(
+        Level level,
+        ConstructionJobProgress progress,
+        ConstructionCommitLog log,
+        ConstructionCommitLog.Phase nextPhase
+    ) {
+        List<ConstructionBuildOp> ops = deliveredProjections(progress);
+        int budget = Math.max(1, blocksPerTick);
+        int index = log.nextIndex();
+        while (index < ops.size() && budget > 0) {
+            ConstructionBuildOp op = ops.get(index);
+            try {
+                if (level instanceof ServerLevel serverLevel && isCommittedWire(serverLevel, op)) {
+                    RedstoneWireNetworkManager.topologyChanged(serverLevel, op.pos());
+                }
+            } catch (RuntimeException exception) {
+                progress.setIncomplete(true);
+                AnvilcraftPlasticraft.LOGGER.error(
+                    "Failed to update construction wire topology for operation {}",
+                    op.id(),
+                    exception
+                );
+            }
+            index++;
+            budget--;
         }
+        log.setNextIndex(index);
+        if (index >= ops.size()) {
+            log.setPhase(nextPhase);
+        }
+        return false;
+    }
+
+    private static boolean reconcileWirePorts(
+        Level level,
+        ConstructionJobProgress progress,
+        ConstructionCommitLog log,
+        ConstructionCommitLog.Phase nextPhase
+    ) {
+        List<ConstructionBuildOp> ops = deliveredProjections(progress);
+        int budget = Math.max(1, blocksPerTick);
+        int index = log.nextIndex();
+        while (index < ops.size() && budget > 0) {
+            ConstructionBuildOp op = ops.get(index);
+            try {
+                if (level instanceof ServerLevel serverLevel && isCommittedWire(serverLevel, op)) {
+                    AnvilCraftRedstoneWirePorts.reconcile(serverLevel, op.pos(), op.target());
+                }
+            } catch (RuntimeException exception) {
+                progress.setIncomplete(true);
+                AnvilcraftPlasticraft.LOGGER.error(
+                    "Failed to restore construction wire ports for operation {}",
+                    op.id(),
+                    exception
+                );
+            }
+            index++;
+            budget--;
+        }
+        log.setNextIndex(index);
+        if (index >= ops.size()) {
+            log.setPhase(nextPhase);
+        }
+        return false;
+    }
+
+    private static boolean isCommittedWire(ServerLevel level, ConstructionBuildOp op) {
+        return level.isInWorldBounds(op.pos())
+            && AnvilCraftRedstoneWirePorts.isWire(op.target())
+            && AnvilCraftRedstoneWirePorts.isWire(level.getBlockState(op.pos()));
+    }
+
+    private static BlockState committedState(ConstructionBuildOp op, Set<Long> delivered) {
+        return OrdinaryBlockAdapter.commitState(op.target(), op.pos(), delivered);
+    }
+
+    /** 拆除临时封堵壳后再校正一次导线端口，避免壳的邻居更新覆盖蓝图方向。 */
+    public static void restoreWirePorts(Level level, ConstructionJobProgress progress) {
+        if (!(level instanceof ServerLevel serverLevel)) return;
         List<ConstructionBuildOp> wires = new ArrayList<>();
         for (ConstructionBuildOp op : deliveredProjections(progress)) {
-            if (!AnvilCraftRedstoneWirePorts.isWire(op.target())) {
-                continue;
-            }
-            if (!AnvilCraftRedstoneWirePorts.isWire(serverLevel.getBlockState(op.pos()))) {
-                continue;
-            }
-            wires.add(op);
+            if (isCommittedWire(serverLevel, op)) wires.add(op);
         }
         for (ConstructionBuildOp op : wires) {
-            RedstoneWireNetworkManager.topologyChanged(serverLevel, op.pos());
+            try {
+                RedstoneWireNetworkManager.topologyChanged(serverLevel, op.pos());
+            } catch (RuntimeException exception) {
+                progress.setIncomplete(true);
+                AnvilcraftPlasticraft.LOGGER.error(
+                    "Failed to update final construction wire topology for operation {}",
+                    op.id(),
+                    exception
+                );
+            }
         }
         for (ConstructionBuildOp op : wires) {
-            AnvilCraftRedstoneWirePorts.reconcile(serverLevel, op.pos(), op.target());
+            try {
+                AnvilCraftRedstoneWirePorts.reconcile(serverLevel, op.pos(), op.target());
+            } catch (RuntimeException exception) {
+                progress.setIncomplete(true);
+                AnvilcraftPlasticraft.LOGGER.error(
+                    "Failed to restore final construction wire ports for operation {}",
+                    op.id(),
+                    exception
+                );
+            }
         }
     }
 
@@ -352,12 +583,6 @@ public final class ConstructionCommitService {
     }
 
     private static List<ConstructionBuildOp> deliveredProjections(ConstructionJobProgress progress) {
-        List<ConstructionBuildOp> ops = new ArrayList<>();
-        for (ConstructionBuildOp op : progress.operations()) {
-            if (op.status() == ConstructionBuildOp.Status.DELIVERED && op.writesProjection()) {
-                ops.add(op);
-            }
-        }
-        return ops;
+        return progress.deliveredProjectionOperations();
     }
 }

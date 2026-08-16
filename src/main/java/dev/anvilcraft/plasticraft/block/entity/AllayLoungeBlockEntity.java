@@ -4,15 +4,13 @@ import com.mojang.serialization.Codec;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
-import dev.anvilcraft.plasticraft.block.AllayLoungeBlock;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionTraffic;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.anvilcraft.plasticraft.init.PlasticraftMenuTypes;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.inventory.AllayLoungeMenu;
-import dev.dubhe.anvilcraft.api.power.IPowerConsumer;
-import dev.dubhe.anvilcraft.api.power.PowerGrid;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -41,7 +39,10 @@ import net.neoforged.neoforge.items.ItemStackHandler;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -50,18 +51,19 @@ import java.util.function.Predicate;
 
 /**
  * 悦灵休息室。最多托管 16 只戴帽悦灵,另有 1 个结构磁盘槽。
- * 固定向电网请求 16 功率;有电才能召回与入库。破坏时把托管悦灵生成回世界。
+ * 不接入电网,有无供电都能召回、出库与入库。破坏时把托管悦灵生成回世界。
  */
-public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsumer {
+public class AllayLoungeBlockEntity extends BlockEntity {
     public static final int HOST_CAPACITY = 16;
     public static final int DISK_SLOT = 0;
-    public static final int RATED_POWER_KW = 16;
     public static final int DOCKING_DURATION_TICKS = 20;
     public static final double RECALL_RANGE = 16.0D;
     public static final int FORMATION_GRID_SIZE = 4;
     public static final double FORMATION_BASE_OFFSET_Y = 3.0D;
     private static final int FORMATION_LAYER_CAPACITY = FORMATION_GRID_SIZE * FORMATION_GRID_SIZE;
-    private static final double FORMATION_SPACING = 1.0D;
+    private static final double FORMATION_SPACING = 1.2D;
+    private static final double FORMATION_RING_RADIUS = 3.0D;
+    private static final double FORMATION_LAYER_SPACING = 1.0D;
     private static final Codec<List<AllayWorkRecord>> HOSTS_CODEC = AllayWorkRecord.CODEC.listOf();
 
     private final ItemStackHandler items = new ItemStackHandler(1) {
@@ -79,14 +81,15 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
     private final List<AllayWorkRecord> hosted = new ArrayList<>();
     private final List<Player> viewers = new ArrayList<>();
     private final List<UUID> dockingQueue = new ArrayList<>();
+    private final Map<UUID, Integer> dockingSlots = new HashMap<>();
+    private final Map<UUID, Double> dockingDistances = new HashMap<>();
     private final EnumMap<Direction, ItemStack> pickupDisplays = new EnumMap<>(Direction.class);
-    @Nullable
-    private PowerGrid grid;
     @Nullable
     private AllayWorkRecord dockingRecord;
     private int dockingProgress;
     private boolean dockingRunning;
     private long dockingSyncGameTime;
+    private long dockingQueuePruneTime = Long.MIN_VALUE;
     private AllayShortageStrategy shortageStrategy = AllayShortageStrategy.PAUSE;
     private boolean loading;
     @Nullable
@@ -106,18 +109,10 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
 
     public static void serverTick(Level level, BlockPos pos, BlockState state, AllayLoungeBlockEntity lounge) {
         lounge.tickDocking();
-        lounge.syncPowerState(state);
     }
 
     private void tickDocking() {
         if (this.dockingRecord == null && !this.dockingRunning) return;
-        if (!this.isPowered()) {
-            if (this.dockingRunning && this.dockingRecord != null) {
-                this.dockingRunning = false;
-                this.sendDockingUpdate();
-            }
-            return;
-        }
         if (!this.dockingRunning) {
             this.dockingRunning = true;
             this.sendDockingUpdate();
@@ -137,9 +132,7 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
 
     private void finishDocking() {
         if (this.dockingRecord == null) return;
-        if (this.hosted.size() < HOST_CAPACITY) {
-            this.hosted.add(this.dockingRecord);
-        } else if (this.level instanceof ServerLevel serverLevel) {
+        if (!this.storeHosted(this.dockingRecord) && this.level instanceof ServerLevel serverLevel) {
             this.spawnBound(serverLevel, this.dockApproachPoint().add(0.0D, 0.2D, 0.0D), this.dockingRecord);
         }
         this.dockingRecord = null;
@@ -163,47 +156,98 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
     }
 
     public DockAssignment assignDockTarget(WorkingAllayEntity worker) {
+        this.registerDocking(worker);
+        UUID id = worker.getUUID();
+        boolean head = !this.dockingQueue.isEmpty() && this.dockingQueue.getFirst().equals(id);
+        return head
+            ? new DockAssignment(true, this.dockApproachPoint())
+            : new DockAssignment(false, this.formationSlotPosition(this.dockingSlots.get(id)));
+    }
+
+    public void registerDocking(WorkingAllayEntity worker) {
         this.pruneDockingQueue();
         UUID id = worker.getUUID();
-        int index = this.dockingQueue.indexOf(id);
-        if (index < 0) {
-            index = this.dockingQueue.size();
-            this.dockingQueue.add(id);
+        if (!this.dockingQueue.contains(id)) {
+            if (this.hosted.removeIf(record -> record.entityId().equals(id))) {
+                this.setChanged();
+            }
+            this.dockingDistances.put(id, worker.position().distanceToSqr(this.dockApproachPoint()));
+            int insertAt = 0;
+            while (insertAt < this.dockingQueue.size()
+                && this.compareDockingOrder(this.dockingQueue.get(insertAt), id) <= 0) {
+                insertAt++;
+            }
+            this.dockingQueue.add(insertAt, id);
         }
-        return index == 0
-            ? new DockAssignment(true, this.dockApproachPoint())
-            : new DockAssignment(false, this.formationSlotPosition(index - 1));
+        this.dockingSlots.computeIfAbsent(id, ignored -> this.allocateDockingSlot());
+    }
+
+    private int compareDockingOrder(UUID first, UUID second) {
+        int distance = Double.compare(
+            this.dockingDistances.getOrDefault(first, Double.POSITIVE_INFINITY),
+            this.dockingDistances.getOrDefault(second, Double.POSITIVE_INFINITY)
+        );
+        return distance != 0 ? distance : first.compareTo(second);
     }
 
     private void pruneDockingQueue() {
         if (!(this.level instanceof ServerLevel serverLevel)) return;
+        long gameTime = serverLevel.getGameTime();
+        if (this.dockingQueuePruneTime == gameTime) return;
+        this.dockingQueuePruneTime = gameTime;
         this.dockingQueue.removeIf(id -> {
             Entity entity = serverLevel.getEntity(id);
-            return !(entity instanceof WorkingAllayEntity worker)
+            boolean remove = !(entity instanceof WorkingAllayEntity worker)
                 || worker.isRemoved()
                 || !worker.isDockingTo(this.worldPosition);
+            if (remove) {
+                this.dockingSlots.remove(id);
+                this.dockingDistances.remove(id);
+                ConstructionTraffic.release(serverLevel, id);
+            }
+            return remove;
         });
+    }
+
+    private int allocateDockingSlot() {
+        int slot = 0;
+        while (this.dockingSlots.containsValue(slot)) {
+            slot++;
+        }
+        return slot;
     }
 
     private Vec3 formationSlotPosition(int slot) {
         int layer = slot / FORMATION_LAYER_CAPACITY;
         int cell = slot % FORMATION_LAYER_CAPACITY;
-        double half = (FORMATION_GRID_SIZE - 1) / 2.0D;
-        double dx = (cell % FORMATION_GRID_SIZE - half) * FORMATION_SPACING;
-        double dz = (cell / FORMATION_GRID_SIZE - half) * FORMATION_SPACING;
+        int side = cell / FORMATION_GRID_SIZE;
+        int sideIndex = cell % FORMATION_GRID_SIZE;
+        double along = (sideIndex - (FORMATION_GRID_SIZE - 1) / 2.0D) * FORMATION_SPACING;
+        double dx = switch (side) {
+            case 0 -> along;
+            case 1 -> FORMATION_RING_RADIUS;
+            case 2 -> -along;
+            default -> -FORMATION_RING_RADIUS;
+        };
+        double dz = switch (side) {
+            case 0 -> -FORMATION_RING_RADIUS;
+            case 1 -> along;
+            case 2 -> FORMATION_RING_RADIUS;
+            default -> -along;
+        };
         return new Vec3(
             this.worldPosition.getX() + 0.5D + dx,
-            this.worldPosition.getY() + FORMATION_BASE_OFFSET_Y + layer,
+            this.worldPosition.getY() + FORMATION_BASE_OFFSET_Y + layer * FORMATION_LAYER_SPACING,
             this.worldPosition.getZ() + 0.5D + dz
         );
     }
 
     public boolean tryDock(WorkingAllayEntity worker) {
         if (this.level == null || this.level.isClientSide) return false;
-        if (!this.isPowered()) return false;
         if (this.isBayBusy()) return false;
         if (this.hosted.size() >= HOST_CAPACITY) return false;
-        this.dockingQueue.remove(worker.getUUID());
+        this.removeDockingWorker(worker.getUUID());
+        worker.clearAssignment(false);
         this.dockingRecord = worker.toWorkRecord();
         this.dockingProgress = 0;
         this.dockingRunning = true;
@@ -220,27 +264,48 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
         return true;
     }
 
+    private void removeDockingWorker(UUID id) {
+        this.dockingQueue.remove(id);
+        this.dockingSlots.remove(id);
+        this.dockingDistances.remove(id);
+    }
+
     public boolean canAcceptDocking() {
-        return this.isPowered() && !this.isBayBusy() && this.hosted.size() < HOST_CAPACITY;
+        return !this.isBayBusy() && this.hosted.size() < HOST_CAPACITY;
     }
 
     public boolean isBayBusy() {
         return this.dockingRecord != null || this.dockingRunning;
     }
 
-    public int recallNearbyWorkers() {
-        if (this.level == null || this.level.isClientSide || !this.isPowered()) return 0;
+    public int recallNearbyWorkers(UUID ownerId) {
+        if (this.level == null || this.level.isClientSide) return 0;
+        this.pruneDockingQueue();
+        int available = HOST_CAPACITY
+            - this.hosted.size()
+            - (this.dockingRecord == null ? 0 : 1)
+            - this.dockingQueue.size();
+        if (available <= 0) return 0;
         AABB range = new AABB(this.worldPosition).inflate(RECALL_RANGE);
         List<WorkingAllayEntity> workers = this.level.getEntitiesOfClass(WorkingAllayEntity.class, range);
+        Vec3 approach = this.dockApproachPoint();
+        workers.sort(Comparator
+            .comparingDouble((WorkingAllayEntity worker) -> worker.position().distanceToSqr(approach))
+            .thenComparing(WorkingAllayEntity::getUUID));
         int recalled = 0;
         for (WorkingAllayEntity worker : workers) {
-            if (worker.startDockingTo(this.worldPosition)) recalled++;
+            if (worker.getOwner().filter(ownerId::equals).isEmpty()) continue;
+            if (worker.isDockingTo(this.worldPosition)) continue;
+            if (worker.startDockingTo(this.worldPosition)) {
+                recalled++;
+                if (recalled >= available) break;
+            }
         }
         return recalled;
     }
 
     public boolean releaseHosted(int index) {
-        if (!(this.level instanceof ServerLevel serverLevel) || !this.isPowered()) return false;
+        if (!(this.level instanceof ServerLevel serverLevel)) return false;
         if (this.isBayBusy()) return false;
         if (index < 0 || index >= this.hosted.size()) return false;
         AllayWorkRecord record = this.hosted.remove(index);
@@ -250,7 +315,7 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
     }
 
     public boolean tryLaunch(Predicate<AllayWorkRecord> match) {
-        if (!(this.level instanceof ServerLevel serverLevel) || !this.isPowered()) return false;
+        if (!(this.level instanceof ServerLevel serverLevel)) return false;
         if (this.isBayBusy()) return false;
         for (int index = 0; index < this.hosted.size(); index++) {
             AllayWorkRecord record = this.hosted.get(index);
@@ -259,6 +324,13 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
             this.spawnBound(serverLevel, this.releasePoint(), record);
             this.occupyOutboundBay();
             return true;
+        }
+        return false;
+    }
+
+    public boolean hasHosted(Predicate<AllayWorkRecord> match) {
+        for (AllayWorkRecord record : this.hosted) {
+            if (match.test(record)) return true;
         }
         return false;
     }
@@ -276,6 +348,7 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
             ConstructionJobController.unclaimLounge(serverLevel, this.worldPosition, this.diskJobId());
         }
         this.lastDiskJobId = null;
+        this.clearDockingQueue();
         if (!(this.level instanceof ServerLevel serverLevel)) {
             this.dropDisk();
             return;
@@ -290,6 +363,17 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
         }
         this.hosted.clear();
         this.dropDisk();
+    }
+
+    private void clearDockingQueue() {
+        if (this.level != null) {
+            for (UUID id : this.dockingQueue) {
+                ConstructionTraffic.release(this.level, id);
+            }
+        }
+        this.dockingQueue.clear();
+        this.dockingSlots.clear();
+        this.dockingDistances.clear();
     }
 
     private void dropDisk() {
@@ -337,17 +421,7 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
     }
 
     public ItemStack pickupDisplay(Direction side) {
-        if (!this.shouldShowPickup()) return ItemStack.EMPTY;
         return this.pickupDisplays.getOrDefault(side, ItemStack.EMPTY);
-    }
-
-    private boolean shouldShowPickup() {
-        if (this.level == null) return false;
-        BlockState state = this.getBlockState();
-        if (state.hasProperty(AllayLoungeBlock.POWERED)) {
-            return state.getValue(AllayLoungeBlock.POWERED);
-        }
-        return this.isPowered();
     }
 
     public Map<Direction, ItemStack> pickupDisplays() {
@@ -434,10 +508,28 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
     }
 
     public boolean addHosted(AllayWorkRecord record) {
-        if (this.hosted.size() >= HOST_CAPACITY) return false;
+        if (this.hosted.size() >= HOST_CAPACITY || this.hostedIndex(record.entityId()) >= 0) return false;
         this.hosted.add(record);
         this.setChanged();
         return true;
+    }
+
+    private boolean storeHosted(AllayWorkRecord record) {
+        int existing = this.hostedIndex(record.entityId());
+        if (existing >= 0) {
+            this.hosted.set(existing, record);
+            return true;
+        }
+        if (this.hosted.size() >= HOST_CAPACITY) return false;
+        this.hosted.add(record);
+        return true;
+    }
+
+    private int hostedIndex(UUID entityId) {
+        for (int index = 0; index < this.hosted.size(); index++) {
+            if (this.hosted.get(index).entityId().equals(entityId)) return index;
+        }
+        return -1;
     }
 
     @Nullable
@@ -459,50 +551,11 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
         return this.dockingProgress + elapsed + partialTick;
     }
 
-    public boolean isPowered() {
-        return this.grid != null && this.grid.isWorking();
-    }
-
-    private void syncPowerState(BlockState state) {
-        if (this.level == null || this.level.isClientSide) return;
-        boolean powered = this.isPowered();
-        if (state.getValue(AllayLoungeBlock.POWERED) != powered) {
-            this.level.setBlock(this.worldPosition, state.setValue(AllayLoungeBlock.POWERED, powered), 3);
-        }
-    }
-
     private void sendDockingUpdate() {
         this.dockingSyncGameTime = this.level == null ? 0L : this.level.getGameTime();
         if (this.level instanceof ServerLevel serverLevel) {
             serverLevel.sendBlockUpdated(this.worldPosition, this.getBlockState(), this.getBlockState(), 3);
         }
-    }
-
-    @Override
-    public int getInputPower() {
-        return RATED_POWER_KW;
-    }
-
-    @Override
-    public void setGrid(@Nullable PowerGrid grid) {
-        this.grid = grid;
-    }
-
-    @Override
-    @Nullable
-    public PowerGrid getGrid() {
-        return this.grid;
-    }
-
-    @Override
-    public BlockPos getPos() {
-        return this.getBlockPos();
-    }
-
-    @Override
-    @Nullable
-    public Level getCurrentLevel() {
-        return this.level;
     }
 
     @Override
@@ -545,11 +598,21 @@ public class AllayLoungeBlockEntity extends BlockEntity implements IPowerConsume
         if (tag.contains("Hosted")) {
             HOSTS_CODEC.parse(registries.createSerializationContext(NbtOps.INSTANCE), tag.get("Hosted"))
                 .resultOrPartial(error -> AnvilcraftPlasticraft.LOGGER.error("Failed to load lounge hosts: {}", error))
-                .ifPresent(this.hosted::addAll);
+                .ifPresent(records -> {
+                    Map<UUID, AllayWorkRecord> unique = new LinkedHashMap<>();
+                    for (AllayWorkRecord record : records) {
+                        unique.put(record.entityId(), record);
+                    }
+                    unique.values().stream().limit(HOST_CAPACITY).forEach(this.hosted::add);
+                });
         }
         this.dockingRecord = null;
         this.dockingProgress = 0;
         this.dockingRunning = false;
+        this.dockingQueue.clear();
+        this.dockingSlots.clear();
+        this.dockingDistances.clear();
+        this.dockingQueuePruneTime = Long.MIN_VALUE;
         if (tag.contains("DockingAllay")) {
             AllayWorkRecord.CODEC
                 .parse(registries.createSerializationContext(NbtOps.INSTANCE), tag.get("DockingAllay"))

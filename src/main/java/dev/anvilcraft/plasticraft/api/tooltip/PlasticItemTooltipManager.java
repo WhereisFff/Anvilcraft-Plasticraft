@@ -163,12 +163,16 @@ public final class PlasticItemTooltipManager {
             "Hosts up to 16 hatted allays and sets their pause or skip mode",
             """
                 Stores 16 hosted allay records plus 1 structure disk
-                Always requests 16 kW from the grid and only recalls or docks while powered
+                Does not join a power grid; recall, launch and docking always work
                 Breaking the lounge releases every hosted allay back into the world
                 Temporary cards show each allay hat and held tool
                 Pause and skip for missing materials or demolition are set here, not on each allay
                 The bottom face takes and unloads items; leftovers that do not fit drop beside the lounge
-                Inserting a deployed disk claims that job, starts it, and excludes unhosted workers"""
+                Inserting a deployed disk claims that job; right-click the disk to start, and unhosted workers leave
+                A creative crate below supplies any blueprint item infinitely
+                Builders carry at most one stack of one block item per trip and recheck enclosure safety before every placement
+                Item collection launches magnet allays first
+                Multiple allays fly around delivered fake blocks and will not brick themselves into a cavity"""
         );
     }
 

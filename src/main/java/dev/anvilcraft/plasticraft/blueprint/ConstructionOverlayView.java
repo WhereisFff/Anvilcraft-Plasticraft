@@ -17,10 +17,20 @@ import java.util.Map;
 public final class ConstructionOverlayView implements BlockGetter {
     private final Level level;
     private final Map<Long, BlockState> overlay;
+    private final ConstructionProjectionIndex.PlannedOverlay planned;
 
     public ConstructionOverlayView(Level level, Map<Long, BlockState> overlay) {
+        this(level, overlay, position -> null);
+    }
+
+    public ConstructionOverlayView(
+        Level level,
+        Map<Long, BlockState> overlay,
+        ConstructionProjectionIndex.PlannedOverlay planned
+    ) {
         this.level = level;
         this.overlay = overlay;
+        this.planned = planned;
     }
 
     public Level level() {
@@ -29,13 +39,18 @@ public final class ConstructionOverlayView implements BlockGetter {
 
     @Override
     public @Nullable BlockEntity getBlockEntity(BlockPos pos) {
-        return this.overlay.containsKey(pos.asLong()) ? null : this.level.getBlockEntity(pos);
+        return this.overlayState(pos.asLong()) != null ? null : this.level.getBlockEntity(pos);
     }
 
     @Override
     public BlockState getBlockState(BlockPos pos) {
-        BlockState overlayState = this.overlay.get(pos.asLong());
+        BlockState overlayState = this.overlayState(pos.asLong());
         return overlayState != null ? overlayState : this.level.getBlockState(pos);
+    }
+
+    private @Nullable BlockState overlayState(long position) {
+        BlockState state = this.overlay.get(position);
+        return state != null ? state : this.planned.stateAt(position);
     }
 
     @Override

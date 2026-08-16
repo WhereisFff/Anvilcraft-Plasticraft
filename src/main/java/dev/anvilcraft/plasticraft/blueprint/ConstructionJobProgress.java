@@ -5,14 +5,17 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /** 一份施工任务的进度、材料台账与租约;与任务索引分离,避免把大进度塞进客户端同步的摘要 record。 */
@@ -23,8 +26,13 @@ public final class ConstructionJobProgress {
     private ConstructionWaitReason waitReason = ConstructionWaitReason.NONE;
     private ConstructionWaitReason lastReported = ConstructionWaitReason.NONE;
     private ItemStack missingMaterial = ItemStack.EMPTY;
+    private int missingOperationId = -1;
     private final List<ConstructionBuildOp> operations = new ArrayList<>();
+    private final Map<Integer, ConstructionBuildOp> operationsById = new HashMap<>();
+    private final Map<Long, List<ConstructionBuildOp>> operationsByPosition = new HashMap<>();
     private final List<ConstructionLedgerEntry> ledger = new ArrayList<>();
+    private final Map<Integer, List<ConstructionLedgerEntry>> carriedLedgerByOperation = new HashMap<>();
+    private final Map<UUID, List<ConstructionLedgerEntry>> carriedLedgerByAllay = new HashMap<>();
     private final List<ConstructionDebrisAccount> debris = new ArrayList<>();
     private final Map<UUID, UUID> debrisLeases = new HashMap<>();
     private final ConstructionCommitLog commitLog = new ConstructionCommitLog();
@@ -32,6 +40,23 @@ public final class ConstructionJobProgress {
     private BlockPos coordinatorLounge;
     private int nextOpId;
     private int nextLedgerId;
+    private long enclosureRevision;
+    private long operationOrderRevision;
+    private long layoutRevision;
+    private long statusRevision;
+    private long topologyRevision;
+    private long overlayCacheRevision = Long.MIN_VALUE;
+    private Map<Long, BlockState> overlayCache = Map.of();
+    private long statusCacheRevision = Long.MIN_VALUE;
+    private OperationStatusSummary statusCache = OperationStatusSummary.EMPTY;
+    private long deliveredPositionCacheRevision = Long.MIN_VALUE;
+    private Set<Long> deliveredPositionCache = Set.of();
+    private long childrenCacheRevision = Long.MIN_VALUE;
+    private Map<Integer, List<ConstructionBuildOp>> childrenCache = Map.of();
+    private long materialCacheRevision = Long.MIN_VALUE;
+    private Map<Item, List<ConstructionBuildOp>> materialOperationCache = Map.of();
+    private final Map<Item, Integer> materialFirstUnresolved = new HashMap<>();
+    private boolean projectionIndexReady;
 
     public ConstructionJobProgress(UUID jobId) {
         this.jobId = jobId;
@@ -79,10 +104,74 @@ public final class ConstructionJobProgress {
 
     public void setMissingMaterial(ItemStack missing) {
         this.missingMaterial = missing.isEmpty() ? ItemStack.EMPTY : missing.copy();
+        if (missing.isEmpty()) {
+            this.missingOperationId = -1;
+        }
+    }
+
+    public int missingOperationId() {
+        return this.missingOperationId;
+    }
+
+    public void setMissingOperationId(int operationId) {
+        this.missingOperationId = operationId;
     }
 
     public List<ConstructionBuildOp> operations() {
         return this.operations;
+    }
+
+    public void clearOperations() {
+        if (this.operations.isEmpty()) return;
+        this.operations.clear();
+        this.operationsById.clear();
+        this.operationsByPosition.clear();
+        this.enclosureRevision++;
+        this.operationOrderRevision++;
+        this.invalidateLayout();
+        this.invalidateStatus();
+        this.invalidateTopology();
+        this.projectionIndexReady = false;
+    }
+
+    /** 锚点改变时丢弃尚未产生实际施工进度的坐标计划，保留休息室认领关系。 */
+    void resetPlan() {
+        this.clearOperations();
+        this.ledger.clear();
+        this.carriedLedgerByOperation.clear();
+        this.carriedLedgerByAllay.clear();
+        this.debris.clear();
+        this.debrisLeases.clear();
+        this.commitLog.reset();
+        this.planned = false;
+        this.incomplete = false;
+        this.waitReason = ConstructionWaitReason.NONE;
+        this.lastReported = ConstructionWaitReason.NONE;
+        this.missingMaterial = ItemStack.EMPTY;
+        this.missingOperationId = -1;
+        this.nextOpId = 0;
+        this.nextLedgerId = 0;
+        this.projectionIndexReady = false;
+    }
+
+    long enclosureRevision() {
+        return this.enclosureRevision;
+    }
+
+    long operationOrderRevision() {
+        return this.operationOrderRevision;
+    }
+
+    long layoutRevision() {
+        return this.layoutRevision;
+    }
+
+    boolean projectionIndexReady() {
+        return this.projectionIndexReady;
+    }
+
+    void setProjectionIndexReady(boolean ready) {
+        this.projectionIndexReady = ready;
     }
 
     public List<ConstructionLedgerEntry> ledger() {
@@ -192,7 +281,22 @@ public final class ConstructionJobProgress {
             status,
             0
         );
+        op.bindInvalidators(
+            this::invalidateEnclosure,
+            this::invalidateOperationOrder,
+            this::invalidateLayout,
+            this::invalidateStatus,
+            this::invalidateTopology
+        );
         this.operations.add(op);
+        this.operationsById.put(op.id(), op);
+        this.operationsByPosition.computeIfAbsent(op.pos().asLong(), ignored -> new ArrayList<>()).add(op);
+        this.invalidateEnclosure();
+        this.invalidateOperationOrder();
+        this.invalidateLayout();
+        this.invalidateStatus();
+        this.invalidateTopology();
+        this.projectionIndexReady = false;
         return op;
     }
 
@@ -218,15 +322,14 @@ public final class ConstructionJobProgress {
             ConstructionLedgerEntry.State.CARRIED
         );
         this.ledger.add(entry);
+        this.indexCarriedEntry(entry);
+        this.invalidateStatus();
         return entry;
     }
 
     @Nullable
     public ConstructionBuildOp operation(int id) {
-        for (ConstructionBuildOp op : this.operations) {
-            if (op.id() == id) return op;
-        }
-        return null;
+        return this.operationsById.get(id);
     }
 
     @Nullable
@@ -258,14 +361,85 @@ public final class ConstructionJobProgress {
     }
 
     @Nullable
-    public ItemStack carriedBy(UUID allayId) {
-        for (ConstructionLedgerEntry entry : this.ledger) {
-            if (entry.state() == ConstructionLedgerEntry.State.CARRIED
-                && allayId.equals(entry.allayId())) {
+    public ItemStack carriedBy(UUID allayId, int operationId) {
+        for (ConstructionLedgerEntry entry : this.carriedLedgerByOperation.getOrDefault(operationId, List.of())) {
+            if (allayId.equals(entry.allayId())) {
                 return entry.stack();
             }
         }
         return null;
+    }
+
+    public boolean hasCarriedMaterial(int operationId) {
+        return this.carriedLedgerByOperation.containsKey(operationId);
+    }
+
+    public boolean isCarriedBy(UUID allayId, int operationId) {
+        return this.carriedLedgerByOperation.getOrDefault(operationId, List.of()).stream()
+            .anyMatch(entry -> allayId.equals(entry.allayId()));
+    }
+
+    public List<ConstructionBuildOp> carriedOperations(UUID allayId) {
+        List<ConstructionBuildOp> result = new ArrayList<>();
+        for (ConstructionLedgerEntry entry : this.carriedLedgerByAllay.getOrDefault(allayId, List.of())) {
+            ConstructionBuildOp op = this.operation(entry.operationId());
+            if (op != null) result.add(op);
+        }
+        result.sort((left, right) -> {
+            int order = Integer.compare(left.order(), right.order());
+            return order != 0 ? order : Integer.compare(left.id(), right.id());
+        });
+        return List.copyOf(result);
+    }
+
+    public List<ConstructionLedgerEntry> carriedEntries(UUID allayId) {
+        return List.copyOf(this.carriedLedgerByAllay.getOrDefault(allayId, List.of()));
+    }
+
+    public List<ConstructionLedgerEntry> carriedEntries(UUID allayId, int operationId) {
+        List<ConstructionLedgerEntry> result = new ArrayList<>();
+        for (ConstructionLedgerEntry entry : this.carriedLedgerByOperation.getOrDefault(operationId, List.of())) {
+            if (allayId.equals(entry.allayId())) result.add(entry);
+        }
+        return List.copyOf(result);
+    }
+
+    public void markOperationDelivered(int operationId) {
+        for (ConstructionLedgerEntry entry : List.copyOf(
+            this.carriedLedgerByOperation.getOrDefault(operationId, List.of())
+        )) {
+            this.transitionCarry(entry, ConstructionLedgerEntry.State.DELIVERED);
+        }
+    }
+
+    public boolean markCarryReturned(ConstructionLedgerEntry entry) {
+        return this.transitionCarry(entry, ConstructionLedgerEntry.State.RETURNED);
+    }
+
+    public boolean markCarriesReturned(UUID allayId) {
+        boolean changed = false;
+        for (ConstructionLedgerEntry entry : List.copyOf(
+            this.carriedLedgerByAllay.getOrDefault(allayId, List.of())
+        )) {
+            changed |= this.transitionCarry(entry, ConstructionLedgerEntry.State.RETURNED);
+        }
+        return changed;
+    }
+
+    List<ConstructionBuildOp> operationsForMaterial(ItemStack material) {
+        this.ensureMaterialOperationCache();
+        List<ConstructionBuildOp> operations = this.materialOperationCache.getOrDefault(material.getItem(), List.of());
+        int first = this.materialFirstUnresolved.getOrDefault(material.getItem(), 0);
+        while (first < operations.size()) {
+            ConstructionBuildOp op = operations.get(first);
+            if (op.status() != ConstructionBuildOp.Status.DELIVERED
+                && op.status() != ConstructionBuildOp.Status.SKIPPED) {
+                break;
+            }
+            first++;
+        }
+        this.materialFirstUnresolved.put(material.getItem(), first);
+        return first == 0 ? operations : operations.subList(first, operations.size());
     }
 
     @Nullable
@@ -276,7 +450,19 @@ public final class ConstructionJobProgress {
         return this.operation(child.parentId());
     }
 
+    public List<ConstructionBuildOp> childrenOf(ConstructionBuildOp parent) {
+        this.ensureChildrenCache();
+        return this.childrenCache.getOrDefault(parent.id(), List.of());
+    }
+
+    List<ConstructionBuildOp> operationsAt(BlockPos pos) {
+        return this.operationsByPosition.getOrDefault(pos.asLong(), List.of());
+    }
+
     public Map<Long, BlockState> overlayStates() {
+        if (this.overlayCacheRevision == this.layoutRevision) {
+            return this.overlayCache;
+        }
         Map<Long, BlockState> overlay = new HashMap<>();
         for (ConstructionBuildOp op : this.operations) {
             if (!op.writesProjection() || op.status() == ConstructionBuildOp.Status.SKIPPED) {
@@ -284,14 +470,98 @@ public final class ConstructionJobProgress {
             }
             overlay.put(op.pos().asLong(), op.target());
         }
-        return overlay;
+        this.overlayCache = Map.copyOf(overlay);
+        this.overlayCacheRevision = this.layoutRevision;
+        return this.overlayCache;
+    }
+
+    private void invalidateEnclosure() {
+        this.enclosureRevision++;
+    }
+
+    private void invalidateOperationOrder() {
+        this.operationOrderRevision++;
+    }
+
+    private void invalidateLayout() {
+        this.layoutRevision++;
+    }
+
+    private void invalidateStatus() {
+        this.statusRevision++;
+    }
+
+    private void invalidateTopology() {
+        this.topologyRevision++;
+    }
+
+    private void ensureChildrenCache() {
+        if (this.childrenCacheRevision == this.topologyRevision) return;
+        Map<Integer, List<ConstructionBuildOp>> children = new HashMap<>();
+        for (ConstructionBuildOp op : this.operations) {
+            if (op.parentId() < 0) continue;
+            children.computeIfAbsent(op.parentId(), ignored -> new ArrayList<>()).add(op);
+        }
+        children.replaceAll((ignored, value) -> List.copyOf(value));
+        this.childrenCache = Map.copyOf(children);
+        this.childrenCacheRevision = this.topologyRevision;
+    }
+
+    private void ensureMaterialOperationCache() {
+        if (this.materialCacheRevision == this.operationOrderRevision) return;
+        Map<Item, List<ConstructionBuildOp>> byItem = new HashMap<>();
+        for (ConstructionBuildOp op : this.operations) {
+            if (op.material().isEmpty()) continue;
+            byItem.computeIfAbsent(op.material().getItem(), ignored -> new ArrayList<>()).add(op);
+        }
+        for (List<ConstructionBuildOp> operations : byItem.values()) {
+            operations.sort((left, right) -> {
+                int order = Integer.compare(left.order(), right.order());
+                return order != 0 ? order : Integer.compare(left.id(), right.id());
+            });
+        }
+        byItem.replaceAll((ignored, operations) -> List.copyOf(operations));
+        this.materialOperationCache = Map.copyOf(byItem);
+        this.materialFirstUnresolved.clear();
+        this.materialCacheRevision = this.operationOrderRevision;
+    }
+
+    private void indexCarriedEntry(ConstructionLedgerEntry entry) {
+        if (entry.state() != ConstructionLedgerEntry.State.CARRIED) return;
+        this.carriedLedgerByOperation.computeIfAbsent(entry.operationId(), ignored -> new ArrayList<>()).add(entry);
+        if (entry.allayId() != null) {
+            this.carriedLedgerByAllay.computeIfAbsent(entry.allayId(), ignored -> new ArrayList<>()).add(entry);
+        }
+    }
+
+    private boolean transitionCarry(ConstructionLedgerEntry entry, ConstructionLedgerEntry.State state) {
+        if (entry.state() != ConstructionLedgerEntry.State.CARRIED) return false;
+        entry.setState(state);
+        removeIndexedEntry(this.carriedLedgerByOperation, entry.operationId(), entry);
+        if (entry.allayId() != null) {
+            removeIndexedEntry(this.carriedLedgerByAllay, entry.allayId(), entry);
+        }
+        this.invalidateStatus();
+        return true;
+    }
+
+    private static <K> void removeIndexedEntry(
+        Map<K, List<ConstructionLedgerEntry>> index,
+        K key,
+        ConstructionLedgerEntry entry
+    ) {
+        List<ConstructionLedgerEntry> entries = index.get(key);
+        if (entries == null) return;
+        entries.remove(entry);
+        if (entries.isEmpty()) index.remove(key);
     }
 
     public boolean hasNonEmptyProgress() {
         if (!this.planned) return false;
         for (ConstructionBuildOp op : this.operations) {
             if (op.status() == ConstructionBuildOp.Status.DELIVERED
-                || op.status() == ConstructionBuildOp.Status.LEASED) {
+                || op.status() == ConstructionBuildOp.Status.LEASED
+                || op.leaseAllay().isPresent()) {
                 return true;
             }
         }
@@ -302,85 +572,205 @@ public final class ConstructionJobProgress {
     }
 
     public boolean allSealResolved() {
-        return this.allResolved(ConstructionBuildOp.Kind.SEAL, true);
+        return !this.statusSummary().openSeal();
     }
 
     public boolean allDemolishResolved() {
-        return this.allResolved(ConstructionBuildOp.Kind.DEMOLISH, false);
+        return !this.statusSummary().openDemolish();
     }
 
     public boolean hasOpenSeal() {
-        return this.hasOpen(ConstructionBuildOp.Kind.SEAL, true);
+        return this.statusSummary().openSeal();
     }
 
     public boolean hasOpenDemolish() {
-        return this.hasOpen(ConstructionBuildOp.Kind.DEMOLISH, false);
+        return this.statusSummary().openDemolish();
     }
 
     public boolean hasLeasedDemolish() {
-        for (ConstructionBuildOp op : this.operations) {
-            if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH || op.shell()) continue;
-            if (op.status() == ConstructionBuildOp.Status.LEASED) return true;
-        }
-        return false;
-    }
-
-    private boolean allResolved(ConstructionBuildOp.Kind kind, boolean includeShell) {
-        for (ConstructionBuildOp op : this.operations) {
-            if (op.kind() != kind) continue;
-            if (op.shell() && !includeShell) continue;
-            if (op.status() == ConstructionBuildOp.Status.PENDING
-                || op.status() == ConstructionBuildOp.Status.WAITING_WORLD
-                || op.status() == ConstructionBuildOp.Status.WAITING_OCCUPIED
-                || op.status() == ConstructionBuildOp.Status.LEASED) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean hasOpen(ConstructionBuildOp.Kind kind, boolean includeShell) {
-        for (ConstructionBuildOp op : this.operations) {
-            if (op.kind() != kind) continue;
-            if (op.shell() && !includeShell) continue;
-            if (op.isOpen()) return true;
-        }
-        return false;
+        return this.statusSummary().leasedDemolish();
     }
 
     public boolean allPlaceResolved() {
-        for (ConstructionBuildOp op : this.operations) {
-            if (!op.isBuildMaterial()) {
-                continue;
-            }
-            if (op.status() == ConstructionBuildOp.Status.PENDING
-                || op.status() == ConstructionBuildOp.Status.WAITING_WORLD
-                || op.status() == ConstructionBuildOp.Status.WAITING_OCCUPIED
-                || op.status() == ConstructionBuildOp.Status.LEASED) {
-                return false;
-            }
-        }
-        return true;
+        return !this.statusSummary().openBuildMaterial();
     }
 
     public boolean hasDelivered() {
-        for (ConstructionBuildOp op : this.operations) {
-            if (op.status() == ConstructionBuildOp.Status.DELIVERED) return true;
-        }
-        return false;
+        return this.statusSummary().delivered();
     }
 
     public boolean hasOpenPlace() {
+        return this.statusSummary().openPlace();
+    }
+
+    int unleasedDemolishCount() {
+        return this.statusSummary().unleasedDemolishCount();
+    }
+
+    int unleasedMaterialCount() {
+        return this.statusSummary().unleasedMaterialCount();
+    }
+
+    boolean hasWaitingWorld() {
+        return this.statusSummary().waitingWorld();
+    }
+
+    boolean hasWaitingOccupied() {
+        return this.statusSummary().waitingOccupied();
+    }
+
+    List<ConstructionBuildOp> waitingWorldPlaces() {
+        return this.statusSummary().waitingWorldPlaces();
+    }
+
+    List<ConstructionBuildOp> leasedWallOperations() {
+        return this.statusSummary().leasedWalls();
+    }
+
+    List<ConstructionBuildOp> deliveredProjectionOperations() {
+        return this.statusSummary().deliveredProjections();
+    }
+
+    Set<Long> deliveredProjectionPositions() {
+        if (this.deliveredPositionCacheRevision == this.statusRevision) {
+            return this.deliveredPositionCache;
+        }
+        Set<Long> delivered = new HashSet<>();
+        for (ConstructionBuildOp op : this.statusSummary().deliveredProjections()) {
+            delivered.add(op.pos().asLong());
+        }
+        this.deliveredPositionCache = Set.copyOf(delivered);
+        this.deliveredPositionCacheRevision = this.statusRevision;
+        return this.deliveredPositionCache;
+    }
+
+    List<ConstructionBuildOp> deliveredEntityOperations() {
+        return this.statusSummary().deliveredEntities();
+    }
+
+    private OperationStatusSummary statusSummary() {
+        if (this.statusCacheRevision == this.statusRevision) {
+            return this.statusCache;
+        }
+        boolean openSeal = false;
+        boolean openDemolish = false;
+        boolean leasedDemolish = false;
+        boolean openBuildMaterial = false;
+        boolean openPlace = false;
+        boolean delivered = false;
+        boolean waitingWorld = false;
+        boolean waitingOccupied = false;
+        int unleasedDemolishCount = 0;
+        int unleasedMaterialCount = 0;
+        List<ConstructionBuildOp> waitingWorldPlaces = new ArrayList<>();
+        List<ConstructionBuildOp> leasedWalls = new ArrayList<>();
+        List<ConstructionBuildOp> deliveredProjections = new ArrayList<>();
+        List<ConstructionBuildOp> deliveredEntities = new ArrayList<>();
         for (ConstructionBuildOp op : this.operations) {
-            if ((op.kind() == ConstructionBuildOp.Kind.PLACE
-                || op.kind() == ConstructionBuildOp.Kind.CONTENT
-                || op.kind() == ConstructionBuildOp.Kind.FLUID
-                || op.kind() == ConstructionBuildOp.Kind.ENTITY)
-                && op.isOpen()) {
-                return true;
+            boolean open = op.isOpen();
+            if (op.kind() == ConstructionBuildOp.Kind.SEAL && open) {
+                openSeal = true;
+            }
+            if (op.kind() == ConstructionBuildOp.Kind.DEMOLISH && !op.shell()) {
+                if (open) openDemolish = true;
+                if (op.leaseAllay().isPresent()) leasedDemolish = true;
+                if (isUnleased(op)) unleasedDemolishCount++;
+            }
+            if (op.isBuildMaterial() && open) {
+                openBuildMaterial = true;
+            }
+            if (isPlaceMaterial(op) && open) {
+                openPlace = true;
+            }
+            if (isLaunchMaterial(op) && isUnleased(op)) {
+                unleasedMaterialCount++;
+            }
+            if (op.status() == ConstructionBuildOp.Status.DELIVERED) {
+                delivered = true;
+                if (op.writesProjection()) deliveredProjections.add(op);
+                if (op.kind() == ConstructionBuildOp.Kind.ENTITY) deliveredEntities.add(op);
+            } else if (op.status() == ConstructionBuildOp.Status.WAITING_WORLD) {
+                waitingWorld = true;
+                if (op.kind() == ConstructionBuildOp.Kind.PLACE) waitingWorldPlaces.add(op);
+            } else if (op.status() == ConstructionBuildOp.Status.WAITING_OCCUPIED) {
+                waitingOccupied = true;
+            }
+            if (op.leaseAllay().isPresent()
+                && (op.kind() == ConstructionBuildOp.Kind.PLACE || op.kind() == ConstructionBuildOp.Kind.SEAL)) {
+                leasedWalls.add(op);
             }
         }
-        return false;
+        this.statusCache = new OperationStatusSummary(
+            openSeal,
+            openDemolish,
+            leasedDemolish,
+            openBuildMaterial,
+            openPlace,
+            delivered,
+            waitingWorld,
+            waitingOccupied,
+            unleasedDemolishCount,
+            unleasedMaterialCount,
+            List.copyOf(waitingWorldPlaces),
+            List.copyOf(leasedWalls),
+            List.copyOf(deliveredProjections),
+            List.copyOf(deliveredEntities)
+        );
+        this.statusCacheRevision = this.statusRevision;
+        return this.statusCache;
+    }
+
+    private boolean isUnleased(ConstructionBuildOp op) {
+        return op.leaseAllay().isEmpty()
+            && !this.hasCarriedMaterial(op.id())
+            && op.status() != ConstructionBuildOp.Status.LEASED
+            && op.status() != ConstructionBuildOp.Status.DELIVERED
+            && op.status() != ConstructionBuildOp.Status.SKIPPED;
+    }
+
+    private static boolean isPlaceMaterial(ConstructionBuildOp op) {
+        return op.kind() == ConstructionBuildOp.Kind.PLACE
+            || op.kind() == ConstructionBuildOp.Kind.CONTENT
+            || op.kind() == ConstructionBuildOp.Kind.FLUID
+            || op.kind() == ConstructionBuildOp.Kind.ENTITY;
+    }
+
+    private static boolean isLaunchMaterial(ConstructionBuildOp op) {
+        return isPlaceMaterial(op) || op.kind() == ConstructionBuildOp.Kind.SEAL;
+    }
+
+    private record OperationStatusSummary(
+        boolean openSeal,
+        boolean openDemolish,
+        boolean leasedDemolish,
+        boolean openBuildMaterial,
+        boolean openPlace,
+        boolean delivered,
+        boolean waitingWorld,
+        boolean waitingOccupied,
+        int unleasedDemolishCount,
+        int unleasedMaterialCount,
+        List<ConstructionBuildOp> waitingWorldPlaces,
+        List<ConstructionBuildOp> leasedWalls,
+        List<ConstructionBuildOp> deliveredProjections,
+        List<ConstructionBuildOp> deliveredEntities
+    ) {
+        private static final OperationStatusSummary EMPTY = new OperationStatusSummary(
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0,
+            0,
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of()
+        );
     }
 
     public CompoundTag save(HolderLookup.Provider registries) {
@@ -392,6 +782,9 @@ public final class ConstructionJobProgress {
         tag.putString("LastReported", this.lastReported.name());
         if (!this.missingMaterial.isEmpty()) {
             tag.put("MissingMaterial", this.missingMaterial.save(registries));
+        }
+        if (this.missingOperationId >= 0) {
+            tag.putInt("MissingOperationId", this.missingOperationId);
         }
         tag.putInt("NextOpId", this.nextOpId);
         tag.putInt("NextLedgerId", this.nextLedgerId);
@@ -427,15 +820,35 @@ public final class ConstructionJobProgress {
             progress.missingMaterial = ItemStack.parse(registries, tag.getCompound("MissingMaterial"))
                 .orElse(ItemStack.EMPTY);
         }
+        if (tag.contains("MissingOperationId")) {
+            progress.missingOperationId = tag.getInt("MissingOperationId");
+        }
         progress.nextOpId = tag.getInt("NextOpId");
         progress.nextLedgerId = tag.getInt("NextLedgerId");
         ListTag opsTag = tag.getList("Operations", Tag.TAG_COMPOUND);
         for (int index = 0; index < opsTag.size(); index++) {
-            progress.operations.add(ConstructionBuildOp.load(opsTag.getCompound(index), registries));
+            ConstructionBuildOp op = ConstructionBuildOp.load(opsTag.getCompound(index), registries);
+            op.bindInvalidators(
+                progress::invalidateEnclosure,
+                progress::invalidateOperationOrder,
+                progress::invalidateLayout,
+                progress::invalidateStatus,
+                progress::invalidateTopology
+            );
+            progress.operations.add(op);
+            progress.operationsById.put(op.id(), op);
+            progress.operationsByPosition.computeIfAbsent(op.pos().asLong(), ignored -> new ArrayList<>()).add(op);
         }
+        progress.invalidateEnclosure();
+        progress.invalidateOperationOrder();
+        progress.invalidateLayout();
+        progress.invalidateStatus();
+        progress.invalidateTopology();
         ListTag ledgerTag = tag.getList("Ledger", Tag.TAG_COMPOUND);
         for (int index = 0; index < ledgerTag.size(); index++) {
-            progress.ledger.add(ConstructionLedgerEntry.load(ledgerTag.getCompound(index), registries));
+            ConstructionLedgerEntry entry = ConstructionLedgerEntry.load(ledgerTag.getCompound(index), registries);
+            progress.ledger.add(entry);
+            progress.indexCarriedEntry(entry);
         }
         ListTag debrisTag = tag.getList("Debris", Tag.TAG_COMPOUND);
         for (int index = 0; index < debrisTag.size(); index++) {

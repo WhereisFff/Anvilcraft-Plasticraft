@@ -14,7 +14,13 @@ public final class ConstructionCommitLog {
         BLOCK_ENTITIES,
         MULTIBLOCK,
         BOUNDARY,
+        PASTE,
+        WIRE_TOPOLOGY,
+        WIRE_PORTS,
         ENTITIES,
+        FINAL_PASTE,
+        FINAL_WIRE_TOPOLOGY,
+        FINAL_WIRE_PORTS,
         PUBLISH,
         DONE
     }
@@ -54,6 +60,12 @@ public final class ConstructionCommitLog {
 
     public boolean isIdle() {
         return this.phase == Phase.NONE || this.phase == Phase.DONE;
+    }
+
+    public void reset() {
+        this.phase = Phase.NONE;
+        this.nextIndex = 0;
+        this.written.clear();
     }
 
     public CompoundTag save() {

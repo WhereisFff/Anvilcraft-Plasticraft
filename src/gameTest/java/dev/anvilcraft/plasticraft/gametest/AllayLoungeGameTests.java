@@ -4,13 +4,16 @@ import dev.anvilcraft.plasticraft.allay.AllayDefaultHardHat;
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
-import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -22,91 +25,124 @@ import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-/** 覆盖悦灵休息室召回节流、方阵、满员拒绝、断电暂停、破坏放出与固定 16 功率。 */
+/** 覆盖悦灵休息室召回节流、稳定队列、满员拒绝、破坏放出与磁铁优先出库。 */
 public final class AllayLoungeGameTests {
     private AllayLoungeGameTests() {
     }
 
     private static final BlockPos LOUNGE_POS = new BlockPos(1, 2, 1);
 
-    @GameTest(timeoutTicks = 40)
+    @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "5x4x5", floor = true)
-    @TestHolder(description = "The lounge always requests 16 kW and becomes powered beside a generator")
-    static void loungeRequestsFixedPower(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "Collector launch prefers a hosted magnet over an empty-hand allay")
+    static void tryLaunchCollectorPrefersMagnet(ExtendedGameTestHelper helper) {
         AllayLoungeBlockEntity lounge = placeLounge(helper);
-        check(lounge.getInputPower() == AllayLoungeBlockEntity.RATED_POWER_KW,
-            "lounge must always request 16 kW");
-        helper.setBlock(LOUNGE_POS.east(), ModBlocks.CREATIVE_GENERATOR.get());
-        helper.startSequence()
-            .thenWaitUntil(() -> check(lounge.isPowered(), "lounge did not connect to the power grid"))
-            .thenSucceed();
+        UUID owner = UUID.randomUUID();
+        check(lounge.addHosted(emptyHandRecord(owner)), "failed to host the empty-hand collector");
+        check(lounge.addHosted(magnetRecord(owner)), "failed to host the magnet collector");
+        check(ConstructionJobController.tryLaunchCollector(lounge), "lounge must launch a collector");
+        check(lounge.hosted().size() == 1, "tryLaunchCollector must remove exactly one hosted record");
+        check(
+            lounge.hosted().getFirst().heldTool().isEmpty(),
+            "the remaining hosted record must be the empty-hand allay"
+        );
+        helper.succeed();
     }
 
-    @GameTest(timeoutTicks = 400)
-    @EmptyTemplate(value = "5x6x5", floor = true)
-    @TestHolder(description = "Recalled allays dock through the single top bay at one per second")
+    @GameTest(timeoutTicks = 500)
+    @EmptyTemplate(value = "9x8x9", floor = true)
+    @TestHolder(description = "Queued allays use stable distance order and dock through the single bay one per second")
     static void recallDocksAllaysWithThrottle(ExtendedGameTestHelper helper) {
-        AllayLoungeBlockEntity lounge = placePoweredLounge(helper);
-        WorkingAllayEntity first = AllayGameTests.spawnHatted(helper, new Vec3(0.5D, 2.0D, 1.5D), null);
-        WorkingAllayEntity second = AllayGameTests.spawnHatted(helper, new Vec3(2.5D, 2.0D, 1.5D), null);
-        check(first.startDockingTo(helper.absolutePos(LOUNGE_POS)), "first allay rejected docking");
-        check(second.startDockingTo(helper.absolutePos(LOUNGE_POS)), "second allay rejected docking");
-        long[] filledTimes = new long[]{-1L, -1L};
+        BlockPos loungePos = new BlockPos(4, 2, 4);
+        AllayLoungeBlockEntity lounge = placeLounge(helper, loungePos);
+        List<WorkingAllayEntity> workers = spawnQueueWorkers(helper, 10);
+        BlockPos absoluteLoungePos = helper.absolutePos(loungePos);
+        for (WorkingAllayEntity worker : workers) {
+            check(worker.startDockingTo(absoluteLoungePos), "allay rejected docking");
+        }
+        Vec3 approach = lounge.dockApproachPoint();
+        WorkingAllayEntity expectedHead = workers.stream()
+            .min(Comparator
+                .comparingDouble((WorkingAllayEntity worker) -> worker.position().distanceToSqr(approach))
+                .thenComparing(WorkingAllayEntity::getUUID))
+            .orElseThrow();
+        check(expectedHead != workers.getFirst(), "queue-order setup must register a farther allay first");
+        for (WorkingAllayEntity worker : workers) {
+            check(
+                lounge.assignDockTarget(worker).head() == (worker == expectedHead),
+                "docking queue head did not follow initial distance order"
+            );
+        }
+        List<Long> filledTimes = new ArrayList<>();
+        Map<UUID, Vec3> waitingTargets = new HashMap<>();
         helper.onEachTick(() -> {
             int filled = lounge.hosted().size();
             long time = helper.getLevel().getGameTime();
-            if (filled >= 1 && filledTimes[0] < 0L) filledTimes[0] = time;
-            if (filled >= 2 && filledTimes[1] < 0L) filledTimes[1] = time;
+            while (filledTimes.size() < filled) {
+                filledTimes.add(time);
+            }
+            for (WorkingAllayEntity worker : workers) {
+                if (worker.isRemoved()) continue;
+                AllayLoungeBlockEntity.DockAssignment assignment = lounge.assignDockTarget(worker);
+                if (assignment.head()) continue;
+                Vec3 previous = waitingTargets.putIfAbsent(worker.getUUID(), assignment.target());
+                check(previous == null || previous.distanceToSqr(assignment.target()) < 1.0E-8D,
+                    "a non-head allay was reassigned while the queue advanced");
+            }
         });
         helper.startSequence()
-            .thenWaitUntil(() -> check(filledTimes[1] >= 0L, "both allays did not dock in time"))
+            .thenWaitUntil(() -> check(lounge.hosted().size() == workers.size(),
+                "queued allays did not all dock in time"))
             .thenExecute(() -> {
-                check(first.isRemoved() && second.isRemoved(), "docked allays were not removed");
-                long gap = filledTimes[1] - filledTimes[0];
-                check(gap >= AllayLoungeBlockEntity.DOCKING_DURATION_TICKS,
-                    "second allay docked only " + gap + " ticks after the first");
+                check(workers.stream().allMatch(WorkingAllayEntity::isRemoved),
+                    "a docked allay remained in the world");
+                check(filledTimes.size() == workers.size(), "not every docking completion was observed");
+                check(!waitingTargets.isEmpty(), "the multi-allay queue never assigned waiting slots");
+                for (int index = 1; index < filledTimes.size(); index++) {
+                    long gap = filledTimes.get(index) - filledTimes.get(index - 1);
+                    check(gap >= AllayLoungeBlockEntity.DOCKING_DURATION_TICKS,
+                        "allay " + index + " docked only " + gap + " ticks after its predecessor");
+                }
             })
             .thenSucceed();
     }
 
-    @GameTest(timeoutTicks = 260)
-    @EmptyTemplate(value = "7x7x7", floor = true)
-    @TestHolder(description = "Waiting allays hold a tidy grid formation above a full lounge")
+    @GameTest(timeoutTicks = 300)
+    @EmptyTemplate(value = "9x8x9", floor = true)
+    @TestHolder(description = "Waiting allays hold a separated ring around the single lounge approach")
     static void waitingAllaysHoldTidyFormation(ExtendedGameTestHelper helper) {
-        BlockPos loungePos = new BlockPos(3, 2, 3);
-        helper.setBlock(loungePos, PlasticraftBlocks.ALLAY_LOUNGE.get());
-        helper.setBlock(loungePos.east(), ModBlocks.CREATIVE_GENERATOR.get());
-        if (!(helper.getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge)) {
-            throw new GameTestAssertException("allay lounge block entity is missing");
-        }
+        BlockPos loungePos = new BlockPos(4, 2, 4);
+        AllayLoungeBlockEntity lounge = placeLounge(helper, loungePos);
         fillLounge(lounge);
-        List<WorkingAllayEntity> workers = List.of(
-            AllayGameTests.spawnHatted(helper, new Vec3(1.5D, 2.0D, 1.5D), null),
-            AllayGameTests.spawnHatted(helper, new Vec3(5.5D, 2.0D, 1.5D), null),
-            AllayGameTests.spawnHatted(helper, new Vec3(1.5D, 2.0D, 5.5D), null),
-            AllayGameTests.spawnHatted(helper, new Vec3(5.5D, 2.0D, 5.5D), null),
-            AllayGameTests.spawnHatted(helper, new Vec3(3.5D, 2.0D, 5.5D), null)
-        );
+        List<WorkingAllayEntity> workers = spawnQueueWorkers(helper, 12);
         helper.startSequence()
-            .thenWaitUntil(() -> check(lounge.isPowered(), "lounge did not connect to the power grid"))
             .thenExecute(() -> {
                 for (WorkingAllayEntity worker : workers) {
                     check(worker.startDockingTo(helper.absolutePos(loungePos)), "allay rejected docking");
                 }
             })
-            .thenExecuteAfter(160, () -> {
-                Vec3 center = helper.absoluteVec(new Vec3(3.5D, 0.0D, 3.5D));
+            .thenExecuteAfter(180, () -> {
+                Vec3 center = lounge.dockApproachPoint();
                 double loungeY = helper.absolutePos(loungePos).getY();
                 List<WorkingAllayEntity> waiters = new ArrayList<>();
                 int heads = 0;
                 for (WorkingAllayEntity worker : workers) {
                     check(!worker.isRemoved(), "an allay docked into a full lounge");
-                    double horizontal = Math.hypot(worker.getX() - center.x, worker.getZ() - center.z);
-                    if (horizontal < 0.5D && worker.getY() < loungeY + 2.0D) {
+                    AllayLoungeBlockEntity.DockAssignment assignment = lounge.assignDockTarget(worker);
+                    check(worker.position().distanceToSqr(assignment.target()) < 0.25D,
+                        "an allay did not settle at its assigned queue target");
+                    check(!worker.navigator().hasPath(),
+                        "a settled docking allay retained stale navigator waypoints");
+                    check(!worker.hasFlightTaskFor(assignment.target()),
+                        "a settled docking allay retained its completed flight task");
+                    if (assignment.head()) {
                         heads++;
                     } else {
                         waiters.add(worker);
@@ -114,6 +150,9 @@ public final class AllayLoungeGameTests {
                 }
                 check(heads == 1, "expected exactly one allay at the approach point, found " + heads);
                 for (WorkingAllayEntity waiter : waiters) {
+                    double horizontal = Math.hypot(waiter.getX() - center.x, waiter.getZ() - center.z);
+                    check(horizontal >= 2.5D,
+                        "waiting allay crowded the lounge approach at radius " + horizontal);
                     double altitude = waiter.getY() - loungeY;
                     check(Math.abs(altitude - AllayLoungeBlockEntity.FORMATION_BASE_OFFSET_Y) < 0.5D,
                         "waiting allay altitude off formation layer: " + altitude);
@@ -124,7 +163,7 @@ public final class AllayLoungeGameTests {
                             waiters.get(a).getX() - waiters.get(b).getX(),
                             waiters.get(a).getZ() - waiters.get(b).getZ()
                         );
-                        check(distance >= 0.9D, "waiting allays crowded together at distance " + distance);
+                        check(distance >= 1.1D, "waiting allays crowded together at distance " + distance);
                     }
                 }
             })
@@ -135,11 +174,10 @@ public final class AllayLoungeGameTests {
     @EmptyTemplate(value = "3x6x3", floor = true)
     @TestHolder(description = "A full lounge never overwrites hosted records")
     static void fullLoungeRejectsDocking(ExtendedGameTestHelper helper) {
-        AllayLoungeBlockEntity lounge = placePoweredLounge(helper);
+        AllayLoungeBlockEntity lounge = placeLounge(helper);
         fillLounge(lounge);
         WorkingAllayEntity worker = AllayGameTests.spawnHatted(helper, new Vec3(1.5D, 3.5D, 1.5D), null);
         helper.startSequence()
-            .thenWaitUntil(() -> check(lounge.isPowered(), "lounge did not connect to the power grid"))
             .thenExecute(() -> {
                 check(!lounge.canAcceptDocking(), "full lounge reported an open bay");
                 worker.startDockingTo(helper.absolutePos(LOUNGE_POS));
@@ -152,26 +190,64 @@ public final class AllayLoungeGameTests {
             .thenSucceed();
     }
 
-    @GameTest(timeoutTicks = 160)
+    @GameTest(timeoutTicks = 120)
     @EmptyTemplate(value = "5x6x5", floor = true)
-    @TestHolder(description = "Docking pauses without power and resumes from the same progress")
-    static void dockingPausesWithoutPower(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "Duplicate hosted records collapse and the matching world allay can return")
+    static void duplicateHostedRecordsDoNotBlockReturn(ExtendedGameTestHelper helper) {
         AllayLoungeBlockEntity lounge = placeLounge(helper);
-        helper.setBlock(LOUNGE_POS.east(), ModBlocks.CREATIVE_GENERATOR.get());
         WorkingAllayEntity worker = AllayGameTests.spawnHatted(helper, new Vec3(1.5D, 3.5D, 1.5D), null);
+        AllayWorkRecord stale = hostedRecord(worker.getUUID(), new ItemStack(Items.SPYGLASS), Optional.empty());
+        check(lounge.addHosted(stale), "failed to add the stale hosted record");
+        check(!lounge.addHosted(stale), "lounge accepted a duplicate hosted UUID through its public API");
+
+        CompoundTag saved = lounge.saveWithoutMetadata(helper.getLevel().registryAccess());
+        ListTag hosted = saved.getList("Hosted", Tag.TAG_COMPOUND);
+        hosted.add(hosted.getCompound(0).copy());
+        hosted.add(hosted.getCompound(0).copy());
+        lounge.loadWithComponents(saved, helper.getLevel().registryAccess());
+        check(lounge.hosted().size() == 1, "duplicate hosted UUIDs survived NBT loading");
+        check(worker.startDockingTo(helper.absolutePos(LOUNGE_POS)), "matching world allay rejected docking");
+        check(lounge.hosted().isEmpty(), "stale hosted copy was not removed when the world allay queued");
+
         helper.startSequence()
-            .thenWaitUntil(() -> check(lounge.isPowered(), "lounge did not connect to the power grid"))
+            .thenWaitUntil(() -> check(
+                worker.isRemoved() && lounge.hosted().size() == 1,
+                "matching world allay was not stored exactly once"
+            ))
             .thenExecute(() -> {
-                check(lounge.tryDock(worker), "powered lounge rejected docking");
-                worker.discard();
-                helper.setBlock(LOUNGE_POS.east(), Blocks.AIR);
+                check(lounge.hosted().getFirst().entityId().equals(worker.getUUID()),
+                    "returned allay record has the wrong UUID");
             })
-            .thenExecuteAfter(30, () -> {
-                check(lounge.dockingRecord() != null, "unpowered lounge lost its docking record");
-                check(lounge.hosted().isEmpty(), "unpowered lounge finished docking anyway");
-            })
-            .thenExecute(() -> helper.setBlock(LOUNGE_POS.east(), ModBlocks.CREATIVE_GENERATOR.get()))
-            .thenWaitUntil(() -> check(lounge.hosted().size() == 1, "docking did not resume after power returned"))
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 180)
+    @EmptyTemplate(value = "9x6x9", floor = true)
+    @TestHolder(description = "A returning allay already sealed inside a room is recalled to its lounge")
+    static void sealedReturningAllayIsRecalled(ExtendedGameTestHelper helper) {
+        AllayLoungeBlockEntity lounge = placeLounge(helper);
+        BlockPos chamber = new BlockPos(5, 2, 5);
+        helper.setBlock(chamber.west(), Blocks.STONE);
+        helper.setBlock(chamber.east(), Blocks.STONE);
+        helper.setBlock(chamber.north(), Blocks.STONE);
+        helper.setBlock(chamber.south(), Blocks.STONE);
+        helper.setBlock(chamber.above(), Blocks.STONE);
+        WorkingAllayEntity worker = AllayGameTests.spawnHatted(
+            helper,
+            new Vec3(5.5D, 2.01D, 5.5D),
+            null
+        );
+        check(worker.startDockingTo(helper.absolutePos(LOUNGE_POS)), "sealed allay rejected docking");
+
+        helper.startSequence()
+            .thenWaitUntil(() -> check(
+                worker.isRemoved() && lounge.hosted().size() == 1,
+                "sealed allay was not recalled and stored"
+            ))
+            .thenExecute(() -> check(
+                lounge.hosted().getFirst().entityId().equals(worker.getUUID()),
+                "recalled lounge record has the wrong UUID"
+            ))
             .thenSucceed();
     }
 
@@ -179,12 +255,11 @@ public final class AllayLoungeGameTests {
     @EmptyTemplate(value = "5x4x5", floor = true)
     @TestHolder(description = "Released lounge allays follow the lounge pause or skip setting")
     static void releasedAllayFollowsLoungeStrategy(ExtendedGameTestHelper helper) {
-        AllayLoungeBlockEntity lounge = placePoweredLounge(helper);
+        AllayLoungeBlockEntity lounge = placeLounge(helper);
         lounge.setShortageStrategy(AllayShortageStrategy.SKIP);
         check(lounge.addHosted(fillerRecord()), "failed to host an allay record");
         helper.startSequence()
-            .thenWaitUntil(() -> check(lounge.isPowered(), "lounge did not connect to the power grid"))
-            .thenExecute(() -> check(lounge.releaseHosted(0), "powered lounge must release the hosted allay"))
+            .thenExecute(() -> check(lounge.releaseHosted(0), "lounge must release the hosted allay"))
             .thenExecuteAfter(5, () -> {
                 List<WorkingAllayEntity> workers = helper.getLevel().getEntitiesOfClass(
                     WorkingAllayEntity.class,
@@ -204,13 +279,12 @@ public final class AllayLoungeGameTests {
     @EmptyTemplate(value = "5x4x5", floor = true)
     @TestHolder(description = "GUI release fails while the top bay is busy")
     static void releaseHostedFailsWhileBayBusy(ExtendedGameTestHelper helper) {
-        AllayLoungeBlockEntity lounge = placePoweredLounge(helper);
+        AllayLoungeBlockEntity lounge = placeLounge(helper);
         helper.startSequence()
-            .thenWaitUntil(() -> check(lounge.isPowered(), "lounge did not connect to the power grid"))
             .thenExecute(() -> {
                 check(lounge.addHosted(fillerRecord()), "failed to host the first record");
                 check(lounge.addHosted(fillerRecord()), "failed to host the second record");
-                check(lounge.tryLaunch(record -> true), "powered lounge must launch the first hosted allay");
+                check(lounge.tryLaunch(record -> true), "lounge must launch the first hosted allay");
                 check(lounge.isBayBusy(), "launch must occupy the bay");
                 check(!lounge.releaseHosted(0), "GUI release must fail while the bay is busy");
                 check(lounge.hosted().size() == 1, "the remaining hosted record must stay");
@@ -248,17 +322,38 @@ public final class AllayLoungeGameTests {
     }
 
     private static AllayLoungeBlockEntity placeLounge(ExtendedGameTestHelper helper) {
-        helper.setBlock(LOUNGE_POS, PlasticraftBlocks.ALLAY_LOUNGE.get());
-        if (!(helper.getBlockEntity(LOUNGE_POS) instanceof AllayLoungeBlockEntity lounge)) {
+        return placeLounge(helper, LOUNGE_POS);
+    }
+
+    private static AllayLoungeBlockEntity placeLounge(ExtendedGameTestHelper helper, BlockPos loungePos) {
+        helper.setBlock(loungePos, PlasticraftBlocks.ALLAY_LOUNGE.get());
+        if (!(helper.getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge)) {
             throw new GameTestAssertException("allay lounge block entity is missing");
         }
         return lounge;
     }
 
-    private static AllayLoungeBlockEntity placePoweredLounge(ExtendedGameTestHelper helper) {
-        AllayLoungeBlockEntity lounge = placeLounge(helper);
-        helper.setBlock(LOUNGE_POS.east(), ModBlocks.CREATIVE_GENERATOR.get());
-        return lounge;
+    private static List<WorkingAllayEntity> spawnQueueWorkers(ExtendedGameTestHelper helper, int count) {
+        List<Vec3> spawnPositions = List.of(
+            new Vec3(1.5D, 2.0D, 1.5D),
+            new Vec3(3.5D, 2.0D, 1.5D),
+            new Vec3(5.5D, 2.0D, 1.5D),
+            new Vec3(7.5D, 2.0D, 1.5D),
+            new Vec3(7.5D, 2.0D, 3.5D),
+            new Vec3(7.5D, 2.0D, 5.5D),
+            new Vec3(7.5D, 2.0D, 7.5D),
+            new Vec3(5.5D, 2.0D, 7.5D),
+            new Vec3(3.5D, 2.0D, 7.5D),
+            new Vec3(1.5D, 2.0D, 7.5D),
+            new Vec3(1.5D, 2.0D, 5.5D),
+            new Vec3(1.5D, 2.0D, 3.5D)
+        );
+        check(count <= spawnPositions.size(), "queue test requested too many workers");
+        List<WorkingAllayEntity> workers = new ArrayList<>(count);
+        for (int index = 0; index < count; index++) {
+            workers.add(AllayGameTests.spawnHatted(helper, spawnPositions.get(index), null));
+        }
+        return workers;
     }
 
     private static void fillLounge(AllayLoungeBlockEntity lounge) {
@@ -268,11 +363,27 @@ public final class AllayLoungeGameTests {
     }
 
     private static AllayWorkRecord fillerRecord() {
+        return hostedRecord(new ItemStack(Items.SPYGLASS), Optional.empty());
+    }
+
+    private static AllayWorkRecord emptyHandRecord(UUID owner) {
+        return hostedRecord(ItemStack.EMPTY, Optional.of(owner));
+    }
+
+    private static AllayWorkRecord magnetRecord(UUID owner) {
+        return hostedRecord(new ItemStack(ModItems.MAGNET.get()), Optional.of(owner));
+    }
+
+    private static AllayWorkRecord hostedRecord(ItemStack tool, Optional<UUID> owner) {
+        return hostedRecord(UUID.randomUUID(), tool, owner);
+    }
+
+    private static AllayWorkRecord hostedRecord(UUID entityId, ItemStack tool, Optional<UUID> owner) {
         return new AllayWorkRecord(
-            UUID.randomUUID(),
+            entityId,
             AllayDefaultHardHat.stack(),
-            new ItemStack(Items.SPYGLASS),
-            Optional.empty(),
+            tool,
+            owner,
             AllayShortageStrategy.PAUSE,
             List.of(),
             Optional.empty(),

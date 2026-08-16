@@ -19,7 +19,10 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.storage.LevelResource;
+import net.minecraft.world.phys.AABB;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -205,8 +208,37 @@ public final class ConstructionBlueprintService {
         ConstructionJob existing = data.jobId().map(index::job).orElse(null);
         if (existing != null) {
             requireOwner(player, existing);
+            if (!existing.dimension().equals(player.level().dimension())) {
+                throw new ConstructionBlueprintException(
+                    "placement_out_of_world",
+                    "Move the blueprint from its deployed dimension"
+                );
+            }
+        }
+        ServerLevel placementLevel = existing == null
+            ? player.serverLevel()
+            : server.getLevel(existing.dimension());
+        if (placementLevel == null) {
+            throw new ConstructionBlueprintException("placement_out_of_world", "Target dimension is unavailable");
+        }
+        validatePlacement(
+            placementLevel,
+            existing == null ? null : existing.jobId(),
+            existing == null ? data.size() : existing.size(),
+            anchor,
+            rotation,
+            mirror
+        );
+        if (existing != null) {
             if (ConstructionJobController.hasProgressLock(server, existing.jobId())) {
                 throw new ConstructionBlueprintException("placement_locked", "");
+            }
+            ConstructionJobProgress progress = ConstructionJobStore.get(server).get(existing.jobId());
+            if (progress != null) {
+                ConstructionProjectionIndex.clearJob(placementLevel, existing.jobId());
+                ConstructionEntityProjectionIndex.clearJob(placementLevel, existing.jobId());
+                progress.resetPlan();
+                ConstructionJobStore.get(server).markDirty();
             }
             ConstructionJob moved = existing.withPlacement(anchor, rotation, mirror);
             index.put(moved);
@@ -232,6 +264,44 @@ public final class ConstructionBlueprintService {
         ConstructionBlueprintData.set(disk, data.withJobId(job.jobId()));
         BlueprintJobSync.syncPut(server, job);
         return job;
+    }
+
+    static void validatePlacement(ServerLevel level, ConstructionJob job) throws ConstructionBlueprintException {
+        validatePlacement(level, job.jobId(), job.size(), job.anchor(), job.rotation(), job.mirror());
+    }
+
+    private static void validatePlacement(
+        ServerLevel level,
+        @Nullable UUID ignoredJobId,
+        Vec3i size,
+        BlockPos anchor,
+        Rotation rotation,
+        Mirror mirror
+    ) throws ConstructionBlueprintException {
+        BoundingBox candidate = new BlueprintPlacement(anchor, rotation, mirror).bounds(size);
+        BlockPos min = new BlockPos(candidate.minX(), candidate.minY(), candidate.minZ());
+        BlockPos max = new BlockPos(candidate.maxX(), candidate.maxY(), candidate.maxZ());
+        if (!level.isInWorldBounds(min)
+            || !level.isInWorldBounds(max)
+            || !level.getWorldBorder().isWithinBounds(AABB.of(candidate))) {
+            throw new ConstructionBlueprintException(
+                "placement_out_of_world",
+                min.toShortString() + " - " + max.toShortString()
+            );
+        }
+        for (ConstructionJob other : ConstructionJobIndex.get(level.getServer()).jobsIn(level)) {
+            if (other.jobId().equals(ignoredJobId)) continue;
+            BoundingBox occupied = BlueprintPlacement.of(other).bounds(other.size());
+            if (intersects(candidate, occupied)) {
+                throw new ConstructionBlueprintException("placement_overlaps_job", other.name());
+            }
+        }
+    }
+
+    private static boolean intersects(BoundingBox first, BoundingBox second) {
+        return first.minX() <= second.maxX() && first.maxX() >= second.minX()
+            && first.minY() <= second.maxY() && first.maxY() >= second.minY()
+            && first.minZ() <= second.maxZ() && first.maxZ() >= second.minZ();
     }
 
     /** 取消一份已放置蓝图:按进度提交已交付投影,返还在途材料,并清除磁盘 jobId。 */
@@ -271,7 +341,7 @@ public final class ConstructionBlueprintService {
         start(server, jobId);
     }
 
-    /** 磁盘入室等无在线玩家入口:用任务已有所有者暂停其其他活动任务。 */
+    /** 菜单右击启动等无额外玩家校验入口:用任务已有所有者暂停其其他活动任务。 */
     public static void start(MinecraftServer server, UUID jobId) {
         ConstructionJobIndex index = ConstructionJobIndex.get(server);
         ConstructionJob job = index.job(jobId);

@@ -19,24 +19,21 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import net.minecraft.world.phys.BlockHitResult;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * 悦灵休息室。本体始终使用稳定的完整方块碰撞;有电与无电经 POWERED 在两套烘焙模型间切换。
+ * 悦灵休息室。本体始终使用稳定的完整方块碰撞,不因供电切换模型。
  */
 public class AllayLoungeBlock extends BaseEntityBlock {
     public static final MapCodec<AllayLoungeBlock> CODEC = simpleCodec(AllayLoungeBlock::new);
     public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
-    public static final BooleanProperty POWERED = BlockStateProperties.POWERED;
 
     public AllayLoungeBlock(Properties properties) {
         super(properties);
         this.registerDefaultState(this.stateDefinition.any()
-            .setValue(FACING, Direction.NORTH)
-            .setValue(POWERED, false));
+            .setValue(FACING, Direction.NORTH));
     }
 
     @Override
@@ -46,7 +43,7 @@ public class AllayLoungeBlock extends BaseEntityBlock {
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
-        builder.add(FACING, POWERED);
+        builder.add(FACING);
     }
 
     @Nullable

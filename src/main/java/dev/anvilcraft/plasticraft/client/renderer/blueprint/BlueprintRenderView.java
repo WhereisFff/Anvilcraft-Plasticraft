@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.client.renderer.blueprint;
 
 import dev.anvilcraft.plasticraft.blueprint.StructureSnapshotCodec;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -20,9 +21,6 @@ import net.minecraft.world.level.material.FluidState;
 import net.neoforged.neoforge.client.model.data.ModelData;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.HashMap;
-import java.util.Map;
-
 /**
  * 投影用的邻接查询视图:只保存变换后局部坐标上的方块与方块实体,
  * 供面剔除和流体连接使用。不加入真实世界,也不跑方块刻。
@@ -34,8 +32,8 @@ final class BlueprintRenderView implements BlockAndTintGetter {
 
     private final ClientLevel level;
     private final BlockPos tintPos;
-    private final Map<BlockPos, BlockState> blocks = new HashMap<>();
-    private final Map<BlockPos, BlockEntity> blockEntities = new HashMap<>();
+    private final Long2ObjectOpenHashMap<BlockState> blocks = new Long2ObjectOpenHashMap<>();
+    private final Long2ObjectOpenHashMap<BlockEntity> blockEntities = new Long2ObjectOpenHashMap<>();
     private boolean hideNonOccludingNeighbors = true;
 
     BlueprintRenderView(ClientLevel level, BlockPos tintPos) {
@@ -44,7 +42,7 @@ final class BlueprintRenderView implements BlockAndTintGetter {
     }
 
     void put(BlockPos pos, BlockState state, @Nullable BlockEntity blockEntity) {
-        BlockPos key = pos.immutable();
+        long key = pos.asLong();
         this.blocks.put(key, state);
         if (blockEntity != null) {
             this.blockEntities.put(key, blockEntity);
@@ -56,7 +54,7 @@ final class BlueprintRenderView implements BlockAndTintGetter {
     }
 
     BlockState realState(BlockPos pos) {
-        BlockState state = this.blocks.get(pos);
+        BlockState state = this.blocks.get(pos.asLong());
         return state != null ? state : Blocks.AIR.defaultBlockState();
     }
 
@@ -86,7 +84,7 @@ final class BlueprintRenderView implements BlockAndTintGetter {
     @Override
     @Nullable
     public BlockEntity getBlockEntity(BlockPos pos) {
-        return this.blockEntities.get(pos);
+        return this.blockEntities.get(pos.asLong());
     }
 
     @Override
@@ -137,7 +135,7 @@ final class BlueprintRenderView implements BlockAndTintGetter {
 
     @Override
     public ModelData getModelData(BlockPos pos) {
-        BlockEntity blockEntity = this.blockEntities.get(pos);
+        BlockEntity blockEntity = this.blockEntities.get(pos.asLong());
         return blockEntity != null ? blockEntity.getModelData() : ModelData.EMPTY;
     }
 

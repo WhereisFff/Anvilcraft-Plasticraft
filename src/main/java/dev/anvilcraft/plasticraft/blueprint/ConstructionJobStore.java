@@ -68,6 +68,10 @@ public final class ConstructionJobStore extends SavedData {
         return this.jobs.get(jobId);
     }
 
+    Iterable<ConstructionJobProgress> progresses() {
+        return this.jobs.values();
+    }
+
     public void remove(UUID jobId) {
         if (this.jobs.remove(jobId) != null) this.setDirty();
     }

@@ -1,32 +1,36 @@
 package dev.anvilcraft.plasticraft.allay;
 
+import dev.anvilcraft.plasticraft.allay.path.AllayPathExecutor;
+import dev.anvilcraft.plasticraft.allay.path.AllayPathPriority;
+import dev.anvilcraft.plasticraft.allay.path.AllayPathSnapshot;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionWorkerSpace;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.PriorityQueue;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 /**
- * 单只戴帽悦灵的基础三维寻路:先按自身碰撞箱直线扫掠,受阻后在路径包围盒膨胀窗口内做有预算的 A*。
- * 不复用树脂牵引规划器,也不做多机预约。
+ * 悦灵分层飞行规划:主线程直线扫掠与快照,工作线程局部 AABB A*。
+ * 不复用树脂牵引线程池,也不把矿车当墙。
  */
 public final class AllayFlightPlanner {
     public static final double SPEED = 0.25D;
-    private static final int WINDOW = 12;
-    private static final int NODE_BUDGET = 4096;
-    private static final double MAX_STRAIGHT = 128.0D;
+    private static final double STALE_MOVE_SQR = 16.0D;
+    private static final int STALE_TICKS = 40;
+    // tick sprint 会让游戏时间远快于工作线程，搜索失效必须按真实时间判定。
+    private static final long SEARCH_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(5L);
 
     private AllayFlightPlanner() {
     }
 
+    /** 测试与调试用同步入口;玩法路径走 {@link FlightTask#advance}。 */
     public static List<Vec3> plan(Entity worker, Vec3 goal) {
         Vec3 actual = worker.position();
         Vec3 start = snapToFree(worker, actual);
@@ -34,12 +38,11 @@ public final class AllayFlightPlanner {
         List<Vec3> path;
         if (start.distanceToSqr(safeGoal) < 0.04D) {
             path = List.of(safeGoal);
-        } else if (start.distanceTo(safeGoal) > MAX_STRAIGHT) {
-            path = isClear(worker, start, safeGoal) ? List.of(safeGoal) : List.of();
         } else if (isClear(worker, start, safeGoal)) {
             path = List.of(safeGoal);
         } else {
-            path = astar(worker, start, safeGoal);
+            Vec3 localGoal = AllayPathSnapshot.nextLocalGoal(worker, start, safeGoal);
+            path = AllayPathSnapshot.search(AllayPathSnapshot.capture(worker, start, localGoal), start, localGoal);
             if (path.isEmpty()) {
                 path = elevate(worker, start, safeGoal);
             }
@@ -57,8 +60,8 @@ public final class AllayFlightPlanner {
         return total;
     }
 
-    private static Vec3 snapToFree(Entity worker, Vec3 goal) {
-        if (worker.level().noCollision(worker, boxAt(worker, goal))) return goal;
+    public static Vec3 snapToFree(Entity worker, Vec3 goal) {
+        if (worker.level().noBlockCollision(worker, boxAt(worker, goal))) return goal;
         BlockPos origin = BlockPos.containing(goal);
         Vec3 best = null;
         double bestDist = Double.MAX_VALUE;
@@ -66,12 +69,12 @@ public final class AllayFlightPlanner {
             for (int x = -3; x <= 3; x++) {
                 for (int z = -3; z <= 3; z++) {
                     if (x == 0 && y == 0 && z == 0) continue;
-                    Vec3 candidate = new Vec3(
-                        origin.getX() + x + 0.5D,
+                    Vec3 candidate = ConstructionWorkerSpace.navigationPoint(
+                        origin.getX() + x,
                         origin.getY() + y,
-                        origin.getZ() + z + 0.5D
+                        origin.getZ() + z
                     );
-                    if (!worker.level().noCollision(worker, boxAt(worker, candidate))) continue;
+                    if (!worker.level().noBlockCollision(worker, boxAt(worker, candidate))) continue;
                     double dist = candidate.distanceToSqr(goal);
                     if (dist < bestDist) {
                         bestDist = dist;
@@ -83,8 +86,27 @@ public final class AllayFlightPlanner {
         return best != null ? best : goal;
     }
 
+    public static boolean isClear(Entity worker, Vec3 from, Vec3 to) {
+        double distance = from.distanceTo(to);
+        if (distance < 1.0E-4D) return true;
+        int steps = Math.max(1, (int) Math.ceil(distance));
+        Vec3 previous = from;
+        for (int step = 1; step <= steps; step++) {
+            Vec3 point = from.lerp(to, (double) step / (double) steps);
+            AABB swept = boxAt(worker, previous).minmax(boxAt(worker, point));
+            if (!worker.level().noBlockCollision(worker, swept)) return false;
+            previous = point;
+        }
+        return true;
+    }
+
+    static AABB boxAt(Entity worker, Vec3 pos) {
+        AABB current = worker.getBoundingBox();
+        return current.move(pos.subtract(worker.position()));
+    }
+
     private static List<Vec3> escape(Vec3 actual, Vec3 start, List<Vec3> path) {
-        if (path.isEmpty() || start.distanceToSqr(actual) < 0.04D) return path;
+        if (start.distanceToSqr(actual) < 0.04D) return path;
         List<Vec3> escaped = new ArrayList<>(path.size() + 1);
         escaped.add(start);
         escaped.addAll(path);
@@ -100,105 +122,191 @@ public final class AllayFlightPlanner {
                 return List.of(up, aboveGoal, goal);
             }
             Vec3 over = new Vec3(goal.x, start.y + rise, goal.z);
-            if (isClear(worker, up, over) && isClear(worker, over, aboveGoal) && isClear(worker, aboveGoal, goal)) {
+            if (isClear(worker, up, over) && isClear(worker, over, aboveGoal) && isClear(worker, over, goal)) {
                 return List.of(up, over, aboveGoal, goal);
             }
         }
         return List.of();
     }
 
-    private static boolean isClear(Entity worker, Vec3 from, Vec3 to) {
-        double distance = from.distanceTo(to);
-        if (distance < 1.0E-4D) return true;
-        if (distance > MAX_STRAIGHT) return false;
-        int steps = Math.max(1, (int) Math.ceil(distance / 0.5D));
-        Vec3 previous = from;
-        for (int step = 1; step <= steps; step++) {
-            Vec3 point = from.lerp(to, (double) step / (double) steps);
-            AABB swept = boxAt(worker, previous).minmax(boxAt(worker, point));
-            if (!worker.level().noCollision(worker, swept)) return false;
-            previous = point;
+    public static final class FlightTask {
+        private static final int RECALL_FAILURES = 3;
+        private final UUID allayId;
+        private Vec3 goal;
+        private AllayPathPriority priority;
+        private Vec3 snapshotStart;
+        private CompletableFuture<List<Vec3>> future;
+        private List<Vec3> path = List.of();
+        private boolean complete;
+        private int age;
+        private boolean submitted;
+        private int failCooldown;
+        private int failedPlans;
+        private long submittedAtNanos;
+
+        public FlightTask(UUID allayId, Vec3 goal, AllayPathPriority priority) {
+            this.allayId = allayId;
+            this.goal = goal;
+            this.priority = priority;
         }
-        return true;
-    }
 
-    private static AABB boxAt(Entity worker, Vec3 pos) {
-        AABB current = worker.getBoundingBox();
-        Vec3 delta = pos.subtract(worker.position());
-        return current.move(delta);
-    }
+        public boolean sameGoal(Vec3 goal) {
+            return this.goal.distanceToSqr(goal) < 0.0625D;
+        }
 
-    private static List<Vec3> astar(Entity worker, Vec3 start, Vec3 goal) {
-        Level level = worker.level();
-        BlockPos startPos = BlockPos.containing(start);
-        BlockPos goalPos = BlockPos.containing(goal);
-        int minX = Math.min(startPos.getX(), goalPos.getX()) - WINDOW;
-        int maxX = Math.max(startPos.getX(), goalPos.getX()) + WINDOW;
-        int minY = Math.min(startPos.getY(), goalPos.getY()) - WINDOW;
-        int maxY = Math.max(startPos.getY(), goalPos.getY()) + WINDOW;
-        int minZ = Math.min(startPos.getZ(), goalPos.getZ()) - WINDOW;
-        int maxZ = Math.max(startPos.getZ(), goalPos.getZ()) + WINDOW;
-        Map<Long, Long> cameFrom = new HashMap<>();
-        Map<Long, Double> cost = new HashMap<>();
-        PriorityQueue<Node> open = new PriorityQueue<>(Comparator.comparingDouble(Node::score));
-        long startKey = startPos.asLong();
-        cost.put(startKey, 0.0D);
-        open.add(new Node(startPos, 0.0D, heuristic(startPos, goalPos)));
-        int expansions = 0;
-        BlockPos found = null;
-        while (!open.isEmpty() && expansions < NODE_BUDGET) {
-            Node current = open.poll();
-            expansions++;
-            if (current.pos().equals(goalPos) || current.pos().distManhattan(goalPos) <= 1) {
-                found = current.pos();
-                break;
-            }
-            for (BlockPos next : neighbors(current.pos())) {
-                if (next.getX() < minX || next.getX() > maxX
-                    || next.getY() < minY || next.getY() > maxY
-                    || next.getZ() < minZ || next.getZ() > maxZ) {
-                    continue;
+        public void setPriority(AllayPathPriority priority) {
+            this.priority = priority;
+        }
+
+        public List<Vec3> path() {
+            return this.path;
+        }
+
+        public boolean isComplete() {
+            return this.complete;
+        }
+
+        public boolean repeatedlyUnreachable() {
+            return this.failedPlans >= RECALL_FAILURES;
+        }
+
+        /** 搜索尚未产出可执行路径时保持施工飞行状态,避免被主线程误判为悬停。 */
+        public boolean isPending() {
+            return (!this.complete || this.submitted) && !this.searchTimedOut();
+        }
+
+        public boolean isSearching() {
+            return this.submitted && this.future != null && !this.future.isDone() && !this.searchTimedOut();
+        }
+
+        public void cancel() {
+            AllayPathExecutor.cancel(this.allayId);
+            this.future = null;
+            this.snapshotStart = null;
+            this.path = List.of();
+            this.submitted = false;
+            this.complete = false;
+            this.age = 0;
+            this.failCooldown = 0;
+            this.failedPlans = 0;
+            this.submittedAtNanos = 0L;
+        }
+
+        public boolean advance(Entity worker) {
+            this.age++;
+            Vec3 actual = worker.position();
+            if (this.submitted) {
+                if (this.searchTimedOut()) {
+                    AllayPathExecutor.cancel(this.allayId);
+                    return this.finish(worker, actual, List.of());
                 }
-                Vec3 nextCenter = new Vec3(next.getX() + 0.5D, next.getY(), next.getZ() + 0.5D);
-                if (!level.noCollision(worker, boxAt(worker, nextCenter))) continue;
-                double nextCost = cost.get(current.pos().asLong()) + 1.0D;
-                long nextKey = next.asLong();
-                if (nextCost >= cost.getOrDefault(nextKey, Double.POSITIVE_INFINITY)) continue;
-                cost.put(nextKey, nextCost);
-                cameFrom.put(nextKey, current.pos().asLong());
-                open.add(new Node(next, nextCost, nextCost + heuristic(next, goalPos)));
+                if (this.stale(worker)) {
+                    this.cancel();
+                    return false;
+                }
+                if (this.future == null || !this.future.isDone()) {
+                    return false;
+                }
+                return this.finishSearch(worker, actual);
             }
+            if (this.complete && this.path.isEmpty() && this.failCooldown++ < 10) {
+                return false;
+            }
+            Vec3 start = snapToFree(worker, actual);
+            Vec3 safeGoal = snapToFree(worker, this.goal);
+            if (start.distanceToSqr(safeGoal) < 0.04D) {
+                this.path = escape(actual, start, List.of(safeGoal));
+                this.complete = true;
+                this.failCooldown = 0;
+                this.failedPlans = 0;
+                return true;
+            }
+            if (isClear(worker, start, safeGoal)) {
+                this.path = escape(actual, start, List.of(safeGoal));
+                this.complete = true;
+                this.failCooldown = 0;
+                this.failedPlans = 0;
+                return true;
+            }
+            if (!this.submitted) {
+                if (!AllayPathSnapshot.acquireCapturePermit(worker)) return false;
+                this.snapshotStart = start;
+                Vec3 localGoal = AllayPathSnapshot.nextLocalGoal(worker, start, safeGoal);
+                AllayPathSnapshot.Capture capture;
+                try {
+                    capture = AllayPathSnapshot.capture(worker, start, localGoal);
+                } catch (RuntimeException error) {
+                    List<Vec3> elevated = elevate(worker, start, safeGoal);
+                    this.path = escape(actual, start, elevated);
+                    this.complete = true;
+                    this.failCooldown = elevated.isEmpty() ? 1 : 0;
+                    this.failedPlans = elevated.isEmpty() ? this.failedPlans + 1 : 0;
+                    return true;
+                }
+                AllayPathPriority effective = start.distanceToSqr(actual) > 0.25D
+                    ? AllayPathPriority.ESCAPE
+                    : this.priority;
+                this.future = AllayPathExecutor.submit(this.allayId, effective, cancelled ->
+                    AllayPathSnapshot.search(capture, start, localGoal, cancelled)
+                );
+                this.submitted = true;
+                this.submittedAtNanos = System.nanoTime();
+                this.complete = false;
+                this.age = 0;
+                this.failCooldown = 0;
+                return false;
+            }
+            return false;
         }
-        if (found == null) return List.of();
-        List<Vec3> points = new ArrayList<>();
-        long cursor = found.asLong();
-        while (cursor != startKey) {
-            BlockPos pos = BlockPos.of(cursor);
-            points.add(new Vec3(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D));
-            Long previous = cameFrom.get(cursor);
-            if (previous == null) break;
-            cursor = previous;
+
+        private boolean finishSearch(Entity worker, Vec3 actual) {
+            List<Vec3> found = List.of();
+            try {
+                if (!this.future.isCancelled()) {
+                    found = this.future.get();
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } catch (ExecutionException error) {
+                found = List.of();
+            }
+            return this.finish(worker, actual, found);
         }
-        Collections.reverse(points);
-        points.add(goal);
-        return points;
-    }
 
-    private static int heuristic(BlockPos from, BlockPos to) {
-        return from.distManhattan(to);
-    }
+        private boolean finish(Entity worker, Vec3 actual, List<Vec3> found) {
+            Vec3 start = snapToFree(worker, actual);
+            if (found.isEmpty()) {
+                Vec3 safeGoal = snapToFree(worker, this.goal);
+                found = elevate(worker, start, safeGoal);
+            }
+            this.failedPlans = found.isEmpty() ? this.failedPlans + 1 : 0;
+            this.path = escape(actual, start, found);
+            this.complete = true;
+            this.submitted = false;
+            this.future = null;
+            this.snapshotStart = null;
+            this.submittedAtNanos = 0L;
+            this.age = 0;
+            this.failCooldown = found.isEmpty() ? 1 : 0;
+            return true;
+        }
 
-    private static BlockPos[] neighbors(BlockPos pos) {
-        return new BlockPos[] {
-            pos.above(),
-            pos.below(),
-            pos.north(),
-            pos.south(),
-            pos.east(),
-            pos.west()
-        };
-    }
+        private boolean searchTimedOut() {
+            return this.submitted
+                && this.future != null
+                && !this.future.isDone()
+                && System.nanoTime() - this.submittedAtNanos >= SEARCH_TIMEOUT_NANOS;
+        }
 
-    private record Node(BlockPos pos, double cost, double score) {
+        private boolean stale(Entity worker) {
+            if (this.snapshotStart != null
+                && worker.position().distanceToSqr(this.snapshotStart) > STALE_MOVE_SQR) {
+                return true;
+            }
+            return this.submitted
+                && this.age >= STALE_TICKS
+                && this.snapshotStart != null
+                && worker.position().distanceToSqr(this.snapshotStart) > 0.25D;
+        }
     }
 }

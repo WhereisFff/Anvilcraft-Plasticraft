@@ -18,10 +18,9 @@ import org.jetbrains.annotations.Nullable;
 
 /** 悦灵休息室菜单:磁盘槽、玩家背包;托管卡片由界面按方块实体同步数据绘制。 */
 public class AllayLoungeMenu extends AbstractContainerMenu {
-    public static final int DATA_POWERED = 0;
-    public static final int DATA_HOSTED_COUNT = 1;
-    public static final int DATA_STRATEGY = 2;
-    public static final int DATA_COUNT = 3;
+    public static final int DATA_HOSTED_COUNT = 0;
+    public static final int DATA_STRATEGY = 1;
+    public static final int DATA_COUNT = 2;
     public static final int DISK_SLOT_X = 134;
     public static final int DISK_SLOT_Y = 27;
     public static final int PLAYER_INVENTORY_Y = 104;
@@ -52,7 +51,6 @@ public class AllayLoungeMenu extends AbstractContainerMenu {
                 @Override
                 public int get(int index) {
                     return switch (index) {
-                        case DATA_POWERED -> lounge.isPowered() ? 1 : 0;
                         case DATA_HOSTED_COUNT -> lounge.hosted().size();
                         case DATA_STRATEGY -> lounge.shortageStrategy().ordinal();
                         default -> 0;
@@ -122,10 +120,6 @@ public class AllayLoungeMenu extends AbstractContainerMenu {
 
     public BlockPos loungePos() {
         return this.loungePos;
-    }
-
-    public boolean powered() {
-        return this.data.get(DATA_POWERED) != 0;
     }
 
     public int hostedCount() {

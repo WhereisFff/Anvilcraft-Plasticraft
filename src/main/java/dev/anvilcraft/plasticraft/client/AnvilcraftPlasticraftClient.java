@@ -17,6 +17,7 @@ import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticPreviewRenderTypes;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticTextureSpriteSource;
 import dev.anvilcraft.plasticraft.client.renderer.UniversalPlasticItemRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.blueprint.BlueprintProjectionRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.Plastic3DPrintingComponentRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.PlasticMoldingChamberRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingViewportResources;
@@ -32,6 +33,7 @@ import net.minecraft.client.renderer.BlockEntityWithoutLevelRenderer;
 import net.minecraft.client.renderer.ItemBlockRenderTypes;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.item.ItemProperties;
+import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -168,5 +170,8 @@ public final class AnvilcraftPlasticraftClient {
     private static void registerReloadListeners(RegisterClientReloadListenersEvent event) {
         event.registerReloadListener(MoldingViewportResources.INSTANCE);
         event.registerReloadListener(DynamicPlasticTextureManager.INSTANCE);
+        event.registerReloadListener((ResourceManagerReloadListener) resourceManager ->
+            BlueprintProjectionRenderer.clearCache()
+        );
     }
 }

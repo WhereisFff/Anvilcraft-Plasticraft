@@ -113,7 +113,14 @@ public final class PlasticraftEntityBuildAdapters {
     private static final class VehicleAdapter implements EntityBuildAdapter {
         @Override
         public boolean matches(EntityType<?> type, CompoundTag nbt) {
-            if (type == EntityType.BOAT || type == EntityType.CHEST_BOAT) {
+            if (type == EntityType.BOAT
+                || type == EntityType.CHEST_BOAT
+                || type == EntityType.MINECART
+                || type == EntityType.CHEST_MINECART
+                || type == EntityType.HOPPER_MINECART
+                || type == EntityType.FURNACE_MINECART
+                || type == EntityType.TNT_MINECART
+                || type == EntityType.COMMAND_BLOCK_MINECART) {
                 return true;
             }
             Class<? extends Entity> base = type.getBaseClass();
@@ -122,6 +129,7 @@ public final class PlasticraftEntityBuildAdapters {
 
         @Override
         public Planned plan(ServerLevel level, StructureSnapshot.EntityEntry entry, CompoundTag transformedNbt) {
+            EntityType<?> type = EntityType.by(transformedNbt).orElse(null);
             Entity entity = EntityType.create(transformedNbt, level).orElse(null);
             List<SlotStack> contents = new ArrayList<>();
             ItemStack material = ItemStack.EMPTY;
@@ -133,13 +141,9 @@ public final class PlasticraftEntityBuildAdapters {
                 material = drop == null || drop == Items.AIR ? new ItemStack(Items.OAK_BOAT) : new ItemStack(drop);
             } else if (entity instanceof AbstractMinecart cart) {
                 material = cart.getPickResult();
-                if (material == null || material.isEmpty()) {
-                    material = new ItemStack(Items.MINECART);
-                }
-            } else if (EntityType.by(transformedNbt).orElse(null) == EntityType.BOAT) {
-                material = new ItemStack(Items.OAK_BOAT);
-            } else if (EntityType.by(transformedNbt).orElse(null) == EntityType.CHEST_BOAT) {
-                material = new ItemStack(Items.OAK_CHEST_BOAT);
+            }
+            if (material == null || material.isEmpty()) {
+                material = vehicleItem(type);
             }
             if (material.isEmpty()) {
                 return Planned.skip();
@@ -378,6 +382,34 @@ public final class PlasticraftEntityBuildAdapters {
                 }
             }
         }
+    }
+
+    private static ItemStack vehicleItem(@Nullable EntityType<?> type) {
+        if (type == EntityType.HOPPER_MINECART) {
+            return new ItemStack(Items.HOPPER_MINECART);
+        }
+        if (type == EntityType.CHEST_MINECART) {
+            return new ItemStack(Items.CHEST_MINECART);
+        }
+        if (type == EntityType.FURNACE_MINECART) {
+            return new ItemStack(Items.FURNACE_MINECART);
+        }
+        if (type == EntityType.TNT_MINECART) {
+            return new ItemStack(Items.TNT_MINECART);
+        }
+        if (type == EntityType.COMMAND_BLOCK_MINECART) {
+            return new ItemStack(Items.COMMAND_BLOCK_MINECART);
+        }
+        if (type == EntityType.MINECART) {
+            return new ItemStack(Items.MINECART);
+        }
+        if (type == EntityType.BOAT) {
+            return new ItemStack(Items.OAK_BOAT);
+        }
+        if (type == EntityType.CHEST_BOAT) {
+            return new ItemStack(Items.OAK_CHEST_BOAT);
+        }
+        return ItemStack.EMPTY;
     }
 
     @Nullable

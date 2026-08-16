@@ -19,7 +19,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
 
-/** 悦灵休息室界面:4x4 托管卡片、磁盘槽、召回、暂停/跳过与有电提示。 */
+/** 悦灵休息室界面:4x4 托管卡片、磁盘槽、召回与暂停/跳过。 */
 public class AllayLoungeScreen extends AbstractContainerScreen<AllayLoungeMenu> {
     private static final ResourceLocation TEXTURE =
         AnvilcraftPlasticraft.of("textures/gui/background/allay_lounge.png");
@@ -29,12 +29,6 @@ public class AllayLoungeScreen extends AbstractContainerScreen<AllayLoungeMenu> 
         AnvilcraftPlasticraft.of("textures/gui/button/allay/pause.png");
     private static final ResourceLocation SKIP_BUTTON =
         AnvilcraftPlasticraft.of("textures/gui/button/allay/skip.png");
-    private static final int POWER_FRAME_X = 10;
-    private static final int POWER_FRAME_Y = 20;
-    private static final int POWER_BAR_X = 13;
-    private static final int POWER_BAR_Y = 24;
-    private static final int POWER_BAR_WIDTH = 7;
-    private static final int POWER_BAR_HEIGHT = 30;
     private static final int BUTTON_SIZE = 16;
     private static final int RECALL_BUTTON_X = 9;
     private static final int RECALL_BUTTON_Y = 66;
@@ -54,18 +48,6 @@ public class AllayLoungeScreen extends AbstractContainerScreen<AllayLoungeMenu> 
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
         this.renderTooltip(graphics, mouseX, mouseY);
-        if (this.isHovering(POWER_FRAME_X, POWER_FRAME_Y, 13, 37, mouseX, mouseY)) {
-            graphics.renderTooltip(
-                this.font,
-                Component.translatable(
-                    this.menu.powered()
-                        ? "screen.anvilcraftplasticraft.allay_lounge.powered"
-                        : "screen.anvilcraftplasticraft.allay_lounge.unpowered"
-                ),
-                mouseX,
-                mouseY
-            );
-        }
         if (this.isRecallHovered(mouseX, mouseY)) {
             graphics.renderTooltip(
                 this.font,
@@ -118,7 +100,6 @@ public class AllayLoungeScreen extends AbstractContainerScreen<AllayLoungeMenu> 
             this.imageWidth,
             this.imageHeight
         );
-        this.renderPowerIndicator(graphics);
         int frame = this.isRecallHovered(mouseX, mouseY) ? 1 : 0;
         graphics.blit(
             RETURN_HOME_BUTTON,
@@ -157,24 +138,6 @@ public class AllayLoungeScreen extends AbstractContainerScreen<AllayLoungeMenu> 
             BUTTON_SIZE,
             BUTTON_SIZE * 4
         );
-    }
-
-    private void renderPowerIndicator(GuiGraphics graphics) {
-        int left = this.leftPos + POWER_BAR_X;
-        int top = this.topPos + POWER_BAR_Y;
-        boolean powered = this.menu.powered();
-        for (int row = 0; row < POWER_BAR_HEIGHT; row++) {
-            int y = top + row;
-            if (!powered) {
-                graphics.fill(left, y, left + POWER_BAR_WIDTH, y + 1, 0xFF1B0A0A);
-                continue;
-            }
-            int base = row % 2 == 0 ? 0xFF2E7D32 : 0xFF43A047;
-            graphics.fill(left, y, left + POWER_BAR_WIDTH, y + 1, base);
-            if (row % 2 == 1) {
-                graphics.fill(left, y, left + 2, y + 1, 0xFF66BB6A);
-            }
-        }
     }
 
     private void renderHostedCards(GuiGraphics graphics) {

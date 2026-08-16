@@ -163,24 +163,6 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private static final double DIRECTION_COMPASS_LABEL_RADIUS = 12.5D;
     private static final double DIRECTION_COMPASS_LINE_WIDTH = 0.35D;
     private static final double DIRECTION_COMPASS_FEATHER = 0.25D;
-    private static final int ENERGY_EMPTY_DARK = 0xFF300000;
-    private static final int ENERGY_EMPTY_TOP = 0xFF3D0000;
-    private static final int ENERGY_EMPTY_CENTER = 0xFF520000;
-    private static final int ENERGY_EMPTY_BOTTOM = 0xFF400000;
-    private static final int ENERGY_FILLED_DARK = 0xFF660000;
-    private static final int ENERGY_FILLED_TOP = 0xFF7D0000;
-    private static final int ENERGY_FILLED_CENTER = 0xFFA90000;
-    private static final int ENERGY_FILLED_BOTTOM = 0xFF830000;
-    private static final int OVERRIDE_ENERGY_EMPTY_DARK = 0xFF20002E;
-    private static final int OVERRIDE_ENERGY_EMPTY_TOP = 0xFF310044;
-    private static final int OVERRIDE_ENERGY_EMPTY_CENTER = 0xFF50006D;
-    private static final int OVERRIDE_ENERGY_EMPTY_BOTTOM = 0xFF3A0054;
-    private static final int OVERRIDE_ENERGY_FILLED_DARK = 0xFF5B007D;
-    private static final int OVERRIDE_ENERGY_FILLED_TOP = 0xFF7800A5;
-    private static final int OVERRIDE_ENERGY_FILLED_CENTER = 0xFFB52CFF;
-    private static final int OVERRIDE_ENERGY_FILLED_BOTTOM = 0xFF8615BE;
-    private static final int OVERRIDE_BORDER = 0xFFE94CFF;
-    private static final int OVERRIDE_BORDER_HOVERED = 0xFFFFB0FF;
     private static final MoldingTool[] TOOL_BUTTONS = {
         MoldingTool.MOVE,
         MoldingTool.SCALE,
@@ -1659,10 +1641,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             y,
             right,
             bottom,
-            creativeOverride ? OVERRIDE_ENERGY_EMPTY_DARK : ENERGY_EMPTY_DARK,
-            creativeOverride ? OVERRIDE_ENERGY_EMPTY_TOP : ENERGY_EMPTY_TOP,
-            creativeOverride ? OVERRIDE_ENERGY_EMPTY_CENTER : ENERGY_EMPTY_CENTER,
-            creativeOverride ? OVERRIDE_ENERGY_EMPTY_BOTTOM : ENERGY_EMPTY_BOTTOM
+            creativeOverride ? 0xFF20002E : 0xFF300000,
+            creativeOverride ? 0xFF310044 : 0xFF3D0000,
+            creativeOverride ? 0xFF50006D : 0xFF520000,
+            creativeOverride ? 0xFF3A0054 : 0xFF400000
         );
         int clampedHeight = Math.clamp(filledHeight, 0, height);
         if (clampedHeight == 0) return;
@@ -1672,10 +1654,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             bottom - clampedHeight,
             right,
             bottom,
-            creativeOverride ? OVERRIDE_ENERGY_FILLED_DARK : ENERGY_FILLED_DARK,
-            creativeOverride ? OVERRIDE_ENERGY_FILLED_TOP : ENERGY_FILLED_TOP,
-            creativeOverride ? OVERRIDE_ENERGY_FILLED_CENTER : ENERGY_FILLED_CENTER,
-            creativeOverride ? OVERRIDE_ENERGY_FILLED_BOTTOM : ENERGY_FILLED_BOTTOM
+            creativeOverride ? 0xFF5B007D : 0xFF660000,
+            creativeOverride ? 0xFF7800A5 : 0xFF7D0000,
+            creativeOverride ? 0xFFB52CFF : 0xFFA90000,
+            creativeOverride ? 0xFF8615BE : 0xFF830000
         );
     }
 
@@ -3691,7 +3673,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private void renderOverrideBorder(GuiGraphics graphics, GuiRect rect, boolean hovered, boolean pressed) {
-        int color = hovered ? OVERRIDE_BORDER_HOVERED : OVERRIDE_BORDER;
+        int color = hovered ? 0xFFFFB0FF : 0xFFE94CFF;
         int left = this.leftPos + rect.x + 1;
         int right = this.leftPos + rect.x + rect.width - 1;
         int top = this.topPos + rect.y + 1 + (pressed ? 1 : 0);

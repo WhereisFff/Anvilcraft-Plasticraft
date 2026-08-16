@@ -2,17 +2,21 @@ package dev.anvilcraft.plasticraft.entity.allay;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.allay.AllayFlightNavigator;
+import dev.anvilcraft.plasticraft.allay.AllayFlightPlanner;
 import dev.anvilcraft.plasticraft.allay.AllayFlightState;
 import dev.anvilcraft.plasticraft.allay.AllayWorkMotions;
 import dev.anvilcraft.plasticraft.allay.AllayHardHatTraits;
 import dev.anvilcraft.plasticraft.allay.AllayHardHats;
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
+import dev.anvilcraft.plasticraft.allay.path.AllayPathPriority;
 import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinition;
 import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinitions;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionDebris;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionLeaseService;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionMaterialAccess;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionTraffic;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionWaitReason;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import net.minecraft.core.BlockPos;
@@ -28,6 +32,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.MoverType;
@@ -78,10 +83,20 @@ public class WorkingAllayEntity extends Allay {
     private static final float ACTION_TURN_STEP = 22.0F;
     private static final float ACTION_PITCH_STEP = 16.0F;
     private static final double ACTION_FACE_DOT = 0.85D;
+    private static final int PROGRESS_SAMPLE_TICKS = 20;
+    private static final double PROGRESS_DISTANCE_SQR = 0.25D;
     private int lastActionTick;
     private boolean holdingForAction;
     @Nullable
     private Vec3 actionLookTarget;
+    @Nullable
+    private AllayFlightPlanner.FlightTask flightTask;
+    private int stuckTicks;
+    private int progressSampleTicks;
+    private Vec3 lastProgressPos = Vec3.ZERO;
+    private boolean evacuating;
+    @Nullable
+    private Vec3 evacuationTarget;
 
     public WorkingAllayEntity(EntityType<? extends Allay> type, Level level) {
         super(type, level);
@@ -235,7 +250,9 @@ public class WorkingAllayEntity extends Allay {
             case FLYING -> {
                 if (!this.navigator.follow(this)) {
                     this.setDeltaMovement(Vec3.ZERO);
-                    this.setFlightState(AllayFlightState.HOVERING);
+                    if (!this.hasPendingFlightTask()) {
+                        this.setFlightState(AllayFlightState.HOVERING);
+                    }
                 }
             }
             case DOCKING -> this.serverDockingTick();
@@ -249,7 +266,9 @@ public class WorkingAllayEntity extends Allay {
             ? found
             : null;
         if (lounge == null) {
+            ConstructionTraffic.release(this.level(), this.getUUID());
             this.dockLoungePos = null;
+            this.cancelFlightTask();
             this.setFlightState(AllayFlightState.HOVERING);
             this.setDeltaMovement(Vec3.ZERO);
             return;
@@ -257,43 +276,53 @@ public class WorkingAllayEntity extends Allay {
         AllayLoungeBlockEntity.DockAssignment assignment = lounge.assignDockTarget(this);
         Vec3 delta = assignment.target().subtract(this.position());
         if (delta.length() < 0.35D) {
+            this.cancelFlightTask();
+            this.navigator.clear();
+            ConstructionTraffic.release(this.level(), this.getUUID());
+            ConstructionTraffic.reserveLounge(
+                this.level(),
+                this.getUUID(),
+                BlockPos.containing(assignment.target())
+            );
             if (assignment.head() && lounge.canAcceptDocking() && lounge.tryDock(this)) {
                 this.dockLoungePos = null;
+                ConstructionTraffic.release(this.level(), this.getUUID());
                 this.discard();
                 return;
             }
             this.setDeltaMovement(delta.scale(0.2D));
             return;
         }
-        double speed = Math.min(0.25D, delta.length() * 0.25D);
-        Vec3 motion = delta.normalize().scale(speed);
-        if (this.horizontalCollision) {
-            if (!this.hasWorkerContactTowards(motion) || this.getY() < assignment.target().y + 1.0D) {
-                motion = new Vec3(motion.x * 0.2D, 0.12D, motion.z * 0.2D);
-            } else {
-                motion = new Vec3(-motion.z, 0.0D, motion.x).scale(0.6D);
-            }
-        }
-        this.setDeltaMovement(motion);
-    }
-
-    private boolean hasWorkerContactTowards(Vec3 motion) {
-        Vec3 horizontal = new Vec3(motion.x, 0.0D, motion.z);
-        if (horizontal.lengthSqr() < 1.0E-8D) return false;
-        Vec3 probe = horizontal.normalize().scale(0.1D);
-        return !this.level().getEntities(
+        ConstructionTraffic.reserveLounge(this.level(), this.getUUID(), BlockPos.containing(assignment.target()));
+        AllayWorkMotions.flyTo(
             this,
-            this.getBoundingBox().expandTowards(probe),
-            entity -> entity instanceof WorkingAllayEntity
-        ).isEmpty();
+            assignment.target(),
+            assignment.head() ? AllayPathPriority.DOCK_HEAD : AllayPathPriority.LEAVE
+        );
+        if (this.flightTask != null && this.flightTask.repeatedlyUnreachable()) {
+            Vec3 recall = AllayFlightPlanner.snapToFree(this, assignment.target());
+            this.cancelFlightTask();
+            this.navigator.clear();
+            this.moveTo(recall.x, recall.y, recall.z, this.getYRot(), this.getXRot());
+            this.setDeltaMovement(Vec3.ZERO);
+            this.resetStuck();
+            return;
+        }
+        if (!this.navigator.follow(this)) {
+            this.setDeltaMovement(Vec3.ZERO);
+        }
     }
 
     public boolean startDockingTo(BlockPos loungePos) {
         if (this.level().isClientSide || this.isRemoved()) return false;
         if (this.flightState() == AllayFlightState.DOCKING) return false;
+        this.clearAssignment(false);
         this.dockLoungePos = loungePos.immutable();
         this.setHomeLounge(loungePos);
         this.setFlightState(AllayFlightState.DOCKING);
+        if (this.level().getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge) {
+            lounge.registerDocking(this);
+        }
         return true;
     }
 
@@ -448,11 +477,20 @@ public class WorkingAllayEntity extends Allay {
     }
 
     public void assign(UUID jobId, int opId) {
+        if (this.assignedJobId.isPresent()
+            && (!this.assignedJobId.get().equals(jobId) || this.taskOpId != opId)) {
+            this.clearAssignment(false);
+        }
         this.assignedJobId = Optional.of(jobId);
         this.taskOpId = opId;
     }
 
     public void clearAssignment(boolean clearCarry) {
+        if (!this.level().isClientSide) {
+            ConstructionLeaseService.release(this);
+            ConstructionTraffic.release(this.level(), this.getUUID());
+        }
+        this.cancelFlightTask();
         this.assignedJobId = Optional.empty();
         this.taskOpId = -1;
         this.holdingForAction = false;
@@ -612,6 +650,89 @@ public class WorkingAllayEntity extends Allay {
         this.waitReason = reason;
     }
 
+    public AllayFlightPlanner.FlightTask ensureFlightTask(Vec3 goal, AllayPathPriority priority) {
+        if (this.flightTask != null && this.flightTask.sameGoal(goal)) {
+            this.flightTask.setPriority(priority);
+            return this.flightTask;
+        }
+        this.cancelFlightTask();
+        this.flightTask = new AllayFlightPlanner.FlightTask(this.getUUID(), goal, priority);
+        return this.flightTask;
+    }
+
+    public boolean hasFlightTaskFor(Vec3 goal) {
+        return this.flightTask != null && this.flightTask.sameGoal(goal);
+    }
+
+    public boolean hasPendingFlightTask() {
+        return this.flightTask != null && this.flightTask.isPending();
+    }
+
+    public void cancelFlightTask() {
+        if (this.flightTask != null) {
+            this.flightTask.cancel();
+            this.flightTask = null;
+        }
+    }
+
+    public void noteProgress() {
+        this.progressSampleTicks++;
+        if (this.progressSampleTicks < PROGRESS_SAMPLE_TICKS) return;
+        if (this.position().distanceToSqr(this.lastProgressPos) < PROGRESS_DISTANCE_SQR) {
+            this.stuckTicks += this.progressSampleTicks;
+        } else {
+            this.stuckTicks = 0;
+        }
+        this.progressSampleTicks = 0;
+        this.lastProgressPos = this.position();
+    }
+
+    public boolean isMotionStuck() {
+        return this.stuckTicks >= 80;
+    }
+
+    public void resetStuck() {
+        this.stuckTicks = 0;
+        this.progressSampleTicks = 0;
+        this.lastProgressPos = this.position();
+    }
+
+    public void beginEvacuation(Vec3 target) {
+        this.evacuating = true;
+        this.evacuationTarget = target;
+    }
+
+    public boolean isEvacuating() {
+        return this.evacuating;
+    }
+
+    public @Nullable Vec3 evacuationTarget() {
+        return this.evacuationTarget;
+    }
+
+    public void endEvacuation() {
+        this.evacuating = false;
+        this.evacuationTarget = null;
+    }
+
+    @Override
+    public void remove(Entity.RemovalReason reason) {
+        if (!this.level().isClientSide) {
+            boolean storedByLounge = reason == Entity.RemovalReason.DISCARDED
+                && this.flightState() == AllayFlightState.DOCKING
+                && this.dockLoungePos == null;
+            if (reason.shouldDestroy()) {
+                this.clearAssignment(false);
+                if (!storedByLounge && !this.hostedCarry().isEmpty()) {
+                    ConstructionLeaseService.markCarriesUntracked(this);
+                }
+            }
+            this.cancelFlightTask();
+            ConstructionTraffic.release(this.level(), this.getUUID());
+        }
+        super.remove(reason);
+    }
+
     public AllayFlightNavigator navigator() {
         return this.navigator;
     }
@@ -651,9 +772,9 @@ public class WorkingAllayEntity extends Allay {
         }
         worker.moveTo(pos.x, pos.y, pos.z, 0.0F, 0.0F);
         worker.applyWorkRecord(record);
+        worker.clearAssignment(false);
         if (level.getEntity(record.entityId()) != null) {
             worker.setUUID(UUID.randomUUID());
-            worker.clearAssignment(false);
         }
         level.addFreshEntity(worker);
         return worker;

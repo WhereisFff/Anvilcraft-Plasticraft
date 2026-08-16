@@ -6,8 +6,11 @@ import dev.anvilcraft.plasticraft.blueprint.BlueprintSource;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintException;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintService;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionBuildOp;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobIndex;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionJobProgress;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionJobStore;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionStructureLibrary;
 import dev.anvilcraft.plasticraft.blueprint.LitematicaImporter;
 import dev.anvilcraft.plasticraft.blueprint.ScannerDiskImporter;
@@ -437,6 +440,20 @@ public final class BlueprintConstructionGameTests {
                 check(moved.rotation() == Rotation.CLOCKWISE_90, "rotation was not applied");
                 check(index.jobs().size() == 1, "index should contain exactly one job");
 
+                try {
+                    ConstructionBlueprintService.deploy(
+                        player,
+                        InteractionHand.MAIN_HAND,
+                        new BlockPos(anchor.getX(), helper.getLevel().getMaxBuildHeight(), anchor.getZ()),
+                        Rotation.NONE,
+                        Mirror.NONE
+                    );
+                    throw new GameTestAssertException("moving a blueprint above build height was accepted");
+                } catch (ConstructionBlueprintException exception) {
+                    check(exception.reason().equals("placement_out_of_world"),
+                        "unexpected out-of-world placement reason: " + exception.reason());
+                }
+
                 // 启动切换与每玩家单活动:启动第二份会暂停第一份。
                 check(
                     ConstructionBlueprintService.toggleActive(player, job.jobId()),
@@ -445,6 +462,19 @@ public final class BlueprintConstructionGameTests {
                 check(index.job(job.jobId()).isActive(), "job did not become active");
 
                 player.setItemInHand(InteractionHand.MAIN_HAND, secondDisk);
+                try {
+                    ConstructionBlueprintService.deploy(
+                        player,
+                        InteractionHand.MAIN_HAND,
+                        moved.anchor(),
+                        moved.rotation(),
+                        moved.mirror()
+                    );
+                    throw new GameTestAssertException("overlapping deployed blueprints were accepted");
+                } catch (ConstructionBlueprintException exception) {
+                    check(exception.reason().equals("placement_overlaps_job"),
+                        "unexpected overlapping placement reason: " + exception.reason());
+                }
                 ConstructionJob secondJob = ConstructionBlueprintService.deploy(
                     player,
                     InteractionHand.MAIN_HAND,
@@ -461,7 +491,33 @@ public final class BlueprintConstructionGameTests {
                     "active job lookup did not return the second job"
                 );
 
+                ConstructionJobProgress oldPlan = ConstructionJobStore.get(helper.getLevel().getServer())
+                    .get(job.jobId());
+                check(oldPlan != null && oldPlan.planned() && !oldPlan.operations().isEmpty(),
+                    "paused first job must retain its original coordinate plan before moving");
+                player.setItemInHand(InteractionHand.MAIN_HAND, heldFirst);
+                BlockPos replannedAnchor = anchor.west();
+                ConstructionBlueprintService.deploy(
+                    player,
+                    InteractionHand.MAIN_HAND,
+                    replannedAnchor,
+                    Rotation.NONE,
+                    Mirror.NONE
+                );
+                ConstructionJobProgress resetPlan = ConstructionJobStore.get(helper.getLevel().getServer())
+                    .get(job.jobId());
+                check(resetPlan != null && !resetPlan.planned() && resetPlan.operations().isEmpty(),
+                    "moving a paused untouched job must discard its old coordinate plan");
+                ConstructionBlueprintService.start(player, job.jobId());
+                ConstructionJobProgress newPlan = ConstructionJobStore.get(helper.getLevel().getServer())
+                    .get(job.jobId());
+                check(newPlan != null && newPlan.operations().stream()
+                        .filter(op -> op.kind() == ConstructionBuildOp.Kind.PLACE)
+                        .anyMatch(op -> op.pos().equals(replannedAnchor)),
+                    "restarted job did not rebuild operations at the moved anchor");
+
                 // 取消清理任务条目并清除手中磁盘的引用。
+                player.setItemInHand(InteractionHand.MAIN_HAND, secondDisk);
                 ConstructionBlueprintService.cancel(player, secondJob.jobId());
                 check(index.job(secondJob.jobId()) == null, "cancelled job still present");
                 check(

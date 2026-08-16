@@ -21,7 +21,7 @@
 | 空手或未知工具 | 通用工：建设 + 近距收集，不是只悬停 |
 | 蟹钳建设触及 1 格 | 蟹钳触及 **4** 格；空手 / 拆除 / 空手收集为 1 格 |
 | 无人机站 / `drone_station` | 悦灵休息室 / `allay_lounge` |
-| 16 个工人物品槽 + 电容器槽 + 内部 FE | 16 条 `AllayWorkRecord` + 1 磁盘槽；固定请求 16 功率，无内部电量 |
+| 16 个工人物品槽 + 电容器槽 + 内部 FE | 16 条 `AllayWorkRecord` + 1 磁盘槽；休息室不耗电，无内部电量 |
 | 工人 `256 FE/空中 gt` 等能耗与报价 | 工人不使用 FE；`ConstructionWaitReason.ENERGY` 只保留占位 |
 | `0.5 × 0.5 × 0.5` 硬碰撞、可站立 | `0.35 × 0.6`，无硬碰撞，玩家不能站上去 |
 | `LANDED` / 落地 / 离地 4 格悬停 | 只有 `HOVERING` / `FLYING` / `DOCKING`；空闲复用原版游荡 |
@@ -31,4 +31,4 @@
 | `leaveSiteThenLand` | `leaveSiteThenIdle` / `releaseToVanilla` |
 | 区外壳在拆除阶段拆掉 | 区内填充拆除阶段拆；区外壳 `shell=true` 留到提交后再砸 |
 
-下一任务是 TODO 11。不要顺带做 TODO 12 / 13 / 15。
+下一任务是 TODO 13。不要顺带做 TODO 14 / 15。

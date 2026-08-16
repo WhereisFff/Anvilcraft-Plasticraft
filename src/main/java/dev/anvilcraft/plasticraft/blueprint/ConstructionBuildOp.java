@@ -56,6 +56,17 @@ public final class ConstructionBuildOp {
     @Nullable
     private CompoundTag entityNbt;
     private ItemStack returnStack = ItemStack.EMPTY;
+    private boolean longReach;
+    private Runnable enclosureInvalidator = () -> {
+    };
+    private Runnable orderInvalidator = () -> {
+    };
+    private Runnable layoutInvalidator = () -> {
+    };
+    private Runnable statusInvalidator = () -> {
+    };
+    private Runnable topologyInvalidator = () -> {
+    };
 
     public ConstructionBuildOp(
         int id,
@@ -93,6 +104,7 @@ public final class ConstructionBuildOp {
 
     public void setMaterial(ItemStack material) {
         this.material = material.isEmpty() ? ItemStack.EMPTY : material.copy();
+        this.orderInvalidator.run();
     }
 
     public Kind kind() {
@@ -104,7 +116,16 @@ public final class ConstructionBuildOp {
     }
 
     public void setStatus(Status status) {
+        if (this.status == status) return;
+        Status previous = this.status;
         this.status = status;
+        if (enclosureRelevant(previous) || enclosureRelevant(status)) {
+            this.enclosureInvalidator.run();
+        }
+        if (previous == Status.SKIPPED || status == Status.SKIPPED) {
+            this.layoutInvalidator.run();
+        }
+        this.statusInvalidator.run();
     }
 
     public int order() {
@@ -112,7 +133,9 @@ public final class ConstructionBuildOp {
     }
 
     public void setOrder(int order) {
+        if (this.order == order) return;
         this.order = order;
+        this.orderInvalidator.run();
     }
 
     public Optional<UUID> leaseAllay() {
@@ -136,7 +159,11 @@ public final class ConstructionBuildOp {
     }
 
     public void setShell(boolean shell) {
+        if (this.shell == shell) return;
         this.shell = shell;
+        this.enclosureInvalidator.run();
+        this.orderInvalidator.run();
+        this.statusInvalidator.run();
     }
 
     public int parentId() {
@@ -144,7 +171,10 @@ public final class ConstructionBuildOp {
     }
 
     public void setParentId(int parentId) {
+        if (this.parentId == parentId) return;
         this.parentId = parentId;
+        this.enclosureInvalidator.run();
+        this.topologyInvalidator.run();
     }
 
     public int slot() {
@@ -187,6 +217,32 @@ public final class ConstructionBuildOp {
 
     public void setReturnStack(ItemStack returnStack) {
         this.returnStack = returnStack == null || returnStack.isEmpty() ? ItemStack.EMPTY : returnStack.copy();
+    }
+
+    public boolean longReach() {
+        return this.longReach;
+    }
+
+    public void setLongReach(boolean longReach) {
+        this.longReach = longReach;
+    }
+
+    void bindInvalidators(
+        Runnable enclosureInvalidator,
+        Runnable orderInvalidator,
+        Runnable layoutInvalidator,
+        Runnable statusInvalidator,
+        Runnable topologyInvalidator
+    ) {
+        this.enclosureInvalidator = enclosureInvalidator;
+        this.orderInvalidator = orderInvalidator;
+        this.layoutInvalidator = layoutInvalidator;
+        this.statusInvalidator = statusInvalidator;
+        this.topologyInvalidator = topologyInvalidator;
+    }
+
+    private static boolean enclosureRelevant(Status status) {
+        return status == Status.LEASED || status == Status.DELIVERED || status == Status.SKIPPED;
     }
 
     public boolean needsMaterial() {
@@ -258,6 +314,9 @@ public final class ConstructionBuildOp {
         if (!this.returnStack.isEmpty()) {
             tag.put("Return", this.returnStack.save(registries));
         }
+        if (this.longReach) {
+            tag.putBoolean("LongReach", true);
+        }
         return tag;
     }
 
@@ -305,6 +364,7 @@ public final class ConstructionBuildOp {
         if (tag.contains("Return")) {
             op.returnStack = ItemStack.parse(registries, tag.getCompound("Return")).orElse(ItemStack.EMPTY);
         }
+        op.longReach = tag.getBoolean("LongReach");
         return op;
     }
 }

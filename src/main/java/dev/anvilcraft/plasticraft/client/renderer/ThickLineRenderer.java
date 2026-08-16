@@ -123,6 +123,75 @@ public final class ThickLineRenderer {
         buffers.endBatch(renderType);
     }
 
+    /** 等长双色段沿全部原始线段连续排布；双色段共用交界截面，原始线段只在整体两端封口。 */
+    public static void renderAlternatingSegments(
+        PoseStack pose,
+        MultiBufferSource.BufferSource buffers,
+        List<Segment> segments,
+        int firstColor,
+        int secondColor,
+        double width,
+        double stripeLength,
+        double phaseDistance,
+        double endpointExtension
+    ) {
+        if (segments.isEmpty() || stripeLength <= LENGTH_EPSILON) return;
+        RenderType renderType = RenderType.debugQuads();
+        VertexConsumer consumer = buffers.getBuffer(renderType);
+        double patternLength = stripeLength * 2.0D;
+        double patternPosition = positiveModulo(phaseDistance, patternLength);
+        boolean useFirstColor = patternPosition < stripeLength;
+        double colorRemaining = useFirstColor
+            ? stripeLength - patternPosition
+            : patternLength - patternPosition;
+        for (Segment segment : segments) {
+            Vec3 segmentStart = segment.from();
+            Vec3 segmentEnd = segment.to();
+            Vec3 delta = segmentEnd.subtract(segmentStart);
+            double segmentLength = delta.length();
+            if (segmentLength <= LENGTH_EPSILON) continue;
+            Vec3 direction = delta.scale(1.0D / segmentLength);
+            Vec3 reference = Math.abs(direction.y) < 0.9D
+                ? new Vec3(0.0D, 1.0D, 0.0D)
+                : new Vec3(1.0D, 0.0D, 0.0D);
+            Vec3 side = direction.cross(reference).normalize().scale(width * 0.5D);
+            Vec3 up = direction.cross(side).normalize().scale(width * 0.5D);
+            Vec3 extension = direction.scale(Math.max(0.0D, endpointExtension));
+            double segmentOffset = 0.0D;
+
+            while (segmentOffset < segmentLength - LENGTH_EPSILON) {
+                double step = Math.min(colorRemaining, segmentLength - segmentOffset);
+                double endOffset = segmentOffset + step;
+                boolean startsSegment = segmentOffset <= LENGTH_EPSILON;
+                boolean endsSegment = endOffset >= segmentLength - LENGTH_EPSILON;
+                Vec3 from = startsSegment
+                    ? segmentStart.subtract(extension)
+                    : segmentStart.add(direction.scale(segmentOffset));
+                Vec3 to = endsSegment
+                    ? segmentEnd.add(extension)
+                    : segmentStart.add(direction.scale(endOffset));
+                Vec3[] fromRing = ring(from, side, up);
+                Vec3[] toRing = ring(to, side, up);
+                int color = useFirstColor ? firstColor : secondColor;
+                if (startsSegment) {
+                    addQuad(pose, consumer, fromRing[3], fromRing[2], fromRing[1], fromRing[0], color);
+                }
+                addSegmentSides(pose, consumer, fromRing, toRing, color);
+                if (endsSegment) {
+                    addQuad(pose, consumer, toRing[0], toRing[1], toRing[2], toRing[3], color);
+                }
+
+                segmentOffset = endOffset;
+                colorRemaining -= step;
+                if (colorRemaining <= LENGTH_EPSILON) {
+                    useFirstColor = !useFirstColor;
+                    colorRemaining = stripeLength;
+                }
+            }
+        }
+        buffers.endBatch(renderType);
+    }
+
     private static void render(
         PoseStack pose,
         VertexConsumer consumer,
@@ -202,11 +271,21 @@ public final class ThickLineRenderer {
         Vec3[] fromRing = ring(from, side, up);
         Vec3[] toRing = ring(to, side, up);
         addQuad(pose, consumer, fromRing[3], fromRing[2], fromRing[1], fromRing[0], color);
+        addSegmentSides(pose, consumer, fromRing, toRing, color);
+        addQuad(pose, consumer, toRing[0], toRing[1], toRing[2], toRing[3], color);
+    }
+
+    private static void addSegmentSides(
+        PoseStack pose,
+        VertexConsumer consumer,
+        Vec3[] fromRing,
+        Vec3[] toRing,
+        int color
+    ) {
         for (int face = 0; face < 4; face++) {
             int next = (face + 1) & 3;
             addQuad(pose, consumer, fromRing[face], fromRing[next], toRing[next], toRing[face], color);
         }
-        addQuad(pose, consumer, toRing[0], toRing[1], toRing[2], toRing[3], color);
     }
 
     private static Vec3[] ring(Vec3 point, Vec3 side, Vec3 up) {

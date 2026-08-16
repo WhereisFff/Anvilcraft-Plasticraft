@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.allay.AllayFlightState;
 import dev.anvilcraft.plasticraft.allay.AllayHardHats;
 import dev.anvilcraft.plasticraft.allay.tool.AllayCapability;
 import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinitions;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionTraffic;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.anvilcraft.plasticraft.event.AllayHardHatEvents;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
@@ -12,13 +13,16 @@ import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.animal.allay.Allay;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.testframework.annotation.TestHolder;
@@ -26,9 +30,10 @@ import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 import net.neoforged.testframework.gametest.GameTestPlayer;
 
+import java.util.List;
 import java.util.UUID;
 
-/** 覆盖戴帽转换、空手通用工、手持加强、原版游荡、推挤、拴绳与无硬碰撞。 */
+/** 覆盖戴帽转换、空手通用工、手持加强、原版游荡、推挤、拴绳、无硬碰撞与局部让行。 */
 public final class AllayGameTests {
     private AllayGameTests() {
     }
@@ -176,6 +181,94 @@ public final class AllayGameTests {
                 check(worker.assignedJobId().isEmpty(), "idle allay must not hold a job lease");
             })
             .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x5x7", floor = true)
+    @TestHolder(description = "Head-on allays yield deterministically while active work outranks docking")
+    static void headOnWorkersYieldDeterministically(ExtendedGameTestHelper helper) {
+        WorkingAllayEntity first = spawnHatted(helper, new Vec3(2.5D, 3.0D, 3.5D), null);
+        WorkingAllayEntity second = spawnHatted(helper, new Vec3(4.5D, 3.0D, 3.5D), null);
+        first.navigator().setPath(List.of(helper.absoluteVec(new Vec3(5.5D, 3.0D, 3.5D))));
+        second.navigator().setPath(List.of(helper.absoluteVec(new Vec3(1.5D, 3.0D, 3.5D))));
+        first.setDeltaMovement(new Vec3(0.25D, 0.0D, 0.0D));
+        second.setDeltaMovement(new Vec3(-0.25D, 0.0D, 0.0D));
+
+        first.navigator().follow(first);
+        second.navigator().follow(second);
+
+        WorkingAllayEntity priority = first.getUUID().compareTo(second.getUUID()) < 0 ? first : second;
+        WorkingAllayEntity yielding = priority == first ? second : first;
+        check(Math.abs(priority.getDeltaMovement().z) < 1.0E-4D,
+            "the priority allay must hold its head-on course");
+        check(Math.abs(priority.getDeltaMovement().x) > 0.2D,
+            "the priority allay must keep making forward progress");
+        check(Math.abs(yielding.getDeltaMovement().z) > 0.05D,
+            "the lower-priority allay must take a lateral sidestep");
+        double yieldingSide = Math.signum(yielding.getDeltaMovement().z);
+        first.navigator().follow(first);
+        second.navigator().follow(second);
+        check(Math.signum(yielding.getDeltaMovement().z) == yieldingSide,
+            "the yielding allay must hold its chosen side instead of oscillating");
+
+        WorkingAllayEntity left = spawnHatted(helper, new Vec3(2.5D, 3.0D, 1.5D), null);
+        WorkingAllayEntity right = spawnHatted(helper, new Vec3(4.5D, 3.0D, 1.5D), null);
+        WorkingAllayEntity active = left.getUUID().compareTo(right.getUUID()) > 0 ? left : right;
+        WorkingAllayEntity docking = active == left ? right : left;
+        Vec3 leftGoal = helper.absoluteVec(new Vec3(5.5D, 3.0D, 1.5D));
+        Vec3 rightGoal = helper.absoluteVec(new Vec3(1.5D, 3.0D, 1.5D));
+        left.navigator().setPath(List.of(leftGoal));
+        right.navigator().setPath(List.of(rightGoal));
+        left.setDeltaMovement(new Vec3(0.25D, 0.0D, 0.0D));
+        right.setDeltaMovement(new Vec3(-0.25D, 0.0D, 0.0D));
+        active.setFlightState(AllayFlightState.FLYING);
+        docking.setFlightState(AllayFlightState.DOCKING);
+
+        active.navigator().follow(active);
+        docking.navigator().follow(docking);
+
+        check(Math.abs(active.getDeltaMovement().z) < 1.0E-4D,
+            "an active worker yielded its route to a docking allay");
+        check(Math.abs(active.getDeltaMovement().x) > 0.2D,
+            "an active worker stopped progressing for a docking allay");
+        check(Math.abs(docking.getDeltaMovement().z) > 0.05D,
+            "a docking allay did not yield to active work");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x5x7", floor = true)
+    @TestHolder(description = "Opposing working allays pass through a one-cell tunnel without reservation or avoidance livelock")
+    static void opposingWorkersPassSingleCellTunnel(ExtendedGameTestHelper helper) {
+        for (int x = 1; x <= 5; x++) {
+            helper.setBlock(new BlockPos(x, 2, 2), Blocks.STONE);
+            helper.setBlock(new BlockPos(x, 2, 4), Blocks.STONE);
+            helper.setBlock(new BlockPos(x, 3, 3), Blocks.STONE);
+        }
+        WorkingAllayEntity first = spawnHatted(helper, new Vec3(1.5D, 2.0D, 3.5D), null);
+        WorkingAllayEntity second = spawnHatted(helper, new Vec3(5.5D, 2.0D, 3.5D), null);
+        Vec3 firstGoal = helper.absoluteVec(new Vec3(5.5D, 2.0D, 3.5D));
+        Vec3 secondGoal = helper.absoluteVec(new Vec3(1.5D, 2.0D, 3.5D));
+        BlockPos corridor = helper.absolutePos(new BlockPos(3, 2, 3));
+        ConstructionTraffic.reserveCorridor(helper.getLevel(), first.getUUID(), List.of(corridor));
+        check(
+            !ConstructionTraffic.isReserved(helper.getLevel(), corridor, second.getUUID()),
+            "a narrow-corridor reservation must not become a hard worker-space obstacle"
+        );
+        first.navigator().setPath(List.of(firstGoal));
+        second.navigator().setPath(List.of(secondGoal));
+        for (int tick = 0; tick < 24; tick++) {
+            first.navigator().follow(first);
+            second.navigator().follow(second);
+            first.move(MoverType.SELF, first.getDeltaMovement());
+            second.move(MoverType.SELF, second.getDeltaMovement());
+        }
+        ConstructionTraffic.release(helper.getLevel(), first.getUUID());
+        ConstructionTraffic.release(helper.getLevel(), second.getUUID());
+        check(first.getX() > second.getX(), "opposing allays did not pass each other inside the tunnel");
+        check(first.position().distanceTo(firstGoal) < 0.4D, "first allay did not clear the tunnel");
+        check(second.position().distanceTo(secondGoal) < 0.4D, "second allay did not clear the tunnel");
+        helper.succeed();
     }
 
     static WorkingAllayEntity spawnHatted(

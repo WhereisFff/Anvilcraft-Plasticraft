@@ -30,9 +30,10 @@ public final class ConstructionEntityProjectionIndex {
 
     public static void deliver(Level level, UUID jobId, int opId, Vec3 pos, CompoundTag nbt) {
         synchronized (LEVELS) {
-            LEVELS.computeIfAbsent(level, ignored -> new HashMap<>())
-                .computeIfAbsent(jobId, ignored -> new ArrayList<>())
-                .add(new Entry(opId, pos, nbt.copy()));
+            Map<UUID, List<Entry>> jobs = LEVELS.computeIfAbsent(level, ignored -> new HashMap<>());
+            List<Entry> updated = new ArrayList<>(jobs.getOrDefault(jobId, List.of()));
+            updated.add(new Entry(opId, pos, nbt.copy()));
+            jobs.put(jobId, List.copyOf(updated));
         }
         if (level instanceof ServerLevel serverLevel) {
             syncJob(serverLevel, jobId);
@@ -65,7 +66,7 @@ public final class ConstructionEntityProjectionIndex {
                 return List.of();
             }
             List<Entry> entries = jobs.get(jobId);
-            return entries == null ? List.of() : List.copyOf(entries);
+            return entries == null ? List.of() : entries;
         }
     }
 
@@ -81,7 +82,7 @@ public final class ConstructionEntityProjectionIndex {
                 }
                 return;
             }
-            LEVELS.computeIfAbsent(level, ignored -> new HashMap<>()).put(jobId, new ArrayList<>(entries));
+            LEVELS.computeIfAbsent(level, ignored -> new HashMap<>()).put(jobId, List.copyOf(entries));
         }
     }
 

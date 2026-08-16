@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.blueprint;
 
 import dev.anvilcraft.plasticraft.init.PlasticraftEntityBuildAdapters;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
 import net.minecraft.core.BlockPos;
@@ -26,6 +27,7 @@ import java.util.Map;
 /**
  * 任务休息室下表面物流:只读下方一格朝上的物品/流体能力。
  * 能力存在但空是缺料;能力整体消失才是来源不可用。
+ * 下方若是创造板条箱,则按创造模式无限给出蓝图所需物品,不消耗箱内过滤物。
  */
 public final class ConstructionMaterialAccess {
     private final ServerLevel level;
@@ -34,17 +36,20 @@ public final class ConstructionMaterialAccess {
     private final IItemHandler items;
     @Nullable
     private final IFluidHandler fluids;
+    private final boolean infinite;
 
     private ConstructionMaterialAccess(
         ServerLevel level,
         BlockPos loungePos,
         @Nullable IItemHandler items,
-        @Nullable IFluidHandler fluids
+        @Nullable IFluidHandler fluids,
+        boolean infinite
     ) {
         this.level = level;
         this.loungePos = loungePos.immutable();
         this.items = items;
         this.fluids = fluids;
+        this.infinite = infinite;
     }
 
     public static ConstructionMaterialAccess below(ServerLevel level, BlockPos loungePos) {
@@ -53,12 +58,17 @@ public final class ConstructionMaterialAccess {
             level,
             loungePos,
             level.getCapability(Capabilities.ItemHandler.BLOCK, below, Direction.UP),
-            level.getCapability(Capabilities.FluidHandler.BLOCK, below, Direction.UP)
+            level.getCapability(Capabilities.FluidHandler.BLOCK, below, Direction.UP),
+            level.getBlockState(below).is(ModBlocks.CREATIVE_CRATE.get())
         );
     }
 
     public boolean isAvailable() {
-        return this.items != null || this.fluids != null;
+        return this.infinite || this.items != null || this.fluids != null;
+    }
+
+    public boolean isInfinite() {
+        return this.infinite;
     }
 
     @Nullable
@@ -77,6 +87,9 @@ public final class ConstructionMaterialAccess {
         }
         if (!op.needsMaterial()) {
             return ItemStack.EMPTY;
+        }
+        if (this.infinite) {
+            return ConstructionJobController.creativeSupply(op);
         }
         if (op.kind() == ConstructionBuildOp.Kind.FLUID && !op.fluid().isEmpty()) {
             if (!op.material().isEmpty() && this.takeMatching(op.material())) {
@@ -97,15 +110,31 @@ public final class ConstructionMaterialAccess {
     }
 
     public boolean hasMaterial(ItemStack needed) {
-        if (needed.isEmpty()) {
+        if (needed.isEmpty() || this.infinite) {
             return true;
         }
-        return this.countMatching(needed) >= needed.getCount();
+        return this.canTakeMatching(needed);
+    }
+
+    public boolean hasMaterial(ConstructionBuildOp op) {
+        if (op.kind() == ConstructionBuildOp.Kind.SEAL
+            && (op.material().isEmpty() || FluidSealFill.stateOf(op.material()) == null)) {
+            return false;
+        }
+        if (!op.needsMaterial() || this.infinite) return true;
+        if (op.kind() == ConstructionBuildOp.Kind.FLUID && !op.fluid().isEmpty()) {
+            return (!op.material().isEmpty() && this.hasMaterial(op.material())) || this.hasFluid(op.fluid());
+        }
+        if (this.hasMaterial(op.material())) return true;
+        return op.kind() == ConstructionBuildOp.Kind.ENTITY && this.hasMatchingResin(op);
     }
 
     public boolean hasFluid(FluidStack needed) {
         if (needed.isEmpty()) {
             return false;
+        }
+        if (this.infinite) {
+            return true;
         }
         if (this.items != null) {
             for (int slot = 0; slot < this.items.getSlots(); slot++) {
@@ -170,6 +199,9 @@ public final class ConstructionMaterialAccess {
         if (this.items == null) {
             return false;
         }
+        if (!this.canTakeMatching(needed)) {
+            return false;
+        }
         int remaining = needed.getCount();
         for (int slot = 0; slot < this.items.getSlots() && remaining > 0; slot++) {
             ItemStack stack = this.items.getStackInSlot(slot);
@@ -182,18 +214,19 @@ public final class ConstructionMaterialAccess {
         return remaining <= 0;
     }
 
-    private int countMatching(ItemStack needed) {
-        if (this.items == null) {
-            return 0;
-        }
-        int count = 0;
-        for (int slot = 0; slot < this.items.getSlots(); slot++) {
+    private boolean canTakeMatching(ItemStack needed) {
+        if (needed.isEmpty()) return true;
+        if (this.items == null) return false;
+        int remaining = needed.getCount();
+        for (int slot = 0; slot < this.items.getSlots() && remaining > 0; slot++) {
             ItemStack stack = this.items.getStackInSlot(slot);
-            if (ConstructionJobController.matchesMaterial(stack, needed)) {
-                count += stack.getCount();
+            if (!ConstructionJobController.matchesMaterial(stack, needed)) continue;
+            ItemStack simulated = this.items.extractItem(slot, remaining, true);
+            if (ConstructionJobController.matchesMaterial(simulated, needed)) {
+                remaining -= simulated.getCount();
             }
         }
-        return count;
+        return remaining <= 0;
     }
 
     private boolean takeExactFluid(FluidStack needed) {
@@ -243,6 +276,15 @@ public final class ConstructionMaterialAccess {
             }
         }
         return ItemStack.EMPTY;
+    }
+
+    private boolean hasMatchingResin(ConstructionBuildOp op) {
+        if (this.items == null) return false;
+        for (int slot = 0; slot < this.items.getSlots(); slot++) {
+            if (!isMatchingResin(this.items.getStackInSlot(slot), op, this.level)) continue;
+            if (!this.items.extractItem(slot, 1, true).isEmpty()) return true;
+        }
+        return false;
     }
 
     private static boolean isMatchingResin(ItemStack stack, ConstructionBuildOp op, ServerLevel level) {

@@ -52,7 +52,9 @@ public final class BlockEntityContentAdapter {
         IItemHandler handler = itemHandlerOf(loaded);
         if (handler != null) {
             extractHandler(handler, contents);
-            return new Extracted(configOf(loaded, registries), List.copyOf(contents), false);
+            CompoundTag config = configOf(loaded, registries);
+            stripSerializedHandlerItems(config);
+            return new Extracted(config, List.copyOf(contents), false);
         }
         parseVanillaItems(nbt, registries, contents);
         return new Extracted(stripResources(nbt), List.copyOf(contents), false);
@@ -132,11 +134,6 @@ public final class BlockEntityContentAdapter {
             ItemStack stack = handler.getStackInSlot(slot);
             if (stack.isEmpty()) continue;
             contents.add(new SlotStack(slot, stack.copy()));
-            if (handler instanceof IItemHandlerModifiable modifiable) {
-                modifiable.setStackInSlot(slot, ItemStack.EMPTY);
-            } else {
-                handler.extractItem(slot, stack.getCount(), false);
-            }
         }
     }
 
@@ -161,5 +158,27 @@ public final class BlockEntityContentAdapter {
         config.remove("y");
         config.remove("z");
         return config;
+    }
+
+    private static void stripSerializedHandlerItems(CompoundTag config) {
+        stripSerializedHandlerItems((Tag) config);
+    }
+
+    private static void stripSerializedHandlerItems(Tag tag) {
+        if (tag instanceof CompoundTag compound) {
+            compound.remove("SlotItem");
+            for (String key : List.copyOf(compound.getAllKeys())) {
+                Tag child = compound.get(key);
+                if (child != null) {
+                    stripSerializedHandlerItems(child);
+                }
+            }
+            return;
+        }
+        if (tag instanceof ListTag list) {
+            for (Tag child : list) {
+                stripSerializedHandlerItems(child);
+            }
+        }
     }
 }

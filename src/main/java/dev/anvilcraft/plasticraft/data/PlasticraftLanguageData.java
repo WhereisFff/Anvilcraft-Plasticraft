@@ -67,8 +67,6 @@ public final class PlasticraftLanguageData {
         // 悦灵休息室界面。
         provider.add("container.anvilcraftplasticraft.allay_lounge", "Allay Lounge");
         provider.add("screen.anvilcraftplasticraft.allay_lounge.recall", "Recall nearby working allays");
-        provider.add("screen.anvilcraftplasticraft.allay_lounge.powered", "Connected to a working grid");
-        provider.add("screen.anvilcraftplasticraft.allay_lounge.unpowered", "Not connected to a working grid");
         provider.add("screen.anvilcraftplasticraft.allay_lounge.strategy", "Shortage strategy for hosted allays");
 
         // 塑料成型舱物品说明、容器标题和建模器界面语言文件生成。
@@ -539,6 +537,14 @@ public final class PlasticraftLanguageData {
         provider.add(
             "message.anvilcraftplasticraft.blueprint.placement_locked",
             "Cannot move a blueprint that already has construction progress"
+        );
+        provider.add(
+            "message.anvilcraftplasticraft.blueprint.placement_out_of_world",
+            "The blueprint must stay inside the world's buildable area"
+        );
+        provider.add(
+            "message.anvilcraftplasticraft.blueprint.placement_overlaps_job",
+            "The blueprint overlaps another deployed construction task"
         );
         provider.add("message.anvilcraftplasticraft.construction.completed", "Construction finished");
         provider.add(

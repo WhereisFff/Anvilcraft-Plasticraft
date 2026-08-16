@@ -109,11 +109,10 @@ public final class PlasticraftBlocks {
         .tag(BlockTags.MINEABLE_WITH_PICKAXE)
         .loot((tables, block) -> tables.dropSelf(block))
         .blockstate((context, provider) -> {
-            // 有电与无电两套烘焙模型由是否接到有效电网切换。
-            ModelFile powered = provider.models().getExistingFile(provider.modLoc("block/allay_lounge"));
-            ModelFile unpowered = provider.models().getExistingFile(provider.modLoc("block/allay_lounge_off"));
+            // 休息室不耗电,始终使用同一套烘焙模型。
+            ModelFile model = provider.models().getExistingFile(provider.modLoc("block/allay_lounge"));
             provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
-                .modelFile(state.getValue(AllayLoungeBlock.POWERED) ? powered : unpowered)
+                .modelFile(model)
                 .rotationY(((int) state.getValue(AllayLoungeBlock.FACING).toYRot() + 180) % 360)
                 .build());
         })

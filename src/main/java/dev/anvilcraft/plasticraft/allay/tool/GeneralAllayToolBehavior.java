@@ -7,6 +7,7 @@ import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobIndex;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobProgress;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobStore;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionTraffic;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import net.minecraft.server.level.ServerLevel;
 
@@ -15,7 +16,7 @@ import java.util.UUID;
 
 /**
  * 空手与加强工具共用的调度器:建设、拆除、收集按能力叠加,
- * 没有任务时把飞行交还给原版悦灵大脑。
+ * 没有可认领工作时让绑定悦灵回库，其余悦灵把飞行交还给原版大脑。
  */
 public final class GeneralAllayToolBehavior implements AllayToolBehavior {
     public static final GeneralAllayToolBehavior INSTANCE = new GeneralAllayToolBehavior();
@@ -35,6 +36,11 @@ public final class GeneralAllayToolBehavior implements AllayToolBehavior {
         }
         AllayToolDefinition definition = worker.toolDefinition();
         ConstructionJob job = ConstructionJobIndex.get(level).activeJobOf(owner.get()).orElse(null);
+        if (!worker.hostedCarry().isEmpty() && !definition.hasCapability(AllayCapability.PICK_UP_MATERIAL)) {
+            worker.clearAssignment(false);
+            ConstructionAllayToolBehavior.INSTANCE.serverTick(worker);
+            return;
+        }
         if (definition.hasCapability(AllayCapability.PICK_UP_MATERIAL)
             && ConstructionAllayToolBehavior.shouldHandle(worker, job)) {
             ConstructionAllayToolBehavior.INSTANCE.serverTick(worker);
@@ -50,6 +56,9 @@ public final class GeneralAllayToolBehavior implements AllayToolBehavior {
                 return;
             }
         }
+        if (worker.assignedJobId().isPresent()) {
+            worker.clearAssignment(false);
+        }
         if (job != null && job.dimension().equals(level.dimension()) && tryClaimWork(worker, level, job, definition)) {
             return;
         }
@@ -58,10 +67,40 @@ public final class GeneralAllayToolBehavior implements AllayToolBehavior {
             CollectionAllayToolBehavior.INSTANCE.serverTick(worker);
             return;
         }
+        if (dockWhenNoWorkCanBeClaimed(worker, level)) {
+            return;
+        }
+        if (isCollectOnly(definition)
+            && job != null
+            && job.dimension().equals(level.dimension())) {
+            CollectionAllayToolBehavior.INSTANCE.serverTick(worker);
+            return;
+        }
         if (job != null && job.dimension().equals(level.dimension()) && isLiveJob(job)) {
             return;
         }
         AllayWorkMotions.releaseToVanilla(worker);
+    }
+
+    private static boolean dockWhenNoWorkCanBeClaimed(WorkingAllayEntity worker, ServerLevel level) {
+        if (worker.homeLoungePos() == null
+            || !worker.assignedJobId().isEmpty()
+            || !worker.hostedCarry().isEmpty()
+            || worker.hasCollectionItems()
+            || worker.isEvacuating()) {
+            return false;
+        }
+        worker.setActionState((byte) 0);
+        AllayWorkMotions.releaseToVanilla(worker);
+        ConstructionTraffic.release(level, worker.getUUID());
+        worker.resetStuck();
+        worker.startDockingTo(worker.homeLoungePos());
+        return true;
+    }
+
+    private static boolean isCollectOnly(AllayToolDefinition definition) {
+        return definition.hasCapability(AllayCapability.COLLECT_ITEMS)
+            && !definition.hasCapability(AllayCapability.PICK_UP_MATERIAL);
     }
 
     private static boolean isLiveJob(ConstructionJob job) {

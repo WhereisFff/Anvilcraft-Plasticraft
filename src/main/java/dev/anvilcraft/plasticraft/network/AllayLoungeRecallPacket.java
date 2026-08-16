@@ -34,7 +34,7 @@ public record AllayLoungeRecallPacket(BlockPos loungePos) implements IServerboun
             return;
         }
         if (player.level().getBlockEntity(this.loungePos) instanceof AllayLoungeBlockEntity lounge) {
-            lounge.recallNearbyWorkers();
+            lounge.recallNearbyWorkers(player.getUUID());
         }
     }
 }
