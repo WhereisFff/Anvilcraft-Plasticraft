@@ -6,6 +6,7 @@ import dev.anvilcraft.plasticraft.client.renderer.UniversalPlasticMeltFluidExten
 import dev.anvilcraft.plasticraft.fluid.UniversalPlasticMeltFluidType;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.fluid.StationaryPlasticMeltFluid;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvents;
@@ -108,7 +109,8 @@ public final class PlasticraftFluids {
             .canDrown(false)
             .supportsBoating(false)
             .sound(SoundActions.BUCKET_FILL, SoundEvents.BUCKET_FILL)
-            .sound(SoundActions.BUCKET_EMPTY, SoundEvents.BUCKET_EMPTY))
+            .sound(SoundActions.BUCKET_EMPTY, SoundEvents.BUCKET_EMPTY),
+            () -> PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.asStack())
     );
     public static final DeferredHolder<Fluid, BaseFlowingFluid> UNIVERSAL_PLASTIC_MELT = FLUIDS.register(
         "universal_plastic_melt",
@@ -117,6 +119,75 @@ public final class PlasticraftFluids {
     public static final DeferredHolder<Fluid, BaseFlowingFluid> FLOWING_UNIVERSAL_PLASTIC_MELT = FLUIDS.register(
         "flowing_universal_plastic_melt",
         () -> new StationaryPlasticMeltFluid.Flowing(universalPlasticMeltProperties())
+    );
+    public static final DeferredHolder<FluidType, FluidType> ENGINEERING_PLASTIC_MELT_TYPE = FLUID_TYPES.register(
+        "engineering_plastic_melt",
+        () -> new UniversalPlasticMeltFluidType(FluidType.Properties.create()
+            .descriptionId("block.anvilcraftplasticraft.engineering_plastic_melt")
+            .density(2050)
+            .viscosity(22000)
+            .fallDistanceModifier(0.0F)
+            .motionScale(0.01D)
+            .canSwim(false)
+            .canDrown(false)
+            .supportsBoating(false)
+            .sound(SoundActions.BUCKET_FILL, SoundEvents.BUCKET_FILL)
+            .sound(SoundActions.BUCKET_EMPTY, SoundEvents.BUCKET_EMPTY),
+            () -> PlasticraftItems.ENGINEERING_PLASTIC_MELT_BUCKET.asStack())
+    );
+    public static final DeferredHolder<Fluid, BaseFlowingFluid> ENGINEERING_PLASTIC_MELT = FLUIDS.register(
+        "engineering_plastic_melt",
+        () -> new StationaryPlasticMeltFluid.Source(engineeringPlasticMeltProperties())
+    );
+    public static final DeferredHolder<Fluid, BaseFlowingFluid> FLOWING_ENGINEERING_PLASTIC_MELT = FLUIDS.register(
+        "flowing_engineering_plastic_melt",
+        () -> new StationaryPlasticMeltFluid.Flowing(engineeringPlasticMeltProperties())
+    );
+    public static final DeferredHolder<FluidType, FluidType> HEAT_RESISTANT_PLASTIC_MELT_TYPE = FLUID_TYPES.register(
+        "heat_resistant_plastic_melt",
+        () -> new UniversalPlasticMeltFluidType(FluidType.Properties.create()
+            .descriptionId("block.anvilcraftplasticraft.heat_resistant_plastic_melt")
+            .density(2150)
+            .viscosity(24000)
+            .fallDistanceModifier(0.0F)
+            .motionScale(0.01D)
+            .canSwim(false)
+            .canDrown(false)
+            .supportsBoating(false)
+            .sound(SoundActions.BUCKET_FILL, SoundEvents.BUCKET_FILL)
+            .sound(SoundActions.BUCKET_EMPTY, SoundEvents.BUCKET_EMPTY),
+            () -> PlasticraftItems.HEAT_RESISTANT_PLASTIC_MELT_BUCKET.asStack())
+    );
+    public static final DeferredHolder<Fluid, BaseFlowingFluid> HEAT_RESISTANT_PLASTIC_MELT = FLUIDS.register(
+        "heat_resistant_plastic_melt",
+        () -> new StationaryPlasticMeltFluid.Source(heatResistantPlasticMeltProperties())
+    );
+    public static final DeferredHolder<Fluid, BaseFlowingFluid> FLOWING_HEAT_RESISTANT_PLASTIC_MELT = FLUIDS.register(
+        "flowing_heat_resistant_plastic_melt",
+        () -> new StationaryPlasticMeltFluid.Flowing(heatResistantPlasticMeltProperties())
+    );
+    public static final DeferredHolder<FluidType, FluidType> CLEAR_PLASTIC_MELT_TYPE = FLUID_TYPES.register(
+        "clear_plastic_melt",
+        () -> new UniversalPlasticMeltFluidType(FluidType.Properties.create()
+            .descriptionId("block.anvilcraftplasticraft.clear_plastic_melt")
+            .density(1950)
+            .viscosity(21000)
+            .fallDistanceModifier(0.0F)
+            .motionScale(0.01D)
+            .canSwim(false)
+            .canDrown(false)
+            .supportsBoating(false)
+            .sound(SoundActions.BUCKET_FILL, SoundEvents.BUCKET_FILL)
+            .sound(SoundActions.BUCKET_EMPTY, SoundEvents.BUCKET_EMPTY),
+            () -> PlasticraftItems.CLEAR_PLASTIC_MELT_BUCKET.asStack())
+    );
+    public static final DeferredHolder<Fluid, BaseFlowingFluid> CLEAR_PLASTIC_MELT = FLUIDS.register(
+        "clear_plastic_melt",
+        () -> new StationaryPlasticMeltFluid.Source(clearPlasticMeltProperties())
+    );
+    public static final DeferredHolder<Fluid, BaseFlowingFluid> FLOWING_CLEAR_PLASTIC_MELT = FLUIDS.register(
+        "flowing_clear_plastic_melt",
+        () -> new StationaryPlasticMeltFluid.Flowing(clearPlasticMeltProperties())
     );
 
     public static final BaseFlowingFluid.Properties HIGH_VISCOSITY_RESIN_PROPERTIES = new BaseFlowingFluid.Properties(
@@ -176,6 +247,42 @@ public final class PlasticraftFluids {
             .slopeFindDistance(1)
             .levelDecreasePerBlock(8)
             .explosionResistance(100.0F);
+    public static final BaseFlowingFluid.Properties ENGINEERING_PLASTIC_MELT_PROPERTIES =
+        new BaseFlowingFluid.Properties(
+            ENGINEERING_PLASTIC_MELT_TYPE,
+            ENGINEERING_PLASTIC_MELT,
+            FLOWING_ENGINEERING_PLASTIC_MELT
+        )
+            .bucket(PlasticraftItems.ENGINEERING_PLASTIC_MELT_BUCKET)
+            .block(PlasticraftBlocks.ENGINEERING_PLASTIC_MELT)
+            .tickRate(40)
+            .slopeFindDistance(1)
+            .levelDecreasePerBlock(8)
+            .explosionResistance(100.0F);
+    public static final BaseFlowingFluid.Properties HEAT_RESISTANT_PLASTIC_MELT_PROPERTIES =
+        new BaseFlowingFluid.Properties(
+            HEAT_RESISTANT_PLASTIC_MELT_TYPE,
+            HEAT_RESISTANT_PLASTIC_MELT,
+            FLOWING_HEAT_RESISTANT_PLASTIC_MELT
+        )
+            .bucket(PlasticraftItems.HEAT_RESISTANT_PLASTIC_MELT_BUCKET)
+            .block(PlasticraftBlocks.HEAT_RESISTANT_PLASTIC_MELT)
+            .tickRate(40)
+            .slopeFindDistance(1)
+            .levelDecreasePerBlock(8)
+            .explosionResistance(100.0F);
+    public static final BaseFlowingFluid.Properties CLEAR_PLASTIC_MELT_PROPERTIES =
+        new BaseFlowingFluid.Properties(
+            CLEAR_PLASTIC_MELT_TYPE,
+            CLEAR_PLASTIC_MELT,
+            FLOWING_CLEAR_PLASTIC_MELT
+        )
+            .bucket(PlasticraftItems.CLEAR_PLASTIC_MELT_BUCKET)
+            .block(PlasticraftBlocks.CLEAR_PLASTIC_MELT)
+            .tickRate(40)
+            .slopeFindDistance(1)
+            .levelDecreasePerBlock(8)
+            .explosionResistance(100.0F);
 
     private PlasticraftFluids() {
     }
@@ -214,6 +321,18 @@ public final class PlasticraftFluids {
         return UNIVERSAL_PLASTIC_MELT_PROPERTIES;
     }
 
+    private static BaseFlowingFluid.Properties engineeringPlasticMeltProperties() {
+        return ENGINEERING_PLASTIC_MELT_PROPERTIES;
+    }
+
+    private static BaseFlowingFluid.Properties heatResistantPlasticMeltProperties() {
+        return HEAT_RESISTANT_PLASTIC_MELT_PROPERTIES;
+    }
+
+    private static BaseFlowingFluid.Properties clearPlasticMeltProperties() {
+        return CLEAR_PLASTIC_MELT_PROPERTIES;
+    }
+
     public static void register(IEventBus modEventBus) {
         FLUID_TYPES.register(modEventBus);
         FLUIDS.register(modEventBus);
@@ -228,6 +347,33 @@ public final class PlasticraftFluids {
         event.registerFluidType(fluidExtension("plastic_oil"), PLASTIC_OIL_TYPE);
         event.registerFluidType(fluidExtension("oil_essence"), CRUDE_OIL_ACID_TYPE);
         event.registerFluidType(new UniversalPlasticMeltFluidExtension(), UNIVERSAL_PLASTIC_MELT_TYPE);
+        event.registerFluidType(
+            new UniversalPlasticMeltFluidExtension(
+                PlasticMaterial.ENGINEERING,
+                AnvilcraftPlasticraft.of("block/engineering_plastic_melt"),
+                true,
+                0xFFFFFFFF
+            ),
+            ENGINEERING_PLASTIC_MELT_TYPE
+        );
+        event.registerFluidType(
+            new UniversalPlasticMeltFluidExtension(
+                PlasticMaterial.HEAT_RESISTANT,
+                AnvilcraftPlasticraft.of("block/heat_resistant_plastic_melt"),
+                true,
+                0xFFFFFFFF
+            ),
+            HEAT_RESISTANT_PLASTIC_MELT_TYPE
+        );
+        event.registerFluidType(
+            new UniversalPlasticMeltFluidExtension(
+                PlasticMaterial.CLEAR,
+                AnvilcraftPlasticraft.of("block/clear_plastic_melt"),
+                false,
+                0x99E7F6FF
+            ),
+            CLEAR_PLASTIC_MELT_TYPE
+        );
     }
 
     private static HighViscosityResinFluidExtension fluidExtension(String textureName) {

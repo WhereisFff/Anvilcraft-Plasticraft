@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.client.renderer.blockentity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.client.renderer.AdhesivePatchRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.ClearPlasticEntityRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
@@ -33,6 +34,12 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
         int packedLight,
         int packedOverlay
     ) {
+        if (ClearPlasticEntityRenderer.enqueue(blockEntity)) {
+            if (blockEntity.isHammerDeflected()) {
+                renderAdhesivePatch(blockEntity, pose, buffers, packedLight, partialTick);
+            }
+            return;
+        }
         if (!blockEntity.isInitialized()) return;
         if (!blockEntity.isPlastic()) {
             Minecraft.getInstance().getBlockRenderer().renderSingleBlock(

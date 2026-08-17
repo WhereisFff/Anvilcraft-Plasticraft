@@ -404,6 +404,19 @@ public final class ConstructionJobProgress {
         return List.copyOf(result);
     }
 
+    /** 返回某项操作尚未结算的全部台账，供取消和权限撤销按操作逐项返还。 */
+    public List<ConstructionLedgerEntry> unsettledEntries(int operationId) {
+        List<ConstructionLedgerEntry> result = new ArrayList<>();
+        for (ConstructionLedgerEntry entry : this.ledger) {
+            if (entry.operationId() != operationId
+                || entry.state() == ConstructionLedgerEntry.State.RETURNED) {
+                continue;
+            }
+            result.add(entry);
+        }
+        return List.copyOf(result);
+    }
+
     public void markOperationDelivered(int operationId) {
         for (ConstructionLedgerEntry entry : List.copyOf(
             this.carriedLedgerByOperation.getOrDefault(operationId, List.of())
@@ -414,6 +427,21 @@ public final class ConstructionJobProgress {
 
     public boolean markCarryReturned(ConstructionLedgerEntry entry) {
         return this.transitionCarry(entry, ConstructionLedgerEntry.State.RETURNED);
+    }
+
+    /** 将已发布但随后撤销的操作台账标记为已返还，不影响仍处于在途索引的 CARRIED 条目。 */
+    public boolean markDeliveredReturned(int operationId) {
+        boolean changed = false;
+        for (ConstructionLedgerEntry entry : this.ledger) {
+            if (entry.operationId() != operationId
+                || entry.state() != ConstructionLedgerEntry.State.DELIVERED) {
+                continue;
+            }
+            entry.setState(ConstructionLedgerEntry.State.RETURNED);
+            changed = true;
+        }
+        if (changed) this.invalidateStatus();
+        return changed;
     }
 
     public boolean markCarriesReturned(UUID allayId) {

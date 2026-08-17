@@ -106,7 +106,7 @@ public class HardenedResinCauldronBlock extends AbstractPlasticEntityBlock<Harde
         if (!state.getValue(BONDED)
             || !(level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded)
             || !(bonded.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron)) return;
-        cauldron.plasticraft$stickEntityInUniversalMelt(entity);
+        cauldron.plasticraft$stickEntityInPlasticMelt(entity);
     }
 
     @Override

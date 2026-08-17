@@ -1,0 +1,12 @@
+{
+  "parent": "anvilcraft:block/template_cauldron_level1of4",
+  "render_type": "minecraft:cutout",
+  "textures": {
+    "bottom": "minecraft:block/cauldron_bottom",
+    "content": "anvilcraftplasticraft:block/heat_resistant_plastic_melt",
+    "inside": "minecraft:block/cauldron_inner",
+    "particle": "minecraft:block/cauldron_side",
+    "side": "minecraft:block/cauldron_side",
+    "top": "minecraft:block/cauldron_top"
+  }
+}

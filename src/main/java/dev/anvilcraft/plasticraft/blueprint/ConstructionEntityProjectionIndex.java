@@ -59,6 +59,43 @@ public final class ConstructionEntityProjectionIndex {
         }
     }
 
+    /** 删除单个实体操作的投影并立即同步该任务的新快照。 */
+    public static boolean removeOperation(Level level, UUID jobId, int opId) {
+        boolean changed = false;
+        boolean empty = false;
+        synchronized (LEVELS) {
+            Map<UUID, List<Entry>> jobs = LEVELS.get(level);
+            if (jobs == null) return false;
+            List<Entry> entries = jobs.get(jobId);
+            if (entries == null) return false;
+            List<Entry> filtered = new ArrayList<>(entries.size());
+            for (Entry entry : entries) {
+                if (entry.opId() == opId) {
+                    changed = true;
+                } else {
+                    filtered.add(entry);
+                }
+            }
+            if (!changed) return false;
+            if (filtered.isEmpty()) {
+                jobs.remove(jobId);
+                empty = true;
+            } else {
+                jobs.put(jobId, List.copyOf(filtered));
+            }
+            if (jobs.isEmpty()) LEVELS.remove(level);
+        }
+        if (level instanceof ServerLevel serverLevel) {
+            PacketDistributor.sendToPlayersInDimension(
+                serverLevel,
+                empty
+                    ? ConstructionEntityProjectionPacket.clear(jobId)
+                    : ConstructionEntityProjectionPacket.replace(jobId, delivered(level, jobId))
+            );
+        }
+        return true;
+    }
+
     public static List<Entry> delivered(Level level, UUID jobId) {
         synchronized (LEVELS) {
             Map<UUID, List<Entry>> jobs = LEVELS.get(level);

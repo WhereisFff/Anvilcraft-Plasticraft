@@ -228,6 +228,23 @@ public final class ConstructionProjectionIndex {
         }
     }
 
+    /** 只移除指定任务的投影，避免取消一个任务时误删相邻任务的同格索引。 */
+    public static boolean remove(Level level, UUID jobId, BlockPos pos) {
+        boolean removed = false;
+        synchronized (LEVELS) {
+            LevelIndex index = LEVELS.get(level);
+            Collision collision = index == null ? null : index.get(pos);
+            if (collision == null || !collision.jobId().equals(jobId)) return false;
+            index.remove(pos);
+            removed = true;
+            if (index.isEmpty()) LEVELS.remove(level);
+        }
+        if (removed && level instanceof ServerLevel serverLevel) {
+            markDirty(serverLevel, jobId, SectionPos.asLong(pos));
+        }
+        return removed;
+    }
+
     public static void clearJob(Level level, UUID jobId) {
         List<Long> sections;
         synchronized (LEVELS) {

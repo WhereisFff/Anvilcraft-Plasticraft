@@ -1,11 +1,12 @@
 package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
-import dev.anvilcraft.plasticraft.block.UniversalPlasticBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltFluidBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticSolidification;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
+import dev.anvilcraft.plasticraft.entity.ClearPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.ClearPlasticBeaconInteraction;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
@@ -15,8 +16,12 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
+import dev.anvilcraft.plasticraft.item.MoldedPlasticDemoItemStacks;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.dubhe.anvilcraft.block.sliding.SlidingRailBlock;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.util.AccelerateManager;
@@ -42,8 +47,10 @@ import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.ObserverBlock;
+import net.minecraft.world.level.block.entity.BeaconBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -54,6 +61,8 @@ import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 import net.neoforged.testframework.gametest.GameTestPlayer;
+import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 
 import java.util.List;
 
@@ -92,8 +101,116 @@ public final class UniversalPlasticGameTests {
     }
 
     @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "13x7x7", floor = true)
+    @TestHolder(description = "Lava shatters non-heat-resistant molded tanks without spilling and leaves heat-resistant tanks intact")
+    static void moldedTankLavaHazardsFollowMaterial(ExtendedGameTestHelper helper) {
+        assertLavaDestroysMoldedTank(helper, new BlockPos(2, 2, 3));
+        assertHeatResistantMoldedTankRetainsLava(helper, new BlockPos(6, 2, 3));
+        assertLavaDestroysBondedMoldedTank(helper, new BlockPos(10, 2, 3));
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "5x5x5", floor = true)
+    @TestHolder(description = "Every clear plastic dye state provides its matching beacon beam color")
+    static void clearPlasticDyeStatesTintBeaconBeams(ExtendedGameTestHelper helper) {
+        BlockPos relativePos = new BlockPos(2, 2, 2);
+        BlockPos pos = helper.absolutePos(relativePos);
+        BlockPos beaconPos = pos.below();
+        for (DyeColor color : DyeColor.values()) {
+            helper.setBlock(
+                relativePos,
+                PlasticraftBlocks.CLEAR_PLASTIC.get().defaultBlockState().setValue(DyeableMaterial.COLOR, color)
+            );
+            Integer beamColor = helper.getLevel()
+                .getBlockState(pos)
+                .getBeaconColorMultiplier(helper.getLevel(), pos, beaconPos);
+            check(
+                Integer.valueOf(color.getTextureDiffuseColor()).equals(beamColor),
+                "clear plastic " + color.getName() + " did not match its beacon beam color"
+            );
+        }
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 100)
+    @EmptyTemplate(value = "5x7x5", floor = true)
+    @TestHolder(description = "A placed clear plastic entity tints a beacon beam above the world surface")
+    static void placedClearPlasticTintsBeaconBeam(ExtendedGameTestHelper helper) {
+        BlockPos beaconPos = new BlockPos(2, 2, 2);
+        BlockPos plasticPos = new BlockPos(2, 4, 2);
+        for (int x = 1; x <= 3; x++) {
+            for (int z = 1; z <= 3; z++) {
+                helper.setBlock(new BlockPos(x, 1, z), Blocks.IRON_BLOCK);
+            }
+        }
+        helper.setBlock(beaconPos, Blocks.BEACON);
+        BlockState displayState = PlasticraftBlocks.CLEAR_PLASTIC.get().defaultBlockState()
+            .setValue(DyeableMaterial.COLOR, DyeColor.YELLOW);
+        ItemStack drop = PlasticraftBlocks.CLEAR_PLASTIC.asStack();
+        PlasticMeltColor.set(drop, DyeColor.YELLOW);
+        ClearPlasticEntity plastic = new ClearPlasticEntity(
+            PlasticraftEntities.CLEAR_PLASTIC.get(),
+            helper.getLevel(),
+            helper.absolutePos(plasticPos).getCenter().add(0.75D, -0.5D, 0.0D),
+            displayState,
+            drop,
+            PlasticEntityOrientation.DEFAULT
+        );
+        plastic.setNoGravity(true);
+        check(helper.getLevel().addFreshEntity(plastic), "failed to add clear plastic entity above beacon");
+
+        helper.runAfterDelay(1, () -> {
+            BlockPos absolutePlasticPos = helper.absolutePos(plasticPos);
+            check(
+                plastic.getBoundingBox().intersects(new AABB(absolutePlasticPos)),
+                "edge-overlapping clear plastic entity did not enter the beacon block"
+            );
+            check(
+                ClearPlasticBeaconInteraction.beamColorAt(helper.getLevel(), absolutePlasticPos) == null,
+                "edge-overlapping clear plastic entity unexpectedly tinted the beacon beam"
+            );
+            plastic.setPos(absolutePlasticPos.getCenter().add(0.0D, -0.5D, 0.0D));
+        });
+
+        helper.runAfterDelay(90, () -> {
+            check(helper.getLevel().getBlockState(helper.absolutePos(plasticPos)).isAir(),
+                "clear plastic entity unexpectedly left a block placeholder");
+            check(
+                plastic.getDisplayState().getValue(DyeableMaterial.COLOR) == DyeColor.YELLOW,
+                "clear plastic entity lost its yellow display state"
+            );
+            check(helper.getLevel().getBlockEntity(helper.absolutePos(beaconPos)) instanceof BeaconBlockEntity,
+                "beacon block entity was not created");
+            BeaconBlockEntity beacon = (BeaconBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(beaconPos));
+            check(!beacon.getBeamSections().isEmpty(), "beacon did not find the clear plastic entity");
+            int expectedColor = DyeColor.YELLOW.getTextureDiffuseColor();
+            String sectionColors = beacon.getBeamSections().stream()
+                .map(section -> String.format("%08X", section.getColor()))
+                .toList()
+                .toString();
+            check(
+                beacon.getBeamSections().getLast().getColor() == expectedColor,
+                "clear plastic entity did not produce the yellow stained-glass beam colour: expected=%08X, actual=%08X, "
+                    .formatted(
+                        expectedColor,
+                        beacon.getBeamSections().getLast().getColor()
+                    )
+                    + "sections=" + sectionColors
+                    + ", entityColor=%08X".formatted(
+                        ClearPlasticBeaconInteraction.beamColorAt(
+                            helper.getLevel(),
+                            helper.absolutePos(plasticPos)
+                        )
+                    )
+            );
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "7x6x7", floor = true)
-    @TestHolder(description = "World melt solidification is colour-preserving, in-place, and idempotent")
+    @TestHolder(description = "World melt solidification creates a colour-preserving 16x16x14 product once")
     static void solidificationTransaction(ExtendedGameTestHelper helper) {
         BlockPos relativePos = new BlockPos(3, 2, 3);
         BlockPos pos = helper.absolutePos(relativePos);
@@ -101,39 +218,27 @@ public final class UniversalPlasticGameTests {
 
         check(UniversalPlasticSolidification.solidify(helper.getLevel(), pos), "melt did not solidify");
         check(!UniversalPlasticSolidification.solidify(helper.getLevel(), pos), "melt solidified twice");
-        BlockState product = helper.getLevel().getBlockState(pos);
-        check(product.is(PlasticraftBlocks.UNIVERSAL_PLASTIC.get()), "solidification did not replace the melt in place");
-        check(
-            product.getValue(DyeableMaterial.COLOR) == DyeColor.PURPLE,
-            "solidification lost the melt colour"
-        );
+        assertCooledProduct(helper, pos, PlasticMaterial.UNIVERSAL, DyeColor.PURPLE);
+        assertNoGranules(helper);
+        helper.succeed();
+    }
 
-        VoxelShape outline = product.getShape(helper.getLevel(), pos);
-        VoxelShape collision = product.getCollisionShape(helper.getLevel(), pos);
-        check(outline.equals(collision), "universal block outline and collision diverged");
-        check(close(outline.bounds().getXsize(), 1.0D), "universal block width is not 16 px");
-        check(close(outline.bounds().getYsize(), 0.875D), "universal block height is not 14 px");
-        check(close(outline.bounds().getZsize(), 1.0D), "universal block length is not 16 px");
-
-        Player player = helper.makeMockPlayer(GameType.CREATIVE);
-        ItemStack clone = ((UniversalPlasticBlock) product.getBlock()).getCloneItemStack(
-            product,
-            new BlockHitResult(pos.getCenter(), Direction.UP, pos, false),
-            helper.getLevel(),
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "Engineering melt solidifies into a 16x16x14 engineering product with its colour")
+    static void engineeringSolidificationPreservesMaterial(ExtendedGameTestHelper helper) {
+        BlockPos relativePos = new BlockPos(3, 2, 3);
+        BlockPos pos = helper.absolutePos(relativePos);
+        helper.getLevel().setBlockAndUpdate(
             pos,
-            player
+            PlasticraftBlocks.ENGINEERING_PLASTIC_MELT.get().defaultBlockState()
         );
-        check(PlasticMeltColor.get(clone) == DyeColor.PURPLE, "pick-block stack lost the product colour");
+        check(helper.getLevel().getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity,
+            "engineering melt block entity was not created");
+        ((UniversalPlasticMeltBlockEntity) helper.getLevel().getBlockEntity(pos)).setColor(DyeColor.LIGHT_BLUE);
 
-        check(helper.getLevel().destroyBlock(pos, true, player), "universal plastic block could not be mined");
-        ItemStack mined = helper.getLevel().getEntitiesOfClass(
-            ItemEntity.class,
-            new AABB(pos).inflate(1.0D),
-            item -> item.getItem().is(PlasticraftBlocks.UNIVERSAL_PLASTIC.asItem())
-        ).stream().map(ItemEntity::getItem).findFirst().orElseThrow(() ->
-            new GameTestAssertException("mined universal plastic block produced no item")
-        );
-        check(PlasticMeltColor.get(mined) == DyeColor.PURPLE, "ordinary block drop lost the product colour");
+        check(UniversalPlasticSolidification.solidify(helper.getLevel(), pos), "engineering melt did not solidify");
+        assertCooledProduct(helper, pos, PlasticMaterial.ENGINEERING, DyeColor.LIGHT_BLUE);
         assertNoGranules(helper);
         helper.succeed();
     }
@@ -203,22 +308,34 @@ public final class UniversalPlasticGameTests {
             helper.getLevel().setRainLevel(0.0F);
         }
 
-        assertProduct(helper, waterMelt, DyeColor.CYAN);
-        assertProduct(helper, coolantMelt, DyeColor.RED);
-        assertProduct(helper.getLevel().getBlockState(rainMelt), DyeColor.LIME);
+        assertCooledProduct(
+            helper,
+            helper.absolutePos(waterMelt),
+            PlasticMaterial.UNIVERSAL,
+            DyeColor.CYAN
+        );
+        assertCooledProduct(
+            helper,
+            helper.absolutePos(coolantMelt),
+            PlasticMaterial.UNIVERSAL,
+            DyeColor.RED
+        );
+        assertCooledProduct(helper, rainMelt, PlasticMaterial.UNIVERSAL, DyeColor.LIME);
         assertNoGranules(helper);
         helper.succeed();
     }
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "9x6x9", floor = true)
-    @TestHolder(description = "Universal plastic item placement, persistence, magnetism, and hammer recovery preserve colour")
+    @TestHolder(description = "Universal plastic item placement, persistence, magnetism, and hammer recovery preserve material data")
     static void itemEntityAndHammerRoundTrip(ExtendedGameTestHelper helper) {
         BlockPos support = new BlockPos(4, 1, 4);
         helper.setBlock(support, Blocks.STONE);
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
-        ItemStack stack = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
-        PlasticMeltColor.set(stack, DyeColor.MAGENTA);
+        ItemStack stack = PlasticMaterial.UNIVERSAL.productStack(DyeColor.MAGENTA);
+        DyeColor expectedDisplayColor = DyeableMaterial.supportsDyeing(PlasticItemData.getMaterial(stack))
+            ? DyeColor.MAGENTA
+            : DyeColor.WHITE;
         player.setItemInHand(InteractionHand.MAIN_HAND, stack);
         BlockHitResult hit = new BlockHitResult(
             helper.absolutePos(support).getCenter(),
@@ -250,12 +367,12 @@ public final class UniversalPlasticGameTests {
         check(close(entity.getBbHeight(), 1.0D), "entity broad-phase height is not one full block");
         AABB collision = entity.plasticraft$getCollisionBox().bounds();
         check(close(collision.getXsize(), 1.0D), "entity collision width drifted from the model");
-        check(close(collision.getYsize(), 0.875D), "entity collision height drifted from the model");
+        check(close(collision.getYsize(), 1.0D), "entity collision height drifted from the model");
         check(close(collision.getZsize(), 1.0D), "entity collision length drifted from the model");
         check(sameBounds(entity.getBoundingBox(), collision), "entity broad-phase box did not follow its geometry");
         check(
-            entity.getDisplayState().getValue(DyeableMaterial.COLOR) == DyeColor.MAGENTA,
-            "placed entity display state lost its colour"
+            entity.getDisplayState().getValue(DyeableMaterial.COLOR) == expectedDisplayColor,
+            "placed entity display state did not follow the material colour capability"
         );
         check(PlasticMeltColor.get(entity.getDropStack()) == DyeColor.MAGENTA, "placed entity drop lost its colour");
 
@@ -263,8 +380,8 @@ public final class UniversalPlasticGameTests {
         UniversalPlasticEntity loaded = new UniversalPlasticEntity(PlasticraftEntities.UNIVERSAL_PLASTIC.get(), helper.getLevel());
         loaded.load(saved);
         check(
-            loaded.getDisplayState().getValue(DyeableMaterial.COLOR) == DyeColor.MAGENTA,
-            "saved entity display state lost its colour"
+            loaded.getDisplayState().getValue(DyeableMaterial.COLOR) == expectedDisplayColor,
+            "saved entity display state did not preserve the material colour capability"
         );
         check(PlasticMeltColor.get(loaded.getDropStack()) == DyeColor.MAGENTA, "saved entity drop lost its colour");
 
@@ -378,7 +495,7 @@ public final class UniversalPlasticGameTests {
         AABB directCollision = directlyPlaced.plasticraft$getCollisionBox().bounds()
             .move(rotated.position().subtract(directlyPlaced.position()));
         check(sameBounds(rotatedCollision, directCollision), "hammer rotation changed the precise collision bounds");
-        check(close(rotatedCollision.getXsize(), 0.875D), "west collision is not 14 px wide");
+        check(close(rotatedCollision.getXsize(), 1.0D), "west collision is not 16 px wide");
         check(close(rotatedCollision.getYsize(), 1.0D), "west collision is not 16 px tall");
         check(
             close(rotatedCollision.getCenter().y, uprightCollision.getCenter().y),
@@ -390,7 +507,7 @@ public final class UniversalPlasticGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "7x5x7", floor = true)
-    @TestHolder(description = "Universal plastic rotates around its 14 px bounds center and previews floor obstruction")
+    @TestHolder(description = "Full-sized universal plastic rotates around its bounds centre without shifting")
     static void centeredHammerRotationUsesActualBounds(ExtendedGameTestHelper helper) {
         UniversalPlasticEntity entity = createUniversal(
             helper,
@@ -414,7 +531,7 @@ public final class UniversalPlasticGameTests {
 
         AABB upsideDown = entity.plasticraft$getCollisionBox().bounds();
         AABB upright = geometry.collisionBoxAt(entity.position(), PlasticEntityOrientation.DEFAULT).bounds();
-        check(sameBounds(upsideDown, upright), "up/down rotation moved the symmetric 14 px collision");
+        check(sameBounds(upsideDown, upright), "up/down rotation moved the full-cube collision");
         check(
             entity.plasticraft$getRotationCenter().equals(upsideDown.getCenter()),
             "universal plastic world rotation center differs from its collision center"
@@ -423,8 +540,8 @@ public final class UniversalPlasticGameTests {
 
         PlasticEntityOrientation west = new PlasticEntityOrientation(Direction.WEST, 0);
         AABB westBounds = geometry.collisionBoxAt(entity.position(), west).bounds();
-        check(westBounds.minY < floorTop - EPSILON, "side rotation did not enter the floor test block");
-        check(!entity.canHammerRotateTo(west), "floor obstruction was not exposed to the hammer preview");
+        check(sameBounds(westBounds, upright), "side rotation moved the full-cube collision");
+        check(entity.canHammerRotateTo(west), "clear full-cube side rotation was rejected");
 
         entity.discard();
         helper.succeed();
@@ -432,7 +549,7 @@ public final class UniversalPlasticGameTests {
 
     @GameTest(timeoutTicks = 35)
     @EmptyTemplate(value = "7x8x7", floor = true)
-    @TestHolder(description = "A falling anvil shatters on a plastic entity whose top is below the block grid")
+    @TestHolder(description = "A falling anvil settles on a full-sized plastic entity")
     static void fallingAnvilBreaksOnFourteenPixelPlastic(ExtendedGameTestHelper helper) {
         UniversalPlasticEntity support = createUniversal(
             helper,
@@ -451,21 +568,24 @@ public final class UniversalPlasticGameTests {
         falling.setDeltaMovement(0.0D, -0.4D, 0.0D);
 
         helper.runAfterDelay(20, () -> {
-            check(!falling.isAlive(), "falling anvil remained an entity after hitting 14 px plastic");
-            check(helper.getBlockState(new BlockPos(3, 3, 3)).isAir(), "falling anvil landed above 14 px plastic");
+            check(!falling.isAlive(), "falling anvil remained an entity after hitting full-sized plastic");
+            check(
+                helper.getBlockState(new BlockPos(3, 3, 3)).is(Blocks.ANVIL),
+                "falling anvil did not settle on full-sized plastic"
+            );
             int drops = helper.getLevel().getEntitiesOfClass(
                 ItemEntity.class,
                 support.getBoundingBox().inflate(3.0D),
                 item -> item.getItem().is(Items.ANVIL)
             ).stream().mapToInt(item -> item.getItem().getCount()).sum();
-            check(drops == 1, "14 px plastic collision produced " + drops + " anvil drops");
+            check(drops == 0, "full-sized plastic collision produced " + drops + " anvil drops");
             helper.succeed();
         });
     }
 
     @GameTest(timeoutTicks = 35)
     @EmptyTemplate(value = "7x7x7", floor = true)
-    @TestHolder(description = "A directly placed falling block waits until the 14 px plastic cell becomes empty")
+    @TestHolder(description = "A directly placed falling block waits until the plastic cell becomes empty")
     static void placedAnvilWaitsForFourteenPixelPlasticToLeave(ExtendedGameTestHelper helper) {
         UniversalPlasticEntity support = createUniversal(
             helper,
@@ -780,23 +900,22 @@ public final class UniversalPlasticGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "9x5x7", floor = true)
-    @TestHolder(description = "A side-pushed plastic snaps to a nearby observer and triggers its vanilla pulse")
+    @TestHolder(description = "A side-pushed full-size plastic reaches an observer and triggers its vanilla pulse")
     static void sidePushedPlasticSnapsToAndTriggersObserver(ExtendedGameTestHelper helper) {
-        BlockPos observerPos = new BlockPos(5, 1, 3);
+        BlockPos observerPos = new BlockPos(5, 2, 3);
         helper.setBlock(
             observerPos,
             Blocks.OBSERVER.defaultBlockState().setValue(ObserverBlock.FACING, Direction.WEST)
         );
-        double initialGap = 1.0D / 32.0D;
+        double initialGap = 0.25D;
         UniversalPlasticEntity target = createUniversal(
             helper,
-            helper.absoluteVec(new Vec3(4.5D - initialGap, 1.0D, 3.5D)),
+            helper.absoluteVec(new Vec3(4.5D - initialGap, 2.0D, 3.5D)),
             PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
             PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack()
         );
         target.setNoGravity(true);
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        player.setNoGravity(true);
         AABB targetBounds = target.plasticraft$getCollisionBox().bounds();
         player.moveTo(
             targetBounds.minX - player.getBbWidth() * 0.5D,
@@ -814,11 +933,19 @@ public final class UniversalPlasticGameTests {
                 check(!helper.getLevel().getBlockTicks().hasScheduledTick(absoluteObserverPos, Blocks.OBSERVER),
                     "observer retained an unrelated scheduled pulse before the plastic push");
                 player.setOnGround(true);
-                player.move(MoverType.SELF, new Vec3(0.01D, 0.0D, 0.0D));
+                player.move(MoverType.SELF, new Vec3(0.12D, -0.08D, 0.0D));
+                double advance = target.getX() - targetStartX;
+                check(advance > 0.10D && advance < initialGap - 0.02D,
+                    "plastic did not complete the first side-push step: " + advance);
+            })
+            .thenIdle(1)
+            .thenExecute(() -> {
+                player.setOnGround(true);
+                player.move(MoverType.SELF, new Vec3(0.12D, -0.08D, 0.0D));
                 AABB movedBounds = target.plasticraft$getCollisionBox().bounds();
                 double remainingGap = absoluteObserverPos.getX() - movedBounds.maxX;
-                check(target.getX() - targetStartX > 0.025D,
-                    "plastic did not extend its short side push to the nearby observer");
+                check(target.getX() - targetStartX > 0.20D,
+                    "plastic did not reach the nearby observer during the side push");
                 check(remainingGap >= -EPSILON && remainingGap <= 1.0E-5D,
                     "plastic left a visible gap before the observer: " + remainingGap);
                 check(helper.getLevel().getBlockTicks().hasScheduledTick(absoluteObserverPos, Blocks.OBSERVER),
@@ -840,7 +967,7 @@ public final class UniversalPlasticGameTests {
     @EmptyTemplate(value = "9x5x7", floor = true)
     @TestHolder(description = "Reloading a plastic that already touches an observer does not retrigger its pulse")
     static void reloadedPlasticContactDoesNotRetriggerObserver(ExtendedGameTestHelper helper) {
-        BlockPos observerPos = new BlockPos(5, 1, 3);
+        BlockPos observerPos = new BlockPos(5, 2, 3);
         helper.setBlock(
             observerPos,
             Blocks.OBSERVER.defaultBlockState().setValue(ObserverBlock.FACING, Direction.WEST)
@@ -857,7 +984,7 @@ public final class UniversalPlasticGameTests {
                     "observer retained an unrelated scheduled pulse before the plastic spawn");
                 plastic[0] = createUniversal(
                     helper,
-                    helper.absoluteVec(new Vec3(4.5D, 1.0D, 3.5D)),
+                    helper.absoluteVec(new Vec3(4.5D, 2.0D, 3.5D)),
                     PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
                     PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack()
                 );
@@ -997,7 +1124,7 @@ public final class UniversalPlasticGameTests {
         );
         check(PlasticMeltColor.get(restored.getDropStack()) == DyeColor.BLUE, "bonded drop stack lost its colour");
         VoxelShape shape = helper.getLevel().getBlockState(pos).getCollisionShape(helper.getLevel(), pos);
-        check(close(shape.bounds().getYsize(), 0.875D), "bonded collision no longer matches the 14 px model");
+        check(close(shape.bounds().getYsize(), 1.0D), "bonded collision no longer matches the full-cube model");
         check(
             shape == helper.getLevel().getBlockState(pos).getCollisionShape(helper.getLevel(), pos),
             "bonded collision shape was rebuilt for an unchanged model"
@@ -1126,6 +1253,94 @@ public final class UniversalPlasticGameTests {
         placeMeltAt(helper, helper.absolutePos(relativePos), color);
     }
 
+    private static void assertLavaDestroysMoldedTank(ExtendedGameTestHelper helper, BlockPos relativePos) {
+        UniversalPlasticEntity tank = newMoldedTank(helper, PlasticMaterial.UNIVERSAL, relativePos);
+        check(helper.getLevel().addFreshEntity(tank), "failed to add molded tank entity");
+        int capacity = tank.getMoldedFluidHandler().getTankCapacity(0);
+        int water = capacity / 2;
+        BlockPos effectPos = BlockPos.containing(tank.getBoundingBox().getCenter());
+        check(tank.getMoldedFluidHandler().fill(new FluidStack(Fluids.WATER, water), IFluidHandler.FluidAction.EXECUTE)
+                == water,
+            "molded tank rejected water before lava");
+        check(tank.getMoldedFluidHandler().fill(
+            new FluidStack(Fluids.LAVA, capacity - water),
+            IFluidHandler.FluidAction.EXECUTE
+        ) == capacity - water, "molded tank reported the wrong lava transfer");
+        check(tank.isRemoved(), "non-heat-resistant molded tank did not shatter on lava");
+        check(tank.getMoldedFluidHandler().getFluidInTank(0).isEmpty(),
+            "shattered molded tank retained a previous fluid");
+        check(helper.getLevel().getFluidState(effectPos).isEmpty(),
+            "shattered molded tank left lava in the world");
+    }
+
+    private static void assertHeatResistantMoldedTankRetainsLava(
+        ExtendedGameTestHelper helper,
+        BlockPos relativePos
+    ) {
+        UniversalPlasticEntity tank = newMoldedTank(helper, PlasticMaterial.HEAT_RESISTANT, relativePos);
+        check(helper.getLevel().addFreshEntity(tank), "failed to add heat-resistant molded tank entity");
+        int capacity = tank.getMoldedFluidHandler().getTankCapacity(0);
+        check(tank.getMoldedFluidHandler().fill(new FluidStack(Fluids.LAVA, capacity), IFluidHandler.FluidAction.EXECUTE)
+                == capacity,
+            "heat-resistant molded tank rejected lava");
+        check(!tank.isRemoved(), "heat-resistant molded tank shattered on lava");
+        check(tank.getMoldedFluidHandler().getFluidInTank(0).is(Fluids.LAVA),
+            "heat-resistant molded tank did not retain lava");
+    }
+
+    private static void assertLavaDestroysBondedMoldedTank(ExtendedGameTestHelper helper, BlockPos relativePos) {
+        BlockPos pos = helper.absolutePos(relativePos);
+        BlockState fixedState = PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState()
+            .setValue(AbstractPlasticEntityBlock.BONDED, true);
+        helper.setBlock(relativePos, fixedState);
+        check(helper.getLevel().getBlockEntity(pos) instanceof BondedEntityBlockEntity,
+            "bonded molded tank block entity was not created");
+        BondedEntityBlockEntity bonded = (BondedEntityBlockEntity) helper.getLevel().getBlockEntity(pos);
+        UniversalPlasticEntity source = newMoldedTank(helper, PlasticMaterial.UNIVERSAL, relativePos);
+        check(bonded.initialize(
+            source,
+            source.getDisplayState(),
+            Direction.UP,
+            PlasticEntityOrientation.DEFAULT,
+            true
+        ), "bonded molded tank could not be initialized");
+
+        IFluidHandler fluids = bonded.getCapabilityFluidHandler();
+        check(fluids != null, "bonded molded tank did not expose its fluid handler");
+        int capacity = fluids.getTankCapacity(0);
+        int water = capacity / 2;
+        check(fluids.fill(new FluidStack(Fluids.WATER, water), IFluidHandler.FluidAction.EXECUTE) == water,
+            "bonded molded tank rejected water before lava");
+        check(fluids.fill(new FluidStack(Fluids.LAVA, capacity - water), IFluidHandler.FluidAction.EXECUTE)
+                == capacity - water,
+            "bonded molded tank reported the wrong lava transfer");
+        bonded.tickFunctionalEntity();
+        check(helper.getBlockState(relativePos).isAir(), "bonded molded tank did not shatter on lava");
+        check(helper.getLevel().getFluidState(pos).isEmpty(), "bonded molded tank left lava in the world");
+    }
+
+    private static UniversalPlasticEntity newMoldedTank(
+        ExtendedGameTestHelper helper,
+        PlasticMaterial material,
+        BlockPos relativePos
+    ) {
+        ItemStack stack = MoldedPlasticDemoItemStacks.product(material, MoldingProductTypes.TANK_ID).orElseThrow(
+            () -> new GameTestAssertException(material.key() + " tank demonstration stack was unavailable")
+        );
+        MoldedPlasticData data = MoldedPlasticData.get(stack).orElseThrow(
+            () -> new GameTestAssertException(material.key() + " tank demonstration stack lost molded data")
+        );
+        UniversalPlasticEntity tank = material.createEntity(
+            helper.getLevel(),
+            data.geometry().placementPosition(helper.absolutePos(relativePos), PlasticEntityOrientation.DEFAULT),
+            material.displayState(DyeColor.WHITE),
+            stack,
+            PlasticEntityOrientation.DEFAULT
+        );
+        tank.setNoGravity(true);
+        return tank;
+    }
+
     private static void placeMeltAt(ExtendedGameTestHelper helper, BlockPos pos, DyeColor color) {
         helper.getLevel().setBlockAndUpdate(pos, PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT.get().defaultBlockState());
         check(
@@ -1163,13 +1378,52 @@ public final class UniversalPlasticGameTests {
         return entity;
     }
 
-    private static void assertProduct(ExtendedGameTestHelper helper, BlockPos relativePos, DyeColor color) {
-        assertProduct(helper.getBlockState(relativePos), color);
-    }
-
-    private static void assertProduct(BlockState state, DyeColor color) {
-        check(state.is(PlasticraftBlocks.UNIVERSAL_PLASTIC.get()), "cooling trigger did not create universal plastic");
-        check(state.getValue(DyeableMaterial.COLOR) == color, "cooling trigger lost the melt colour");
+    private static UniversalPlasticEntity assertCooledProduct(
+        ExtendedGameTestHelper helper,
+        BlockPos pos,
+        PlasticMaterial material,
+        DyeColor color
+    ) {
+        check(
+            !helper.getLevel().getBlockState(pos).is(material.meltBlock()),
+            material.key() + " cooling left the melt block in place"
+        );
+        List<UniversalPlasticEntity> products = helper.getLevel().getEntitiesOfClass(
+            UniversalPlasticEntity.class,
+            new AABB(pos).inflate(0.25D),
+            entity -> entity.getType() == material.entityType()
+        );
+        check(products.size() == 1, material.key() + " cooling did not create exactly one product entity");
+        UniversalPlasticEntity product = products.getFirst();
+        check(product.getDisplayState().is(material.productBlock()), material.key() + " cooling used the wrong block");
+        check(
+            product.getDisplayState().getValue(DyeableMaterial.COLOR) == color,
+            material.key() + " cooling lost the display colour"
+        );
+        ItemStack drop = product.getDropStack();
+        check(drop.is(material.productBlock().asItem()), material.key() + " cooled product used the wrong drop item");
+        check(
+            PlasticItemData.getMaterial(drop).equals(material.key()),
+            material.key() + " cooled product lost its material key"
+        );
+        check(PlasticMeltColor.get(drop) == color, material.key() + " cooled product lost its item colour");
+        MoldedPlasticData data = MoldedPlasticData.get(drop).orElseThrow(() ->
+            new GameTestAssertException(material.key() + " cooled product has no molded data")
+        );
+        check(data.material().getFluid() == material.melt(), material.key() + " cooled product used the wrong melt");
+        check(
+            PlasticMeltColor.get(data.material()) == color,
+            material.key() + " cooled product lost its molded colour"
+        );
+        AABB bounds = data.surfaceBounds();
+        check(close(bounds.getXsize(), 1.0D), material.key() + " cooled product width is not 16 px");
+        check(close(bounds.getYsize(), 0.875D), material.key() + " cooled product height is not 14 px");
+        check(close(bounds.getZsize(), 1.0D), material.key() + " cooled product length is not 16 px");
+        AABB collision = product.plasticraft$getCollisionBox().bounds();
+        check(close(collision.getXsize(), 1.0D), material.key() + " cooled collision width is not 16 px");
+        check(close(collision.getYsize(), 0.875D), material.key() + " cooled collision height is not 14 px");
+        check(close(collision.getZsize(), 1.0D), material.key() + " cooled collision length is not 16 px");
+        return product;
     }
 
     private static void assertNoGranules(ExtendedGameTestHelper helper) {
@@ -1181,6 +1435,7 @@ public final class UniversalPlasticGameTests {
             ItemEntity.class,
             bounds,
             item -> item.getItem().is(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get())
+                || item.getItem().is(PlasticraftItems.ENGINEERING_PLASTIC_GRANULE.get())
         ).stream().mapToInt(item -> item.getItem().getCount()).sum();
         check(granules == 0, "world solidification produced " + granules + " plastic granules");
     }

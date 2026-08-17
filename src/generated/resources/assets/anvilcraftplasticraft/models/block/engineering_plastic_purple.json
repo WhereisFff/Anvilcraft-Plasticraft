@@ -1,0 +1,76 @@
+{
+  "elements": [
+    {
+      "faces": {
+        "down": {
+          "texture": "#plastic",
+          "uv": [
+            0.25,
+            0.25,
+            4.25,
+            4.25
+          ]
+        },
+        "east": {
+          "texture": "#plastic",
+          "uv": [
+            4.75,
+            0.25,
+            8.75,
+            4.25
+          ]
+        },
+        "north": {
+          "texture": "#plastic",
+          "uv": [
+            9.25,
+            0.25,
+            13.25,
+            4.25
+          ]
+        },
+        "south": {
+          "texture": "#plastic",
+          "uv": [
+            0.25,
+            4.75,
+            4.25,
+            8.75
+          ]
+        },
+        "up": {
+          "texture": "#plastic",
+          "uv": [
+            4.75,
+            4.75,
+            8.75,
+            8.75
+          ]
+        },
+        "west": {
+          "texture": "#plastic",
+          "uv": [
+            9.25,
+            4.75,
+            13.25,
+            8.75
+          ]
+        }
+      },
+      "from": [
+        0,
+        0,
+        0
+      ],
+      "to": [
+        16,
+        16,
+        16
+      ]
+    }
+  ],
+  "textures": {
+    "particle": "anvilcraftplasticraft:block/engineering_plastic/purple",
+    "plastic": "anvilcraftplasticraft:block/engineering_plastic/purple"
+  }
+}

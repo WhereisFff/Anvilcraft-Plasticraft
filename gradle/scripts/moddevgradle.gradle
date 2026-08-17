@@ -54,6 +54,7 @@ neoForge {
 
         data {
             data()
+            gameDirectory.value(project.layout.projectDirectory.dir('run/data'))
             programArguments.addAll(
                 '--mod', project.mod_id,
                 '--all',

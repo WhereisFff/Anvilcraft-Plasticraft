@@ -14,6 +14,7 @@ import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -76,13 +77,47 @@ public final class DemolitionPlanner {
     }
 
     public static void clearAttachedResidue(ServerLevel level, BlockPos smashed) {
+        for (BlockPos neighbor : attachedResiduePositions(level, smashed)) {
+            level.setBlockAndUpdate(neighbor, Blocks.AIR.defaultBlockState());
+        }
+    }
+
+    /** 返回砸击后清理附属残留的实际方块位置，供权限检查和执行共用。 */
+    public static List<BlockPos> attachedResiduePositions(ServerLevel level, BlockPos smashed) {
+        List<BlockPos> result = new ArrayList<>();
         for (Direction direction : Direction.values()) {
             BlockPos neighbor = smashed.relative(direction);
             BlockState state = level.getBlockState(neighbor);
             if (state.isAir()) continue;
             if (OrdinaryBlockAdapter.isAttachedHalf(state) || coreOf(level, neighbor, state).equals(smashed)) {
-                level.setBlockAndUpdate(neighbor, Blocks.AIR.defaultBlockState());
+                result.add(neighbor.immutable());
             }
+        }
+        return result;
+    }
+
+    /** 返回拆除操作会触及的核心及附属残留位置。 */
+    public static List<BlockPos> affectedPositions(ServerLevel level, BlockPos requested) {
+        BlockPos smashed = StonecutterSmashAdapter.mainPartOf(level, requested);
+        Set<BlockPos> result = new LinkedHashSet<>();
+        result.add(smashed.immutable());
+        BlockState state = level.getBlockState(smashed);
+        if (state.getBlock() instanceof AbstractMultiPartBlock<?> multiPartBlock) {
+            addMultiPartPositions(result, smashed, state, multiPartBlock);
+        }
+        result.addAll(attachedResiduePositions(level, smashed));
+        return List.copyOf(result);
+    }
+
+    private static <P extends Enum<P>> void addMultiPartPositions(
+        Set<BlockPos> positions,
+        BlockPos main,
+        BlockState state,
+        AbstractMultiPartBlock<P> block
+    ) {
+        if (!state.hasProperty(block.getPart())) return;
+        for (P part : block.getParts()) {
+            positions.add(main.offset(block.offsetFrom(state, part)).immutable());
         }
     }
 

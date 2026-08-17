@@ -4,9 +4,8 @@ import dev.anvilcraft.lib.v2.recipe.util.InWorldRecipeContext;
 import dev.anvilcraft.lib.v2.recipe.util.InWorldRecipeData;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
-import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
-import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import net.minecraft.core.BlockPos;
@@ -35,9 +34,12 @@ public final class PlasticMeltRecipeColor {
         if (result == null) return;
         FluidStack melt = findMelt(result.handler());
         if (melt.isEmpty()) return;
+        PlasticMaterial material = PlasticMaterial.fromMelt(melt).orElse(null);
+        if (material == null) return;
         State state = context.computeIfAbsent(DATA);
         state.cauldronPos = pos;
         state.sourceColor = colorAt(context, pos, melt);
+        state.material = material;
         state.hasMelt = true;
     }
 
@@ -52,10 +54,12 @@ public final class PlasticMeltRecipeColor {
 
     public static void apply(InWorldRecipeContext context) {
         State data = context.computeIfAbsent(DATA);
-        if (!data.hasMelt || data.dyeColor == null || data.cauldronPos == null) return;
+        if (!data.hasMelt || data.dyeColor == null || data.cauldronPos == null || data.material == null) return;
         BlockPos pos = data.cauldronPos;
         BlockState blockState = context.getLevel().getBlockState(pos);
-        if (blockState.is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())) {
+        if (data.material.supportsDyeing()
+            && PlasticMaterial.fromMeltCauldron(blockState).filter(data.material::equals).isPresent()
+            && blockState.hasProperty(UniversalPlasticMeltCauldronBlock.COLOR)) {
             context.getLevel().setBlock(
                 pos,
                 blockState.setValue(UniversalPlasticMeltCauldronBlock.COLOR, data.dyeColor),
@@ -66,20 +70,21 @@ public final class PlasticMeltRecipeColor {
             List<FluidStack> fluids = cauldron.getFluids().copyFluids();
             boolean changed = false;
             for (FluidStack fluid : fluids) {
-                if (!fluid.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())) continue;
-                PlasticMeltColor.set(fluid, data.dyeColor);
+                if (!fluid.is(data.material.melt())) continue;
+                if (data.material.supportsDyeing()) PlasticMeltColor.set(fluid, data.dyeColor);
                 changed = true;
             }
             if (changed) cauldron.getFluids().setFluids(fluids);
             return;
         }
         FluidContainerLookup.Result result = FluidContainerLookup.find(context.getLevel(), pos, null);
-        if (result != null) recolorFirstMelt(result.handler(), data.dyeColor);
+        if (result != null) recolorFirstMelt(result.handler(), data.material, data.dyeColor);
     }
 
     private static DyeColor colorAt(InWorldRecipeContext context, BlockPos pos, FluidStack melt) {
         BlockState state = context.getLevel().getBlockState(pos);
-        if (state.is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())) {
+        if (state.hasProperty(UniversalPlasticMeltCauldronBlock.COLOR)
+            && PlasticMaterial.fromMeltCauldron(state).isPresent()) {
             return state.getValue(UniversalPlasticMeltCauldronBlock.COLOR);
         }
         return PlasticMeltColor.get(melt);
@@ -88,16 +93,24 @@ public final class PlasticMeltRecipeColor {
     private static FluidStack findMelt(IFluidHandler handler) {
         for (int tank = 0; tank < handler.getTanks(); tank++) {
             FluidStack fluid = handler.getFluidInTank(tank);
-            if (fluid.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())) return fluid.copy();
+            if (PlasticMaterial.isMelt(fluid)) return fluid.copy();
         }
         return FluidStack.EMPTY;
     }
 
-    private static void recolorFirstMelt(IFluidHandler handler, DyeColor color) {
-        FluidStack melt = findMelt(handler);
+    private static FluidStack findMelt(IFluidHandler handler, PlasticMaterial material) {
+        for (int tank = 0; tank < handler.getTanks(); tank++) {
+            FluidStack fluid = handler.getFluidInTank(tank);
+            if (fluid.is(material.melt())) return fluid.copy();
+        }
+        return FluidStack.EMPTY;
+    }
+
+    private static void recolorFirstMelt(IFluidHandler handler, PlasticMaterial material, DyeColor color) {
+        FluidStack melt = findMelt(handler, material);
         if (melt.isEmpty()) return;
         FluidStack replacement = melt.copy();
-        PlasticMeltColor.set(replacement, color);
+        if (material.supportsDyeing()) PlasticMeltColor.set(replacement, color);
         FluidStack drained = handler.drain(melt, IFluidHandler.FluidAction.EXECUTE);
         if (drained.getAmount() != melt.getAmount()) {
             if (!drained.isEmpty()) handler.fill(drained, IFluidHandler.FluidAction.EXECUTE);
@@ -114,6 +127,7 @@ public final class PlasticMeltRecipeColor {
         private BlockPos cauldronPos;
         private DyeColor sourceColor = DyeColor.WHITE;
         private DyeColor dyeColor;
+        private PlasticMaterial material;
         private boolean hasMelt;
     }
 }

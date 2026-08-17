@@ -8,9 +8,8 @@ import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFallingBlockBehavior;
 import dev.anvilcraft.plasticraft.entity.adhesive.SlidingAdhesionData;
 import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
-import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
-import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.machine.PlasticMoldingAnvilProcessor;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
@@ -215,14 +214,15 @@ public final class AnvilCraftApiEvents {
     @SubscribeEvent
     public static void colorMixedGranules(LargeCauldronEvent.MixingOutput event) {
         ItemStack result = event.getResult();
-        if (!result.is(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get())) return;
+        PlasticMaterial material = PlasticMaterial.fromGranule(result).orElse(null);
+        if (material == null) return;
         DyeColor color = DyeColor.WHITE;
         for (FluidStack fluid : event.getCauldron().getFluids().copyFluids()) {
-            if (!fluid.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())) continue;
+            if (!fluid.is(material.melt())) continue;
             color = PlasticMeltColor.get(fluid);
             break;
         }
-        PlasticMeltColor.set(result, color);
+        if (material.supportsDyeing()) PlasticMeltColor.set(result, color);
         event.setResult(result);
     }
 

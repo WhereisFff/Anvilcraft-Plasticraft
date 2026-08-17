@@ -1,0 +1,93 @@
+{
+  "blueprint_format": 1,
+  "file_revision": 2,
+  "name": "alloy-hard-ham",
+  "owner": {
+    "uuid": "380df991-f603-344c-a090-369bad2a924a",
+    "name": "Dev"
+  },
+  "workspace": {
+    "coordinate_system": "world_xyz_px",
+    "units_per_block": 16,
+    "size": [
+      48,
+      48,
+      48
+    ]
+  },
+  "type_suggestion": "anvilcraftplasticraft:allay_hard_hat",
+  "created_at": 1786858962549,
+  "updated_at": 1786858975508,
+  "bake_version": 1,
+  "model_hash": "bff67c59ef7dcf3f7a26e5bf886c5cdc5983e94fdd0d0fe1f848f61106597894",
+  "model": {
+    "requested_type": "anvilcraftplasticraft:allay_hard_hat",
+    "elements": [
+      {
+        "to": {
+          "x": 24.0,
+          "y": 17.0,
+          "z": 24.0
+        },
+        "transform": {
+          "pivot": {
+            "x": 20.0,
+            "y": 18.5,
+            "z": 20.0
+          }
+        },
+        "id": "4669ac76-689c-4f0f-9e49-2df30090faa1",
+        "name": "Cube 1",
+        "from": {
+          "x": 16.0,
+          "y": 16.0,
+          "z": 16.0
+        }
+      },
+      {
+        "to": {
+          "x": 23.0,
+          "y": 20.0,
+          "z": 23.0
+        },
+        "transform": {
+          "pivot": {
+            "x": 20.0,
+            "y": 18.5,
+            "z": 20.0
+          }
+        },
+        "id": "65adc4db-3fe1-4b71-bd3a-6a1d90e31e18",
+        "name": "Cube 2",
+        "from": {
+          "x": 17.0,
+          "y": 17.0,
+          "z": 17.0
+        }
+      },
+      {
+        "to": {
+          "x": 24.0,
+          "y": 21.0,
+          "z": 21.0
+        },
+        "transform": {
+          "pivot": {
+            "x": 20.0,
+            "y": 18.5,
+            "z": 20.0
+          }
+        },
+        "id": "1cbdfdc2-db24-48fa-a084-21fd38ff51ec",
+        "name": "Cube 3",
+        "from": {
+          "x": 16.0,
+          "y": 17.0,
+          "z": 19.0
+        }
+      }
+    ],
+    "format_version": 3,
+    "name": "alloy-hard-ham"
+  }
+}

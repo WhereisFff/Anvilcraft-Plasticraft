@@ -15,7 +15,7 @@ public record MoldingBlueprintSummary(
     long updatedAt,
     boolean pinned
 ) {
-    public static final int MAX_FILE_ID_LENGTH = 101;
+    public static final int MAX_FILE_ID_LENGTH = MoldingBlueprintLibrary.MAX_FILE_ID_LENGTH;
 
     public MoldingBlueprintSummary {
         if (!MoldingBlueprintLibrary.isSafeFileId(fileId)) throw new IllegalArgumentException("Invalid blueprint file id");

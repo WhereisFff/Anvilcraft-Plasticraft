@@ -38,17 +38,22 @@ public class UniversalPlasticBlock extends AbstractPlasticEntityBlock<UniversalP
 
     public UniversalPlasticBlock(Properties properties) {
         super(properties);
-        this.registerDefaultState(this.defaultBlockState()
+        BlockState defaultState = this.defaultBlockState()
             .setValue(FACING, Direction.NORTH)
             .setValue(MAGNETIZED, false)
-            .setValue(BONDED, false)
-            .setValue(DyeableMaterial.COLOR, DyeColor.WHITE));
+            .setValue(BONDED, false);
+        if (this.hasColorState()) defaultState = defaultState.setValue(DyeableMaterial.COLOR, DyeColor.WHITE);
+        this.registerDefaultState(defaultState);
     }
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         super.createBlockStateDefinition(builder);
-        builder.add(DyeableMaterial.COLOR);
+        if (this.hasColorState()) builder.add(DyeableMaterial.COLOR);
+    }
+
+    protected boolean hasColorState() {
+        return true;
     }
 
     @Override
@@ -91,12 +96,18 @@ public class UniversalPlasticBlock extends AbstractPlasticEntityBlock<UniversalP
     @Override
     protected ItemStack createDropStack(BlockState state) {
         ItemStack stack = new ItemStack(this);
-        PlasticItemData.setMaterial(stack, "universal_plastic");
-        PlasticMeltColor.set(stack, state.getValue(DyeableMaterial.COLOR));
+        PlasticItemData.setMaterial(stack, this.materialKey());
+        if (state.hasProperty(DyeableMaterial.COLOR)) {
+            PlasticMeltColor.set(stack, state.getValue(DyeableMaterial.COLOR));
+        }
         if (state.getValue(MAGNETIZED)) {
             PlasticItemData.setMagnetized(stack, true);
         }
         return stack;
+    }
+
+    protected String materialKey() {
+        return "universal_plastic";
     }
 
     @Override

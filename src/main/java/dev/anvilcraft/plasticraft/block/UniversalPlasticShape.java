@@ -26,28 +26,28 @@ public final class UniversalPlasticShape {
         ),
         surface(
             Direction.UP,
-            point(0, 14, 0), point(16, 14, 0), point(16, 14, 16), point(0, 14, 16),
+            point(0, 16, 0), point(16, 16, 0), point(16, 16, 16), point(0, 16, 16),
             16, 16, 0, 0
         ),
         surface(
             Direction.NORTH,
-            point(16, 0, 0), point(16, 14, 0), point(0, 14, 0), point(0, 0, 0),
-            16, 14, 0, 1
+            point(16, 0, 0), point(16, 16, 0), point(0, 16, 0), point(0, 0, 0),
+            16, 16, 0, 1
         ),
         surface(
             Direction.SOUTH,
-            point(0, 0, 16), point(0, 14, 16), point(16, 14, 16), point(16, 0, 16),
-            16, 14, 0, 1
+            point(0, 0, 16), point(0, 16, 16), point(16, 16, 16), point(16, 0, 16),
+            16, 16, 0, 1
         ),
         surface(
             Direction.WEST,
-            point(0, 0, 0), point(0, 14, 0), point(0, 14, 16), point(0, 0, 16),
-            16, 14, 0, 1
+            point(0, 0, 0), point(0, 16, 0), point(0, 16, 16), point(0, 0, 16),
+            16, 16, 0, 1
         ),
         surface(
             Direction.EAST,
-            point(16, 0, 16), point(16, 14, 16), point(16, 14, 0), point(16, 0, 0),
-            16, 14, 0, 1
+            point(16, 0, 16), point(16, 16, 16), point(16, 16, 0), point(16, 0, 0),
+            16, 16, 0, 1
         )
     );
     public static final String SHAPE_HASH = PlasticTextureInput.computeShapeHash(SURFACES);

@@ -32,4 +32,7 @@ dependencies {
     runtimeOnly(libs.jei.forge)
     compileOnly(libs.jade)
     runtimeOnly(libs.jade)
+
+    // FTB Teams 只用于独立权限适配，不进入 Plasticraft 发布物。
+    compileOnly(libs.ftb.teams) { transitive = false }
 }

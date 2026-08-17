@@ -6,6 +6,7 @@ import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionPermission;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionTraffic;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.anvilcraft.plasticraft.init.PlasticraftMenuTypes;
@@ -22,6 +23,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.SimpleMenuProvider;
@@ -94,6 +96,9 @@ public class AllayLoungeBlockEntity extends BlockEntity {
     private boolean loading;
     @Nullable
     private UUID lastDiskJobId;
+    /** 休息室放置者；无所有者时保持拒绝访问，不进行隐式认领。 */
+    @Nullable
+    private UUID owner;
 
     public AllayLoungeBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState blockState) {
         super(type, pos, blockState);
@@ -109,6 +114,7 @@ public class AllayLoungeBlockEntity extends BlockEntity {
 
     public static void serverTick(Level level, BlockPos pos, BlockState state, AllayLoungeBlockEntity lounge) {
         lounge.tickDocking();
+        lounge.retryDiskClaim();
     }
 
     private void tickDocking() {
@@ -132,8 +138,11 @@ public class AllayLoungeBlockEntity extends BlockEntity {
 
     private void finishDocking() {
         if (this.dockingRecord == null) return;
-        if (!this.storeHosted(this.dockingRecord) && this.level instanceof ServerLevel serverLevel) {
-            this.spawnBound(serverLevel, this.dockApproachPoint().add(0.0D, 0.2D, 0.0D), this.dockingRecord);
+        if (this.level instanceof ServerLevel serverLevel) {
+            AllayWorkRecord record = this.dockingRecord;
+            if (!this.canHostRecord(record) || !this.storeHosted(record)) {
+                this.spawnBound(serverLevel, this.dockApproachPoint().add(0.0D, 0.2D, 0.0D), record);
+            }
         }
         this.dockingRecord = null;
         this.dockingProgress = 0;
@@ -165,6 +174,7 @@ public class AllayLoungeBlockEntity extends BlockEntity {
     }
 
     public void registerDocking(WorkingAllayEntity worker) {
+        if (!canHost(worker)) return;
         this.pruneDockingQueue();
         UUID id = worker.getUUID();
         if (!this.dockingQueue.contains(id)) {
@@ -244,6 +254,7 @@ public class AllayLoungeBlockEntity extends BlockEntity {
 
     public boolean tryDock(WorkingAllayEntity worker) {
         if (this.level == null || this.level.isClientSide) return false;
+        if (!canHost(worker)) return false;
         if (this.isBayBusy()) return false;
         if (this.hosted.size() >= HOST_CAPACITY) return false;
         this.removeDockingWorker(worker.getUUID());
@@ -278,7 +289,22 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         return this.dockingRecord != null || this.dockingRunning;
     }
 
+    /** 网络入口：只召回当前休息室所有者或同队成员的悦灵。 */
+    public int recallNearbyWorkers(ServerPlayer actor) {
+        if (!ConstructionPermission.canUseLounge(actor, this)) return 0;
+        UUID loungeOwner = this.owner;
+        return loungeOwner == null ? 0 : recallNearbyWorkers(actor.server, loungeOwner);
+    }
+
+    /** 兼容内部调度与旧 GameTest 的可信入口。 */
     public int recallNearbyWorkers(UUID ownerId) {
+        if (this.level instanceof ServerLevel level) {
+            return recallNearbyWorkers(level.getServer(), ownerId);
+        }
+        return 0;
+    }
+
+    private int recallNearbyWorkers(MinecraftServer server, UUID ownerId) {
         if (this.level == null || this.level.isClientSide) return 0;
         this.pruneDockingQueue();
         int available = HOST_CAPACITY
@@ -294,7 +320,10 @@ public class AllayLoungeBlockEntity extends BlockEntity {
             .thenComparing(WorkingAllayEntity::getUUID));
         int recalled = 0;
         for (WorkingAllayEntity worker : workers) {
-            if (worker.getOwner().filter(ownerId::equals).isEmpty()) continue;
+            UUID workerOwner = worker.getOwner().orElse(null);
+            if (workerOwner == null || !ConstructionPermission.areCollaborators(server, ownerId, workerOwner)) {
+                continue;
+            }
             if (worker.isDockingTo(this.worldPosition)) continue;
             if (worker.startDockingTo(this.worldPosition)) {
                 recalled++;
@@ -312,6 +341,20 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         this.spawnBound(serverLevel, this.releasePoint(), record);
         this.occupyOutboundBay();
         return true;
+    }
+
+    /** 网络入口：托管卡片只能由休息室所有者或同队成员操作。 */
+    public boolean releaseHosted(ServerPlayer actor, int index) {
+        if (!ConstructionPermission.canUseLounge(actor, this)
+            || index < 0
+            || index >= this.hosted.size()) {
+            return false;
+        }
+        UUID recordOwner = this.hosted.get(index).owner().orElse(null);
+        return recordOwner != null
+            && this.owner != null
+            && ConstructionPermission.areCollaborators(actor.server, recordOwner, this.owner)
+            && releaseHosted(index);
     }
 
     public boolean tryLaunch(Predicate<AllayWorkRecord> match) {
@@ -387,7 +430,18 @@ public class AllayLoungeBlockEntity extends BlockEntity {
     private WorkingAllayEntity spawnBound(ServerLevel level, Vec3 pos, AllayWorkRecord record) {
         WorkingAllayEntity worker = WorkingAllayEntity.spawnFromRecord(level, pos, record);
         worker.setHomeLounge(this.worldPosition);
+        if (!this.canHost(worker)) {
+            worker.setHomeLounge(null);
+        }
         return worker;
+    }
+
+    private boolean canHostRecord(AllayWorkRecord record) {
+        if (!(this.level instanceof ServerLevel level) || this.owner == null) return false;
+        UUID recordOwner = record.owner().orElse(null);
+        return recordOwner != null
+            && ConstructionPermission.areCollaborators(level.getServer(), recordOwner, this.owner)
+            && ConstructionPermission.canModify(level, this.worldPosition, this.owner);
     }
 
     public AllayShortageStrategy shortageStrategy() {
@@ -405,6 +459,13 @@ public class AllayLoungeBlockEntity extends BlockEntity {
                 this.shortageStrategy
             );
         }
+    }
+
+    /** 网络入口：缺料策略属于休息室设置，不能由陌生玩家修改。 */
+    public boolean setShortageStrategy(ServerPlayer actor, AllayShortageStrategy strategy) {
+        if (!ConstructionPermission.canUseLounge(actor, this)) return false;
+        setShortageStrategy(strategy);
+        return true;
     }
 
     public void setPickupDisplay(Direction side, ItemStack stack) {
@@ -451,12 +512,24 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         UUID now = this.diskJobId();
         if (Objects.equals(now, this.lastDiskJobId)) return;
         UUID previous = this.lastDiskJobId;
-        this.lastDiskJobId = now;
-        if (previous != null) {
+        if (previous != null && !previous.equals(now)) {
             ConstructionJobController.unclaimLounge(serverLevel, this.worldPosition, previous);
         }
-        if (now != null) {
-            ConstructionJobController.claimLounge(serverLevel, this.worldPosition, now);
+        this.lastDiskJobId = null;
+        this.retryDiskClaim();
+    }
+
+    /** 权限或团队关系暂时失败时，保留磁盘并在后续 tick 重新尝试认领。 */
+    private void retryDiskClaim() {
+        if (!(this.level instanceof ServerLevel serverLevel) || this.level.isClientSide) return;
+        UUID now = this.diskJobId();
+        if (now == null) {
+            this.lastDiskJobId = null;
+            return;
+        }
+        if (Objects.equals(now, this.lastDiskJobId)) return;
+        if (ConstructionJobController.claimLounge(serverLevel, this.worldPosition, now)) {
+            this.lastDiskJobId = now;
         }
     }
 
@@ -476,7 +549,8 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         );
     }
 
-    public void openMenu(ServerPlayer player) {
+    public boolean openMenu(ServerPlayer player) {
+        if (!ConstructionPermission.canUseLounge(player, this)) return false;
         player.openMenu(
             new SimpleMenuProvider(
                 (containerId, inventory, ignored) -> new AllayLoungeMenu(
@@ -489,6 +563,28 @@ public class AllayLoungeBlockEntity extends BlockEntity {
             ),
             buffer -> buffer.writeBlockPos(this.worldPosition)
         );
+        return true;
+    }
+
+    @Nullable
+    public UUID owner() {
+        return this.owner;
+    }
+
+    public void setOwner(@Nullable UUID owner) {
+        if (Objects.equals(this.owner, owner)) return;
+        this.owner = owner;
+        this.setChanged();
+        this.sendDockingUpdate();
+    }
+
+    public boolean canHost(WorkingAllayEntity worker) {
+        if (!(this.level instanceof ServerLevel level)) return false;
+        UUID workerOwner = worker.getOwner().orElse(null);
+        if (workerOwner == null) return false;
+        return this.owner != null
+            && ConstructionPermission.areCollaborators(level.getServer(), workerOwner, this.owner)
+            && ConstructionPermission.canModify(level, this.worldPosition, this.owner);
     }
 
     public void addViewer(Player player) {
@@ -568,6 +664,9 @@ public class AllayLoungeBlockEntity extends BlockEntity {
             .ifPresent(encoded -> tag.put("Hosted", encoded));
         this.saveDockingState(tag, registries);
         this.savePickupDisplays(tag, registries);
+        if (this.owner != null) {
+            tag.putUUID("Owner", this.owner);
+        }
     }
 
     private void saveDockingState(CompoundTag tag, HolderLookup.Provider registries) {
@@ -588,7 +687,7 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         super.loadAdditional(tag, registries);
         this.loading = true;
         if (tag.contains("Items")) this.items.deserializeNBT(registries, tag.getCompound("Items"));
-        this.lastDiskJobId = this.diskJobId();
+        this.lastDiskJobId = null;
         this.loadPickupDisplays(tag, registries);
         this.loading = false;
         this.shortageStrategy = AllayShortageStrategy.SKIP.getSerializedName().equals(tag.getString("ShortageStrategy"))
@@ -624,6 +723,7 @@ public class AllayLoungeBlockEntity extends BlockEntity {
             this.dockingRunning = tag.getBoolean("DockingRunning");
         }
         this.dockingSyncGameTime = this.level == null ? 0L : this.level.getGameTime();
+        this.owner = tag.hasUUID("Owner") ? tag.getUUID("Owner") : null;
     }
 
     @Override
@@ -634,6 +734,9 @@ public class AllayLoungeBlockEntity extends BlockEntity {
             .resultOrPartial(error -> AnvilcraftPlasticraft.LOGGER.error("Failed to sync lounge hosts: {}", error))
             .ifPresent(encoded -> tag.put("Hosted", encoded));
         this.savePickupDisplays(tag, registries);
+        if (this.owner != null) {
+            tag.putUUID("Owner", this.owner);
+        }
         return tag;
     }
 

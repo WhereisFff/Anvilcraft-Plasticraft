@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.client.molding.scene;
 
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingAxis;
+import dev.anvilcraft.plasticraft.client.molding.editor.MoldingGizmoBasis;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingGizmoGeometry;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingSelection;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingTool;
@@ -264,6 +265,7 @@ public final class MoldingSceneBuilder {
                 scene.accumulator(EditorDrawPhase.GIZMO),
                 gizmoOrigin,
                 tool,
+                MoldingGizmoBasis.forSelection(model, selection, tool),
                 gizmoWorldUnitsPerPixel,
                 cameraDirection,
                 hoveredGizmoAxis
@@ -464,12 +466,36 @@ public final class MoldingSceneBuilder {
         @Nullable MoldingAxis hoveredAxis,
         @Nullable ViewportTransform viewportTransform
     ) {
+        return replaceGizmo(
+            scene,
+            dynamicRevision,
+            center,
+            tool,
+            MoldingGizmoBasis.WORLD,
+            worldUnitsPerPixel,
+            cameraDirection,
+            hoveredAxis,
+            viewportTransform
+        );
+    }
+
+    public static EditorSceneMesh replaceGizmo(
+        EditorSceneMesh scene,
+        long dynamicRevision,
+        Vector3d center,
+        MoldingTool tool,
+        MoldingGizmoBasis basis,
+        double worldUnitsPerPixel,
+        Vector3d cameraDirection,
+        @Nullable MoldingAxis hoveredAxis,
+        @Nullable ViewportTransform viewportTransform
+    ) {
         List<EditorScenePart> parts = new ArrayList<>(scene.parts().size());
         scene.parts().stream()
             .filter(part -> part.phase() != EditorDrawPhase.GIZMO)
             .forEach(parts::add);
         MeshAccumulator gizmo = new MeshAccumulator(cameraDirection, worldUnitsPerPixel, viewportTransform);
-        addGizmo(gizmo, center, tool, worldUnitsPerPixel, cameraDirection, hoveredAxis);
+        addGizmo(gizmo, center, tool, basis, worldUnitsPerPixel, cameraDirection, hoveredAxis);
         if (!gizmo.indices.isEmpty()) parts.add(gizmo.build(EditorDrawPhase.GIZMO));
         return new EditorSceneMesh(scene.staticRevision(), dynamicRevision, parts);
     }
@@ -824,6 +850,7 @@ public final class MoldingSceneBuilder {
         MeshAccumulator mesh,
         Vector3d center,
         MoldingTool tool,
+        MoldingGizmoBasis basis,
         double worldUnitsPerPixel,
         Vector3d cameraDirection,
         @Nullable MoldingAxis hoveredAxis
@@ -832,7 +859,7 @@ public final class MoldingSceneBuilder {
             case NONE -> {
             }
             case MOVE, PIVOT -> addMoveGizmo(mesh, center, worldUnitsPerPixel, hoveredAxis);
-            case SCALE -> addScaleGizmo(mesh, center, worldUnitsPerPixel, hoveredAxis);
+            case SCALE -> addScaleGizmo(mesh, center, basis, worldUnitsPerPixel, hoveredAxis);
             case ROTATE -> addRotateGizmo(mesh, center, worldUnitsPerPixel, cameraDirection, hoveredAxis);
             case MIRROR -> addMirrorGizmo(mesh, center, worldUnitsPerPixel, hoveredAxis);
         }
@@ -873,15 +900,17 @@ public final class MoldingSceneBuilder {
     private static void addScaleGizmo(
         MeshAccumulator mesh,
         Vector3d center,
+        MoldingGizmoBasis basis,
         double worldUnitsPerPixel,
         @Nullable MoldingAxis hoveredAxis
     ) {
         double length = MoldingGizmoGeometry.axisLength(worldUnitsPerPixel);
         double halfSize = MoldingGizmoGeometry.handleHalfSize(worldUnitsPerPixel);
         for (MoldingAxis axis : MoldingAxis.values()) {
-            addScaleAxis(mesh, center, axis, length, halfSize, worldUnitsPerPixel, axisColor(axis));
+            Vector3d direction = basis.direction(axis);
+            addScaleAxis(mesh, center, direction, length, halfSize, worldUnitsPerPixel, axisColor(axis));
             if (axis == hoveredAxis) {
-                addScaleAxis(mesh, center, axis, length, halfSize, worldUnitsPerPixel, HOVER_COLOR);
+                addScaleAxis(mesh, center, direction, length, halfSize, worldUnitsPerPixel, HOVER_COLOR);
             }
         }
     }
@@ -889,13 +918,13 @@ public final class MoldingSceneBuilder {
     private static void addScaleAxis(
         MeshAccumulator mesh,
         Vector3d center,
-        MoldingAxis axis,
+        Vector3d direction,
         double length,
         double halfSize,
         double worldUnitsPerPixel,
         int color
     ) {
-        Vector3d offset = axis.vector().mul(length);
+        Vector3d offset = new Vector3d(direction).mul(length);
         Vector3d negative = new Vector3d(center).sub(offset);
         Vector3d positive = new Vector3d(center).add(offset);
         mesh.segment(negative, positive, MoldingGizmoGeometry.shaftWidth(worldUnitsPerPixel), color);

@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.allay.tool;
 
 import dev.anvilcraft.plasticraft.allay.AllayFlightState;
+import dev.anvilcraft.plasticraft.allay.AllayHardHatTraits;
 import dev.anvilcraft.plasticraft.allay.AllayWorkMotions;
 import dev.anvilcraft.plasticraft.allay.path.AllayPathPriority;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBuildOp;
@@ -13,6 +14,7 @@ import dev.anvilcraft.plasticraft.blueprint.ConstructionTraffic;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionWaitReason;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionWorkerSpace;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
+import dev.dubhe.anvilcraft.util.BlockMiningEffect;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.AABB;
@@ -37,13 +39,25 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
             worker.clearAssignment(false);
             return;
         }
-        ConstructionJob job = ConstructionJobIndex.get(level).activeJobOf(owner.get()).orElse(null);
+        ConstructionJob job = ConstructionJobController.jobForWorker(level, worker);
         if (job == null || !job.dimension().equals(level.dimension())) {
+            if (worker.assignedJobId().isPresent()) {
+                worker.clearAssignment(false);
+                worker.setHomeLounge(null);
+            }
             if (worker.homeLoungePos() != null) {
                 restAtHome(worker);
                 return;
             }
             continueOrIdle(worker);
+            return;
+        }
+        ConstructionJobProgress progress = ConstructionJobStore.get(level).get(job.jobId());
+        if (progress != null
+            && worker.assignedJobId().isPresent()
+            && !ConstructionJobController.canContinueJob(worker, progress)) {
+            ConstructionJobController.revokeWorker(worker, level, progress);
+            AllayWorkMotions.releaseToVanilla(worker);
             return;
         }
         if (job.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE) {
@@ -78,7 +92,6 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
             }
             return;
         }
-        ConstructionJobProgress progress = ConstructionJobStore.get(level).get(job.jobId());
         if (progress == null) return;
         if (worker.assignedJobId().filter(job.jobId()::equals).isEmpty() || worker.taskOpId() < 0) {
             if (!tryClaim(worker, level, job, progress)) {
@@ -156,7 +169,8 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
         if (!worker.prepareAction(Vec3.atCenterOf(op.pos()))) {
             return;
         }
-        if (ConstructionJobController.tryDemolish(level, progress, op)) {
+        BlockMiningEffect miningEffect = AllayHardHatTraits.miningEffectOf(worker.getHardHat());
+        if (ConstructionJobController.tryDemolish(level, progress, op, miningEffect)) {
             worker.resetStuck();
             worker.clearAssignment(false);
             ConstructionTraffic.release(level, worker.getUUID());
@@ -198,7 +212,10 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
             return;
         }
         worker.clearAssignment(false);
-        worker.startDockingTo(home);
+        if (!worker.startDockingTo(home)) {
+            worker.setHomeLounge(null);
+            AllayWorkMotions.releaseToVanilla(worker);
+        }
     }
 
     private static void leaveSiteThenIdle(WorkingAllayEntity worker, ConstructionJob job) {

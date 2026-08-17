@@ -383,6 +383,11 @@ public class BondedEntityBlockEntity extends BlockEntity
             return;
         }
         if (functionalEntity instanceof UniversalPlasticEntity universal) {
+            if (universal.plasticraft$wasMoldedTankDestroyedByLava()
+                || universal.plasticraft$destroyMoldedTankIfFilledWithLava()) {
+                serverLevel.removeBlock(this.worldPosition, false);
+                return;
+            }
             universal.plasticraft$tickRedstoneConductor();
             if (universal.isMoldedTray()) {
                 universal.plasticraft$tickBondedTray();

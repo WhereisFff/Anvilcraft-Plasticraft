@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
 import dev.anvilcraft.plasticraft.block.piston.PlasticPistonOccupancy;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.EngineeringPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesivePathPlanner;
@@ -20,9 +21,11 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingFormingMode;
@@ -71,6 +74,7 @@ import net.minecraft.world.level.block.piston.PistonMovingBlockEntity;
 import net.minecraft.world.level.block.piston.PistonStructureResolver;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -93,11 +97,11 @@ public final class PlasticMoldingProductionGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "5x5x5", floor = true)
-    @TestHolder(description = "A molded 16x16x14 cuboid uses the cooled universal plastic entity and geometry contract")
+    @TestHolder(description = "A molded 16x16x16 cube uses the cooled universal plastic entity and geometry contract")
     static void standardMoldMatchesCooledPlastic(ExtendedGameTestHelper helper) {
         EditableMoldingModel model = model(
             "Standard Universal Plastic",
-            cube("Body", 16.0, 0.0, 16.0, 32.0, 14.0, 32.0)
+            cube("Body", 16.0, 0.0, 16.0, 32.0, 16.0, 32.0)
         );
         MoldedPlasticData data = fullData(model, DyeColor.WHITE);
         BlockState displayState = PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState();
@@ -475,9 +479,10 @@ public final class PlasticMoldingProductionGameTests {
 
     @GameTest(timeoutTicks = 30)
     @EmptyTemplate(value = "11x6x8", floor = true)
-    @TestHolder(description = "Only an exact 16x16x16 molded entity conducts redstone power through six faces")
+    @TestHolder(description = "Only a non-transparent exact 16x16x16 molded entity conducts redstone power through six faces")
     static void fullBlockSizedProductConductsRedstone(ExtendedGameTestHelper helper) {
         BlockPos fullAnchor = new BlockPos(3, 2, 2);
+        BlockPos clearAnchor = new BlockPos(7, 2, 2);
         BlockPos shortAnchor = new BlockPos(7, 2, 5);
         MoldedPlasticData fullProductData = fullData(model(
             "Redstone Cube",
@@ -489,6 +494,19 @@ public final class PlasticMoldingProductionGameTests {
             "Short Redstone Cube",
             cube("Body", 16.0D, 0.0D, 16.0D, 32.0D, 15.0D, 32.0D)
         ), DyeColor.RED));
+        createMoldedProduct(
+            helper,
+            clearAnchor,
+            fullData(
+                model(
+                    "Clear Redstone Cube",
+                    cube("Body", 16.0D, 0.0D, 16.0D, 32.0D, 16.0D, 32.0D)
+                ),
+                DyeColor.CYAN,
+                PlasticraftFluids.CLEAR_PLASTIC_MELT.get()
+            ),
+            PlasticMaterial.CLEAR
+        );
 
         BlockState poweredRepeater = Blocks.REPEATER.defaultBlockState()
             .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.WEST)
@@ -532,7 +550,17 @@ public final class PlasticMoldingProductionGameTests {
                     "adjacent full block-sized plastic conductors retained a removed redstone input");
                 check(!helper.getBlockState(fullAnchor.east()).getValue(BlockStateProperties.LIT),
                     "receiver remained powered after the conducted input was removed");
-                helper.succeed();
+                helper.setBlock(clearAnchor.west().below(), Blocks.STONE);
+                helper.setBlock(clearAnchor.west(), poweredRepeater);
+                helper.setBlock(clearAnchor.west(2), Blocks.REDSTONE_BLOCK);
+                helper.setBlock(clearAnchor.east(), Blocks.REDSTONE_LAMP);
+                helper.runAfterDelay(3, () -> {
+                    check(helper.getLevel().getSignal(helper.absolutePos(clearAnchor), Direction.WEST) == 0,
+                        "full block-sized clear plastic incorrectly conducted redstone");
+                    check(!helper.getBlockState(clearAnchor.east()).getValue(BlockStateProperties.LIT),
+                        "full block-sized clear plastic powered the receiver across it");
+                    helper.succeed();
+                });
             });
         });
     }
@@ -908,6 +936,64 @@ public final class PlasticMoldingProductionGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "13x8x13", floor = true)
+    @TestHolder(description = "Engineering melt creates an engineering molded item and retains its material")
+    static void engineeringItemProductionPreservesMaterial(ExtendedGameTestHelper helper) {
+        ReadyChamber ready = prepareChamber(
+            helper,
+            new BlockPos(6, 2, 3),
+            Direction.NORTH,
+            almostFullModel(),
+            1,
+            MoldingProductionMode.SINGLE,
+            PlasticMoldingAnvilProcessor.OutputMode.ITEM,
+            DyeColor.CYAN,
+            PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get()
+        );
+        fireGiantAnvil(helper, ready.topCenter());
+
+        List<ItemEntity> products = productItems(helper.getLevel(), ready.bounds());
+        check(products.size() == 1, "engineering casting did not produce exactly one item");
+        ItemStack product = products.getFirst().getItem();
+        check(product.is(PlasticraftBlocks.ENGINEERING_PLASTIC.asItem()),
+            "engineering casting returned a universal-plastic item");
+        MoldedPlasticData data = MoldedPlasticData.get(product).orElseThrow();
+        check(data.material().is(PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get()),
+            "engineering item data lost its material fluid");
+        check(PlasticMeltColor.get(data.material()) == DyeColor.CYAN,
+            "engineering item data lost its melt colour");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "13x8x13", floor = true)
+    @TestHolder(description = "Engineering melt creates the engineering molded entity type")
+    static void engineeringEntityProductionUsesEngineeringEntity(ExtendedGameTestHelper helper) {
+        ReadyChamber ready = prepareChamber(
+            helper,
+            new BlockPos(6, 2, 3),
+            Direction.NORTH,
+            almostFullModel(),
+            1,
+            MoldingProductionMode.SINGLE,
+            PlasticMoldingAnvilProcessor.OutputMode.ENTITY,
+            DyeColor.BLUE,
+            PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get()
+        );
+        fireGiantAnvil(helper, ready.topCenter());
+
+        List<UniversalPlasticEntity> products = productEntities(helper.getLevel(), ready.bounds());
+        check(products.size() == 1, "engineering casting did not produce exactly one entity");
+        UniversalPlasticEntity product = products.getFirst();
+        check(product instanceof EngineeringPlasticEntity,
+            "engineering casting returned the universal-plastic entity type");
+        check(product.getMoldedData().orElseThrow().material()
+            .is(PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get()),
+            "engineering entity data lost its material fluid");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "13x8x13", floor = true)
     @TestHolder(description = "Crafting-table output rolls back a blocked preflight and recovers exactly 64 clay balls")
     static void entityProductionPreflightAndSixtyFourClay(ExtendedGameTestHelper helper) {
         ReadyChamber ready = prepareChamber(helper, new BlockPos(6, 2, 3), Direction.NORTH, model("Sixty Four Clay", cube("Body", 0.0, 0.0, 0.0, 44.0, 32.0, 32.0)), 64, MoldingProductionMode.SINGLE, PlasticMoldingAnvilProcessor.OutputMode.ENTITY, DyeColor.BLUE);
@@ -1223,9 +1309,13 @@ public final class PlasticMoldingProductionGameTests {
     }
 
     private static MoldedPlasticData fullData(EditableMoldingModel model, DyeColor color) {
+        return fullData(model, color, PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get());
+    }
+
+    private static MoldedPlasticData fullData(EditableMoldingModel model, DyeColor color, Fluid material) {
         BakedMoldingModel baked = MoldingModelBaker.bake(model);
         int amount = Math.max(250, (baked.analysis().volume() + 3) / 4);
-        return MoldedPlasticData.manufacture(model, baked, melt(amount, color), amount);
+        return MoldedPlasticData.manufacture(model, baked, melt(material, amount, color), amount);
     }
 
     private static UniversalPlasticEntity createMoldedProduct(
@@ -1233,14 +1323,22 @@ public final class PlasticMoldingProductionGameTests {
         BlockPos occupiedPos,
         MoldedPlasticData data
     ) {
-        ItemStack stack = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        return createMoldedProduct(helper, occupiedPos, data, PlasticMaterial.UNIVERSAL);
+    }
+
+    private static UniversalPlasticEntity createMoldedProduct(
+        ExtendedGameTestHelper helper,
+        BlockPos occupiedPos,
+        MoldedPlasticData data,
+        PlasticMaterial material
+    ) {
+        ItemStack stack = material.productBlock().asItem().getDefaultInstance();
         MoldedPlasticData.set(stack, data);
         BlockPos absolutePos = helper.absolutePos(occupiedPos);
-        UniversalPlasticEntity entity = new UniversalPlasticEntity(
-            PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
+        UniversalPlasticEntity entity = material.createEntity(
             helper.getLevel(),
             data.geometry().placementPosition(absolutePos, PlasticEntityOrientation.DEFAULT),
-            PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            material.productBlock().defaultBlockState(),
             stack,
             PlasticEntityOrientation.DEFAULT
         );
@@ -1305,12 +1403,40 @@ public final class PlasticMoldingProductionGameTests {
     }
 
     private static FluidStack melt(int amount, DyeColor color) {
-        FluidStack melt = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), amount);
+        return melt(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), amount, color);
+    }
+
+    private static ReadyChamber prepareChamber(ExtendedGameTestHelper helper, BlockPos relativeController, Direction front, EditableMoldingModel model, int clayBalls, MoldingProductionMode mode, PlasticMoldingAnvilProcessor.OutputMode outputMode, DyeColor color) {
+        return prepareChamber(
+            helper,
+            relativeController,
+            front,
+            model,
+            clayBalls,
+            mode,
+            outputMode,
+            color,
+            PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get()
+        );
+    }
+
+    private static FluidStack melt(Fluid fluid, int amount, DyeColor color) {
+        FluidStack melt = new FluidStack(fluid, amount);
         PlasticMeltColor.set(melt, color);
         return melt;
     }
 
-    private static ReadyChamber prepareChamber(ExtendedGameTestHelper helper, BlockPos relativeController, Direction front, EditableMoldingModel model, int clayBalls, MoldingProductionMode mode, PlasticMoldingAnvilProcessor.OutputMode outputMode, DyeColor color) {
+    private static ReadyChamber prepareChamber(
+        ExtendedGameTestHelper helper,
+        BlockPos relativeController,
+        Direction front,
+        EditableMoldingModel model,
+        int clayBalls,
+        MoldingProductionMode mode,
+        PlasticMoldingAnvilProcessor.OutputMode outputMode,
+        DyeColor color,
+        Fluid material
+    ) {
         PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, relativeController, front);
         check(chamber.replaceEditableModel(model, chamber.revision()).accepted(), "production model was rejected");
         check(chamber.bakedModel().analysis().clayBallRequirement() == clayBalls, "production model did not require the expected clay total");
@@ -1322,11 +1448,11 @@ public final class PlasticMoldingProductionGameTests {
         check(chamber.machineState() == PlasticMoldingMachineState.MOLD_READY, "production mold did not finish in twelve active ticks");
         check(chamber.moldedClayBalls() == clayBalls, "production mold did not reserve exact clay");
         IFluidHandler fluids = chamber.fluidHandler();
-        check(fluids.fill(melt(250, color), IFluidHandler.FluidAction.EXECUTE) == 250, "production chamber did not accept its minimum batch melt");
+        check(fluids.fill(melt(material, 250, color), IFluidHandler.FluidAction.EXECUTE) == 250, "production chamber did not accept its minimum batch melt");
         tick(chamber, 1);
         check(chamber.machineState() == PlasticMoldingMachineState.PROCESS_READY, "minimum batch melt did not make the chamber process-ready");
         check(chamber.batchFluidAmount() == 250, "minimum batch did not transfer exactly 250 mB");
-        check(fluids.fill(melt(STAGING_RESERVE, color), IFluidHandler.FluidAction.EXECUTE) == STAGING_RESERVE, "production chamber did not accept independent staging reserve");
+        check(fluids.fill(melt(material, STAGING_RESERVE, color), IFluidHandler.FluidAction.EXECUTE) == STAGING_RESERVE, "production chamber did not accept independent staging reserve");
         BlockPos topCenter = topCenter(chamber.getBlockPos(), front);
         placeTopStructure(helper.getLevel(), topCenter, outputMode);
         AABB bounds = PlasticMoldingChamberStructure.regionBounds(chamber.getBlockPos(), front);
@@ -1396,7 +1522,11 @@ public final class PlasticMoldingProductionGameTests {
     }
 
     private static List<ItemEntity> productItems(ServerLevel level, AABB bounds) {
-        return level.getEntitiesOfClass(ItemEntity.class, bounds, entity -> entity.isAlive() && entity.getItem().is(PlasticraftBlocks.UNIVERSAL_PLASTIC.asItem()));
+        return level.getEntitiesOfClass(
+            ItemEntity.class,
+            bounds,
+            entity -> entity.isAlive() && entity.getItem().is(PlasticraftItemTags.PLASTIC_PRODUCTS)
+        );
     }
 
     private static List<UniversalPlasticEntity> productEntities(ServerLevel level, AABB bounds) {

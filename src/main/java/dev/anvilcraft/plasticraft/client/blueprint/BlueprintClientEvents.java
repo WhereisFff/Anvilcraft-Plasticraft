@@ -39,6 +39,9 @@ public final class BlueprintClientEvents {
             .translatable("tooltip.anvilcraftplasticraft.blueprint.source." + data.source().getSerializedName())
             .withStyle(ChatFormatting.DARK_GRAY));
         event.getToolTip().add(Component
+            .translatable("tooltip.anvilcraftplasticraft.blueprint.permissions")
+            .withStyle(ChatFormatting.DARK_GRAY));
+        event.getToolTip().add(Component
             .translatable("tooltip.anvilcraftplasticraft.blueprint.controls")
             .withStyle(ChatFormatting.DARK_GRAY));
         event.getToolTip().add(Component

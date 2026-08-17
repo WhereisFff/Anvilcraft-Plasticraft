@@ -44,6 +44,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.AABB;
@@ -53,7 +54,6 @@ import net.minecraft.stats.Stats;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.neoforged.neoforge.fluids.FluidUtil;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -80,11 +80,13 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
     private final MoldedPlasticFluidHandler moldedFluidHandler = new MoldedPlasticFluidHandler(
         this::getMoldedData,
         this::replaceMoldedData,
-        this::getDropStack
+        this::getDropStack,
+        this::destroyMoldedTankFromLava
     );
     private Runnable moldedContentsChanged = () -> {
     };
     private MoldedTrayRedstoneRuntimeManager trayRuntimes;
+    private boolean moldedTankDestroyedByLava;
 
     public static void configureDefaultDrop(Supplier<ItemStack> supplier) {
         defaultDropSupplier = Objects.requireNonNull(supplier, "supplier");
@@ -160,6 +162,11 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
             this.moldedDataCached = true;
         }
         return this.cachedMoldedData;
+    }
+
+    /** 透明材料覆写此入口，激光路径判定不依赖客户端渲染状态。 */
+    public boolean canLaserPassThrough() {
+        return false;
     }
 
     public boolean isMoldedAnvil() {
@@ -253,6 +260,17 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
 
     public MoldedPlasticFluidHandler getMoldedFluidHandler() {
         return this.moldedFluidHandler;
+    }
+
+    public boolean plasticraft$destroyMoldedTankIfFilledWithLava() {
+        if (this.level().isClientSide || this.isRemoved() || !this.moldedFluidHandler.hasUnsafeLava()) return false;
+        this.moldedFluidHandler.discardFluids();
+        this.destroyMoldedTankFromLava();
+        return true;
+    }
+
+    public boolean plasticraft$wasMoldedTankDestroyedByLava() {
+        return this.moldedTankDestroyedByLava;
     }
 
     public MoldedPlasticContentSummary getMoldedContentSummary() {
@@ -409,6 +427,7 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
 
     @Override
     public void tick() {
+        if (this.plasticraft$destroyMoldedTankIfFilledWithLava()) return;
         super.tick();
         if (this.isRemoved()) return;
         if (!this.level().isClientSide) {
@@ -416,6 +435,15 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
             if (this.isMoldedTray()) this.getMoldedTrayRuntimes().tick();
         }
         MoldedTrayLightSource.update(this);
+    }
+
+    private void destroyMoldedTankFromLava() {
+        if (this.level().isClientSide || this.isRemoved()) return;
+        this.moldedTankDestroyedByLava = true;
+        BlockPos effectPos = BlockPos.containing(this.getBoundingBox().getCenter());
+        this.level().levelEvent(2001, effectPos, Block.getId(this.getDisplayState()));
+        this.level().gameEvent(this, GameEvent.BLOCK_DESTROY, effectPos);
+        this.discard();
     }
 
     @Override
@@ -551,7 +579,7 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
     @Override
     public Optional<ShockAnvilBehavior> anvilcraft$getShockAnvilBehavior() {
         return this.isMoldedAnvil()
-            ? Optional.of(ShockAnvilBehavior.NORMAL)
+            ? Optional.of(ShockAnvilBehavior.fromMiningEffect(MoldedPlasticAnvilAbilities.miningEffect(this)))
             : Optional.empty();
     }
 

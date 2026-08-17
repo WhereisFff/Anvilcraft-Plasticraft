@@ -130,7 +130,7 @@ public final class AnvilCraftClientApiBootstrap {
             if (fluid.isEmpty()) continue;
             float layerMaxY = layerMinY
                 + CAULDRON_CONTENT_HEIGHT * fluid.getAmount() / LargeCauldronFluidHandler.TOTAL_CAPACITY;
-            if (fluid.is(PlasticraftFluids.PLASTIC_OIL.get())) {
+            if (isCatalyzingFluid(fluid)) {
                 PlasticOilCatalysisRenderer.renderContainerOverlay(
                     cauldron.getLevel(),
                     cauldron.getBlockPos(),
@@ -174,7 +174,7 @@ public final class AnvilCraftClientApiBootstrap {
         int packedOverlay
     ) {
         FluidStack fluid = tank.getFluidHandler().getFluid();
-        if (tank.getLevel() != null && fluid.is(PlasticraftFluids.PLASTIC_OIL.get())) {
+        if (tank.getLevel() != null && isCatalyzingFluid(fluid)) {
             float fill = Math.min((float) fluid.getAmount() / tank.getFluidHandler().getCapacity(), 1.0F);
             float surfaceY = TANK_WALL + (1.0F - 2.0F * TANK_WALL) * fill;
             PlasticOilCatalysisRenderer.renderContainerOverlay(
@@ -198,5 +198,10 @@ public final class AnvilCraftClientApiBootstrap {
         float fill = Math.min((float) fluid.getAmount() / tank.getFluidHandler().getCapacity(), 1.0F);
         float surfaceY = TANK_WALL + (1.0F - 2.0F * TANK_WALL) * fill;
         IgnitedFluidFlameRenderer.renderBlue(poseStack, buffers, surfaceY, 1.0F, packedOverlay);
+    }
+
+    private static boolean isCatalyzingFluid(FluidStack fluid) {
+        return fluid.is(PlasticraftFluids.PLASTIC_OIL.get())
+            || fluid.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get());
     }
 }

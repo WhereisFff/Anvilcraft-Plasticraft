@@ -33,8 +33,11 @@ import java.util.regex.Pattern;
 /** 世界级共享蓝图库及按玩家保存的置顶偏好。 */
 public final class MoldingBlueprintLibrary {
     public static final int MAX_LIBRARY_FILES = 512;
+    public static final int MAX_FILE_ID_LENGTH = 101;
     private static final int MAX_PREFERENCE_BYTES = 64 * 1024;
-    private static final Pattern SAFE_FILE_ID = Pattern.compile("[a-z0-9][a-z0-9._-]{0,95}\\.json");
+    private static final Pattern SAFE_FILE_ID = Pattern.compile(
+        "[\\p{L}\\p{N}][\\p{L}\\p{N}\\p{M} ._-]{0,95}\\.json"
+    );
     private static final String LIBRARY_DIRECTORY = "blueprints";
     private static final String PREFERENCE_DIRECTORY = "blueprint_preferences";
 
@@ -235,7 +238,7 @@ public final class MoldingBlueprintLibrary {
     public static String fileIdFromDisplayName(String name) {
         String stem = stripJsonSuffix(name == null ? "" : name.strip());
         if (stem.length() > 64) {
-            stem = stem.substring(0, 64);
+            stem = truncateWithoutSplittingCodePoint(stem, 64);
         }
         String candidate = stem + ".json";
         if (isSafeFileId(candidate)) return candidate;
@@ -332,16 +335,23 @@ public final class MoldingBlueprintLibrary {
     }
 
     public static boolean isSafeFileId(String fileId) {
-        return fileId != null && SAFE_FILE_ID.matcher(fileId).matches();
+        return fileId != null
+            && fileId.length() <= MAX_FILE_ID_LENGTH
+            && SAFE_FILE_ID.matcher(fileId).matches();
     }
 
     public static String safeStem(String name) {
         StringBuilder result = new StringBuilder();
         boolean separator = false;
-        for (int index = 0; index < name.length() && result.length() < 64; index++) {
-            char character = Character.toLowerCase(name.charAt(index));
-            if (character >= 'a' && character <= 'z' || character >= '0' && character <= '9') {
-                result.append(character);
+        for (int index = 0; index < name.length();) {
+            int sourceCodePoint = name.codePointAt(index);
+            index += Character.charCount(sourceCodePoint);
+            int codePoint = Character.toLowerCase(sourceCodePoint);
+            int codePointLength = Character.charCount(codePoint);
+            if (result.length() + codePointLength > 64) break;
+            if (Character.isLetterOrDigit(codePoint)
+                || isCombiningMark(codePoint) && !separator && !result.isEmpty()) {
+                result.appendCodePoint(codePoint);
                 separator = false;
             } else if (!separator && !result.isEmpty()) {
                 result.append('-');
@@ -352,6 +362,19 @@ public final class MoldingBlueprintLibrary {
             result.deleteCharAt(result.length() - 1);
         }
         return result.isEmpty() ? "blueprint" : result.toString();
+    }
+
+    private static boolean isCombiningMark(int codePoint) {
+        int type = Character.getType(codePoint);
+        return type == Character.NON_SPACING_MARK
+            || type == Character.COMBINING_SPACING_MARK
+            || type == Character.ENCLOSING_MARK;
+    }
+
+    private static String truncateWithoutSplittingCodePoint(String value, int maxLength) {
+        int end = maxLength;
+        if (Character.isHighSurrogate(value.charAt(end - 1))) end--;
+        return value.substring(0, end);
     }
 
     private static MoldingBlueprint readPath(Path path) throws BlueprintException {

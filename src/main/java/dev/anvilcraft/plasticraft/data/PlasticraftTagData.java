@@ -102,7 +102,6 @@ public final class PlasticraftTagData {
                 itemKey(ModBlocks.CUT_FROST_METAL_STAIRS),
                 itemKey(ModBlocks.FROST_DECO_BLOCK),
                 itemKey(ModBlocks.FROST_DECO_OUTLINE),
-                itemKey(ModBlocks.FROST_GLASS),
                 itemKey(ModItems.FROST_METAL_INGOT),
                 itemKey(ModItems.FROST_METAL_NUGGET),
                 itemKey(ModItems.FROST_METAL_PICKAXE),
@@ -117,6 +116,33 @@ public final class PlasticraftTagData {
                 itemKey(ModItems.FROST_METAL_UPGRADE_SMITHING_TEMPLATE)
             );
 
+            // 余烬金属催化剂覆盖余烬铁砧本体及其金属制品，供耐热塑料反应查询。
+            provider.addTag(PlasticraftItemTags.EMBER_METAL_ITEMS).add(
+                itemKey(ModBlocks.EMBER_ANVIL),
+                itemKey(ModBlocks.EMBER_GRINDSTONE),
+                itemKey(ModBlocks.EMBER_SMITHING_TABLE),
+                itemKey(ModBlocks.EMBER_METAL_BLOCK),
+                itemKey(ModBlocks.CUT_EMBER_METAL_BLOCK),
+                itemKey(ModBlocks.CUT_EMBER_METAL_PILLAR),
+                itemKey(ModBlocks.CUT_EMBER_METAL_SLAB),
+                itemKey(ModBlocks.CUT_EMBER_METAL_STAIRS),
+                itemKey(ModBlocks.EMBER_DECO_BLOCK),
+                itemKey(ModBlocks.EMBER_DECO_OUTLINE),
+                itemKey(ModBlocks.EMBER_GLASS),
+                itemKey(ModItems.EMBER_METAL_INGOT),
+                itemKey(ModItems.EMBER_METAL_NUGGET),
+                itemKey(ModItems.EMBER_METAL_PICKAXE),
+                itemKey(ModItems.EMBER_METAL_AXE),
+                itemKey(ModItems.EMBER_METAL_SHOVEL),
+                itemKey(ModItems.EMBER_METAL_HOE),
+                itemKey(ModItems.EMBER_METAL_SWORD),
+                itemKey(ModItems.EMBER_ANVIL_HAMMER),
+                itemKey(ModItems.EMBER_DRAGON_ROD),
+                itemKey(ModItems.EMBER_METAL_HEAVY_HALBERD),
+                itemKey(ModItems.EMBER_METAL_RESONATOR),
+                itemKey(ModItems.EMBER_METAL_UPGRADE_SMITHING_TEMPLATE)
+            );
+
             // 皇家钢催化剂标签覆盖本体皇家钢制品，并包含 Plasticraft 的催化压盖。
             provider.addTag(PlasticraftItemTags.ROYAL_STEEL_ITEMS).add(
                 itemKey(ModBlocks.ROYAL_ANVIL),
@@ -128,7 +154,6 @@ public final class PlasticraftTagData {
                 itemKey(ModBlocks.CUT_ROYAL_STEEL_PILLAR),
                 itemKey(ModBlocks.CUT_ROYAL_STEEL_SLAB),
                 itemKey(ModBlocks.CUT_ROYAL_STEEL_STAIRS),
-                itemKey(ModBlocks.TEMPERING_GLASS),
                 itemKey(ModItems.ROYAL_STEEL_INGOT),
                 itemKey(ModItems.ROYAL_STEEL_NUGGET),
                 itemKey(ModItems.ROYAL_STEEL_PICKAXE),
@@ -141,6 +166,10 @@ public final class PlasticraftTagData {
                 itemKey(ModItems.ROYAL_STEEL_UPGRADE_SMITHING_TEMPLATE),
                 itemKey(PlasticraftBlocks.CATALYTIC_PRESS_LID)
             );
+            // 浮霜玻璃作为透明塑料催化剂单独建标签，效率按玻璃种类参与半速计算。
+            provider.addTag(PlasticraftItemTags.FROST_GLASS_ITEMS).add(itemKey(ModBlocks.FROST_GLASS));
+            // 皇家玻璃作为透明塑料催化剂单独建标签，避免与皇家钢催化语义混用。
+            provider.addTag(PlasticraftItemTags.ROYAL_GLASS_ITEMS).add(itemKey(ModBlocks.TEMPERING_GLASS));
         });
     }
 

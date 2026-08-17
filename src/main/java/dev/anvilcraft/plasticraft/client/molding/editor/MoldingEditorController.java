@@ -171,6 +171,10 @@ public final class MoldingEditorController {
         return sharedPivot(selected).map(MoldingEditorController::vector).orElseGet(this::selectionCenter);
     }
 
+    public MoldingGizmoBasis gizmoBasis() {
+        return MoldingGizmoBasis.forSelection(this.model, this.selection, this.tool);
+    }
+
     public double selectionExtent() {
         List<MoldingVec3> vertices = selectedElements().stream()
             .flatMap(element -> MoldingModelBaker.transformedVertices(this.model, element).stream())

@@ -1,0 +1,196 @@
+{
+  "variants": {
+    "color=black,level=1": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level1"
+    },
+    "color=black,level=2": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level2"
+    },
+    "color=black,level=3": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level3"
+    },
+    "color=black,level=4": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level4"
+    },
+    "color=blue,level=1": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level1"
+    },
+    "color=blue,level=2": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level2"
+    },
+    "color=blue,level=3": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level3"
+    },
+    "color=blue,level=4": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level4"
+    },
+    "color=brown,level=1": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level1"
+    },
+    "color=brown,level=2": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level2"
+    },
+    "color=brown,level=3": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level3"
+    },
+    "color=brown,level=4": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level4"
+    },
+    "color=cyan,level=1": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level1"
+    },
+    "color=cyan,level=2": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level2"
+    },
+    "color=cyan,level=3": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level3"
+    },
+    "color=cyan,level=4": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level4"
+    },
+    "color=gray,level=1": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level1"
+    },
+    "color=gray,level=2": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level2"
+    },
+    "color=gray,level=3": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level3"
+    },
+    "color=gray,level=4": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level4"
+    },
+    "color=green,level=1": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level1"
+    },
+    "color=green,level=2": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level2"
+    },
+    "color=green,level=3": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level3"
+    },
+    "color=green,level=4": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level4"
+    },
+    "color=light_blue,level=1": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level1"
+    },
+    "color=light_blue,level=2": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level2"
+    },
+    "color=light_blue,level=3": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level3"
+    },
+    "color=light_blue,level=4": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level4"
+    },
+    "color=light_gray,level=1": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level1"
+    },
+    "color=light_gray,level=2": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level2"
+    },
+    "color=light_gray,level=3": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level3"
+    },
+    "color=light_gray,level=4": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level4"
+    },
+    "color=lime,level=1": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level1"
+    },
+    "color=lime,level=2": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level2"
+    },
+    "color=lime,level=3": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level3"
+    },
+    "color=lime,level=4": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level4"
+    },
+    "color=magenta,level=1": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level1"
+    },
+    "color=magenta,level=2": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level2"
+    },
+    "color=magenta,level=3": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level3"
+    },
+    "color=magenta,level=4": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level4"
+    },
+    "color=orange,level=1": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level1"
+    },
+    "color=orange,level=2": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level2"
+    },
+    "color=orange,level=3": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level3"
+    },
+    "color=orange,level=4": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level4"
+    },
+    "color=pink,level=1": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level1"
+    },
+    "color=pink,level=2": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level2"
+    },
+    "color=pink,level=3": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level3"
+    },
+    "color=pink,level=4": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level4"
+    },
+    "color=purple,level=1": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level1"
+    },
+    "color=purple,level=2": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level2"
+    },
+    "color=purple,level=3": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level3"
+    },
+    "color=purple,level=4": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level4"
+    },
+    "color=red,level=1": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level1"
+    },
+    "color=red,level=2": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level2"
+    },
+    "color=red,level=3": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level3"
+    },
+    "color=red,level=4": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level4"
+    },
+    "color=white,level=1": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level1"
+    },
+    "color=white,level=2": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level2"
+    },
+    "color=white,level=3": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level3"
+    },
+    "color=white,level=4": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level4"
+    },
+    "color=yellow,level=1": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level1"
+    },
+    "color=yellow,level=2": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level2"
+    },
+    "color=yellow,level=3": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level3"
+    },
+    "color=yellow,level=4": {
+      "model": "anvilcraftplasticraft:block/clear_plastic_melt_cauldron_level4"
+    }
+  }
+}

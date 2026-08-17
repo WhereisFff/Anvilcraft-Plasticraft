@@ -42,7 +42,7 @@ abstract class EntityHighViscosityResinMixin {
             return Vec3.ZERO;
         }
         if (movement.equals(Vec3.ZERO)) return movement;
-        if (HighViscosityResinFluidBlock.isUniversalPlasticMeltTouching(entity)) return movement;
+        if (HighViscosityResinFluidBlock.isPlasticMeltTouching(entity)) return movement;
         if (entity instanceof Player) return movement;
         if (!HighViscosityResinFluidBlock.isEntityTouching(entity)) return movement;
         entity.setDeltaMovement(Vec3.ZERO);

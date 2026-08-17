@@ -27,9 +27,21 @@ public final class PlasticraftItemTags {
         Registries.ITEM,
         AnvilcraftPlasticraft.of("frost_metal_items")
     );
+    public static final TagKey<Item> EMBER_METAL_ITEMS = TagKey.create(
+        Registries.ITEM,
+        AnvilcraftPlasticraft.of("ember_metal_items")
+    );
     public static final TagKey<Item> ROYAL_STEEL_ITEMS = TagKey.create(
         Registries.ITEM,
         AnvilcraftPlasticraft.of("royal_steel_items")
+    );
+    public static final TagKey<Item> FROST_GLASS_ITEMS = TagKey.create(
+        Registries.ITEM,
+        AnvilcraftPlasticraft.of("frost_glass_items")
+    );
+    public static final TagKey<Item> ROYAL_GLASS_ITEMS = TagKey.create(
+        Registries.ITEM,
+        AnvilcraftPlasticraft.of("royal_glass_items")
     );
     public static final TagKey<Item> PLASTIC_PRODUCTS = TagKey.create(
         Registries.ITEM,

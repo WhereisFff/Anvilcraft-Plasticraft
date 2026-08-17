@@ -29,10 +29,11 @@ public final class PlasticraftStorages extends SavedData {
     }
 
     public static Optional<PlasticraftStorages> tryGet() {
+        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        // 集成服务器与客户端同处一个进程，客户端线程不得借生命周期钩子写入服务端 SavedData。
+        if (server == null || !server.isSameThread()) return Optional.empty();
         PlasticraftStorages inProgress = loading;
         if (inProgress != null) return Optional.of(inProgress);
-        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
-        if (server == null) return Optional.empty();
         return Optional.of(get(server));
     }
 

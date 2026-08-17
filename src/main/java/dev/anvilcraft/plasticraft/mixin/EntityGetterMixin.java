@@ -6,10 +6,12 @@ import com.llamalad7.mixinextras.sugar.Local;
 import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
 import dev.anvilcraft.plasticraft.api.entity.ElasticCollisionEntity;
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
+import dev.anvilcraft.plasticraft.entity.ClearPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContext;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContextHolder;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
+import dev.dubhe.anvilcraft.api.injection.entity.IFallingBlockEntityExtension;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.EntityGetter;
 import net.minecraft.world.phys.AABB;
@@ -107,7 +109,8 @@ interface EntityGetterMixin {
         Entity mover
     ) {
         Predicate<Entity> withoutBondedMembers = target ->
-            !EntityBondManager.areInSameComponent(mover, target)
+            !plasticraft$ignoresClearPlasticCollision(mover, target)
+                && !EntityBondManager.areInSameComponent(mover, target)
                 && !EntityBondManager.ignoresPreclippedCollision(mover, target)
                 && original.test(target);
         if (!(mover instanceof CarrierMoveContextHolder holder)) {
@@ -144,5 +147,11 @@ interface EntityGetterMixin {
             context.addTarget(movable);
             return false;
         };
+    }
+
+    private static boolean plasticraft$ignoresClearPlasticCollision(Entity mover, Entity target) {
+        return mover instanceof IFallingBlockEntityExtension extension
+            && extension.anvilcraft$isSpectral()
+            && target instanceof ClearPlasticEntity;
     }
 }

@@ -1,9 +1,9 @@
 # 悦灵施工系统交接
 
-> 交接时间：2026-08-16。设计规格见 `docs/construction-allay-design.zh_cn.md`（以下简称“设计文档”）。
+> 交接时间：2026-08-17。设计规格见 `docs/construction-allay-design.zh_cn.md`（以下简称“设计文档”）。
 > 旧无人机文档只保留术语对照，不要再按 `construction-drone-*.zh_cn.md` 的物品、螺旋桨、内部 FE 或硬碰撞实现。
 > 接手后续任务前，必须完整阅读设计文档与仓库 `AGENTS.md`，并先写该 TODO 的实施 Plan 再动手。
-> TODO 01 至 TODO 12 对应的无人机交付物、单休息室物流、异步分层寻路与防自封已由悦灵替换覆盖。下一任务是 TODO 13。不要顺带做 TODO 14 / 15。
+> TODO 01 至 TODO 13 的代码与自动化验证已完成；TODO 13 正等待玩家游戏内验收。不要提前勾选 TODO 13，也不要顺带做 TODO 14 / 15。
 
 ## 1. 当前进度
 
@@ -16,7 +16,8 @@
 | 无休息室建设 / 拆除 / 收集闭环 | 已从无人机改对施工悦灵；未认领时创造模式所有者不扣料 |
 | 删除无人机物品、螺旋桨、内部 FE | 已完成；`runData` 后 generated 不应再有 `*_drone` / `propeller` |
 | TODO 11 单休息室认领与材料物流 | 已实现，游戏内验收通过（`feat(allay)` e76c194，本轮含验收修正） |
-| TODO 12 | 已完成：异步分层寻路、装配并发与防自封。下一任务是 TODO 13。不要做 TODO 14 / 15 |
+| TODO 12 | 已完成：异步分层寻路、装配并发与防自封 |
+| TODO 13 | 代码与自动化验证已完成：实时所有权、可选 FTB Teams、世界权限等待、团队调度和离队回收；等待玩家游戏内验收，复选框暂不勾选 |
 
 工作流程约定：每个 TODO 完成“范围 + 自动化验证”后按 conventional-commits（中文 subject，scope 用 `allay` 或 `blueprint`）提交一次，然后暂停等待玩家游戏内验收，验收通过才继续下一个；验收通过后勾选设计文档中的复选框。玩家已声明后续会自制全新贴图模型并配套改代码，当前程序生成资产只是可用占位。
 
@@ -79,6 +80,16 @@
 5. `BlueprintConstructionGameTests` 覆盖世界可建造范围、任务重叠及无实际进度任务移动后重规划；成对大箱子、门、巨型铁砧、铁轨与漏斗矿车占用等边界也有自动化覆盖
 6. `./gradlew runGameTestServer` 全量结果：`467 GAME TESTS COMPLETE IN 55.07 s`，`All 467 required tests passed :)`
 
+### 已通过的 TODO 13 自动化验收（2026-08-17）
+
+1. `ConstructionPermission` 统一实时查询所有者、当前同队关系和世界写入权限；FTB Teams API 只出现在独立可选适配器中，未安装或查询失败时收紧为 owner-only
+2. 蓝图导入、部署、快照读取、启动、暂停和取消，以及悦灵交互、休息室菜单、磁盘槽、召回、放出、设置和破坏均在服务端复核当前关系；任务结束会清理所有在线玩家当前物品栏及打开容器中的任务磁盘引用
+3. 团队调度优先当前协调休息室任务，再选悦灵所有者自己的无协调任务，最后按距离和任务 UUID 稳定选择队友任务；已被其他任务占用的实体和托管记录不计为可用工人
+4. 入队与离队不写入任务或悦灵 NBT；持有租约的队友离队后会释放操作、掉落物和交通预约，并按台账结清在途材料或收集库存
+5. 规划、封堵、拆除、投影交付、内容/流体/实体写入、安静提交、边界更新、红石端口恢复和最终壳清理都在写入前复核世界权限；拒绝时进入 `WAITING_PERMISSION`，恢复后按提交日志和原台账续做，SKIP 不能推进
+6. 自由收集优先向悦灵所有者卸货；所有者不在当前维度时可向当前在线同队成员卸货，转入玩家背包不被误判为世界写入
+7. `compileJava`、`compileGameTestJava`、`runData`、`build` 与 `runGameTestServer` 均通过；最近一次全量报告为 `489` 项通过、`0` 项失败
+
 ## 2. 代码地图
 
 ### 公共玩法层 `allay/`
@@ -105,13 +116,13 @@
 
 ### 实体与物品
 
-- `entity/allay/WorkingAllayEntity`：唯一施工悦灵。继承原版 `Allay`；`0.35 × 0.6`；`canBeCollidedWith()==false`；`isPushable()==true`；可拴绳。`convertFrom` / `toWorkRecord` / `applyWorkRecord` / `spawnFromRecord`。`prepareAction` 每 4 gt 且对准后才允许动手。`shortageStrategy()` 只在已加载的 `homeLoungePos` 上读休息室策略，否则固定 `PAUSE`。`HomeLounge` 写在实体 NBT、不进 `AllayWorkRecord`；出库时由休息室写入。收集库存：`tryInsertCollection` / `canAcceptCollection` / `isCollectionFull` / `unloadCollectionTo(ConstructionMaterialAccess)`；装入前剥任务标记。无室卸货仍用 `Inventory.add`，有室走下方容器，塞不下的扔旁边。潜行右击摘帽，不是打开设置。死亡掉落安全帽、托管物和收集库存
+- `entity/allay/WorkingAllayEntity`：唯一施工悦灵。继承原版 `Allay`；`0.35 × 0.6`；`canBeCollidedWith()==false`；`isPushable()==true`；可拴绳。`convertFrom` / `toWorkRecord` / `applyWorkRecord` / `spawnFromRecord`。`prepareAction` 每 4 gt 且对准后才允许动手。`shortageStrategy()` 只在已加载的 `homeLoungePos` 上读休息室策略，否则固定 `PAUSE`。`HomeLounge` 写在实体 NBT、不进 `AllayWorkRecord`；出库时由休息室写入。收集库存：`tryInsertCollection` / `canAcceptCollection` / `isCollectionFull` / `unloadCollectionTo(ConstructionMaterialAccess)`；装入前剥任务标记。无室卸货优先给所有者，所有者不在当前维度时可给在线同队成员；有室走下方容器，塞不下的扔旁边。潜行右击摘帽、换帽和主手交互只允许所有者或当前同队成员，并复核当前位置世界权限。死亡掉落安全帽、托管物和收集库存
 - 没有 `DroneItem`、`DroneAssemblyRecipe`、`DroneData` 或工人创造变体
 
 ### 悦灵休息室
 
 - `block/AllayLoungeBlock`：只有 `FACING`；本体始终完整方块碰撞；破坏调用 `releaseAllToWorld()`（会先 `unclaimLounge`）
-- `block/entity/AllayLoungeBlockEntity`：16 条托管、1 磁盘槽、不实现 `IPowerConsumer`、顶部 20 gt 单通道入/出库、召回只扫描操作玩家所有的 16 格内悦灵且不超过剩余容量。手动召回与自动返室都按登记瞬间到中心的距离和 UUID 稳定插入队列，不按实时位置重排；中心只给队首，其余在室顶上方 3 格、半径 3 格的四边环使用 1.2 格间距固定槽位，每层 16 位后向上叠 1 格。到达目标槽位清掉旧飞行任务、路点和过境预约；队首入库不触发其余等待者整体换位。`onDiskChanged` 只 `claimLounge` / `unclaimLounge`，不启动任务。`tryLaunch(Predicate)` 是任务出库；`releaseHosted` 是 GUI 放出，二者都占通道。出库 `spawnBound` 写 `homeLoungePos`。NBT 既有字段后追加 `PickupDisplays`
+- `block/entity/AllayLoungeBlockEntity`：16 条托管、1 磁盘槽、不实现 `IPowerConsumer`、顶部 20 gt 单通道入/出库。休息室保存放置者 `Owner`，只有所有者或当前同队成员能打开、召回、放出、改设置、插拔任务磁盘或破坏；无所有者时不隐式认领。召回扫描休息室所有者及当前同队成员在 16 格内的悦灵且不超过剩余容量。手动召回与自动返室都按登记瞬间到中心的距离和 UUID 稳定插入队列，不按实时位置重排；中心只给队首，其余在室顶上方 3 格、半径 3 格的四边环使用 1.2 格间距固定槽位，每层 16 位后向上叠 1 格。到达目标槽位清掉旧飞行任务、路点和过境预约；队首入库不触发其余等待者整体换位。`onDiskChanged` 只尝试 `claimLounge` / `unclaimLounge`，权限暂时失败时保留磁盘并重试，不启动任务。`tryLaunch(Predicate)` 是任务出库；`releaseHosted` 是 GUI 放出，二者都占通道。出库 `spawnBound` 写 `homeLoungePos`。NBT 既有字段后依次追加 `PickupDisplays`、`Owner`
 - `client/renderer/blockentity/AllayLoungeRenderer`：只读已同步的四面预约物，用原版物品渲染器画在水平侧面
 - 菜单：`PlasticraftMenuTypes.ALLAY_LOUNGE`；界面 `AllayLoungeScreen` 画 4×4 卡片、召回、暂停/跳过。磁盘槽空手右击走全局黄底变绿启动，与背包槽相同。没有工人单机菜单
 
@@ -134,7 +145,8 @@
 | `StonecutterSmashAdapter` | 对齐普通铁砧砸切石机：`BreakBlockUtil` + `spawnAfterBreak(..., false)` + `IHasMultiBlock.onRemove` + 标记掉落 + 按实际堆叠累加 `Debris` 已生成 + `AnvilUtil.dropItems` + 置空气。禁止 `destroyBlock` / 假玩家。爆炸抗性 ≥ 1200 只伤铁砧，悦灵忽略，黑曜石可拆 |
 | `ConstructionDebris` | 数据组件 `construction_debris`（job UUID + op id）。原版合并看组件，任务掉落不与玩家掉落合堆。玩家捡起剥组件并记外部结算；收集吸入也剥组件再入库存 |
 | `ConstructionDebrisAccount` | 按拆除 op 对账：已生成 / 已收集 / 外部。盒内标记 + 已收集 + 外部 < 已生成的差额记外部，不复制补发 |
-| `ConstructionPermission` | 窄接口，本项恒为允许。拒绝时必须 `WAITING_PERMISSION` 且忽略 SKIP。领地/FTB 留给 TODO 13 |
+| `ConstructionPermission` | 所有施工权限的唯一公共入口。团队关系每次调用实时查询，不写入 NBT；未安装 FTB Teams 或适配器异常时严格 owner-only。世界权限默认复用原版 `mayInteract` / `mayBuild`，领地集成和 GameTest 通过窄 provider 接入；异常按拒绝处理 |
+| `integration/ftbteams/FtbTeamsAdapter` | 仅在 `ModList` 确认 `ftbteams` 已加载后解析嵌套 API 类并调用 `TeamManager.arePlayersInSameTeam`；主模组对 FTB Teams 只 `compileOnly`，不得在公共入口直接引用其 API |
 | `ConstructionProjectionIndex` | 已交付假方块的区块段索引。世界格保持空气，不放占位方块实体。同一 tick 的交付与邻接刷新只把 `(job, section)` 标脏，tick 末每段最多发送一次完整快照；客户端已交付视图只在索引变更后重建。`connect()` 对红石导线/二极管/拉杆/按钮/活塞跳过 `updateShape`。`isOccupied` 忽略悦灵、掉落物和经验球 |
 | `ConstructionEntityProjectionIndex` | 已交付实体投影。不改 `ConstructionProjectionSectionPacket` 字段序，用独立包 `ConstructionEntityProjectionPacket` 同步 |
 | `ConstructionOverlayView` | 只读覆盖视图，已交付/规划目标优先于世界，用于栅栏等邻接形状 |
@@ -144,9 +156,9 @@
 | `EntityBuildAdapter` / `EntityBuildAdapters` | 实体适配接口与注册表。瞬态直接跳过。矿车实体等待下方铁轨交付，铁轨交付的占用检测反向忽略既有矿车。注册项在 `init/PlasticraftEntityBuildAdapters` |
 | `AnvilCraftRedstoneWirePorts` | 提交后先 `topologyChanged`，再用本体公开 `editConnection` 按蓝图关掉多余端口、补回缺失端口。不要再写红石导线 mixin，也不要把类放进 `dev.dubhe.anvilcraft.block`（JPMS 裂包） |
 | `ConstructionCommitLog` | 分区提交相位按方块状态、方块实体、多方块、边界、两次整区粘贴、两轮导线建网/端口恢复、实体与发布顺序持久化。进度 NBT 在 `Debris` 之后追加 `CommitLog` |
-| `ConstructionCommitService` | 安静提交：已交付投影静默写入区块段，不跑 `onPlace`/`neighborChanged`。提交日志内各整表阶段都受 `blocksPerTick` 预算约束，`commitState` 复用计划坐标集合，避免大结构退化为平方复杂度；单项方块实体或实体恢复失败记为残缺并继续。拆临时壳后的导线端口校正只执行一次线性扫描。通用路径禁止假玩家 |
-| `ConstructionJobController` | 规划、阶段恢复、封堵/拆除/收集窄接口、缺拆除策略与权限桩。`fitsWorker` 使用 `0.35 × 0.6`。规划覆盖表按布局版本复用；分配按 `order/id` 遇到首个安全项即返回，同任务、同能力的失败扫描共享 `5 gt` 重试窗口；各能力游标只越过不可逆的完成/无关前缀，仍保留租约和等待项供后续复核，拆除剥离顺序按操作布局缓存。SEAL 只扫描最低未解决 Y 层；DEMOLISH 选点忽略未来建造格预约、防自封和腔外偏好，允许进入已清空内部。每维度每 tick 只捕获一次按所有者分组的已加载工作悦灵快照，加入/离开事件增量修正；参与者、能力和磁铁检查共用该快照。休息室先确认确有匹配工具，再做当前阶段可分配检查；潜在操作上界不超过现有工人数时直接返回，超过时只扫描到第 `workers + 1` 个实际候选，被最低层阻塞的上层不会触发出库。世界阻塞由分配/交付入口发现，控制器每 tick 只复核已经处于 `WAITING_WORLD` 的 PLACE。`setLeaseAllay` / `AllayId`。`reach(worker)` 读工具定义，不要写死 1 格。`extractMaterial` 未认领时对创造模式走 `creativeSupply`；认领后走 `extractMaterialFromLounge`，创造玩家也不能绕过箱子。`claimLounge` 只写 `CoordinatorLounge` 并驱逐无室工人，不启动任务。`tryLaunchForJob` 按阶段放人，不要伪造任务。`nextAssignable` 用 `ConstructionPlacementLimits.canDeliver` 跳过短臂工人。`nextPhase()` 按剩余 SEAL/DEMOLISH/PLACE 回到对应阶段，收集不是必经阶段。`allDemolishResolved()` 后仅当工地盒内仍有本任务标记掉落、且存在所有者本维度到最近标记物 ≤ 128、库存未满的已加载收集悦灵时进入 `COLLECTING_DEBRIS`，否则直接 `BUILDING`。`reconcileDebris` 只扫 `worldBox`，禁止 `inflate(128)`。`ensureIndex` 只在首次建造或重载恢复 `writesProjection()` 的已交付格，并用 `projectionState`，此后增量维护；已交付父格后重试待处理 `ATTACHED`。`chooseApproach` 先查六个正交邻位，全部失败才查边角邻位，后者仍要过触及、真实碰撞、腔外和预约复核；`writesProjection()==false` 的操作优先使用自身格。`finish`/`complete` 等提交日志完成后砸剩余壳并做最后一次导线端口校正。缺收集**不**走 PAUSE/SKIP，不追加 `WaitReason`。工人无能量资格，不要再写 `ENERGY` 拒派 |
-| `ConstructionBlueprintService` | 导入/部署/启动停止/取消仍走这里；首次部署与重摆都校验完整变换包围盒处于可建造高度/世界边界内，且不与同维度其他任务重叠，错误键为 `placement_out_of_world` / `placement_overlaps_job`。活动任务或已有实际进度时禁止移动；无实际进度的暂停/未启动任务移动时清旧方块/实体投影并 `resetPlan()`，保留 `CoordinatorLounge`，下次启动按新锚点重规划。启动第二份会 `pause` 旧任务。取消仍删除任务并安静提交已交付投影，已放真实填充块不删；`cancel` / `complete` 要清协调站磁盘上的 `jobId` |
+| `ConstructionCommitService` | 安静提交：已交付投影静默写入区块段，不跑 `onPlace`/`neighborChanged`。提交日志内各整表阶段都受 `blocksPerTick` 预算约束，`commitState` 复用计划坐标集合，避免大结构退化为平方复杂度；单项方块实体或实体恢复失败记为残缺并继续。每个写入阶段和最终导线端口恢复都复核当前世界权限，拒绝时保留提交游标并回到 `WAITING_PERMISSION`。通用路径禁止假玩家 |
+| `ConstructionJobController` | 规划、阶段恢复、封堵/拆除/收集、团队调度和权限等待的中央入口。`jobForWorker` 优先协调休息室任务，再选悦灵所有者自己的无协调任务，最后按距离和 UUID 选同队任务；其他任务已有租约或有效协调绑定的工人不计入可用能力。每个执行 tick 复核团队、协调站和操作位置，失权时释放租约、掉落物及交通预约并结算携带物。规划、分配、交付、提交、最终壳清理和红石邻接写入共享 `ConstructionPermission`；拒绝强制 `WAITING_PERMISSION`，恢复后根据提交日志回原阶段。`fitsWorker` 使用 `0.35 × 0.6`。规划覆盖表按布局版本复用；分配按 `order/id` 遇到首个安全项即返回，同任务、同能力的失败扫描共享 `5 gt` 重试窗口；各能力游标只越过不可逆的完成/无关前缀，仍保留租约和等待项供后续复核，拆除剥离顺序按操作布局缓存。SEAL 只扫描最低未解决 Y 层；DEMOLISH 允许进入已清空内部。每维度每 tick 只捕获一次按所有者分组的已加载工作悦灵快照，按实时团队关系过滤。`extractMaterial` 未认领时从任务所有者取料，认领后走 `extractMaterialFromLounge`。`claimLounge` 只写 `CoordinatorLounge` 并驱逐无室工人，不启动任务。`nextPhase()` 按剩余 SEAL/DEMOLISH/PLACE 回到对应阶段，收集不是必经阶段。`reconcileDebris` 只扫 `worldBox`。`ensureIndex` 只在首次建造或重载恢复已交付格，此后增量维护。缺收集不走 PAUSE/SKIP；工人无能量资格 |
+| `ConstructionBlueprintService` | 导入、部署、启动停止和取消的玩家入口都按任务所有者或当前同队成员复核；部署及重摆还逐个校验变换后的方块和实体位置的世界权限。首次部署与重摆都校验完整变换包围盒处于可建造高度/世界边界内，且不与同维度其他任务重叠。活动任务或已有实际进度时禁止移动；无实际进度的暂停/未启动任务移动时清旧方块/实体投影并 `resetPlan()`，保留 `CoordinatorLounge`。取消仍删除任务并按当前权限提交可保留的已交付投影；`cancel` / `complete` 会清协调站及在线玩家打开容器中的 `jobId` |
 | `ConstructionWaitReason` | `NONE/MATERIAL/OCCUPIED/WORLD/SOURCE/ENERGY/DEMOLITION/PERMISSION`；`ENERGY` 保留占位，不要删除或重排。`byId` 按序，只能追加 |
 | `network/ConstructionProjectionSectionPacket` | 按区块段同步已交付格子；字段顺序冻结，只能追加 |
 
@@ -236,17 +248,20 @@
 31. 接近位、撤离段和休息室预约只在最终工位筛选时排他，包括它们在内的任何预约都禁止进入 A* 快照硬障碍；窄廊预约连 `fitsWorker` 也不参与。单格洞里避让候选全失败时必须继续原路线，施工悦灵本来就没有硬碰撞
 32. `releaseLease` 会先清实体任务号但保留手上材料；返还台账不能只查 `assignedJobId`。取预约材料按操作 ID 精确匹配，回库按悦灵 UUID 跨所有任务进度结清旧记录
 
-## 6. TODO 13 切入点提示
+## 6. TODO 13 验收交接
 
-- 依赖：TODO 12 异步分层寻路、装配并发与防自封已经落地。不要顺带做远程转运（TODO 14）、观察九区块加载（TODO 15）
-- TODO 12 已把 `AllayFlightPlanner` 换成异步分层规划器，并把 `ConstructionEnclosure` / `ConstructionTraffic` 挂到现有派发入口
-- 下一任务是领地 / FTB 权限。先写 TODO 13 实施 Plan，再改代码
+- 依赖：TODO 12 异步分层寻路、装配并发与防自封已经落地；TODO 13 的代码、自动化测试和资源说明已经完成。设计文档中的 `- [ ] 完成 TODO 13` 暂不勾选，等待玩家游戏内验收
+- FTB Teams 未安装时应严格 owner-only；安装后分别验证所有者、当前同队成员和陌生玩家对蓝图、悦灵、休息室、磁盘和卸货的权限
+- 在验收过程中让玩家入队、离队，确认下一次派发、取放、卸货和世界写入立即按新关系更新；离队工人的租约、交通预约、携带材料和收集库存应被释放或结算
+- 在受保护区域拒绝规划、封堵、拆除、投影交付、提交和强制覆盖，确认任务进入 `WAITING_PERMISSION`；恢复权限后从原台账继续，不能用 PAUSE/SKIP 绕过
+- 确认同队成员可以共享调度但不能越过任务所有者的世界权限；陌生玩家不能取料、卸货、召回、放出、修改设置、替换磁盘或修改世界
+- 不要顺带做远程转运（TODO 14）或观察九区块加载（TODO 15）
 
 ## 7. 已知待办与注意点
 
 - 望远镜观察仍是 `AllayToolBehavior.NONE`，TODO 15 接入真实覆盖状态
 - 已交付流体叠在 MODEL 假方块上的深度关系未作为硬验收；可见性优先。若再调叠层，继续沿 `AFTER_TRANSLUCENT_BLOCKS` 与分区网格边界修正，不要绕回即时 `ChunkOffset` 地形批次
-- 权限桩恒为允许，领地/FTB Teams 属 TODO 13；`WAITING_PERMISSION` 已占位且忽略 SKIP。自由收集物的团队共享也属 TODO 13，本项只对所有者或该休息室卸货
+- `ConstructionPermission` 已实现实时团队关系和世界权限复核；默认世界 provider 使用原版 `mayInteract` / `mayBuild`，领地模组应通过窄 provider 接入。`WAITING_PERMISSION` 忽略 SKIP；自由收集物可在所有者不在当前维度时卸给当前同队在线成员
 - 远程休息室转运与预计完工时间综合优化属 TODO 14；本地顶部 `20 gt` 共享通道、稳定队列和队首独占已经完成，TODO 14 必须复用
 - 已交付投影的世界格是空气：指向时 Jade 显示空气是当前契约，不是渲染 bug。若后续要让准星识别假方块，应走独立查询，不要改 `Level#getBlockState`
 - 施工悦灵本身没有设置界面；缺料/缺拆除只在休息室切换
@@ -256,12 +271,13 @@
 
 - `AllayGameTests`：戴帽转换、空手通用工、手持加强、原版游荡、推挤、拴绳与无硬碰撞；`headOnWorkersYieldDeterministically` 锁定迎面让行，`opposingWorkersPassSingleCellTunnel` 锁定单格通道穿行
 - `AllayLoungeGameTests`：召回节流、稳定环形等待队列、重复托管记录恢复、满员拒绝、破坏放出、封闭环境返室强制贴靠、通道忙时 GUI 放出失败、室内暂停/跳过与收集出库优先磁铁。不要再写耗电或断电冻结
-- `CollectionAllayGameTests`：九格、16 格重扫、向所有者或休息室卸货并尽力腾空、短时序吸入。不要启动施工任务
+- `CollectionAllayGameTests`：九格、16 格重扫、向所有者/当前同队成员或休息室卸货并尽力腾空、短时序吸入。不要启动施工任务
 - `BlueprintConstructionGameTests`：完整蓝图越出可建造范围、与另一已部署任务重叠、无实际进度的暂停任务移动后清旧索引并在新锚点重规划
-- `ConstructionJobGameTests`：无休息室建设 / 拆除 / 收集闭环；同材一组批次、操作索引与状态缓存一致性、铁轨忽略漏斗矿车、空碰撞状态不制造假障碍、成对大箱子、落单半箱收成单箱、门两半提交、空手跳过巨型铁砧，以及建设/拆除接近点失效立即释放租约
+- `ConstructionJobGameTests`：无休息室建设 / 拆除 / 收集闭环；所有者/同队调度、离队租约释放、任务掉落拾取后离队落地、权限等待与恢复、取消结算、多方块拆除逐一复核所有受影响 part、同材一组批次、操作索引与状态缓存一致性、铁轨忽略漏斗矿车、空碰撞状态不制造假障碍、成对大箱子、落单半箱收成单箱、门两半提交、空手跳过巨型铁砧，以及建设/拆除接近点失效立即释放租约
 - `zzz_construction_enclose`：空心立方体、门形腔体、矿车/石英最后封口、未来格预约、台阶袋形腔、互锁最终封口与 64 只参与上限
 - `zzz_construction_flight`：墙体/成型舱绕行、边缘碰撞逃生、待处理搜索 watchdog、分段下行/抬升、预约铁轨隧道、动态重规划、封闭目标强制贴靠和薄墙扫掠
 - `zzz_construction_lounge`：锁入槽只认领不启动、排除无室工人、下方箱子扣料与返还、创造板条箱无限供料、来源不可用悬停、20 gt 出库、建造阶段磁铁回库，以及同阶段全部剩余操作已租时空闲建设悦灵回库。不要再写电量拒派
+- `AllayGameTests` / `AllayLoungeGameTests` / `BlueprintConstructionGameTests` / `CollectionAllayGameTests`：覆盖同队交互、离队即时失权、休息室菜单和磁盘槽权限、团队快照读取以及当前同队成员自由收集卸货
 - `MoldingProductGameTests` / `PlasticMoldingChamberGameTests`：安全帽占地/高度包络与高精度打印组件
 
-本轮最近一次全量结果：`467 GAME TESTS COMPLETE IN 55.07 s`，`All 467 required tests passed :)`。
+本轮最近一次全量结果：`489 GAME TESTS COMPLETE IN 47.46 s`，`All 489 required tests passed :)`。

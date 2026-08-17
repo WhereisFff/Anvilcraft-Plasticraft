@@ -5,11 +5,16 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.BlockEntityWithoutLevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.Sheets;
+import net.minecraft.client.renderer.block.BlockRenderDispatcher;
+import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -38,15 +43,22 @@ public final class UniversalPlasticItemRenderer extends BlockEntityWithoutLevelR
     ) {
         MoldedPlasticData data = MoldedPlasticData.get(stack).orElse(null);
         if (data == null) {
-            BlockState state = PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState()
-                .setValue(DyeableMaterial.COLOR, PlasticMeltColor.get(stack));
-            Minecraft.getInstance().getBlockRenderer().renderSingleBlock(
-                state,
-                pose,
-                buffers,
-                packedLight,
-                packedOverlay
-            );
+            Block productBlock = Block.byItem(stack.getItem());
+            BlockState state = productBlock.defaultBlockState();
+            if (state.hasProperty(DyeableMaterial.COLOR)) {
+                state = state.setValue(DyeableMaterial.COLOR, PlasticMeltColor.get(stack));
+            }
+            if (state.is(PlasticraftBlocks.CLEAR_PLASTIC.get())) {
+                renderClearPlasticBlock(state, pose, buffers, packedLight, packedOverlay);
+            } else {
+                Minecraft.getInstance().getBlockRenderer().renderSingleBlock(
+                    state,
+                    pose,
+                    buffers,
+                    packedLight,
+                    packedOverlay
+                );
+            }
             return;
         }
         AABB bounds = MoldedTrayComponentRenderer.renderBounds(data);
@@ -58,7 +70,14 @@ public final class UniversalPlasticItemRenderer extends BlockEntityWithoutLevelR
         pose.translate(0.5D, 0.5D, 0.5D);
         pose.scale(scale, scale, scale);
         pose.translate(-center.x, -center.y, -center.z);
-        MoldedPlasticMeshRenderer.render(data, pose, buffers, packedLight, 0xFFFFFFFF, false);
+        MoldedPlasticMeshRenderer.render(
+            data,
+            pose,
+            buffers,
+            packedLight,
+            0xFFFFFFFF,
+            PlasticMaterial.fromMelt(data.material()).map(PlasticMaterial::isTransparent).orElse(false)
+        );
         MoldedTrayComponentRenderer.render(
             data,
             Minecraft.getInstance().getBlockRenderer(),
@@ -68,5 +87,27 @@ public final class UniversalPlasticItemRenderer extends BlockEntityWithoutLevelR
             packedOverlay
         );
         pose.popPose();
+    }
+
+    private static void renderClearPlasticBlock(
+        BlockState state,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        int packedLight,
+        int packedOverlay
+    ) {
+        BlockRenderDispatcher dispatcher = Minecraft.getInstance().getBlockRenderer();
+        BakedModel model = dispatcher.getBlockModel(state);
+        dispatcher.getModelRenderer().renderModel(
+            pose.last(),
+            buffers.getBuffer(Sheets.translucentItemSheet()),
+            state,
+            model,
+            1.0F,
+            1.0F,
+            1.0F,
+            packedLight,
+            packedOverlay
+        );
     }
 }

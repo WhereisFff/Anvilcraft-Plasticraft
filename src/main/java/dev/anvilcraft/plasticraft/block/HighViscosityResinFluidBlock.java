@@ -1,13 +1,14 @@
 package dev.anvilcraft.plasticraft.block;
 
+import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.block.FishTankBlock;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
-import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
-import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.dubhe.anvilcraft.util.CauldronUtil;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
@@ -51,7 +52,7 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
     /** 在本体容器的真实液面内应用树脂的粘滞效果。 */
     public static void stickEntityInContainer(BlockState state, Level level, BlockPos pos, Entity entity) {
         if (isEntityInsideContainer(state, level, pos, entity)) {
-            if (containsUniversalPlasticMelt(level, state, pos)) {
+            if (containsPlasticMelt(level, state, pos)) {
                 entity.makeStuckInBlock(state, PLAYER_SPEED);
             } else {
                 stickEntity(state, entity);
@@ -78,23 +79,23 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
         return false;
     }
 
-    private static boolean containsUniversalPlasticMelt(Level level, BlockState state, BlockPos pos) {
+    private static boolean containsPlasticMelt(Level level, BlockState state, BlockPos pos) {
         if (state.getBlock() instanceof FishTankBlock
             && level.getBlockEntity(pos) instanceof FishTankBlockEntity tank) {
-            return tank.getFluidHandler().getFluid().is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get());
+            return PlasticMaterial.isMelt(tank.getFluidHandler().getFluid());
         }
         if (state.getBlock() instanceof LargeCauldronBlock) {
             LargeCauldronBlockEntity cauldron = LargeCauldronBlockEntity.getMain(level, pos, state);
             if (cauldron == null) return false;
             IFluidHandler fluids = cauldron.getFluidHandler();
             for (int tank = 0; tank < fluids.getTanks(); tank++) {
-                if (fluids.getFluidInTank(tank).is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())) return true;
+                if (PlasticMaterial.isMelt(fluids.getFluidInTank(tank))) return true;
             }
         }
         if (state.getBlock() instanceof HardenedResinCauldronBlock
             && level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
             && bonded.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron) {
-            return cauldron.getFluidHandler().getFluid().is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get());
+            return PlasticMaterial.isMelt(cauldron.getFluidHandler().getFluid());
         }
         if (state.getBlock() instanceof UniversalPlasticMeltCauldronBlock) {
             return state.getValue(UniversalPlasticMeltCauldronBlock.LEVEL) > 0;
@@ -162,7 +163,7 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
 
     private static boolean isHighViscosityResin(FluidStack fluid) {
         return !fluid.isEmpty() && (fluid.is(PlasticraftFluids.LIQUID_HIGH_VISCOSITY_RESIN.get())
-            || fluid.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get()));
+            || PlasticMaterial.isMelt(fluid));
     }
 
     public static boolean isEntityTouching(Entity entity) {
@@ -191,8 +192,8 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
         return false;
     }
 
-    /** 判断实体是否接触通用塑料熔体；熔体容器中的实体仍由各容器入口施加减速。 */
-    public static boolean isUniversalPlasticMeltTouching(Entity entity) {
+    /** 判断实体是否接触塑料熔体；熔体容器中的实体仍由各容器入口施加减速。 */
+    public static boolean isPlasticMeltTouching(Entity entity) {
         AABB bounds = entity.getBoundingBox().deflate(1.0E-7D);
         int minX = Mth.floor(bounds.minX);
         int minY = Mth.floor(bounds.minY);
@@ -206,16 +207,16 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
                 for (int z = minZ; z <= maxZ; z++) {
                     pos.set(x, y, z);
                     BlockState state = entity.level().getBlockState(pos);
-                    if (state.is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT.get())
-                        || (state.is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())
+                    if (PlasticMaterial.fromMeltBlock(state).isPresent()
+                        || (PlasticMaterial.fromMeltCauldron(state).isPresent()
                             && isEntityInsideContainer(state, entity.level(), pos, entity))) {
                         return true;
                     }
                     if (state.getBlock() instanceof HardenedResinCauldronBlock
                         && entity.level().getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
                         && bonded.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron
-                        && cauldron.plasticraft$isEntityInsideUniversalMelt(entity)) return true;
-                    if (containsUniversalPlasticMelt(entity.level(), state, pos)
+                        && cauldron.plasticraft$isEntityInsidePlasticMelt(entity)) return true;
+                    if (containsPlasticMelt(entity.level(), state, pos)
                         && isEntityInsideContainer(state, entity.level(), pos, entity)) {
                         return true;
                     }

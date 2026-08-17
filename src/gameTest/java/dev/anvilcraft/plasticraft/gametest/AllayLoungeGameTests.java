@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionPermission;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.dubhe.anvilcraft.init.item.ModItems;
@@ -17,12 +18,14 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
+import net.neoforged.testframework.gametest.GameTestPlayer;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -41,10 +44,50 @@ public final class AllayLoungeGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Lounge access requires its owner or a current teammate and never claims an unowned lounge")
+    static void loungeAccessRechecksTeamMembership(ExtendedGameTestHelper helper) {
+        AllayLoungeBlockEntity lounge = placeLounge(helper);
+        lounge.setOwner(null);
+        GameTestPlayer owner = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        GameTestPlayer teammate = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+
+        check(lounge.owner() == null, "the fixture lounge must start unowned");
+        check(!ConstructionPermission.canUseLounge(owner, lounge), "an unowned lounge was usable");
+        check(lounge.owner() == null, "checking access claimed an unowned lounge");
+        WorkingAllayEntity worker = AllayGameTests.spawnHattedForOwner(
+            helper,
+            new Vec3(2.5D, 2.0D, 2.5D),
+            owner.getUUID()
+        );
+        check(!lounge.canHost(worker), "an unowned lounge accepted a working allay");
+        check(lounge.owner() == null, "checking worker admission claimed an unowned lounge");
+
+        lounge.setOwner(owner.getUUID());
+        check(ConstructionPermission.canUseLounge(owner, lounge), "the lounge owner was denied access");
+        check(!ConstructionPermission.canUseLounge(teammate, lounge), "a stranger used the lounge");
+        try {
+            ConstructionPermission.setCollaboratorProvider((server, first, second) ->
+                first.equals(owner.getUUID()) && second.equals(teammate.getUUID())
+                    || first.equals(teammate.getUUID()) && second.equals(owner.getUUID())
+            );
+            check(lounge.setShortageStrategy(teammate, AllayShortageStrategy.SKIP),
+                "a current teammate could not change lounge settings");
+        } finally {
+            ConstructionPermission.setCollaboratorProvider(null);
+        }
+        check(!lounge.setShortageStrategy(teammate, AllayShortageStrategy.PAUSE),
+            "a former teammate retained lounge access");
+        check(lounge.shortageStrategy() == AllayShortageStrategy.SKIP,
+            "the denied former teammate changed lounge settings");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "5x4x5", floor = true)
     @TestHolder(description = "Collector launch prefers a hosted magnet over an empty-hand allay")
     static void tryLaunchCollectorPrefersMagnet(ExtendedGameTestHelper helper) {
         AllayLoungeBlockEntity lounge = placeLounge(helper);
-        UUID owner = UUID.randomUUID();
+        UUID owner = AllayGameTests.TEST_OWNER;
         check(lounge.addHosted(emptyHandRecord(owner)), "failed to host the empty-hand collector");
         check(lounge.addHosted(magnetRecord(owner)), "failed to host the magnet collector");
         check(ConstructionJobController.tryLaunchCollector(lounge), "lounge must launch a collector");
@@ -176,7 +219,11 @@ public final class AllayLoungeGameTests {
     static void fullLoungeRejectsDocking(ExtendedGameTestHelper helper) {
         AllayLoungeBlockEntity lounge = placeLounge(helper);
         fillLounge(lounge);
-        WorkingAllayEntity worker = AllayGameTests.spawnHatted(helper, new Vec3(1.5D, 3.5D, 1.5D), null);
+        WorkingAllayEntity worker = AllayGameTests.spawnHattedForOwner(
+            helper,
+            new Vec3(1.5D, 3.5D, 1.5D),
+            AllayGameTests.TEST_OWNER
+        );
         helper.startSequence()
             .thenExecute(() -> {
                 check(!lounge.canAcceptDocking(), "full lounge reported an open bay");
@@ -195,8 +242,16 @@ public final class AllayLoungeGameTests {
     @TestHolder(description = "Duplicate hosted records collapse and the matching world allay can return")
     static void duplicateHostedRecordsDoNotBlockReturn(ExtendedGameTestHelper helper) {
         AllayLoungeBlockEntity lounge = placeLounge(helper);
-        WorkingAllayEntity worker = AllayGameTests.spawnHatted(helper, new Vec3(1.5D, 3.5D, 1.5D), null);
-        AllayWorkRecord stale = hostedRecord(worker.getUUID(), new ItemStack(Items.SPYGLASS), Optional.empty());
+        WorkingAllayEntity worker = AllayGameTests.spawnHattedForOwner(
+            helper,
+            new Vec3(1.5D, 3.5D, 1.5D),
+            AllayGameTests.TEST_OWNER
+        );
+        AllayWorkRecord stale = hostedRecord(
+            worker.getUUID(),
+            new ItemStack(Items.SPYGLASS),
+            Optional.of(AllayGameTests.TEST_OWNER)
+        );
         check(lounge.addHosted(stale), "failed to add the stale hosted record");
         check(!lounge.addHosted(stale), "lounge accepted a duplicate hosted UUID through its public API");
 
@@ -232,10 +287,10 @@ public final class AllayLoungeGameTests {
         helper.setBlock(chamber.north(), Blocks.STONE);
         helper.setBlock(chamber.south(), Blocks.STONE);
         helper.setBlock(chamber.above(), Blocks.STONE);
-        WorkingAllayEntity worker = AllayGameTests.spawnHatted(
+        WorkingAllayEntity worker = AllayGameTests.spawnHattedForOwner(
             helper,
             new Vec3(5.5D, 2.01D, 5.5D),
-            null
+            AllayGameTests.TEST_OWNER
         );
         check(worker.startDockingTo(helper.absolutePos(LOUNGE_POS)), "sealed allay rejected docking");
 
@@ -330,6 +385,7 @@ public final class AllayLoungeGameTests {
         if (!(helper.getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge)) {
             throw new GameTestAssertException("allay lounge block entity is missing");
         }
+        lounge.setOwner(AllayGameTests.TEST_OWNER);
         return lounge;
     }
 
@@ -351,7 +407,11 @@ public final class AllayLoungeGameTests {
         check(count <= spawnPositions.size(), "queue test requested too many workers");
         List<WorkingAllayEntity> workers = new ArrayList<>(count);
         for (int index = 0; index < count; index++) {
-            workers.add(AllayGameTests.spawnHatted(helper, spawnPositions.get(index), null));
+            workers.add(AllayGameTests.spawnHattedForOwner(
+                helper,
+                spawnPositions.get(index),
+                AllayGameTests.TEST_OWNER
+            ));
         }
         return workers;
     }
@@ -363,7 +423,7 @@ public final class AllayLoungeGameTests {
     }
 
     private static AllayWorkRecord fillerRecord() {
-        return hostedRecord(new ItemStack(Items.SPYGLASS), Optional.empty());
+        return hostedRecord(new ItemStack(Items.SPYGLASS), Optional.of(AllayGameTests.TEST_OWNER));
     }
 
     private static AllayWorkRecord emptyHandRecord(UUID owner) {

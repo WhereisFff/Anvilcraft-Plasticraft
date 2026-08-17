@@ -1,0 +1,10 @@
+{
+  "type": "anvilcraft:solid_liquid",
+  "fluid": "anvilcraftplasticraft:engineering_plastic_melt",
+  "ingredients": [
+    {
+      "items": "minecraft:black_dye"
+    }
+  ],
+  "results": []
+}

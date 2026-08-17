@@ -46,13 +46,18 @@ public final class ConstructionCommitService {
     private ConstructionCommitService() {
     }
 
-    public static void commitDelivered(Level level, ConstructionJobProgress progress) {
+    public static boolean commitDelivered(Level level, ConstructionJobProgress progress) {
         int previous = blocksPerTick;
         blocksPerTick = Integer.MAX_VALUE;
         try {
             while (!tick(level, progress)) {
-                // 取消与小结构一次写完
+                if (level instanceof ServerLevel serverLevel
+                    && ConstructionJobIndex.get(serverLevel.getServer()).job(progress.jobId()) instanceof ConstructionJob job
+                    && job.state() == ConstructionJob.STATE_WAITING_PERMISSION) {
+                    return false;
+                }
             }
+            return true;
         } finally {
             blocksPerTick = previous;
         }
@@ -60,6 +65,7 @@ public final class ConstructionCommitService {
 
     /** @return 是否已经发布完成 */
     public static boolean tick(Level level, ConstructionJobProgress progress) {
+        if (!hasCommitPermission(level, progress)) return false;
         ConstructionCommitLog log = progress.commitLog();
         if (log.phase() == ConstructionCommitLog.Phase.NONE) {
             log.setPhase(ConstructionCommitLog.Phase.STATES);
@@ -132,6 +138,7 @@ public final class ConstructionCommitService {
         int index = log.nextIndex();
         while (index < ops.size() && budget > 0) {
             ConstructionBuildOp op = ops.get(index);
+            if (!canWrite(level, progress, op)) return false;
             if (!log.isWritten(op.id())) {
                 try {
                     if (level.isInWorldBounds(op.pos())) {
@@ -170,6 +177,7 @@ public final class ConstructionCommitService {
         int index = log.nextIndex();
         while (index < ops.size() && budget > 0) {
             ConstructionBuildOp op = ops.get(index);
+            if (!canWrite(level, progress, op)) return false;
             try {
                 List<BlockEntityContentAdapter.SlotStack> contents = new ArrayList<>();
                 List<FluidBuildAdapter.TankFluid> fluids = new ArrayList<>();
@@ -228,6 +236,7 @@ public final class ConstructionCommitService {
         int index = log.nextIndex();
         while (index < ops.size() && budget > 0) {
             ConstructionBuildOp op = ops.get(index);
+            if (!canWrite(level, progress, op)) return false;
             if (!log.isWritten(op.id())) {
                 try {
                     Entity entity = EntityBuildAdapters.spawn(serverLevel, op);
@@ -288,6 +297,7 @@ public final class ConstructionCommitService {
         int index = log.nextIndex();
         while (index < ops.size() && budget > 0) {
             ConstructionBuildOp op = ops.get(index);
+            if (!canWrite(level, progress, op)) return false;
             try {
                 if (!level.isInWorldBounds(op.pos())) {
                     progress.setIncomplete(true);
@@ -314,6 +324,79 @@ public final class ConstructionCommitService {
         return false;
     }
 
+    private static boolean hasCommitPermission(Level level, ConstructionJobProgress progress) {
+        if (!(level instanceof ServerLevel serverLevel)) return true;
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.status() != ConstructionBuildOp.Status.DELIVERED) continue;
+            if (!op.writesProjection()
+                && op.kind() != ConstructionBuildOp.Kind.CONTENT
+                && op.kind() != ConstructionBuildOp.Kind.FLUID
+                && op.kind() != ConstructionBuildOp.Kind.ENTITY) {
+                continue;
+            }
+            if (!ConstructionJobController.enterIfDenied(serverLevel, progress, op)) return false;
+        }
+        return true;
+    }
+
+    private static boolean canWrite(Level level, ConstructionJobProgress progress, ConstructionBuildOp op) {
+        return !(level instanceof ServerLevel serverLevel)
+            || ConstructionJobController.enterIfDenied(serverLevel, progress, op);
+    }
+
+    /** 取消任务时只返还尚未写入世界的材料；提交日志是这项判断的唯一依据。 */
+    static boolean hasCommittedMaterial(ConstructionJobProgress progress, ConstructionBuildOp op) {
+        ConstructionCommitLog log = progress.commitLog();
+        if (op.kind() == ConstructionBuildOp.Kind.SEAL) {
+            return op.status() == ConstructionBuildOp.Status.DELIVERED;
+        }
+        if (op.writesProjection() || op.kind() == ConstructionBuildOp.Kind.ENTITY) {
+            return log.isWritten(op.id());
+        }
+        if (op.kind() != ConstructionBuildOp.Kind.CONTENT && op.kind() != ConstructionBuildOp.Kind.FLUID) {
+            return false;
+        }
+        ConstructionBuildOp parent = progress.parentOf(op);
+        if (parent == null) return false;
+        if (parent.kind() == ConstructionBuildOp.Kind.ENTITY) {
+            return log.isWritten(parent.id());
+        }
+        ConstructionCommitLog.Phase phase = log.phase();
+        if (phase.ordinal() > ConstructionCommitLog.Phase.BLOCK_ENTITIES.ordinal()) {
+            return true;
+        }
+        if (phase != ConstructionCommitLog.Phase.BLOCK_ENTITIES) return false;
+        List<ConstructionBuildOp> parents = deliveredProjections(progress);
+        int processed = Math.min(log.nextIndex(), parents.size());
+        for (int index = 0; index < processed; index++) {
+            if (parents.get(index).id() == parent.id()) return true;
+        }
+        return false;
+    }
+
+    /** 动态撤销 DELIVERED 操作时保持当前提交游标仍指向同一项未处理操作。 */
+    static void adjustCursorForRemoval(ConstructionJobProgress progress, Set<Integer> removedOperationIds) {
+        if (removedOperationIds.isEmpty()) return;
+        ConstructionCommitLog log = progress.commitLog();
+        List<ConstructionBuildOp> current = switch (log.phase()) {
+            case STATES, BLOCK_ENTITIES, MULTIBLOCK, BOUNDARY, PASTE,
+                 WIRE_TOPOLOGY, WIRE_PORTS, FINAL_PASTE, FINAL_WIRE_TOPOLOGY,
+                 FINAL_WIRE_PORTS -> deliveredProjections(progress);
+            case ENTITIES -> progress.deliveredEntityOperations();
+            case NONE, PUBLISH, DONE -> List.of();
+        };
+        int processed = Math.min(log.nextIndex(), current.size());
+        int removedBeforeCursor = 0;
+        for (int index = 0; index < processed; index++) {
+            if (removedOperationIds.contains(current.get(index).id())) {
+                removedBeforeCursor++;
+            }
+        }
+        if (removedBeforeCursor > 0) {
+            log.setNextIndex(log.nextIndex() - removedBeforeCursor);
+        }
+    }
+
     private static boolean updateBoundaryShapes(
         Level level,
         ConstructionJobProgress progress,
@@ -325,6 +408,7 @@ public final class ConstructionCommitService {
         int index = log.nextIndex();
         while (index < ops.size() && budget > 0) {
             ConstructionBuildOp op = ops.get(index);
+            if (!canWrite(level, progress, op)) return false;
             try {
                 if (!level.isInWorldBounds(op.pos())) {
                     progress.setIncomplete(true);
@@ -427,6 +511,7 @@ public final class ConstructionCommitService {
         int index = log.nextIndex();
         while (index < ops.size() && budget > 0) {
             ConstructionBuildOp op = ops.get(index);
+            if (!canWrite(level, progress, op)) return false;
             try {
                 if (level.isInWorldBounds(op.pos())) {
                     writeWithoutCallbacks(level, op.pos(), committedState(op, delivered));
@@ -462,6 +547,7 @@ public final class ConstructionCommitService {
         int index = log.nextIndex();
         while (index < ops.size() && budget > 0) {
             ConstructionBuildOp op = ops.get(index);
+            if (!canWrite(level, progress, op)) return false;
             try {
                 if (level instanceof ServerLevel serverLevel && isCommittedWire(serverLevel, op)) {
                     RedstoneWireNetworkManager.topologyChanged(serverLevel, op.pos());
@@ -495,6 +581,7 @@ public final class ConstructionCommitService {
         int index = log.nextIndex();
         while (index < ops.size() && budget > 0) {
             ConstructionBuildOp op = ops.get(index);
+            if (!canWrite(level, progress, op)) return false;
             try {
                 if (level instanceof ServerLevel serverLevel && isCommittedWire(serverLevel, op)) {
                     AnvilCraftRedstoneWirePorts.reconcile(serverLevel, op.pos(), op.target());
@@ -528,13 +615,14 @@ public final class ConstructionCommitService {
     }
 
     /** 拆除临时封堵壳后再校正一次导线端口，避免壳的邻居更新覆盖蓝图方向。 */
-    public static void restoreWirePorts(Level level, ConstructionJobProgress progress) {
-        if (!(level instanceof ServerLevel serverLevel)) return;
+    public static boolean restoreWirePorts(Level level, ConstructionJobProgress progress) {
+        if (!(level instanceof ServerLevel serverLevel)) return true;
         List<ConstructionBuildOp> wires = new ArrayList<>();
         for (ConstructionBuildOp op : deliveredProjections(progress)) {
             if (isCommittedWire(serverLevel, op)) wires.add(op);
         }
         for (ConstructionBuildOp op : wires) {
+            if (!canWrite(level, progress, op)) return false;
             try {
                 RedstoneWireNetworkManager.topologyChanged(serverLevel, op.pos());
             } catch (RuntimeException exception) {
@@ -547,6 +635,7 @@ public final class ConstructionCommitService {
             }
         }
         for (ConstructionBuildOp op : wires) {
+            if (!canWrite(level, progress, op)) return false;
             try {
                 AnvilCraftRedstoneWirePorts.reconcile(serverLevel, op.pos(), op.target());
             } catch (RuntimeException exception) {
@@ -558,6 +647,7 @@ public final class ConstructionCommitService {
                 );
             }
         }
+        return true;
     }
 
     static boolean preservesExactState(BlockState state) {

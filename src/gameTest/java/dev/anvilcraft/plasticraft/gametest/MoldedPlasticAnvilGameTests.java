@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.lib.v2.recipe.util.InWorldRecipeContext;
 import dev.anvilcraft.lib.v2.util.predicate.BlockStatePredicate;
+import dev.anvilcraft.plasticraft.entity.EngineeringPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.MoldedPlasticAnvilAbilities;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
@@ -36,6 +37,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -138,6 +140,54 @@ public final class MoldedPlasticAnvilGameTests {
                 "landing unexpectedly removed a molded product");
             helper.succeed();
         });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "11x6x7", floor = true)
+    @TestHolder(description = "Engineering molded anvils use Silk Touch while universal anvils keep normal drops")
+    static void engineeringAnvilUsesRoyalSilkTouchBreaking(ExtendedGameTestHelper helper) {
+        BlockPos universalTarget = new BlockPos(3, 2, 3);
+        BlockPos engineeringTarget = new BlockPos(7, 2, 3);
+        helper.setBlock(universalTarget.below(), Blocks.STONECUTTER);
+        helper.setBlock(engineeringTarget.below(), Blocks.STONECUTTER);
+        helper.setBlock(universalTarget, Blocks.GLASS);
+        helper.setBlock(engineeringTarget, Blocks.GLASS);
+
+        UniversalPlasticEntity universal = createProduct(
+            helper,
+            new BlockPos(2, 4, 3),
+            PlasticEntityOrientation.DEFAULT,
+            MoldingProductTypes.ANVIL_ID
+        );
+        EngineeringPlasticEntity engineering = createEngineeringProduct(
+            helper,
+            new BlockPos(8, 4, 3),
+            PlasticEntityOrientation.DEFAULT,
+            MoldingProductTypes.ANVIL_ID
+        );
+        universal.setNoGravity(true);
+        engineering.setNoGravity(true);
+
+        check(handleGiantLanding(helper, universal, universalTarget.above(), 2.0F),
+            "universal anvil did not consume its stonecutter break");
+        check(handleGiantLanding(helper, engineering, engineeringTarget.above(), 2.0F),
+            "engineering anvil did not consume its stonecutter break");
+        check(helper.getBlockState(universalTarget).isAir(), "universal anvil did not break glass");
+        check(helper.getBlockState(engineeringTarget).isAir(), "engineering anvil did not break glass");
+
+        int universalGlass = helper.getLevel().getEntitiesOfClass(
+            ItemEntity.class,
+            new AABB(helper.absolutePos(universalTarget)).inflate(1.0D),
+            item -> item.getItem().is(Blocks.GLASS.asItem())
+        ).stream().mapToInt(item -> item.getItem().getCount()).sum();
+        int engineeringGlass = helper.getLevel().getEntitiesOfClass(
+            ItemEntity.class,
+            new AABB(helper.absolutePos(engineeringTarget)).inflate(1.0D),
+            item -> item.getItem().is(Blocks.GLASS.asItem())
+        ).stream().mapToInt(item -> item.getItem().getCount()).sum();
+        check(universalGlass == 0, "universal anvil unexpectedly used Silk Touch");
+        check(engineeringGlass == 1, "engineering anvil did not produce one Silk Touch glass drop");
+        helper.succeed();
     }
 
     @GameTest(timeoutTicks = 20)
@@ -309,6 +359,30 @@ public final class MoldedPlasticAnvilGameTests {
         );
     }
 
+    private static EngineeringPlasticEntity createEngineeringProduct(
+        ExtendedGameTestHelper helper,
+        BlockPos occupiedPos,
+        PlasticEntityOrientation orientation,
+        ResourceLocation type
+    ) {
+        MoldedPlasticData data = manufacture(type, PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get());
+        ItemStack stack = PlasticraftBlocks.ENGINEERING_PLASTIC.asStack();
+        MoldedPlasticData.set(stack, data);
+        EngineeringPlasticEntity entity = new EngineeringPlasticEntity(
+            PlasticraftEntities.ENGINEERING_PLASTIC.get(),
+            helper.getLevel(),
+            Vec3.ZERO,
+            PlasticraftBlocks.ENGINEERING_PLASTIC.get().defaultBlockState(),
+            stack,
+            orientation
+        );
+        Vec3 position = entity.plasticraft$placementPosition(helper.absolutePos(occupiedPos), orientation);
+        entity.setPos(position);
+        entity.setStartPos(entity.blockPosition());
+        check(helper.getLevel().addFreshEntity(entity), "failed to add engineering molded product");
+        return entity;
+    }
+
     private static UniversalPlasticEntity createProduct(
         ExtendedGameTestHelper helper,
         BlockPos occupiedPos,
@@ -333,6 +407,10 @@ public final class MoldedPlasticAnvilGameTests {
     }
 
     private static MoldedPlasticData manufacture(ResourceLocation type) {
+        return manufacture(type, PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get());
+    }
+
+    private static MoldedPlasticData manufacture(ResourceLocation type, Fluid material) {
         return manufacture(new EditableMoldingModel(
             EditableMoldingModel.CURRENT_FORMAT_VERSION,
             "Molded anvil behavior test",
@@ -343,7 +421,7 @@ public final class MoldedPlasticAnvilGameTests {
                 MoldingElement.cube("Top", vec(0, 6, 0), vec(18, 11, 18))
             ),
             List.of()
-        ));
+        ), material);
     }
 
     private static MoldedPlasticData manufactureGiantAnvil() {
@@ -361,12 +439,16 @@ public final class MoldedPlasticAnvilGameTests {
     }
 
     private static MoldedPlasticData manufacture(EditableMoldingModel model) {
+        return manufacture(model, PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get());
+    }
+
+    private static MoldedPlasticData manufacture(EditableMoldingModel model, Fluid material) {
         var baked = MoldingModelBaker.bake(model);
         int melt = baked.analysis().minimumMeltMillibuckets();
         MoldedPlasticData data = MoldedPlasticData.manufacture(
             model,
             baked,
-            new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), melt),
+            new FluidStack(material, melt),
             melt
         );
         check(model.requestedType().equals(data.finalType()),

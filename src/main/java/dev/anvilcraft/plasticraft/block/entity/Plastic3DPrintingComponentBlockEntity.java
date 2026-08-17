@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.block.entity;
 
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
-import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -24,8 +24,7 @@ public final class Plastic3DPrintingComponentBlockEntity extends BlockEntity {
     private final FluidTank tank = new FluidTank(CAPACITY) {
         @Override
         public boolean isFluidValid(FluidStack stack) {
-            return !stack.isEmpty()
-                && stack.getFluid().getFluidType() == PlasticraftFluids.UNIVERSAL_PLASTIC_MELT_TYPE.get();
+            return PlasticMaterial.isMelt(stack);
         }
 
         @Override

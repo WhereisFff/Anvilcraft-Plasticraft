@@ -10,6 +10,7 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.recipe.CondenserGas;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
@@ -530,6 +531,46 @@ public final class PlasticraftRecipeData {
             .requires(ModFluids.POWDER_SNOW.get(), 1000)
             .result(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/universal_plastic_melt_with_powder_snow"));
+
+        // 流体混合配方：一桶工程塑料熔体与一桶水冷却混合，凝固为 16 个工程塑料颗粒。
+        FluidMixingRecipe.builder()
+            .requires(PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get(), 1000)
+            .requires(Fluids.WATER, 1000)
+            .result(PlasticraftItems.ENGINEERING_PLASTIC_GRANULE, 16)
+            .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/engineering_plastic_melt_with_water"));
+
+        // 流体混合配方：一桶工程塑料熔体与一桶细雪冷却混合，同样凝固为 16 个工程塑料颗粒。
+        FluidMixingRecipe.builder()
+            .requires(PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get(), 1000)
+            .requires(ModFluids.POWDER_SNOW.get(), 1000)
+            .result(PlasticraftItems.ENGINEERING_PLASTIC_GRANULE, 16)
+            .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/engineering_plastic_melt_with_powder_snow"));
+
+        FluidMixingRecipe.builder()
+            .requires(PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT.get(), 1000)
+            .requires(Fluids.WATER, 1000)
+            .result(PlasticraftItems.HEAT_RESISTANT_PLASTIC_GRANULE, 16)
+            .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/heat_resistant_plastic_melt_with_water"));
+
+        FluidMixingRecipe.builder()
+            .requires(PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT.get(), 1000)
+            .requires(ModFluids.POWDER_SNOW.get(), 1000)
+            .result(PlasticraftItems.HEAT_RESISTANT_PLASTIC_GRANULE, 16)
+            .save(provider, AnvilcraftPlasticraft.of(
+                "fluid_mixing/heat_resistant_plastic_melt_with_powder_snow"
+            ));
+
+        FluidMixingRecipe.builder()
+            .requires(PlasticraftFluids.CLEAR_PLASTIC_MELT.get(), 1000)
+            .requires(Fluids.WATER, 1000)
+            .result(PlasticraftItems.CLEAR_PLASTIC_GRANULE, 16)
+            .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/clear_plastic_melt_with_water"));
+
+        FluidMixingRecipe.builder()
+            .requires(PlasticraftFluids.CLEAR_PLASTIC_MELT.get(), 1000)
+            .requires(ModFluids.POWDER_SNOW.get(), 1000)
+            .result(PlasticraftItems.CLEAR_PLASTIC_GRANULE, 16)
+            .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/clear_plastic_melt_with_powder_snow"));
     }
 
     private static void generatePlasticMeltSolidLiquidRecipes(RegistrumRecipeProvider provider) {
@@ -541,9 +582,41 @@ public final class PlasticraftRecipeData {
             .result(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("solid_liquid/cool_universal_plastic_melt"));
 
+        // 固液配方：向一桶工程塑料熔体投入任意冷却物品，消耗熔体并产出 16 个工程塑料颗粒。
+        SolidLiquidRecipe.builder()
+            .cauldron(PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get())
+            .consume(1000)
+            .requires(PlasticraftItemTags.COLD_ITEMS)
+            .result(PlasticraftItems.ENGINEERING_PLASTIC_GRANULE, 16)
+            .save(provider, AnvilcraftPlasticraft.of("solid_liquid/cool_engineering_plastic_melt"));
+        SolidLiquidRecipe.builder()
+            .cauldron(PlasticraftFluids.CLEAR_PLASTIC_MELT.get())
+            .consume(1000)
+            .requires(PlasticraftItemTags.COLD_ITEMS)
+            .result(PlasticraftItems.CLEAR_PLASTIC_GRANULE, 16)
+            .save(provider, AnvilcraftPlasticraft.of("solid_liquid/cool_clear_plastic_melt"));
+
+        SolidLiquidRecipe.builder()
+            .cauldron(PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT.get())
+            .consume(1000)
+            .requires(PlasticraftItemTags.COLD_ITEMS)
+            .result(PlasticraftItems.HEAT_RESISTANT_PLASTIC_GRANULE, 16)
+            .save(provider, AnvilcraftPlasticraft.of("solid_liquid/cool_heat_resistant_plastic_melt"));
+
         // 固液配方（每种染料各一份）：投入染料后熔体种类与数量都不变，
         // 颜色由配方上下文在提交后写回，因此有意不声明物品或流体产出,
         // 用覆盖 validate 的构建器跳过本体"必须有产出"的数据生成校验。
+        generatePlasticMeltDyeRecipes(provider, PlasticMaterial.UNIVERSAL);
+        generatePlasticMeltDyeRecipes(provider, PlasticMaterial.ENGINEERING);
+        generatePlasticMeltDyeRecipes(provider, PlasticMaterial.CLEAR);
+        generatePlasticMeltDyeRecipes(provider, PlasticMaterial.HEAT_RESISTANT);
+    }
+
+    private static void generatePlasticMeltDyeRecipes(
+        RegistrumRecipeProvider provider,
+        PlasticMaterial material
+    ) {
+        // 固液染色配方：为当前塑料材料的 16 种染料逐一生成只改组件颜色、不改变熔体数量的配方。
         for (DyeColor color : DyeColor.values()) {
             DyeItem dye = DyeItem.byColor(color);
             SolidLiquidRecipe.Builder dyeBuilder = new SolidLiquidRecipe.Builder() {
@@ -552,9 +625,11 @@ public final class PlasticraftRecipeData {
                 }
             };
             dyeBuilder
-                .cauldron(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())
+                .cauldron(material.melt())
                 .requires(dye)
-                .save(provider, AnvilcraftPlasticraft.of("solid_liquid/dye_universal_plastic_melt_" + color.getName()));
+                .save(provider, AnvilcraftPlasticraft.of(
+                    "solid_liquid/dye_" + material.key() + "_melt_" + color.getName()
+                ));
         }
     }
 

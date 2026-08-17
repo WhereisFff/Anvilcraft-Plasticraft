@@ -4,6 +4,8 @@ import dev.anvilcraft.lib.v2.registrum.util.entry.ItemEntry;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.item.HighViscosityResinBucketItem;
+import dev.anvilcraft.plasticraft.item.ClearPlasticGranuleItem;
+import dev.anvilcraft.plasticraft.item.ClearPlasticMeltBucketItem;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticGranuleItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticMeltBucketItem;
@@ -81,6 +83,84 @@ public final class PlasticraftItems {
             provider.generated(context, provider.modLoc("item/universal_plastic_granule"));
         })
         .register();
+    public static final ItemEntry<UniversalPlasticMeltBucketItem> ENGINEERING_PLASTIC_MELT_BUCKET =
+        AnvilcraftPlasticraft.REGISTRUM
+            .item(
+                "engineering_plastic_melt_bucket",
+                properties -> new UniversalPlasticMeltBucketItem(
+                    PlasticraftFluids.ENGINEERING_PLASTIC_MELT,
+                    properties
+                )
+            )
+            .lang("Engineering Plastic Melt Bucket")
+            .initialProperties(() -> new Item.Properties().stacksTo(1).craftRemainder(Items.BUCKET))
+            .tag(Tags.Items.BUCKETS)
+            .model(ModelProviderUtil::bucket)
+            .register();
+    public static final ItemEntry<UniversalPlasticGranuleItem> ENGINEERING_PLASTIC_GRANULE =
+        AnvilcraftPlasticraft.REGISTRUM
+            .item("engineering_plastic_granule", UniversalPlasticGranuleItem::new)
+            .lang("Engineering Plastic Granule")
+            .model((context, provider) -> {
+                provider.existingFileHelper.trackGenerated(
+                    provider.modLoc("item/engineering_plastic_granule"),
+                    ModelProvider.TEXTURE
+                );
+                provider.generated(context, provider.modLoc("item/engineering_plastic_granule"));
+            })
+            .register();
+    public static final ItemEntry<UniversalPlasticMeltBucketItem> HEAT_RESISTANT_PLASTIC_MELT_BUCKET =
+        AnvilcraftPlasticraft.REGISTRUM
+            .item(
+                "heat_resistant_plastic_melt_bucket",
+                properties -> new UniversalPlasticMeltBucketItem(
+                    PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT,
+                    properties
+                )
+            )
+            .lang("Heat-Resistant Plastic Melt Bucket")
+            .initialProperties(() -> new Item.Properties().stacksTo(1).craftRemainder(Items.BUCKET))
+            .properties(Item.Properties::fireResistant)
+            .tag(Tags.Items.BUCKETS)
+            .model(ModelProviderUtil::bucket)
+            .register();
+    public static final ItemEntry<UniversalPlasticGranuleItem> HEAT_RESISTANT_PLASTIC_GRANULE =
+        AnvilcraftPlasticraft.REGISTRUM
+            .item("heat_resistant_plastic_granule", UniversalPlasticGranuleItem::new)
+            .lang("Heat-Resistant Plastic Granule")
+            .properties(Item.Properties::fireResistant)
+            .model((context, provider) -> {
+                provider.existingFileHelper.trackGenerated(
+                    provider.modLoc("item/heat_resistant_plastic_granule"),
+                    ModelProvider.TEXTURE
+                );
+                provider.generated(context, provider.modLoc("item/heat_resistant_plastic_granule"));
+            })
+            .register();
+    public static final ItemEntry<ClearPlasticMeltBucketItem> CLEAR_PLASTIC_MELT_BUCKET =
+        AnvilcraftPlasticraft.REGISTRUM
+            .item(
+                "clear_plastic_melt_bucket",
+                properties -> new ClearPlasticMeltBucketItem(PlasticraftFluids.CLEAR_PLASTIC_MELT, properties)
+            )
+            .lang("Clear Plastic Melt Bucket")
+            .initialProperties(() -> new Item.Properties().stacksTo(1).craftRemainder(Items.BUCKET))
+            .tag(Tags.Items.BUCKETS)
+            .model(ModelProviderUtil::bucket)
+            .register();
+    public static final ItemEntry<ClearPlasticGranuleItem> CLEAR_PLASTIC_GRANULE =
+        AnvilcraftPlasticraft.REGISTRUM
+            .item("clear_plastic_granule", ClearPlasticGranuleItem::new)
+            .lang("Clear Plastic Granule")
+            .model((context, provider) -> {
+                provider.existingFileHelper.trackGenerated(
+                    provider.modLoc("item/clear_plastic_granule"),
+                    ModelProvider.TEXTURE
+                );
+                provider.generated(context, provider.modLoc("item/clear_plastic_granule"))
+                    .renderType("minecraft:translucent");
+            })
+            .register();
 
     private PlasticraftItems() {
     }

@@ -59,7 +59,23 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
             worker.clearAssignment(false);
             return;
         }
-        ConstructionJob job = ConstructionJobIndex.get(level).activeJobOf(owner.get()).orElse(null);
+        ConstructionJob job = ConstructionJobController.jobForWorker(level, worker);
+        ConstructionJobProgress progress = job == null
+            ? null
+            : ConstructionJobStore.get(level).get(job.jobId());
+        if (progress != null
+            && (worker.assignedJobId().isPresent() || !worker.hostedCarry().isEmpty())
+            && !ConstructionJobController.canContinueJob(worker, progress)) {
+            ConstructionJobController.revokeWorker(worker, level, progress);
+            AllayWorkMotions.releaseToVanilla(worker);
+            return;
+        }
+        if (job == null && (worker.assignedJobId().isPresent() || !worker.hostedCarry().isEmpty())) {
+            worker.clearAssignment(false);
+            worker.dropCollectionAt(worker.position());
+            AllayWorkMotions.releaseToVanilla(worker);
+            return;
+        }
         if (job != null && job.dimension().equals(level.dimension())
             && job.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE) {
             worker.setWaitReason(ConstructionWaitReason.SOURCE);
@@ -88,7 +104,7 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
             finishThenRest(worker, level, job);
             return;
         }
-        ConstructionJobProgress progress = ConstructionJobStore.get(level).get(job.jobId());
+        progress = ConstructionJobStore.get(level).get(job.jobId());
         if (progress == null) return;
         if (worker.isEvacuating()) {
             Vec3 target = worker.evacuationTarget();
@@ -154,7 +170,7 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
             return;
         }
         if (!progress.hasCoordinator()) {
-            ServerPlayer player = ConstructionJobController.findOwner(level.getServer(), level, owner.get());
+            ServerPlayer player = ConstructionJobController.findOwner(level.getServer(), level, job.owner());
             if (player == null) {
                 worker.setWaitReason(ConstructionWaitReason.SOURCE);
                 AllayWorkMotions.holdStation(worker);
@@ -399,6 +415,11 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
         UUID ownerId,
         @Nullable ConstructionJob job
     ) {
+        if (worker.homeLoungePos() != null
+            && (!(level.getBlockEntity(worker.homeLoungePos()) instanceof AllayLoungeBlockEntity lounge)
+                || !lounge.canHost(worker))) {
+            worker.setHomeLounge(null);
+        }
         if (worker.homeLoungePos() == null) {
             returnCarryToOwner(worker, level, ownerId);
             return;
@@ -438,7 +459,9 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
             return;
         }
         ConstructionJobController.depositHostedCarry(worker, player);
-        AllayWorkMotions.releaseToVanilla(worker);
+        if (worker.hostedCarry().isEmpty()) {
+            AllayWorkMotions.releaseToVanilla(worker);
+        }
     }
 
     private static void finishThenRest(WorkingAllayEntity worker, ServerLevel level, @Nullable ConstructionJob job) {
@@ -480,15 +503,22 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
             return;
         }
         worker.clearAssignment(false);
-        worker.startDockingTo(home);
+        if (!worker.startDockingTo(home)) {
+            worker.setHomeLounge(null);
+            AllayWorkMotions.releaseToVanilla(worker);
+        }
     }
 
     private static boolean depositAtLounge(WorkingAllayEntity worker, ServerLevel level) {
         BlockPos home = worker.homeLoungePos();
         if (home == null) return true;
+        if (!(level.getBlockEntity(home) instanceof AllayLoungeBlockEntity lounge) || !lounge.canHost(worker)) {
+            worker.setHomeLounge(null);
+            return false;
+        }
         if (!approachLounge(worker, level, home)) return false;
         ConstructionJobController.depositHostedCarryToLounge(worker, level, home);
-        return true;
+        return worker.hostedCarry().isEmpty();
     }
 
     private static boolean approachLounge(WorkingAllayEntity worker, ServerLevel level, BlockPos loungePos) {

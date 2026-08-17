@@ -8,6 +8,7 @@ import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 
 /** 休息室界面切换缺料与缺拆除策略,室内悦灵共用这一份设置。 */
@@ -44,7 +45,9 @@ public record AllayLoungeSettingsPacket(
             return;
         }
         if (player.level().getBlockEntity(this.loungePos) instanceof AllayLoungeBlockEntity lounge) {
-            lounge.setShortageStrategy(this.strategy);
+            if (player instanceof ServerPlayer serverPlayer) {
+                lounge.setShortageStrategy(serverPlayer, this.strategy);
+            }
         }
     }
 }

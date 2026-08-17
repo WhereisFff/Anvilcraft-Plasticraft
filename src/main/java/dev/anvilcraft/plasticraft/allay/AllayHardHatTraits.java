@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.allay;
 
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.dubhe.anvilcraft.util.BlockMiningEffect;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
@@ -18,9 +19,10 @@ import java.util.Set;
 public final class AllayHardHatTraits {
     private static final Map<ResourceLocation, Set<AllayMaterialTrait>> BY_MATERIAL = new HashMap<>();
 
-    /** 当前声明的材料能力;耐热塑料尚未加入游戏,先冻结判定边界。 */
+    /** 耐热能力为后续材料预留，工程塑料当前只注册精准采集。 */
     public enum AllayMaterialTrait {
-        FIRE_RESISTANT
+        FIRE_RESISTANT,
+        SILK_TOUCH
     }
 
     private AllayHardHatTraits() {
@@ -52,5 +54,16 @@ public final class AllayHardHatTraits {
 
     public static boolean isFireResistant(ItemStack hat) {
         return traitsOf(hat).contains(AllayMaterialTrait.FIRE_RESISTANT);
+    }
+
+    public static boolean hasSilkTouch(ItemStack hat) {
+        return traitsOf(hat).contains(AllayMaterialTrait.SILK_TOUCH);
+    }
+
+    public static BlockMiningEffect miningEffectOf(ItemStack hat) {
+        Set<AllayMaterialTrait> traits = traitsOf(hat);
+        if (traits.contains(AllayMaterialTrait.FIRE_RESISTANT)) return BlockMiningEffect.SMELTING;
+        if (traits.contains(AllayMaterialTrait.SILK_TOUCH)) return BlockMiningEffect.SILK_TOUCH;
+        return BlockMiningEffect.NORMAL;
     }
 }

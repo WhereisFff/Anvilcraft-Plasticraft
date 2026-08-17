@@ -56,6 +56,24 @@ public final class MoldingHitTester {
         double worldUnitsPerPixel,
         Vector3d cameraDirection
     ) {
+        return hitGizmo(
+            ray,
+            origin,
+            tool,
+            MoldingGizmoBasis.WORLD,
+            worldUnitsPerPixel,
+            cameraDirection
+        );
+    }
+
+    public static Optional<GizmoHit> hitGizmo(
+        ViewportRay ray,
+        Vector3d origin,
+        MoldingTool tool,
+        MoldingGizmoBasis basis,
+        double worldUnitsPerPixel,
+        Vector3d cameraDirection
+    ) {
         if (tool == MoldingTool.NONE) return Optional.empty();
         if (!(worldUnitsPerPixel > 0.0D) || !Double.isFinite(worldUnitsPerPixel)) return Optional.empty();
         GizmoCandidate closest = null;
@@ -76,10 +94,11 @@ public final class MoldingHitTester {
             }
         } else {
             for (MoldingAxis axis : MoldingAxis.values()) {
-                Vector3d positive = axis.vector().mul(length).add(origin);
+                Vector3d direction = tool == MoldingTool.SCALE ? basis.direction(axis) : axis.vector();
+                Vector3d positive = new Vector3d(direction).mul(length).add(origin);
                 closest = closerCandidate(closest, ray, axis, 1.0D, origin, positive, hitRadius);
                 if (tool != MoldingTool.SCALE) continue;
-                Vector3d negative = axis.vector().mul(-length).add(origin);
+                Vector3d negative = new Vector3d(direction).mul(-length).add(origin);
                 closest = closerCandidate(closest, ray, axis, -1.0D, origin, negative, hitRadius);
             }
         }

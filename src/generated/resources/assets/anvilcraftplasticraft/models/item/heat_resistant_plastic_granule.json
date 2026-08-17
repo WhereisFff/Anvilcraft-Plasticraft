@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "anvilcraftplasticraft:item/heat_resistant_plastic_granule"
+  }
+}

@@ -2,11 +2,14 @@ package dev.anvilcraft.plasticraft.client.renderer.entity;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import dev.anvilcraft.plasticraft.client.renderer.ClearPlasticRenderTypes;
 import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.AnvilCraft;
 import dev.dubhe.anvilcraft.client.init.ModRenderTypes;
 import net.minecraft.client.Minecraft;
@@ -39,10 +42,15 @@ public final class PlasticEntityRenderHelper {
     ) {
         BlockState state = PlasticEntityRenderTransforms.canonicalize(entity.getDisplayState());
         BakedModel model = dispatcher.getBlockModel(state);
-        RenderType renderType = entity instanceof ResinAnvilEntity || entity instanceof CatalyticPressLidEntity
-            ? Sheets.translucentItemSheet()
-            : Sheets.cutoutBlockSheet();
+        RenderType renderType = state.is(PlasticraftBlocks.CLEAR_PLASTIC.get())
+            ? ClearPlasticRenderTypes.block()
+            : entity instanceof ResinAnvilEntity || entity instanceof CatalyticPressLidEntity
+                ? Sheets.translucentItemSheet()
+                : Sheets.cutoutBlockSheet();
         VertexConsumer consumer = buffers.getBuffer(renderType);
+        if (entity instanceof UniversalPlasticEntity universal) {
+            consumer = TransparentPlasticFaceCullingVertexConsumer.wrapWithBlockFaceShading(universal, consumer);
+        }
         int tint = entity.getDisplayTint();
         float red = (float) (tint >> 16 & 0xFF) / 255.0F;
         float green = (float) (tint >> 8 & 0xFF) / 255.0F;
@@ -58,6 +66,7 @@ public final class PlasticEntityRenderHelper {
             packedLight,
             OverlayTexture.NO_OVERLAY
         );
+        TransparentPlasticFaceCullingVertexConsumer.finish(consumer);
     }
 
     /** 实体、轮盘缩略图和终点预览必须从同一份同步模型数据选择外观。 */
@@ -76,11 +85,20 @@ public final class PlasticEntityRenderHelper {
                 buffers,
                 packedLight,
                 0xFFFFFFFF,
-                false
+                isTransparent(universal),
+                universal
             );
             return;
         }
         renderBlock(entity, dispatcher, pose, buffers, packedLight);
+    }
+
+    public static boolean isTransparent(UniversalPlasticEntity entity) {
+        return entity.getDisplayState().is(PlasticraftBlocks.CLEAR_PLASTIC.get())
+            || entity.getMoldedData()
+                .flatMap(data -> PlasticMaterial.fromMelt(data.material()))
+                .map(PlasticMaterial::isTransparent)
+                .orElse(false);
     }
 
     /** 使用本体铁砧锤的蓝色半透明材质渲染方向预览。 */

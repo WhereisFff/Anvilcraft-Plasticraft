@@ -2,12 +2,18 @@ package dev.anvilcraft.plasticraft.inventory;
 
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionJobIndex;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionPermission;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.inventory.Slot;
@@ -101,7 +107,13 @@ public class AllayLoungeMenu extends AbstractContainerMenu {
         this.lounge = lounge;
         this.loungePos = loungePos;
         this.data = data;
-        this.addSlot(new DiskSlot(items, AllayLoungeBlockEntity.DISK_SLOT, DISK_SLOT_X, DISK_SLOT_Y));
+        this.addSlot(new DiskSlot(
+            items,
+            AllayLoungeBlockEntity.DISK_SLOT,
+            DISK_SLOT_X,
+            DISK_SLOT_Y,
+            playerInventory.player
+        ));
         for (int row = 0; row < 3; row++) {
             for (int column = 0; column < 9; column++) {
                 this.addSlot(new Slot(
@@ -144,15 +156,21 @@ public class AllayLoungeMenu extends AbstractContainerMenu {
 
     @Override
     public ItemStack quickMoveStack(Player player, int index) {
+        AllayLoungeBlockEntity lounge = this.lounge();
+        if (lounge == null || !(player instanceof ServerPlayer serverPlayer)
+            || !ConstructionPermission.canUseLounge(serverPlayer, lounge)) {
+            return ItemStack.EMPTY;
+        }
         Slot slot = this.slots.get(index);
         if (!slot.hasItem()) return ItemStack.EMPTY;
         ItemStack stack = slot.getItem();
         ItemStack original = stack.copy();
         if (index == 0) {
+            if (!canManageDisk(serverPlayer, stack)) return ItemStack.EMPTY;
             if (!this.moveItemStackTo(stack, 1, this.slots.size(), true)) {
                 return ItemStack.EMPTY;
             }
-        } else if (AllayLoungeBlockEntity.isValidDisk(stack)) {
+        } else if (AllayLoungeBlockEntity.isValidDisk(stack) && canManageDisk(serverPlayer, stack)) {
             if (!this.moveItemStackTo(stack, 0, 1, false)) {
                 return ItemStack.EMPTY;
             }
@@ -168,12 +186,41 @@ public class AllayLoungeMenu extends AbstractContainerMenu {
     }
 
     @Override
+    public void clicked(int slotId, int button, ClickType clickType, Player player) {
+        AllayLoungeBlockEntity lounge = this.lounge();
+        if (player instanceof ServerPlayer serverPlayer) {
+            if (lounge == null || !ConstructionPermission.canUseLounge(serverPlayer, lounge)) return;
+            if (slotId == 0
+                && (!canManageDisk(serverPlayer, this.slots.get(0).getItem())
+                    || !canManageDisk(serverPlayer, this.getCarried()))) {
+                return;
+            }
+        }
+        super.clicked(slotId, button, clickType, player);
+    }
+
+    @Override
     public boolean stillValid(Player player) {
+        AllayLoungeBlockEntity lounge = this.lounge();
+        if (lounge == null) return false;
+        if (player instanceof ServerPlayer serverPlayer
+            && !ConstructionPermission.canUseLounge(serverPlayer, lounge)) {
+            return false;
+        }
         return player.distanceToSqr(
             this.loungePos.getX() + 0.5D,
             this.loungePos.getY() + 0.5D,
             this.loungePos.getZ() + 0.5D
         ) <= 64.0D;
+    }
+
+    private static boolean canManageDisk(ServerPlayer player, ItemStack stack) {
+        if (stack.isEmpty()) return true;
+        ConstructionJob job = ConstructionBlueprintData.get(stack)
+            .flatMap(ConstructionBlueprintData::jobId)
+            .map(id -> ConstructionJobIndex.get(player.server).job(id))
+            .orElse(null);
+        return job == null || ConstructionPermission.canManageJob(player, job);
     }
 
     @Override
@@ -185,13 +232,17 @@ public class AllayLoungeMenu extends AbstractContainerMenu {
     }
 
     private static class DiskSlot extends SlotItemHandler {
-        DiskSlot(ItemStackHandler handler, int index, int x, int y) {
+        private final Player player;
+
+        DiskSlot(ItemStackHandler handler, int index, int x, int y, Player player) {
             super(handler, index, x, y);
+            this.player = player;
         }
 
         @Override
         public boolean mayPlace(ItemStack stack) {
-            return AllayLoungeBlockEntity.isValidDisk(stack);
+            return AllayLoungeBlockEntity.isValidDisk(stack)
+                && (!(this.player instanceof ServerPlayer serverPlayer) || canManageDisk(serverPlayer, stack));
         }
     }
 }

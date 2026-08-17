@@ -9,6 +9,9 @@ import dev.anvilcraft.plasticraft.client.renderer.entity.ResinAnvilRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.UniversalPlasticEntityRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.allay.WorkingAllayRenderer;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
+import dev.anvilcraft.plasticraft.entity.ClearPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.EngineeringPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.HeatResistantPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
@@ -78,6 +81,38 @@ public final class PlasticraftEntities {
             .clientTrackingRange(10)
             .updateInterval(1))
         .lang("Universal Plastic Block")
+        .renderer(() -> UniversalPlasticEntityRenderer::new)
+        .register();
+    public static final EntityEntry<EngineeringPlasticEntity> ENGINEERING_PLASTIC = AnvilcraftPlasticraft.REGISTRUM
+        .<EngineeringPlasticEntity>entity("engineering_plastic", EngineeringPlasticEntity::new, MobCategory.MISC)
+        .properties(builder -> builder
+            .sized(UniversalPlasticEntity.COLLISION_SIZE, UniversalPlasticEntity.COLLISION_SIZE)
+            .clientTrackingRange(10)
+            .updateInterval(1))
+        .lang("Engineering Plastic Block")
+        .renderer(() -> UniversalPlasticEntityRenderer::new)
+        .register();
+    public static final EntityEntry<HeatResistantPlasticEntity> HEAT_RESISTANT_PLASTIC =
+        AnvilcraftPlasticraft.REGISTRUM
+            .<HeatResistantPlasticEntity>entity(
+                "heat_resistant_plastic",
+                HeatResistantPlasticEntity::new,
+                MobCategory.MISC
+            )
+            .properties(builder -> builder
+                .sized(UniversalPlasticEntity.COLLISION_SIZE, UniversalPlasticEntity.COLLISION_SIZE)
+                .clientTrackingRange(10)
+                .updateInterval(1))
+            .lang("Heat-Resistant Plastic Block")
+            .renderer(() -> UniversalPlasticEntityRenderer::new)
+            .register();
+    public static final EntityEntry<ClearPlasticEntity> CLEAR_PLASTIC = AnvilcraftPlasticraft.REGISTRUM
+        .<ClearPlasticEntity>entity("clear_plastic", ClearPlasticEntity::new, MobCategory.MISC)
+        .properties(builder -> builder
+            .sized(UniversalPlasticEntity.COLLISION_SIZE, UniversalPlasticEntity.COLLISION_SIZE)
+            .clientTrackingRange(10)
+            .updateInterval(1))
+        .lang("Clear Plastic Block")
         .renderer(() -> UniversalPlasticEntityRenderer::new)
         .register();
 

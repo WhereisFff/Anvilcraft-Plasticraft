@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.item.ResinAnvilItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticBlockItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticGranuleItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticMeltBucketItem;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintDisk;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
@@ -37,6 +38,8 @@ import java.util.Map;
 
 /** 集中声明并追加 Plasticraft 物品工具提示，同时为语言数据生成提供原文。 */
 public final class PlasticItemTooltipManager {
+    public static final String DEMONSTRATION_TOOLTIP_KEY =
+        "tooltip.anvilcraftplasticraft.molded_demonstration.shift";
     private static final Map<ResourceLocation, String> NORMAL = new LinkedHashMap<>();
     private static final Map<ResourceLocation, String> SHIFT = new LinkedHashMap<>();
     private static boolean initialized;
@@ -89,8 +92,10 @@ public final class PlasticItemTooltipManager {
             AnvilcraftPlasticraft.of("plastic_oil_bucket"),
             "The second-layer condensate and primary feedstock for later plastic processing",
             """
-                Heat it from directly below while it touches a royal-steel or frost-metal item to create universal plastic melt
-                Royal steel starts at 25% speed and reaches 50% with eight distinct items; frost metal runs at half speed
+                Heat it from directly below with royal or frost glass to create clear plastic melt
+                Royal or frost metal instead creates universal plastic melt
+                Royal glass starts at 25% speed and reaches 50% with eight distinct items; frost glass runs at half speed
+                Frost metal can continue directly from newly formed universal melt into engineering plastic melt
                 A Large Cauldron averages the actual heat output of all nine blocks beneath it"""
         );
         registerNormal(
@@ -99,14 +104,71 @@ public final class PlasticItemTooltipManager {
         );
         registerNormal(
             AnvilcraftPlasticraft.of("universal_plastic"),
-            "An ordinary piece of plastic"
+            "Ordinary plastic that blocks lasers and breaks when hit by a level 5 or stronger beam"
+        );
+        register(
+            AnvilcraftPlasticraft.of("clear_plastic_melt_bucket"),
+            "Transparent plastic melt for clear molded products",
+            "Made from plastic oil with tempering glass or frost glass; frost glass runs at half speed and all 16 dye colours are supported"
+        );
+        registerNormal(
+            AnvilcraftPlasticraft.of("clear_plastic_granule"),
+            "Transparent plastic feedstock for molding"
+        );
+        register(
+            AnvilcraftPlasticraft.of("clear_plastic"),
+            "Clear plastic products that tint beacon beams like stained glass and do not conduct redstone",
+            """
+                Spectral Anvils can pass through it
+                Lasers pass through it without dealing damage
+                All 16 dye colours tint beacon beams like their stained-glass counterparts"""
+        );
+        register(
+            AnvilcraftPlasticraft.of("engineering_plastic_melt_bucket"),
+            "Royal-steel-reinforced melt for molding engineering plastic products",
+            """
+                Convert universal plastic melt with any frost-metal item without external cooling
+                Royal-steel items instead require a cold block directly below the melt"""
+        );
+        registerNormal(
+            AnvilcraftPlasticraft.of("engineering_plastic_granule"),
+            "Solid engineering plastic feedstock retaining its melt colour"
+        );
+        register(
+            AnvilcraftPlasticraft.of("engineering_plastic"),
+            "High-strength plastic that blocks lasers and whose molded demolition tools preserve broken blocks",
+            """
+                Molded anvils break targets above stonecutters with Silk Touch
+                Allay Hard Hats grant Silk Touch to demolition allays holding a stonecutter
+                Lasers at level 5 or above destroy the engineering plastic they hit"""
+        );
+        register(
+            AnvilcraftPlasticraft.of("heat_resistant_plastic_melt_bucket"),
+            "Ember-metal-reinforced melt for fire-resistant plastic products",
+            """
+                Convert universal plastic melt with an item in the anvilcraftplasticraft:ember_metal_items tag
+                The reaction needs heat directly below and preserves the melt colour
+                Heat-resistant products and Allay Hard Hats are immune to fire"""
+        );
+        registerNormal(
+            AnvilcraftPlasticraft.of("heat_resistant_plastic_granule"),
+            "Solid heat-resistant plastic feedstock retaining its melt colour"
+        );
+        register(
+            AnvilcraftPlasticraft.of("heat_resistant_plastic"),
+            "Heat-resistant plastic that blocks lasers and is immune to fire and laser damage",
+            """
+                Molded anvils break targets above stonecutters with Smelting
+                Allay Hard Hats grant fire immunity and Smelting to demolition allays
+                The anvil behaves like an Ember Anvil when it lands
+                It blocks lasers without taking laser damage"""
         );
         register(
             AnvilcraftPlasticraft.of("catalytic_press_lid"),
-            "A sealed full-speed royal-steel catalyst for converting plastic oil",
+            "A sealed full-speed royal-steel catalyst for plastic oil and chilled universal melt",
             """
-                Plastic oil reacts with royal-steel or frost-metal items while heated from directly below
-                Royal steel starts at 25% speed; frost metal runs at half the open-catalysis speed
+                Plastic oil converts to universal plastic melt while heated from directly below
+                Universal plastic melt converts to engineering plastic melt over a cold block
                 Bond this lid above a vessel for full speed, then press it with a falling anvil"""
         );
         register(
@@ -192,15 +254,26 @@ public final class PlasticItemTooltipManager {
     public static void addTooltip(ItemStack stack, Item.TooltipContext context, List<Component> tooltip) {
         ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         boolean specializedMoldedProduct = MoldedPlasticData.get(stack)
-            .map(data -> MoldingProductTypes.isChest(data.finalType())
-                || MoldingProductTypes.isTank(data.finalType())
-                || MoldingProductTypes.isAnvil(data.finalType())
-                || MoldingProductTypes.isTray(data.finalType()))
+            .map(data -> !MoldingProductTypes.NORMAL_ID.equals(data.finalType()))
             .orElse(false);
+        boolean demonstrationModel = specializedMoldedProduct
+            && PlasticItemData.isDemonstrationModel(stack);
+        boolean shiftDown = Screen.hasShiftDown();
         int dynamicTooltipIndex = 1;
-        if (SHIFT.containsKey(itemId)) {
-            if (Screen.hasShiftDown()) {
-                dynamicTooltipIndex += addTranslatedTooltip(tooltip, getTranslationKeyShift(itemId));
+        if (SHIFT.containsKey(itemId) || demonstrationModel) {
+            if (shiftDown) {
+                if (SHIFT.containsKey(itemId)) {
+                    dynamicTooltipIndex += addTranslatedTooltip(tooltip, getTranslationKeyShift(itemId));
+                }
+                if (itemId.equals(AnvilcraftPlasticraft.of("allay_lounge"))) {
+                    dynamicTooltipIndex += addTranslatedTooltip(
+                        tooltip,
+                        "tooltip.anvilcraftplasticraft.item.allay_lounge.permissions"
+                    );
+                }
+                if (demonstrationModel) {
+                    dynamicTooltipIndex += addTranslatedTooltip(tooltip, DEMONSTRATION_TOOLTIP_KEY);
+                }
             } else {
                 if (NORMAL.containsKey(itemId) && !specializedMoldedProduct) {
                     dynamicTooltipIndex += addTranslatedTooltip(tooltip, getTranslationKey(itemId));
@@ -263,10 +336,14 @@ public final class PlasticItemTooltipManager {
                 addPlasticSizeTooltip(stack, dynamicTooltip);
                 addMoldedProductTooltip(stack, dynamicTooltip);
             }
-            dynamicTooltip.add(Component.translatable(
-                "tooltip.anvilcraftplasticraft.color",
-                Component.translatable("color.minecraft." + PlasticMeltColor.get(stack).getName())
-            ).withStyle(ChatFormatting.GRAY));
+            if (PlasticMaterial.fromKey(PlasticItemData.getMaterial(stack))
+                .map(PlasticMaterial::supportsDyeing)
+                .orElse(true)) {
+                dynamicTooltip.add(Component.translatable(
+                    "tooltip.anvilcraftplasticraft.color",
+                    Component.translatable("color.minecraft." + PlasticMeltColor.get(stack).getName())
+                ).withStyle(ChatFormatting.GRAY));
+            }
         }
         if (stack.getItem() instanceof ResinAnvilItem) {
             addCapturedEntityTooltip(stack, context, dynamicTooltip);
@@ -295,7 +372,11 @@ public final class PlasticItemTooltipManager {
                 ).withStyle(ChatFormatting.GRAY));
             } else if (MoldingProductTypes.isTank(data.finalType())) {
                 tooltip.add(Component.translatable(
-                    "tooltip.anvilcraftplasticraft.molded_tank",
+                    PlasticMaterial.fromMelt(data.material())
+                        .filter(material -> material == PlasticMaterial.HEAT_RESISTANT)
+                        .isPresent()
+                        ? "tooltip.anvilcraftplasticraft.molded_tank_heat_resistant"
+                        : "tooltip.anvilcraftplasticraft.molded_tank",
                     data.capacity()
                 ).withStyle(ChatFormatting.GRAY));
             } else if (MoldingProductTypes.isAnvil(data.finalType())) {
@@ -307,6 +388,10 @@ public final class PlasticItemTooltipManager {
             } else if (MoldingProductTypes.isTray(data.finalType())) {
                 tooltip.add(Component.translatable(
                     "tooltip.anvilcraftplasticraft.molded_tray"
+                ).withStyle(ChatFormatting.GRAY));
+            } else if (MoldingProductTypes.ALLAY_HARD_HAT_ID.equals(data.finalType())) {
+                tooltip.add(Component.translatable(
+                    "tooltip.anvilcraftplasticraft.molded_allay_hard_hat"
                 ).withStyle(ChatFormatting.GRAY));
             }
         });

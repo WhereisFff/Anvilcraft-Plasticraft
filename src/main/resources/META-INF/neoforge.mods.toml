@@ -64,5 +64,12 @@ versionRange = "[0.0.1,)"
 ordering = "AFTER"
 side = "CLIENT"
 
+[[dependencies."${mod_id}"]]
+modId = "ftbteams"
+type = "optional"
+versionRange = "[2101.1.10,)"
+ordering = "AFTER"
+side = "BOTH"
+
 [mc-publish]
 loaders = ["neoforge"]

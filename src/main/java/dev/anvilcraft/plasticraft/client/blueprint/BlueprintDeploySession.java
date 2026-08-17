@@ -277,16 +277,16 @@ public final class BlueprintDeploySession {
     /** 已部署磁盘的取消会移除世界中的蓝图;磁盘已换成其它蓝图时,对准残留投影删除。 */
     private static void cancel(SessionState session) {
         UUID jobId = session.jobId.filter(id -> ClientBlueprintJobCache.job(id) != null)
-            .orElseGet(BlueprintDeploySession::lookedAtOwnedJobId);
+            .orElseGet(BlueprintDeploySession::lookedAtJobId);
         if (jobId != null) {
             PacketDistributor.sendToServer(new BlueprintCancelPacket(jobId));
         }
         exit();
     }
 
-    /** 准星射线命中的、属于当前玩家的已放置蓝图,取最近的一份。 */
+    /** 准星射线命中的已放置蓝图,取最近的一份;最终权限由服务端实时复核。 */
     @Nullable
-    public static UUID lookedAtOwnedJobId() {
+    public static UUID lookedAtJobId() {
         Minecraft minecraft = Minecraft.getInstance();
         Player player = minecraft.player;
         if (player == null || minecraft.level == null) return null;
@@ -296,7 +296,6 @@ public final class BlueprintDeploySession {
         double closestDistance = Double.MAX_VALUE;
         for (ConstructionJob job : ClientBlueprintJobCache.jobs()) {
             if (!job.dimension().equals(minecraft.level.dimension())) continue;
-            if (!job.owner().equals(player.getUUID())) continue;
             AABB box = AABB.of(new BlueprintPlacement(job.anchor(), job.rotation(), job.mirror())
                 .bounds(job.size()));
             Optional<Vec3> hit = box.clip(start, end);
@@ -316,7 +315,7 @@ public final class BlueprintDeploySession {
         SessionState session = state;
         if (session == null) return null;
         UUID jobId = session.jobId.filter(id -> ClientBlueprintJobCache.job(id) != null)
-            .orElseGet(BlueprintDeploySession::lookedAtOwnedJobId);
+            .orElseGet(BlueprintDeploySession::lookedAtJobId);
         if (jobId == null) return null;
         ConstructionJob job = ClientBlueprintJobCache.job(jobId);
         return job == null ? null : job.name();

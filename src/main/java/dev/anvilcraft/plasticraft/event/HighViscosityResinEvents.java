@@ -52,5 +52,23 @@ public final class HighViscosityResinEvents {
             1000,
             Layered4LevelCauldronBlock.LEVEL
         );
+        event.register(
+            PlasticraftBlocks.ENGINEERING_PLASTIC_MELT_CAULDRON.get(),
+            PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get(),
+            1000,
+            Layered4LevelCauldronBlock.LEVEL
+        );
+        event.register(
+            PlasticraftBlocks.HEAT_RESISTANT_PLASTIC_MELT_CAULDRON.get(),
+            PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT.get(),
+            1000,
+            Layered4LevelCauldronBlock.LEVEL
+        );
+        event.register(
+            PlasticraftBlocks.CLEAR_PLASTIC_MELT_CAULDRON.get(),
+            PlasticraftFluids.CLEAR_PLASTIC_MELT.get(),
+            1000,
+            Layered4LevelCauldronBlock.LEVEL
+        );
     }
 }

@@ -4,11 +4,11 @@ import dev.anvilcraft.plasticraft.allay.AllayFlightState;
 import dev.anvilcraft.plasticraft.allay.AllayWorkMotions;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
-import dev.anvilcraft.plasticraft.blueprint.ConstructionJobIndex;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobProgress;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobStore;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionTraffic;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 
 import java.util.Optional;
@@ -35,7 +35,22 @@ public final class GeneralAllayToolBehavior implements AllayToolBehavior {
             return;
         }
         AllayToolDefinition definition = worker.toolDefinition();
-        ConstructionJob job = ConstructionJobIndex.get(level).activeJobOf(owner.get()).orElse(null);
+        ConstructionJob job = ConstructionJobController.jobForWorker(level, worker);
+        ConstructionJobProgress assignedProgress = job == null
+            ? null
+            : ConstructionJobStore.get(level).get(job.jobId());
+        if (assignedProgress != null
+            && worker.assignedJobId().isPresent()
+            && !ConstructionJobController.canContinueJob(worker, assignedProgress)) {
+            if (definition.hasCapability(AllayCapability.COLLECT_ITEMS)
+                && CollectionAllayToolBehavior.isCollectionAssignment(worker, job)) {
+                ConstructionJobController.revokeCollectionWorker(worker, level, job, assignedProgress);
+            } else {
+                ConstructionJobController.revokeWorker(worker, level, assignedProgress);
+            }
+            AllayWorkMotions.releaseToVanilla(worker);
+            return;
+        }
         if (!worker.hostedCarry().isEmpty() && !definition.hasCapability(AllayCapability.PICK_UP_MATERIAL)) {
             worker.clearAssignment(false);
             ConstructionAllayToolBehavior.INSTANCE.serverTick(worker);
@@ -94,8 +109,10 @@ public final class GeneralAllayToolBehavior implements AllayToolBehavior {
         AllayWorkMotions.releaseToVanilla(worker);
         ConstructionTraffic.release(level, worker.getUUID());
         worker.resetStuck();
-        worker.startDockingTo(worker.homeLoungePos());
-        return true;
+        BlockPos home = worker.homeLoungePos();
+        if (home != null && worker.startDockingTo(home)) return true;
+        worker.setHomeLounge(null);
+        return false;
     }
 
     private static boolean isCollectOnly(AllayToolDefinition definition) {

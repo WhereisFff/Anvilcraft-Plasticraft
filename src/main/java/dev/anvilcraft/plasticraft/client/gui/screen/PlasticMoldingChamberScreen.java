@@ -13,6 +13,7 @@ import dev.anvilcraft.plasticraft.client.gui.MoldingTrayTypeIcon;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingAxis;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingCamera;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingEditorController;
+import dev.anvilcraft.plasticraft.client.molding.editor.MoldingGizmoBasis;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingGizmoGeometry;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingGuiTransform;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingHitTester;
@@ -314,7 +315,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private ViewportTransform modelDragTransform;
     @Nullable
     private Vector3d modelDragOrigin;
+    @Nullable
+    private Vector3d modelDragAxisDirection;
     private double modelDragDirection = 1.0D;
+    private double modelDragWorldUnitsPerLocalUnit = 1.0D;
     private long seenTitleMessageGeneration;
     private int titleMessageTicks;
     private boolean removed;
@@ -666,7 +670,9 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             this.modelDragAxis = null;
             this.modelDragTransform = null;
             this.modelDragOrigin = null;
+            this.modelDragAxisDirection = null;
             this.modelDragDirection = 1.0D;
+            this.modelDragWorldUnitsPerLocalUnit = 1.0D;
             refreshNumericFields();
             return true;
         }
@@ -2148,6 +2154,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     ) {
         ViewportHover hover = viewportHover(transform, mouseX, mouseY);
         Vector3d gizmoOrigin = this.editor.gizmoOrigin();
+        MoldingGizmoBasis gizmoBasis = this.editor.gizmoBasis();
         double gizmoWorldUnitsPerPixel = transform.worldUnitsPerPixel(gizmoOrigin);
         Vector3d gizmoCameraDirection = transform.directionToCamera(gizmoOrigin);
         boolean hasSelection = !this.editor.selection().isEmpty();
@@ -2220,6 +2227,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 ++this.dynamicSceneRevision,
                 gizmoOrigin,
                 this.editor.tool(),
+                gizmoBasis,
                 gizmoWorldUnitsPerPixel,
                 gizmoCameraDirection,
                 hover.gizmoAxis(),
@@ -2249,10 +2257,12 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         );
         if (!this.editor.selection().isEmpty()) {
             Vector3d gizmoOrigin = this.editor.gizmoOrigin();
+            MoldingGizmoBasis gizmoBasis = this.editor.gizmoBasis();
             Optional<MoldingHitTester.GizmoHit> gizmo = MoldingHitTester.hitGizmo(
                 ray,
                 gizmoOrigin,
                 this.editor.tool(),
+                gizmoBasis,
                 transform.worldUnitsPerPixel(gizmoOrigin),
                 transform.directionToCamera(gizmoOrigin)
             );
@@ -2277,10 +2287,12 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         );
         if (!this.editor.selection().isEmpty()) {
             Vector3d gizmoOrigin = this.editor.gizmoOrigin();
+            MoldingGizmoBasis gizmoBasis = this.editor.gizmoBasis();
             Optional<MoldingHitTester.GizmoHit> gizmo = MoldingHitTester.hitGizmo(
                 ray,
                 gizmoOrigin,
                 this.editor.tool(),
+                gizmoBasis,
                 transform.worldUnitsPerPixel(gizmoOrigin),
                 transform.directionToCamera(gizmoOrigin)
             );
@@ -2295,6 +2307,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                     this.modelDragStartY = mouseY - this.topPos - VIEWPORT_Y;
                     this.modelDragTransform = transform;
                     this.modelDragOrigin = gizmoOrigin;
+                    this.modelDragAxisDirection = gizmoBasis.direction(gizmo.get().axis());
+                    this.modelDragWorldUnitsPerLocalUnit = gizmoBasis.worldUnitsPerLocalUnit(gizmo.get().axis());
                     return true;
                 }
             }
@@ -2347,7 +2361,12 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private void updateModelDrag(double mouseX, double mouseY) {
-        if (this.modelDragAxis == null || this.modelDragTransform == null || this.modelDragOrigin == null) return;
+        if (this.modelDragAxis == null
+            || this.modelDragTransform == null
+            || this.modelDragOrigin == null
+            || this.modelDragAxisDirection == null) {
+            return;
+        }
         double currentX = mouseX - this.leftPos - VIEWPORT_X;
         double currentY = mouseY - this.topPos - VIEWPORT_Y;
         double deltaX = currentX - this.modelDragStartX;
@@ -2362,7 +2381,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             );
             Optional<Vector2d> start = this.modelDragTransform.project(center);
             Optional<Vector2d> end = this.modelDragTransform.project(
-                new Vector3d(this.modelDragAxis.vector())
+                new Vector3d(this.modelDragAxisDirection)
                     .mul(referenceLength * this.modelDragDirection)
                     .add(center)
             );
@@ -2371,7 +2390,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             double length = screenAxis.length();
             if (length < 1.0E-5D) return;
             screenAxis.div(length);
-            amount = (deltaX * screenAxis.x + deltaY * screenAxis.y) * referenceLength / length;
+            amount = (deltaX * screenAxis.x + deltaY * screenAxis.y)
+                * referenceLength
+                / length
+                / this.modelDragWorldUnitsPerLocalUnit;
         }
         this.editor.updateDrag(amount);
         refreshNumericFields();

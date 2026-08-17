@@ -19,7 +19,7 @@ public final class BuiltInPlasticEntityModels {
     private static final double PIXEL_SCALE = 1.0D / 16.0D;
 
     public static final VoxelShape UNIVERSAL_PLASTIC_COMPATIBILITY = Block.box(
-        0.0D, 0.0D, 0.0D, 16.0D, 14.0D, 16.0D
+        0.0D, 0.0D, 0.0D, 16.0D, 16.0D, 16.0D
     );
     public static final VoxelShape ROYAL_ANVIL_COMPATIBILITY = Shapes.or(
         Block.box(2.0D, 0.0D, 2.0D, 14.0D, 4.0D, 14.0D),
@@ -38,7 +38,7 @@ public final class BuiltInPlasticEntityModels {
     public static final Model UNIVERSAL_PLASTIC = create(
         "universal_plastic",
         UNIVERSAL_PLASTIC_COMPATIBILITY,
-        List.of(cube(0.0D, 0.0D, 0.0D, 16.0D, 14.0D, 16.0D))
+        List.of(cube(0.0D, 0.0D, 0.0D, 16.0D, 16.0D, 16.0D))
     );
     public static final Model RESIN_ANVIL = create(
         "resin_anvil",

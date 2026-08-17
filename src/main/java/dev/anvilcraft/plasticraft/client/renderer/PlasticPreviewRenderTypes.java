@@ -46,6 +46,7 @@ public final class PlasticPreviewRenderTypes {
                 .setTextureState(new RenderStateShard.TextureStateShard(texture, false, false))
                 .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
                 .setOutputState(RenderStateShard.TRANSLUCENT_TARGET)
+                .setCullState(RenderStateShard.CULL)
                 .createCompositeState(true)
         )
     );

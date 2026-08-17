@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.gametest;
 import dev.anvilcraft.plasticraft.allay.tool.CollectionAllayToolBehavior;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionMaterialAccess;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionPermission;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.dubhe.anvilcraft.init.item.ModItems;
@@ -25,6 +26,8 @@ import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 import net.neoforged.testframework.gametest.GameTestPlayer;
+
+import java.util.UUID;
 
 /** 覆盖磁铁九格真空收集与空手近距捡 1 个。 */
 public final class CollectionAllayGameTests {
@@ -56,7 +59,12 @@ public final class CollectionAllayGameTests {
     @TestHolder(description = "Free mode locks a drop inside 16 blocks and ignores one beyond that range")
     static void freeModeScansSixteenBlocksOnly(ExtendedGameTestHelper helper) {
         ServerLevel level = helper.getLevel();
-        WorkingAllayEntity worker = spawnCollectionAllay(helper, new Vec3(2.5D, 2.0D, 2.5D), null);
+        WorkingAllayEntity worker = AllayGameTests.spawnHattedForOwner(
+            helper,
+            new Vec3(2.5D, 2.0D, 2.5D),
+            AllayGameTests.TEST_OWNER
+        );
+        worker.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(ModItems.MAGNET.get()));
         ItemEntity inside = spawnDrop(helper, new Vec3(10.5D, 2.0D, 2.5D), new ItemStack(Items.COBBLESTONE));
         ItemEntity outside = spawnDrop(helper, new Vec3(19.5D, 2.0D, 2.5D), new ItemStack(Items.DIRT));
         ExperienceOrb orb = new ExperienceOrb(level, worker.getX(), worker.getY(), worker.getZ(), 5);
@@ -88,6 +96,43 @@ public final class CollectionAllayGameTests {
             item -> item.getItem().is(Items.DIRT)
         ).stream().mapToInt(item -> item.getItem().getCount()).sum();
         check(dropped == 4, "the four dirt that did not fit must drop beside the owner");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20, batch = "zzz_collection")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A free collector unloads to a current teammate without treating inventory insertion as a world edit")
+    static void freeCollectorUnloadsToCurrentTeammate(ExtendedGameTestHelper helper) {
+        GameTestPlayer teammate = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        teammate.setNoGravity(true);
+        teammate.moveTo(helper.absoluteVec(new Vec3(2.5D, 2.0D, 2.5D)));
+        UUID workerOwner = UUID.fromString("00000000-0000-0000-0000-000000000113");
+        WorkingAllayEntity worker = AllayGameTests.spawnHattedForOwner(
+            helper,
+            new Vec3(2.5D, 2.0D, 2.5D),
+            workerOwner
+        );
+        worker.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(ModItems.MAGNET.get()));
+        worker.tickCount = 20;
+        check(worker.tryInsertCollection(new ItemStack(Items.DIRT, 3)) == 3,
+            "the team unload fixture must hold three dirt");
+
+        try {
+            ConstructionPermission.setCollaboratorProvider((server, first, second) ->
+                first.equals(workerOwner) && second.equals(teammate.getUUID())
+                    || first.equals(teammate.getUUID()) && second.equals(workerOwner)
+            );
+            ConstructionPermission.setWorldPermissionProvider((level, pos, owner) -> false);
+            for (int attempt = 0; attempt < 12 && worker.hasCollectionItems(); attempt++) {
+                CollectionAllayToolBehavior.INSTANCE.serverTick(worker);
+            }
+            check(countInPlayer(teammate, Items.DIRT) == 3,
+                "the current teammate did not receive the free collection items");
+            check(!worker.hasCollectionItems(), "team unload left collection items on the allay");
+        } finally {
+            ConstructionPermission.setWorldPermissionProvider(null);
+            ConstructionPermission.setCollaboratorProvider(null);
+        }
         helper.succeed();
     }
 
@@ -127,7 +172,7 @@ public final class CollectionAllayGameTests {
         helper.succeed();
     }
 
-    @GameTest(timeoutTicks = 400, batch = "zzz_collection_live")
+    @GameTest(timeoutTicks = 400, batch = "zzz_collection_live_magnet")
     @EmptyTemplate(value = "7x4x7", floor = true)
     @TestHolder(description = "A collection allay flies to a drop inside 16 blocks and inhales it")
     static void collectionAllayInhalesNearbyDrop(ExtendedGameTestHelper helper) {
@@ -157,7 +202,7 @@ public final class CollectionAllayGameTests {
         }).thenSucceed();
     }
 
-    @GameTest(timeoutTicks = 400, batch = "zzz_collection_live")
+    @GameTest(timeoutTicks = 400, batch = "zzz_collection_live_empty_hand")
     @EmptyTemplate(value = "7x4x7", floor = true)
     @TestHolder(description = "An empty-handed allay must walk up to a drop before picking exactly one item")
     static void emptyHandApproachesToPickOne(ExtendedGameTestHelper helper) {

@@ -50,7 +50,10 @@ public final class PlasticraftBlockEntities {
             PlasticraftBlocks.CATALYTIC_PRESS_LID,
             PlasticraftBlocks.RESIN_ANVIL,
             PlasticraftBlocks.HARDEND_RESIN_ANVIL,
-            PlasticraftBlocks.UNIVERSAL_PLASTIC
+            PlasticraftBlocks.UNIVERSAL_PLASTIC,
+            PlasticraftBlocks.ENGINEERING_PLASTIC,
+            PlasticraftBlocks.CLEAR_PLASTIC,
+            PlasticraftBlocks.HEAT_RESISTANT_PLASTIC
         )
         .renderer(() -> BondedEntityBlockEntityRenderer::new)
         .register();
@@ -77,7 +80,12 @@ public final class PlasticraftBlockEntities {
             "universal_plastic_melt",
             UniversalPlasticMeltBlockEntity::new
         )
-        .validBlock(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT)
+        .validBlocks(
+            PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT,
+            PlasticraftBlocks.ENGINEERING_PLASTIC_MELT,
+            PlasticraftBlocks.CLEAR_PLASTIC_MELT,
+            PlasticraftBlocks.HEAT_RESISTANT_PLASTIC_MELT
+        )
         .register();
 
     private PlasticraftBlockEntities() {

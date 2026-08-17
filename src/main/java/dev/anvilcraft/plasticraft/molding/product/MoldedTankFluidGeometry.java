@@ -17,7 +17,8 @@ import java.util.Set;
 /** 储罐内腔的等体积半空间裁切器，服务端和客户端使用同一套几何约定。 */
 public final class MoldedTankFluidGeometry {
     private static final double EPSILON = 1.0E-8D;
-    private static final double FACE_INSET = 0.02D;
+    // 六向边界精确退让 1/128 方块，避免远距离深度缓冲把流体与零厚度壳面量化到同一深度。
+    private static final double FACE_INSET_PIXELS = 1.0D / 8.0D;
     private static final int SOLVER_STEPS = 42;
     private static final int TOPOLOGY_CACHE_LIMIT = 32;
     private static final Vec3 NEGATIVE_X_NORMAL = new Vec3(-1.0D, 0.0D, 0.0D);
@@ -157,7 +158,7 @@ public final class MoldedTankFluidGeometry {
     }
 
     private static List<Vec3> inset(List<Vec3> vertices, Vec3 normal) {
-        Vec3 offset = normal.scale(-FACE_INSET / 16.0D);
+        Vec3 offset = normal.scale(-FACE_INSET_PIXELS / 16.0D);
         return vertices.stream().map(vertex -> vertex.add(offset)).toList();
     }
 

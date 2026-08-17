@@ -14,8 +14,8 @@ import java.util.UUID;
 
 /** 按固定世界 Y 轴判断塑料模型是否具有三段式铁砧外形。 */
 public final class MoldingAnvilShapeAnalyzer {
-    public static final int MIN_BOTTOM_WIDTH = 14;
-    public static final int MIN_BOTTOM_DEPTH = 14;
+    public static final int MIN_BOTTOM_WIDTH = 12;
+    public static final int MIN_BOTTOM_DEPTH = 12;
     public static final int MIN_TOTAL_THICKNESS = 10;
     public static final int MIN_BOTTOM_THICKNESS = 3;
     public static final int MIN_MIDDLE_THICKNESS = 3;

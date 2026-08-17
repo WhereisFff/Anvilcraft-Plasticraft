@@ -74,7 +74,7 @@ public final class ConstructionBlueprintEvents {
             }
             CompoundTag tag = template.get().save(new CompoundTag());
             ConstructionBlueprintService.ImportResult result = ConstructionBlueprintService.importIntoDisk(
-                player.server,
+                player,
                 held,
                 tag,
                 templateId.getPath(),
@@ -110,7 +110,7 @@ public final class ConstructionBlueprintEvents {
             if (!(event.getEntity() instanceof ServerPlayer player)) return;
             try {
                 ConstructionBlueprintService.ImportResult result = ConstructionBlueprintService.importSnapshot(
-                    player.server,
+                    player,
                     held,
                     ScannerDiskImporter.read(player.server, held),
                     ScannerDiskImporter.scannerName(held).orElse("scanned_structure"),

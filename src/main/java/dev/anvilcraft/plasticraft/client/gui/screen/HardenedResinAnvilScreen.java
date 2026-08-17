@@ -1,12 +1,16 @@
 package dev.anvilcraft.plasticraft.client.gui.screen;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticPaletteTintManager;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
+import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.constant.Constant;
 import dev.dubhe.anvilcraft.constant.SharedTextures;
 import net.minecraft.client.Minecraft;
@@ -27,6 +31,7 @@ import net.minecraft.world.item.ItemStack;
 
 /** 使用浅色塑料背景的 AnvilCraft 风格界面。 */
 public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAnvilMenu> {
+    private static final float CLEAR_BASE_ALPHA = 0.45F;
     private static final ResourceLocation BACKGROUND = AnvilcraftPlasticraft.of(
         "textures/gui/background/hardend_resin_anvil.png"
     );
@@ -35,6 +40,24 @@ public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAn
     );
     private static final ResourceLocation UNIVERSAL_BACKGROUND_OVERLAY = AnvilcraftPlasticraft.of(
         "textures/gui/background/universal_plastic_anvil_overlay.png"
+    );
+    private static final ResourceLocation ENGINEERING_BACKGROUND_OVERLAY = AnvilcraftPlasticraft.of(
+        "textures/gui/background/engineering_plastic_anvil_overlay.png"
+    );
+    private static final ResourceLocation HEAT_RESISTANT_BACKGROUND_OVERLAY = AnvilcraftPlasticraft.of(
+        "textures/gui/background/heat_resistant_plastic_anvil_overlay.png"
+    );
+    private static final ResourceLocation CLEAR_BACKGROUND_OVERLAY = AnvilcraftPlasticraft.of(
+        "textures/gui/background/clear_plastic_anvil_overlay.png"
+    );
+    private static final ResourceLocation ENGINEERING_BACKGROUND_BASE = AnvilcraftPlasticraft.of(
+        "textures/gui/background/engineering_plastic_anvil_base.png"
+    );
+    private static final ResourceLocation HEAT_RESISTANT_BACKGROUND_BASE = AnvilcraftPlasticraft.of(
+        "textures/gui/background/heat_resistant_plastic_anvil_base.png"
+    );
+    private static final ResourceLocation CLEAR_BACKGROUND_BASE = AnvilcraftPlasticraft.of(
+        "textures/gui/background/clear_plastic_anvil_base.png"
     );
     private EditBox name;
     private final Player player;
@@ -124,33 +147,53 @@ public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAn
 
     @Override
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
-        if (this.menu.isPlasticAnvilTarget()) {
-            int tint = PlasticMeltColor.tint(this.targetColor());
-            graphics.setColor(
-                (tint >> 16 & 0xFF) / 255.0F,
-                (tint >> 8 & 0xFF) / 255.0F,
-                (tint & 0xFF) / 255.0F,
-                1.0F
-            );
-            graphics.blit(
-                UNIVERSAL_BACKGROUND_BASE,
-                this.leftPos,
-                this.topPos,
-                0,
-                0,
-                this.imageWidth,
-                this.imageHeight
-            );
-            graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
-            graphics.blit(
-                UNIVERSAL_BACKGROUND_OVERLAY,
-                this.leftPos,
-                this.topPos,
-                0,
-                0,
-                this.imageWidth,
-                this.imageHeight
-            );
+        PlasticMaterial material = this.targetMaterial();
+        if (this.isPlasticAnvilTarget()) {
+            boolean transparent = material == PlasticMaterial.CLEAR;
+            int tint = PlasticPaletteTintManager.INSTANCE.tint(material, this.targetColor());
+            if (transparent) {
+                // GUI 默认贴图绘制路径不会开启混合，透明塑料的 alpha 必须在这里显式启用
+                RenderSystem.enableBlend();
+                RenderSystem.defaultBlendFunc();
+            }
+            try {
+                setTint(graphics, tint, transparent ? CLEAR_BASE_ALPHA : 1.0F);
+                graphics.blit(
+                    switch (material) {
+                        case ENGINEERING -> ENGINEERING_BACKGROUND_BASE;
+                        case HEAT_RESISTANT -> HEAT_RESISTANT_BACKGROUND_BASE;
+                        case CLEAR -> CLEAR_BACKGROUND_BASE;
+                        case UNIVERSAL -> UNIVERSAL_BACKGROUND_BASE;
+                    },
+                    this.leftPos,
+                    this.topPos,
+                    0,
+                    0,
+                    this.imageWidth,
+                    this.imageHeight
+                );
+                graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
+                graphics.blit(
+                    switch (material) {
+                        case ENGINEERING -> ENGINEERING_BACKGROUND_OVERLAY;
+                        case HEAT_RESISTANT -> HEAT_RESISTANT_BACKGROUND_OVERLAY;
+                        case CLEAR -> CLEAR_BACKGROUND_OVERLAY;
+                        case UNIVERSAL -> UNIVERSAL_BACKGROUND_OVERLAY;
+                    },
+                    this.leftPos,
+                    this.topPos,
+                    0,
+                    0,
+                    this.imageWidth,
+                    this.imageHeight
+                );
+            } finally {
+                graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
+                if (transparent) {
+                    RenderSystem.defaultBlendFunc();
+                    RenderSystem.disableBlend();
+                }
+            }
         } else {
             super.renderBg(graphics, partialTick, mouseX, mouseY);
         }
@@ -158,6 +201,26 @@ public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAn
             ? SharedTextures.TEXT_FIELD_DISABLE
             : SharedTextures.TEXT_FIELD;
         graphics.blit(texture, this.leftPos + 59, this.topPos + 20, 0, 0, 110, 16, 110, 16);
+    }
+
+    private static void setTint(GuiGraphics graphics, int tint, float alpha) {
+        graphics.setColor(
+            (tint >> 16 & 0xFF) / 255.0F,
+            (tint >> 8 & 0xFF) / 255.0F,
+            (tint & 0xFF) / 255.0F,
+            alpha
+        );
+    }
+
+    private boolean isPlasticAnvilTarget() {
+        if (this.menu.isPlasticAnvilTarget()) return true;
+        if (this.menu.bondedBlockPos() != null) {
+            if (!(this.player.level().getBlockEntity(this.menu.bondedBlockPos())
+                instanceof BondedEntityBlockEntity bonded)) return false;
+            return bonded.isMoldedAnvil() || MoldedPlasticData.get(bonded.getStoredDropStack()).isPresent();
+        }
+        Entity entity = this.player.level().getEntity(this.menu.entityId());
+        return entity instanceof UniversalPlasticEntity;
     }
 
     private DyeColor targetColor() {
@@ -170,16 +233,40 @@ public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAn
         if (entity instanceof UniversalPlasticEntity universal) {
             return universal.getMoldedData()
                 .map(data -> PlasticMeltColor.get(data.material()))
-                .orElse(DyeColor.WHITE);
+                .orElseGet(() -> colorOf(universal.getDropStack()));
         }
         if (entity instanceof AbstractPlasticEntity plastic) return colorOf(plastic.getDropStack());
         return DyeColor.WHITE;
+    }
+
+    private PlasticMaterial targetMaterial() {
+        if (this.menu.bondedBlockPos() != null
+            && this.player.level().getBlockEntity(this.menu.bondedBlockPos())
+                instanceof BondedEntityBlockEntity bonded) {
+            return materialOf(bonded.getStoredDropStack());
+        }
+        Entity entity = this.player.level().getEntity(this.menu.entityId());
+        if (entity instanceof UniversalPlasticEntity universal) {
+            return universal.getMoldedData()
+                .flatMap(data -> PlasticMaterial.fromMelt(data.material()))
+                .orElseGet(() -> materialOf(universal.getDropStack()));
+        }
+        if (entity instanceof AbstractPlasticEntity plastic) return materialOf(plastic.getDropStack());
+        return PlasticMaterial.UNIVERSAL;
     }
 
     private static DyeColor colorOf(ItemStack stack) {
         return MoldedPlasticData.get(stack)
             .map(data -> PlasticMeltColor.get(data.material()))
             .orElseGet(() -> PlasticMeltColor.get(stack));
+    }
+
+    private static PlasticMaterial materialOf(ItemStack stack) {
+        PlasticMaterial molded = MoldedPlasticData.get(stack)
+            .flatMap(data -> PlasticMaterial.fromMelt(data.material()))
+            .orElse(null);
+        if (molded != null) return molded;
+        return PlasticMaterial.fromKey(PlasticItemData.getMaterial(stack)).orElse(PlasticMaterial.UNIVERSAL);
     }
 
     @Override

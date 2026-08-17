@@ -1,0 +1,7 @@
+allprojects {
+    String validationBuildDirectory = System.getProperty('plasticraft.section.validation.buildDir')
+    if (validationBuildDirectory != null) {
+        String projectHash = Integer.toUnsignedString(project.projectDir.absolutePath.hashCode(), 16)
+        layout.buildDirectory.set(file("${validationBuildDirectory}/${projectHash}${project.path.replace(':', '_')}"))
+    }
+}

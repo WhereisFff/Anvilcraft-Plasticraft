@@ -10,6 +10,7 @@ import dev.anvilcraft.plasticraft.api.texture.PlasticTextureInput;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureResourceException;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticShape;
 import dev.anvilcraft.plasticraft.item.CreativeColorVariantItem;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.atlas.SpriteSource;
 import net.minecraft.client.renderer.texture.atlas.SpriteSourceType;
@@ -42,24 +43,32 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
     }
 
     public static ResourceLocation sprite(DyeColor color) {
-        return UniversalPlasticShape.sprite(color);
+        return sprite(PlasticMaterial.UNIVERSAL, color);
+    }
+
+    public static ResourceLocation sprite(PlasticMaterial material, DyeColor color) {
+        return material.sprite(color);
     }
 
     @Override
     public void run(ResourceManager resourceManager, Output output) {
         PlasticTextureCache.clear();
-        try {
-            PlasticTextureResourceLoader.LoadedResources resources = PlasticTextureResourceLoader.load(
-                resourceManager
-            );
-            addGeneratedSprites(output, resources);
-        } catch (IOException | IllegalArgumentException exception) {
-            AnvilcraftPlasticraft.LOGGER.error(
-                "Unable to generate universal plastic textures; using safe placeholders: {}",
-                exception.getMessage(),
-                exception
-            );
-            addPlaceholderSprites(output);
+        for (PlasticMaterial material : PlasticMaterial.values()) {
+            try {
+                PlasticTextureResourceLoader.LoadedResources resources = PlasticTextureResourceLoader.load(
+                    resourceManager,
+                    material
+                );
+                addGeneratedSprites(output, material, resources);
+            } catch (IOException | IllegalArgumentException exception) {
+                AnvilcraftPlasticraft.LOGGER.error(
+                    "Unable to generate {} textures; using safe placeholders: {}",
+                    material.key(),
+                    exception.getMessage(),
+                    exception
+                );
+                addPlaceholderSprites(output, material);
+            }
         }
     }
 
@@ -70,31 +79,81 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
 
     private static void addGeneratedSprites(
         Output output,
+        PlasticMaterial material,
         PlasticTextureResourceLoader.LoadedResources resources
     ) {
+        if (material.isTransparent()) {
+            PlasticTextureInput input = input(material, resources.baseHash(), resources.paletteHash(), DyeColor.WHITE);
+            GeneratedPlasticTexture generated = PlasticTextureCache.getOrGenerate(
+                input,
+                () -> PlasticTextureGenerator.generateTransparent(
+                    input,
+                    resources.bases(),
+                    resources.palette()
+                )
+            );
+            addSprite(output, material, DyeColor.WHITE, generated);
+            for (DyeColor color : DyeColor.values()) {
+                if (color == DyeColor.WHITE) continue;
+                PlasticTextureInput coloredInput = input(material, resources.baseHash(), resources.paletteHash(), color);
+                GeneratedPlasticTexture colored = PlasticTextureCache.getOrGenerate(
+                    coloredInput,
+                    () -> PlasticTextureGenerator.generateTransparent(
+                        coloredInput,
+                        resources.bases(),
+                        resources.palette()
+                    )
+                );
+                addSprite(output, material, color, colored);
+            }
+            return;
+        }
         for (DyeColor color : DyeColor.values()) {
-            PlasticTextureInput input = input(resources.baseHash(), resources.paletteHash(), color);
+            PlasticTextureInput input = input(material, resources.baseHash(), resources.paletteHash(), color);
             GeneratedPlasticTexture generated = PlasticTextureCache.getOrGenerate(
                 input,
                 () -> PlasticTextureGenerator.generate(input, resources.bases(), resources.palette())
             );
-            addSprite(output, color, generated);
+            addSprite(output, material, color, generated);
         }
     }
 
-    private static void addPlaceholderSprites(Output output) {
-        for (DyeColor color : DyeColor.values()) {
-            PlasticTextureInput input = input("unavailable", "unavailable", color);
+    private static void addPlaceholderSprites(Output output, PlasticMaterial material) {
+        if (material.isTransparent()) {
+            PlasticTextureInput input = input(material, "unavailable", "none", DyeColor.WHITE);
             GeneratedPlasticTexture generated = PlasticTextureCache.getOrGenerate(
                 input,
                 () -> PlasticTextureGenerator.placeholder(input)
             );
-            addSprite(output, color, generated);
+            addSprite(output, material, DyeColor.WHITE, generated);
+            for (DyeColor color : DyeColor.values()) {
+                if (color == DyeColor.WHITE) continue;
+                PlasticTextureInput coloredInput = input(material, "unavailable", "unavailable", color);
+                GeneratedPlasticTexture colored = PlasticTextureCache.getOrGenerate(
+                    coloredInput,
+                    () -> PlasticTextureGenerator.placeholder(coloredInput)
+                );
+                addSprite(output, material, color, colored);
+            }
+            return;
+        }
+        for (DyeColor color : DyeColor.values()) {
+            PlasticTextureInput input = input(material, "unavailable", "unavailable", color);
+            GeneratedPlasticTexture generated = PlasticTextureCache.getOrGenerate(
+                input,
+                () -> PlasticTextureGenerator.placeholder(input)
+            );
+            addSprite(output, material, color, generated);
         }
     }
 
-    private static void addSprite(Output output, DyeColor color, GeneratedPlasticTexture generated) {
-        ResourceLocation spriteId = sprite(color);
+    private static void addSprite(
+        Output output,
+        PlasticMaterial material,
+        DyeColor color,
+        GeneratedPlasticTexture generated
+    ) {
+        ResourceLocation spriteId = sprite(material, color);
         output.add(spriteId, loader -> createSprite(spriteId, generated));
     }
 
@@ -115,16 +174,21 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
         }
     }
 
-    private static PlasticTextureInput input(String baseHash, String paletteHash, DyeColor color) {
+    private static PlasticTextureInput input(
+        PlasticMaterial material,
+        String baseHash,
+        String paletteHash,
+        DyeColor color
+    ) {
         return new PlasticTextureInput(
             PlasticTextureGenerator.VERSION,
             UniversalPlasticShape.SHAPE_HASH,
             UniversalPlasticShape.SURFACES,
-            PlasticTextureResourceLoader.BASE_RESOURCE.toString(),
+            material.baseTexture(16).toString(),
             baseHash,
-            PlasticTextureResourceLoader.PALETTE_RESOURCE.toString(),
+            material.hasPalette() ? material.paletteTexture().toString() : "none",
             paletteHash,
-            CreativeColorVariantItem.paletteRow(color)
+            material.hasPalette() ? CreativeColorVariantItem.paletteRow(color) : 0
         );
     }
 

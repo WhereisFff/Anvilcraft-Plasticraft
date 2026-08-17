@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.client.renderer;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
@@ -17,21 +18,43 @@ import net.neoforged.neoforge.fluids.FluidStack;
 
 /** 使用同一张灰度纹理渲染流体，并从存储位置读取调色数据。 */
 public final class UniversalPlasticMeltFluidExtension extends HighViscosityResinFluidExtension {
-    private static final ResourceLocation TEXTURE = AnvilcraftPlasticraft.of("block/universal_plastic_melt");
     private static final String CATALYSIS_OPACITY_KEY = "PlasticraftCatalysisOpacity";
+    private final PlasticMaterial material;
+    private final boolean opaque;
+    private final int defaultTint;
 
     public UniversalPlasticMeltFluidExtension() {
-        super(TEXTURE);
+        this(PlasticMaterial.UNIVERSAL, AnvilcraftPlasticraft.of("block/universal_plastic_melt"), true, 0xFFFFFFFF);
+    }
+
+    public UniversalPlasticMeltFluidExtension(ResourceLocation texture) {
+        this(PlasticMaterial.UNIVERSAL, texture, true, 0xFFFFFFFF);
+    }
+
+    public UniversalPlasticMeltFluidExtension(ResourceLocation texture, boolean opaque, int defaultTint) {
+        this(PlasticMaterial.UNIVERSAL, texture, opaque, defaultTint);
+    }
+
+    public UniversalPlasticMeltFluidExtension(
+        PlasticMaterial material,
+        ResourceLocation texture,
+        boolean opaque,
+        int defaultTint
+    ) {
+        super(texture);
+        this.material = material;
+        this.opaque = opaque;
+        this.defaultTint = defaultTint;
     }
 
     @Override
     public boolean isOpaque() {
-        return true;
+        return this.opaque;
     }
 
     @Override
     public int getTintColor(FluidStack stack) {
-        int tint = PlasticMeltColor.tint(stack);
+        int tint = this.tint(PlasticMeltColor.get(stack));
         CustomData data = stack.get(DataComponents.CUSTOM_DATA);
         if (data == null) return tint;
         CompoundTag tag = data.copyTag();
@@ -43,9 +66,17 @@ public final class UniversalPlasticMeltFluidExtension extends HighViscosityResin
     @Override
     public int getTintColor(FluidState state, BlockAndTintGetter getter, BlockPos pos) {
         if (getter.getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity melt) {
-            return PlasticMeltColor.tint(melt.getColor());
+            return this.tint(melt.getColor());
         }
-        return PlasticMeltColor.tint(DyeColor.WHITE);
+        return this.tint(DyeColor.WHITE);
+    }
+
+    private int tint(DyeColor color) {
+        int rgb = this.opaque
+            ? PlasticPaletteTintManager.INSTANCE.tint(this.material, color)
+            : PlasticPaletteTintManager.INSTANCE.transparentTint(this.material, color);
+        int alpha = this.opaque ? 0xFF : this.defaultTint >>> 24;
+        return alpha << 24 | rgb & 0x00FFFFFF;
     }
 
     /** 只在客户端临时渲染栈上记录催化覆层透明度。 */

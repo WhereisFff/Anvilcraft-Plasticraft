@@ -3,6 +3,8 @@ package dev.anvilcraft.plasticraft.client.renderer;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureLayout;
+import dev.anvilcraft.plasticraft.client.renderer.entity.TransparentPlasticFaceCullingVertexConsumer;
+import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
@@ -53,13 +55,98 @@ public final class MoldedPlasticMeshRenderer {
         int color,
         boolean translucent
     ) {
+        return render(data, pose, buffers, packedLight, color, translucent, null);
+    }
+
+    public static RenderType render(
+        MoldedPlasticData data,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        int packedLight,
+        int color,
+        boolean translucent,
+        UniversalPlasticEntity cullingEntity
+    ) {
         ResourceLocation texture = DynamicPlasticTextureManager.INSTANCE.texture(data);
-        RenderType renderType = translucent
-            ? RenderType.entityTranslucent(texture)
-            : RenderType.entityCutoutNoCull(texture);
+        PreparedMesh mesh = preparedMesh(data);
+        boolean deferredTransparent = translucent && ClearPlasticRenderTypes.isDeferredPassActive();
+        RenderType renderType = deferredTransparent
+            ? ClearPlasticRenderTypes.molded(texture)
+            : translucent
+                ? RenderType.entityTranslucentCull(texture)
+                : RenderType.entityCutoutNoCull(texture);
+        if (deferredTransparent) {
+            renderDeferredTransparentMesh(
+                mesh,
+                pose,
+                buffers,
+                packedLight,
+                color,
+                cullingEntity,
+                renderType
+            );
+            return renderType;
+        }
         VertexConsumer consumer = buffers.getBuffer(renderType);
-        renderMesh(data, pose, consumer, packedLight, color, true);
+        if (cullingEntity != null) {
+            consumer = TransparentPlasticFaceCullingVertexConsumer.wrap(cullingEntity, consumer);
+        }
+        renderMesh(mesh.volumeVertices, pose, consumer, packedLight, color, true, true);
+        renderMesh(mesh.zeroThicknessVertices, pose, consumer, packedLight, color, true, false);
+        TransparentPlasticFaceCullingVertexConsumer.finish(consumer);
         return renderType;
+    }
+
+    private static void renderDeferredTransparentMesh(
+        PreparedMesh mesh,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        int packedLight,
+        int color,
+        UniversalPlasticEntity cullingEntity,
+        RenderType renderType
+    ) {
+        renderDeferredMeshPart(
+            mesh.volumeVertices,
+            pose,
+            buffers,
+            packedLight,
+            color,
+            cullingEntity,
+            renderType,
+            true
+        );
+        if (mesh.zeroThicknessVertices.length > 0) {
+            renderDeferredMeshPart(
+                mesh.zeroThicknessVertices,
+                pose,
+                buffers,
+                packedLight,
+                color,
+                cullingEntity,
+                renderType,
+                false
+            );
+        }
+    }
+
+    private static void renderDeferredMeshPart(
+        float[] vertices,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        int packedLight,
+        int color,
+        UniversalPlasticEntity cullingEntity,
+        RenderType renderType,
+        boolean volumeCullable
+    ) {
+        if (vertices.length == 0) return;
+        VertexConsumer consumer = buffers.getBuffer(renderType);
+        if (cullingEntity != null) {
+            consumer = TransparentPlasticFaceCullingVertexConsumer.wrap(cullingEntity, consumer);
+        }
+        renderMesh(vertices, pose, consumer, packedLight, color, true, volumeCullable);
+        TransparentPlasticFaceCullingVertexConsumer.finish(consumer);
     }
 
     public static RenderType renderPreview(
@@ -71,7 +158,25 @@ public final class MoldedPlasticMeshRenderer {
         ResourceLocation texture = DynamicPlasticTextureManager.INSTANCE.texture(data);
         RenderType renderType = PlasticPreviewRenderTypes.moldedPreview(texture);
         VertexConsumer consumer = buffers.getBuffer(renderType);
-        renderMesh(data, pose, consumer, LightTexture.FULL_BLOCK, valid ? 0xFFFFFFFF : INVALID_PREVIEW_COLOR, false);
+        PreparedMesh mesh = preparedMesh(data);
+        renderMesh(
+            mesh.volumeVertices,
+            pose,
+            consumer,
+            LightTexture.FULL_BLOCK,
+            valid ? 0xFFFFFFFF : INVALID_PREVIEW_COLOR,
+            false,
+            true
+        );
+        renderMesh(
+            mesh.zeroThicknessVertices,
+            pose,
+            consumer,
+            LightTexture.FULL_BLOCK,
+            valid ? 0xFFFFFFFF : INVALID_PREVIEW_COLOR,
+            false,
+            false
+        );
         return renderType;
     }
 
@@ -89,7 +194,11 @@ public final class MoldedPlasticMeshRenderer {
     ) {
         if (prepared.layers.isEmpty()) return;
         PoseStack.Pose lastPose = pose.last();
-        VertexConsumer consumer = buffers.getBuffer(RenderType.translucent());
+        VertexConsumer consumer = buffers.getBuffer(
+            ClearPlasticRenderTypes.isDeferredPassActive()
+                ? ClearPlasticRenderTypes.fluid()
+                : RenderType.translucent()
+        );
         for (PreparedFluidLayer layer : prepared.layers) {
             FluidStack fluid = layer.fluid;
             IClientFluidTypeExtensions properties = IClientFluidTypeExtensions.of(fluid.getFluid());
@@ -232,17 +341,19 @@ public final class MoldedPlasticMeshRenderer {
     }
 
     private static void renderMesh(
-        MoldedPlasticData data,
+        float[] vertices,
         PoseStack pose,
         VertexConsumer consumer,
         int packedLight,
         int color,
-        boolean entityFormat
+        boolean entityFormat,
+        boolean volumeCullable
     ) {
-        PreparedMesh mesh = preparedMesh(data);
         PoseStack.Pose lastPose = pose.last();
-        float[] vertices = mesh.vertices;
         for (int offset = 0; offset < vertices.length; offset += VERTEX_STRIDE) {
+            if (offset % (VERTEX_STRIDE * 4) == 0) {
+                TransparentPlasticFaceCullingVertexConsumer.beginQuad(consumer, !volumeCullable);
+            }
             VertexConsumer vertex = consumer.addVertex(
                     lastPose.pose(),
                     vertices[offset],
@@ -271,21 +382,42 @@ public final class MoldedPlasticMeshRenderer {
     }
 
     private static final class PreparedMesh {
-        private final float[] vertices;
+        private final float[] volumeVertices;
+        private final float[] zeroThicknessVertices;
 
-        private PreparedMesh(float[] vertices) {
-            this.vertices = vertices;
+        private PreparedMesh(float[] volumeVertices, float[] zeroThicknessVertices) {
+            this.volumeVertices = volumeVertices;
+            this.zeroThicknessVertices = zeroThicknessVertices;
         }
 
         private static PreparedMesh create(MoldedPlasticData data) {
             List<MoldingQuad> quads = data.surfaceMesh();
             PlasticTextureLayout layout = data.textureLayout();
-            float[] vertices = new float[quads.size() * 4 * VERTEX_STRIDE];
+            return new PreparedMesh(
+                createVertices(quads, layout, true, false),
+                createVertices(quads, layout, false, true)
+            );
+        }
+
+        private static float[] createVertices(
+            List<MoldingQuad> quads,
+            PlasticTextureLayout layout,
+            boolean includeVolume,
+            boolean includeZeroThickness
+        ) {
+            int quadCount = 0;
+            for (MoldingQuad quad : quads) {
+                if (quad.doubleSided() ? includeZeroThickness : includeVolume) {
+                    quadCount += quad.doubleSided() ? 2 : 1;
+                }
+            }
+            float[] vertices = new float[quadCount * 4 * VERTEX_STRIDE];
             int offset = 0;
             for (int index = 0; index < quads.size(); index++) {
                 MoldingQuad quad = quads.get(index);
+                if (quad.doubleSided() ? !includeZeroThickness : !includeVolume) continue;
                 PlasticTextureLayout.UvRegion region = layout.regions().get("surface_" + index);
-                if (region == null) continue;
+                if (region == null) throw new IllegalStateException("Molded plastic texture layout is incomplete");
                 float u0 = region.x() / (float) layout.atlasWidth();
                 float v0 = region.y() / (float) layout.atlasHeight();
                 float u1 = (region.x() + region.width()) / (float) layout.atlasWidth();
@@ -294,11 +426,18 @@ public final class MoldedPlasticMeshRenderer {
                 offset = putVertex(vertices, offset, quad.second(), quad.normal(), u1, v0);
                 offset = putVertex(vertices, offset, quad.third(), quad.normal(), u1, v1);
                 offset = putVertex(vertices, offset, quad.fourth(), quad.normal(), u0, v1);
+                if (quad.doubleSided()) {
+                    MoldingVec3 reverseNormal = quad.normal().scale(-1.0D);
+                    offset = putVertex(vertices, offset, quad.first(), reverseNormal, u0, v0);
+                    offset = putVertex(vertices, offset, quad.fourth(), reverseNormal, u0, v1);
+                    offset = putVertex(vertices, offset, quad.third(), reverseNormal, u1, v1);
+                    offset = putVertex(vertices, offset, quad.second(), reverseNormal, u1, v0);
+                }
             }
             if (offset != vertices.length) {
                 throw new IllegalStateException("Molded plastic texture layout is incomplete");
             }
-            return new PreparedMesh(vertices);
+            return vertices;
         }
 
         private static int putVertex(

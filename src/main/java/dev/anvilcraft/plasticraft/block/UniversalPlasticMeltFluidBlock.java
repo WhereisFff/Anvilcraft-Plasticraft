@@ -2,8 +2,9 @@ package dev.anvilcraft.plasticraft.block;
 
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockTags;
-import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
+import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -28,8 +29,15 @@ import java.util.function.Supplier;
 
 /** 只保留单格流体、携带颜色并统一固化为通用塑料制品的熔体。 */
 public class UniversalPlasticMeltFluidBlock extends LiquidBlock implements EntityBlock {
-    public UniversalPlasticMeltFluidBlock(Supplier<? extends FlowingFluid> fluid, Properties properties) {
+    private final PlasticMaterial material;
+
+    public UniversalPlasticMeltFluidBlock(
+        Supplier<? extends FlowingFluid> fluid,
+        Properties properties,
+        PlasticMaterial material
+    ) {
         super(fluid.get(), properties.randomTicks());
+        this.material = material;
     }
 
     @Override
@@ -74,8 +82,9 @@ public class UniversalPlasticMeltFluidBlock extends LiquidBlock implements Entit
     @Override
     public ItemStack pickupBlock(@Nullable Player player, LevelAccessor level, BlockPos pos, BlockState state) {
         if (state.getValue(LEVEL) != 0) return ItemStack.EMPTY;
-        ItemStack bucket = PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.asStack();
-        if (level.getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity melt) {
+        ItemStack bucket = new ItemStack(this.material.bucket());
+        if (this.material.supportsDyeing()
+            && level.getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity melt) {
             PlasticMeltColor.set(bucket, melt.getColor());
         }
         level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
@@ -85,6 +94,7 @@ public class UniversalPlasticMeltFluidBlock extends LiquidBlock implements Entit
     /** 计划刻、随机刻和测试共用的环境判定入口，结算仍委托给唯一固化服务。 */
     public static boolean trySolidifyFromEnvironment(ServerLevel level, BlockPos pos) {
         if (!shouldCool(level, pos)) return false;
+        if (PlasticOilCatalysis.delaysSolidification(level, pos)) return false;
         return UniversalPlasticSolidification.solidify(level, pos);
     }
 

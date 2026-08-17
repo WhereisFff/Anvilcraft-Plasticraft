@@ -27,6 +27,7 @@ public class UniversalPlasticBlockItem extends AbstractPlasticEntityItem<Univers
 
     @Override
     protected BlockState prepareDisplayState(ItemStack stack, BlockState state) {
+        if (!state.hasProperty(DyeableMaterial.COLOR) || !this.supportsDyeing()) return state;
         return state.setValue(
             DyeableMaterial.COLOR,
             MoldedPlasticData.get(stack)

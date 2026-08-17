@@ -32,11 +32,40 @@ public final class PlasticraftLanguageData {
 
         // 物品组、塑料材料名称及无法由 Registrum 条目自动生成的物品名称。
         provider.add(PlasticraftItemGroups.TITLE_KEY, "Anvilcraft: Plasticraft");
+        provider.add(PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "universal_plastic", "Universal Plastic");
+        provider.add(
+            PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "universal_plastic.tooltip",
+            "Universal plastic melt, granules and molded products"
+        );
+        provider.add(PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "engineering_plastic", "Engineering Plastic");
+        provider.add(
+            PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "engineering_plastic.tooltip",
+            "Engineering plastic melt, granules and molded products"
+        );
+        provider.add(PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "clear_plastic", "Clear Plastic");
+        provider.add(
+            PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "clear_plastic.tooltip",
+            "Clear plastic melt, granules and molded products"
+        );
+        provider.add(
+            PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "heat_resistant_plastic",
+            "Heat-Resistant Plastic"
+        );
+        provider.add(
+            PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "heat_resistant_plastic.tooltip",
+            "Heat-resistant plastic melt, granules and molded products"
+        );
         provider.add("item.anvilcraftplasticraft.hardend_resin_anvil", "Hardened Resin Anvil");
         provider.add("item.anvilcraftplasticraft.hardend_resin_cauldron", "Hardened Resin Cauldron");
         provider.add("item.anvilcraftplasticraft.resin_anvil", "Resin Anvil");
         provider.add("item.anvilcraftplasticraft.universal_plastic", "Universal Plastic Block");
         provider.add("material.anvilcraftplasticraft.universal_plastic", "Universal Plastic");
+        provider.add("item.anvilcraftplasticraft.engineering_plastic", "Engineering Plastic Block");
+        provider.add("material.anvilcraftplasticraft.engineering_plastic", "Engineering Plastic");
+        provider.add("item.anvilcraftplasticraft.heat_resistant_plastic", "Heat-Resistant Plastic Block");
+        provider.add("material.anvilcraftplasticraft.heat_resistant_plastic", "Heat-Resistant Plastic");
+        provider.add("item.anvilcraftplasticraft.clear_plastic", "Clear Plastic Block");
+        provider.add("material.anvilcraftplasticraft.clear_plastic", "Clear Plastic");
         provider.add("item.anvilcraftplasticraft.molded_product_name", "%1$s %2$s");
         provider.add("item.anvilcraftplasticraft.molded_product_suffix.block", "Block");
 
@@ -68,6 +97,10 @@ public final class PlasticraftLanguageData {
         provider.add("container.anvilcraftplasticraft.allay_lounge", "Allay Lounge");
         provider.add("screen.anvilcraftplasticraft.allay_lounge.recall", "Recall nearby working allays");
         provider.add("screen.anvilcraftplasticraft.allay_lounge.strategy", "Shortage strategy for hosted allays");
+        provider.add(
+            "tooltip.anvilcraftplasticraft.item.allay_lounge.permissions",
+            "Only the owner or a current teammate can manage it; without FTB Teams, only the owner"
+        );
 
         // 塑料成型舱物品说明、容器标题和建模器界面语言文件生成。
         provider.add(
@@ -267,8 +300,24 @@ public final class PlasticraftLanguageData {
         provider.add("tooltip.anvilcraftplasticraft.molding.clay", "Clay slot %1$s, molded %2$s / %3$s");
         provider.add("tooltip.anvilcraftplasticraft.molding.partial_downgrade", "This result will downgrade to a normal product");
         provider.add("tooltip.anvilcraftplasticraft.molded_chest", "A plastic chest that can store %s stacks of items");
-        provider.add("tooltip.anvilcraftplasticraft.molded_tank", "A plastic tank that can store %s B of fluid");
+        provider.add(
+            "tooltip.anvilcraftplasticraft.molded_tank",
+            "A plastic tank that stores %s B of fluid and shatters when filled with lava"
+        );
+        provider.add(
+            "tooltip.anvilcraftplasticraft.molded_tank_heat_resistant",
+            "A heat-resistant plastic tank that stores %s B of fluid, including lava"
+        );
         provider.add("tooltip.anvilcraftplasticraft.molded_anvil", "A plastic anvil that can process falling-anvil recipes");
+        provider.add(
+            PlasticItemTooltipManager.DEMONSTRATION_TOOLTIP_KEY,
+            "This is only a demonstration model\n"
+                + "You can still model or import any model you want in the Plastic Molding Chamber"
+        );
+        provider.add(
+            "tooltip.anvilcraftplasticraft.molded_allay_hard_hat",
+            "A plastic hard hat that turns an allay into a working allay"
+        );
         provider.add(
             "tooltip.anvilcraftplasticraft.molded_giant_anvil",
             "A giant plastic anvil for falling-anvil recipes, multiblock processing, ground shocks, and large cauldrons"
@@ -296,7 +345,7 @@ public final class PlasticraftLanguageData {
         provider.add("message.anvilcraftplasticraft.molding.type_cavity_ratio_too_small", "The selected type needs at least 50% cavity volume");
         provider.add("message.anvilcraftplasticraft.molding.type_anvil_empty", "An anvil model cannot be empty");
         provider.add("message.anvilcraftplasticraft.molding.type_anvil_height_too_short", "An anvil model needs at least 10 px of height");
-        provider.add("message.anvilcraftplasticraft.molding.type_anvil_bottom_too_small", "The anvil bottom needs a flat 14 x 14 px area");
+        provider.add("message.anvilcraftplasticraft.molding.type_anvil_bottom_too_small", "The anvil bottom needs a flat 12 x 12 px area");
         provider.add("message.anvilcraftplasticraft.molding.type_anvil_bottom_too_thin", "The anvil bottom segment needs at least 3 px of thickness");
         provider.add("message.anvilcraftplasticraft.molding.type_anvil_middle_too_thin", "The anvil middle segment needs at least 3 px of thickness");
         provider.add("message.anvilcraftplasticraft.molding.type_anvil_neck_not_narrow", "The anvil middle segment must be strictly narrower on every side");
@@ -482,6 +531,10 @@ public final class PlasticraftLanguageData {
         provider.add("tooltip.anvilcraftplasticraft.blueprint.state_placed", "Paused, yellow slot, right-click this slot to start");
         provider.add("tooltip.anvilcraftplasticraft.blueprint.state_active", "Building, green slot");
         provider.add(
+            "tooltip.anvilcraftplasticraft.blueprint.permissions",
+            "Only the owner or a current teammate can manage it; without FTB Teams, only the owner"
+        );
+        provider.add(
             "tooltip.anvilcraftplasticraft.blueprint.cancel_commits",
             "Cancel quietly commits delivered blocks, contents, fluids and entities and returns in-transit items"
         );
@@ -570,7 +623,10 @@ public final class PlasticraftLanguageData {
         provider.add("message.anvilcraftplasticraft.blueprint.disk_not_imported", "This disk has no blueprint yet");
         provider.add("message.anvilcraftplasticraft.blueprint.structure_missing", "Structure data is missing from this world");
         provider.add("message.anvilcraftplasticraft.blueprint.job_missing", "This deployment no longer exists");
-        provider.add("message.anvilcraftplasticraft.blueprint.not_owner", "Only the owner can manage this blueprint");
+        provider.add(
+            "message.anvilcraftplasticraft.blueprint.not_owner",
+            "Only the owner or a current teammate can manage this blueprint"
+        );
         provider.add("message.anvilcraftplasticraft.blueprint.template_missing", "Structure block has no saved template");
         provider.add("message.anvilcraftplasticraft.blueprint.scanner_data_missing", "This disk has no scanner data");
         provider.add("message.anvilcraftplasticraft.blueprint.scanner_file_missing", "Scanner structure file is missing");

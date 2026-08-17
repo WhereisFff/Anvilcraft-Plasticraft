@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.client.renderer.entity.allay;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.RenderLayerParent;
@@ -48,7 +49,10 @@ public class AllayHardHatLayer extends RenderLayer<WorkingAllayEntity, WorkingAl
             -bounds.minY,
             -(bounds.minZ + bounds.maxZ) * 0.5D
         );
-        MoldedPlasticMeshRenderer.render(data, poseStack, buffers, packedLight, 0xFFFFFFFF, false);
+        boolean translucent = PlasticMaterial.fromMelt(data.material())
+            .map(PlasticMaterial::isTransparent)
+            .orElse(false);
+        MoldedPlasticMeshRenderer.render(data, poseStack, buffers, packedLight, 0xFFFFFFFF, translucent);
         poseStack.popPose();
     }
 }

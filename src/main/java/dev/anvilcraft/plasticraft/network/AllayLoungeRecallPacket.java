@@ -7,6 +7,7 @@ import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 
 /** 休息室界面的召回指令:让周围戴帽悦灵依次入库。 */
@@ -34,7 +35,9 @@ public record AllayLoungeRecallPacket(BlockPos loungePos) implements IServerboun
             return;
         }
         if (player.level().getBlockEntity(this.loungePos) instanceof AllayLoungeBlockEntity lounge) {
-            lounge.recallNearbyWorkers(player.getUUID());
+            if (player instanceof ServerPlayer serverPlayer) {
+                lounge.recallNearbyWorkers(serverPlayer);
+            }
         }
     }
 }

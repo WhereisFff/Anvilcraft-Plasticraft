@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
@@ -14,7 +15,9 @@ import dev.anvilcraft.plasticraft.recipe.CatalyticPressProcess;
 import dev.anvilcraft.plasticraft.recipe.PlasticGranuleCauldronOutput;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
+import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
+import dev.dubhe.anvilcraft.block.entity.BurningHeaterBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.block.state.GiantAnvilCube;
@@ -37,7 +40,9 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.npc.VillagerTrades;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.GameType;
@@ -103,6 +108,135 @@ public final class UniversalPlasticProductionGameTests {
         check(PlasticMeltColor.get(output) == DyeColor.PURPLE, "catalytic outlet lost the melt colour");
         check(!helper.getBlockState(outputPos).is(PlasticraftBlocks.UNIVERSAL_PLASTIC.get()), "outlet created a plastic block");
         helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("7x6x7")
+    @TestHolder(description = "A catalytic outlet preserves engineering-plastic material and colour")
+    static void catalyticOutletProducesEngineeringGranules(ExtendedGameTestHelper helper) {
+        BlockPos cauldronPos = new BlockPos(2, 2, 3);
+        BlockPos outputPos = cauldronPos.east();
+        HardenedResinCauldronEntity cauldron = spawnCauldron(helper, cauldronPos);
+        CatalyticPressLidEntity lid = spawnReadyLid(helper, cauldronPos.above());
+        FluidStack melt = coloredEngineeringMelt(BUCKET, DyeColor.LIGHT_BLUE);
+        check(
+            cauldron.getFluidHandler().fill(melt, IFluidHandler.FluidAction.EXECUTE) == BUCKET,
+            "source cauldron rejected engineering plastic melt"
+        );
+
+        Player player = helper.makeMockPlayer(GameType.CREATIVE);
+        player.setPos(cauldron.position().add(0.0D, 0.5D, -2.0D));
+        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.ANVIL_HAMMER.asStack());
+        check(
+            cauldron.plasticraft$useAnvilHammer(player, InteractionHand.MAIN_HAND, Direction.EAST).consumesAction(),
+            "anvil hammer did not open the engineering-plastic outlet"
+        );
+        helper.setBlock(outputPos, fullWaterCauldron());
+
+        CatalyticPressProcess.press(lid);
+
+        ItemStack output = singleGranuleDrop(
+            helper,
+            outputPos,
+            PlasticraftItems.ENGINEERING_PLASTIC_GRANULE.get()
+        );
+        check(output.getCount() == GRANULES, "engineering outlet produced the wrong granule count");
+        check(PlasticMeltColor.get(output) == DyeColor.LIGHT_BLUE, "engineering outlet lost the melt colour");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 520)
+    @EmptyTemplate("5x6x5")
+    @TestHolder(description = "Royal steel converts universal melt only while the block below is cold")
+    static void royalSteelEngineeringCatalysisRequiresColdBelow(ExtendedGameTestHelper helper) {
+        BlockPos cauldronPos = new BlockPos(2, 2, 2);
+        helper.setBlock(cauldronPos.below(), Blocks.STONE);
+        helper.setBlock(cauldronPos, universalMeltCauldron(DyeColor.CYAN));
+        spawnCatalyst(helper, cauldronPos, ModItems.ROYAL_STEEL_INGOT.asStack());
+
+        helper.startSequence()
+            .thenExecuteAfter(40, () -> {
+                check(
+                    helper.getBlockState(cauldronPos).is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get()),
+                    "royal steel reacted without cold below"
+                );
+                helper.setBlock(cauldronPos.below(), Blocks.ICE);
+            })
+            .thenExecuteAfter(430, () -> {
+                BlockState result = helper.getBlockState(cauldronPos);
+                check(result.is(PlasticraftBlocks.ENGINEERING_PLASTIC_MELT_CAULDRON.get()),
+                    "royal steel did not produce engineering melt over cold");
+                check(result.getValue(UniversalPlasticMeltCauldronBlock.COLOR)
+                    == DyeColor.CYAN, "royal-steel catalysis lost the melt colour");
+            })
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 860)
+    @EmptyTemplate("5x6x5")
+    @TestHolder(description = "Frost metal converts universal melt without a cold block")
+    static void frostMetalEngineeringCatalysisNeedsNoCold(ExtendedGameTestHelper helper) {
+        BlockPos cauldronPos = new BlockPos(2, 2, 2);
+        helper.setBlock(cauldronPos.below(), Blocks.STONE);
+        helper.setBlock(cauldronPos, universalMeltCauldron(DyeColor.MAGENTA));
+        spawnCatalyst(helper, cauldronPos, ModItems.FROST_METAL_INGOT.asStack());
+
+        helper.startSequence()
+            .thenExecuteAfter(820, () -> {
+                BlockState result = helper.getBlockState(cauldronPos);
+                check(result.is(PlasticraftBlocks.ENGINEERING_PLASTIC_MELT_CAULDRON.get()),
+                    "frost metal did not produce engineering melt without cold");
+                check(result.getValue(UniversalPlasticMeltCauldronBlock.COLOR)
+                    == DyeColor.MAGENTA, "frost-metal catalysis lost the melt colour");
+            })
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 940)
+    @EmptyTemplate("5x6x5")
+    @TestHolder(description = "Frost metal continues directly from heated plastic oil to engineering melt")
+    static void frostMetalCatalysisContinuesAcrossBothStages(ExtendedGameTestHelper helper) {
+        BlockPos cauldronPos = new BlockPos(2, 2, 2);
+        helper.setBlock(cauldronPos.below(), ModBlocks.BURNING_HEATER.getDefaultState());
+        check(
+            helper.getBlockEntity(cauldronPos.below()) instanceof BurningHeaterBlockEntity heater
+                && heater.getItemHandler().insertItem(0, Items.LAVA_BUCKET.getDefaultInstance(), false).isEmpty(),
+            "failed to fuel the burning heater"
+        );
+        helper.setBlock(
+            cauldronPos,
+            PlasticraftBlocks.PLASTIC_OIL_CAULDRON.get().defaultBlockState()
+                .setValue(Layered4LevelCauldronBlock.LEVEL, 4)
+        );
+        for (ItemStack catalyst : List.of(
+            ModItems.FROST_METAL_INGOT.asStack(),
+            ModItems.FROST_METAL_NUGGET.asStack(),
+            ModItems.FROST_METAL_PICKAXE.asStack(),
+            ModItems.FROST_METAL_AXE.asStack(),
+            ModItems.FROST_METAL_SHOVEL.asStack(),
+            ModItems.FROST_METAL_HOE.asStack(),
+            ModItems.FROST_METAL_SWORD.asStack(),
+            ModItems.FROST_ANVIL_HAMMER.asStack()
+        )) {
+            spawnCatalyst(helper, cauldronPos, catalyst);
+        }
+
+        helper.startSequence()
+            .thenExecuteAfter(450, () -> {
+                BlockState intermediate = helper.getBlockState(cauldronPos);
+                check(
+                    intermediate.is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get()),
+                    "frost catalysts did not finish the plastic-oil stage; found " + intermediate
+                );
+            })
+            .thenExecuteAfter(450, () -> {
+                BlockState result = helper.getBlockState(cauldronPos);
+                check(
+                    result.is(PlasticraftBlocks.ENGINEERING_PLASTIC_MELT_CAULDRON.get()),
+                    "frost catalysts did not continue through both reaction stages; found " + result
+                );
+            })
+            .thenSucceed();
     }
 
     @GameTest(timeoutTicks = 20)
@@ -360,6 +494,30 @@ public final class UniversalPlasticProductionGameTests {
         return melt;
     }
 
+    private static FluidStack coloredEngineeringMelt(int amount, DyeColor color) {
+        FluidStack melt = new FluidStack(PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get(), amount);
+        PlasticMeltColor.set(melt, color);
+        return melt;
+    }
+
+    private static BlockState universalMeltCauldron(DyeColor color) {
+        return PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get().defaultBlockState()
+            .setValue(Layered4LevelCauldronBlock.LEVEL, 4)
+            .setValue(UniversalPlasticMeltCauldronBlock.COLOR, color);
+    }
+
+    private static void spawnCatalyst(
+        ExtendedGameTestHelper helper,
+        BlockPos relativePos,
+        ItemStack stack
+    ) {
+        Vec3 center = Vec3.atCenterOf(helper.absolutePos(relativePos)).add(0.0D, 0.2D, 0.0D);
+        ItemEntity catalyst = new ItemEntity(helper.getLevel(), center.x, center.y, center.z, stack);
+        catalyst.setDeltaMovement(Vec3.ZERO);
+        catalyst.setPickUpDelay(Integer.MAX_VALUE);
+        check(helper.getLevel().addFreshEntity(catalyst), "failed to spawn catalyst " + stack.getItem());
+    }
+
     private static FluidTank filledTank(FluidStack fluid) {
         FluidTank tank = new FluidTank(Math.max(BUCKET, fluid.getAmount()));
         check(tank.fill(fluid, IFluidHandler.FluidAction.EXECUTE) == fluid.getAmount(), "test tank rejected fluid");
@@ -371,19 +529,36 @@ public final class UniversalPlasticProductionGameTests {
     }
 
     private static ItemStack singleGranuleDrop(ExtendedGameTestHelper helper, BlockPos relativePos) {
+        return singleGranuleDrop(helper, relativePos, PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get());
+    }
+
+    private static ItemStack singleGranuleDrop(
+        ExtendedGameTestHelper helper,
+        BlockPos relativePos,
+        Item granule
+    ) {
         List<ItemStack> drops = granuleDrops(
             helper,
-            new AABB(helper.absolutePos(relativePos)).inflate(1.0D)
+            new AABB(helper.absolutePos(relativePos)).inflate(1.0D),
+            granule
         );
         check(drops.size() == 1, "expected one granule stack, found " + drops.size());
         return drops.getFirst();
     }
 
     private static List<ItemStack> granuleDrops(ExtendedGameTestHelper helper, AABB bounds) {
+        return granuleDrops(helper, bounds, PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get());
+    }
+
+    private static List<ItemStack> granuleDrops(
+        ExtendedGameTestHelper helper,
+        AABB bounds,
+        Item granule
+    ) {
         return helper.getLevel().getEntitiesOfClass(
             ItemEntity.class,
             bounds,
-            item -> item.isAlive() && item.getItem().is(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get())
+            item -> item.isAlive() && item.getItem().is(granule)
         ).stream().map(ItemEntity::getItem).toList();
     }
 

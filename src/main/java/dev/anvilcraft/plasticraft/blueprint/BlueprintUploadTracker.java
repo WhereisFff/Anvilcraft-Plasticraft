@@ -87,7 +87,7 @@ public final class BlueprintUploadTracker {
             ItemStack disk = player.getItemInHand(InteractionHand.MAIN_HAND);
             String name = stripExtension(session.fileName());
             ConstructionBlueprintService.ImportResult result = ConstructionBlueprintService.importIntoDisk(
-                player.server,
+                player,
                 disk,
                 tag,
                 name,

@@ -11,6 +11,7 @@ import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobIndex;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobProgress;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobStore;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionPermission;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionMaterialAccess;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionWaitReason;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
@@ -19,7 +20,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -94,8 +94,24 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
             worker.clearAssignment(false);
             return;
         }
-        ConstructionJob job = ConstructionJobIndex.get(level).activeJobOf(owner.get()).orElse(null);
+        ConstructionJob job = ConstructionJobController.jobForWorker(level, worker);
         boolean sameSite = job != null && job.dimension().equals(level.dimension());
+        ConstructionJobProgress assignedProgress = job == null
+            ? null
+            : ConstructionJobStore.get(level).get(job.jobId());
+        if (assignedProgress != null
+            && worker.assignedJobId().isPresent()
+            && !ConstructionJobController.canContinueJob(worker, assignedProgress)) {
+            ConstructionJobController.revokeCollectionWorker(worker, level, job, assignedProgress);
+            AllayWorkMotions.releaseToVanilla(worker);
+            return;
+        }
+        if (job == null && worker.assignedJobId().isPresent()) {
+            worker.clearAssignment(false);
+            worker.dropCollectionAt(worker.position());
+            AllayWorkMotions.releaseToVanilla(worker);
+            return;
+        }
         if (worker.isCollectionFull()) {
             worker.setActionState((byte) 0);
             if (sameSite && onSite(worker, job)) {
@@ -125,6 +141,7 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
         ConstructionJobProgress progress
     ) {
         if (!ConstructionJobController.canClaimJob(worker, progress)) return false;
+        if (!ConstructionJobController.canContinueJob(worker, progress)) return false;
         if (!canAttemptTask(worker, level)) return false;
         if (worker.isCollectionFull()) return false;
         if (!isVacuum(worker) && hasAvailableVacuum(level, job, progress)) return false;
@@ -150,9 +167,12 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
         ItemEntity best = null;
         double bestDistance = Double.MAX_VALUE;
         double range = collectRange(worker);
+        UUID ownerId = worker.getOwner().orElse(null);
+        if (ownerId == null) return null;
         AABB box = worker.getBoundingBox().inflate(range);
         for (ItemEntity entity : level.getEntitiesOfClass(ItemEntity.class, box)) {
             if (!entity.isAlive() || entity.hasPickUpDelay() || entity.getItem().isEmpty()) continue;
+            if (!ConstructionPermission.canModify(level, BlockPos.containing(entity.position()), ownerId)) continue;
             double distance = worker.distanceTo(entity);
             if (distance <= range && distance < bestDistance) {
                 best = entity;
@@ -255,6 +275,24 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
             worker.clearAssignment(false);
             return;
         }
+        UUID workerOwner = worker.getOwner().orElse(null);
+        UUID permissionOwner = job == null ? workerOwner : job.owner();
+        if (permissionOwner == null
+            || !ConstructionPermission.canModify(level, BlockPos.containing(target.position()), permissionOwner)) {
+            if (progress != null) {
+                ConstructionJob taskJob = ConstructionJobIndex.get(level).job(progress.jobId());
+                if (taskJob != null) {
+                    ConstructionJobController.revokeCollectionWorker(worker, level, taskJob, progress);
+                } else {
+                    progress.releaseDebrisLease(target.getUUID());
+                    worker.clearAssignment(false);
+                }
+            } else {
+                worker.clearAssignment(false);
+            }
+            worker.setActionState((byte) 0);
+            return;
+        }
         if (isVacuum(worker)) {
             if (worker.distanceTo(target) > collectRange(worker)) {
                 worker.setActionState((byte) 0);
@@ -268,7 +306,9 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
             }
             inhaleNearby(worker, level, progress);
             worker.setWaitReason(ConstructionWaitReason.NONE);
-            worker.clearAssignment(false);
+            if (progress == null) {
+                worker.clearAssignment(false);
+            }
             worker.resetStuck();
             if (progress != null) {
                 ConstructionJobStore.get(level).markDirty();
@@ -299,7 +339,9 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
         }
         worker.setActionState((byte) 0);
         worker.setWaitReason(ConstructionWaitReason.NONE);
-        worker.clearAssignment(false);
+        if (progress == null) {
+            worker.clearAssignment(false);
+        }
         worker.resetStuck();
         if (progress != null) {
             ConstructionJobStore.get(level).markDirty();
@@ -358,6 +400,12 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
             if (progress != null) {
                 ConstructionDebris mark = ConstructionDebris.get(entity.getItem());
                 if (mark == null || !mark.jobId().equals(progress.jobId())) continue;
+            } else {
+                UUID ownerId = worker.getOwner().orElse(null);
+                if (ownerId == null
+                    || !ConstructionPermission.canModify(level, BlockPos.containing(entity.position()), ownerId)) {
+                    continue;
+                }
             }
             if (!worker.canAcceptCollection(entity.getItem())) continue;
             ConstructionJobController.tryCollect(worker, entity, progress);
@@ -451,9 +499,29 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
     private static void tryUnload(WorkingAllayEntity worker, ServerLevel level, UUID ownerId) {
         BlockPos home = worker.homeLoungePos();
         if (home != null) {
-            Vec3 target = level.getBlockEntity(home) instanceof AllayLoungeBlockEntity lounge
-                ? lounge.dockApproachPoint()
-                : Vec3.atCenterOf(home).add(0.0D, 1.05D, 0.0D);
+            AllayLoungeBlockEntity lounge = level.getBlockEntity(home) instanceof AllayLoungeBlockEntity found
+                ? found
+                : null;
+            if (lounge == null) {
+                worker.setHomeLounge(null);
+                home = null;
+            } else if (!lounge.canHost(worker)
+                || lounge.owner() == null
+                || !ConstructionPermission.canModify(level, home, lounge.owner())
+                || !ConstructionPermission.canModify(level, home.below(), lounge.owner())) {
+                ConstructionJob job = ConstructionJobController.jobForWorker(level, worker);
+                ConstructionJobProgress progress = job == null
+                    ? null
+                    : ConstructionJobStore.get(level).get(job.jobId());
+                if (worker.assignedJobId().isPresent()) {
+                    ConstructionJobController.revokeCollectionWorker(worker, level, job, progress);
+                } else {
+                    worker.dropCollectionAt(worker.position());
+                    worker.setHomeLounge(null);
+                }
+                return;
+            }
+            Vec3 target = lounge.dockApproachPoint();
             double range = isVacuum(worker) ? FREE_RANGE : ConstructionJobController.reach(worker) + 0.5D;
             if (worker.position().distanceTo(target) > range) {
                 AllayWorkMotions.flyTo(worker, target);
@@ -462,13 +530,48 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
             if (!worker.prepareAction(target)) {
                 return;
             }
+            ConstructionJob taskJob = ConstructionJobController.jobForWorker(level, worker);
+            ConstructionJobProgress taskProgress = taskJob == null
+                ? null
+                : ConstructionJobStore.get(level).get(taskJob.jobId());
+            if (worker.assignedJobId().isPresent()
+                && (taskJob == null
+                    || taskProgress == null
+                    || !ConstructionJobController.canContinueJob(worker, taskProgress))) {
+                ConstructionJobController.revokeCollectionWorker(worker, level, taskJob, taskProgress);
+                return;
+            }
+            if (lounge.owner() == null
+                || !ConstructionPermission.canModify(level, home, lounge.owner())
+                || !ConstructionPermission.canModify(level, home.below(), lounge.owner())
+                || !lounge.canHost(worker)) {
+                if (worker.assignedJobId().isPresent()) {
+                    ConstructionJobController.revokeCollectionWorker(worker, level, taskJob, taskProgress);
+                } else {
+                    worker.dropCollectionAt(worker.position());
+                    worker.setHomeLounge(null);
+                }
+                return;
+            }
             worker.unloadCollectionTo(ConstructionMaterialAccess.below(level, home));
             if (!worker.hasCollectionItems()) {
                 worker.startDockingTo(home);
             }
             return;
         }
-        Player owner = level.getPlayerByUUID(ownerId);
+        ConstructionJob taskJob = ConstructionJobController.jobForWorker(level, worker);
+        if (worker.assignedJobId().isPresent()) {
+            ConstructionJobProgress progress = taskJob == null
+                ? null
+                : ConstructionJobStore.get(level).get(taskJob.jobId());
+            if (taskJob == null
+                || progress == null
+                || !ConstructionJobController.canContinueJob(worker, progress)) {
+                ConstructionJobController.revokeCollectionWorker(worker, level, taskJob, progress);
+                return;
+            }
+        }
+        ServerPlayer owner = ConstructionPermission.findOnlineCollaborator(level, ownerId);
         if (owner == null) return;
         double range = isVacuum(worker) ? FREE_RANGE : ConstructionJobController.reach(worker) + 0.5D;
         if (worker.distanceTo(owner) > range) {
@@ -478,8 +581,12 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
         if (!worker.prepareAction(owner.position().add(0.0D, 1.0D, 0.0D))) {
             return;
         }
+        if (!ConstructionPermission.areCollaborators(level.getServer(), ownerId, owner.getUUID())) {
+            return;
+        }
         worker.unloadCollectionTo(owner);
         if (!worker.hasCollectionItems()) {
+            worker.clearAssignment(false);
             AllayWorkMotions.releaseToVanilla(worker);
         }
     }
@@ -499,8 +606,7 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
         ConstructionJobProgress progress
     ) {
         for (WorkingAllayEntity other : ConstructionJobController.loadedWorkers(level, job.owner())) {
-            if (!other.isAlive()) continue;
-            if (!ConstructionJobController.isBoundToCoordinator(other, progress)) continue;
+            if (!ConstructionJobController.isWorkerAvailableForJob(level, other, job, progress)) continue;
             if (isVacuum(other) && !other.isCollectionFull() && canAttemptTask(other, level)) {
                 return true;
             }
@@ -508,7 +614,10 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
         if (progress.hasCoordinator()
             && level.getBlockEntity(progress.coordinatorLounge()) instanceof AllayLoungeBlockEntity lounge) {
             for (AllayWorkRecord record : lounge.hosted()) {
-                if (record.owner().filter(job.owner()::equals).isPresent()
+                if (record.assignedJobId().filter(assigned -> !assigned.equals(job.jobId())).isEmpty()
+                    && record.owner()
+                    .map(owner -> ConstructionPermission.areCollaborators(level.getServer(), owner, job.owner()))
+                    .orElse(false)
                     && isVacuumTool(record.heldTool())
                     && hasCollectionCapacity(record)
                     && canAttemptTask(record, level)) {

@@ -1633,15 +1633,16 @@ public final class PlasticMoldingChamberGameTests {
             check(unsafe.reason().equals("unsafe_filename"), "path traversal did not return a filename error");
 
             String originalFirstId = firstFile.fileId();
-            String renamedId = "renamed-hat-" + suffix + ".json";
+            String renamedName = "Renamed Hat " + suffix;
+            String renamedId = renamedName + ".json";
             MoldingBlueprintLibrary.StoredBlueprint renamed = MoldingBlueprintLibrary.rename(
                 owner,
                 firstFile.fileId(),
                 firstFile.blueprint().fileRevision(),
-                "Renamed Hat " + suffix
+                renamedName
             );
             currentFirst = renamed;
-            check(renamed.fileId().equals(renamedId), "rename did not use the sanitized filename: " + renamed.fileId());
+            check(renamed.fileId().equals(renamedId), "rename did not preserve the safe filename: " + renamed.fileId());
             check(renamed.blueprint().name().equals(MoldingBlueprintLibrary.displayName(renamedId)),
                 "rename did not sync the blueprint name to the filename");
             check(MoldingBlueprintLibrary.list(owner).stream().anyMatch(summary ->
@@ -1664,7 +1665,7 @@ public final class PlasticMoldingChamberGameTests {
                 owner,
                 secondFile.fileId(),
                 secondFile.blueprint().fileRevision(),
-                "Renamed Hat " + suffix
+                renamedName
             ));
             check(taken.reason().equals("blueprint_name_taken"), "conflicting rename did not report a taken filename");
 

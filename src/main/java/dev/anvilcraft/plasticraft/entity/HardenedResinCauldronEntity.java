@@ -10,10 +10,10 @@ import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionBox;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
-import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
 import dev.dubhe.anvilcraft.api.entity.IEntityCauldron;
@@ -470,7 +470,7 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         AABB previousBox = this.getBoundingBox();
         super.tick();
         if (this.isRemoved()) return;
-        this.stickEntitiesInUniversalMelt();
+        this.stickEntitiesInPlasticMelt();
         if (this.level().isClientSide) return;
         if (this.burnIfCrossingLava(previousBox)) return;
         this.tickFunctionalState();
@@ -485,10 +485,10 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         this.tickFunctionalState();
     }
 
-    /** 让实体形态硬化树脂锅中的通用塑料熔体也施加蜘蛛网式减速。 */
-    private void stickEntitiesInUniversalMelt() {
+    /** 让实体形态硬化树脂锅中的塑料熔体也施加蜘蛛网式减速。 */
+    private void stickEntitiesInPlasticMelt() {
         FluidStack fluid = this.fluidHandler.getFluid();
-        if (!fluid.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())) return;
+        if (!PlasticMaterial.isMelt(fluid)) return;
         if (this.getOrientation().attachmentFace() != Direction.UP) return;
         AABB box = this.getBoundingBox();
         double fill = Math.clamp((double) fluid.getAmount() / CAPACITY, 0.0D, 1.0D);
@@ -505,13 +505,13 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
             fluidArea,
             candidate -> candidate != this && candidate.isAlive()
         )) {
-            this.plasticraft$stickEntityInUniversalMelt(entity);
+            this.plasticraft$stickEntityInPlasticMelt(entity);
         }
     }
 
-    public boolean plasticraft$isEntityInsideUniversalMelt(Entity entity) {
+    public boolean plasticraft$isEntityInsidePlasticMelt(Entity entity) {
         FluidStack fluid = this.fluidHandler.getFluid();
-        if (!fluid.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())
+        if (!PlasticMaterial.isMelt(fluid)
             || this.getOrientation().attachmentFace() != Direction.UP) return false;
         AABB box = this.getBoundingBox();
         double fill = Math.clamp((double) fluid.getAmount() / CAPACITY, 0.0D, 1.0D);
@@ -526,8 +526,8 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         return fluidArea.intersects(entity.getBoundingBox());
     }
 
-    public void plasticraft$stickEntityInUniversalMelt(Entity entity) {
-        if (this.plasticraft$isEntityInsideUniversalMelt(entity)) {
+    public void plasticraft$stickEntityInPlasticMelt(Entity entity) {
+        if (this.plasticraft$isEntityInsidePlasticMelt(entity)) {
             entity.makeStuckInBlock(this.getDisplayState(), UNIVERSAL_MELT_STICK_SPEED);
         }
     }
@@ -1433,7 +1433,9 @@ public class HardenedResinCauldronEntity extends AbstractPlasticEntity
         Fluid fluid = id < 0 ? Fluids.EMPTY : BuiltInRegistries.FLUID.byId(id);
         if (fluid == null || fluid == Fluids.EMPTY || amount <= 0) return FluidStack.EMPTY;
         FluidStack stack = new FluidStack(fluid, amount);
-        PlasticMeltColor.set(stack, DyeColor.byId(this.entityData.get(FLUID_COLOR)));
+        if (PlasticMaterial.fromMelt(stack).map(PlasticMaterial::supportsDyeing).orElse(false)) {
+            PlasticMeltColor.set(stack, DyeColor.byId(this.entityData.get(FLUID_COLOR)));
+        }
         return stack;
     }
 

@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.allay;
 
-import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import net.minecraft.world.item.ItemStack;
@@ -12,7 +12,7 @@ public final class AllayHardHats {
 
     public static boolean isHardHat(ItemStack stack) {
         return !stack.isEmpty()
-            && stack.is(PlasticraftBlocks.UNIVERSAL_PLASTIC.asItem())
+            && stack.is(PlasticraftItemTags.PLASTIC_PRODUCTS)
             && MoldedPlasticData.get(stack)
                 .map(data -> MoldingProductTypes.ALLAY_HARD_HAT_ID.equals(data.finalType()))
                 .orElse(false);

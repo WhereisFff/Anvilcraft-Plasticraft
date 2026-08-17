@@ -5,6 +5,8 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "AdhesiveEntityLifecycleMixin",
+    "BaseLaserBlockEntityMixin",
+    "BeaconBlockEntityMixin",
     "BlockCollisionsMixin",
     "BlockGetterMixin",
     "BlockStateLightEmissionMixin",

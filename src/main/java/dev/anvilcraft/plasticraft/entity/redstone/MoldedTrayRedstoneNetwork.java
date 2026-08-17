@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.entity.redstone;
 
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
-import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockTags;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayCell;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponent;
@@ -298,7 +298,7 @@ public final class MoldedTrayRedstoneNetwork {
         return !state.isAir()
             && !isFluidBlock(state)
             && !(position.equals(host.plasticraft$getAnchorBlockPos())
-                && state.is(PlasticraftBlocks.UNIVERSAL_PLASTIC.get()));
+                && state.is(PlasticraftBlockTags.PLASTIC_PRODUCTS));
     }
 
     private static Optional<BlockPos> nearestOutputReceiver(

@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.blueprint.BlueprintSource;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionAssembler;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintException;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintService;
@@ -15,6 +16,7 @@ import dev.anvilcraft.plasticraft.blueprint.ConstructionJobStore;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionLedgerEntry;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionMaterialAccess;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionOverlayView;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionPermission;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionProjectionIndex;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionDebris;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionEnclosure;
@@ -25,11 +27,14 @@ import dev.anvilcraft.plasticraft.blueprint.DemolitionPlanner;
 import dev.anvilcraft.plasticraft.blueprint.StonecutterSmashAdapter;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
 import dev.anvilcraft.plasticraft.allay.AllayDefaultHardHat;
 import dev.anvilcraft.plasticraft.allay.AllayFlightPlanner;
 import dev.anvilcraft.plasticraft.allay.AllayFlightState;
+import dev.anvilcraft.plasticraft.allay.AllayHardHatTraits;
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayWorkMotions;
 import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
@@ -103,6 +108,7 @@ import net.minecraft.world.level.block.state.properties.SlabType;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
@@ -163,6 +169,213 @@ public final class ConstructionJobGameTests {
                 throw new GameTestAssertException("ledger setup failed: " + exception.reason());
             }
         }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Planning permission denial waits without skip and resumes from the original job after permission returns")
+    static void planningPermissionWaitCannotBeSkipped(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        UUID[] jobId = {null};
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                ItemStack disk = deployDisk(helper, player, 1, new BlockPos(3, 2, 1));
+                jobId[0] = ConstructionBlueprintData.get(disk)
+                    .flatMap(ConstructionBlueprintData::jobId)
+                    .orElseThrow();
+                ConstructionJobIndex index = ConstructionJobIndex.get(helper.getLevel());
+                ConstructionJob deployed = index.job(jobId[0]);
+                check(deployed != null, "permission fixture must keep the deployed job");
+                ConstructionPermission.setWorldPermissionProvider(
+                    (level, pos, owner) -> !pos.equals(deployed.anchor())
+                );
+                ConstructionBlueprintService.start(player, jobId[0]);
+                ConstructionJob waiting = index.job(jobId[0]);
+                check(
+                    waiting != null && waiting.state() == ConstructionJob.STATE_WAITING_PERMISSION,
+                    "planning denial must enter WAITING_PERMISSION"
+                );
+                ConstructionJobProgress progress = ConstructionJobStore.get(helper.getLevel()).get(jobId[0]);
+                check(progress != null && progress.planned(), "permission wait must retain the original plan");
+                ConstructionJobController.resumeFromSkipWait(helper.getLevel().getServer(), waiting);
+                check(
+                    index.job(jobId[0]).state() == ConstructionJob.STATE_WAITING_PERMISSION,
+                    "skip recovery must not bypass WAITING_PERMISSION"
+                );
+
+                ConstructionPermission.setWorldPermissionProvider(null);
+                ConstructionJobController.tickJob(
+                    helper.getLevel().getServer(),
+                    helper.getLevel(),
+                    index.job(jobId[0])
+                );
+                check(
+                    index.job(jobId[0]).state() != ConstructionJob.STATE_WAITING_PERMISSION,
+                    "restored permission must resume the retained job"
+                );
+                ConstructionJobController.pause(helper.getLevel().getServer(), index.job(jobId[0]));
+                ConstructionPermission.setWorldPermissionProvider(
+                    (level, pos, owner) -> !pos.equals(deployed.anchor())
+                );
+                ConstructionBlueprintService.start(player, jobId[0]);
+                check(
+                    index.job(jobId[0]).state() == ConstructionJob.STATE_WAITING_PERMISSION,
+                    "restarting a retained plan must repeat the full permission precheck"
+                );
+                ConstructionPermission.setWorldPermissionProvider(null);
+                ConstructionBlueprintService.cancel(player, jobId[0]);
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("planning permission setup failed: " + exception.reason());
+            } finally {
+                ConstructionPermission.setWorldPermissionProvider(null);
+                if (jobId[0] != null) cancelQuietly(player, jobId[0]);
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A teammate leaving during an active lease immediately loses the operation and releases it for reassignment")
+    static void departedTeammateLosesActiveLease(ExtendedGameTestHelper helper) {
+        GameTestPlayer owner = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        UUID teammateOwner = UUID.fromString("00000000-0000-0000-0000-000000000213");
+        UUID[] jobId = {null};
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                owner.setNoGravity(true);
+                owner.moveTo(helper.absoluteVec(new Vec3(1.5D, 2.0D, 1.5D)));
+                StartedJob started = startCobbleJob(helper, owner, 1, new BlockPos(3, 2, 3));
+                jobId[0] = started.job().jobId();
+                WorkingAllayEntity worker = AllayGameTests.spawnHattedForOwner(
+                    helper,
+                    new Vec3(2.5D, 2.0D, 3.5D),
+                    teammateOwner
+                );
+                worker.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(ModItems.CRAB_CLAW.get()));
+                ConstructionPermission.setCollaboratorProvider((server, first, second) ->
+                    first.equals(teammateOwner) && second.equals(owner.getUUID())
+                        || first.equals(owner.getUUID()) && second.equals(teammateOwner)
+                );
+                ConstructionAllayToolBehavior.INSTANCE.serverTick(worker);
+                check(worker.waitReason() != ConstructionWaitReason.SOURCE,
+                    "the teammate worker incorrectly required its own offline owner as the material source");
+                ConstructionBuildOp leased = started.progress().operation(worker.taskOpId());
+                check(leased != null && leased.leaseAllay().filter(worker.getUUID()::equals).isPresent(),
+                    "the teammate fixture did not hold the operation lease");
+
+                ConstructionPermission.setCollaboratorProvider(null);
+                check(!ConstructionJobController.canContinueJob(worker, started.progress()),
+                    "the departed teammate retained its active lease permission");
+                ConstructionAllayToolBehavior.INSTANCE.serverTick(worker);
+                check(worker.assignedJobId().isEmpty(), "revocation did not clear the departed teammate assignment");
+                check(leased.leaseAllay().isEmpty(), "revocation did not release the operation lease");
+                check(leased.status() == ConstructionBuildOp.Status.PENDING,
+                    "the released operation was not returned to pending");
+                ConstructionBlueprintService.cancel(owner, jobId[0]);
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("team lease revocation setup failed: " + exception.reason());
+            } finally {
+                ConstructionPermission.setCollaboratorProvider(null);
+                if (jobId[0] != null) cancelQuietly(owner, jobId[0]);
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_collection")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A task collector leaving after pickup drops its unsettled inventory instead of unloading it")
+    static void departedTaskCollectorDropsPickedInventory(ExtendedGameTestHelper helper) {
+        GameTestPlayer owner = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        UUID teammateOwner = UUID.fromString("00000000-0000-0000-0000-000000000214");
+        UUID jobId = UUID.randomUUID();
+        ServerLevel level = helper.getLevel();
+        BlockPos targetPos = helper.absolutePos(new BlockPos(3, 2, 3));
+        ConstructionJob job = new ConstructionJob(
+            jobId,
+            owner.getUUID(),
+            ConstructionJob.STATE_COLLECTING_DEBRIS,
+            "departed-collector",
+            level.dimension(),
+            targetPos,
+            Rotation.NONE,
+            Mirror.NONE,
+            "departed-collector",
+            new Vec3i(1, 1, 1),
+            BlueprintSource.VANILLA_FILE,
+            false,
+            false
+        );
+        ConstructionJobProgress progress = ConstructionJobStore.get(level).getOrCreate(jobId);
+        progress.setPlanned(true);
+        ConstructionBuildOp operation = progress.addOperation(
+            targetPos,
+            Blocks.STONE.defaultBlockState(),
+            ItemStack.EMPTY,
+            ConstructionBuildOp.Kind.DEMOLISH,
+            ConstructionBuildOp.Status.DELIVERED
+        );
+        progress.addDebrisSpawned(operation.id(), 1);
+        ItemStack marked = new ItemStack(Items.COBBLESTONE);
+        ConstructionDebris.mark(marked, jobId, operation.id());
+        ItemEntity drop = new ItemEntity(
+            level,
+            targetPos.getX() + 0.5D,
+            targetPos.getY() + 0.2D,
+            targetPos.getZ() + 0.5D,
+            marked
+        );
+        drop.setDeltaMovement(Vec3.ZERO);
+        drop.setPickUpDelay(0);
+        check(level.addFreshEntity(drop), "failed to spawn the marked collection fixture");
+        ConstructionJobIndex.get(level).put(job);
+
+        WorkingAllayEntity worker = AllayGameTests.spawnHattedForOwner(
+            helper,
+            new Vec3(2.5D, 2.2D, 3.5D),
+            teammateOwner
+        );
+        worker.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(ModItems.MAGNET.get()));
+        try {
+            ConstructionPermission.setCollaboratorProvider((server, first, second) ->
+                first.equals(teammateOwner) && second.equals(owner.getUUID())
+                    || first.equals(owner.getUUID()) && second.equals(teammateOwner)
+            );
+            check(
+                CollectionAllayToolBehavior.tryClaim(worker, level, job, progress),
+                "the teammate collector failed to claim the marked drop"
+            );
+            for (int attempt = 0; attempt < 12 && !worker.hasCollectionItems(); attempt++) {
+                worker.tickCount += WorkingAllayEntity.ACTION_INTERVAL_TICKS;
+                CollectionAllayToolBehavior.INSTANCE.serverTick(worker);
+            }
+            check(worker.hasCollectionItems(), "the teammate collector did not pick up the marked drop");
+            check(worker.assignedJobId().filter(jobId::equals).isPresent(),
+                "task provenance was cleared before the picked inventory could be authorized for unloading");
+            check(!drop.isAlive(), "the picked marked drop remained in the world");
+
+            ConstructionPermission.setCollaboratorProvider(null);
+            CollectionAllayToolBehavior.INSTANCE.serverTick(worker);
+
+            check(worker.assignedJobId().isEmpty(), "the departed collector kept its task assignment");
+            check(!worker.hasCollectionItems(), "the departed collector kept unsettled collection inventory");
+            check(countItem(owner, Items.COBBLESTONE) == 0,
+                "the departed collector unloaded task items to a player after permission loss");
+            List<ItemEntity> returned = level.getEntitiesOfClass(
+                ItemEntity.class,
+                worker.getBoundingBox().inflate(2.0D),
+                item -> item.isAlive() && item.getItem().is(Items.COBBLESTONE)
+            );
+            check(returned.stream().mapToInt(item -> item.getItem().getCount()).sum() == 1,
+                "permission revocation did not materialize exactly one picked task item");
+            check(returned.stream().noneMatch(item -> ConstructionDebris.isMarked(item.getItem())),
+                "permission revocation restored a task marker to the settled item");
+        } finally {
+            ConstructionPermission.setCollaboratorProvider(null);
+            ConstructionTraffic.release(level, worker.getUUID());
+            ConstructionJobIndex.get(level).remove(jobId);
+            ConstructionJobStore.get(level).remove(jobId);
+        }
+        helper.succeed();
     }
 
     @GameTest(timeoutTicks = 40, batch = "zzz_construction")
@@ -1134,6 +1347,64 @@ public final class ConstructionJobGameTests {
 
     @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
     @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "Demolishing a multipart checks world permission for every affected part before changing the world")
+    static void multipartDemolitionChecksEveryAffectedPart(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        UUID[] jobId = {null};
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                ServerLevel level = helper.getLevel();
+                GiantAnvilBlock block = ModBlocks.GIANT_ANVIL.get();
+                BlockPos bottom = helper.absolutePos(new BlockPos(3, 2, 3));
+                BlockState bottomState = block.defaultBlockState()
+                    .setValue(GiantAnvilBlock.HALF, Cube3x3PartHalf.BOTTOM_CENTER);
+                level.setBlockAndUpdate(bottom, bottomState);
+                block.setPlacedBy(level, bottom, bottomState, null, ItemStack.EMPTY);
+
+                StartedJob started = startStructureJob(
+                    helper,
+                    player,
+                    cobbleStructure(1),
+                    "multipart-permission",
+                    new BlockPos(3, 3, 3)
+                );
+                jobId[0] = started.job().jobId();
+                ConstructionBuildOp demolish = firstKind(
+                    started.progress(),
+                    ConstructionBuildOp.Kind.DEMOLISH
+                );
+                BlockPos deniedPart = bottom.offset(1, 0, 1);
+                check(level.getBlockState(deniedPart).is(block), "denied multipart fixture is missing its corner");
+                ConstructionPermission.setWorldPermissionProvider(
+                    (permissionLevel, pos, owner) -> !pos.equals(deniedPart)
+                );
+
+                check(
+                    !ConstructionJobController.tryDemolish(level, started.progress(), demolish),
+                    "multipart demolition changed the world despite a denied corner"
+                );
+                ConstructionJob waiting = ConstructionJobIndex.get(level).job(jobId[0]);
+                check(
+                    waiting != null && waiting.state() == ConstructionJob.STATE_WAITING_PERMISSION,
+                    "denied multipart demolition did not enter WAITING_PERMISSION"
+                );
+                for (Cube3x3PartHalf part : block.getParts()) {
+                    check(
+                        level.getBlockState(bottom.offset(part.getOffset())).is(block),
+                        "permission denial removed multipart part " + part
+                    );
+                }
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("multipart permission setup failed: " + exception.reason());
+            } finally {
+                ConstructionPermission.setWorldPermissionProvider(null);
+                if (jobId[0] != null) cancelQuietly(player, jobId[0]);
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "7x6x7", floor = true)
     @TestHolder(description = "Demolition may approach an inner target through a cleared cell reserved for later construction")
     static void demolitionApproachesThroughFutureBuildCell(ExtendedGameTestHelper helper) {
         ServerLevel level = helper.getLevel();
@@ -1228,6 +1499,62 @@ public final class ConstructionJobGameTests {
             if (jobSlot[0] != null) {
                 cancelQuietly(player, jobSlot[0]);
             }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 400, batch = "zzz_construction_demolish_live")
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "An engineering hard hat gives stonecutter demolition Silk Touch drops")
+    static void engineeringHardHatGrantsDemolitionSilkTouch(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        player.setNoGravity(true);
+        player.moveTo(helper.absoluteVec(new Vec3(2.5D, 2.0D, 2.5D)));
+        UUID[] jobSlot = new UUID[1];
+        BlockPos target = new BlockPos(3, 2, 3);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                helper.setBlock(target, Blocks.GLASS);
+                WorkingAllayEntity worker = spawnDemolitionAllay(
+                    helper,
+                    new Vec3(2.5D, 2.0D, 3.5D),
+                    player,
+                    0
+                );
+                worker.setNoGravity(true);
+                worker.setHardHat(engineeringHardHat());
+                check(AllayHardHatTraits.hasSilkTouch(worker.getHardHat()),
+                    "engineering hard hat did not register Silk Touch");
+                StartedJob started = startCobbleJob(helper, player, 1, target);
+                jobSlot[0] = started.job().jobId();
+                if (!DemolitionAllayToolBehavior.tryClaim(
+                    worker,
+                    helper.getLevel(),
+                    started.job(),
+                    started.progress()
+                )) {
+                    cancelQuietly(player, started.job().jobId());
+                    jobSlot[0] = null;
+                    throw new GameTestAssertException(
+                        "engineering demolition allay failed to claim: wait=" + worker.waitReason()
+                    );
+                }
+                player.moveTo(helper.absoluteVec(new Vec3(0.5D, 4.0D, 0.5D)));
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("engineering demolish setup failed: " + exception.reason());
+            }
+        }).thenWaitUntil(() -> check(
+            helper.getBlockState(target).isAir(),
+            "engineering demolition allay did not break the glass target"
+        )).thenExecute(() -> {
+            BlockPos absoluteTarget = helper.absolutePos(target);
+            int silkDrops = helper.getLevel().getEntitiesOfClass(
+                ItemEntity.class,
+                new AABB(absoluteTarget).inflate(1.5D),
+                item -> item.getItem().is(Items.GLASS) && ConstructionDebris.isMarked(item.getItem())
+            ).stream().mapToInt(item -> item.getItem().getCount()).sum();
+            check(silkDrops == 1,
+                "engineering hard hat produced " + silkDrops + " marked glass drops instead of one");
+            if (jobSlot[0] != null) cancelQuietly(player, jobSlot[0]);
         }).thenSucceed();
     }
 
@@ -1664,7 +1991,7 @@ public final class ConstructionJobGameTests {
         }).thenSucceed();
     }
 
-    @GameTest(timeoutTicks = 80, batch = "zzz_collection_live")
+    @GameTest(timeoutTicks = 80, batch = "zzz_collection_live_task")
     @EmptyTemplate(value = "24x6x5", floor = true)
     @TestHolder(description = "A magnet collector flies toward a marked task drop outside its suction range")
     static void taskCollectorFliesToRemoteMarkedDrop(ExtendedGameTestHelper helper) {
@@ -1674,7 +2001,7 @@ public final class ConstructionJobGameTests {
             UUID jobId = UUID.randomUUID();
             BlockPos loungePos = helper.absolutePos(new BlockPos(2, 2, 2));
             BlockPos targetPos = helper.absolutePos(new BlockPos(20, 2, 2));
-            helper.setBlock(new BlockPos(2, 2, 2), PlasticraftBlocks.ALLAY_LOUNGE.get());
+            placeLounge(helper, new BlockPos(2, 2, 2)).setOwner(player.getUUID());
             WorkingAllayEntity worker = CollectionAllayGameTests.spawnCollectionAllay(
                 helper,
                 new Vec3(2.5D, 3.0D, 2.5D),
@@ -2472,6 +2799,76 @@ public final class ConstructionJobGameTests {
         }).thenSucceed();
     }
 
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Cancel after a partial commit keeps written material, advances the stable cursor, and does not refund committed blocks")
+    static void cancelAfterPartialCommitKeepsWrittenMaterial(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        UUID[] jobId = {null};
+        int previous = ConstructionCommitService.blocksPerTick;
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            ConstructionCommitService.blocksPerTick = 1;
+            try {
+                StartedJob started = startCobbleJob(helper, player, 2);
+                jobId[0] = started.job().jobId();
+                player.getInventory().add(new ItemStack(Items.COBBLESTONE, 2));
+                for (ConstructionBuildOp op : started.progress().operations()) {
+                    if (op.kind() != ConstructionBuildOp.Kind.PLACE) continue;
+                    check(
+                        ConstructionJobController.extractMaterial(player, started.progress(), op, UUID.randomUUID()),
+                        "partial permission commit must extract both blocks"
+                    );
+                    check(
+                        ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), op),
+                        "partial permission commit must deliver both projections"
+                    );
+                }
+                ConstructionBuildOp first = firstPlace(started.progress());
+                ConstructionBuildOp second = firstPlaceAfter(started.progress(), first.id());
+                check(
+                    !ConstructionCommitService.tick(helper.getLevel(), started.progress()),
+                    "budget one must leave the commit in progress"
+                );
+                check(helper.getLevel().getBlockState(first.pos()).is(Blocks.COBBLESTONE),
+                    "the first commit tick must write the first block");
+                check(helper.getLevel().getBlockState(second.pos()).isAir(),
+                    "the second block must still be a projection before cancellation");
+
+                ConstructionPermission.setWorldPermissionProvider(
+                    (level, pos, owner) -> !pos.equals(first.pos())
+                );
+                check(
+                    !ConstructionCommitService.tick(helper.getLevel(), started.progress()),
+                    "revoked commit permission must stop the next commit tick"
+                );
+                ConstructionJob waiting = ConstructionJobIndex.get(helper.getLevel()).job(jobId[0]);
+                check(
+                    waiting != null && waiting.state() == ConstructionJob.STATE_WAITING_PERMISSION,
+                    "partial commit denial must enter WAITING_PERMISSION"
+                );
+                ConstructionJobController.resumeFromSkipWait(helper.getLevel().getServer(), waiting);
+                check(
+                    ConstructionJobIndex.get(helper.getLevel()).job(jobId[0]).state()
+                        == ConstructionJob.STATE_WAITING_PERMISSION,
+                    "skip must not advance a permission-blocked partial commit"
+                );
+
+                ConstructionBlueprintService.cancel(player, jobId[0]);
+                check(helper.getLevel().getBlockState(first.pos()).is(Blocks.COBBLESTONE),
+                    "cancel must keep the block already written before permission loss");
+                check(helper.getLevel().getBlockState(second.pos()).is(Blocks.COBBLESTONE),
+                    "cursor adjustment must still commit the authorized second block");
+                check(countCobble(player) == 0, "cancel must not refund either committed cobblestone");
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("partial permission commit setup failed: " + exception.reason());
+            } finally {
+                ConstructionPermission.setWorldPermissionProvider(null);
+                ConstructionCommitService.blocksPerTick = previous;
+                if (jobId[0] != null) cancelQuietly(player, jobId[0]);
+            }
+        }).thenSucceed();
+    }
+
     @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
     @EmptyTemplate(value = "5x4x5", floor = true)
     @TestHolder(description = "A water source takes a full bucket, writes water on commit, and returns the empty bucket")
@@ -2759,6 +3156,64 @@ public final class ConstructionJobGameTests {
         }).thenSucceed();
     }
 
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Canceling a denied delivered water projection returns one filled bucket and consumes the allay's empty bucket")
+    static void cancelDeniedDeliveredWaterSettlesPhysicalBucket(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        UUID[] jobId = {null};
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob started = startStructureJob(
+                    helper,
+                    player,
+                    multiBlockStructure(List.of(BlockPos.ZERO), List.of(Blocks.WATER.defaultBlockState())),
+                    "denied-water-cancel",
+                    new BlockPos(2, 2, 2)
+                );
+                jobId[0] = started.job().jobId();
+                WorkingAllayEntity worker = spawnConstructionAllay(
+                    helper,
+                    new Vec3(1.5D, 2.0D, 1.5D),
+                    player,
+                    0
+                );
+                player.getInventory().add(new ItemStack(Items.WATER_BUCKET));
+                ConstructionBuildOp place = firstPlace(started.progress());
+                check(
+                    ConstructionJobController.extractMaterial(player, started.progress(), place, worker.getUUID()),
+                    "denied water fixture must extract the filled bucket"
+                );
+                worker.setHostedCarry(new ItemStack(Items.WATER_BUCKET));
+                check(
+                    ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), place, worker),
+                    "denied water fixture must deliver the projection"
+                );
+                check(place.returnStack().is(Items.BUCKET), "water delivery must produce an empty bucket");
+                worker.setHostedCarry(place.returnStack().copy());
+                player.moveTo(helper.absoluteVec(new Vec3(4.5D, 2.0D, 4.5D)));
+                ConstructionPermission.setWorldPermissionProvider(
+                    (level, pos, owner) -> !pos.equals(place.pos())
+                );
+
+                ConstructionBlueprintService.cancel(player, jobId[0]);
+                check(helper.getLevel().getBlockState(place.pos()).isAir(),
+                    "denied delivered water must not be committed");
+                check(countItem(player, Items.WATER_BUCKET) == 1,
+                    "cancel must return the original filled bucket exactly once");
+                check(countItem(player, Items.BUCKET) == 0,
+                    "rolling back water must not also return the transformed empty bucket");
+                check(worker.hostedCarry().isEmpty(),
+                    "rolling back water must consume the allay's physical empty bucket");
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("denied delivered water setup failed: " + exception.reason());
+            } finally {
+                ConstructionPermission.setWorldPermissionProvider(null);
+                if (jobId[0] != null) cancelQuietly(player, jobId[0]);
+            }
+        }).thenSucceed();
+    }
+
     private static void assertBoatJob(ExtendedGameTestHelper helper, GameTestPlayer player)
         throws ConstructionBlueprintException {
         CompoundTag nbt = new CompoundTag();
@@ -2963,6 +3418,7 @@ public final class ConstructionJobGameTests {
                 UUID secondId = ConstructionBlueprintData.get(secondDisk).flatMap(ConstructionBlueprintData::jobId).orElse(null);
                 check(secondId != null, "deployed disk must carry a job id");
                 AllayLoungeBlockEntity lounge = placeLounge(helper, new BlockPos(2, 2, 2));
+                lounge.setOwner(player.getUUID());
                 lounge.items().setStackInSlot(AllayLoungeBlockEntity.DISK_SLOT, secondDisk);
                 MinecraftServer server = helper.getLevel().getServer();
                 ConstructionJob second = ConstructionJobIndex.get(server).job(secondId);
@@ -2976,6 +3432,87 @@ public final class ConstructionJobGameTests {
                 ConstructionBlueprintService.cancel(player, first.job().jobId());
             } catch (ConstructionBlueprintException exception) {
                 throw new GameTestAssertException("lounge disk claim setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 60, batch = "zzz_construction_lounge")
+    @EmptyTemplate(value = "11x6x11", floor = true)
+    @TestHolder(description = "A lounge-bound teammate selects that lounge's job and a worker leased elsewhere is not counted as available")
+    static void teamSchedulingPrefersCoordinatorAndExcludesOtherLeases(ExtendedGameTestHelper helper) {
+        GameTestPlayer loungeOwner = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        GameTestPlayer jobOwner = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        UUID[] ownJobId = {null};
+        UUID[] coordinatedJobId = {null};
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                ConstructionPermission.setCollaboratorProvider((server, first, second) ->
+                    first.equals(loungeOwner.getUUID()) && second.equals(jobOwner.getUUID())
+                        || first.equals(jobOwner.getUUID()) && second.equals(loungeOwner.getUUID())
+                );
+                BlockPos ownAnchor = new BlockPos(5, 2, 7);
+                BlockPos coordinatedAnchor = new BlockPos(8, 2, 7);
+                helper.setBlock(ownAnchor, Blocks.STONE);
+                helper.setBlock(coordinatedAnchor, Blocks.STONE);
+
+                StartedJob own = startCobbleJob(helper, loungeOwner, 1, ownAnchor);
+                ownJobId[0] = own.job().jobId();
+                ItemStack coordinatedDisk = deployDisk(helper, jobOwner, 1, coordinatedAnchor);
+                coordinatedJobId[0] = ConstructionBlueprintData.get(coordinatedDisk)
+                    .flatMap(ConstructionBlueprintData::jobId)
+                    .orElseThrow();
+                AllayLoungeBlockEntity lounge = placeLounge(helper, new BlockPos(2, 2, 2));
+                lounge.setOwner(loungeOwner.getUUID());
+                lounge.items().setStackInSlot(AllayLoungeBlockEntity.DISK_SLOT, coordinatedDisk);
+                ConstructionBlueprintService.start(helper.getLevel().getServer(), coordinatedJobId[0]);
+
+                ConstructionJob coordinated = ConstructionJobIndex.get(helper.getLevel()).job(coordinatedJobId[0]);
+                ConstructionJobProgress coordinatedProgress = ConstructionJobStore.get(helper.getLevel())
+                    .get(coordinatedJobId[0]);
+                check(coordinated != null && coordinated.isActive(), "the teammate job was not activated");
+                check(coordinatedProgress != null
+                    && lounge.getBlockPos().equals(coordinatedProgress.coordinatorLounge()),
+                    "the teammate job did not retain the lounge coordinator");
+
+                WorkingAllayEntity local = AllayGameTests.spawnHattedForOwner(
+                    helper,
+                    new Vec3(2.5D, 3.0D, 2.5D),
+                    loungeOwner.getUUID()
+                );
+                local.setHomeLounge(lounge.getBlockPos());
+                ConstructionJob selected = ConstructionJobController.jobForWorker(helper.getLevel(), local);
+                check(selected != null && selected.jobId().equals(coordinatedJobId[0]),
+                    "the lounge-bound teammate selected its owner's unrelated active job");
+
+                WorkingAllayEntity leasedElsewhere = spawnDemolitionAllay(
+                    helper,
+                    new Vec3(3.5D, 3.0D, 2.5D),
+                    loungeOwner,
+                    0
+                );
+                leasedElsewhere.setHomeLounge(lounge.getBlockPos());
+                ConstructionBuildOp ownDemolish = own.progress().operations().stream()
+                    .filter(op -> op.kind() == ConstructionBuildOp.Kind.DEMOLISH)
+                    .findFirst()
+                    .orElseThrow();
+                leasedElsewhere.assign(own.job().jobId(), ownDemolish.id());
+                check(
+                    !ConstructionJobController.hasAvailableDemolitionAllay(
+                        helper.getLevel(),
+                        coordinated,
+                        coordinatedProgress
+                    ),
+                    "a worker leased to another team job satisfied this job's demolition availability"
+                );
+
+                ConstructionBlueprintService.cancel(jobOwner, coordinatedJobId[0]);
+                ConstructionBlueprintService.cancel(loungeOwner, ownJobId[0]);
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("team scheduling setup failed: " + exception.reason());
+            } finally {
+                ConstructionPermission.setCollaboratorProvider(null);
+                if (coordinatedJobId[0] != null) cancelQuietly(jobOwner, coordinatedJobId[0]);
+                if (ownJobId[0] != null) cancelQuietly(loungeOwner, ownJobId[0]);
             }
         }).thenSucceed();
     }
@@ -3032,6 +3569,7 @@ public final class ConstructionJobGameTests {
                 worker.assign(started.job().jobId(), first.id());
                 int before = countCobble(player);
                 AllayLoungeBlockEntity lounge = placeLounge(helper, new BlockPos(2, 2, 2));
+                lounge.setOwner(player.getUUID());
                 lounge.items().setStackInSlot(AllayLoungeBlockEntity.DISK_SLOT, player.getMainHandItem().copy());
                 check(worker.assignedJobId().isEmpty(), "eviction must clear the unhosted assignment");
                 check(!worker.hostedCarry().isEmpty(), "eviction must keep the carried cobble");
@@ -3055,6 +3593,13 @@ public final class ConstructionJobGameTests {
             try {
                 AllayLoungeBlockEntity lounge = placeLoungeWithChest(helper, new BlockPos(2, 2, 2), new ItemStack(Items.COBBLESTONE, 2));
                 StartedJob started = claimCobbleAtLounge(helper, player, 2, lounge);
+                WorkingAllayEntity worker = spawnConstructionAllay(
+                    helper,
+                    new Vec3(2.5D, 3.0D, 2.5D),
+                    player,
+                    0
+                );
+                worker.setHomeLounge(lounge.getBlockPos());
                 ConstructionBuildOp first = firstPlace(started.progress());
                 check(
                     !ConstructionJobController.extractMaterial(player, started.progress(), first, UUID.randomUUID()),
@@ -3066,7 +3611,7 @@ public final class ConstructionJobGameTests {
                         helper.getLevel(),
                         started.progress(),
                         first,
-                        UUID.randomUUID()
+                        worker.getUUID()
                     ),
                     "claimed extract must take cobble from the chest below"
                 );
@@ -3144,6 +3689,13 @@ public final class ConstructionJobGameTests {
             try {
                 AllayLoungeBlockEntity lounge = placeLoungeWithCreativeCrate(helper, new BlockPos(2, 2, 2));
                 StartedJob started = claimCobbleAtLounge(helper, player, 2, lounge);
+                WorkingAllayEntity worker = spawnConstructionAllay(
+                    helper,
+                    new Vec3(2.5D, 3.0D, 2.5D),
+                    player,
+                    0
+                );
+                worker.setHomeLounge(lounge.getBlockPos());
                 ConstructionBuildOp first = firstPlace(started.progress());
                 ConstructionMaterialAccess access = ConstructionMaterialAccess.below(
                     helper.getLevel(),
@@ -3155,7 +3707,7 @@ public final class ConstructionJobGameTests {
                         helper.getLevel(),
                         started.progress(),
                         first,
-                        UUID.randomUUID()
+                        worker.getUUID()
                     ),
                     "claimed extract must invent cobble from the creative crate"
                 );
@@ -3179,13 +3731,20 @@ public final class ConstructionJobGameTests {
             try {
                 AllayLoungeBlockEntity lounge = placeLoungeWithChest(helper, new BlockPos(2, 2, 2), new ItemStack(Items.COBBLESTONE, 2));
                 StartedJob started = claimCobbleAtLounge(helper, player, 2, lounge);
+                WorkingAllayEntity worker = spawnConstructionAllay(
+                    helper,
+                    new Vec3(2.5D, 3.0D, 2.5D),
+                    player,
+                    0
+                );
+                worker.setHomeLounge(lounge.getBlockPos());
                 ConstructionBuildOp first = firstPlace(started.progress());
                 check(
                     ConstructionJobController.extractMaterialFromLounge(
                         helper.getLevel(),
                         started.progress(),
                         first,
-                        UUID.randomUUID()
+                        worker.getUUID()
                     ),
                     "setup extract must take one cobble"
                 );
@@ -3206,7 +3765,12 @@ public final class ConstructionJobGameTests {
                 );
                 ConstructionBuildOp next = firstOpenPlace(progress);
                 check(
-                    ConstructionJobController.extractMaterialFromLounge(helper.getLevel(), progress, next, UUID.randomUUID()),
+                    ConstructionJobController.extractMaterialFromLounge(
+                        helper.getLevel(),
+                        progress,
+                        next,
+                        worker.getUUID()
+                    ),
                     "second extract must take another cobble"
                 );
                 fillChest(helper, lounge.getBlockPos().below(), Items.COBBLESTONE);
@@ -3346,6 +3910,7 @@ public final class ConstructionJobGameTests {
     static void tryLaunchOccupiesBay(ExtendedGameTestHelper helper) {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         AllayLoungeBlockEntity lounge = placeLounge(helper, new BlockPos(2, 2, 2));
+        lounge.setOwner(player.getUUID());
         helper.startSequence()
             .thenExecute(() -> {
                 check(lounge.addHosted(constructionRecord(player.getUUID())), "failed to host a construction record");
@@ -3797,6 +4362,62 @@ public final class ConstructionJobGameTests {
         helper.succeed();
     }
 
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_enclose")
+    @EmptyTemplate(value = "9x9x9", floor = true)
+    @TestHolder(description = "A solid five by five by five cube fills its final enclosed tunnel from inside to outside")
+    static void solidCubeFinalTunnelCompletes(ExtendedGameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ConstructionJobProgress progress = new ConstructionJobProgress(UUID.randomUUID());
+        BlockPos anchor = helper.absolutePos(new BlockPos(2, 2, 2));
+        BlockState cobblestone = Blocks.COBBLESTONE.defaultBlockState();
+        for (int x = 0; x < 5; x++) {
+            for (int y = 0; y < 5; y++) {
+                for (int z = 0; z < 5; z++) {
+                    progress.addOperation(
+                        anchor.offset(x, y, z),
+                        cobblestone,
+                        new ItemStack(Blocks.COBBLESTONE),
+                        ConstructionBuildOp.Kind.PLACE,
+                        ConstructionBuildOp.Status.PENDING
+                    );
+                }
+            }
+        }
+        ConstructionAssembler.assignBuildOrder(level, progress);
+        List<ConstructionBuildOp> tunnel = List.of(
+            placeAt(progress, anchor.offset(1, 2, 2)),
+            placeAt(progress, anchor.offset(2, 2, 2)),
+            placeAt(progress, anchor.offset(3, 2, 2)),
+            placeAt(progress, anchor.offset(4, 2, 2))
+        );
+        WorkingAllayEntity worker = spawnConstructionAllay(helper, new Vec3(1.5D, 2.0D, 1.5D), null, 0);
+        try {
+            for (ConstructionBuildOp op : progress.operations()) {
+                if (!tunnel.contains(op)) {
+                    deliverForTest(level, progress, op);
+                }
+            }
+            for (ConstructionBuildOp expected : tunnel) {
+                ConstructionBuildOp assigned = ConstructionJobController.nextAssignable(level, progress, worker);
+                check(assigned == expected,
+                    "solid-cube tunnel must choose its innermost safe gap before sealing the next one");
+                BlockPos approach = assigned.approach().orElse(null);
+                check(approach != null, "solid-cube tunnel gap has no safe approach");
+                Vec3 point = ConstructionWorkerSpace.navigationPoint(approach);
+                worker.setPos(point.x, point.y, point.z);
+                check(
+                    ConstructionJobController.tryDeliver(level, progress, assigned, worker),
+                    "solid-cube tunnel gap could not deliver without trapping its allay: " + assigned.pos()
+                );
+            }
+            check(progress.allPlaceResolved(), "solid five by five by five cube remained incomplete after its tunnel closed");
+        } finally {
+            worker.discard();
+            ConstructionProjectionIndex.clearJob(level, progress.jobId());
+        }
+        helper.succeed();
+    }
+
     @GameTest(timeoutTicks = 20, batch = "zzz_construction_enclose")
     @EmptyTemplate(value = "5x4x5", floor = true)
     @TestHolder(description = "A future build cell reserved as an approach cannot be filled by another worker")
@@ -4169,7 +4790,12 @@ public final class ConstructionJobGameTests {
     @TestHolder(description = "An allay replans around a wall that appears on its active route and still docks")
     static void flightReplansAfterRouteChanges(ExtendedGameTestHelper helper) {
         AllayLoungeBlockEntity lounge = placeLounge(helper, new BlockPos(7, 2, 4));
-        WorkingAllayEntity worker = spawnConstructionAllay(helper, new Vec3(1.5D, 2.0D, 4.5D), null, 0);
+        WorkingAllayEntity worker = AllayGameTests.spawnHattedForOwner(
+            helper,
+            new Vec3(1.5D, 2.0D, 4.5D),
+            AllayGameTests.TEST_OWNER
+        );
+        worker.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(ModItems.CRAB_CLAW.get()));
         BlockPos wallBase = helper.absolutePos(new BlockPos(4, 2, 4));
         AABB wallBounds = new AABB(wallBase).expandTowards(0.0D, 2.0D, 0.0D);
         boolean[] wallPlaced = {false};
@@ -4322,6 +4948,7 @@ public final class ConstructionJobGameTests {
         int count,
         AllayLoungeBlockEntity lounge
     ) throws ConstructionBlueprintException {
+        lounge.setOwner(player.getUUID());
         ItemStack disk = deployDisk(helper, player, count, new BlockPos(4, 2, 4));
         UUID jobId = ConstructionBlueprintData.get(disk).flatMap(ConstructionBlueprintData::jobId).orElse(null);
         check(jobId != null, "deployed lounge disk must carry a job id");
@@ -4347,6 +4974,7 @@ public final class ConstructionJobGameTests {
         if (!(helper.getBlockEntity(relativePos) instanceof AllayLoungeBlockEntity lounge)) {
             throw new GameTestAssertException("allay lounge block entity is missing");
         }
+        lounge.setOwner(AllayGameTests.TEST_OWNER);
         return lounge;
     }
 
@@ -5062,6 +5690,18 @@ public final class ConstructionJobGameTests {
         return worker;
     }
 
+    private static ItemStack engineeringHardHat() {
+        ItemStack universal = AllayDefaultHardHat.stack();
+        MoldedPlasticData data = MoldedPlasticData.get(universal).orElseThrow();
+        FluidStack material = new FluidStack(
+            PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get(),
+            Math.max(1, data.material().getAmount())
+        );
+        ItemStack engineering = PlasticraftBlocks.ENGINEERING_PLASTIC.asStack();
+        MoldedPlasticData.set(engineering, data.withMaterial(material));
+        return engineering;
+    }
+
     private static void discardNearby(ExtendedGameTestHelper helper, BlockPos pos) {
         for (Entity entity : helper.getLevel().getEntities(null, new AABB(pos).inflate(1.5D))) {
             if (entity instanceof GameTestPlayer) {
@@ -5120,6 +5760,13 @@ public final class ConstructionJobGameTests {
             if (op.kind() == ConstructionBuildOp.Kind.PLACE) return op;
         }
         throw new GameTestAssertException("planned job has no PLACE operation");
+    }
+
+    private static ConstructionBuildOp firstPlaceAfter(ConstructionJobProgress progress, int operationId) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() == ConstructionBuildOp.Kind.PLACE && op.id() > operationId) return op;
+        }
+        throw new GameTestAssertException("planned job has no later PLACE operation");
     }
 
     private static ConstructionBuildOp firstOpenPlace(ConstructionJobProgress progress) {

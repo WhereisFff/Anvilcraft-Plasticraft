@@ -83,9 +83,22 @@ public final class ConstructionJobIndex extends SavedData {
         return result;
     }
 
+    /** 兼容入口：无服务器上下文时保持严格 UUID 匹配。 */
     public Optional<ConstructionJob> activeJobOf(UUID owner) {
         for (ConstructionJob job : this.jobs.values()) {
             if (job.isActive() && job.owner().equals(owner)) return Optional.of(job);
+        }
+        return Optional.empty();
+    }
+
+    /** 按实时团队关系查找任务；优先返回玩家自己的任务，再返回同队任务。 */
+    public Optional<ConstructionJob> activeJobOf(MinecraftServer server, UUID actor) {
+        Optional<ConstructionJob> owned = this.activeJobOf(actor);
+        if (owned.isPresent()) return owned;
+        for (ConstructionJob job : this.jobs.values()) {
+            if (job.isActive() && ConstructionPermission.areCollaborators(server, actor, job.owner())) {
+                return Optional.of(job);
+            }
         }
         return Optional.empty();
     }
@@ -108,12 +121,18 @@ public final class ConstructionJobIndex extends SavedData {
      * 返回状态被暂停的任务列表,调用方据此同步客户端。
      */
     public List<ConstructionJob> activate(UUID jobId) {
+        return this.activate(null, jobId);
+    }
+
+    /** 启动任务并暂停同一所有者的其他活动任务；团队关系只影响共享调度，不改变玩家配额。 */
+    public List<ConstructionJob> activate(@Nullable MinecraftServer server, UUID jobId) {
         ConstructionJob target = this.jobs.get(jobId);
         if (target == null) return List.of();
         List<ConstructionJob> paused = new ArrayList<>();
         for (Map.Entry<UUID, ConstructionJob> entry : this.jobs.entrySet()) {
             ConstructionJob job = entry.getValue();
-            if (!job.jobId().equals(jobId) && job.isActive() && job.owner().equals(target.owner())) {
+            boolean sameOwner = job.owner().equals(target.owner());
+            if (!job.jobId().equals(jobId) && job.isActive() && sameOwner) {
                 ConstructionJob pausedJob = job.withState(ConstructionJob.STATE_INACTIVE);
                 entry.setValue(pausedJob);
                 paused.add(pausedJob);

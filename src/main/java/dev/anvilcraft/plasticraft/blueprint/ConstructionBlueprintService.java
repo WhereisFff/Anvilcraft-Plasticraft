@@ -19,9 +19,11 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.block.StructureVoidBlock;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
@@ -32,7 +34,9 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -63,6 +67,28 @@ public final class ConstructionBlueprintService {
         String name,
         BlueprintSource source
     ) throws ConstructionBlueprintException {
+        return importIntoDisk(null, server, disk, structureTag, name, source);
+    }
+
+    /** 网络/玩家入口：改写已部署磁盘前必须是任务所有者或同队成员。 */
+    public static ImportResult importIntoDisk(
+        ServerPlayer actor,
+        ItemStack disk,
+        CompoundTag structureTag,
+        String name,
+        BlueprintSource source
+    ) throws ConstructionBlueprintException {
+        return importIntoDisk(actor, actor.server, disk, structureTag, name, source);
+    }
+
+    private static ImportResult importIntoDisk(
+        @Nullable ServerPlayer actor,
+        MinecraftServer server,
+        ItemStack disk,
+        CompoundTag structureTag,
+        String name,
+        BlueprintSource source
+    ) throws ConstructionBlueprintException {
         requireImportableDisk(disk);
         int dataVersion = NbtUtils.getDataVersion(structureTag, 500);
         CompoundTag updated = DataFixTypes.STRUCTURE.updateToCurrentVersion(
@@ -74,7 +100,7 @@ public final class ConstructionBlueprintService {
             updated,
             server.registryAccess()
         );
-        return importSnapshot(server, disk, parsed, name, source);
+        return importSnapshot(actor, server, disk, parsed, name, source);
     }
 
     /** 把已解析的快照入库并写盘;供扫描器磁盘等已归一化的来源复用。 */
@@ -85,8 +111,30 @@ public final class ConstructionBlueprintService {
         String name,
         BlueprintSource source
     ) throws ConstructionBlueprintException {
+        return importSnapshot(null, server, disk, parsed, name, source);
+    }
+
+    /** 网络/玩家入口：改写已部署磁盘前必须是任务所有者或同队成员。 */
+    public static ImportResult importSnapshot(
+        ServerPlayer actor,
+        ItemStack disk,
+        StructureSnapshotCodec.ParsedSnapshot parsed,
+        String name,
+        BlueprintSource source
+    ) throws ConstructionBlueprintException {
+        return importSnapshot(actor, actor.server, disk, parsed, name, source);
+    }
+
+    private static ImportResult importSnapshot(
+        @Nullable ServerPlayer actor,
+        MinecraftServer server,
+        ItemStack disk,
+        StructureSnapshotCodec.ParsedSnapshot parsed,
+        String name,
+        BlueprintSource source
+    ) throws ConstructionBlueprintException {
         requireImportableDisk(disk);
-        removeDiskJob(server, disk);
+        removeDiskJob(actor, server, disk);
         StructureSnapshot snapshot = StructureSnapshotCodec.canonicalize(parsed.snapshot());
         CompoundTag canonical = StructureSnapshotCodec.write(snapshot);
         String hash = StructureSnapshotCodec.hash(canonical);
@@ -177,13 +225,22 @@ public final class ConstructionBlueprintService {
     }
 
     /** 磁盘改写前按取消语义清理先前部署:已交付投影提交,在途材料返还。 */
-    private static void removeDiskJob(MinecraftServer server, ItemStack disk) {
+    private static void removeDiskJob(
+        @Nullable ServerPlayer actor,
+        MinecraftServer server,
+        ItemStack disk
+    ) throws ConstructionBlueprintException {
         UUID jobId = ConstructionBlueprintData.get(disk).flatMap(ConstructionBlueprintData::jobId).orElse(null);
         if (jobId == null) return;
         ConstructionJobIndex index = ConstructionJobIndex.get(server);
         ConstructionJob job = index.job(jobId);
         if (job == null) return;
-        ConstructionJobController.cancel(server, job);
+        if (actor != null && !ConstructionPermission.canManageJob(actor, job)) {
+            throw new ConstructionBlueprintException("not_owner", "");
+        }
+        if (!ConstructionJobController.cancel(server, job)) {
+            throw new ConstructionBlueprintException("permission_denied", "");
+        }
     }
 
     /**
@@ -220,6 +277,20 @@ public final class ConstructionBlueprintService {
             : server.getLevel(existing.dimension());
         if (placementLevel == null) {
             throw new ConstructionBlueprintException("placement_out_of_world", "Target dimension is unavailable");
+        }
+        UUID permissionOwner = existing == null ? player.getUUID() : existing.owner();
+        StructureSnapshot snapshot = StructureSnapshotCodec.parse(
+            ConstructionStructureLibrary.load(server, data.hash()),
+            placementLevel.registryAccess()
+        ).snapshot();
+        validatePlacementPermissions(
+            placementLevel,
+            snapshot,
+            new BlueprintPlacement(anchor, rotation, mirror),
+            permissionOwner
+        );
+        if (!ConstructionPermission.canModify(placementLevel, anchor, permissionOwner)) {
+            throw new ConstructionBlueprintException("permission_denied", anchor.toShortString());
         }
         validatePlacement(
             placementLevel,
@@ -264,6 +335,34 @@ public final class ConstructionBlueprintService {
         ConstructionBlueprintData.set(disk, data.withJobId(job.jobId()));
         BlueprintJobSync.syncPut(server, job);
         return job;
+    }
+
+    /** 部署前逐点校验结构声明位置，避免只检查锚点而把受保护格写入任务或旧投影。 */
+    private static void validatePlacementPermissions(
+        ServerLevel level,
+        StructureSnapshot snapshot,
+        BlueprintPlacement placement,
+        UUID owner
+    ) throws ConstructionBlueprintException {
+        Set<BlockPos> positions = new LinkedHashSet<>();
+        for (StructureSnapshot.BlockEntry entry : snapshot.blocks()) {
+            if (placement.stateOf(snapshot.stateOf(entry)).getBlock() instanceof StructureVoidBlock) continue;
+            positions.add(placement.worldOf(entry.pos()));
+        }
+        for (StructureSnapshot.EntityEntry entry : snapshot.entities()) {
+            positions.add(placement.worldOf(entry.blockPos()));
+            Vec3 transformed = placement.localOf(entry.pos(), entry.blockPos())
+                .add(placement.anchor().getX(), placement.anchor().getY(), placement.anchor().getZ());
+            positions.add(BlockPos.containing(transformed));
+        }
+        for (BlockPos pos : positions) {
+            if (!level.isInWorldBounds(pos) || !level.getWorldBorder().isWithinBounds(pos)) {
+                throw new ConstructionBlueprintException("placement_out_of_world", pos.toShortString());
+            }
+            if (!ConstructionPermission.canModify(level, pos, owner)) {
+                throw new ConstructionBlueprintException("permission_denied", pos.toShortString());
+            }
+        }
     }
 
     static void validatePlacement(ServerLevel level, ConstructionJob job) throws ConstructionBlueprintException {
@@ -313,19 +412,8 @@ public final class ConstructionBlueprintService {
             throw new ConstructionBlueprintException("job_missing", "");
         }
         requireOwner(player, job);
-        ConstructionJobController.cancel(server, job);
-        clearJobId(player.getInventory().getSelected(), jobId);
-        clearJobId(player.getOffhandItem(), jobId);
-        for (ItemStack stack : player.getInventory().items) {
-            clearJobId(stack, jobId);
-        }
-        clearJobId(player.containerMenu.getCarried(), jobId);
-    }
-
-    private static void clearJobId(ItemStack stack, UUID jobId) {
-        ConstructionBlueprintData data = ConstructionBlueprintData.get(stack).orElse(null);
-        if (data != null && data.jobId().map(jobId::equals).orElse(false)) {
-            ConstructionBlueprintData.set(stack, data.withoutJobId());
+        if (!ConstructionJobController.cancel(server, job)) {
+            throw new ConstructionBlueprintException("permission_denied", "");
         }
     }
 
@@ -351,7 +439,7 @@ public final class ConstructionBlueprintService {
         if (job.isActive()) {
             return;
         }
-        List<ConstructionJob> paused = index.activate(jobId);
+        List<ConstructionJob> paused = index.activate(server, jobId);
         for (ConstructionJob pausedJob : paused) {
             ConstructionJobController.pause(server, pausedJob);
         }
@@ -394,33 +482,38 @@ public final class ConstructionBlueprintService {
     public static boolean canReadSnapshot(ServerPlayer player, String hash) {
         if (!ConstructionStructureLibrary.isValidHash(hash)) return false;
         for (ConstructionJob job : ConstructionJobIndex.get(player.server).jobs()) {
-            if (job.hash().equals(hash)) {
+            if (job.hash().equals(hash) && ConstructionPermission.canManageJob(player, job)) {
                 return true;
             }
         }
-        if (diskHasHash(player.containerMenu.getCarried(), hash)) {
+        if (diskCanReadSnapshot(player, player.containerMenu.getCarried(), hash)) {
             return true;
         }
         for (Slot slot : player.containerMenu.slots) {
-            if (diskHasHash(slot.getItem(), hash)) {
+            if (diskCanReadSnapshot(player, slot.getItem(), hash)) {
                 return true;
             }
         }
         for (ItemStack stack : player.getInventory().items) {
-            if (diskHasHash(stack, hash)) {
+            if (diskCanReadSnapshot(player, stack, hash)) {
                 return true;
             }
         }
-        return diskHasHash(player.getOffhandItem(), hash);
+        return diskCanReadSnapshot(player, player.getOffhandItem(), hash);
     }
 
-    private static boolean diskHasHash(ItemStack stack, String hash) {
-        return ConstructionBlueprintData.get(stack).map(data -> data.hash().equals(hash)).orElse(false);
+    private static boolean diskCanReadSnapshot(ServerPlayer player, ItemStack stack, String hash) {
+        ConstructionBlueprintData data = ConstructionBlueprintData.get(stack).orElse(null);
+        if (data == null || !data.hash().equals(hash)) return false;
+        UUID jobId = data.jobId().orElse(null);
+        if (jobId == null) return true;
+        ConstructionJob job = ConstructionJobIndex.get(player.server).job(jobId);
+        return job != null && ConstructionPermission.canManageJob(player, job);
     }
 
     private static void requireOwner(ServerPlayer player, ConstructionJob job)
         throws ConstructionBlueprintException {
-        if (!job.owner().equals(player.getUUID())) {
+        if (!ConstructionPermission.canManageJob(player, job)) {
             throw new ConstructionBlueprintException("not_owner", "");
         }
     }

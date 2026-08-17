@@ -8,12 +8,10 @@ import dev.anvilcraft.plasticraft.block.PlasticMoldingMachineState;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
-import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.inventory.PlasticMoldingChamberMenu;
 import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
 import dev.anvilcraft.plasticraft.molding.bake.ManufacturedMoldingGeometry;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
-import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintDisk;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingMachineAction;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingCycleFeedback;
@@ -31,6 +29,7 @@ import dev.anvilcraft.plasticraft.molding.machine.PlasticMoldingAnvilProcessor;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticSurfaceAdapter;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductPreview;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.type.MoldingTypeValidation;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingCommand;
@@ -2042,7 +2041,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     }
 
     private static boolean isPlasticMelt(FluidStack stack) {
-        return !stack.isEmpty() && stack.getFluid().getFluidType() == PlasticraftFluids.UNIVERSAL_PLASTIC_MELT_TYPE.get();
+        return PlasticMaterial.isMelt(stack);
     }
 
     private static boolean isPlasticMeltContainer(ItemStack stack) {

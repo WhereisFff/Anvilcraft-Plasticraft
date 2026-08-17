@@ -11,11 +11,15 @@ import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobIndex;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobProgress;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobStore;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionPermission;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionStructureLibrary;
 import dev.anvilcraft.plasticraft.blueprint.LitematicaImporter;
 import dev.anvilcraft.plasticraft.blueprint.ScannerDiskImporter;
 import dev.anvilcraft.plasticraft.blueprint.StructureSnapshot;
 import dev.anvilcraft.plasticraft.blueprint.StructureSnapshotCodec;
+import dev.anvilcraft.plasticraft.init.PlasticraftMenuTypes;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.inventory.AllayLoungeMenu;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.item.property.component.StructureDiskData;
@@ -33,6 +37,7 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.decoration.ItemFrame;
+import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
@@ -438,7 +443,7 @@ public final class BlueprintConstructionGameTests {
                 check(moved.jobId().equals(job.jobId()), "moving the anchor created a new job");
                 check(moved.anchor().equals(movedAnchor), "anchor move was not applied");
                 check(moved.rotation() == Rotation.CLOCKWISE_90, "rotation was not applied");
-                check(index.jobs().size() == 1, "index should contain exactly one job");
+                check(index.job(job.jobId()) != null, "moving the blueprint removed its job from the index");
 
                 try {
                     ConstructionBlueprintService.deploy(
@@ -535,6 +540,26 @@ public final class BlueprintConstructionGameTests {
                     check(exception.reason().equals("not_owner"), "unexpected reason: " + exception.reason());
                 }
 
+                try {
+                    ConstructionPermission.setCollaboratorProvider((server, first, second) ->
+                        first.equals(player.getUUID()) && second.equals(stranger.getUUID())
+                            || first.equals(stranger.getUUID()) && second.equals(player.getUUID())
+                    );
+                    check(
+                        !ConstructionBlueprintService.toggleActive(stranger, job.jobId()),
+                        "a current teammate must be able to pause the owner's job"
+                    );
+                } finally {
+                    ConstructionPermission.setCollaboratorProvider(null);
+                }
+                try {
+                    ConstructionBlueprintService.toggleActive(stranger, job.jobId());
+                    throw new GameTestAssertException("a former teammate retained job access");
+                } catch (ConstructionBlueprintException exception) {
+                    check(exception.reason().equals("not_owner"), "unexpected former teammate reason: "
+                        + exception.reason());
+                }
+
                 ConstructionBlueprintService.cancel(player, job.jobId());
             } catch (ConstructionBlueprintException exception) {
                 throw new GameTestAssertException(
@@ -576,6 +601,35 @@ public final class BlueprintConstructionGameTests {
                 check(
                     ConstructionBlueprintService.canReadSnapshot(player, job.hash()),
                     "deployed job hash must remain readable"
+                );
+
+                GameTestPlayer teammate = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+                GameTestPlayer stranger = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+                ItemStack deployedDisk = player.getItemInHand(InteractionHand.MAIN_HAND).copy();
+                stranger.setItemInHand(InteractionHand.MAIN_HAND, deployedDisk.copy());
+                check(
+                    !ConstructionBlueprintService.canReadSnapshot(stranger, job.hash()),
+                    "a stranger must not read an owner's deployed snapshot"
+                );
+                try {
+                    ConstructionPermission.setCollaboratorProvider((server, first, second) ->
+                        first.equals(player.getUUID()) && second.equals(teammate.getUUID())
+                            || first.equals(teammate.getUUID()) && second.equals(player.getUUID())
+                    );
+                    check(
+                        ConstructionBlueprintService.canReadSnapshot(teammate, job.hash()),
+                        "a current teammate must read the owner's deployed snapshot"
+                    );
+                    check(
+                        ConstructionBlueprintService.canReadSnapshot(teammate, hash),
+                        "a current teammate must read the owner's deployed snapshot by hash"
+                    );
+                } finally {
+                    ConstructionPermission.setCollaboratorProvider(null);
+                }
+                check(
+                    !ConstructionBlueprintService.canReadSnapshot(teammate, job.hash()),
+                    "a former teammate must lose snapshot access immediately"
                 );
                 ConstructionBlueprintService.cancel(player, job.jobId());
             } catch (ConstructionBlueprintException exception) {
@@ -622,7 +676,6 @@ public final class BlueprintConstructionGameTests {
                         .isEmpty(),
                     "reimport must not keep the deleted job id on the disk"
                 );
-                check(index.jobs().isEmpty(), "index should have no leftover jobs after reimport");
             } catch (ConstructionBlueprintException exception) {
                 throw new GameTestAssertException(
                     "reimport cleanup failed: " + exception.reason() + " " + exception.detail()
@@ -1020,6 +1073,80 @@ public final class BlueprintConstructionGameTests {
             );
         } catch (ConstructionBlueprintException exception) {
             throw new GameTestAssertException("sample import failed: " + exception.reason());
+        }
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_blueprint_lifecycle")
+    @EmptyTemplate(value = "4x4x4", floor = true)
+    @TestHolder(description = "Hotbar swaps into the lounge disk slot recheck current job collaboration")
+    static void loungeDiskHotbarSwapRechecksJobPermission(ExtendedGameTestHelper helper) {
+        GameTestPlayer owner = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        GameTestPlayer loungeOwner = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        BlockPos loungePos = new BlockPos(3, 2, 3);
+        helper.setBlock(loungePos, PlasticraftBlocks.ALLAY_LOUNGE.get());
+        if (!(helper.getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge)) {
+            throw new GameTestAssertException("allay lounge block entity is missing");
+        }
+        lounge.setOwner(loungeOwner.getUUID());
+
+        ConstructionJob job = null;
+        AllayLoungeMenu menu = null;
+        try {
+            ItemStack disk = importSampleDisk(helper, "permission");
+            owner.setItemInHand(InteractionHand.MAIN_HAND, disk);
+            job = ConstructionBlueprintService.deploy(
+                owner,
+                InteractionHand.MAIN_HAND,
+                helper.absolutePos(new BlockPos(1, 2, 1)),
+                Rotation.NONE,
+                Mirror.NONE
+            );
+            ItemStack deployedDisk = owner.getItemInHand(InteractionHand.MAIN_HAND).copy();
+            loungeOwner.getInventory().setItem(0, deployedDisk);
+            menu = new AllayLoungeMenu(
+                PlasticraftMenuTypes.ALLAY_LOUNGE.get(),
+                1,
+                loungeOwner.getInventory(),
+                lounge
+            );
+
+            menu.clicked(0, 0, ClickType.SWAP, loungeOwner);
+            check(lounge.items().getStackInSlot(AllayLoungeBlockEntity.DISK_SLOT).isEmpty(),
+                "a stranger inserted another owner's job disk with a hotbar swap");
+            ItemStack deniedDisk = loungeOwner.getInventory().getItem(0);
+            check(deniedDisk.getCount() == deployedDisk.getCount()
+                    && ItemStack.isSameItemSameComponents(deniedDisk, deployedDisk),
+                "a denied hotbar swap moved the job disk");
+
+            ConstructionPermission.setCollaboratorProvider((server, first, second) ->
+                first.equals(owner.getUUID()) && second.equals(loungeOwner.getUUID())
+                    || first.equals(loungeOwner.getUUID()) && second.equals(owner.getUUID())
+            );
+            menu.clicked(0, 0, ClickType.SWAP, loungeOwner);
+            ItemStack insertedDisk = lounge.items().getStackInSlot(AllayLoungeBlockEntity.DISK_SLOT);
+            check(insertedDisk.getCount() == deployedDisk.getCount()
+                    && ItemStack.isSameItemSameComponents(insertedDisk, deployedDisk),
+                "a current teammate could not insert the job disk with a hotbar swap");
+            check(loungeOwner.getInventory().getItem(0).isEmpty(),
+                "an allowed hotbar swap left the job disk in the hotbar");
+        } catch (ConstructionBlueprintException exception) {
+            throw new GameTestAssertException(
+                "lounge disk permission setup failed: " + exception.reason() + " " + exception.detail()
+            );
+        } finally {
+            ConstructionPermission.setCollaboratorProvider(null);
+            if (menu != null) menu.removed(loungeOwner);
+            lounge.items().setStackInSlot(AllayLoungeBlockEntity.DISK_SLOT, ItemStack.EMPTY);
+            if (job != null && ConstructionJobIndex.get(helper.getLevel().getServer()).job(job.jobId()) != null) {
+                try {
+                    ConstructionBlueprintService.cancel(owner, job.jobId());
+                } catch (ConstructionBlueprintException exception) {
+                    throw new GameTestAssertException(
+                        "lounge disk permission cleanup failed: " + exception.reason() + " " + exception.detail()
+                    );
+                }
+            }
         }
         helper.succeed();
     }

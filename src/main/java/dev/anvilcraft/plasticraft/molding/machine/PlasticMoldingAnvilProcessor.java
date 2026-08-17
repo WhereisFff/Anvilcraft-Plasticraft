@@ -8,10 +8,8 @@ import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
-import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
-import dev.anvilcraft.plasticraft.item.DyeableMaterial;
-import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
@@ -277,6 +275,8 @@ public final class PlasticMoldingAnvilProcessor {
         FluidStack material = snapshot.batchFluid().isEmpty()
             ? new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 1)
             : snapshot.batchFluid();
+        PlasticMaterial plasticMaterial = PlasticMaterial.fromMelt(material)
+            .orElseThrow(() -> new IllegalArgumentException("Unsupported molding material"));
         MoldedPlasticData data = MoldedPlasticData.manufacture(
             snapshot.model(),
             snapshot.bakedModel(),
@@ -285,12 +285,9 @@ public final class PlasticMoldingAnvilProcessor {
             snapshot.typeOverride(),
             snapshot.creativeOverride()
         );
-        ItemStack product = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        ItemStack product = plasticMaterial.productStack(PlasticMeltColor.get(material));
         MoldedPlasticData.set(product, data);
-        PlasticMeltColor.set(product, PlasticMeltColor.get(material));
-        PlasticItemData.setMaterial(product, "universal_plastic");
-        BlockState displayState = PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState()
-            .setValue(DyeableMaterial.COLOR, PlasticMeltColor.get(material));
+        BlockState displayState = plasticMaterial.displayState(PlasticMeltColor.get(material));
 
         List<Entity> entities = new ArrayList<>();
         if (outputMode == OutputMode.ITEM) {
@@ -301,8 +298,7 @@ public final class PlasticMoldingAnvilProcessor {
         } else {
             PlasticEntityOrientation orientation = PlasticEntityOrientation.DEFAULT;
             Vec3 origin = data.geometry().entityOrigin();
-            UniversalPlasticEntity entity = new UniversalPlasticEntity(
-                PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
+            UniversalPlasticEntity entity = plasticMaterial.createEntity(
                 level,
                 new Vec3(bounds.minX + origin.x, bounds.minY + origin.y, bounds.minZ + origin.z),
                 displayState,

@@ -5,15 +5,18 @@ import dev.anvilcraft.plasticraft.allay.AllayFlightState;
 import dev.anvilcraft.plasticraft.allay.AllayHardHats;
 import dev.anvilcraft.plasticraft.allay.tool.AllayCapability;
 import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinitions;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionPermission;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionTraffic;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.anvilcraft.plasticraft.event.AllayHardHatEvents;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.dubhe.anvilcraft.init.item.ModItems;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -37,6 +40,8 @@ import java.util.UUID;
 public final class AllayGameTests {
     private AllayGameTests() {
     }
+
+    static final UUID TEST_OWNER = UUID.fromString("00000000-0000-0000-0000-000000000013");
 
     @GameTest(timeoutTicks = 40)
     @EmptyTemplate(value = "3x4x3", floor = true)
@@ -236,6 +241,46 @@ public final class AllayGameTests {
         helper.succeed();
     }
 
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate(value = "3x4x3", floor = true)
+    @TestHolder(description = "Only an owner or current teammate can manage a working allay")
+    static void workingAllayManagementRechecksTeamMembership(ExtendedGameTestHelper helper) {
+        GameTestPlayer owner = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        GameTestPlayer teammate = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        GameTestPlayer stranger = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        WorkingAllayEntity worker = spawnHatted(helper, new Vec3(1.5D, 2.0D, 1.5D), owner);
+
+        worker.setHardHat(namedHardHat("initial"));
+        owner.setItemInHand(InteractionHand.MAIN_HAND, namedHardHat("owner"));
+        worker.mobInteract(owner, InteractionHand.MAIN_HAND);
+        check(worker.getHardHat().getHoverName().getString().equals("owner"),
+            "the owner could not replace the working allay's hard hat");
+
+        stranger.setItemInHand(InteractionHand.MAIN_HAND, namedHardHat("stranger"));
+        worker.mobInteract(stranger, InteractionHand.MAIN_HAND);
+        check(worker.getHardHat().getHoverName().getString().equals("owner"),
+            "a stranger replaced the working allay's hard hat");
+
+        try {
+            ConstructionPermission.setCollaboratorProvider((server, first, second) ->
+                first.equals(owner.getUUID()) && second.equals(teammate.getUUID())
+                    || first.equals(teammate.getUUID()) && second.equals(owner.getUUID())
+            );
+            teammate.setItemInHand(InteractionHand.MAIN_HAND, namedHardHat("teammate"));
+            worker.mobInteract(teammate, InteractionHand.MAIN_HAND);
+            check(worker.getHardHat().getHoverName().getString().equals("teammate"),
+                "a current teammate could not manage the working allay");
+        } finally {
+            ConstructionPermission.setCollaboratorProvider(null);
+        }
+
+        teammate.setItemInHand(InteractionHand.MAIN_HAND, namedHardHat("former"));
+        worker.mobInteract(teammate, InteractionHand.MAIN_HAND);
+        check(worker.getHardHat().getHoverName().getString().equals("teammate"),
+            "a former teammate retained working allay access");
+        helper.succeed();
+    }
+
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "7x5x7", floor = true)
     @TestHolder(description = "Opposing working allays pass through a one-cell tunnel without reservation or avoidance livelock")
@@ -276,6 +321,14 @@ public final class AllayGameTests {
         Vec3 relativePos,
         GameTestPlayer owner
     ) {
+        return spawnHattedForOwner(helper, relativePos, owner == null ? null : owner.getUUID());
+    }
+
+    static WorkingAllayEntity spawnHattedForOwner(
+        ExtendedGameTestHelper helper,
+        Vec3 relativePos,
+        UUID ownerId
+    ) {
         Allay vanilla = EntityType.ALLAY.create(helper.getLevel());
         check(vanilla != null, "failed to create vanilla allay");
         Vec3 pos = helper.absoluteVec(relativePos);
@@ -284,9 +337,15 @@ public final class AllayGameTests {
         WorkingAllayEntity worker = WorkingAllayEntity.convertFrom(
             vanilla,
             AllayDefaultHardHat.stack(),
-            owner == null ? null : owner.getUUID()
+            ownerId
         );
         return worker;
+    }
+
+    private static ItemStack namedHardHat(String name) {
+        ItemStack hat = AllayDefaultHardHat.stack();
+        hat.set(DataComponents.CUSTOM_NAME, Component.literal(name));
+        return hat;
     }
 
     private static void check(boolean condition, String message) {

@@ -16,6 +16,7 @@ import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionDebris;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionLeaseService;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionMaterialAccess;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionPermission;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionTraffic;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionWaitReason;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
@@ -26,6 +27,7 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Mth;
@@ -265,9 +267,10 @@ public class WorkingAllayEntity extends Allay {
             && this.level().getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity found
             ? found
             : null;
-        if (lounge == null) {
+        if (lounge == null || !lounge.canHost(this)) {
             ConstructionTraffic.release(this.level(), this.getUUID());
             this.dockLoungePos = null;
+            this.setHomeLounge(null);
             this.cancelFlightTask();
             this.setFlightState(AllayFlightState.HOVERING);
             this.setDeltaMovement(Vec3.ZERO);
@@ -316,13 +319,15 @@ public class WorkingAllayEntity extends Allay {
     public boolean startDockingTo(BlockPos loungePos) {
         if (this.level().isClientSide || this.isRemoved()) return false;
         if (this.flightState() == AllayFlightState.DOCKING) return false;
+        if (!(this.level().getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge)
+            || !lounge.canHost(this)) {
+            return false;
+        }
         this.clearAssignment(false);
         this.dockLoungePos = loungePos.immutable();
         this.setHomeLounge(loungePos);
         this.setFlightState(AllayFlightState.DOCKING);
-        if (this.level().getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge) {
-            lounge.registerDocking(this);
-        }
+        lounge.registerDocking(this);
         return true;
     }
 
@@ -332,6 +337,10 @@ public class WorkingAllayEntity extends Allay {
 
     @Override
     public InteractionResult mobInteract(Player player, InteractionHand hand) {
+        if (!this.level().isClientSide
+            && (!(player instanceof ServerPlayer serverPlayer) || !this.canBeManagedBy(serverPlayer))) {
+            return InteractionResult.FAIL;
+        }
         ItemStack stack = player.getItemInHand(hand);
         if (stack.is(Items.LEAD) && this.canBeLeashed()) {
             return super.mobInteract(player, hand);
@@ -361,6 +370,7 @@ public class WorkingAllayEntity extends Allay {
 
     public boolean unequipHat(Player player) {
         if (this.level().isClientSide) return false;
+        if (!(player instanceof ServerPlayer serverPlayer) || !this.canBeManagedBy(serverPlayer)) return false;
         if (!this.hostedCarry().isEmpty() || this.hasCollectionItems()) return false;
         ItemStack hat = this.getHardHat();
         Allay vanilla = EntityType.ALLAY.create(this.level());
@@ -377,6 +387,16 @@ public class WorkingAllayEntity extends Allay {
             player.getInventory().placeItemBackInInventory(hat);
         }
         return true;
+    }
+
+    private boolean canBeManagedBy(ServerPlayer player) {
+        return this.owner != null
+            && ConstructionPermission.areCollaborators(
+                player.server,
+                this.owner,
+                player.getUUID()
+            )
+            && ConstructionPermission.canPlayerModify(player, this.blockPosition());
     }
 
     @Override
@@ -611,6 +631,25 @@ public class WorkingAllayEntity extends Allay {
             ItemStack slot = this.collectionInventory.get(index);
             if (slot.isEmpty()) continue;
             access.insertOrDrop(slot.copy());
+            this.collectionInventory.set(index, ItemStack.EMPTY);
+        }
+    }
+
+    /** 权限失效或来源不可用时，把临时收集库存安全实体化到指定位置。 */
+    public void dropCollectionAt(Vec3 position) {
+        if (this.toolDefinition().inventorySize() <= 0) {
+            ItemStack carry = this.hostedCarry();
+            if (!carry.isEmpty()) {
+                dropBeside(this.level(), position, carry.copy());
+                this.setHostedCarry(ItemStack.EMPTY);
+            }
+            return;
+        }
+        this.ensureCollectionSlots();
+        for (int index = 0; index < this.collectionInventory.size(); index++) {
+            ItemStack stack = this.collectionInventory.get(index);
+            if (stack.isEmpty()) continue;
+            dropBeside(this.level(), position, stack.copy());
             this.collectionInventory.set(index, ItemStack.EMPTY);
         }
     }

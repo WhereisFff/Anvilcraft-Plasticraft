@@ -20,6 +20,7 @@ import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintedGeometry;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrinterMotion;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -52,6 +53,7 @@ import java.util.WeakHashMap;
 
 /** 用同一世界坐标系绘制编辑投影、粘土模具和逐体素打印机构。 */
 public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<PlasticMoldingChamberBlockEntity> {
+    private static final int CLEAR_PLASTIC_PREVIEW_ALPHA = 0x88000000;
     public static final ModelResourceLocation PRINTER_FRAME_MODEL = ModelResourceLocation.standalone(
         AnvilcraftPlasticraft.of("block/print_warehouse")
     );
@@ -226,16 +228,63 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
 
         Direction front = chamber.getBlockState().getValue(PlasticMoldingChamberBlock.FACING);
         Matrix4f pose = poseStack.last().pose();
-        VertexConsumer consumer = bufferSource.getBuffer(RenderType.debugQuads());
         int skyDarken = chamber.getLevel() == null ? 0 : chamber.getLevel().getSkyDarken();
         float brightness = worldBrightness(packedLight, skyDarken);
         FluidStack material = chamber.printingMaterial();
         if (material.isEmpty()) material = chamber.batchFluid();
-        int baseColor = 0xFF000000 | DyeableMaterial.tint(PlasticMeltColor.get(material));
-        for (MoldingPrintedGeometry.PrintedTriangle triangle : cached.geometry.surfaceTriangles()) {
+        boolean transparent = PlasticMaterial.fromMelt(material)
+            .map(PlasticMaterial::isTransparent)
+            .orElse(false);
+        int baseColor = (transparent ? CLEAR_PLASTIC_PREVIEW_ALPHA : 0xFF000000)
+            | DyeableMaterial.tint(PlasticMeltColor.get(material));
+        if (transparent) {
+            renderPrintedGeometry(
+                bufferSource,
+                MoldingProjectionRenderTypes.depth(true),
+                pose,
+                front,
+                cached.geometry,
+                0xFFFFFFFF,
+                1.0F
+            );
+            MoldingProjectionRenderTypes.endDepth(bufferSource);
+            renderPrintedGeometry(
+                bufferSource,
+                MoldingProjectionRenderTypes.color(true),
+                pose,
+                front,
+                cached.geometry,
+                baseColor,
+                brightness
+            );
+            MoldingProjectionRenderTypes.endColor(bufferSource);
+            return;
+        }
+        renderPrintedGeometry(
+            bufferSource,
+            RenderType.debugQuads(),
+            pose,
+            front,
+            cached.geometry,
+            baseColor,
+            brightness
+        );
+    }
+
+    private static void renderPrintedGeometry(
+        MultiBufferSource bufferSource,
+        RenderType renderType,
+        Matrix4f pose,
+        Direction front,
+        MoldingPrintedGeometry geometry,
+        int baseColor,
+        float brightness
+    ) {
+        VertexConsumer consumer = bufferSource.getBuffer(renderType);
+        for (MoldingPrintedGeometry.PrintedTriangle triangle : geometry.surfaceTriangles()) {
             renderPrintedTriangle(consumer, pose, front, triangle, baseColor, brightness);
         }
-        for (MoldingPrintedGeometry.PrintedTriangle triangle : cached.geometry.capTriangles()) {
+        for (MoldingPrintedGeometry.PrintedTriangle triangle : geometry.capTriangles()) {
             renderPrintedTriangle(consumer, pose, front, triangle, baseColor, brightness);
         }
     }

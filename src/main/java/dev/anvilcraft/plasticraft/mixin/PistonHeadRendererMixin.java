@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * NeoForge 活塞移动渲染会忽略 {@link RenderShape#INVISIBLE}，
- * 把默认 16x16x14 烘焙模型叠在方块化塑料的实体网格上。
+ * 把默认 16x16x16 烘焙模型叠在方块化塑料的实体网格上。
  */
 @Mixin(PistonHeadRenderer.class)
 abstract class PistonHeadRendererMixin {

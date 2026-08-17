@@ -18,34 +18,46 @@ public final class ConstructionLeaseService {
     public static void release(WorkingAllayEntity worker) {
         if (!(worker.level() instanceof ServerLevel level)) return;
         UUID jobId = worker.assignedJobId().orElse(null);
-        if (jobId == null) return;
         ConstructionJobStore store = ConstructionJobStore.get(level);
-        ConstructionJobProgress progress = store.get(jobId);
-        if (progress == null) return;
+        boolean changed = false;
+        if (jobId != null) {
+            ConstructionJobProgress progress = store.get(jobId);
+            if (progress != null) {
+                changed |= releaseOwnedLease(level, worker, progress);
+            }
+        }
+        // 任务号可能已经被清掉，但实体仍带着旧租约或台账；跨全部进度结清，避免下一任务重复领取。
+        if (!changed || jobId == null) {
+            for (ConstructionJobProgress progress : store.progresses()) {
+                if (jobId != null && progress.jobId().equals(jobId)) continue;
+                changed |= releaseOwnedLease(level, worker, progress);
+            }
+        }
+        if (changed) store.markDirty();
+    }
+
+    private static boolean releaseOwnedLease(
+        ServerLevel level,
+        WorkingAllayEntity worker,
+        ConstructionJobProgress progress
+    ) {
         ConstructionBuildOp op = worker.taskOpId() < 0 ? null : progress.operation(worker.taskOpId());
         if (!isOwnedAssignment(op, worker.getUUID())) {
             op = findOwnedAssignment(progress, worker.getUUID());
         }
-        if (op == null) return;
+        if (op == null) return false;
         if (worker.hostedCarry().isEmpty()) {
             returnReservedMaterial(level, worker, progress, op);
         }
         op.setStatus(ConstructionBuildOp.Status.PENDING);
         op.setLeaseAllay(null);
         op.setApproach(null);
-        store.markDirty();
+        return true;
     }
 
     public static void markCarriesUntracked(WorkingAllayEntity worker) {
         if (!(worker.level() instanceof ServerLevel level)) return;
-        ConstructionJobStore store = ConstructionJobStore.get(level);
-        boolean changed = false;
-        for (ConstructionJobProgress progress : store.progresses()) {
-            changed |= progress.markCarriesReturned(worker.getUUID());
-        }
-        if (changed) {
-            store.markDirty();
-        }
+        ConstructionJobController.markCarryReturned(worker, level.getServer(), worker.hostedCarry().copy());
     }
 
     private static boolean isOwnedAssignment(ConstructionBuildOp op, UUID workerId) {
@@ -72,6 +84,9 @@ public final class ConstructionLeaseService {
             ? null
             : ConstructionMaterialAccess.below(level, loungePos);
         ConstructionJob job = ConstructionJobIndex.get(level).job(progress.jobId());
+        if (access != null && (job == null || !ConstructionJobController.canAccessCoordinatorStorage(level, job, progress))) {
+            access = null;
+        }
         ServerPlayer owner = job == null ? null : level.getServer().getPlayerList().getPlayer(job.owner());
         boolean changed = false;
         for (ConstructionLedgerEntry entry : progress.carriedEntries(worker.getUUID(), op.id())) {
@@ -80,7 +95,8 @@ public final class ConstructionLeaseService {
                 if (!access.isInfinite()) {
                     access.insertOrDrop(stack);
                 }
-            } else if (owner != null) {
+            } else if (owner != null
+                && ConstructionPermission.canModify(level, owner.blockPosition(), job.owner())) {
                 owner.getInventory().placeItemBackInInventory(stack);
             } else if (!stack.isEmpty()) {
                 Vec3 pos = worker.position();

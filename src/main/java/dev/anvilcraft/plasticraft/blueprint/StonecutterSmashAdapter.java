@@ -28,7 +28,7 @@ public final class StonecutterSmashAdapter {
     }
 
     public static boolean smash(ServerLevel level, BlockPos pos, UUID jobId, int operationId) {
-        return smash(level, pos, jobId, operationId, null);
+        return smash(level, pos, jobId, operationId, null, BlockMiningEffect.NORMAL);
     }
 
     public static boolean smash(
@@ -38,16 +38,27 @@ public final class StonecutterSmashAdapter {
         int operationId,
         @Nullable ConstructionJobProgress progress
     ) {
+        return smash(level, pos, jobId, operationId, progress, BlockMiningEffect.NORMAL);
+    }
+
+    public static boolean smash(
+        ServerLevel level,
+        BlockPos pos,
+        UUID jobId,
+        int operationId,
+        @Nullable ConstructionJobProgress progress,
+        BlockMiningEffect miningEffect
+    ) {
         BlockPos breakPos = mainPartOf(level, pos);
         BlockState state = level.getBlockState(breakPos);
         if (state.isAir()) return true;
         if (isPermanentObstacle(level, breakPos, state)) return false;
-        ItemStack dummyTool = BreakBlockUtil.createTool(level, state, BlockMiningEffect.NORMAL);
+        ItemStack dummyTool = BreakBlockUtil.createTool(level, state, miningEffect);
         state.spawnAfterBreak(level, breakPos, dummyTool, false);
         if (state.getBlock() instanceof IHasMultiBlock multiBlock) {
             multiBlock.onRemove(level, breakPos, state);
         }
-        List<ItemStack> drops = BreakBlockUtil.drop(level, breakPos, BlockMiningEffect.NORMAL);
+        List<ItemStack> drops = BreakBlockUtil.drop(level, breakPos, miningEffect);
         int spawned = 0;
         for (ItemStack drop : drops) {
             ConstructionDebris.mark(drop, jobId, operationId);

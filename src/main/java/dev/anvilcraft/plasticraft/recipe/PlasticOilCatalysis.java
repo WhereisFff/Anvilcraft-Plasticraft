@@ -4,11 +4,14 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.PlasticOilCauldronBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
+import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import net.minecraft.core.BlockPos;
@@ -47,6 +50,7 @@ public final class PlasticOilCatalysis {
     public static final int BASE_WORK = 800;
     public static final double MAX_OPEN_MULTIPLIER = 0.55D;
     public static final double FROST_METAL_EFFICIENCY = 0.5D;
+    public static final double ENGINEERING_REACTION_POWER = 8.0D;
 
     private PlasticOilCatalysis() {
     }
@@ -88,27 +92,73 @@ public final class PlasticOilCatalysis {
                 pos,
                 item -> cauldron.containsEntity(state, pos, item)
             );
-            advance(level, pos, CatalyticPressHeat.power(level.getBlockState(pos.below())), catalysts, () -> {
+            CatalystCounts counts = countCatalysts(catalysts);
+            PlasticMaterial productMaterial = oilProduct(counts);
+            advance(level, pos, oilWorkPerTick(
+                CatalyticPressHeat.power(level.getBlockState(pos.below())),
+                counts
+            ), () -> {
                 int levelValue = state.getValue(PlasticOilCauldronBlock.LEVEL);
-                BlockState result = PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get()
-                    .defaultBlockState()
+                BlockState result = productMaterial.meltCauldron().defaultBlockState()
+                    .setValue(UniversalPlasticMeltCauldronBlock.LEVEL, levelValue);
+                if (result.hasProperty(UniversalPlasticMeltCauldronBlock.COLOR)) {
+                    result = result.setValue(UniversalPlasticMeltCauldronBlock.COLOR, DyeColor.WHITE);
+                }
+                return level.setBlock(pos, result, Block.UPDATE_ALL);
+            });
+            return;
+        }
+        if (state.is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())) {
+            UniversalPlasticMeltCauldronBlock cauldron = (UniversalPlasticMeltCauldronBlock) state.getBlock();
+            if (!cauldron.containsEntity(state, pos, catalyst) || hasSealedLid(level, pos)) return;
+            List<ItemEntity> catalysts = looseCatalysts(
+                level,
+                pos,
+                item -> cauldron.containsEntity(state, pos, item)
+            );
+            CatalystCounts counts = countCatalysts(catalysts);
+            double heat = CatalyticPressHeat.power(level.getBlockState(pos.below()));
+            boolean cold = PlasticCatalysisCold.isCold(level.getBlockState(pos.below()));
+            PlasticMaterial productMaterial = universalProduct(counts, heat, cold);
+            advance(level, pos, universalWorkPerTick(counts, heat, cold), () -> {
+                int levelValue = state.getValue(UniversalPlasticMeltCauldronBlock.LEVEL);
+                DyeColor color = state.getValue(UniversalPlasticMeltCauldronBlock.COLOR);
+                BlockState result = productMaterial.meltCauldron().defaultBlockState()
                     .setValue(UniversalPlasticMeltCauldronBlock.LEVEL, levelValue)
-                    .setValue(UniversalPlasticMeltCauldronBlock.COLOR, DyeColor.WHITE);
+                    .setValue(UniversalPlasticMeltCauldronBlock.COLOR, color);
                 return level.setBlock(pos, result, Block.UPDATE_ALL);
             });
             return;
         }
         if (!level.getFluidState(pos).isSourceOfType(PlasticraftFluids.PLASTIC_OIL.get())) {
-            clearProgress(level, pos);
+            if (!level.getFluidState(pos).isSourceOfType(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())) {
+                clearProgress(level, pos);
+                return;
+            }
+            List<ItemEntity> catalysts = looseCatalysts(level, pos, item -> item.blockPosition().equals(pos));
+            CatalystCounts counts = countCatalysts(catalysts);
+            double heat = CatalyticPressHeat.power(level.getBlockState(pos.below()));
+            boolean cold = PlasticCatalysisCold.isCold(level.getBlockState(pos.below()));
+            PlasticMaterial productMaterial = universalProduct(counts, heat, cold);
+            advance(level, pos, universalWorkPerTick(counts, heat, cold), () -> {
+                DyeColor color = level.getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity melt
+                    ? melt.getColor()
+                    : DyeColor.WHITE;
+                FluidStack output = new FluidStack(productMaterial.melt(), 1_000);
+                PlasticMeltColor.set(output, color);
+                CatalyticPressProcess.placeMelt(level, pos, output);
+                return true;
+            });
             return;
         }
         List<ItemEntity> catalysts = looseCatalysts(level, pos, item -> item.blockPosition().equals(pos));
-        advance(level, pos, CatalyticPressHeat.power(level.getBlockState(pos.below())), catalysts, () -> {
-            CatalyticPressProcess.placeMelt(
-                level,
-                pos,
-                new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 1_000)
-            );
+        CatalystCounts counts = countCatalysts(catalysts);
+        advance(level, pos, oilWorkPerTick(
+            CatalyticPressHeat.power(level.getBlockState(pos.below())),
+            counts
+        ), () -> {
+            PlasticMaterial material = oilProduct(counts);
+            CatalyticPressProcess.placeMelt(level, pos, new FluidStack(material.melt(), 1_000));
             return true;
         });
     }
@@ -121,6 +171,7 @@ public final class PlasticOilCatalysis {
             tank.getFluidHandler(),
             countCatalysts(tank.getItemHandler()),
             CatalyticPressHeat.power(level.getBlockState(tank.getBlockPos().below())),
+            PlasticCatalysisCold.isCold(level.getBlockState(tank.getBlockPos().below())),
             true
         );
     }
@@ -135,6 +186,7 @@ public final class PlasticOilCatalysis {
             cauldron.getFluidHandler(),
             countCatalysts(cauldron.getItemHandler()),
             CatalyticPressHeat.power(level.getBlockState(pos.below())),
+            PlasticCatalysisCold.isCold(level.getBlockState(pos.below())),
             true
         );
     }
@@ -144,14 +196,38 @@ public final class PlasticOilCatalysis {
         if (!cauldron.isMainPart()) return;
         Set<Item> royalSteelCatalysts = new HashSet<>();
         Set<Item> frostMetalCatalysts = new HashSet<>();
-        collectCatalysts(cauldron.getInputHandler(), royalSteelCatalysts, frostMetalCatalysts);
-        collectCatalysts(cauldron.getOutputHandler(), royalSteelCatalysts, frostMetalCatalysts);
+        Set<Item> emberMetalCatalysts = new HashSet<>();
+        Set<Item> royalGlassCatalysts = new HashSet<>();
+        Set<Item> frostGlassCatalysts = new HashSet<>();
+        collectCatalysts(
+            cauldron.getInputHandler(),
+            royalSteelCatalysts,
+            frostMetalCatalysts,
+            emberMetalCatalysts,
+            royalGlassCatalysts,
+            frostGlassCatalysts
+        );
+        collectCatalysts(
+            cauldron.getOutputHandler(),
+            royalSteelCatalysts,
+            frostMetalCatalysts,
+            emberMetalCatalysts,
+            royalGlassCatalysts,
+            frostGlassCatalysts
+        );
         tickFluidContainer(
             level,
             cauldron.getBlockPos(),
             cauldron.getFluids(),
-            new CatalystCounts(royalSteelCatalysts.size(), frostMetalCatalysts.size()),
+            new CatalystCounts(
+                royalSteelCatalysts.size(),
+                frostMetalCatalysts.size(),
+                emberMetalCatalysts.size(),
+                royalGlassCatalysts.size(),
+                frostGlassCatalysts.size()
+            ),
             largeCauldronHeat(level, cauldron.getBlockPos()),
+            PlasticCatalysisCold.isCold(level.getBlockState(cauldron.getBlockPos().below(2))),
             false
         );
     }
@@ -178,17 +254,24 @@ public final class PlasticOilCatalysis {
         IFluidHandler fluids,
         CatalystCounts catalysts,
         double heat,
+        boolean cold,
         boolean checkLid
     ) {
-        FluidStack plasticOil = findPlasticOil(fluids);
-        if (plasticOil.isEmpty()) {
+        FluidStack input = findReactiveFluid(fluids);
+        if (input.isEmpty()) {
             clearProgress(level, pos);
             return;
         }
         if (checkLid && hasSealedLid(level, pos)) return;
 
         ProgressData data = ProgressData.get(level);
-        double workPerTick = heat * catalystMultiplier(catalysts.royalSteelItems(), catalysts.frostMetalItems());
+        boolean universal = input.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get());
+        PlasticMaterial outputMaterial = universal
+            ? universalProduct(catalysts, heat, cold)
+            : oilProduct(catalysts);
+        double workPerTick = universal
+            ? universalWorkPerTick(catalysts, heat, cold)
+            : oilWorkPerTick(heat, catalysts);
         if (workPerTick <= 0.0D) {
             syncPausedProgress(level, pos, data);
             return;
@@ -197,13 +280,16 @@ public final class PlasticOilCatalysis {
         if (!result.advanced()) return;
         PlasticOilCatalysisVisualSync.update(level, pos, result.work(), workPerTick);
         if (!result.complete()) return;
-        if (!transformFluid(fluids, plasticOil)) return;
-        data.clear(pos);
-        CatalyticPressProcess.syncMeltContainerColor(
-            level,
-            pos,
-            new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), plasticOil.getAmount())
+        FluidStack output = new FluidStack(
+            outputMaterial.melt(),
+            input.getAmount()
         );
+        if (outputMaterial.supportsDyeing()) {
+            PlasticMeltColor.set(output, universal ? PlasticMeltColor.get(input) : DyeColor.WHITE);
+        }
+        if (!transformFluid(fluids, input, output)) return;
+        data.clear(pos);
+        CatalyticPressProcess.syncMeltContainerColor(level, pos, output);
         PlasticOilCatalysisVisualSync.complete(level, pos);
         playCompletionSound(level, pos);
     }
@@ -211,13 +297,10 @@ public final class PlasticOilCatalysis {
     private static void advance(
         ServerLevel level,
         BlockPos pos,
-        double heat,
-        List<ItemEntity> catalysts,
+        double workPerTick,
         Transformation transformation
     ) {
-        CatalystCounts counts = countCatalysts(catalysts);
         ProgressData data = ProgressData.get(level);
-        double workPerTick = heat * catalystMultiplier(counts.royalSteelItems(), counts.frostMetalItems());
         if (workPerTick <= 0.0D) {
             syncPausedProgress(level, pos, data);
             return;
@@ -257,49 +340,109 @@ public final class PlasticOilCatalysis {
     }
 
     private static boolean isCatalyst(ItemStack stack) {
-        return stack.is(PlasticraftItemTags.ROYAL_STEEL_ITEMS) || stack.is(PlasticraftItemTags.FROST_METAL_ITEMS);
+        return stack.is(PlasticraftItemTags.ROYAL_STEEL_ITEMS)
+            || stack.is(PlasticraftItemTags.FROST_METAL_ITEMS)
+            || stack.is(PlasticraftItemTags.EMBER_METAL_ITEMS)
+            || stack.is(PlasticraftItemTags.ROYAL_GLASS_ITEMS)
+            || stack.is(PlasticraftItemTags.FROST_GLASS_ITEMS);
+    }
+
+    public static boolean delaysSolidification(ServerLevel level, BlockPos pos) {
+        if (!level.getFluidState(pos).isSourceOfType(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())) return false;
+        boolean coldBelow = PlasticCatalysisCold.isCold(level.getBlockState(pos.below()));
+        return !level.getEntitiesOfClass(
+            ItemEntity.class,
+            new AABB(pos),
+            item -> !item.isRemoved()
+                && item.blockPosition().equals(pos)
+                && (item.getItem().is(PlasticraftItemTags.FROST_METAL_ITEMS)
+                    || coldBelow && item.getItem().is(PlasticraftItemTags.ROYAL_STEEL_ITEMS)
+                    || CatalyticPressHeat.power(level.getBlockState(pos.below())) > 0.0D
+                        && item.getItem().is(PlasticraftItemTags.EMBER_METAL_ITEMS))
+        ).isEmpty();
     }
 
     private static CatalystCounts countCatalysts(IItemHandler handler) {
         Set<Item> royalSteel = new HashSet<>();
         Set<Item> frostMetal = new HashSet<>();
-        collectCatalysts(handler, royalSteel, frostMetal);
-        return new CatalystCounts(royalSteel.size(), frostMetal.size());
+        Set<Item> emberMetal = new HashSet<>();
+        Set<Item> royalGlass = new HashSet<>();
+        Set<Item> frostGlass = new HashSet<>();
+        collectCatalysts(handler, royalSteel, frostMetal, emberMetal, royalGlass, frostGlass);
+        return new CatalystCounts(
+            royalSteel.size(),
+            frostMetal.size(),
+            emberMetal.size(),
+            royalGlass.size(),
+            frostGlass.size()
+        );
     }
 
     private static CatalystCounts countCatalysts(List<ItemEntity> catalysts) {
         Set<Item> royalSteel = new HashSet<>();
         Set<Item> frostMetal = new HashSet<>();
+        Set<Item> emberMetal = new HashSet<>();
+        Set<Item> royalGlass = new HashSet<>();
+        Set<Item> frostGlass = new HashSet<>();
         for (ItemEntity catalyst : catalysts) {
-            collectCatalyst(catalyst.getItem(), royalSteel, frostMetal);
+            collectCatalyst(catalyst.getItem(), royalSteel, frostMetal, emberMetal, royalGlass, frostGlass);
         }
-        return new CatalystCounts(royalSteel.size(), frostMetal.size());
+        return new CatalystCounts(
+            royalSteel.size(),
+            frostMetal.size(),
+            emberMetal.size(),
+            royalGlass.size(),
+            frostGlass.size()
+        );
     }
 
-    private static void collectCatalysts(IItemHandler handler, Set<Item> royalSteel, Set<Item> frostMetal) {
+    private static void collectCatalysts(
+        IItemHandler handler,
+        Set<Item> royalSteel,
+        Set<Item> frostMetal,
+        Set<Item> emberMetal,
+        Set<Item> royalGlass,
+        Set<Item> frostGlass
+    ) {
         for (int slot = 0; slot < handler.getSlots(); slot++) {
             ItemStack stack = handler.getStackInSlot(slot);
-            collectCatalyst(stack, royalSteel, frostMetal);
+            collectCatalyst(stack, royalSteel, frostMetal, emberMetal, royalGlass, frostGlass);
         }
     }
 
-    private static void collectCatalyst(ItemStack stack, Set<Item> royalSteel, Set<Item> frostMetal) {
-        if (stack.is(PlasticraftItemTags.ROYAL_STEEL_ITEMS)) {
+    private static void collectCatalyst(
+        ItemStack stack,
+        Set<Item> royalSteel,
+        Set<Item> frostMetal,
+        Set<Item> emberMetal,
+        Set<Item> royalGlass,
+        Set<Item> frostGlass
+    ) {
+        if (stack.is(PlasticraftItemTags.ROYAL_GLASS_ITEMS)) {
+            royalGlass.add(stack.getItem());
+        } else if (stack.is(PlasticraftItemTags.FROST_GLASS_ITEMS)) {
+            frostGlass.add(stack.getItem());
+        } else if (stack.is(PlasticraftItemTags.ROYAL_STEEL_ITEMS)) {
             royalSteel.add(stack.getItem());
         } else if (stack.is(PlasticraftItemTags.FROST_METAL_ITEMS)) {
             frostMetal.add(stack.getItem());
+        } else if (stack.is(PlasticraftItemTags.EMBER_METAL_ITEMS)) {
+            emberMetal.add(stack.getItem());
         }
     }
 
-    private static FluidStack findPlasticOil(IFluidHandler handler) {
+    private static FluidStack findReactiveFluid(IFluidHandler handler) {
         for (int tank = 0; tank < handler.getTanks(); tank++) {
             FluidStack stored = handler.getFluidInTank(tank);
-            if (stored.is(PlasticraftFluids.PLASTIC_OIL.get())) return stored.copy();
+            if (stored.is(PlasticraftFluids.PLASTIC_OIL.get())
+                || stored.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())) {
+                return stored.copy();
+            }
         }
         return FluidStack.EMPTY;
     }
 
-    private static boolean transformFluid(IFluidHandler handler, FluidStack input) {
+    private static boolean transformFluid(IFluidHandler handler, FluidStack input, FluidStack output) {
         FluidStack simulated = handler.drain(input, IFluidHandler.FluidAction.SIMULATE);
         if (simulated.getAmount() != input.getAmount()
             || !FluidStack.isSameFluidSameComponents(simulated, input)) return false;
@@ -310,7 +453,6 @@ public final class PlasticOilCatalysis {
             if (!drained.isEmpty()) handler.fill(drained, IFluidHandler.FluidAction.EXECUTE);
             return false;
         }
-        FluidStack output = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), drained.getAmount());
         int filled = handler.fill(output, IFluidHandler.FluidAction.EXECUTE);
         if (filled == output.getAmount()) return true;
         if (filled > 0) {
@@ -318,6 +460,37 @@ public final class PlasticOilCatalysis {
         }
         handler.fill(drained, IFluidHandler.FluidAction.EXECUTE);
         return false;
+    }
+
+    private static double oilWorkPerTick(double heat, CatalystCounts catalysts) {
+        return heat * (catalysts.hasGlass()
+            ? catalystMultiplier(catalysts.royalGlassItems(), catalysts.frostGlassItems())
+            : catalystMultiplier(catalysts.royalSteelItems(), catalysts.frostMetalItems()));
+    }
+
+    private static double engineeringWorkPerTick(CatalystCounts catalysts, boolean cold) {
+        int royalSteel = cold ? catalysts.royalSteelItems() : 0;
+        return ENGINEERING_REACTION_POWER * catalystMultiplier(royalSteel, catalysts.frostMetalItems());
+    }
+
+    private static double heatResistantWorkPerTick(double heat, CatalystCounts catalysts) {
+        return heat * catalystMultiplier(catalysts.emberMetalItems());
+    }
+
+    private static double universalWorkPerTick(CatalystCounts catalysts, double heat, boolean cold) {
+        return catalysts.emberMetalItems() > 0 && heat > 0.0D
+            ? heatResistantWorkPerTick(heat, catalysts)
+            : engineeringWorkPerTick(catalysts, cold);
+    }
+
+    private static PlasticMaterial universalProduct(CatalystCounts catalysts, double heat, boolean cold) {
+        return catalysts.emberMetalItems() > 0 && heat > 0.0D
+            ? PlasticMaterial.HEAT_RESISTANT
+            : PlasticMaterial.ENGINEERING;
+    }
+
+    private static PlasticMaterial oilProduct(CatalystCounts catalysts) {
+        return catalysts.hasGlass() ? PlasticMaterial.CLEAR : PlasticMaterial.UNIVERSAL;
     }
 
     private static boolean hasSealedLid(ServerLevel level, BlockPos containerPos) {
@@ -345,7 +518,16 @@ public final class PlasticOilCatalysis {
         boolean apply();
     }
 
-    private record CatalystCounts(int royalSteelItems, int frostMetalItems) {
+    private record CatalystCounts(
+        int royalSteelItems,
+        int frostMetalItems,
+        int emberMetalItems,
+        int royalGlassItems,
+        int frostGlassItems
+    ) {
+        private boolean hasGlass() {
+            return this.royalGlassItems > 0 || this.frostGlassItems > 0;
+        }
     }
 
     /** 没有方块实体的反应位置也通过维度数据持久化进度。 */

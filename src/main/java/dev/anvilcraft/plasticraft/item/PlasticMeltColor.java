@@ -7,7 +7,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.neoforged.neoforge.fluids.FluidStack;
 
-/** 通用塑料熔体和通用塑料粒共用的单 ID 颜色数据。 */
+/** 塑料熔体和塑料粒共用的单 ID 颜色数据。 */
 public final class PlasticMeltColor {
     public static final String COLOR_KEY = "PlasticMeltColor";
 

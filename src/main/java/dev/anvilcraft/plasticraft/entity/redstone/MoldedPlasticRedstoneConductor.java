@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.entity.redstone;
 
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -43,10 +44,14 @@ public final class MoldedPlasticRedstoneConductor {
 
     public static void update(UniversalPlasticEntity host) {
         if (!(host.level() instanceof ServerLevel level)) return;
+        if (host.isRemoved() || !conductsRedstone(host)) {
+            remove(host);
+            return;
+        }
         AABB localBounds = host.getMoldedData()
             .map(MoldedPlasticData::surfaceBounds)
             .orElseGet(() -> host.plasticraft$getGeometry().localBounds());
-        if (host.isRemoved() || !isFullBlockSized(localBounds)) {
+        if (!isFullBlockSized(localBounds)) {
             remove(host);
             return;
         }
@@ -90,11 +95,22 @@ public final class MoldedPlasticRedstoneConductor {
         int result = 0;
         for (Entry entry : matching) {
             UniversalPlasticEntity owner = entry.owner.get();
-            if (owner == null || owner.isRemoved() || owner.level() != level) continue;
+            if (owner == null
+                || owner.isRemoved()
+                || owner.level() != level
+                || !conductsRedstone(owner)) continue;
             result = Math.max(result, receivedDirectSignal(owner, entry.bounds));
             if (result >= 15) return 15;
         }
         return result;
+    }
+
+    private static boolean conductsRedstone(UniversalPlasticEntity host) {
+        if (host.getDisplayState().is(PlasticraftBlocks.CLEAR_PLASTIC.get())) return false;
+        return host.getMoldedData()
+            .flatMap(data -> PlasticMaterial.fromMelt(data.material()))
+            .map(material -> !material.isTransparent())
+            .orElse(true);
     }
 
     private static int receivedDirectSignal(UniversalPlasticEntity host, AABB bounds) {
@@ -222,7 +238,11 @@ public final class MoldedPlasticRedstoneConductor {
             if (!connectedBefore.contains(key)) changed.add(key);
         }
 
-        Block notifyingBlock = PlasticraftBlocks.UNIVERSAL_PLASTIC.get();
+        UniversalPlasticEntity notifyingOwner = replacement == null ? null : replacement.owner.get();
+        if (notifyingOwner == null && previous != null) notifyingOwner = previous.owner.get();
+        Block notifyingBlock = notifyingOwner == null
+            ? PlasticraftBlocks.UNIVERSAL_PLASTIC.get()
+            : notifyingOwner.getDisplayState().getBlock();
         for (SignalKey key : changed) {
             level.updateNeighborsAt(key.sourcePos, notifyingBlock);
             level.updateNeighborsAtExceptFromFacing(

@@ -7,6 +7,7 @@ import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 
 /** 休息室卡片点选后把对应托管悦灵放到站顶。 */
@@ -37,7 +38,9 @@ public record AllayLoungeReleasePacket(BlockPos loungePos, int index) implements
             return;
         }
         if (player.level().getBlockEntity(this.loungePos) instanceof AllayLoungeBlockEntity lounge) {
-            lounge.releaseHosted(this.index);
+            if (player instanceof ServerPlayer serverPlayer) {
+                lounge.releaseHosted(serverPlayer, this.index);
+            }
         }
     }
 }

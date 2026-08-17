@@ -1,7 +1,9 @@
 package dev.anvilcraft.plasticraft.molding.product;
 
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticStorageHandle;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandlerItem;
@@ -16,12 +18,14 @@ import java.util.function.Supplier;
 public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
     private final MoldedPlasticStorageHandle handle;
     private final Supplier<ItemStack> container;
+    private final Runnable onLavaDestroysTank;
 
     public MoldedPlasticFluidHandler(
         Supplier<Optional<MoldedPlasticData>> data,
         Consumer<MoldedPlasticData> update
     ) {
-        this(data, update, () -> ItemStack.EMPTY);
+        this(data, update, () -> ItemStack.EMPTY, () -> {
+        });
     }
 
     public MoldedPlasticFluidHandler(
@@ -29,8 +33,19 @@ public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
         Consumer<MoldedPlasticData> update,
         Supplier<ItemStack> container
     ) {
+        this(data, update, container, () -> {
+        });
+    }
+
+    public MoldedPlasticFluidHandler(
+        Supplier<Optional<MoldedPlasticData>> data,
+        Consumer<MoldedPlasticData> update,
+        Supplier<ItemStack> container,
+        Runnable onLavaDestroysTank
+    ) {
         this.handle = new MoldedPlasticStorageHandle(data, update);
         this.container = container;
+        this.onLavaDestroysTank = onLavaDestroysTank;
     }
 
     @Override
@@ -67,6 +82,18 @@ public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
         return stack != null && !stack.isEmpty() && tank >= 0 && tank < this.getTanks();
     }
 
+    public boolean hasUnsafeLava() {
+        return this.handle.data()
+            .filter(value -> MoldingProductTypes.isTank(value.finalType()))
+            .filter(value -> !isLavaResistant(value))
+            .map(value -> this.handle.fluids().stream().anyMatch(fluid -> fluid.is(FluidTags.LAVA)))
+            .orElse(false);
+    }
+
+    public void discardFluids() {
+        this.handle.setFluids(List.of());
+    }
+
     @Override
     public int fill(FluidStack resource, FluidAction action) {
         if (resource == null || resource.isEmpty()) return 0;
@@ -86,12 +113,16 @@ public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
             }
         }
         if (action.execute()) {
-            if (match >= 0) {
+            if (resource.is(FluidTags.LAVA) && !isLavaResistant(value)) {
+                this.discardFluids();
+                this.onLavaDestroysTank.run();
+            } else if (match >= 0) {
                 fluids.set(match, fluids.get(match).copyWithAmount(fluids.get(match).getAmount() + accepted));
+                this.handle.setFluids(fluids);
             } else {
                 fluids.add(resource.copyWithAmount(accepted));
+                this.handle.setFluids(fluids);
             }
-            this.handle.setFluids(fluids);
         }
         return accepted;
     }
@@ -127,5 +158,11 @@ public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
             this.handle.setFluids(fluids);
         }
         return extracted;
+    }
+
+    private static boolean isLavaResistant(MoldedPlasticData data) {
+        return PlasticMaterial.fromMelt(data.material())
+            .filter(material -> material == PlasticMaterial.HEAT_RESISTANT)
+            .isPresent();
     }
 }

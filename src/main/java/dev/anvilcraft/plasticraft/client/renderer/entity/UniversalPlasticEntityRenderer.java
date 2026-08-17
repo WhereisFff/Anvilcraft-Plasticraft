@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.client.renderer.entity;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
+import dev.anvilcraft.plasticraft.client.renderer.ClearPlasticRenderTypes;
 import dev.anvilcraft.plasticraft.client.renderer.DynamicPlasticTextureManager;
 import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer.PreparedTankFluids;
@@ -9,6 +10,7 @@ import dev.anvilcraft.plasticraft.client.renderer.MoldedTrayComponentRenderer;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.entity.EntityRenderer;
@@ -69,9 +71,15 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
             super.render(entity, yaw, partialTick, pose, buffers, packedLight);
             return;
         }
+        boolean deferredPass = ClearPlasticRenderTypes.isDeferredPassActive();
+        if (PlasticEntityRenderHelper.isTransparent(entity)
+            && isLiveWorldEntity(entity)
+            && !deferredPass) {
+            super.render(entity, yaw, partialTick, pose, buffers, packedLight);
+            return;
+        }
         pose.pushPose();
         PlasticEntityRenderTransforms.apply(pose, entity, partialTick);
-        PlasticEntityRenderHelper.renderModel(entity, this.dispatcher, pose, buffers, packedLight);
         entity.getMoldedData()
             .filter(data -> MoldingProductTypes.isTank(data.finalType()))
             .ifPresent(data -> {
@@ -83,6 +91,8 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
                     packedLight
                 );
             });
+        // 先绘制内腔流体，再绘制外壳，让透明塑料颜色覆盖在流体之上。
+        PlasticEntityRenderHelper.renderModel(entity, this.dispatcher, pose, buffers, packedLight);
         entity.getMoldedData().ifPresent(data -> MoldedTrayComponentRenderer.render(
             data,
             this.dispatcher,
@@ -94,7 +104,7 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
             OverlayTexture.NO_OVERLAY
         ));
         pose.popPose();
-        super.render(entity, yaw, partialTick, pose, buffers, packedLight);
+        if (!deferredPass) super.render(entity, yaw, partialTick, pose, buffers, packedLight);
     }
 
     @Override
@@ -114,6 +124,14 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
         return entity.isOnFire()
             ? 15
             : sampleLight(entity.level(), LightLayer.BLOCK, entity.getBoundingBox());
+    }
+
+    public static int packedLight(UniversalPlasticEntity entity) {
+        int blockLight = entity.isOnFire()
+            ? 15
+            : sampleLight(entity.level(), LightLayer.BLOCK, entity.getBoundingBox());
+        int skyLight = sampleLight(entity.level(), LightLayer.SKY, entity.getBoundingBox());
+        return LightTexture.pack(blockLight, skyLight);
     }
 
     private static int sampleLight(Level level, LightLayer layer, AABB bounds) {
@@ -140,6 +158,10 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
         return Math.max(light, brightness(
             level, layer, sample, centerX, centerY, bounds.maxZ + LIGHT_SAMPLE_OFFSET
         ));
+    }
+
+    private static boolean isLiveWorldEntity(UniversalPlasticEntity entity) {
+        return entity.level().isClientSide && entity.level().getEntity(entity.getId()) == entity;
     }
 
     private static int brightness(

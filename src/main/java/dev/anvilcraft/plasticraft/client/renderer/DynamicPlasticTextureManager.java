@@ -12,6 +12,7 @@ import dev.anvilcraft.plasticraft.api.texture.PlasticTextureInput;
 import dev.anvilcraft.plasticraft.item.CreativeColorVariantItem;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.ResourceLocation;
@@ -29,7 +30,7 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
     public static final DynamicPlasticTextureManager INSTANCE = new DynamicPlasticTextureManager();
 
     private final Map<TextureKey, ResourceLocation> textures = new HashMap<>();
-    private ResourceInputs resources;
+    private final Map<PlasticMaterial, ResourceInputs> resources = new HashMap<>();
 
     private DynamicPlasticTextureManager() {
     }
@@ -38,9 +39,11 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
         List<PlasticSurface> surfaces = data.plasticSurfaces();
         String shapeHash = data.shapeHash();
         DyeColor color = PlasticMeltColor.get(data.material());
-        ResourceInputs currentResources = this.loadResources();
+        PlasticMaterial material = PlasticMaterial.fromMelt(data.material()).orElse(PlasticMaterial.UNIVERSAL);
+        ResourceInputs currentResources = this.loadResources(material);
         TextureKey key = new TextureKey(
             shapeHash,
+            material,
             currentResources.baseHash,
             currentResources.paletteHash,
             color
@@ -49,6 +52,7 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
             shapeHash,
             surfaces,
             color,
+            material,
             currentResources
         ));
     }
@@ -64,30 +68,34 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
             minecraft.getTextureManager().release(texture);
         }
         this.textures.clear();
-        this.resources = null;
+        this.resources.clear();
     }
 
     private ResourceLocation createTexture(
         String shapeHash,
         List<PlasticSurface> surfaces,
         DyeColor color,
+        PlasticMaterial material,
         ResourceInputs resourceInputs
     ) {
         PlasticTextureInput input = new PlasticTextureInput(
             PlasticTextureGenerator.VERSION,
             shapeHash,
             surfaces,
-            PlasticTextureResourceLoader.BASE_RESOURCE.toString(),
+            material.baseTexture(16).toString(),
             resourceInputs.baseHash,
-            PlasticTextureResourceLoader.PALETTE_RESOURCE.toString(),
+            material.hasPalette() ? material.paletteTexture().toString() : "none",
             resourceInputs.paletteHash,
-            CreativeColorVariantItem.paletteRow(color)
+            material.hasPalette() ? CreativeColorVariantItem.paletteRow(color) : 0
         );
         GeneratedPlasticTexture generated = PlasticTextureCache.getOrGenerate(
             input,
-            () -> resourceInputs.available()
-                ? PlasticTextureGenerator.generate(input, resourceInputs.bases, resourceInputs.palette)
-                : PlasticTextureGenerator.placeholder(input)
+            () -> {
+                if (!resourceInputs.available(material)) return PlasticTextureGenerator.placeholder(input);
+                return material.isTransparent()
+                    ? PlasticTextureGenerator.generateTransparent(input, resourceInputs.bases, resourceInputs.palette)
+                    : PlasticTextureGenerator.generate(input, resourceInputs.bases, resourceInputs.palette);
+            }
         );
         NativeImage image = new NativeImage(
             generated.layout().atlasWidth(),
@@ -100,18 +108,23 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
             }
         }
         ResourceLocation id = AnvilcraftPlasticraft.of(
-            "dynamic/molded_" + shapeHash + "_" + color.getName()
+            "dynamic/molded_" + material.key() + "_" + shapeHash + "_" + color.getName()
         );
         Minecraft.getInstance().getTextureManager().register(id, new DynamicTexture(image));
         return id;
     }
 
-    private ResourceInputs loadResources() {
-        if (this.resources != null) return this.resources;
+    private ResourceInputs loadResources(PlasticMaterial material) {
+        ResourceInputs cached = this.resources.get(material);
+        if (cached != null) return cached;
+        ResourceInputs loadedResources;
         try {
             ResourceManager manager = Minecraft.getInstance().getResourceManager();
-            PlasticTextureResourceLoader.LoadedResources loaded = PlasticTextureResourceLoader.load(manager);
-            this.resources = new ResourceInputs(
+            PlasticTextureResourceLoader.LoadedResources loaded = PlasticTextureResourceLoader.load(
+                manager,
+                material
+            );
+            loadedResources = new ResourceInputs(
                 loaded.bases(),
                 loaded.palette(),
                 loaded.baseHash(),
@@ -122,12 +135,19 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
                 "Unable to load dynamic plastic texture resources; using placeholders",
                 exception
             );
-            this.resources = ResourceInputs.unavailable();
+            loadedResources = ResourceInputs.unavailable();
         }
-        return this.resources;
+        this.resources.put(material, loadedResources);
+        return loadedResources;
     }
 
-    private record TextureKey(String shapeHash, String baseHash, String paletteHash, DyeColor color) {
+    private record TextureKey(
+        String shapeHash,
+        PlasticMaterial material,
+        String baseHash,
+        String paletteHash,
+        DyeColor color
+    ) {
     }
 
     private record ResourceInputs(
@@ -140,8 +160,8 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
             return new ResourceInputs(null, null, "unavailable", "unavailable");
         }
 
-        private boolean available() {
-            return this.bases != null && this.palette != null;
+        private boolean available(PlasticMaterial material) {
+            return this.bases != null && (!material.hasPalette() || this.palette != null);
         }
     }
 }

@@ -6,6 +6,7 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingBarrierFace;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingAnvilShapeAnalysis;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingAnvilShapeAnalyzer;
@@ -86,7 +87,7 @@ public final class MoldingProductGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "Anvil type accepts the three-section profile, projection/giant bounds, and reversed Ember outline")
+    @TestHolder(description = "Anvil type accepts the three-section profile, minimum base, projection/giant bounds, and reversed Ember outline")
     static void anvilShapeBoundaries(ExtendedGameTestHelper helper) {
         MoldingAnvilShapeAnalysis valid = MoldingAnvilShapeAnalyzer.analyze(anvilMask(
             3,
@@ -122,8 +123,10 @@ public final class MoldingProductGameTests {
         check(!preview.downgraded() && MoldingProductTypes.ANVIL_ID.equals(preview.finalType()),
             "complete baked anvil model was downgraded: " + preview);
 
-        check(!MoldingAnvilShapeAnalyzer.analyze(anvilMask(3, 3, 5, 13, 10, 18)).valid(),
-            "13 px bottom passed the 14 x 14 rule");
+        check(MoldingAnvilShapeAnalyzer.analyze(anvilMask(3, 3, 5, 12, 10, 18)).valid(),
+            "12 x 12 bottom did not pass the minimum rule");
+        check(!MoldingAnvilShapeAnalyzer.analyze(anvilRectMask(11, 12, 9, 10, 18, 18)).valid(),
+            "11 x 12 bottom passed the 12 x 12 rule");
         check(!MoldingAnvilShapeAnalyzer.analyze(anvilMask(3, 2, 5, 16, 10, 18)).valid(),
             "2 px middle passed the thickness rule");
         check(!MoldingAnvilShapeAnalyzer.analyze(anvilMask(3, 3, 5, 16, 16, 18)).valid(),
@@ -154,8 +157,8 @@ public final class MoldingProductGameTests {
             "ember-anvil reversed bottom outline was rejected: " + emberBaked.functionalAnalysis().anvilShape());
         check(MoldingProductTypes.validate(MoldingProductTypes.ANVIL_ID, emberAnvil, emberBaked).valid(),
             "ember-anvil could not be assigned the anvil type");
-        check(!MoldingModelBaker.bake(emberAnvilModel(false)).functionalAnalysis().anvilShape().valid(),
-            "ordinary 12 x 12 bottom passed without a reversed outer outline");
+        check(MoldingModelBaker.bake(emberAnvilModel(false)).functionalAnalysis().anvilShape().valid(),
+            "ordinary 12 x 12 bottom did not pass the minimum rule");
         helper.succeed();
     }
 
@@ -407,13 +410,14 @@ public final class MoldingProductGameTests {
         );
         check(fluids.fill(new FluidStack(Fluids.WATER, 1500), IFluidHandler.FluidAction.EXECUTE) == 1500,
             "tank did not accept the first fluid");
-        check(fluids.fill(new FluidStack(Fluids.LAVA, 600), IFluidHandler.FluidAction.EXECUTE) == 500,
+        check(fluids.fill(new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 600), IFluidHandler.FluidAction.EXECUTE) == 500,
             "tank did not enforce shared capacity");
         check(tank[0].contents().fluids().size() == 2, "tank did not preserve fluid order");
         check(fluids.getTanks() == 2, "tank capability did not expose every fluid layer");
         check(fluids.getFluidInTank(0).is(Fluids.WATER)
-            && fluids.getFluidInTank(1).is(Fluids.LAVA), "tank capability changed fluid layer order");
-        check(fluids.drain(250, IFluidHandler.FluidAction.SIMULATE).is(Fluids.LAVA),
+            && fluids.getFluidInTank(1).is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get()),
+            "tank capability changed fluid layer order");
+        check(fluids.drain(250, IFluidHandler.FluidAction.SIMULATE).is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get()),
             "tank amount drain did not start at the top layer");
         check(fluids.drain(new FluidStack(Fluids.WATER, 500), IFluidHandler.FluidAction.EXECUTE)
                 .getAmount() == 500,
@@ -447,6 +451,48 @@ public final class MoldingProductGameTests {
         double surfaceY = freeSurface.stream().mapToDouble(Vec3::y).average().orElseThrow();
         check(Math.abs(surfaceY - 3.8D) < 1.0E-5D,
             "axis-aligned liquid volume used the wrong slice integral: " + surfaceY);
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Only heat-resistant molded tanks retain lava; other materials discard every fluid")
+    static void tankLavaHazardsFollowMaterial(ExtendedGameTestHelper helper) {
+        EditableMoldingModel model = model(MoldingProductTypes.TANK_ID);
+        for (PlasticMaterial material : PlasticMaterial.values()) {
+            final MoldedPlasticData[] tank = {
+                fullData(model).withMaterial(new FluidStack(material.melt(), 250))
+            };
+            boolean[] destroyed = {false};
+            MoldedPlasticFluidHandler fluids = new MoldedPlasticFluidHandler(
+                () -> Optional.of(tank[0]),
+                replacement -> tank[0] = replacement,
+                () -> ItemStack.EMPTY,
+                () -> destroyed[0] = true
+            );
+            int capacity = fluids.getTankCapacity(0);
+            int water = capacity / 2;
+            check(water > 0, material.key() + " tank had no usable capacity");
+            check(fluids.fill(new FluidStack(Fluids.WATER, water), IFluidHandler.FluidAction.EXECUTE) == water,
+                material.key() + " tank rejected water before the lava check");
+
+            int lava = capacity - water;
+            check(fluids.fill(new FluidStack(Fluids.LAVA, lava), IFluidHandler.FluidAction.SIMULATE) == lava,
+                material.key() + " tank reported the wrong simulated lava transfer");
+            check(!destroyed[0], material.key() + " tank was destroyed by simulated lava");
+            check(fluids.fill(new FluidStack(Fluids.LAVA, lava), IFluidHandler.FluidAction.EXECUTE) == lava,
+                material.key() + " tank reported the wrong executed lava transfer");
+
+            if (material == PlasticMaterial.HEAT_RESISTANT) {
+                check(!destroyed[0], "heat-resistant tank was destroyed by lava");
+                check(fluids.getFluidInTank(0).is(Fluids.WATER)
+                        && fluids.getFluidInTank(1).is(Fluids.LAVA),
+                    "heat-resistant tank did not retain its fluids after lava fill");
+            } else {
+                check(destroyed[0], material.key() + " tank was not destroyed by lava");
+                check(handleFluids(tank).isEmpty(), material.key() + " tank retained fluid after lava destruction");
+            }
+        }
         helper.succeed();
     }
 
