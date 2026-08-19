@@ -1,5 +1,7 @@
 package dev.anvilcraft.plasticraft.gametest;
 
+import dev.anvilcraft.lib.v2.multiblock.dynamic.definition.MultiblockDefinition;
+import dev.anvilcraft.lib.v2.util.predicate.BlockStatePredicate;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
@@ -27,12 +29,11 @@ import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.block.ModFluids;
 import dev.dubhe.anvilcraft.init.item.ModItemTags;
 import dev.dubhe.anvilcraft.recipe.anvil.outcome.RoyalPreferenceOutcome;
-import dev.dubhe.anvilcraft.recipe.multiblock.BlockPattern;
-import dev.dubhe.anvilcraft.recipe.multiblock.BlockPredicateWithState;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockConversionRecipe;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockRecipe;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.Vec3i;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
@@ -56,6 +57,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CampfireBlock;
 import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.Half;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
@@ -764,51 +766,101 @@ public final class CondenserTowerGameTests {
         throw new GameTestAssertException("royal preference selected no gem block");
     }
 
-    private static void checkCondenserInputPattern(BlockPattern pattern) {
-        check(pattern.getLayers().equals(List.of(
-            List.of("DCD", "CFC", "DCD"),
-            List.of(" C ", "C C", " C "),
-            List.of(" E ", "ABA", " E ")
-        )), "condenser recipe layers were not ordered from bottom to top");
+    private static void checkCondenserInputPattern(MultiblockDefinition definition) {
+        check(definition.definition().size() == 18,
+            "condenser recipe did not retain its 3x3x3 non-air layout");
 
-        checkPipePredicate(pattern.getBySymbol('A'), Direction.Axis.X, "west/east");
-        checkPipePredicate(pattern.getBySymbol('E'), Direction.Axis.Z, "north/south");
-        check(pattern.getBySymbol('C').getBlock()
-                == ModBlocks.CUT_BRASS_PILLAR.get(),
+        checkPipePredicate(predicateAt(definition, 0, 2, 1), Direction.Axis.X, "west");
+        checkPipePredicate(predicateAt(definition, 2, 2, 1), Direction.Axis.X, "east");
+        checkPipePredicate(predicateAt(definition, 1, 2, 0), Direction.Axis.Z, "north");
+        checkPipePredicate(predicateAt(definition, 1, 2, 2), Direction.Axis.Z, "south");
+        BlockState pillar = ModBlocks.CUT_BRASS_PILLAR.get().defaultBlockState()
+            .setValue(BlockStateProperties.AXIS, Direction.Axis.Y);
+        check(matchesOnlyBlock(predicateAt(definition, 1, 0, 0), ModBlocks.CUT_BRASS_PILLAR.get())
+                && matchesPredicate(predicateAt(definition, 1, 0, 0), pillar),
             "condenser recipe did not use cut brass pillars");
-        check(pattern.getBySymbol('D').getBlock() == PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get(),
+        check(matchesOnlyBlock(predicateAt(definition, 0, 0, 0), PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get()),
             "condenser recipe did not use high-viscosity resin blocks");
-        checkTrapdoorPredicate(pattern.getBySymbol('B'), Half.TOP, "top");
-        checkTrapdoorPredicate(pattern.getBySymbol('F'), Half.BOTTOM, "bottom");
+        checkTrapdoorPredicate(predicateAt(definition, 1, 2, 1), Half.TOP, "top");
+        checkTrapdoorPredicate(predicateAt(definition, 1, 0, 1), Half.BOTTOM, "bottom");
     }
 
     private static void checkPipePredicate(
-        BlockPredicateWithState predicate,
+        BlockStatePredicate predicate,
         Direction.Axis axis,
         String position
     ) {
-        check(predicate.getBlock() == ModBlocks.PIPE_STRAIGHT.get(),
+        check(matchesOnlyBlock(predicate, ModBlocks.PIPE_STRAIGHT.get()),
             position + " condenser interface was not a straight pipe");
-        check(predicate.getPropertyValue(PipeBlock.AXIS) == axis,
+        BlockState expected = pipeState(axis);
+        check(matchesPredicate(predicate, expected),
+            position + " condenser pipe did not accept its configured state");
+        check(!matchesPredicate(predicate, expected.setValue(
+                PipeBlock.AXIS,
+                axis == Direction.Axis.X ? Direction.Axis.Z : Direction.Axis.X
+            )),
             position + " condenser pipe used the wrong axis");
-        check(Boolean.TRUE.equals(predicate.getPropertyValue(PipeBlock.HAS_END_START))
-                && Boolean.TRUE.equals(predicate.getPropertyValue(PipeBlock.HAS_END_END)),
+        check(!matchesPredicate(predicate, expected.setValue(PipeBlock.HAS_END_START, false))
+                && !matchesPredicate(predicate, expected.setValue(PipeBlock.HAS_END_END, false)),
             position + " condenser pipe did not render both ends");
-        check(Boolean.TRUE.equals(predicate.getPropertyValue(PipeBlock.HAS_CHECK_VALVE)),
+        check(!matchesPredicate(predicate, expected.setValue(PipeBlock.HAS_CHECK_VALVE, false)),
             position + " condenser pipe did not include a check valve");
-        check(Boolean.FALSE.equals(predicate.getPropertyValue(PipeBlock.WATERLOGGED)),
+        check(!matchesPredicate(predicate, expected.setValue(PipeBlock.WATERLOGGED, true)),
             position + " condenser pipe was waterlogged");
     }
 
     private static void checkTrapdoorPredicate(
-        BlockPredicateWithState predicate,
+        BlockStatePredicate predicate,
         Half half,
         String position
     ) {
-        check(predicate.getBlock() == Blocks.COPPER_TRAPDOOR,
+        check(matchesOnlyBlock(predicate, Blocks.COPPER_TRAPDOOR),
             position + " condenser trapdoor was not copper");
-        check(predicate.getPropertyValue(TrapDoorBlock.HALF) == half,
+        BlockState expected = trapdoorState(half);
+        check(matchesPredicate(predicate, expected),
+            position + " condenser trapdoor did not accept its configured state");
+        check(!matchesPredicate(predicate, expected.setValue(
+                TrapDoorBlock.HALF,
+                half == Half.TOP ? Half.BOTTOM : Half.TOP
+            )),
             position + " condenser trapdoor used the wrong half");
+        check(!matchesPredicate(predicate, expected.setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.SOUTH)),
+            position + " condenser trapdoor used the wrong facing");
+        check(!matchesPredicate(predicate, expected.setValue(BlockStateProperties.OPEN, true)),
+            position + " condenser trapdoor was open");
+        check(!matchesPredicate(predicate, expected.setValue(BlockStateProperties.WATERLOGGED, true)),
+            position + " condenser trapdoor was waterlogged");
+    }
+
+    private static BlockStatePredicate predicateAt(MultiblockDefinition definition, int x, int y, int z) {
+        return definition.definition().get(new Vec3i(x, y, z));
+    }
+
+    private static boolean matchesOnlyBlock(BlockStatePredicate predicate, Block block) {
+        return predicate != null
+            && predicate.getBlocks().size() == 1
+            && predicate.getBlocks().stream().allMatch(holder -> holder.value() == block);
+    }
+
+    private static boolean matchesPredicate(BlockStatePredicate predicate, BlockState state) {
+        return predicate != null && predicate.testWithoutEntity(state);
+    }
+
+    private static BlockState pipeState(Direction.Axis axis) {
+        return ModBlocks.PIPE_STRAIGHT.get().defaultBlockState()
+            .setValue(PipeBlock.AXIS, axis)
+            .setValue(PipeBlock.HAS_END_START, true)
+            .setValue(PipeBlock.HAS_END_END, true)
+            .setValue(PipeBlock.HAS_CHECK_VALVE, true)
+            .setValue(PipeBlock.WATERLOGGED, false);
+    }
+
+    private static BlockState trapdoorState(Half half) {
+        return Blocks.COPPER_TRAPDOOR.defaultBlockState()
+            .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH)
+            .setValue(BlockStateProperties.OPEN, false)
+            .setValue(TrapDoorBlock.HALF, half)
+            .setValue(BlockStateProperties.WATERLOGGED, false);
     }
 
     private static void check(boolean condition, String message) {

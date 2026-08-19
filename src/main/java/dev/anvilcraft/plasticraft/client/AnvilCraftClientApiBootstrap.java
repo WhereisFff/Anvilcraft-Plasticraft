@@ -1,6 +1,8 @@
 package dev.anvilcraft.plasticraft.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import dev.anvilcraft.lib.v2.multiblock.dynamic.definition.MultiblockDefinition;
+import dev.anvilcraft.lib.v2.util.predicate.BlockStatePredicate;
 import dev.anvilcraft.plasticraft.block.IgnitedFluidEffects;
 import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.MoldingBlueprintDiskPreviewRenderer;
@@ -16,15 +18,18 @@ import dev.dubhe.anvilcraft.client.renderer.blockentity.FishTankRenderHooks;
 import dev.dubhe.anvilcraft.client.renderer.blockentity.LargeCauldronRenderHooks;
 import dev.dubhe.anvilcraft.client.support.StructureDiskPreviewSupport;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
-import dev.dubhe.anvilcraft.recipe.multiblock.BlockPattern;
-import dev.dubhe.anvilcraft.recipe.multiblock.BlockPredicateWithState;
 import dev.dubhe.anvilcraft.util.LevelLike;
 import dev.dubhe.anvilcraft.util.RecipeUtil;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.Vec3i;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.TrapDoorBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.Half;
 import net.neoforged.neoforge.fluids.FluidStack;
 
 /** 客户端扩展点注册。不得在此初始化 JEI/Jade 客户端 API。 */
@@ -83,27 +88,51 @@ public final class AnvilCraftClientApiBootstrap {
         });
     }
 
-    private static void seedCondenserValves(BlockPattern pattern, LevelLike level) {
-        if (!isCondenserInput(pattern)) return;
+    private static void seedCondenserValves(MultiblockDefinition definition, LevelLike level) {
+        if (!isCondenserInput(definition)) return;
         seedValve(level, new BlockPos(0, 2, 1), Direction.WEST);
         seedValve(level, new BlockPos(2, 2, 1), Direction.EAST);
         seedValve(level, new BlockPos(1, 2, 0), Direction.NORTH);
         seedValve(level, new BlockPos(1, 2, 2), Direction.SOUTH);
     }
 
-    private static boolean isCondenserInput(BlockPattern pattern) {
-        return pattern.getSize() == 3
-            && pattern.getPredicate(1, 2, 1).getBlock() == Blocks.COPPER_TRAPDOOR
-            && isValvePipe(pattern.getPredicate(0, 2, 1), Direction.Axis.X)
-            && isValvePipe(pattern.getPredicate(2, 2, 1), Direction.Axis.X)
-            && isValvePipe(pattern.getPredicate(1, 2, 0), Direction.Axis.Z)
-            && isValvePipe(pattern.getPredicate(1, 2, 2), Direction.Axis.Z);
+    private static boolean isCondenserInput(MultiblockDefinition definition) {
+        return definition.definition().size() == 18
+            && isTrapdoor(predicateAt(definition, 1, 2, 1), Half.TOP)
+            && isTrapdoor(predicateAt(definition, 1, 0, 1), Half.BOTTOM)
+            && isValvePipe(predicateAt(definition, 0, 2, 1), Direction.Axis.X)
+            && isValvePipe(predicateAt(definition, 2, 2, 1), Direction.Axis.X)
+            && isValvePipe(predicateAt(definition, 1, 2, 0), Direction.Axis.Z)
+            && isValvePipe(predicateAt(definition, 1, 2, 2), Direction.Axis.Z);
     }
 
-    private static boolean isValvePipe(BlockPredicateWithState predicate, Direction.Axis axis) {
-        return predicate.getBlock() == ModBlocks.PIPE_STRAIGHT.get()
-            && predicate.getPropertyValue(PipeBlock.AXIS) == axis
-            && Boolean.TRUE.equals(predicate.getPropertyValue(PipeBlock.HAS_CHECK_VALVE));
+    private static BlockStatePredicate predicateAt(MultiblockDefinition definition, int x, int y, int z) {
+        return definition.definition().get(new Vec3i(x, y, z));
+    }
+
+    private static boolean isValvePipe(BlockStatePredicate predicate, Direction.Axis axis) {
+        return predicate != null && predicate.testWithoutEntity(pipeState(axis));
+    }
+
+    private static boolean isTrapdoor(BlockStatePredicate predicate, Half half) {
+        return predicate != null && predicate.testWithoutEntity(trapdoorState(half));
+    }
+
+    private static BlockState pipeState(Direction.Axis axis) {
+        return ModBlocks.PIPE_STRAIGHT.get().defaultBlockState()
+            .setValue(PipeBlock.AXIS, axis)
+            .setValue(PipeBlock.HAS_END_START, true)
+            .setValue(PipeBlock.HAS_END_END, true)
+            .setValue(PipeBlock.HAS_CHECK_VALVE, true)
+            .setValue(PipeBlock.WATERLOGGED, false);
+    }
+
+    private static BlockState trapdoorState(Half half) {
+        return Blocks.COPPER_TRAPDOOR.defaultBlockState()
+            .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH)
+            .setValue(BlockStateProperties.OPEN, false)
+            .setValue(TrapDoorBlock.HALF, half)
+            .setValue(BlockStateProperties.WATERLOGGED, false);
     }
 
     private static void seedValve(LevelLike level, BlockPos pos, Direction outward) {

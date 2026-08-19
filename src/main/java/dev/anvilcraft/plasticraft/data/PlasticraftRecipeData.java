@@ -4,8 +4,10 @@ import dev.anvilcraft.lib.v2.recipe.data.advancement.predicate.item.NotPredicate
 import dev.anvilcraft.lib.v2.recipe.init.LibItemSubPredicates;
 import dev.anvilcraft.lib.v2.registrum.providers.ProviderType;
 import dev.anvilcraft.lib.v2.registrum.providers.RegistrumRecipeProvider;
+import dev.anvilcraft.lib.v2.util.predicate.BlockStatePredicate;
 import dev.anvilcraft.lib.v2.util.predicate.ItemIngredientPredicate;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
@@ -18,6 +20,8 @@ import dev.anvilcraft.plasticraft.recipe.FluidFastCookingRecipe;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
 import dev.anvilcraft.plasticraft.recipe.PlasticMoldingChamberRecipe;
 import dev.dubhe.anvilcraft.block.CorruptedBeaconBlock;
+import dev.dubhe.anvilcraft.block.fluid.PipeBlock;
+import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.block.ModFluids;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
@@ -31,13 +35,13 @@ import dev.dubhe.anvilcraft.recipe.anvil.outcome.ResentmentAmberOutcome;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.FastCookingRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.SolidLiquidRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.TimeWarpRecipe;
-import dev.dubhe.anvilcraft.recipe.multiblock.BlockPredicateWithState;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockConversionRecipe;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockRecipe;
 import net.minecraft.advancements.Advancement;
 import net.minecraft.advancements.AdvancementHolder;
 import net.minecraft.advancements.AdvancementRequirements;
 import net.minecraft.advancements.AdvancementRewards;
+import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponentPredicate;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.data.recipes.RecipeCategory;
@@ -55,6 +59,9 @@ import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.ShapedRecipe;
 import net.minecraft.world.item.crafting.ShapedRecipePattern;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.TrapDoorBlock;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.Half;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.conditions.ICondition;
@@ -220,36 +227,15 @@ public final class PlasticraftRecipeData {
             .layer("DCD", "CFC", "DCD")
             .layer(" C ", "C C", " C ")
             .layer(" E ", "ABA", " E ")
-            .symbol('A', BlockPredicateWithState.of("anvilcraft:pipe_straight")
-                .hasState("axis", "x")
-                .hasState("has_end_start", "true")
-                .hasState("has_end_end", "true")
-                .hasState("has_check_valve", "true")
-                .hasState("waterlogged", "false")
+            .symbol('A', condenserPipe(Direction.Axis.X))
+            .symbol('B', condenserTrapdoor(Half.TOP))
+            .symbol('C', BlockStatePredicate.builder()
+                .of(ModBlocks.CUT_BRASS_PILLAR.get())
+                .with(BlockStateProperties.AXIS, Direction.Axis.Y)
             )
-            .symbol('B', BlockPredicateWithState.of("minecraft:copper_trapdoor")
-                .hasState("facing", "north")
-                .hasState("open", "false")
-                .hasState("half", "top")
-                .hasState("waterlogged", "false")
-            )
-            .symbol('C', BlockPredicateWithState.of("anvilcraft:cut_brass_pillar")
-                .hasState("axis", "y")
-            )
-            .symbol('D', "anvilcraftplasticraft:high_viscosity_resin_block")
-            .symbol('E', BlockPredicateWithState.of("anvilcraft:pipe_straight")
-                .hasState("axis", "z")
-                .hasState("has_end_start", "true")
-                .hasState("has_end_end", "true")
-                .hasState("has_check_valve", "true")
-                .hasState("waterlogged", "false")
-            )
-            .symbol('F', BlockPredicateWithState.of("minecraft:copper_trapdoor")
-                .hasState("facing", "north")
-                .hasState("open", "false")
-                .hasState("half", "bottom")
-                .hasState("waterlogged", "false")
-            )
+            .symbol('D', PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get())
+            .symbol('E', condenserPipe(Direction.Axis.Z))
+            .symbol('F', condenserTrapdoor(Half.BOTTOM))
             // 显式指定附属模组命名空间，避免 AnvilCraft 构建器按结果物品回退到本体命名空间。
             .save(provider, AnvilcraftPlasticraft.of("multiblock/condenser_tower"));
 
@@ -259,147 +245,45 @@ public final class PlasticraftRecipeData {
             .inputLayer("DCD", "CFC", "DCD")
             .inputLayer(" C ", "C C", " C ")
             .inputLayer(" E ", "ABA", " E ")
-            .inputSymbol('A', BlockPredicateWithState.of("anvilcraft:pipe_straight")
-                .hasState("axis", "x")
-                .hasState("has_end_start", "true")
-                .hasState("has_end_end", "true")
-                .hasState("has_check_valve", "true")
-                .hasState("waterlogged", "false")
+            .inputSymbol('A', condenserPipe(Direction.Axis.X))
+            .inputSymbol('B', condenserTrapdoor(Half.TOP))
+            .inputSymbol('C', BlockStatePredicate.builder()
+                .of(ModBlocks.CUT_BRASS_PILLAR.get())
+                .with(BlockStateProperties.AXIS, Direction.Axis.Y)
             )
-            .inputSymbol('B', BlockPredicateWithState.of("minecraft:copper_trapdoor")
-                .hasState("facing", "north")
-                .hasState("open", "false")
-                .hasState("half", "top")
-                .hasState("waterlogged", "false")
-            )
-            .inputSymbol('C', BlockPredicateWithState.of("anvilcraft:cut_brass_pillar")
-                .hasState("axis", "y")
-            )
-            .inputSymbol('D', "anvilcraftplasticraft:high_viscosity_resin_block")
-            .inputSymbol('E', BlockPredicateWithState.of("anvilcraft:pipe_straight")
-                .hasState("axis", "z")
-                .hasState("has_end_start", "true")
-                .hasState("has_end_end", "true")
-                .hasState("has_check_valve", "true")
-                .hasState("waterlogged", "false")
-            )
-            .inputSymbol('F', BlockPredicateWithState.of("minecraft:copper_trapdoor")
-                .hasState("facing", "north")
-                .hasState("open", "false")
-                .hasState("half", "bottom")
-                .hasState("waterlogged", "false")
-            )
+            .inputSymbol('D', PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get())
+            .inputSymbol('E', condenserPipe(Direction.Axis.Z))
+            .inputSymbol('F', condenserTrapdoor(Half.BOTTOM))
             .outputLayer("ABC", "DEF", "GHI")
             .outputLayer("JKL", "MNO", "PQR")
             .outputLayer("STU", "VWX", "YZ[")
-            .outputSymbol('A', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "bottom_wn")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('B', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "bottom_n")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('C', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "bottom_en")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('D', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "bottom_w")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('E', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "bottom_center")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('F', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "bottom_e")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('G', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "bottom_ws")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('H', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "bottom_s")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('I', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "bottom_es")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('J', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "mid_wn")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('K', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "mid_n")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('L', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "mid_en")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('M', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "mid_w")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('N', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "mid_center")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('O', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "mid_e")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('P', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "mid_ws")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('Q', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "mid_s")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('R', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "mid_es")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('S', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "top_wn")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('T', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "top_n")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('U', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "top_en")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('V', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "top_w")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('W', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "top_center")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('X', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "top_e")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('Y', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "top_ws")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('Z', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "top_s")
-                .hasState("sealed", "false")
-            )
-            .outputSymbol('[', BlockPredicateWithState.of("anvilcraftplasticraft:condenser_tower")
-                .hasState("half", "top_es")
-                .hasState("sealed", "false")
-            )
+            .outputSymbol('A', condenserTowerPart(Cube3x3PartHalf.BOTTOM_WN))
+            .outputSymbol('B', condenserTowerPart(Cube3x3PartHalf.BOTTOM_N))
+            .outputSymbol('C', condenserTowerPart(Cube3x3PartHalf.BOTTOM_EN))
+            .outputSymbol('D', condenserTowerPart(Cube3x3PartHalf.BOTTOM_W))
+            .outputSymbol('E', condenserTowerPart(Cube3x3PartHalf.BOTTOM_CENTER))
+            .outputSymbol('F', condenserTowerPart(Cube3x3PartHalf.BOTTOM_E))
+            .outputSymbol('G', condenserTowerPart(Cube3x3PartHalf.BOTTOM_WS))
+            .outputSymbol('H', condenserTowerPart(Cube3x3PartHalf.BOTTOM_S))
+            .outputSymbol('I', condenserTowerPart(Cube3x3PartHalf.BOTTOM_ES))
+            .outputSymbol('J', condenserTowerPart(Cube3x3PartHalf.MID_WN))
+            .outputSymbol('K', condenserTowerPart(Cube3x3PartHalf.MID_N))
+            .outputSymbol('L', condenserTowerPart(Cube3x3PartHalf.MID_EN))
+            .outputSymbol('M', condenserTowerPart(Cube3x3PartHalf.MID_W))
+            .outputSymbol('N', condenserTowerPart(Cube3x3PartHalf.MID_CENTER))
+            .outputSymbol('O', condenserTowerPart(Cube3x3PartHalf.MID_E))
+            .outputSymbol('P', condenserTowerPart(Cube3x3PartHalf.MID_WS))
+            .outputSymbol('Q', condenserTowerPart(Cube3x3PartHalf.MID_S))
+            .outputSymbol('R', condenserTowerPart(Cube3x3PartHalf.MID_ES))
+            .outputSymbol('S', condenserTowerPart(Cube3x3PartHalf.TOP_WN))
+            .outputSymbol('T', condenserTowerPart(Cube3x3PartHalf.TOP_N))
+            .outputSymbol('U', condenserTowerPart(Cube3x3PartHalf.TOP_EN))
+            .outputSymbol('V', condenserTowerPart(Cube3x3PartHalf.TOP_W))
+            .outputSymbol('W', condenserTowerPart(Cube3x3PartHalf.TOP_CENTER))
+            .outputSymbol('X', condenserTowerPart(Cube3x3PartHalf.TOP_E))
+            .outputSymbol('Y', condenserTowerPart(Cube3x3PartHalf.TOP_WS))
+            .outputSymbol('Z', condenserTowerPart(Cube3x3PartHalf.TOP_S))
+            .outputSymbol('[', condenserTowerPart(Cube3x3PartHalf.TOP_ES))
             // 转换配方没有结果物品，必须显式给 ID，不能让构建器以 minecraft:air 推导文件名。
             .save(provider, AnvilcraftPlasticraft.of("multiblock_conversion/condenser_tower"));
 
@@ -409,6 +293,32 @@ public final class PlasticraftRecipeData {
         generatePlasticMeltSolidLiquidRecipes(provider);
 
         generateResinTimeWarpRecipes(provider);
+    }
+
+    private static BlockStatePredicate.Builder condenserPipe(Direction.Axis axis) {
+        return BlockStatePredicate.builder()
+            .of(ModBlocks.PIPE_STRAIGHT.get())
+            .with(PipeBlock.AXIS, axis)
+            .with(PipeBlock.HAS_END_START, true)
+            .with(PipeBlock.HAS_END_END, true)
+            .with(PipeBlock.HAS_CHECK_VALVE, true)
+            .with(PipeBlock.WATERLOGGED, false);
+    }
+
+    private static BlockStatePredicate.Builder condenserTrapdoor(Half half) {
+        return BlockStatePredicate.builder()
+            .of(Blocks.COPPER_TRAPDOOR)
+            .with(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH)
+            .with(BlockStateProperties.OPEN, false)
+            .with(TrapDoorBlock.HALF, half)
+            .with(BlockStateProperties.WATERLOGGED, false);
+    }
+
+    private static BlockStatePredicate.Builder condenserTowerPart(Cube3x3PartHalf half) {
+        return BlockStatePredicate.builder()
+            .of(PlasticraftBlocks.CONDENSER_TOWER.get())
+            .with(CondenserTowerBlock.HALF, half)
+            .with(CondenserTowerBlock.SEALED, false);
     }
 
     private static RecipeOutput moldingChamberRecipeOutput(RecipeOutput output) {

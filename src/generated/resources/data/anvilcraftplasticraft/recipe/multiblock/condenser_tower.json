@@ -1,70 +1,80 @@
 {
   "type": "anvilcraft:multiblock",
   "pattern": {
-    "layers": [
+    "grid": [
       [
-        "DCD",
-        "CFC",
-        "DCD"
+        "0A0",
+        "ABA",
+        "0A0"
+      ],
+      [
+        " A ",
+        "A A",
+        " A "
       ],
       [
         " C ",
-        "C C",
+        "DED",
         " C "
-      ],
-      [
-        " E ",
-        "ABA",
-        " E "
       ]
     ],
-    "symbols": {
+    "mapping": {
+      "0": {
+        "blocks": "anvilcraftplasticraft:high_viscosity_resin_block"
+      },
       "A": {
-        "block": "anvilcraft:pipe_straight",
-        "properties": {
-          "axis": "x",
-          "has_check_valve": "true",
-          "has_end_end": "true",
-          "has_end_start": "true",
-          "waterlogged": "false"
-        }
+        "blocks": "anvilcraft:cut_brass_pillar",
+        "properties": [
+          {
+            "axis": "y"
+          }
+        ]
       },
       "B": {
-        "block": "minecraft:copper_trapdoor",
-        "properties": {
-          "facing": "north",
-          "half": "top",
-          "open": "false",
-          "waterlogged": "false"
-        }
+        "blocks": "minecraft:copper_trapdoor",
+        "properties": [
+          {
+            "facing": "north",
+            "half": "bottom",
+            "open": "false",
+            "waterlogged": "false"
+          }
+        ]
       },
       "C": {
-        "block": "anvilcraft:cut_brass_pillar",
-        "properties": {
-          "axis": "y"
-        }
+        "blocks": "anvilcraft:pipe_straight",
+        "properties": [
+          {
+            "axis": "z",
+            "has_check_valve": "true",
+            "has_end_end": "true",
+            "has_end_start": "true",
+            "waterlogged": "false"
+          }
+        ]
       },
       "D": {
-        "block": "anvilcraftplasticraft:high_viscosity_resin_block"
+        "blocks": "anvilcraft:pipe_straight",
+        "properties": [
+          {
+            "axis": "x",
+            "has_check_valve": "true",
+            "has_end_end": "true",
+            "has_end_start": "true",
+            "waterlogged": "false"
+          }
+        ]
       },
       "E": {
-        "block": "anvilcraft:pipe_straight",
-        "properties": {
-          "axis": "z",
-          "has_check_valve": "true",
-          "has_end_end": "true",
-          "has_end_start": "true",
-          "waterlogged": "false"
-        }
-      },
-      "F": {
-        "block": "minecraft:copper_trapdoor",
-        "properties": {
-          "facing": "north",
-          "half": "bottom",
-          "open": "false",
-          "waterlogged": "false"
-        }
+        "blocks": "minecraft:copper_trapdoor",
+        "properties": [
+          {
+            "facing": "north",
+            "half": "top",
+            "open": "false",
+            "waterlogged": "false"
+          }
+        ]
       }
     }
   },
