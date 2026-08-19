@@ -1,9 +1,11 @@
 package dev.anvilcraft.plasticraft.data;
 
+import dev.anvilcraft.lib.v2.config.ConfigData;
 import dev.anvilcraft.lib.v2.registrum.providers.ProviderType;
 import dev.anvilcraft.lib.v2.registrum.providers.RegistrumLangProvider;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
+import dev.anvilcraft.plasticraft.config.PlasticraftClientConfig;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemGroups;
 
 /** 生成物品名、界面文本、提示文本和可选集成所需的英文语言数据。 */
@@ -16,6 +18,7 @@ public final class PlasticraftLanguageData {
     }
 
     private static void generate(RegistrumLangProvider provider) {
+        ConfigData.readConfigClass(provider, PlasticraftClientConfig.class);
         // 静态物品提示的翻译键与运行时 manager 共用同一份声明，避免两边漏改。
         PlasticItemTooltipManager.getNormalMap().forEach(
             (itemId, description) -> provider.add(

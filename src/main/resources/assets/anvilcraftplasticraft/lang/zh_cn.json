@@ -1,4 +1,9 @@
 {
+  "anvilcraftplasticraft.configuration.title": "塑料工艺配置",
+  "anvilcraftplasticraft.configuration.section.anvilcraftplasticraft.client.toml": "塑料工艺客户端配置",
+  "anvilcraftplasticraft.configuration.section.anvilcraftplasticraft.client.toml.title": "塑料工艺客户端配置",
+  "anvilcraftplasticraft.configuration.fold_creative_color_variants": "折叠创造栏十六色变体",
+  "anvilcraftplasticraft.configuration.fold_creative_color_variants.tooltip": "是否将十六色塑料物品折叠到创造物品栏叠加层中",
   "block.anvilcraftplasticraft.high_heat_fuel": "高热燃料",
   "block.anvilcraftplasticraft.high_heat_fuel_cauldron": "高热燃料炼药锅",
   "block.anvilcraftplasticraft.plastic_oil": "塑料油",

@@ -1,4 +1,5 @@
 repositories {
+    def localRepository = mavenLocal()
     def centralRepository = mavenCentral()
     def anvilRepository = maven {
         name = 'Cjsah Maven'
@@ -12,6 +13,7 @@ repositories {
 
     exclusiveContent {
         forRepositories(
+            // localRepository,
             centralRepository,
             anvilRepository
         )

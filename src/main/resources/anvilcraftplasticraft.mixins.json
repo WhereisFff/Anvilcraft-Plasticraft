@@ -33,7 +33,6 @@
     "VillagerExperienceAccessor"
   ],
   "client": [
-    "CreativeModeInventoryScreenMixin",
     "DiskSlotClickScreenMixin",
     "DiskSlotTintMixin",
     "EntityRenderDispatcherMixin",

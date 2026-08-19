@@ -4,12 +4,14 @@ import dev.anvilcraft.lib.v2.registrum.util.CreativeTabSection;
 import dev.anvilcraft.lib.v2.registrum.util.CreativeTabSections;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.item.CreativeColorVariantItem;
 import dev.anvilcraft.plasticraft.item.MoldedPlasticDemoItemStacks;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.init.item.ModItemGroups;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -47,9 +49,11 @@ public final class PlasticraftItemGroups {
                     sections.accept(PlasticraftBlocks.ALLAY_LOUNGE.asItem());
                     for (PlasticMaterial material : PlasticMaterial.values()) {
                         sections.section(plasticSection(material), section -> {
-                            section.accept(material.bucket());
-                            section.accept(material.granule());
-                            MoldedPlasticDemoItemStacks.creativeProducts(material).forEach(section::accept);
+                            acceptPlasticVariants(section, material.bucket().getDefaultInstance());
+                            acceptPlasticVariants(section, material.granule().getDefaultInstance());
+                            MoldedPlasticDemoItemStacks.creativeProducts(material).forEach(
+                                stack -> acceptPlasticVariants(section, stack)
+                            );
                         });
                     }
                 }
@@ -78,6 +82,15 @@ public final class PlasticraftItemGroups {
             })
             .tooltip(Component.translatable(SECTION_TITLE_KEY_PREFIX + material.key() + ".tooltip"))
             .build();
+    }
+
+    private static void acceptPlasticVariants(CreativeTabSections section, ItemStack source) {
+        if (source.getItem() instanceof CreativeColorVariantItem provider
+            && !provider.isCreativePickerEnabled(source)) {
+            provider.createCreativeColorVariants(source).forEach(section::accept);
+            return;
+        }
+        section.accept(source);
     }
 
     public static void register(IEventBus modEventBus) {

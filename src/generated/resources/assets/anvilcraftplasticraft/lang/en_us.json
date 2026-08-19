@@ -1,4 +1,9 @@
 {
+  "anvilcraftplasticraft.configuration.fold_creative_color_variants": "Fold Creative Color Variants",
+  "anvilcraftplasticraft.configuration.fold_creative_color_variants.tooltip": "Whether to fold 16-color plastic items into the creative inventory overlay",
+  "anvilcraftplasticraft.configuration.section.anvilcraftplasticraft.client.toml": "Anvilcraftplasticraft Client Configuration",
+  "anvilcraftplasticraft.configuration.section.anvilcraftplasticraft.client.toml.title": "Anvilcraftplasticraft Client Configuration",
+  "anvilcraftplasticraft.configuration.title": "Anvilcraftplasticraft Configuration",
   "block.anvilcraftplasticraft.allay_lounge": "Allay Lounge",
   "block.anvilcraftplasticraft.catalytic_press_lid": "Catalytic Press Lid",
   "block.anvilcraftplasticraft.clear_plastic": "Clear Plastic Block",

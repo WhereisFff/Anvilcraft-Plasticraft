@@ -10,7 +10,7 @@ The special 16x16x14px products cooled directly from world melt and ordinary pro
 
 ## Creative inventory
 
-Each plastic material has its own labeled section in the Plasticraft creative tab. Its banner starts on a new row, shows a material tooltip on hover, and contains that material's melt bucket, granules, standard 16x16x16px block, chest, tank, anvil, tray and Allay Hard Hat product slots. Right-click a product slot to open its 16-color picker
+Each plastic material has its own labeled section in the Plasticraft creative tab. Its banner starts on a new row, shows a material tooltip on hover, and contains that material's melt bucket, granules, standard 16x16x16px block, chest, tank, anvil, tray and Allay Hard Hat product slots. By default, 16-color plastic items are folded into one representative slot; right-click it to open the 16-color picker. Disable folding in the client configuration to show all sixteen colors directly
 
 ## Placement and recovery
 

@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft;
 
 import com.mojang.logging.LogUtils;
 import dev.anvilcraft.lib.v2.network.register.NetworkRegistrar;
+import dev.anvilcraft.lib.v2.config.ConfigManager;
 import dev.anvilcraft.lib.v2.registrum.Registrum;
 import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
 import dev.anvilcraft.plasticraft.allay.AllayHardHatTraits;
@@ -9,6 +10,7 @@ import dev.anvilcraft.plasticraft.allay.AllayHardHatTraits.AllayMaterialTrait;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
 import dev.anvilcraft.plasticraft.data.PlasticraftDatagen;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveInvisibilityService;
+import dev.anvilcraft.plasticraft.config.PlasticraftClientConfig;
 import dev.anvilcraft.plasticraft.event.AllayHardHatEvents;
 import dev.anvilcraft.plasticraft.event.AnvilCraftApiBootstrap;
 import dev.anvilcraft.plasticraft.event.HighViscosityResinEvents;
@@ -61,6 +63,10 @@ public final class AnvilcraftPlasticraft {
     public static final Logger LOGGER = LogUtils.getLogger();
     public static final Registrum REGISTRUM = Registrum.create(MOD_ID)
         .defaultCreativeTab((ResourceKey<CreativeModeTab>) null);
+    public static final PlasticraftClientConfig CLIENT_CONFIG = ConfigManager.register(
+        MOD_ID,
+        PlasticraftClientConfig::new
+    );
 
     public AnvilcraftPlasticraft(IEventBus modEventBus, ModContainer ignored) {
         PlasticraftAttachments.register(modEventBus);
