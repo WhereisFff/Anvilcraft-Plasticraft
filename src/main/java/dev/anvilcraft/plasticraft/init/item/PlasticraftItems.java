@@ -52,15 +52,15 @@ public final class PlasticraftItems {
         PlasticraftFluids.HIGH_HEAT_FUEL,
         "High-Heat Fuel Bucket"
     );
-    public static final ItemEntry<BucketItem> PLASTIC_OIL_BUCKET = fluidBucket(
-        "plastic_oil_bucket",
-        PlasticraftFluids.PLASTIC_OIL,
-        "Plastic Oil Bucket"
-    );
     public static final ItemEntry<BucketItem> CRUDE_OIL_ACID_BUCKET = fluidBucket(
         "crude_oil_acid_bucket",
         PlasticraftFluids.CRUDE_OIL_ACID,
         "Crude Oil Essence Bucket"
+    );
+    public static final ItemEntry<BucketItem> PLASTIC_OIL_BUCKET = fluidBucket(
+        "plastic_oil_bucket",
+        PlasticraftFluids.PLASTIC_OIL,
+        "Plastic Oil Bucket"
     );
     public static final ItemEntry<UniversalPlasticMeltBucketItem> UNIVERSAL_PLASTIC_MELT_BUCKET = AnvilcraftPlasticraft.REGISTRUM
         .item(

@@ -13,10 +13,12 @@ import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.api.entity.IGenericAnvilEntity;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingTrayShapeAnalyzer;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContentSummary;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContents;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticFluidHandler;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticItemHandler;
 import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticStorageHandle;
@@ -25,7 +27,9 @@ import dev.anvilcraft.plasticraft.molding.product.MoldedTrayCell;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponent;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponentGeometry;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponentPlacement;
+import dev.anvilcraft.plasticraft.molding.product.PlasticCauldronLayout;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
+import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.api.giantanvil.IShockEntity;
 import dev.dubhe.anvilcraft.api.giantanvil.ShockAnvilBehavior;
@@ -34,8 +38,12 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
@@ -44,23 +52,31 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import net.minecraft.world.phys.shapes.BooleanOp;
+import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.stats.Stats;
 import net.minecraft.world.level.gameevent.GameEvent;
+import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidUtil;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.ItemStackHandler;
+import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
 
 /** 保留通用塑料颜色并复用全部公共塑料物理的轻量制品实体。 */
-public class UniversalPlasticEntity extends AbstractPlasticEntity implements IShockEntity, IGenericAnvilEntity {
+public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implements IShockEntity, IGenericAnvilEntity {
     private static final EntityDataAccessor<ItemStack> MOLDED_STACK = SynchedEntityData.defineId(
         UniversalPlasticEntity.class,
         EntityDataSerializers.ITEM_STACK
@@ -69,25 +85,44 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
         UniversalPlasticEntity.class,
         EntityDataSerializers.COMPOUND_TAG
     );
+    private static final EntityDataAccessor<CompoundTag> DISPLAY_ITEMS = SynchedEntityData.defineId(
+        UniversalPlasticEntity.class,
+        EntityDataSerializers.COMPOUND_TAG
+    );
+    private static final EntityDataAccessor<CompoundTag> DISPLAY_FLUIDS = SynchedEntityData.defineId(
+        UniversalPlasticEntity.class,
+        EntityDataSerializers.COMPOUND_TAG
+    );
+    private static final int DISPLAY_ITEM_SLOTS = PlasticCauldronLayout.LARGE.totalSlots();
     private static Supplier<ItemStack> defaultDropSupplier = () -> ItemStack.EMPTY;
     private Optional<MoldedPlasticData> cachedMoldedData = Optional.empty();
     private PlasticEntityGeometry cachedMoldedGeometry;
     private boolean moldedDataCached;
     private final MoldedPlasticItemHandler moldedItemHandler = new MoldedPlasticItemHandler(
         this::getMoldedData,
-        this::replaceMoldedData
+        this::replaceMoldedData,
+        this::onMoldedCauldronOutputChanged
     );
     private final MoldedPlasticFluidHandler moldedFluidHandler = new MoldedPlasticFluidHandler(
         this::getMoldedData,
         this::replaceMoldedData,
-        this::getDropStack,
-        this::destroyMoldedTankFromLava
+        this::getDropStack
     );
+    private final IItemHandler moldedInputView = this.moldedItemHandler.inputView();
+    private final IItemHandler moldedOutputView = this.moldedItemHandler.outputView();
+    /** 客户端只保存渲染所需的槽位快照；权威物品仍在服务端 UUID 仓储。 */
+    private final ItemStackHandler syncedItems = new ItemStackHandler(DISPLAY_ITEM_SLOTS);
+    /** 客户端只保存炼药锅渲染所需的分层流体快照；权威流体仍在服务端 UUID 仓储。 */
+    private List<FluidStack> syncedFluids = List.of();
+    /** 配方查询被别的锅占用时顶替上去的空句柄，语义同硬化树脂锅。 */
+    private final IItemHandler emptyRecipeHandler = new ItemStackHandler(0);
+    /** 内腔在局部空间的包围盒；逐格扫描掩码开销大，随几何缓存一起失效即可。 */
+    private AABB cachedCauldronCavity;
+    private PlasticEntityGeometry cachedCauldronEntryGeometry;
+    private VoxelShape cachedCauldronEntryOpening;
     private Runnable moldedContentsChanged = () -> {
     };
     private MoldedTrayRedstoneRuntimeManager trayRuntimes;
-    private boolean moldedTankDestroyedByLava;
-
     public static void configureDefaultDrop(Supplier<ItemStack> supplier) {
         defaultDropSupplier = Objects.requireNonNull(supplier, "supplier");
     }
@@ -105,9 +140,11 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
         ItemStack dropStack,
         PlasticEntityOrientation orientation
     ) {
-        super(entityType, level, position, displayState, dropStack, orientation);
+        super(entityType, level, position, displayState, MoldedPlasticCauldronState.withoutState(dropStack), orientation);
         // 父类构造期间不能依赖动态回调同步子类数据，初始化完成后再写入一次同步槽
         this.onDropStackChanged(this.getDropStack());
+        // 点燃校验依赖锅底流体，必须等完整仓储已同步后才恢复运行状态。
+        MoldedPlasticCauldronState.get(dropStack).ifPresent(this::restorePickedCauldronState);
     }
 
     @Override
@@ -115,6 +152,8 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
         super.defineSynchedData(builder);
         builder.define(MOLDED_STACK, ItemStack.EMPTY);
         builder.define(MOLDED_SUMMARY, new CompoundTag());
+        builder.define(DISPLAY_ITEMS, new CompoundTag());
+        builder.define(DISPLAY_FLUIDS, new CompoundTag());
     }
 
     @Override
@@ -123,7 +162,17 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
         if (MOLDED_STACK.equals(key)) {
             this.moldedDataCached = false;
             this.cachedMoldedGeometry = null;
+            this.cachedCauldronCavity = null;
+            this.cachedCauldronEntryGeometry = null;
+            this.cachedCauldronEntryOpening = null;
             this.invalidatePlasticGeometry();
+        }
+        // 父类构造期间 setDropStack 会动态回调到本类，此时子类字段初始化器尚未运行。
+        if (DISPLAY_ITEMS.equals(key) && this.syncedItems != null) {
+            this.readSyncedItems(this.entityData.get(DISPLAY_ITEMS));
+        }
+        if (DISPLAY_FLUIDS.equals(key) && this.syncedFluids != null) {
+            this.readSyncedFluids(this.entityData.get(DISPLAY_FLUIDS));
         }
     }
 
@@ -151,6 +200,57 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
             this.cachedMoldedGeometry = geometry;
         }
         return this.cachedMoldedGeometry;
+    }
+
+    @Override
+    protected PlasticEntityGeometry cauldronResinEntryGeometry() {
+        if (!this.isMoldedCauldron()) return this.getLocalGeometry();
+        if (this.cachedCauldronEntryGeometry != null) return this.cachedCauldronEntryGeometry;
+        PlasticEntityGeometry geometry = this.getLocalGeometry();
+        AABB bounds = geometry.localBounds();
+        AABB cavity = this.cauldronCavity();
+        if (cavity == null) return geometry;
+        double entryTop = Math.min(bounds.maxY, cavity.minY);
+        if (entryTop <= bounds.minY + 1.0E-6D) return geometry;
+        VoxelShape clip = Shapes.box(
+            bounds.minX,
+            bounds.minY,
+            bounds.minZ,
+            bounds.maxX,
+            entryTop,
+            bounds.maxZ
+        );
+        VoxelShape entryCollision = Shapes.join(
+            geometry.collisionShape(),
+            clip,
+            BooleanOp.AND
+        ).optimize();
+        this.cachedCauldronEntryGeometry = entryCollision.isEmpty()
+            ? geometry
+            : PlasticEntityGeometry.of(
+                entryCollision,
+                entryCollision,
+                geometry.rotationPivot(),
+                geometry.entityOrigin()
+            );
+        return this.cachedCauldronEntryGeometry;
+    }
+
+    @Override
+    protected VoxelShape cauldronResinEntryOpening() {
+        if (this.cachedCauldronEntryOpening != null) return this.cachedCauldronEntryOpening;
+        AABB cavity = this.cauldronCavity();
+        if (cavity == null) return Shapes.empty();
+        AABB bounds = this.getLocalGeometry().localBounds();
+        this.cachedCauldronEntryOpening = Shapes.box(
+            cavity.minX,
+            bounds.minY,
+            cavity.minZ,
+            cavity.maxX,
+            bounds.maxY,
+            cavity.maxZ
+        );
+        return this.cachedCauldronEntryOpening;
     }
 
     public Optional<MoldedPlasticData> getMoldedData() {
@@ -187,6 +287,12 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
     public boolean isMoldedTray() {
         return this.getMoldedData()
             .map(data -> MoldingProductTypes.isTray(data.finalType()))
+            .orElse(false);
+    }
+
+    public boolean isMoldedCauldron() {
+        return this.getMoldedData()
+            .map(data -> MoldingProductTypes.isCauldron(data.finalType()))
             .orElse(false);
     }
 
@@ -262,17 +368,6 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
         return this.moldedFluidHandler;
     }
 
-    public boolean plasticraft$destroyMoldedTankIfFilledWithLava() {
-        if (this.level().isClientSide || this.isRemoved() || !this.moldedFluidHandler.hasUnsafeLava()) return false;
-        this.moldedFluidHandler.discardFluids();
-        this.destroyMoldedTankFromLava();
-        return true;
-    }
-
-    public boolean plasticraft$wasMoldedTankDestroyedByLava() {
-        return this.moldedTankDestroyedByLava;
-    }
-
     public MoldedPlasticContentSummary getMoldedContentSummary() {
         return MoldedPlasticContentSummary.fromTag(this.entityData.get(MOLDED_SUMMARY), this.registryAccess());
     }
@@ -287,6 +382,11 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
         MoldedPlasticData.set(stack, data);
         this.setDropStack(stack);
         this.moldedContentsChanged.run();
+    }
+
+    private void onMoldedCauldronOutputChanged() {
+        if (!this.isMoldedCauldron() || this.autoOutputting || this.restoringData) return;
+        this.tryAutoOutputResults();
     }
 
     @Override
@@ -308,7 +408,10 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
             this.gameEvent(GameEvent.ENTITY_INTERACT, player);
             return InteractionResult.CONSUME;
         }
-        if (this.getMoldedData().filter(data -> MoldingProductTypes.isTank(data.finalType())).isEmpty()) {
+        if (this.isMoldedCauldron()) {
+            return super.interactNormally(player, hand);
+        }
+        if (this.getMoldedData().filter(data -> MoldingProductTypes.holdsFluids(data.finalType())).isEmpty()) {
             return InteractionResult.PASS;
         }
         return FluidUtil.interactWithFluidHandler(player, hand, this.moldedFluidHandler)
@@ -389,7 +492,8 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
     }
 
     private void synchronizeMoldedStack(ItemStack stack) {
-        ItemStack synchronizedStack = MoldedPlasticData.get(stack)
+        Optional<MoldedPlasticData> moldedData = MoldedPlasticData.get(stack);
+        ItemStack synchronizedStack = moldedData
             .map(data -> {
                 ItemStack copy = stack.copyWithCount(1);
                 MoldedPlasticData setView = data.withContents(data.contents().renderView());
@@ -398,16 +502,84 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
             })
             .orElse(ItemStack.EMPTY);
         this.entityData.set(MOLDED_STACK, synchronizedStack);
-        CompoundTag summary = MoldedPlasticData.get(stack)
+        CompoundTag summary = moldedData
             .map(data -> this.level().isClientSide
                 ? data.summary()
                 : new MoldedPlasticStorageHandle(() -> Optional.of(data), ignored -> {}).summary())
             .map(value -> value.toTag(this.registryAccess()))
             .orElseGet(CompoundTag::new);
         this.entityData.set(MOLDED_SUMMARY, summary);
+        CompoundTag displayItems = moldedData
+            .map(data -> this.createDisplayItemsTag(data, this.registryAccess()))
+            .orElseGet(CompoundTag::new);
+        this.entityData.set(DISPLAY_ITEMS, displayItems);
+        CompoundTag displayFluids = moldedData
+            .map(data -> this.createDisplayFluidsTag(data, this.registryAccess()))
+            .orElseGet(CompoundTag::new);
+        this.entityData.set(DISPLAY_FLUIDS, displayFluids);
         this.moldedDataCached = false;
         this.cachedMoldedGeometry = null;
+        this.cachedCauldronCavity = null;
+        this.cachedCauldronEntryGeometry = null;
+        this.cachedCauldronEntryOpening = null;
         this.invalidatePlasticGeometry();
+    }
+
+    private CompoundTag createDisplayItemsTag(MoldedPlasticData data, HolderLookup.Provider registries) {
+        List<MoldedPlasticContents.StoredItem> items = this.level().isClientSide
+            ? data.contents().items()
+            : new MoldedPlasticStorageHandle(() -> Optional.of(data), ignored -> {}).items();
+        CompoundTag tag = new CompoundTag();
+        ListTag stacks = new ListTag();
+        for (MoldedPlasticContents.StoredItem item : items) {
+            if (item.slot() < 0 || item.slot() >= DISPLAY_ITEM_SLOTS || item.stack().isEmpty()) continue;
+            CompoundTag entry = new CompoundTag();
+            entry.putInt("Slot", item.slot());
+            entry.put("Stack", item.stack().save(registries));
+            stacks.add(entry);
+        }
+        tag.put("Stacks", stacks);
+        return tag;
+    }
+
+    private void readSyncedItems(CompoundTag tag) {
+        for (int slot = 0; slot < this.syncedItems.getSlots(); slot++) {
+            this.syncedItems.setStackInSlot(slot, ItemStack.EMPTY);
+        }
+        ListTag stacks = tag.getList("Stacks", Tag.TAG_COMPOUND);
+        for (int index = 0; index < stacks.size(); index++) {
+            CompoundTag entry = stacks.getCompound(index);
+            int slot = entry.getInt("Slot");
+            if (slot < 0 || slot >= this.syncedItems.getSlots()) continue;
+            ItemStack parsed = ItemStack.parseOptional(this.registryAccess(), entry.getCompound("Stack"));
+            if (!parsed.isEmpty()) this.syncedItems.setStackInSlot(slot, parsed);
+        }
+    }
+
+    private CompoundTag createDisplayFluidsTag(MoldedPlasticData data, HolderLookup.Provider registries) {
+        CompoundTag tag = new CompoundTag();
+        if (!MoldingProductTypes.isCauldron(data.finalType())) return tag;
+        List<FluidStack> fluids = this.level().isClientSide
+            ? data.contents().fluids()
+            : new MoldedPlasticStorageHandle(() -> Optional.of(data), ignored -> {}).fluids();
+        ListTag stacks = new ListTag();
+        for (FluidStack fluid : fluids) {
+            if (!fluid.isEmpty()) stacks.add(fluid.save(registries));
+        }
+        tag.put("Fluids", stacks);
+        return tag;
+    }
+
+    private void readSyncedFluids(CompoundTag tag) {
+        ListTag stacks = tag.getList("Fluids", Tag.TAG_COMPOUND);
+        int count = Math.min(stacks.size(), PlasticCauldronLayout.LARGE.fluidLayers());
+        List<FluidStack> fluids = new ArrayList<>(count);
+        for (int index = 0; index < count; index++) {
+            FluidStack fluid = FluidStack.parse(this.registryAccess(), stacks.getCompound(index))
+                .orElse(FluidStack.EMPTY);
+            if (!fluid.isEmpty()) fluids.add(fluid);
+        }
+        this.syncedFluids = List.copyOf(fluids);
     }
 
     @Override
@@ -423,27 +595,44 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
     protected void addAdditionalSaveData(CompoundTag tag) {
         if (!this.level().isClientSide && this.trayRuntimes != null) this.trayRuntimes.persist();
         super.addAdditionalSaveData(tag);
+        if (!this.level().isClientSide) {
+            this.getMoldedData().ifPresent(data -> {
+                tag.put("DisplayItems", this.createDisplayItemsTag(data, this.registryAccess()));
+                tag.put("DisplayFluids", this.createDisplayFluidsTag(data, this.registryAccess()));
+            });
+        }
+    }
+
+    @Override
+    protected void readAdditionalSaveData(CompoundTag tag) {
+        super.readAdditionalSaveData(tag);
+        if (this.level().isClientSide && tag.contains("DisplayItems", Tag.TAG_COMPOUND)) {
+            CompoundTag displayItems = tag.getCompound("DisplayItems");
+            this.entityData.set(DISPLAY_ITEMS, displayItems);
+            this.readSyncedItems(displayItems);
+        }
+        if (this.level().isClientSide && tag.contains("DisplayFluids", Tag.TAG_COMPOUND)) {
+            CompoundTag displayFluids = tag.getCompound("DisplayFluids");
+            this.entityData.set(DISPLAY_FLUIDS, displayFluids);
+            this.readSyncedFluids(displayFluids);
+        }
     }
 
     @Override
     public void tick() {
-        if (this.plasticraft$destroyMoldedTankIfFilledWithLava()) return;
+        PlasticHeatDamage.hurtFromSupport(this);
+        if (this.isRemoved()) return;
         super.tick();
         if (this.isRemoved()) return;
-        if (!this.level().isClientSide) {
-            this.plasticraft$tickRedstoneConductor();
-            if (this.isMoldedTray()) this.getMoldedTrayRuntimes().tick();
-        }
-        MoldedTrayLightSource.update(this);
+        // 托盘光源只由位置与朝向派生，休眠期间两者都不变，跳过重复的收集与网络比较。
+        if (!this.plasticraft$isResting()) MoldedTrayLightSource.update(this);
     }
 
-    private void destroyMoldedTankFromLava() {
-        if (this.level().isClientSide || this.isRemoved()) return;
-        this.moldedTankDestroyedByLava = true;
-        BlockPos effectPos = BlockPos.containing(this.getBoundingBox().getCenter());
-        this.level().levelEvent(2001, effectPos, Block.getId(this.getDisplayState()));
-        this.level().gameEvent(this, GameEvent.BLOCK_DESTROY, effectPos);
-        this.discard();
+    @Override
+    protected void tickAdditionalState() {
+        if (this.level().isClientSide) return;
+        this.plasticraft$tickRedstoneConductor();
+        if (this.isMoldedTray()) this.getMoldedTrayRuntimes().tick();
     }
 
     @Override
@@ -524,6 +713,11 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
     @Override
     protected void prepareAnvilHammerPickup(Player player) {
         if (this.isMoldedTray()) this.getMoldedTrayRuntimes().flush();
+        if (!this.isMoldedCauldron()) return;
+        for (ItemStack stack : this.extractAllStacks()) {
+            player.getInventory().placeItemBackInInventory(stack);
+        }
+        this.moldedFluidHandler.discardFluids();
     }
 
     @Override
@@ -533,14 +727,42 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
     }
 
     @Override
-    public ItemStack getPickResult() {
-        if (!this.level().isClientSide) return this.prepareDropStack(this.getDropStack().copyWithCount(1));
-        ItemStack synchronizedStack = this.entityData.get(MOLDED_STACK);
-        if (synchronizedStack.isEmpty()) return super.getPickResult();
-        ItemStack result = synchronizedStack.copyWithCount(1);
-        PlasticItemData.setMaterial(result, this.materialKey());
-        PlasticItemData.setMagnetized(result, this.isMagnetized());
-        return this.prepareDropStack(result);
+    public ItemStack getCompletePickResult() {
+        return this.withCauldronPickState(super.getCompletePickResult());
+    }
+
+    @Override
+    protected ItemStack prepareInitialPickResult(ItemStack stack) {
+        MoldedPlasticCauldronState.clear(stack);
+        MoldedPlasticData.get(stack).ifPresent(data -> MoldedPlasticData.set(stack, data.withoutContents()));
+        return stack;
+    }
+
+    private ItemStack withCauldronPickState(ItemStack stack) {
+        if (!this.isMoldedCauldron()) {
+            MoldedPlasticCauldronState.clear(stack);
+            return stack;
+        }
+        MoldedPlasticCauldronState.set(
+            stack,
+            new MoldedPlasticCauldronState(
+                Optional.ofNullable(this.getOutletLocalDirection()),
+                this.anvilcraft$isIgnited()
+            )
+        );
+        return stack;
+    }
+
+    private void restorePickedCauldronState(MoldedPlasticCauldronState state) {
+        if (!this.isMoldedCauldron()) return;
+        boolean previousRestoring = this.restoringData;
+        this.restoringData = true;
+        try {
+            this.setOutletLocalDirection(state.outletSide().orElse(null));
+            this.anvilcraft$setIgnited(state.ignited());
+        } finally {
+            this.restoringData = previousRestoring;
+        }
     }
 
     @Override
@@ -581,6 +803,217 @@ public class UniversalPlasticEntity extends AbstractPlasticEntity implements ISh
         return this.isMoldedAnvil()
             ? Optional.of(ShockAnvilBehavior.fromMiningEffect(MoldedPlasticAnvilAbilities.miningEffect(this)))
             : Optional.empty();
+    }
+
+    @Override
+    public boolean plasticraft$isCauldron() {
+        return this.isMoldedCauldron();
+    }
+
+    /** 非炼药锅制品不会走到锅逻辑，回退到普通布局只为让接口始终有值可答。 */
+    @Override
+    public PlasticCauldronLayout plasticraft$cauldronLayout() {
+        PlasticCauldronLayout layout = this.getMoldedData()
+            .map(data -> PlasticCauldronLayout.of(data.finalType()))
+            .orElse(null);
+        return layout == null ? PlasticCauldronLayout.NORMAL : layout;
+    }
+
+    @Override
+    public FluidStack plasticraft$bottomFluid() {
+        return this.moldedFluidHandler.getBottomFluid();
+    }
+
+    @Override
+    public IFluidHandler plasticraft$bottomFluidAccess() {
+        return this.moldedFluidHandler.bottomAccess();
+    }
+
+    @Override
+    public IItemHandler getInput() {
+        if (!CauldronImpactRecipeProcessor.canAccessRecipeInventory(this)) return this.emptyRecipeHandler;
+        return this.processingOutput ? this.moldedOutputView : this.moldedInputView;
+    }
+
+    @Override
+    public IItemHandler getOutput() {
+        if (!CauldronImpactRecipeProcessor.canAccessRecipeInventory(this)) return this.emptyRecipeHandler;
+        return this.processingOutput ? this.emptyRecipeHandler : this.moldedOutputView;
+    }
+
+    @Override
+    public IItemHandler getItemHandler() {
+        return this.moldedItemHandler;
+    }
+
+    @Override
+    public IFluidHandler getFluidHandler() {
+        return this.moldedFluidHandler;
+    }
+
+    @Override
+    protected IItemHandler cauldronInputHandler() {
+        return this.moldedInputView;
+    }
+
+    @Override
+    protected IItemHandler cauldronOutputHandler() {
+        return this.moldedOutputView;
+    }
+
+    /** 成型仓储的每次写入都已经过 {@link #replaceMoldedData} 同步与落库，这里只补一次唤醒。 */
+    @Override
+    protected void onCauldronContentsChanged() {
+        this.hasImpulse = true;
+    }
+
+    @Override
+    protected List<ItemStack> extractAllStacks() {
+        List<ItemStack> stacks = new ArrayList<>();
+        for (int slot = 0; slot < this.moldedItemHandler.getSlots(); slot++) {
+            // 多倍堆叠槽单次只交出一个完整堆叠，需要反复抽取直到清空
+            while (true) {
+                ItemStack extracted = this.moldedItemHandler.extractItem(slot, Integer.MAX_VALUE, false);
+                if (extracted.isEmpty()) break;
+                stacks.add(extracted);
+            }
+        }
+        return stacks;
+    }
+
+    @Override
+    protected void discardPersistentContents() {
+        if (!this.isMoldedCauldron()) return;
+        boolean previousAutoOutputting = this.autoOutputting;
+        this.autoOutputting = true;
+        try {
+            this.extractAllStacks();
+            this.moldedFluidHandler.discardFluids();
+        } finally {
+            this.autoOutputting = previousAutoOutputting;
+        }
+    }
+
+    /** 底层流体只占整锅容量中的对应高度，不能把大型锅的一层误算成整口锅。 */
+    @Override
+    protected AABB cauldronFluidArea() {
+        int totalCapacity = this.cauldronTotalFluidCapacity();
+        double fill = totalCapacity <= 0
+            ? 0.0D
+            : Math.clamp(this.plasticraft$bottomFluid().getAmount() / (double) totalCapacity, 0.0D, 1.0D);
+        return this.cauldronFluidArea(fill);
+    }
+
+    /** 喷流与外部装置需要整锅的真实液面，而不是底层流体的上表面。 */
+    @Override
+    public double getFluidSurfaceY() {
+        int totalCapacity = this.cauldronTotalFluidCapacity();
+        long totalAmount = 0L;
+        for (int tank = 0; tank < this.moldedFluidHandler.getTanks(); tank++) {
+            totalAmount += this.moldedFluidHandler.getFluidInTank(tank).getAmount();
+        }
+        double fill = totalCapacity <= 0
+            ? 0.0D
+            : Math.clamp(totalAmount / (double) totalCapacity, 0.0D, 1.0D);
+        return this.cauldronFluidArea(fill).maxY;
+    }
+
+    private AABB cauldronFluidArea(double fill) {
+        AABB cavity = this.cauldronCavity();
+        if (cavity == null) return this.getBoundingBox();
+        // 先在模型局部空间裁出液体盒，再把八个角逐一变换到世界，不能只变换两个对角点。
+        // 墙面、天花板和非对称模型下，旋转后的轴向包围盒不再由原来的两个点决定。
+        double localMaxY = cavity.minY + (cavity.maxY - cavity.minY) * fill;
+        double[] xs = {cavity.minX, cavity.maxX};
+        double[] ys = {cavity.minY, localMaxY};
+        double[] zs = {cavity.minZ, cavity.maxZ};
+        PlasticEntityGeometry geometry = this.plasticraft$getGeometry();
+        Vec3 position = this.position();
+        PlasticEntityOrientation orientation = this.getOrientation();
+        double minX = Double.POSITIVE_INFINITY;
+        double minY = Double.POSITIVE_INFINITY;
+        double minZ = Double.POSITIVE_INFINITY;
+        double maxX = Double.NEGATIVE_INFINITY;
+        double maxY = Double.NEGATIVE_INFINITY;
+        double maxZ = Double.NEGATIVE_INFINITY;
+        for (double x : xs) {
+            for (double y : ys) {
+                for (double z : zs) {
+                    Vec3 world = geometry.worldPointAt(position, orientation, new Vec3(x, y, z));
+                    minX = Math.min(minX, world.x);
+                    minY = Math.min(minY, world.y);
+                    minZ = Math.min(minZ, world.z);
+                    maxX = Math.max(maxX, world.x);
+                    maxY = Math.max(maxY, world.y);
+                    maxZ = Math.max(maxZ, world.z);
+                }
+            }
+        }
+        return new AABB(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    private @Nullable AABB cauldronCavity() {
+        if (this.cachedCauldronCavity == null) {
+            this.cachedCauldronCavity = this.getMoldedData().flatMap(MoldedPlasticData::cavityBounds).orElse(null);
+        }
+        return this.cachedCauldronCavity;
+    }
+
+    @Override
+    protected int cauldronFluidCapacity() {
+        return this.getMoldedData()
+            .map(data -> this.plasticraft$cauldronLayout().fluidLayerCapacity(data.capacity()))
+            .orElse(0);
+    }
+
+    private int cauldronTotalFluidCapacity() {
+        return Math.multiplyExact(
+            this.cauldronFluidCapacity(),
+            this.plasticraft$cauldronLayout().fluidLayers()
+        );
+    }
+
+    @Override
+    protected boolean resistsWorldLava() {
+        return this.getMoldedData()
+            .flatMap(data -> PlasticMaterial.fromMelt(data.material()))
+            .filter(material -> material == PlasticMaterial.HEAT_RESISTANT)
+            .isPresent();
+    }
+
+    @Override
+    public List<ItemStack> getSyncedItems() {
+        if (this.level().isClientSide) {
+            List<ItemStack> stacks = new ArrayList<>();
+            for (int slot = 0; slot < this.syncedItems.getSlots(); slot++) {
+                ItemStack stack = this.syncedItems.getStackInSlot(slot);
+                if (!stack.isEmpty()) stacks.add(stack);
+            }
+            return stacks;
+        }
+        List<ItemStack> stacks = new ArrayList<>();
+        for (int slot = 0; slot < this.moldedItemHandler.getSlots(); slot++) {
+            ItemStack stack = this.moldedItemHandler.getStackInSlot(slot);
+            if (!stack.isEmpty()) stacks.add(stack);
+        }
+        return stacks;
+    }
+
+    public List<FluidStack> getSyncedFluids() {
+        if (this.level().isClientSide) {
+            return this.syncedFluids.stream().map(FluidStack::copy).toList();
+        }
+        return this.getMoldedData()
+            .filter(data -> MoldingProductTypes.isCauldron(data.finalType()))
+            .map(data -> new MoldedPlasticStorageHandle(() -> Optional.of(data), ignored -> {}).fluids())
+            .orElse(List.of());
+    }
+
+    @Override
+    public boolean plasticraft$isEntityInsidePlasticMelt(Entity entity) {
+        if (!this.isMoldedCauldron() || !PlasticMaterial.isMelt(this.plasticraft$bottomFluid())) return false;
+        if (this.getOrientation().attachmentFace() != Direction.UP) return false;
+        return this.cauldronFluidArea().intersects(entity.getBoundingBox());
     }
 
 }

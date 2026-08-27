@@ -10,6 +10,7 @@
     "BlockCollisionsMixin",
     "BlockGetterMixin",
     "BlockStateLightEmissionMixin",
+    "ConstructionWorldChangeMixin",
     "DiskSlotClickMixin",
     "EntityCarrierCollisionMixin",
     "EntityGetterMixin",
@@ -19,12 +20,14 @@
     "HasCauldronMixin",
     "HasItemIngredientMixin",
     "InWorldRecipeContextMixin",
+    "ItemCacheMixin",
     "LevelBondedPistonDropMixin",
     "LargeCauldronBlockMixin",
     "LivingEntityResinHeadMixin",
     "PistonBaseBlockMixin",
     "PistonMovingBlockEntityMixin",
     "PistonStructureResolverMixin",
+    "PlasticWorldChangeMixin",
     "PlayerEdgeCollisionMixin",
     "ServerGamePacketListenerMixin",
     "ServerLevelTrayRedstoneMixin",
@@ -33,9 +36,13 @@
     "VillagerExperienceAccessor"
   ],
   "client": [
+    "CreativeModeInventoryScreenMixin",
+    "CreativeModeInventoryScreenAccessor",
+    "CreativeModeTabAccessor",
     "DiskSlotClickScreenMixin",
     "DiskSlotTintMixin",
     "EntityRenderDispatcherMixin",
+    "PlasticEntityPickBlockMixin",
     "PistonHeadRendererMixin"
   ],
   "injectors": {

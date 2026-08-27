@@ -190,6 +190,8 @@ public final class EntityBondManager {
         merged.addAll(targetComponent);
         merged.addAll(sourceComponent);
         for (Entity member : merged) {
+            // 胶合后整个连通分量由领导者统一驱动位移，任何成员都不能停留在休眠态。
+            if (member instanceof AbstractPlasticEntity plastic) plastic.plasticraft$wakeFromRest();
             EntityBondState state = changed.getOrDefault(member.getUUID(), get(member));
             if (state == null) continue;
             EntityBondState rebased = state.withLeader(

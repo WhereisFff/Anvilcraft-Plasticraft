@@ -17,7 +17,12 @@ public final class ConstructionWorkerSpace {
     public static final double WIDTH = 0.35D;
     public static final double HEIGHT = 0.6D;
     public static final double HALF_WIDTH = WIDTH * 0.5D;
-    private static final double NAVIGATION_CLEARANCE = 0.01D;
+    /**
+     * 落脚点距格底的垂距:0.6 高的包围盒在格内居中,上下各留 0.2 格余量。
+     * 交付接近位常常紧贴目标格(铺地板时就在目标正上方),贴着格底站会让飞行到达误差
+     * 把包围盒探进相邻格,从而被 {@code deliveryInteraction} 判成"占着目标格"而永远交付不了。
+     */
+    private static final double NAVIGATION_CLEARANCE = (1.0D - HEIGHT) * 0.5D;
 
     private ConstructionWorkerSpace() {
     }

@@ -22,6 +22,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 
@@ -64,6 +65,7 @@ interface EntityGetterMixin {
             if (context != null) requestedMovement = context.requestedMovement();
         }
         VoxelShape collisionShape = shaped.plasticraft$getCollisionShape(mover, requestedMovement);
+        if (collisionShape.isEmpty() || !collisionBox.intersects(collisionShape.bounds())) return Shapes.empty();
         return Shapes.joinIsNotEmpty(Shapes.create(collisionBox), collisionShape, BooleanOp.AND)
             ? collisionShape
             : Shapes.empty();
@@ -94,7 +96,22 @@ interface EntityGetterMixin {
         AABB ignoredCollisionBox
     ) {
         if (original.isEmpty()) return original;
-        return original.stream().filter(shape -> !shape.isEmpty()).toList();
+        // 绝大多数查询没有空形状可剔除，此时原样返回，避免每次碰撞查询都新建列表。
+        int emptyIndex = -1;
+        for (int index = 0; index < original.size(); index++) {
+            if (original.get(index).isEmpty()) {
+                emptyIndex = index;
+                break;
+            }
+        }
+        if (emptyIndex < 0) return original;
+        List<VoxelShape> filtered = new ArrayList<>(original.size() - 1);
+        for (int index = 0; index < original.size(); index++) {
+            if (index == emptyIndex) continue;
+            VoxelShape shape = original.get(index);
+            if (!shape.isEmpty()) filtered.add(shape);
+        }
+        return filtered;
     }
 
     @ModifyExpressionValue(

@@ -304,6 +304,32 @@ public final class MoldingModelBaker {
         return inverseTransforms(point, element.transform(), hierarchy(element, model.groupMap()));
     }
 
+    /** 返回所有反向绕序的有体积 cube 各自占据的制造体素。 */
+    static List<MoldingVolumeMask> negativeVolumeMasks(EditableMoldingModel model) {
+        Map<UUID, MoldingGroup> groups = model.groupMap();
+        BakeSpace space = spaceFor(model);
+        List<MoldingVolumeMask> masks = new ArrayList<>();
+        for (MoldingElement element : model.elements()) {
+            List<MoldingGroup> hierarchy = hierarchy(element, groups);
+            if (!element.hasVolume() || !element.visible() || hierarchy.stream().anyMatch(group -> !group.visible())) {
+                continue;
+            }
+            List<MoldingVec3> vertices = translatedVertices(element, hierarchy, space.offset());
+            if (!hasNegativeOrientation(vertices)) continue;
+            MoldingVolumeMask mask = new MoldingVolumeMask(space.sizeX(), space.sizeY(), space.sizeZ());
+            rasterizeCube(mask, element, hierarchy, vertices, space);
+            if (!mask.isEmpty()) masks.add(mask);
+        }
+        return List.copyOf(masks);
+    }
+
+    static boolean hasNegativeOrientation(List<MoldingVec3> vertices) {
+        MoldingVec3 xEdge = vertices.get(1).subtract(vertices.get(0));
+        MoldingVec3 yEdge = vertices.get(2).subtract(vertices.get(0));
+        MoldingVec3 zEdge = vertices.get(4).subtract(vertices.get(0));
+        return xEdge.cross(yEdge).dot(zEdge) < -EPSILON;
+    }
+
     /** 保留每个可见源 Cube 的连续表面，完整成型制品不得显示制造体素的拟合轮廓。 */
     public static List<MoldingQuad> createExactSurfaceMesh(EditableMoldingModel model) {
         return createManufacturedGeometry(model, 1.0D).surfaceMesh();

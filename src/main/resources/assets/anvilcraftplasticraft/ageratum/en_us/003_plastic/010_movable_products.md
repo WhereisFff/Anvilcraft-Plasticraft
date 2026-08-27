@@ -10,13 +10,14 @@ The special 16x16x14px products cooled directly from world melt and ordinary pro
 
 ## Creative inventory
 
-Each plastic material has its own labeled section in the Plasticraft creative tab. Its banner starts on a new row, shows a material tooltip on hover, and contains that material's melt bucket, granules, standard 16x16x16px block, chest, tank, anvil, tray and Allay Hard Hat product slots. By default, 16-color plastic items are folded into one representative slot; right-click it to open the 16-color picker. Disable folding in the client configuration to show all sixteen colors directly
+Each plastic material has its own labeled section in the Plasticraft creative tab. Its banner starts on a new row, shows a material tooltip on hover, and contains that material's melt bucket, granules, standard 16x16x16px block, chest, tank, anvil, tray and Allay Hard Hat product slots. By default, 16-color plastic items are folded into one representative slot; right-click it to open the 16-color picker. Click a material banner to expand every color-capable slot in that section, and click it again to fold the section back. The client configuration controls the initial state; disable folding to start with all sixteen colors visible
 
 ## Placement and recovery
 
 - Products are entities affected by gravity, buoyancy, pushing and sliding rails, and they can be magnetized
 - Clicking one of the six block faces selects one of four in-face turns, for 24 placement orientations; hold an Anvil Hammer use to adjust the orientation wheel
 - Sneak-use any Anvil Hammer to retrieve a product; its model, material, color, magnetism and container contents are preserved, while its orientation is chosen again when placing it
+- In Creative Mode, middle-click returns an empty initial product that preserves its material, color, magnetization and molded shape; Ctrl + middle-click also copies container contents and persistent functional state
 - High-Viscosity Resin can bond products to blocks or other products; pistons and sliding rails move a bonded group as one
 - Products follow the movement rules of Resin Blocks, Slime Blocks and Honey Blocks; one bonded group counts as one position against the piston push limit
 

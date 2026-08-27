@@ -1,16 +1,17 @@
 package dev.anvilcraft.plasticraft.recipe;
 
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
-import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.dubhe.anvilcraft.init.block.ModFluidTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -22,28 +23,28 @@ public final class HardenedResinCauldronSupport {
     }
 
     public static boolean isIgnitedOil(Level level, BlockPos pos) {
-        HardenedResinCauldronEntity cauldron = find(level, pos);
+        PlasticCauldron cauldron = find(level, pos);
         return cauldron != null
             && cauldron.anvilcraft$isIgnited()
-            && cauldron.getFluidHandler().getFluid().is(ModFluidTags.OIL);
+            && cauldron.plasticraft$bottomFluid().is(ModFluidTags.OIL);
     }
 
     public static Boolean isIgnitedHighHeatFuel(Level level, BlockPos pos) {
-        HardenedResinCauldronEntity cauldron = find(level, pos);
+        PlasticCauldron cauldron = find(level, pos);
         return cauldron == null ? null : cauldron.anvilcraft$isIgnited()
-            && cauldron.getFluidHandler().getFluid().is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
+            && cauldron.plasticraft$bottomFluid().is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
     }
 
     public static Boolean hasHighHeatFuel(Level level, BlockPos pos) {
-        HardenedResinCauldronEntity cauldron = find(level, pos);
-        return cauldron == null ? null : cauldron.getFluidHandler().getFluid().is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
+        PlasticCauldron cauldron = find(level, pos);
+        return cauldron == null ? null : cauldron.plasticraft$bottomFluid().is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
     }
 
     public static Boolean validBase(Level level, BlockPos pos) {
-        HardenedResinCauldronEntity cauldron = find(level, pos);
+        PlasticCauldron cauldron = find(level, pos);
         if (cauldron == null) return null;
         if (cauldron.getOrientation().attachmentFace() != Direction.UP) return false;
-        FluidStack fluid = cauldron.getFluidHandler().getFluid();
+        FluidStack fluid = cauldron.plasticraft$bottomFluid();
         return fluid.isEmpty() || fluid.is(ModFluidTags.OIL) || fluid.is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
     }
 
@@ -60,9 +61,9 @@ public final class HardenedResinCauldronSupport {
     }
 
     public static Boolean consumeHighHeatFuel(Level level, BlockPos pos, int amount) {
-        HardenedResinCauldronEntity cauldron = find(level, pos);
+        PlasticCauldron cauldron = find(level, pos);
         if (cauldron == null) return null;
-        IFluidHandler handler = cauldron.getFluidHandler();
+        IFluidHandler handler = cauldron.plasticraft$bottomFluidAccess();
         FluidStack request = new FluidStack(PlasticraftFluids.HIGH_HEAT_FUEL.get(), amount);
         FluidStack simulated = handler.drain(request, IFluidHandler.FluidAction.SIMULATE);
         if (!FluidStack.matches(simulated, request)) return false;
@@ -71,10 +72,10 @@ public final class HardenedResinCauldronSupport {
     }
 
     private static Boolean consumeOil(Level level, BlockPos pos, int amount) {
-        HardenedResinCauldronEntity cauldron = find(level, pos);
+        PlasticCauldron cauldron = find(level, pos);
         if (cauldron == null) return null;
         if (amount <= 0) return false;
-        IFluidHandler handler = cauldron.getFluidHandler();
+        IFluidHandler handler = cauldron.plasticraft$bottomFluidAccess();
         FluidStack simulated = handler.drain(amount, IFluidHandler.FluidAction.SIMULATE);
         if (!simulated.is(ModFluidTags.OIL) || simulated.getAmount() != amount) return false;
         handler.drain(amount, IFluidHandler.FluidAction.EXECUTE);
@@ -82,42 +83,52 @@ public final class HardenedResinCauldronSupport {
     }
 
     public static Integer fluidAmount(Level level, BlockPos pos) {
-        HardenedResinCauldronEntity cauldron = find(level, pos);
-        return cauldron == null ? null : cauldron.getFluidHandler().getFluidAmount();
+        PlasticCauldron cauldron = find(level, pos);
+        return cauldron == null ? null : cauldron.plasticraft$bottomFluid().getAmount();
     }
 
-    /** 返回与落砧配方锅格相交的全部实体锅，包括从四个角跨入同一格的锅。 */
-    public static List<HardenedResinCauldronEntity> findRecipeTargets(Level level, BlockPos pos) {
-        List<HardenedResinCauldronEntity> targets = new ArrayList<>(level.getEntitiesOfClass(
-            HardenedResinCauldronEntity.class,
-            new AABB(pos).inflate(0.0625D),
-            Entity::isAlive
-        ));
+    /** 返回实际碰撞箱进入当前落砧格的锅，不把工作方块覆盖范围扩展为受击范围。 */
+    public static List<PlasticCauldron> findRecipeTargets(Level level, BlockPos pos) {
+        List<PlasticCauldron> targets = new ArrayList<>();
+        AABB impactCell = new AABB(pos);
+        for (PlasticCauldron candidate : PlasticCauldrons.findIn(level, impactCell)) {
+            if (matchesRecipeTarget(candidate, impactCell)) {
+                targets.add(candidate);
+            }
+        }
         if (level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
             && bonded.isInitialized()
-            && bonded.isPlastic()
-            && bonded.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron
-            && !targets.contains(cauldron)) {
-            targets.add(cauldron);
+            && bonded.isPlastic()) {
+            PlasticCauldron cauldron = PlasticCauldrons.of(bonded.getOrCreateRenderEntity());
+            if (cauldron != null
+                && matchesRecipeTarget(cauldron, impactCell)
+                && !targets.contains(cauldron)) {
+                targets.add(cauldron);
+            }
         }
-        targets.sort(Comparator.comparingInt(Entity::getId));
+        targets.sort(Comparator.comparingInt(PlasticCauldron::getId));
         return List.copyOf(targets);
     }
 
-    private static HardenedResinCauldronEntity find(Level level, BlockPos pos) {
-        Entity selected = null;
-        for (Entity entity : level.getEntitiesOfClass(Entity.class, new AABB(pos),
-            candidate -> candidate instanceof HardenedResinCauldronEntity
-                && !candidate.isRemoved()
-                && BlockPos.containing(candidate.getBoundingBox().getCenter()).equals(pos))) {
-            if (selected == null || entity.getId() < selected.getId()) selected = entity;
+    private static boolean matchesRecipeTarget(PlasticCauldron cauldron, AABB impactCell) {
+        return cauldron.plasticraft$cauldronEntity().getBoundingBox().intersects(impactCell);
+    }
+
+    private static @Nullable PlasticCauldron find(Level level, BlockPos pos) {
+        PlasticCauldron selected = null;
+        for (PlasticCauldron cauldron : PlasticCauldrons.findIn(
+            level,
+            new AABB(pos),
+            candidate -> !candidate.isRemoved()
+                && BlockPos.containing(candidate.getBoundingBox().getCenter()).equals(pos)
+        )) {
+            if (selected == null || cauldron.getId() < selected.getId()) selected = cauldron;
         }
-        if (selected instanceof HardenedResinCauldronEntity cauldron) return cauldron;
+        if (selected != null) return selected;
         if (level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
             && bonded.isInitialized()
-            && bonded.isPlastic()
-            && bonded.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron) {
-            return cauldron;
+            && bonded.isPlastic()) {
+            return PlasticCauldrons.of(bonded.getOrCreateRenderEntity());
         }
         return null;
     }

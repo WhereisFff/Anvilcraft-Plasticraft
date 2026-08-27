@@ -49,27 +49,29 @@ public final class StonecutterSmashAdapter {
         @Nullable ConstructionJobProgress progress,
         BlockMiningEffect miningEffect
     ) {
-        BlockPos breakPos = mainPartOf(level, pos);
-        BlockState state = level.getBlockState(breakPos);
-        if (state.isAir()) return true;
-        if (isPermanentObstacle(level, breakPos, state)) return false;
-        ItemStack dummyTool = BreakBlockUtil.createTool(level, state, miningEffect);
-        state.spawnAfterBreak(level, breakPos, dummyTool, false);
-        if (state.getBlock() instanceof IHasMultiBlock multiBlock) {
-            multiBlock.onRemove(level, breakPos, state);
-        }
-        List<ItemStack> drops = BreakBlockUtil.drop(level, breakPos, miningEffect);
-        int spawned = 0;
-        for (ItemStack drop : drops) {
-            ConstructionDebris.mark(drop, jobId, operationId);
-            spawned += drop.getCount();
-        }
-        if (progress != null && spawned > 0) {
-            progress.addDebrisSpawned(operationId, spawned);
-        }
-        AnvilUtil.dropItems(drops, level, breakPos.getCenter());
-        level.setBlockAndUpdate(breakPos, Blocks.AIR.defaultBlockState());
-        return true;
+        return ConstructionJobController.withoutWorldChangeObservation(() -> {
+            BlockPos breakPos = mainPartOf(level, pos);
+            BlockState state = level.getBlockState(breakPos);
+            if (state.isAir()) return true;
+            if (isPermanentObstacle(level, breakPos, state)) return false;
+            ItemStack dummyTool = BreakBlockUtil.createTool(level, state, miningEffect);
+            state.spawnAfterBreak(level, breakPos, dummyTool, false);
+            if (state.getBlock() instanceof IHasMultiBlock multiBlock) {
+                multiBlock.onRemove(level, breakPos, state);
+            }
+            List<ItemStack> drops = BreakBlockUtil.drop(level, breakPos, miningEffect);
+            int spawned = 0;
+            for (ItemStack drop : drops) {
+                ConstructionDebris.mark(drop, jobId, operationId);
+                spawned += drop.getCount();
+            }
+            if (progress != null && spawned > 0) {
+                progress.addDebrisSpawned(operationId, spawned);
+            }
+            AnvilUtil.dropItems(drops, level, breakPos.getCenter());
+            level.setBlockAndUpdate(breakPos, Blocks.AIR.defaultBlockState());
+            return true;
+        });
     }
 
     public static BlockPos mainPartOf(ServerLevel level, BlockPos pos) {

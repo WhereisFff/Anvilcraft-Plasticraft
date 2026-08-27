@@ -55,8 +55,11 @@ public final class AllayGameTests {
 
         Allay vanilla = EntityType.ALLAY.create(helper.getLevel());
         check(vanilla != null, "failed to create vanilla allay");
-        Vec3 pos = helper.absoluteVec(new Vec3(1.5D, 2.0D, 1.5D));
-        vanilla.moveTo(pos.x, pos.y, pos.z, 0.0F, 0.0F);
+        // 刻意偏离格心并让三个朝向互不相同:戴帽既不能把悦灵吸到格心,也不能把某一个朝向搬错
+        Vec3 pos = helper.absoluteVec(new Vec3(1.37D, 2.35D, 1.62D));
+        vanilla.moveTo(pos.x, pos.y, pos.z, 41.0F, 0.0F);
+        vanilla.setYBodyRot(53.0F);
+        vanilla.setYHeadRot(67.0F);
         vanilla.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(ModItems.CRAB_CLAW.get()));
         UUID id = vanilla.getUUID();
         check(helper.getLevel().addFreshEntity(vanilla), "failed to add vanilla allay");
@@ -71,10 +74,14 @@ public final class AllayGameTests {
 
         WorkingAllayEntity worker = helper.getLevel().getEntitiesOfClass(
             WorkingAllayEntity.class,
-            vanilla.getBoundingBox().inflate(1.0D)
+            vanilla.getBoundingBox().inflate(1.0D),
+            candidate -> candidate.getUUID().equals(id)
         ).stream().findFirst().orElse(null);
-        check(worker != null, "wearing a hard hat did not create a working allay");
-        check(worker.getUUID().equals(id), "working allay did not keep the vanilla UUID");
+        check(worker != null, "wearing a hard hat did not create a working allay keeping the vanilla UUID");
+        check(worker.position().distanceToSqr(pos) < 1.0E-9D, "hat conversion left the exact spawn position");
+        check(worker.getYRot() == 41.0F, "hat conversion changed the allay facing");
+        check(worker.yBodyRot == 53.0F, "hat conversion reset the rendered body facing");
+        check(worker.getYHeadRot() == 67.0F, "hat conversion reset the rendered head facing");
         check(worker.flightState() == AllayFlightState.HOVERING, "working allay is not hovering");
         check(!worker.isNoGravity() || worker.flightState() == AllayFlightState.HOVERING,
             "working allay should stay aloft");
@@ -175,8 +182,8 @@ public final class AllayGameTests {
 
     @GameTest(timeoutTicks = 80)
     @EmptyTemplate(value = "7x7x7", floor = true)
-    @TestHolder(description = "An idle hatted allay is not locked to a scripted 5x5x5 wander")
-    static void idleWanderStaysInsideFiveCube(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "An idle hatted allay flies on the vanilla move control while a commanded one ignores it")
+    static void idleWorkerUsesVanillaFlightControl(ExtendedGameTestHelper helper) {
         WorkingAllayEntity worker = spawnHatted(helper, new Vec3(3.5D, 3.0D, 3.5D), null);
         helper.startSequence()
             .thenExecuteAfter(40, () -> {
@@ -184,6 +191,30 @@ public final class AllayGameTests {
                 check(!worker.isCommanded(), "idle allay must stay on vanilla AI");
                 check(!worker.navigator().hasPath(), "idle allay must not keep a scripted path");
                 check(worker.assignedJobId().isEmpty(), "idle allay must not hold a job lease");
+                // 空闲时必须真的吃下原版飞行目标:移动控制器收不到目标点就只会呆在原地
+                worker.getMoveControl().setWantedPosition(
+                    worker.getX(),
+                    worker.getY() + 2.0D,
+                    worker.getZ() + 3.0D,
+                    1.0D
+                );
+                worker.getMoveControl().tick();
+                check(worker.zza > 0.0F, "idle allay ignored a vanilla flight target");
+                check(worker.yya > 0.0F, "idle allay ignored the climb of a vanilla flight target");
+            })
+            .thenExecute(() -> {
+                worker.navigator().setPath(List.of(helper.absoluteVec(new Vec3(5.5D, 3.0D, 5.5D))));
+                check(worker.isCommanded(), "a scripted path must count as being commanded");
+                worker.getMoveControl().setWantedPosition(
+                    worker.getX(),
+                    worker.getY() + 2.0D,
+                    worker.getZ() + 3.0D,
+                    1.0D
+                );
+                worker.getMoveControl().tick();
+                check(worker.zza == 0.0F && worker.yya == 0.0F,
+                    "a commanded allay must ignore vanilla flight targets");
+                worker.navigator().clear();
             })
             .thenSucceed();
     }

@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.allay;
 
+import dev.anvilcraft.plasticraft.blueprint.ConstructionWorkerSpace;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -90,6 +91,9 @@ public final class AllayFlightNavigator {
         while (delta.lengthSqr() < this.waypointReachedDistanceSqr() && this.canAdvanceWaypoint(worker)) {
             this.index++;
             if (!this.hasPath()) {
+                // 终点判定容差(0.3 格)远大于落脚点与相邻格的间隙,必须精确落位:
+                // 差之毫厘会让包围盒探进相邻格,交付判定据此认为工人占着目标格,而这点位移又小到无法执行。
+                settleOn(worker, target);
                 worker.setDeltaMovement(Vec3.ZERO);
                 this.lastCommandedMotion = Vec3.ZERO;
                 return false;
@@ -123,9 +127,20 @@ public final class AllayFlightNavigator {
         return true;
     }
 
+    /**
+     * 抵达终点时对齐到路点本身。路点来自规划器的自由格采样或落脚点,本身就是可站位置;
+     * 只有该处此刻确实无碰撞才对齐,免得把工人塞进刚被别人占掉的格子。
+     */
+    private static void settleOn(Entity worker, Vec3 point) {
+        if (worker.position().distanceToSqr(point) < 1.0E-8D) return;
+        if (!worker.level().noBlockCollision(worker, ConstructionWorkerSpace.boxAt(point))) return;
+        worker.setPos(point.x, point.y, point.z);
+    }
+
     private boolean canAdvanceWaypoint(Entity worker) {
+        // 跳点必须同样避开塑料实体,否则会把规划好的绕行直接抹平。
         return this.index == this.waypoints.size() - 1
-            || AllayFlightPlanner.isClear(worker, worker.position(), this.waypoints.get(this.index + 1));
+            || AllayFlightPlanner.isClear(worker, worker.position(), this.waypoints.get(this.index + 1), true);
     }
 
     private boolean shouldReplan(Entity worker, double waypointDistance) {

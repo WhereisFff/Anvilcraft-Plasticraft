@@ -13,7 +13,7 @@ import dev.anvilcraft.plasticraft.block.piston.PistonAdhesionController;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
-import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityAdhesion;
@@ -632,7 +632,7 @@ public final class AdhesivePatchRenderer {
     }
 
     private static boolean isHardenedCauldronOpening(Entity entity, Direction localFace) {
-        return entity instanceof HardenedResinCauldronEntity && localFace == Direction.UP;
+        return PlasticCauldrons.isCauldron(entity) && localFace == Direction.UP;
     }
 
     private static void renderWrappedAdhesive(

@@ -1,32 +1,49 @@
 package dev.anvilcraft.plasticraft.client.renderer.entity;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
 import dev.anvilcraft.plasticraft.client.renderer.ClearPlasticRenderTypes;
 import dev.anvilcraft.plasticraft.client.renderer.DynamicPlasticTextureManager;
+import dev.anvilcraft.plasticraft.client.renderer.FluidRenderOpacity;
+import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer.FluidLayerRenderPass;
 import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer.PreparedTankFluids;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticOilCatalysisRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.MoldedTrayComponentRenderer;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
+import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.util.RandomSource;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.fluids.FluidStack;
 import org.joml.Matrix3f;
+import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
+import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
 
@@ -36,6 +53,7 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
     private static final Map<UniversalPlasticEntity, GravitySample> GRAVITY_SAMPLES = new WeakHashMap<>();
     private static final Map<UniversalPlasticEntity, FluidMeshSample> FLUID_MESH_SAMPLES = new WeakHashMap<>();
     private final BlockRenderDispatcher dispatcher;
+    private final RandomSource random = RandomSource.create();
 
     public UniversalPlasticEntityRenderer(EntityRendererProvider.Context context) {
         super(context);
@@ -63,6 +81,18 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
                 buffers,
                 preview.valid()
             );
+            entity.getMoldedData().ifPresent(data -> {
+                Direction outlet = entity.getOutletLocalDirection();
+                if (outlet != null && MoldingProductTypes.isCauldron(data.finalType())) {
+                    MoldedPlasticMeshRenderer.renderCauldronOutletPreview(
+                        data,
+                        outlet,
+                        pose,
+                        buffers,
+                        preview.valid()
+                    );
+                }
+            });
             pose.popPose();
             pose.pushPose();
             PlasticEntityRenderTransforms.applyWorldAlignedPreview(pose, entity);
@@ -78,21 +108,37 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
             super.render(entity, yaw, partialTick, pose, buffers, packedLight);
             return;
         }
+        OptionalRenderData renderData = OptionalRenderData.of(entity.getMoldedData().orElse(null));
+        boolean transparentCauldronPass = renderData.cauldron()
+            && deferredPass
+            && PlasticEntityRenderHelper.isTransparent(entity);
+        if (transparentCauldronPass) {
+            // 世界重力对齐的物品不乘锅壳旋转，但透明锅仍必须最后覆盖在它们外面。
+            this.renderCauldronGravityItems(entity, renderData.data(), pose, buffers, packedLight);
+        }
         pose.pushPose();
         PlasticEntityRenderTransforms.apply(pose, entity, partialTick);
-        entity.getMoldedData()
-            .filter(data -> MoldingProductTypes.isTank(data.finalType()))
-            .ifPresent(data -> {
+        if (renderData.cauldron()) {
+            this.renderCauldron(entity, renderData.data(), deferredPass, pose, buffers, packedLight, partialTick);
+        } else {
+            boolean deferredTransparentContents = deferredPass && PlasticEntityRenderHelper.isTransparent(entity);
+            // 储罐沿用按实际内腔求解的多流体网格；炼药锅不能走这条储罐路径。
+            if (renderData.data() != null && MoldingProductTypes.isTank(renderData.data().finalType())) {
                 Vec3 localUp = localUp(entity, partialTick, pose);
                 MoldedPlasticMeshRenderer.renderTankFluids(
-                    preparedTankFluids(entity, data, localUp),
+                    preparedTankFluids(entity, renderData.data(), localUp),
                     pose,
                     buffers,
-                    packedLight
+                    packedLight,
+                    deferredPass && PlasticEntityRenderHelper.isTransparent(entity)
+                        ? FluidLayerRenderPass.TRANSLUCENT_ONLY
+                        : FluidLayerRenderPass.ALL
                 );
-            });
-        // 先绘制内腔流体，再绘制外壳，让透明塑料颜色覆盖在流体之上。
-        PlasticEntityRenderHelper.renderModel(entity, this.dispatcher, pose, buffers, packedLight);
+                if (deferredTransparentContents) flush(buffers);
+            }
+            // 流体先写深度，透明壳体随后只会覆盖位于液面前方的像素。
+            PlasticEntityRenderHelper.renderModel(entity, this.dispatcher, pose, buffers, packedLight);
+        }
         entity.getMoldedData().ifPresent(data -> MoldedTrayComponentRenderer.render(
             data,
             this.dispatcher,
@@ -104,7 +150,427 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
             OverlayTexture.NO_OVERLAY
         ));
         pose.popPose();
+        if (renderData.cauldron() && !transparentCauldronPass) {
+            // 侧放或倒置的锅中物品要服从世界重力，不能继续乘上锅壳的离散旋转。
+            this.renderCauldronGravityItems(entity, renderData.data(), pose, buffers, packedLight);
+        }
         if (!deferredPass) super.render(entity, yaw, partialTick, pose, buffers, packedLight);
+    }
+
+    /** 在延迟透明壳开始前写入不透明流体深度，使后侧壳体和内壁通过深度测试自然被遮挡。 */
+    public void renderOpaqueFluidContents(
+        UniversalPlasticEntity entity,
+        float partialTick,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        int packedLight
+    ) {
+        OptionalRenderData renderData = OptionalRenderData.of(entity.getMoldedData().orElse(null));
+        if (renderData.data() == null) return;
+        pose.pushPose();
+        try {
+            PlasticEntityRenderTransforms.apply(pose, entity, partialTick);
+            if (renderData.cauldron()) {
+                List<FluidStack> fluids = entity.getSyncedFluids();
+                this.renderCauldronFluids(
+                    entity,
+                    fluids,
+                    CauldronFluidMetrics.of(entity, renderData.data(), fluids),
+                    FluidLayerRenderPass.OPAQUE_ONLY,
+                    false,
+                    pose,
+                    buffers,
+                    packedLight,
+                    partialTick
+                );
+            } else if (MoldingProductTypes.isTank(renderData.data().finalType())) {
+                Vec3 localUp = localUp(entity, partialTick, pose);
+                MoldedPlasticMeshRenderer.renderTankFluids(
+                    preparedTankFluids(entity, renderData.data(), localUp),
+                    pose,
+                    buffers,
+                    packedLight,
+                    FluidLayerRenderPass.OPAQUE_ONLY
+                );
+            }
+        } finally {
+            pose.popPose();
+        }
+    }
+
+    /** 炼药锅的绘制顺序必须独立于储罐；透明锅壳最后刷批，避免遮掉背后的锅体与内容。 */
+    private void renderCauldron(
+        UniversalPlasticEntity entity,
+        MoldedPlasticData data,
+        boolean deferredPass,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        int packedLight,
+        float partialTick
+    ) {
+        List<ItemStack> items = entity.getSyncedItems();
+        List<FluidStack> fluids = entity.getSyncedFluids();
+        FluidStack bottomFluid = fluids.isEmpty() ? FluidStack.EMPTY : fluids.getFirst();
+        CauldronFluidMetrics metrics = CauldronFluidMetrics.of(entity, data, fluids);
+        boolean gravityAlignedItems = !items.isEmpty() && entity.shouldUseGravityAlignedItemLayout();
+
+        boolean transparent = deferredPass && PlasticEntityRenderHelper.isTransparent(entity);
+        FluidLayerRenderPass fluidRenderPass = transparent
+            ? FluidLayerRenderPass.TRANSLUCENT_ONLY
+            : FluidLayerRenderPass.ALL;
+        if (transparent) {
+            if (!items.isEmpty() && !gravityAlignedItems && !entity.shouldEjectStoredItems()) {
+                this.renderItems(entity, items, metrics, false, false, pose, buffers, packedLight);
+            }
+            flush(buffers);
+            this.renderCauldronFluids(
+                entity, fluids, metrics, fluidRenderPass, true, pose, buffers, packedLight, partialTick
+            );
+            flush(buffers);
+            PlasticEntityRenderHelper.renderModel(entity, this.dispatcher, pose, buffers, packedLight);
+            this.renderOutlet(entity, data, pose, buffers, packedLight);
+            flush(buffers);
+        } else {
+            PlasticEntityRenderHelper.renderModel(entity, this.dispatcher, pose, buffers, packedLight);
+            this.renderOutlet(entity, data, pose, buffers, packedLight);
+            flush(buffers);
+            if (!items.isEmpty() && !gravityAlignedItems && !entity.shouldEjectStoredItems()) {
+                this.renderItems(entity, items, metrics, false, false, pose, buffers, packedLight);
+            }
+            flush(buffers);
+            this.renderCauldronFluids(
+                entity, fluids, metrics, fluidRenderPass, true, pose, buffers, packedLight, partialTick
+            );
+            flush(buffers);
+        }
+
+        if (!bottomFluid.isEmpty() && entity.anvilcraft$isIgnited()) {
+            float top = metrics.fluidTop();
+            if (bottomFluid.is(PlasticraftFluids.HIGH_HEAT_FUEL.get())) {
+                IgnitedFluidFlameRenderer.renderBlue(
+                    pose, buffers, top, metrics.flameScale(), OverlayTexture.NO_OVERLAY
+                );
+            } else {
+                IgnitedFluidFlameRenderer.renderOrdinary(
+                    pose, buffers, top, metrics.flameScale(), OverlayTexture.NO_OVERLAY
+                );
+            }
+            flush(buffers);
+        }
+
+    }
+
+    private void renderOutlet(
+        UniversalPlasticEntity entity,
+        MoldedPlasticData data,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        int packedLight
+    ) {
+        Direction outlet = entity.getOutletLocalDirection();
+        if (outlet == null) return;
+        MoldedPlasticMeshRenderer.renderCauldronOutlet(
+            data,
+            outlet,
+            pose,
+            buffers,
+            packedLight,
+            PlasticEntityRenderHelper.isTransparent(entity)
+        );
+    }
+
+    private void renderCauldronFluids(
+        UniversalPlasticEntity entity,
+        List<FluidStack> fluids,
+        CauldronFluidMetrics metrics,
+        FluidLayerRenderPass renderPass,
+        boolean renderOverlays,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        int packedLight,
+        float partialTick
+    ) {
+        boolean deferredTransparent = ClearPlasticRenderTypes.isDeferredPassActive()
+            && PlasticEntityRenderHelper.isTransparent(entity);
+        float layerBottom = metrics.fluidBottom();
+        for (FluidStack fluid : fluids) {
+            if (fluid.isEmpty()) continue;
+            float layerTop = Math.min(
+                metrics.fullFluidTop(),
+                layerBottom + metrics.layerHeight(fluid.getAmount())
+            );
+            if (layerTop <= layerBottom) continue;
+            if (renderPass.includes(FluidRenderOpacity.isOpaque(fluid))) {
+                if (deferredTransparent) {
+                    VertexConsumer consumer = buffers.getBuffer(ClearPlasticRenderTypes.fluid());
+                    FluidRenderHelper.INSTANCE.renderFluidBox(
+                        fluid,
+                        metrics.minX(),
+                        layerBottom,
+                        metrics.minZ(),
+                        metrics.maxX(),
+                        layerTop,
+                        metrics.maxZ(),
+                        consumer,
+                        pose,
+                        packedLight,
+                        true,
+                        false
+                    );
+                } else if (renderPass == FluidLayerRenderPass.OPAQUE_ONLY) {
+                    // 预绘必须写入主目标深度；FluidRenderHelper 的 buffers 重载会自行选择 translucent。
+                    VertexConsumer consumer = buffers.getBuffer(RenderType.cutout());
+                    FluidRenderHelper.INSTANCE.renderFluidBox(
+                        fluid,
+                        metrics.minX(),
+                        layerBottom,
+                        metrics.minZ(),
+                        metrics.maxX(),
+                        layerTop,
+                        metrics.maxZ(),
+                        consumer,
+                        pose,
+                        packedLight,
+                        true,
+                        false
+                    );
+                } else {
+                    FluidRenderHelper.INSTANCE.renderFluidBox(
+                        fluid,
+                        metrics.minX(),
+                        layerBottom,
+                        metrics.minZ(),
+                        metrics.maxX(),
+                        layerTop,
+                        metrics.maxZ(),
+                        buffers,
+                        pose,
+                        packedLight,
+                        true,
+                        false
+                    );
+                }
+            }
+            if (renderOverlays) {
+                PlasticOilCatalysisRenderer.renderContainerOverlay(
+                    entity.level(),
+                    BlockPos.containing(entity.getBoundingBox().getCenter()),
+                    partialTick,
+                    fluid,
+                    metrics.minX(),
+                    layerBottom,
+                    metrics.minZ(),
+                    metrics.maxX(),
+                    layerTop,
+                    metrics.maxZ(),
+                    buffers,
+                    pose,
+                    packedLight,
+                    true,
+                    deferredTransparent
+                );
+            }
+            layerBottom = layerTop;
+        }
+    }
+
+    private void renderItems(
+        UniversalPlasticEntity entity,
+        List<ItemStack> items,
+        CauldronFluidMetrics metrics,
+        boolean gravityAligned,
+        boolean itemsAtDownwardOpening,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        int packedLight
+    ) {
+        this.random.setSeed(itemHash(items));
+        float minX = metrics.cavityMinX();
+        float minY = metrics.cavityMinY();
+        float minZ = metrics.cavityMinZ();
+        float maxX = metrics.cavityMaxX();
+        float maxY = metrics.cavityMaxY();
+        float maxZ = metrics.cavityMaxZ();
+        // cavityBounds 以方块为单位；surfaceBounds 也是同一约定。
+        float localCenterX = (minX + maxX) * 0.5F;
+        float localCenterZ = (minZ + maxZ) * 0.5F;
+        float localCenterY = itemsAtDownwardOpening
+            ? minY - 0.17F
+            : itemCenterY(metrics);
+        if (gravityAligned) {
+            Vec3 origin = entity.plasticraft$getGeometry().entityOrigin();
+            localCenterX -= (float) origin.x;
+            localCenterY -= (float) origin.y;
+            localCenterZ -= (float) origin.z;
+        }
+        float centerX = localCenterX;
+        float centerY = localCenterY;
+        float centerZ = localCenterZ;
+        int itemCount = items.size();
+        float partAngle = 360.0F / itemCount;
+        int remaining = itemCount;
+        for (ItemStack stack : items) {
+            float angleDegrees = partAngle * remaining;
+            float angle = angleDegrees * Mth.DEG_TO_RAD;
+            float radius = itemCount == 1 ? 0.0F : Math.min(0.16F, Math.min(maxX - minX, maxZ - minZ) * 0.2F);
+            pose.pushPose();
+            pose.translate(
+                centerX + Mth.cos(angle) * radius,
+                centerY,
+                centerZ + Mth.sin(angle) * radius
+            );
+            pose.mulPose(
+                new Quaternionf()
+                    .rotateY((angleDegrees + this.random.nextIntBetweenInclusive(-25, 25) + 35.0F) * Mth.DEG_TO_RAD)
+                    .rotateX(65.0F * Mth.DEG_TO_RAD)
+            );
+            int renderedCopies = Math.min(5, 1 + stack.getCount() / 8);
+            for (int copy = 0; copy < renderedCopies; copy++) {
+                pose.pushPose();
+                if (copy > 0) {
+                    float spread = 1.0F / 20.0F;
+                    pose.translate(
+                        (this.random.nextFloat() - 0.5F) * spread,
+                        (this.random.nextFloat() - 0.5F) * spread,
+                        (this.random.nextFloat() - 0.5F) * spread
+                    );
+                }
+                Minecraft.getInstance().getItemRenderer().renderStatic(
+                    stack,
+                    ItemDisplayContext.GROUND,
+                    packedLight,
+                    OverlayTexture.NO_OVERLAY,
+                    pose,
+                    buffers,
+                    entity.level(),
+                    0
+                );
+                pose.popPose();
+            }
+            pose.popPose();
+            remaining--;
+        }
+    }
+
+    private void renderCauldronGravityItems(
+        UniversalPlasticEntity entity,
+        MoldedPlasticData data,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        int packedLight
+    ) {
+        List<ItemStack> items = entity.getSyncedItems();
+        if (items.isEmpty() || !entity.shouldUseGravityAlignedItemLayout()) return;
+        CauldronFluidMetrics metrics = CauldronFluidMetrics.of(entity, data, entity.getSyncedFluids());
+        boolean itemsAtDownwardOpening = entity.getOrientation().attachmentFace() == Direction.DOWN;
+        pose.pushPose();
+        this.renderItems(entity, items, metrics, true, itemsAtDownwardOpening, pose, buffers, packedLight);
+        flush(buffers);
+        pose.popPose();
+    }
+
+    /** 与硬化树脂锅一致：物品随液面上升，但在接近锅沿前留出物品自身的可见空间。 */
+    private static float itemCenterY(CauldronFluidMetrics metrics) {
+        float dry = metrics.cavityMinY() + 0.06F;
+        float rise = Math.max(0.0F, metrics.fullFluidTop() - metrics.fluidBottom() - 0.125F);
+        float wet = metrics.cavityMaxY() - 0.19F;
+        return Mth.clamp(dry + metrics.fill() * rise, dry, Math.max(dry, wet));
+    }
+
+    private static int itemHash(List<ItemStack> items) {
+        int hash = 0;
+        for (ItemStack stack : items) {
+            if (stack.isEmpty()) continue;
+            hash = hash * 31 + Item.getId(stack.getItem()) + stack.getDamageValue();
+        }
+        return hash;
+    }
+
+    private static void flush(MultiBufferSource buffers) {
+        if (buffers instanceof MultiBufferSource.BufferSource source) source.endBatch();
+    }
+
+    private record OptionalRenderData(MoldedPlasticData data, boolean cauldron) {
+        private static OptionalRenderData of(MoldedPlasticData data) {
+            return new OptionalRenderData(data, data != null && MoldingProductTypes.isCauldron(data.finalType()));
+        }
+    }
+
+    private record CauldronFluidMetrics(
+        float minX,
+        float minZ,
+        float maxX,
+        float maxZ,
+        float cavityMinX,
+        float cavityMinY,
+        float cavityMinZ,
+        float cavityMaxX,
+        float cavityMaxY,
+        float cavityMaxZ,
+        float fluidBottom,
+        float fullFluidTop,
+        float fluidTop,
+        float fill,
+        int totalCapacity
+    ) {
+        private static final float SIDE_INSET = 0.001F;
+        private static final float BOTTOM_INSET = 0.001F;
+        private static final float TOP_INSET = 0.064F;
+
+        private static CauldronFluidMetrics of(
+            UniversalPlasticEntity entity,
+            MoldedPlasticData data,
+            List<FluidStack> fluids
+        ) {
+            AABB cavity = data.cavityBounds().orElse(data.surfaceBounds());
+            int layerCapacity = entity.plasticraft$cauldronLayout().fluidLayerCapacity(data.capacity());
+            int totalCapacity = Math.max(
+                1,
+                Math.multiplyExact(layerCapacity, entity.plasticraft$cauldronLayout().fluidLayers())
+            );
+            long totalAmount = fluids.stream().mapToLong(FluidStack::getAmount).sum();
+            float fill = Mth.clamp(totalAmount / (float) totalCapacity, 0.0F, 1.0F);
+            float cavityMinX = (float) cavity.minX;
+            float cavityMinY = (float) cavity.minY;
+            float cavityMinZ = (float) cavity.minZ;
+            float cavityMaxX = (float) cavity.maxX;
+            float cavityMaxY = (float) cavity.maxY;
+            float cavityMaxZ = (float) cavity.maxZ;
+            float xInset = safeInset(cavityMaxX - cavityMinX, SIDE_INSET);
+            float zInset = safeInset(cavityMaxZ - cavityMinZ, SIDE_INSET);
+            float bottom = cavityMinY + safeInset(cavityMaxY - cavityMinY, BOTTOM_INSET);
+            float fullTop = cavityMaxY - safeInset(cavityMaxY - cavityMinY, TOP_INSET);
+            if (fullTop < bottom) fullTop = bottom;
+            return new CauldronFluidMetrics(
+                cavityMinX + xInset,
+                cavityMinZ + zInset,
+                cavityMaxX - xInset,
+                cavityMaxZ - zInset,
+                cavityMinX,
+                cavityMinY,
+                cavityMinZ,
+                cavityMaxX,
+                cavityMaxY,
+                cavityMaxZ,
+                bottom,
+                fullTop,
+                Mth.lerp(fill, bottom, fullTop),
+                fill,
+                totalCapacity
+            );
+        }
+
+        private static float safeInset(float extent, float requested) {
+            return Math.min(requested, Math.max(0.0F, extent * 0.5F - 1.0E-4F));
+        }
+
+        private float flameScale() {
+            return Math.max(0.4F, Math.min(1.0F, Math.min(maxX - minX, maxZ - minZ)));
+        }
+
+        private float layerHeight(int amount) {
+            return (this.fullFluidTop - this.fluidBottom) * amount / this.totalCapacity;
+        }
     }
 
     @Override

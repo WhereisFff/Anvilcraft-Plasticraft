@@ -40,7 +40,7 @@ import dev.anvilcraft.plasticraft.molding.session.MoldingSessionSnapshot;
 import dev.anvilcraft.plasticraft.network.MoldingPrinterMotionPacket;
 import dev.anvilcraft.plasticraft.network.MoldingSessionStatusPacket;
 import dev.dubhe.anvilcraft.api.injection.tooltip.ITooltipProviderExtension;
-import dev.dubhe.anvilcraft.api.item.IChargerDischargeable;
+import dev.dubhe.anvilcraft.api.item.IFullCapacitor;
 import dev.dubhe.anvilcraft.api.power.IPowerConsumer;
 import dev.dubhe.anvilcraft.api.power.PowerGrid;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
@@ -1464,8 +1464,8 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
 
         int capacitorEnergy = capacitorEnergy(input);
         if (capacitorEnergy <= 0 || MoldingPowerBridge.capacity() - this.energy < capacitorEnergy) return;
-        if (!(input.getItem() instanceof IChargerDischargeable dischargeable)) return;
-        ItemStack emptyCapacitor = dischargeable.discharge(input.copyWithCount(1));
+        if (!(input.getItem() instanceof IFullCapacitor capacitor)) return;
+        ItemStack emptyCapacitor = capacitor.getEmpty(input.copyWithCount(1));
         this.energy += capacitorEnergy;
         this.finishResourceInput(emptyCapacitor);
     }

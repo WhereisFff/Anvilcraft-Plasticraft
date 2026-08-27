@@ -4,8 +4,11 @@ import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
-import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldronWorkBlockFinder;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
@@ -63,12 +66,13 @@ public final class CatalyticPressProcess {
         }
 
         FluidStack stored = firstFluid(container.handler());
+        WorkConditions work = workConditions(level, container);
         String process;
         double workPerTick;
         Fluid outputFluid;
         @Nullable DyeColor outputColor;
         if (stored.is(PlasticraftFluids.PLASTIC_OIL.get())) {
-            double heat = CatalyticPressHeat.power(level.getBlockState(container.pos().below()));
+            double heat = work.heat();
             GlassCatalysts glass = glassCatalysts(level, container);
             if (glass.hasAny()) {
                 process = CLEAR_PLASTIC_PROCESS;
@@ -85,14 +89,14 @@ public final class CatalyticPressProcess {
                 outputColor = DyeColor.WHITE;
             }
         } else if (stored.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())) {
-            double heat = CatalyticPressHeat.power(level.getBlockState(container.pos().below()));
+            double heat = work.heat();
             int emberMetalItems = emberMetalItems(level, container);
             if (emberMetalItems > 0 && heat > 0.0D) {
                 process = HEAT_RESISTANT_PLASTIC_PROCESS;
                 workPerTick = heat * PlasticOilCatalysis.catalystMultiplier(emberMetalItems);
                 outputFluid = PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT.get();
                 outputColor = PlasticMeltColor.get(stored);
-            } else if (PlasticCatalysisCold.isCold(level.getBlockState(container.pos().below()))) {
+            } else if (work.cold()) {
                 process = ENGINEERING_PLASTIC_PROCESS;
                 workPerTick = PlasticOilCatalysis.ENGINEERING_REACTION_POWER;
                 outputFluid = PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get();
@@ -180,7 +184,7 @@ public final class CatalyticPressProcess {
         if (result == null) return null;
 
         BlockState state = level.getBlockState(containerPos);
-        HardenedResinCauldronEntity plasticCauldron = plasticCauldron(level, containerPos, result);
+        PlasticCauldron plasticCauldron = plasticCauldron(level, containerPos, result);
         boolean supportedBlock = state.is(BlockTags.CAULDRONS) || state.getBlock() instanceof FishTankBlock;
         if (!supportedBlock && plasticCauldron == null) return null;
         if (plasticCauldron != null && plasticCauldron.getOrientation().attachmentFace() != Direction.UP) return null;
@@ -189,6 +193,25 @@ public final class CatalyticPressProcess {
 
     public static BlockPos occupiedPos(Entity entity) {
         return BlockPos.containing(entity.getBoundingBox().getCenter());
+    }
+
+    private static WorkConditions workConditions(ServerLevel level, SealedContainer container) {
+        PlasticCauldron cauldron = container.plasticCauldron();
+        if (cauldron == null) return workConditions(level.getBlockState(container.pos().below()));
+        @Nullable WorkConditions work = PlasticCauldronWorkBlockFinder.find(
+            cauldron,
+            CatalyticPressProcess::cauldronWorkConditions
+        );
+        return work == null ? WorkConditions.NONE : work;
+    }
+
+    private static WorkConditions workConditions(BlockState state) {
+        return new WorkConditions(CatalyticPressHeat.power(state), PlasticCatalysisCold.isCold(state));
+    }
+
+    private static @Nullable WorkConditions cauldronWorkConditions(BlockState state) {
+        WorkConditions work = workConditions(state);
+        return work.isWorking() ? work : null;
     }
 
     private static @Nullable FluidTransformation planTransformation(
@@ -411,8 +434,9 @@ public final class CatalyticPressProcess {
         // 方块化容器的胶接关系保存在方块附加数据中，替换锅之前必须同步清掉双方的胶面。
         BondedFallingBlocks.removeAll(level, container.pos());
         if (container.plasticCauldron() != null && !container.plasticCauldron().isRemoved()) {
-            EntityBondManager.disconnectEntity(level, container.plasticCauldron());
-            container.plasticCauldron().discard();
+            AbstractPlasticEntity cauldronEntity = container.plasticCauldron().plasticraft$cauldronEntity();
+            EntityBondManager.disconnectEntity(level, cauldronEntity);
+            cauldronEntity.discard();
         }
         placeMelt(level, container.pos(), melt);
         level.levelEvent(2001, container.pos(), Block.getId(PlasticraftBlocks.CATALYTIC_PRESS_LID.get().defaultBlockState()));
@@ -445,14 +469,15 @@ public final class CatalyticPressProcess {
         }
     }
 
-    private static @Nullable HardenedResinCauldronEntity plasticCauldron(
+    private static @Nullable PlasticCauldron plasticCauldron(
         ServerLevel level,
         BlockPos pos,
         FluidContainerLookup.Result result
     ) {
-        if (result.entity() instanceof HardenedResinCauldronEntity cauldron) return cauldron;
+        PlasticCauldron entityCauldron = PlasticCauldrons.of(result.entity());
+        if (entityCauldron != null) return entityCauldron;
         if (level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
-            && bonded.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron) {
+            && PlasticCauldrons.of(bonded.getOrCreateRenderEntity()) instanceof PlasticCauldron cauldron) {
             return cauldron;
         }
         return null;
@@ -506,11 +531,19 @@ public final class CatalyticPressProcess {
         }
     }
 
+    private record WorkConditions(double heat, boolean cold) {
+        private static final WorkConditions NONE = new WorkConditions(0.0D, false);
+
+        private boolean isWorking() {
+            return this.heat > 0.0D || this.cold;
+        }
+    }
+
     public record SealedContainer(
         BlockPos pos,
         IFluidHandler handler,
         FluidContainerLookup.Result lookup,
-        @Nullable HardenedResinCauldronEntity plasticCauldron
+        @Nullable PlasticCauldron plasticCauldron
     ) {
     }
 }

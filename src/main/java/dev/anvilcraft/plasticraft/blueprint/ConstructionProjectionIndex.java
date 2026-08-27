@@ -108,7 +108,20 @@ public final class ConstructionProjectionIndex {
         return connected;
     }
 
-    public record Collision(BlockPos pos, VoxelShape worldShape, BlockState state, UUID jobId) {
+    /**
+     * @param pendingDecorations 该位置尚未交付的告示牌加工位掩码,见 {@link SignDecorationAdapter#maskOf(int)};
+     *                           0 表示按目标状态原样渲染,不涉及告示牌的投影一律为 0。
+     */
+    public record Collision(
+        BlockPos pos,
+        VoxelShape worldShape,
+        BlockState state,
+        UUID jobId,
+        int pendingDecorations
+    ) {
+        public Collision(BlockPos pos, VoxelShape worldShape, BlockState state, UUID jobId) {
+            this(pos, worldShape, state, jobId, 0);
+        }
     }
 
     public static boolean tryDeliver(
@@ -201,7 +214,7 @@ public final class ConstructionProjectionIndex {
             VoxelShape worldShape = local.isEmpty()
                 ? Shapes.empty()
                 : local.move(neighbor.getX(), neighbor.getY(), neighbor.getZ());
-            put(level, existing.jobId(), neighbor, existing.state(), worldShape);
+            put(level, existing.jobId(), neighbor, existing.state(), worldShape, existing.pendingDecorations());
             if (level instanceof ServerLevel serverLevel) {
                 markDirty(serverLevel, existing.jobId(), SectionPos.asLong(neighbor));
             }
@@ -209,13 +222,48 @@ public final class ConstructionProjectionIndex {
     }
 
     public static void put(Level level, UUID jobId, BlockPos pos, BlockState state, VoxelShape worldShape) {
+        put(level, jobId, pos, state, worldShape, 0);
+    }
+
+    public static void put(
+        Level level,
+        UUID jobId,
+        BlockPos pos,
+        BlockState state,
+        VoxelShape worldShape,
+        int pendingDecorations
+    ) {
         synchronized (LEVELS) {
             LEVELS.computeIfAbsent(level, ignored -> new LevelIndex()).put(new Collision(
                 pos.immutable(),
                 worldShape,
                 state,
-                jobId
+                jobId,
+                pendingDecorations
             ));
+        }
+    }
+
+    /**
+     * 更新已交付假告示牌的未加工掩码。重新入索引会顶起该区段 revision,客户端 BER 缓存据此失效重建,
+     * 因此不必再单独通知渲染层。世界已满足的告示牌没有投影条目,直接忽略。
+     */
+    public static void setPendingDecorations(Level level, UUID jobId, BlockPos pos, int pendingDecorations) {
+        synchronized (LEVELS) {
+            LevelIndex index = LEVELS.get(level);
+            Collision current = index == null ? null : index.get(pos);
+            if (current == null || !current.jobId().equals(jobId)) return;
+            if (current.pendingDecorations() == pendingDecorations) return;
+            index.put(new Collision(
+                current.pos(),
+                current.worldShape(),
+                current.state(),
+                jobId,
+                pendingDecorations
+            ));
+        }
+        if (level instanceof ServerLevel serverLevel) {
+            markDirty(serverLevel, jobId, SectionPos.asLong(pos));
         }
     }
 
@@ -337,7 +385,8 @@ public final class ConstructionProjectionIndex {
         UUID jobId,
         long section,
         List<BlockPos> positions,
-        List<BlockState> states
+        List<BlockState> states,
+        Map<Long, Integer> pendingDecorations
     ) {
         if (positions.size() != states.size()) return;
         for (BlockPos pos : positions) {
@@ -373,7 +422,13 @@ public final class ConstructionProjectionIndex {
             VoxelShape worldShape = local.isEmpty()
                 ? Shapes.empty()
                 : local.move(pos.getX(), pos.getY(), pos.getZ());
-            collisions.add(new Collision(pos.immutable(), worldShape, state, jobId));
+            collisions.add(new Collision(
+                pos.immutable(),
+                worldShape,
+                state,
+                jobId,
+                pendingDecorations.getOrDefault(pos.asLong(), 0)
+            ));
         }
         collisions.sort(Comparator.comparingLong(collision -> collision.pos().asLong()));
         synchronized (LEVELS) {
@@ -392,19 +447,39 @@ public final class ConstructionProjectionIndex {
     }
 
     static void syncSection(ServerLevel level, UUID jobId, long section) {
-        List<BlockPos> positions = new ArrayList<>();
-        List<BlockState> states = new ArrayList<>();
+        List<Collision> entries = new ArrayList<>();
         synchronized (LEVELS) {
             LevelIndex index = LEVELS.get(level);
             if (index != null) {
-                index.collectSection(jobId, section, positions, states);
+                index.collectSection(jobId, section, entries);
             }
         }
         PacketDistributor.sendToPlayersTrackingChunk(
             level,
             new ChunkPos(SectionPos.x(section), SectionPos.z(section)),
-            new ConstructionProjectionSectionPacket(jobId, section, false, positions, states)
+            sectionPacket(jobId, section, entries)
         );
+    }
+
+    private static ConstructionProjectionSectionPacket sectionPacket(
+        UUID jobId,
+        long section,
+        List<Collision> entries
+    ) {
+        List<BlockPos> positions = new ArrayList<>(entries.size());
+        List<BlockState> states = new ArrayList<>(entries.size());
+        List<ConstructionProjectionSectionPacket.SignMask> masks = new ArrayList<>();
+        for (Collision collision : entries) {
+            positions.add(collision.pos());
+            states.add(collision.state());
+            if (collision.pendingDecorations() != 0) {
+                masks.add(new ConstructionProjectionSectionPacket.SignMask(
+                    collision.pos(),
+                    collision.pendingDecorations()
+                ));
+            }
+        }
+        return new ConstructionProjectionSectionPacket(jobId, section, false, positions, states, masks);
     }
 
     public static void flushDirty(ServerLevel level) {
@@ -478,21 +553,9 @@ public final class ConstructionProjectionIndex {
     ) {
         for (Map.Entry<UUID, Map<Long, List<Collision>>> jobEntry : grouped.entrySet()) {
             for (Map.Entry<Long, List<Collision>> sectionEntry : jobEntry.getValue().entrySet()) {
-                List<BlockPos> positions = new ArrayList<>();
-                List<BlockState> states = new ArrayList<>();
-                for (Collision collision : sectionEntry.getValue()) {
-                    positions.add(collision.pos());
-                    states.add(collision.state());
-                }
                 PacketDistributor.sendToPlayer(
                     player,
-                    new ConstructionProjectionSectionPacket(
-                        jobEntry.getKey(),
-                        sectionEntry.getKey(),
-                        false,
-                        positions,
-                        states
-                    )
+                    sectionPacket(jobEntry.getKey(), sectionEntry.getKey(), sectionEntry.getValue())
                 );
             }
         }
@@ -614,13 +677,12 @@ public final class ConstructionProjectionIndex {
             return job.snapshot;
         }
 
-        private void collectSection(UUID jobId, long section, List<BlockPos> positions, List<BlockState> states) {
-            Map<Long, Collision> entries = this.bySection.get(section);
-            if (entries == null) return;
-            for (Collision collision : entries.values()) {
+        private void collectSection(UUID jobId, long section, List<Collision> entries) {
+            Map<Long, Collision> indexed = this.bySection.get(section);
+            if (indexed == null) return;
+            for (Collision collision : indexed.values()) {
                 if (!collision.jobId().equals(jobId)) continue;
-                positions.add(collision.pos());
-                states.add(collision.state());
+                entries.add(collision);
             }
         }
 

@@ -23,7 +23,7 @@ import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 
-/** 覆盖硬化树脂锅的熔岩销毁、移动穿越和不可放置流体溢出契约。 */
+/** 覆盖硬化树脂锅的熔岩储存、世界熔岩伤害、移动穿越和不可放置流体溢出契约。 */
 public final class HardenedResinCauldronFluidHazardGameTests {
     private HardenedResinCauldronFluidHazardGameTests() {
     }
@@ -32,15 +32,15 @@ public final class HardenedResinCauldronFluidHazardGameTests {
     @EmptyTemplate(value = "17x7x7", floor = true)
     @TestHolder(description = "Hardened resin cauldrons handle lava fills, contact, movement, bonding, and spills")
     static void hardenedResinCauldronFluidHazards(ExtendedGameTestHelper helper) {
-        assertExecutedLavaFillBurnsCauldron(helper, 2);
+        assertExecutedLavaFillKeepsCauldron(helper, 2);
         assertWorldLavaBurnsCauldron(helper, 5);
         assertCrossingWorldLavaBurnsCauldron(helper, 8);
-        assertLavaFillBurnsBondedCauldron(helper, 12);
+        assertLavaFillKeepsBondedCauldron(helper, 12);
         assertNonPlaceableFluidSpills(helper, 15);
         helper.succeed();
     }
 
-    private static void assertExecutedLavaFillBurnsCauldron(ExtendedGameTestHelper helper, int x) {
+    private static void assertExecutedLavaFillKeepsCauldron(ExtendedGameTestHelper helper, int x) {
         HardenedResinCauldronEntity cauldron = createCauldron(helper, new Vec3(x + 0.5D, 2.0D, 3.5D));
         FluidStack lava = new FluidStack(Fluids.LAVA, HardenedResinCauldronEntity.CAPACITY);
 
@@ -51,11 +51,12 @@ public final class HardenedResinCauldronFluidHazardGameTests {
 
         int filled = cauldron.getFluidHandler().fill(lava, IFluidHandler.FluidAction.EXECUTE);
         check(filled == HardenedResinCauldronEntity.CAPACITY, "executed lava fill returned the wrong amount");
-        check(cauldron.isRemoved(), "executed lava fill did not burn the cauldron");
+        check(!cauldron.isRemoved(), "executed lava fill burned the cauldron");
+        cauldron.tick();
+        check(!cauldron.isRemoved(), "lava-filled cauldron burned on its next tick");
+        checkStoredLava(cauldron.getFluidHandler(), "free cauldron");
         BlockPos fluidPos = helper.absolutePos(new BlockPos(x, 2, 3));
-        check(helper.getLevel().getFluidState(fluidPos).isSource()
-                && helper.getLevel().getFluidState(fluidPos).getType() == Fluids.LAVA,
-            "burned cauldron did not leave a lava source");
+        check(helper.getLevel().getFluidState(fluidPos).isEmpty(), "lava fill created a world lava source");
     }
 
     private static void assertWorldLavaBurnsCauldron(ExtendedGameTestHelper helper, int x) {
@@ -73,7 +74,7 @@ public final class HardenedResinCauldronFluidHazardGameTests {
         check(cauldron.isRemoved(), "cauldron crossed world lava without burning");
     }
 
-    private static void assertLavaFillBurnsBondedCauldron(ExtendedGameTestHelper helper, int x) {
+    private static void assertLavaFillKeepsBondedCauldron(ExtendedGameTestHelper helper, int x) {
         BlockPos support = new BlockPos(x, 1, 3);
         BlockPos occupied = support.above();
         helper.setBlock(support, Blocks.STONE);
@@ -107,9 +108,10 @@ public final class HardenedResinCauldronFluidHazardGameTests {
         bonded.tickFunctionalEntity();
 
         BlockPos fluidPos = helper.absolutePos(occupied);
-        check(helper.getLevel().getFluidState(fluidPos).isSource()
-                && helper.getLevel().getFluidState(fluidPos).getType() == Fluids.LAVA,
-            "burned bonded cauldron did not become a lava source");
+        check(helper.getBlockState(occupied).is(PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get()),
+            "bonded lava fill removed the cauldron block");
+        checkStoredLava(bonded.getFluidHandler(), "bonded cauldron");
+        check(helper.getLevel().getFluidState(fluidPos).isEmpty(), "bonded lava fill created a world lava source");
     }
 
     private static void assertNonPlaceableFluidSpills(ExtendedGameTestHelper helper, int x) {
@@ -153,6 +155,12 @@ public final class HardenedResinCauldronFluidHazardGameTests {
         cauldron.setNoGravity(true);
         check(level.addFreshEntity(cauldron), "failed to add hardened resin cauldron");
         return cauldron;
+    }
+
+    private static void checkStoredLava(IFluidHandler handler, String carrier) {
+        FluidStack stored = handler.getFluidInTank(0);
+        check(stored.is(Fluids.LAVA) && stored.getAmount() == HardenedResinCauldronEntity.CAPACITY,
+            carrier + " did not retain its lava");
     }
 
     private static void check(boolean condition, String message) {

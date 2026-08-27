@@ -1,6 +1,11 @@
 {
   "sources": [
     {
+      "type": "directory",
+      "source": "fluid",
+      "prefix": "fluid/"
+    },
+    {
       "type": "anvilcraftplasticraft:generated_plastic"
     }
   ]

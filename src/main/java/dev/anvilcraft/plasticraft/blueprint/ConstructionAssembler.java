@@ -90,7 +90,8 @@ public final class ConstructionAssembler {
             if (op.kind() != ConstructionBuildOp.Kind.ATTACHED
                 && op.kind() != ConstructionBuildOp.Kind.CONTENT
                 && op.kind() != ConstructionBuildOp.Kind.FLUID
-                && op.kind() != ConstructionBuildOp.Kind.ENTITY) {
+                && op.kind() != ConstructionBuildOp.Kind.ENTITY
+                && op.kind() != ConstructionBuildOp.Kind.DECORATE) {
                 continue;
             }
             ConstructionBuildOp parent = parentOf(op, byId, placesByPosition);

@@ -28,7 +28,9 @@ public record AllayWorkRecord(
     List<ItemStack> collectionInventory,
     Optional<UUID> assignedJobId,
     ItemStack hostedCarry,
-    Optional<Component> customName
+    Optional<Component> customName,
+    Optional<Long> originLounge,
+    Optional<UUID> transitJob
 ) {
     public static final Codec<AllayWorkRecord> CODEC = RecordCodecBuilder.create(instance -> instance.group(
         UUIDUtil.CODEC.fieldOf("entity_id").forGetter(AllayWorkRecord::entityId),
@@ -42,7 +44,9 @@ public record AllayWorkRecord(
         UUIDUtil.CODEC.optionalFieldOf("assigned_job_id").forGetter(AllayWorkRecord::assignedJobId),
         ItemStack.OPTIONAL_CODEC.optionalFieldOf("hosted_carry", ItemStack.EMPTY)
             .forGetter(AllayWorkRecord::hostedCarry),
-        ComponentSerialization.CODEC.optionalFieldOf("custom_name").forGetter(AllayWorkRecord::customName)
+        ComponentSerialization.CODEC.optionalFieldOf("custom_name").forGetter(AllayWorkRecord::customName),
+        Codec.LONG.optionalFieldOf("origin_lounge").forGetter(AllayWorkRecord::originLounge),
+        UUIDUtil.CODEC.optionalFieldOf("transit_job").forGetter(AllayWorkRecord::transitJob)
     ).apply(instance, AllayWorkRecord::new));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, AllayWorkRecord> STREAM_CODEC = StreamCodec.of(
@@ -60,6 +64,37 @@ public record AllayWorkRecord(
         Objects.requireNonNull(assignedJobId, "assignedJobId");
         Objects.requireNonNull(hostedCarry, "hostedCarry");
         Objects.requireNonNull(customName, "customName");
+        Objects.requireNonNull(originLounge, "originLounge");
+        Objects.requireNonNull(transitJob, "transitJob");
+    }
+
+    /**
+     * 非转运悦灵的便捷构造器，转运字段缺省为空。
+     */
+    public AllayWorkRecord(
+        UUID entityId,
+        ItemStack hardHat,
+        ItemStack heldTool,
+        Optional<UUID> owner,
+        AllayShortageStrategy shortageStrategy,
+        List<ItemStack> collectionInventory,
+        Optional<UUID> assignedJobId,
+        ItemStack hostedCarry,
+        Optional<Component> customName
+    ) {
+        this(
+            entityId,
+            hardHat,
+            heldTool,
+            owner,
+            shortageStrategy,
+            collectionInventory,
+            assignedJobId,
+            hostedCarry,
+            customName,
+            Optional.empty(),
+            Optional.empty()
+        );
     }
 
     private static void encode(RegistryFriendlyByteBuf buffer, AllayWorkRecord data) {
@@ -72,6 +107,8 @@ public record AllayWorkRecord(
         ByteBufCodecs.optional(UUIDUtil.STREAM_CODEC).encode(buffer, data.assignedJobId);
         ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, data.hostedCarry);
         ByteBufCodecs.optional(ComponentSerialization.STREAM_CODEC).encode(buffer, data.customName);
+        ByteBufCodecs.optional(ByteBufCodecs.VAR_LONG).encode(buffer, data.originLounge);
+        ByteBufCodecs.optional(UUIDUtil.STREAM_CODEC).encode(buffer, data.transitJob);
     }
 
     private static AllayWorkRecord decode(RegistryFriendlyByteBuf buffer) {
@@ -84,7 +121,9 @@ public record AllayWorkRecord(
             ItemStack.OPTIONAL_LIST_STREAM_CODEC.decode(buffer),
             ByteBufCodecs.optional(UUIDUtil.STREAM_CODEC).decode(buffer),
             ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer),
-            ByteBufCodecs.optional(ComponentSerialization.STREAM_CODEC).decode(buffer)
+            ByteBufCodecs.optional(ComponentSerialization.STREAM_CODEC).decode(buffer),
+            ByteBufCodecs.optional(ByteBufCodecs.VAR_LONG).decode(buffer),
+            ByteBufCodecs.optional(UUIDUtil.STREAM_CODEC).decode(buffer)
         );
     }
 }

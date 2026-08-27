@@ -29,7 +29,9 @@ Plastic melts are produced by environmental catalysis through four routes:
 | Universal Plastic Melt | Royal steel or frost metal | Royal steel needs cold directly below | Engineering Plastic Melt |
 | Universal Plastic Melt | Ember metal | A heat source directly below | Heat-Resistant Plastic Melt |
 
-Plastic Oil Cauldrons, Universal Plastic Melt Cauldrons, Fish Tanks, Large Cauldrons, upward-facing Hardened Resin Cauldrons and fluid source blocks in the world all support open catalysis
+Plastic Oil Cauldrons, Universal Plastic Melt Cauldrons, Fish Tanks, Large Cauldrons, upward-facing Hardened Resin and plastic cauldrons, and fluid source blocks in the world all support open catalysis
+
+Ordinary block containers and fluid sources still read the condition directly beneath their container cell. An upward-facing Hardened Resin or plastic cauldron instead searches from the center and every covered part of its physical bottom face along current gravity for one block. A valid processing block below the center takes priority, then the remaining covered bottom cells are tried. A small cauldron can therefore share a cell with a campfire or another processing block, while a cauldron taller than one block still reads the block outside its actual bottom
 
 ## Catalyst count
 

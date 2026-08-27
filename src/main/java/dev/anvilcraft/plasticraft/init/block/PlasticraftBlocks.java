@@ -252,7 +252,7 @@ public final class PlasticraftBlocks {
             context.get(),
             provider.models()
                 .getBuilder(context.getName())
-                .texture("particle", provider.modLoc("block/liquid_high_viscosity_resin"))
+                .texture("particle", provider.modLoc("fluid/liquid_high_viscosity_resin"))
         ))
         .register();
 
@@ -285,7 +285,7 @@ public final class PlasticraftBlocks {
         .initialProperties(() -> Blocks.CAULDRON)
         .lang("Plastic Oil Cauldron")
         .blockstate((context, provider) -> {
-            ModelFile[] models = layeredCauldronModels(provider, context.getName(), "block/plastic_oil");
+            ModelFile[] models = layeredCauldronModels(provider, context.getName(), "fluid/plastic_oil");
             provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
                 .modelFile(models[state.getValue(Layered4LevelCauldronBlock.LEVEL) - 1])
                 .build());
@@ -315,14 +315,14 @@ public final class PlasticraftBlocks {
         .lang("Universal Plastic Melt")
         .blockstate((context, provider) -> {
             provider.models().existingFileHelper.trackGenerated(
-                provider.modLoc("block/universal_plastic_melt"),
+                provider.modLoc("fluid/universal_plastic_melt"),
                 ModelProvider.TEXTURE
             );
             provider.simpleBlock(
                 context.get(),
                 provider.models()
                     .getBuilder(context.getName())
-                    .texture("particle", provider.modLoc("block/universal_plastic_melt"))
+                    .texture("particle", provider.modLoc("fluid/universal_plastic_melt"))
             );
         })
         .register();
@@ -337,7 +337,7 @@ public final class PlasticraftBlocks {
             ModelFile[] models = layeredCauldronModels(
                 provider,
                 context.getName(),
-                "block/universal_plastic_melt"
+                "fluid/universal_plastic_melt"
             );
             provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
                 .modelFile(models[state.getValue(Layered4LevelCauldronBlock.LEVEL) - 1])
@@ -407,14 +407,14 @@ public final class PlasticraftBlocks {
             .lang("Engineering Plastic Melt")
             .blockstate((context, provider) -> {
                 provider.models().existingFileHelper.trackGenerated(
-                    provider.modLoc("block/engineering_plastic_melt"),
+                    provider.modLoc("fluid/engineering_plastic_melt"),
                     ModelProvider.TEXTURE
                 );
                 provider.simpleBlock(
                     context.get(),
                     provider.models()
                         .getBuilder(context.getName())
-                        .texture("particle", provider.modLoc("block/engineering_plastic_melt"))
+                        .texture("particle", provider.modLoc("fluid/engineering_plastic_melt"))
                 );
             })
             .register();
@@ -430,7 +430,7 @@ public final class PlasticraftBlocks {
                 ModelFile[] models = layeredCauldronModels(
                     provider,
                     context.getName(),
-                    "block/engineering_plastic_melt"
+                    "fluid/engineering_plastic_melt"
                 );
                 provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
                     .modelFile(models[state.getValue(Layered4LevelCauldronBlock.LEVEL) - 1])
@@ -499,14 +499,14 @@ public final class PlasticraftBlocks {
             .lang("Heat-Resistant Plastic Melt")
             .blockstate((context, provider) -> {
                 provider.models().existingFileHelper.trackGenerated(
-                    provider.modLoc("block/heat_resistant_plastic_melt"),
+                    provider.modLoc("fluid/heat_resistant_plastic_melt"),
                     ModelProvider.TEXTURE
                 );
                 provider.simpleBlock(
                     context.get(),
                     provider.models()
                         .getBuilder(context.getName())
-                        .texture("particle", provider.modLoc("block/heat_resistant_plastic_melt"))
+                        .texture("particle", provider.modLoc("fluid/heat_resistant_plastic_melt"))
                 );
             })
             .register();
@@ -522,7 +522,7 @@ public final class PlasticraftBlocks {
                 ModelFile[] models = layeredCauldronModels(
                     provider,
                     context.getName(),
-                    "block/heat_resistant_plastic_melt"
+                    "fluid/heat_resistant_plastic_melt"
                 );
                 provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
                     .modelFile(models[state.getValue(Layered4LevelCauldronBlock.LEVEL) - 1])
@@ -593,14 +593,14 @@ public final class PlasticraftBlocks {
             .lang("Clear Plastic Melt")
             .blockstate((context, provider) -> {
                 provider.models().existingFileHelper.trackGenerated(
-                    provider.modLoc("block/clear_plastic_melt"),
+                    provider.modLoc("fluid/clear_plastic_melt"),
                     ModelProvider.TEXTURE
                 );
                 provider.simpleBlock(
                     context.get(),
                     provider.models()
                         .getBuilder(context.getName())
-                        .texture("particle", provider.modLoc("block/clear_plastic_melt"))
+                        .texture("particle", provider.modLoc("fluid/clear_plastic_melt"))
                 );
             })
             .register();
@@ -613,7 +613,7 @@ public final class PlasticraftBlocks {
                 ModelFile[] models = layeredCauldronModels(
                     provider,
                     context.getName(),
-                    "block/clear_plastic_melt"
+                    "fluid/clear_plastic_melt"
                 );
                 provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
                     .modelFile(models[state.getValue(Layered4LevelCauldronBlock.LEVEL) - 1])
@@ -844,7 +844,7 @@ public final class PlasticraftBlocks {
                 context.get(),
                 provider.models()
                     .getBuilder(context.getName())
-                    .texture("particle", provider.modLoc("block/" + textureName))
+                    .texture("particle", provider.modLoc("fluid/" + textureName))
             ))
             .register();
     }
@@ -860,7 +860,7 @@ public final class PlasticraftBlocks {
                 ModelProvider.TEXTURE
             );
         }
-        String renderType = contentTexture.equals("block/clear_plastic_melt")
+        String renderType = contentTexture.equals("fluid/clear_plastic_melt")
             ? "minecraft:translucent"
             : contentTexture.endsWith("_plastic_melt")
                 ? "minecraft:cutout"

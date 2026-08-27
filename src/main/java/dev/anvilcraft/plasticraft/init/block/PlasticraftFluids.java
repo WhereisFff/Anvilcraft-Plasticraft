@@ -350,7 +350,7 @@ public final class PlasticraftFluids {
         event.registerFluidType(
             new UniversalPlasticMeltFluidExtension(
                 PlasticMaterial.ENGINEERING,
-                AnvilcraftPlasticraft.of("block/engineering_plastic_melt"),
+                AnvilcraftPlasticraft.of("fluid/engineering_plastic_melt"),
                 true,
                 0xFFFFFFFF
             ),
@@ -359,7 +359,7 @@ public final class PlasticraftFluids {
         event.registerFluidType(
             new UniversalPlasticMeltFluidExtension(
                 PlasticMaterial.HEAT_RESISTANT,
-                AnvilcraftPlasticraft.of("block/heat_resistant_plastic_melt"),
+                AnvilcraftPlasticraft.of("fluid/heat_resistant_plastic_melt"),
                 true,
                 0xFFFFFFFF
             ),
@@ -368,7 +368,7 @@ public final class PlasticraftFluids {
         event.registerFluidType(
             new UniversalPlasticMeltFluidExtension(
                 PlasticMaterial.CLEAR,
-                AnvilcraftPlasticraft.of("block/clear_plastic_melt"),
+                AnvilcraftPlasticraft.of("fluid/clear_plastic_melt"),
                 false,
                 0x99E7F6FF
             ),
@@ -377,7 +377,7 @@ public final class PlasticraftFluids {
     }
 
     private static HighViscosityResinFluidExtension fluidExtension(String textureName) {
-        ResourceLocation texture = AnvilcraftPlasticraft.of("block/" + textureName);
+        ResourceLocation texture = AnvilcraftPlasticraft.of("fluid/" + textureName);
         return new HighViscosityResinFluidExtension(
             texture,
             0xFFFFFFFF,

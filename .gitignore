@@ -15,6 +15,7 @@ runs/
 local-mods/
 /net/
 /dev/
+/.claude
 /.vscode
 /tools
 

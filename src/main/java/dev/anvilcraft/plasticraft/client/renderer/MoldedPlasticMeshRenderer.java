@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.client.renderer;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureLayout;
+import dev.anvilcraft.plasticraft.client.renderer.DynamicPlasticTextureManager.MoldedTextureRef;
 import dev.anvilcraft.plasticraft.client.renderer.entity.TransparentPlasticFaceCullingVertexConsumer;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
@@ -16,9 +17,10 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
 import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -31,8 +33,19 @@ import java.util.Map;
 public final class MoldedPlasticMeshRenderer {
     private static final float PIXELS_PER_BLOCK = 16.0F;
     private static final int INVALID_PREVIEW_COLOR = 0xFFFF1A1A;
-    private static final int PREPARED_MESH_CACHE_LIMIT = 32;
+    private static final int PREPARED_MESH_CACHE_LIMIT = 128;
     private static final int VERTEX_STRIDE = 8;
+    private static final double PIXEL = 1.0D / PIXELS_PER_BLOCK;
+    private static final double OUTLET_WIDTH_RATIO = 0.57D;
+    private static final double OUTLET_HEIGHT_RATIO = 0.60D;
+    private static final double OUTLET_MINIMUM_WIDTH = 4.0D * PIXEL;
+    private static final double OUTLET_MINIMUM_HEIGHT = 4.0D * PIXEL;
+    private static final double OUTLET_MAXIMUM_WIDTH = 16.0D * PIXEL;
+    private static final double OUTLET_MAXIMUM_HEIGHT = 12.0D * PIXEL;
+    private static final double OUTLET_MINIMUM_EXTENSION = 2.0D * PIXEL;
+    private static final double OUTLET_MAXIMUM_EXTENSION = 8.0D * PIXEL;
+    private static final double OUTLET_INNER_INSET_RATIO = 0.125D;
+    private static final double OUTLET_MAXIMUM_INNER_INSET = 2.0D * PIXEL;
     private static final Map<String, PreparedMesh> PREPARED_MESH_CACHE = new LinkedHashMap<>(
         PREPARED_MESH_CACHE_LIMIT,
         0.75F,
@@ -45,6 +58,20 @@ public final class MoldedPlasticMeshRenderer {
     };
 
     private MoldedPlasticMeshRenderer() {
+    }
+
+    public enum FluidLayerRenderPass {
+        ALL,
+        OPAQUE_ONLY,
+        TRANSLUCENT_ONLY;
+
+        public boolean includes(boolean opaque) {
+            return switch (this) {
+                case ALL -> true;
+                case OPAQUE_ONLY -> opaque;
+                case TRANSLUCENT_ONLY -> !opaque;
+            };
+        }
     }
 
     public static RenderType render(
@@ -67,14 +94,14 @@ public final class MoldedPlasticMeshRenderer {
         boolean translucent,
         UniversalPlasticEntity cullingEntity
     ) {
-        ResourceLocation texture = DynamicPlasticTextureManager.INSTANCE.texture(data);
+        MoldedTextureRef textureRef = DynamicPlasticTextureManager.INSTANCE.textureRef(data);
         PreparedMesh mesh = preparedMesh(data);
         boolean deferredTransparent = translucent && ClearPlasticRenderTypes.isDeferredPassActive();
         RenderType renderType = deferredTransparent
-            ? ClearPlasticRenderTypes.molded(texture)
+            ? ClearPlasticRenderTypes.molded(textureRef.texture())
             : translucent
-                ? RenderType.entityTranslucentCull(texture)
-                : RenderType.entityCutoutNoCull(texture);
+                ? RenderType.entityTranslucentCull(textureRef.texture())
+                : RenderType.entityCutoutNoCull(textureRef.texture());
         if (deferredTransparent) {
             renderDeferredTransparentMesh(
                 mesh,
@@ -83,7 +110,8 @@ public final class MoldedPlasticMeshRenderer {
                 packedLight,
                 color,
                 cullingEntity,
-                renderType
+                renderType,
+                textureRef
             );
             return renderType;
         }
@@ -91,8 +119,8 @@ public final class MoldedPlasticMeshRenderer {
         if (cullingEntity != null) {
             consumer = TransparentPlasticFaceCullingVertexConsumer.wrap(cullingEntity, consumer);
         }
-        renderMesh(mesh.volumeVertices, pose, consumer, packedLight, color, true, true);
-        renderMesh(mesh.zeroThicknessVertices, pose, consumer, packedLight, color, true, false);
+        renderMesh(mesh.volumeVertices, pose, consumer, packedLight, color, true, true, textureRef);
+        renderMesh(mesh.zeroThicknessVertices, pose, consumer, packedLight, color, true, false, textureRef);
         TransparentPlasticFaceCullingVertexConsumer.finish(consumer);
         return renderType;
     }
@@ -104,7 +132,8 @@ public final class MoldedPlasticMeshRenderer {
         int packedLight,
         int color,
         UniversalPlasticEntity cullingEntity,
-        RenderType renderType
+        RenderType renderType,
+        MoldedTextureRef textureRef
     ) {
         renderDeferredMeshPart(
             mesh.volumeVertices,
@@ -114,7 +143,8 @@ public final class MoldedPlasticMeshRenderer {
             color,
             cullingEntity,
             renderType,
-            true
+            true,
+            textureRef
         );
         if (mesh.zeroThicknessVertices.length > 0) {
             renderDeferredMeshPart(
@@ -125,7 +155,8 @@ public final class MoldedPlasticMeshRenderer {
                 color,
                 cullingEntity,
                 renderType,
-                false
+                false,
+                textureRef
             );
         }
     }
@@ -138,14 +169,15 @@ public final class MoldedPlasticMeshRenderer {
         int color,
         UniversalPlasticEntity cullingEntity,
         RenderType renderType,
-        boolean volumeCullable
+        boolean volumeCullable,
+        MoldedTextureRef textureRef
     ) {
         if (vertices.length == 0) return;
         VertexConsumer consumer = buffers.getBuffer(renderType);
         if (cullingEntity != null) {
             consumer = TransparentPlasticFaceCullingVertexConsumer.wrap(cullingEntity, consumer);
         }
-        renderMesh(vertices, pose, consumer, packedLight, color, true, volumeCullable);
+        renderMesh(vertices, pose, consumer, packedLight, color, true, volumeCullable, textureRef);
         TransparentPlasticFaceCullingVertexConsumer.finish(consumer);
     }
 
@@ -155,8 +187,8 @@ public final class MoldedPlasticMeshRenderer {
         MultiBufferSource buffers,
         boolean valid
     ) {
-        ResourceLocation texture = DynamicPlasticTextureManager.INSTANCE.texture(data);
-        RenderType renderType = PlasticPreviewRenderTypes.moldedPreview(texture);
+        MoldedTextureRef textureRef = DynamicPlasticTextureManager.INSTANCE.textureRef(data);
+        RenderType renderType = PlasticPreviewRenderTypes.moldedPreview(textureRef.texture());
         VertexConsumer consumer = buffers.getBuffer(renderType);
         PreparedMesh mesh = preparedMesh(data);
         renderMesh(
@@ -166,7 +198,8 @@ public final class MoldedPlasticMeshRenderer {
             LightTexture.FULL_BLOCK,
             valid ? 0xFFFFFFFF : INVALID_PREVIEW_COLOR,
             false,
-            true
+            true,
+            textureRef
         );
         renderMesh(
             mesh.zeroThicknessVertices,
@@ -175,9 +208,71 @@ public final class MoldedPlasticMeshRenderer {
             LightTexture.FULL_BLOCK,
             valid ? 0xFFFFFFFF : INVALID_PREVIEW_COLOR,
             false,
-            false
+            false,
+            textureRef
         );
         return renderType;
+    }
+
+    /** 绘制与鱼缸同类、但按制品内腔和外壳尺寸伸缩的炼药锅出料口。 */
+    public static void renderCauldronOutlet(
+        MoldedPlasticData data,
+        Direction localDirection,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        int packedLight,
+        boolean translucent
+    ) {
+        if (!localDirection.getAxis().isHorizontal()) return;
+        OutletGeometry outlet = OutletGeometry.create(data, localDirection);
+        MoldedTextureRef textureRef = DynamicPlasticTextureManager.INSTANCE.textureRef(data);
+        boolean deferredTransparent = translucent && ClearPlasticRenderTypes.isDeferredPassActive();
+        RenderType renderType = deferredTransparent
+            ? ClearPlasticRenderTypes.molded(textureRef.texture())
+            : translucent
+                ? RenderType.entityTranslucentCull(textureRef.texture())
+                : RenderType.entityCutoutNoCull(textureRef.texture());
+        renderMesh(
+            outlet.vertices,
+            pose,
+            buffers.getBuffer(renderType),
+            packedLight,
+            0xFFFFFFFF,
+            true,
+            true,
+            textureRef
+        );
+    }
+
+    /** 锤击旋转预览也要显示当前已安装的出料口，避免预览与实体落点不一致。 */
+    public static void renderCauldronOutletPreview(
+        MoldedPlasticData data,
+        Direction localDirection,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        boolean valid
+    ) {
+        if (!localDirection.getAxis().isHorizontal()) return;
+        OutletGeometry outlet = OutletGeometry.create(data, localDirection);
+        MoldedTextureRef textureRef = DynamicPlasticTextureManager.INSTANCE.textureRef(data);
+        RenderType renderType = PlasticPreviewRenderTypes.moldedPreview(textureRef.texture());
+        renderMesh(
+            outlet.vertices,
+            pose,
+            buffers.getBuffer(renderType),
+            LightTexture.FULL_BLOCK,
+            valid ? 0xFFFFFFFF : INVALID_PREVIEW_COLOR,
+            false,
+            true,
+            textureRef
+        );
+    }
+
+    /** 物品渲染缩放时把出料口伸出外壳的部分也纳入包围盒。 */
+    public static AABB cauldronOutletBounds(MoldedPlasticData data, Direction localDirection) {
+        return localDirection.getAxis().isHorizontal()
+            ? OutletGeometry.create(data, localDirection).bounds
+            : data.surfaceBounds();
     }
 
     /** 将液面求解与顶点换算集中到显示状态变化时执行。 */
@@ -185,23 +280,38 @@ public final class MoldedPlasticMeshRenderer {
         return PreparedTankFluids.create(MoldedTankFluidGeometry.solve(data, localUp));
     }
 
-    /** 在制品网格之后绘制按内腔体积裁切的多流体层。 */
+    /** 绘制按内腔体积裁切的多流体层。 */
     public static void renderTankFluids(
         PreparedTankFluids prepared,
         PoseStack pose,
         MultiBufferSource buffers,
         int packedLight
     ) {
+        renderTankFluids(prepared, pose, buffers, packedLight, FluidLayerRenderPass.ALL);
+    }
+
+    public static void renderTankFluids(
+        PreparedTankFluids prepared,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        int packedLight,
+        FluidLayerRenderPass renderPass
+    ) {
         if (prepared.layers.isEmpty()) return;
         PoseStack.Pose lastPose = pose.last();
-        VertexConsumer consumer = buffers.getBuffer(
-            ClearPlasticRenderTypes.isDeferredPassActive()
-                ? ClearPlasticRenderTypes.fluid()
-                : RenderType.translucent()
-        );
+        boolean deferredPass = ClearPlasticRenderTypes.isDeferredPassActive();
         for (PreparedFluidLayer layer : prepared.layers) {
             FluidStack fluid = layer.fluid;
             IClientFluidTypeExtensions properties = IClientFluidTypeExtensions.of(fluid.getFluid());
+            boolean opaque = FluidRenderOpacity.isOpaque(fluid);
+            if (!renderPass.includes(opaque)) continue;
+            VertexConsumer consumer = buffers.getBuffer(
+                deferredPass
+                    ? ClearPlasticRenderTypes.moldedFluid()
+                    : opaque
+                        ? RenderType.entityCutoutNoCull(InventoryMenu.BLOCK_ATLAS)
+                        : RenderType.translucent()
+            );
             TextureAtlasSprite sprite = Minecraft.getInstance()
                 .getTextureAtlas(InventoryMenu.BLOCK_ATLAS)
                 .apply(properties.getStillTexture(fluid));
@@ -347,7 +457,8 @@ public final class MoldedPlasticMeshRenderer {
         int packedLight,
         int color,
         boolean entityFormat,
-        boolean volumeCullable
+        boolean volumeCullable,
+        MoldedTextureRef textureRef
     ) {
         PoseStack.Pose lastPose = pose.last();
         for (int offset = 0; offset < vertices.length; offset += VERTEX_STRIDE) {
@@ -361,7 +472,7 @@ public final class MoldedPlasticMeshRenderer {
                     vertices[offset + 2]
                 )
                 .setColor(color)
-                .setUv(vertices[offset + 6], vertices[offset + 7]);
+                .setUv(vertices[offset + 6], textureRef.mapV(vertices[offset + 7]));
             if (entityFormat) vertex.setOverlay(OverlayTexture.NO_OVERLAY);
             vertex
                 .setLight(packedLight)
@@ -371,6 +482,266 @@ public final class MoldedPlasticMeshRenderer {
                     vertices[offset + 4],
                     vertices[offset + 5]
                 );
+        }
+    }
+
+    private static int putOutletVertex(
+        float[] target,
+        int offset,
+        double x,
+        double y,
+        double z,
+        float normalX,
+        float normalY,
+        float normalZ,
+        float u,
+        float v
+    ) {
+        target[offset] = (float) x;
+        target[offset + 1] = (float) y;
+        target[offset + 2] = (float) z;
+        target[offset + 3] = normalX;
+        target[offset + 4] = normalY;
+        target[offset + 5] = normalZ;
+        target[offset + 6] = u;
+        target[offset + 7] = v;
+        return offset + VERTEX_STRIDE;
+    }
+
+    private static int putOutletQuad(
+        float[] target,
+        int offset,
+        double firstX,
+        double firstY,
+        double firstZ,
+        double secondX,
+        double secondY,
+        double secondZ,
+        double thirdX,
+        double thirdY,
+        double thirdZ,
+        double fourthX,
+        double fourthY,
+        double fourthZ,
+        float normalX,
+        float normalY,
+        float normalZ,
+        float u0,
+        float v0,
+        float u1,
+        float v1
+    ) {
+        offset = putOutletVertex(
+            target, offset, firstX, firstY, firstZ, normalX, normalY, normalZ, u0, v0
+        );
+        offset = putOutletVertex(
+            target, offset, fourthX, fourthY, fourthZ, normalX, normalY, normalZ, u1, v0
+        );
+        offset = putOutletVertex(
+            target, offset, thirdX, thirdY, thirdZ, normalX, normalY, normalZ, u1, v1
+        );
+        return putOutletVertex(
+            target, offset, secondX, secondY, secondZ, normalX, normalY, normalZ, u0, v1
+        );
+    }
+
+    private static final class OutletGeometry {
+        private final AABB bounds;
+        private final float[] vertices;
+
+        private OutletGeometry(AABB bounds, float[] vertices) {
+            this.bounds = bounds;
+            this.vertices = vertices;
+        }
+
+        private static OutletGeometry create(MoldedPlasticData data, Direction direction) {
+            AABB shell = data.surfaceBounds();
+            AABB cavity = data.cavityBounds().orElse(shell);
+            boolean alongZ = direction.getAxis() == Direction.Axis.Z;
+            double tangentMinimum = alongZ ? cavity.minX : cavity.minZ;
+            double tangentMaximum = alongZ ? cavity.maxX : cavity.maxZ;
+            double tangentSpan = tangentMaximum - tangentMinimum;
+            double cavityHeight = cavity.maxY - cavity.minY;
+            double width = scaledDimension(
+                tangentSpan,
+                OUTLET_WIDTH_RATIO,
+                OUTLET_MINIMUM_WIDTH,
+                OUTLET_MAXIMUM_WIDTH
+            );
+            double height = scaledDimension(
+                cavityHeight,
+                OUTLET_HEIGHT_RATIO,
+                OUTLET_MINIMUM_HEIGHT,
+                OUTLET_MAXIMUM_HEIGHT
+            );
+            double tangentCenter = clampToSpan(
+                (tangentMinimum + tangentMaximum) * 0.5D,
+                alongZ ? shell.minX : shell.minZ,
+                alongZ ? shell.maxX : shell.maxZ,
+                width
+            );
+            double verticalCenter = clampToSpan(
+                (shell.minY + shell.maxY) * 0.5D - PIXEL,
+                cavity.minY,
+                cavity.maxY,
+                height
+            );
+            double innerInset = Math.min(
+                OUTLET_MAXIMUM_INNER_INSET,
+                Math.min(width, height) * OUTLET_INNER_INSET_RATIO
+            );
+            double extension = Math.min(
+                OUTLET_MAXIMUM_EXTENSION,
+                Math.max(OUTLET_MINIMUM_EXTENSION, Math.min(width, height) * 0.25D)
+            );
+            AABB bounds = createBounds(
+                shell,
+                cavity,
+                direction,
+                tangentCenter,
+                verticalCenter,
+                width,
+                height,
+                innerInset,
+                extension
+            );
+            return new OutletGeometry(bounds, createVertices(bounds, data.textureLayout()));
+        }
+
+        private static double scaledDimension(double span, double ratio, double minimum, double maximum) {
+            return Math.min(span, Math.min(maximum, Math.max(minimum, span * ratio)));
+        }
+
+        private static double clampToSpan(double center, double minimum, double maximum, double size) {
+            double lower = minimum + size * 0.5D;
+            double upper = maximum - size * 0.5D;
+            return lower > upper ? (minimum + maximum) * 0.5D : Math.clamp(center, lower, upper);
+        }
+
+        private static AABB createBounds(
+            AABB shell,
+            AABB cavity,
+            Direction direction,
+            double tangentCenter,
+            double verticalCenter,
+            double width,
+            double height,
+            double innerInset,
+            double extension
+        ) {
+            double tangentMinimum = tangentCenter - width * 0.5D;
+            double tangentMaximum = tangentCenter + width * 0.5D;
+            double bottom = verticalCenter - height * 0.5D;
+            double top = verticalCenter + height * 0.5D;
+            // 管体从内腔壁的内侧起步，外壳越厚时便会自然拥有更长的穿壁段。
+            return switch (direction) {
+                case NORTH -> new AABB(
+                    tangentMinimum,
+                    bottom,
+                    shell.minZ - extension,
+                    tangentMaximum,
+                    top,
+                    Math.max(shell.minZ, cavity.minZ) + innerInset
+                );
+                case SOUTH -> new AABB(
+                    tangentMinimum,
+                    bottom,
+                    Math.min(shell.maxZ, cavity.maxZ) - innerInset,
+                    tangentMaximum,
+                    top,
+                    shell.maxZ + extension
+                );
+                case WEST -> new AABB(
+                    shell.minX - extension,
+                    bottom,
+                    tangentMinimum,
+                    Math.max(shell.minX, cavity.minX) + innerInset,
+                    top,
+                    tangentMaximum
+                );
+                case EAST -> new AABB(
+                    Math.min(shell.maxX, cavity.maxX) - innerInset,
+                    bottom,
+                    tangentMinimum,
+                    shell.maxX + extension,
+                    top,
+                    tangentMaximum
+                );
+                default -> throw new IllegalArgumentException("Cauldron outlet must be horizontal");
+            };
+        }
+
+        private static float[] createVertices(AABB bounds, PlasticTextureLayout layout) {
+            PlasticTextureLayout.UvRegion region = largestRegion(layout);
+            float u0 = region.x() / (float) layout.atlasWidth();
+            float v0 = region.y() / (float) layout.atlasHeight();
+            float u1 = (region.x() + region.width()) / (float) layout.atlasWidth();
+            float v1 = (region.y() + region.height()) / (float) layout.atlasHeight();
+            float[] vertices = new float[6 * 4 * VERTEX_STRIDE];
+            int offset = 0;
+            offset = putOutletQuad(
+                vertices, offset,
+                bounds.minX, bounds.minY, bounds.maxZ,
+                bounds.minX, bounds.minY, bounds.minZ,
+                bounds.maxX, bounds.minY, bounds.minZ,
+                bounds.maxX, bounds.minY, bounds.maxZ,
+                0.0F, -1.0F, 0.0F, u0, v0, u1, v1
+            );
+            offset = putOutletQuad(
+                vertices, offset,
+                bounds.minX, bounds.maxY, bounds.minZ,
+                bounds.minX, bounds.maxY, bounds.maxZ,
+                bounds.maxX, bounds.maxY, bounds.maxZ,
+                bounds.maxX, bounds.maxY, bounds.minZ,
+                0.0F, 1.0F, 0.0F, u0, v0, u1, v1
+            );
+            offset = putOutletQuad(
+                vertices, offset,
+                bounds.minX, bounds.minY, bounds.minZ,
+                bounds.minX, bounds.maxY, bounds.minZ,
+                bounds.maxX, bounds.maxY, bounds.minZ,
+                bounds.maxX, bounds.minY, bounds.minZ,
+                0.0F, 0.0F, -1.0F, u0, v0, u1, v1
+            );
+            offset = putOutletQuad(
+                vertices, offset,
+                bounds.minX, bounds.minY, bounds.maxZ,
+                bounds.maxX, bounds.minY, bounds.maxZ,
+                bounds.maxX, bounds.maxY, bounds.maxZ,
+                bounds.minX, bounds.maxY, bounds.maxZ,
+                0.0F, 0.0F, 1.0F, u0, v0, u1, v1
+            );
+            offset = putOutletQuad(
+                vertices, offset,
+                bounds.minX, bounds.minY, bounds.minZ,
+                bounds.minX, bounds.minY, bounds.maxZ,
+                bounds.minX, bounds.maxY, bounds.maxZ,
+                bounds.minX, bounds.maxY, bounds.minZ,
+                -1.0F, 0.0F, 0.0F, u0, v0, u1, v1
+            );
+            putOutletQuad(
+                vertices, offset,
+                bounds.maxX, bounds.minY, bounds.maxZ,
+                bounds.maxX, bounds.minY, bounds.minZ,
+                bounds.maxX, bounds.maxY, bounds.minZ,
+                bounds.maxX, bounds.maxY, bounds.maxZ,
+                1.0F, 0.0F, 0.0F, u0, v0, u1, v1
+            );
+            return vertices;
+        }
+
+        private static PlasticTextureLayout.UvRegion largestRegion(PlasticTextureLayout layout) {
+            PlasticTextureLayout.UvRegion selected = null;
+            long largestArea = Long.MIN_VALUE;
+            for (PlasticTextureLayout.UvRegion region : layout.regions().values()) {
+                long area = (long) region.width() * region.height();
+                if (area > largestArea) {
+                    selected = region;
+                    largestArea = area;
+                }
+            }
+            if (selected == null) throw new IllegalStateException("Molded plastic texture layout is empty");
+            return selected;
         }
     }
 

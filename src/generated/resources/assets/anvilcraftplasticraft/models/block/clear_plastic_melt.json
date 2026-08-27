@@ -1,5 +1,5 @@
 {
   "textures": {
-    "particle": "anvilcraftplasticraft:block/clear_plastic_melt"
+    "particle": "anvilcraftplasticraft:fluid/clear_plastic_melt"
   }
 }

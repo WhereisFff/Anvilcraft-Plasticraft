@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.api.texture.PlasticSurface;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureCache;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureGenerator;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureInput;
+import dev.anvilcraft.plasticraft.api.texture.PlasticTextureLayout;
 import dev.anvilcraft.plasticraft.item.CreativeColorVariantItem;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
@@ -20,41 +21,87 @@ import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.minecraft.world.item.DyeColor;
 
+import javax.annotation.Nullable;
+
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
-/** 运行时制品共享的 CPU 生成结果与 GPU 动态纹理生命周期。 */
+/**
+ * 运行时制品共享的 CPU 生成结果与 GPU 动态纹理生命周期。
+ *
+ * <p>同一 (形状, 材质) 的十六种颜色纵向堆叠进同一张动态纹理，使十六色制品共用一个
+ * {@code RenderType}。vanilla 的 {@code MultiBufferSource.BufferSource} 对非 {@code fixedBuffers}
+ * 的 {@code RenderType} 只保留一个共享缓冲，切换即强制刷写，逐色独立纹理会把批次打散成颜色数量的倍数。</p>
+ */
 public final class DynamicPlasticTextureManager implements ResourceManagerReloadListener {
     public static final DynamicPlasticTextureManager INSTANCE = new DynamicPlasticTextureManager();
 
-    private final Map<TextureKey, ResourceLocation> textures = new HashMap<>();
+    private final Map<AtlasKey, ColorAtlas> atlases = new HashMap<>();
+    private final Map<AtlasKey, Map<DyeColor, ResourceLocation>> oversizedTextures = new HashMap<>();
     private final Map<PlasticMaterial, ResourceInputs> resources = new HashMap<>();
 
     private DynamicPlasticTextureManager() {
     }
 
-    public synchronized ResourceLocation texture(MoldedPlasticData data) {
+    /**
+     * 取得制品纹理及其在堆叠图集中的颜色行。
+     *
+     * <p>只有真正被请求到的颜色才会生成并上传对应行，避免首次见到新形状时付出十六倍的生成开销。</p>
+     */
+    public synchronized MoldedTextureRef textureRef(MoldedPlasticData data) {
         List<PlasticSurface> surfaces = data.plasticSurfaces();
         String shapeHash = data.shapeHash();
         DyeColor color = PlasticMeltColor.get(data.material());
         PlasticMaterial material = PlasticMaterial.fromMelt(data.material()).orElse(PlasticMaterial.UNIVERSAL);
         ResourceInputs currentResources = this.loadResources(material);
-        TextureKey key = new TextureKey(
+        PlasticTextureLayout layout = data.textureLayout();
+        AtlasKey key = new AtlasKey(
             shapeHash,
             material,
             currentResources.baseHash,
-            currentResources.paletteHash,
-            color
+            currentResources.paletteHash
         );
-        return this.textures.computeIfAbsent(key, ignored -> this.createTexture(
+        // 无色板的材质与颜色无关，只需单行；行数必须与 paletteRow 的取值域一致。
+        int rowCount = material.hasPalette() ? CreativeColorVariantItem.CREATIVE_COLOR_ORDER.size() : 1;
+        int paletteRow = material.hasPalette() ? CreativeColorVariantItem.paletteRow(color) : 0;
+
+        // 安全阀：堆叠后的高度超过生成器上限时退回逐色单张纹理，复杂形状不会因为超限抛异常。
+        if (layout.atlasHeight() * rowCount > PlasticTextureGenerator.MAX_ATLAS_SIZE) {
+            ResourceLocation oversized = this.oversizedTextures
+                .computeIfAbsent(key, ignored -> new HashMap<>())
+                .computeIfAbsent(color, ignored -> this.createOversizedTexture(
+                    shapeHash,
+                    surfaces,
+                    color,
+                    material,
+                    currentResources,
+                    paletteRow
+                ));
+            return new MoldedTextureRef(oversized, 0, 1);
+        }
+
+        ColorAtlas atlas = this.atlases.computeIfAbsent(key, ignored -> createAtlas(
+            shapeHash,
+            material,
+            layout,
+            rowCount
+        ));
+        atlas.fillRow(paletteRow, () -> this.generate(
             shapeHash,
             surfaces,
-            color,
             material,
-            currentResources
+            currentResources,
+            paletteRow
         ));
+        return new MoldedTextureRef(atlas.id, paletteRow, rowCount);
+    }
+
+    /** 只需要纹理标识、不关心颜色行的调用方入口（物品模型、实体渲染器纹理契约）。 */
+    public ResourceLocation texture(MoldedPlasticData data) {
+        return this.textureRef(data).texture();
     }
 
     @Override
@@ -64,38 +111,53 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
 
     public synchronized void clear() {
         Minecraft minecraft = Minecraft.getInstance();
-        for (ResourceLocation texture : this.textures.values()) {
-            minecraft.getTextureManager().release(texture);
+        for (ColorAtlas atlas : this.atlases.values()) {
+            minecraft.getTextureManager().release(atlas.id);
         }
-        this.textures.clear();
+        for (Map<DyeColor, ResourceLocation> byColor : this.oversizedTextures.values()) {
+            for (ResourceLocation texture : byColor.values()) {
+                minecraft.getTextureManager().release(texture);
+            }
+        }
+        this.atlases.clear();
+        this.oversizedTextures.clear();
         this.resources.clear();
     }
 
-    private ResourceLocation createTexture(
+    private static ColorAtlas createAtlas(
+        String shapeHash,
+        PlasticMaterial material,
+        PlasticTextureLayout layout,
+        int rowCount
+    ) {
+        // 按满尺寸分配，未填充的行保持透明；calloc 保证未生成的行不会读到未初始化内存。
+        NativeImage image = new NativeImage(
+            layout.atlasWidth(),
+            layout.atlasHeight() * rowCount,
+            true
+        );
+        ResourceLocation id = AnvilcraftPlasticraft.of(
+            "dynamic/molded_" + material.key() + "_" + shapeHash
+        );
+        DynamicTexture texture = new DynamicTexture(image);
+        Minecraft.getInstance().getTextureManager().register(id, texture);
+        return new ColorAtlas(id, texture, layout.atlasHeight(), rowCount);
+    }
+
+    private ResourceLocation createOversizedTexture(
         String shapeHash,
         List<PlasticSurface> surfaces,
         DyeColor color,
         PlasticMaterial material,
-        ResourceInputs resourceInputs
+        ResourceInputs resourceInputs,
+        int paletteRow
     ) {
-        PlasticTextureInput input = new PlasticTextureInput(
-            PlasticTextureGenerator.VERSION,
+        GeneratedPlasticTexture generated = this.generate(
             shapeHash,
             surfaces,
-            material.baseTexture(16).toString(),
-            resourceInputs.baseHash,
-            material.hasPalette() ? material.paletteTexture().toString() : "none",
-            resourceInputs.paletteHash,
-            material.hasPalette() ? CreativeColorVariantItem.paletteRow(color) : 0
-        );
-        GeneratedPlasticTexture generated = PlasticTextureCache.getOrGenerate(
-            input,
-            () -> {
-                if (!resourceInputs.available(material)) return PlasticTextureGenerator.placeholder(input);
-                return material.isTransparent()
-                    ? PlasticTextureGenerator.generateTransparent(input, resourceInputs.bases, resourceInputs.palette)
-                    : PlasticTextureGenerator.generate(input, resourceInputs.bases, resourceInputs.palette);
-            }
+            material,
+            resourceInputs,
+            paletteRow
         );
         NativeImage image = new NativeImage(
             generated.layout().atlasWidth(),
@@ -112,6 +174,34 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
         );
         Minecraft.getInstance().getTextureManager().register(id, new DynamicTexture(image));
         return id;
+    }
+
+    private GeneratedPlasticTexture generate(
+        String shapeHash,
+        List<PlasticSurface> surfaces,
+        PlasticMaterial material,
+        ResourceInputs resourceInputs,
+        int paletteRow
+    ) {
+        PlasticTextureInput input = new PlasticTextureInput(
+            PlasticTextureGenerator.VERSION,
+            shapeHash,
+            surfaces,
+            material.baseTexture(16).toString(),
+            resourceInputs.baseHash,
+            material.hasPalette() ? material.paletteTexture().toString() : "none",
+            resourceInputs.paletteHash,
+            paletteRow
+        );
+        return PlasticTextureCache.getOrGenerate(
+            input,
+            () -> {
+                if (!resourceInputs.available(material)) return PlasticTextureGenerator.placeholder(input);
+                return material.isTransparent()
+                    ? PlasticTextureGenerator.generateTransparent(input, resourceInputs.bases, resourceInputs.palette)
+                    : PlasticTextureGenerator.generate(input, resourceInputs.bases, resourceInputs.palette);
+            }
+        );
     }
 
     private ResourceInputs loadResources(PlasticMaterial material) {
@@ -141,18 +231,63 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
         return loadedResources;
     }
 
-    private record TextureKey(
+    /**
+     * 纹理引用：{@code colorRow} 是颜色在堆叠图集中的行号，{@code rowCount} 是堆叠总行数。
+     *
+     * <p>网格 UV 仍按单色图块的 0 至 1 计算，由渲染侧施加 {@code v → (v + colorRow) / rowCount}
+     * 的行偏移，因此 {@code PreparedMesh} 缓存可以继续只按形状哈希索引。</p>
+     */
+    public record MoldedTextureRef(ResourceLocation texture, int colorRow, int rowCount) {
+        public float mapV(float v) {
+            return (v + this.colorRow) / this.rowCount;
+        }
+    }
+
+    /** 一张 (形状, 材质) 图集，纵向堆叠全部颜色行，按需填充。 */
+    private static final class ColorAtlas {
+        private final ResourceLocation id;
+        private final DynamicTexture texture;
+        private final int rowHeight;
+        private final boolean[] filledRows;
+
+        private ColorAtlas(ResourceLocation id, DynamicTexture texture, int rowHeight, int rowCount) {
+            this.id = id;
+            this.texture = texture;
+            this.rowHeight = rowHeight;
+            this.filledRows = new boolean[rowCount];
+        }
+
+        private void fillRow(int row, Supplier<GeneratedPlasticTexture> generator) {
+            if (this.filledRows[row]) return;
+            NativeImage image = this.texture.getPixels();
+            if (image == null) return;
+            GeneratedPlasticTexture generated = generator.get();
+            int baseY = row * this.rowHeight;
+            for (int y = 0; y < this.rowHeight; y++) {
+                for (int x = 0; x < image.getWidth(); x++) {
+                    image.setPixelRGBA(
+                        x,
+                        baseY + y,
+                        PlasticTextureSpriteSource.swapRedBlue(generated.argbAt(x, y))
+                    );
+                }
+            }
+            this.filledRows[row] = true;
+            this.texture.upload();
+        }
+    }
+
+    private record AtlasKey(
         String shapeHash,
         PlasticMaterial material,
         String baseHash,
-        String paletteHash,
-        DyeColor color
+        String paletteHash
     ) {
     }
 
     private record ResourceInputs(
-        PlasticBaseTextureSet bases,
-        PlasticColorPalette palette,
+        @Nullable PlasticBaseTextureSet bases,
+        @Nullable PlasticColorPalette palette,
         String baseHash,
         String paletteHash
     ) {

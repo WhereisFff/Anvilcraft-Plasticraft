@@ -6,6 +6,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.List;
+import java.util.Optional;
 
 /** 制造体素并集；普通模型使用 48x48x48，超限模型按整数像素外接尺寸分配。 */
 public final class MoldingVolumeMask {
@@ -123,6 +124,29 @@ public final class MoldingVolumeMask {
         return this.volume;
     }
 
+    /** 已置位格子的像素包围盒；空掩码返回空。 */
+    public Optional<Bounds> bounds() {
+        if (this.cells.isEmpty()) return Optional.empty();
+        int minX = Integer.MAX_VALUE;
+        int minY = Integer.MAX_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int maxY = Integer.MIN_VALUE;
+        int maxZ = Integer.MIN_VALUE;
+        for (int index = this.cells.nextSetBit(0); index >= 0; index = this.cells.nextSetBit(index + 1)) {
+            int x = this.xOf(index);
+            int y = this.yOf(index);
+            int z = this.zOf(index);
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (z < minZ) minZ = z;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+            if (z > maxZ) maxZ = z;
+        }
+        return Optional.of(new Bounds(minX, minY, minZ, maxX, maxY, maxZ));
+    }
+
     public BitSet copyBits() {
         return (BitSet) this.cells.clone();
     }
@@ -235,5 +259,9 @@ public final class MoldingVolumeMask {
         result = 31 * result + this.sizeX;
         result = 31 * result + this.sizeY;
         return 31 * result + this.sizeZ;
+    }
+
+    /** 像素包围盒，两端均为闭区间的格坐标。 */
+    public record Bounds(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
     }
 }

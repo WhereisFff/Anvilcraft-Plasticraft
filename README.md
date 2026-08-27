@@ -45,7 +45,10 @@ Linux 或 macOS 使用 `./gradlew build`。构建产物位于 `build/libs`。
 
 ## 贡献者
 
-[WhereisFff](https://github.com/WhereisFff)（策划、程序、美术）、[Leaden-TP](https://github.com/Leaden-TP)（美术）、[XeKr](https://github.com/XeKr)（美术）
+- [WhereisFff](https://github.com/WhereisFff)（策划、程序、美术）
+- [Leaden-TP](https://github.com/Leaden-TP)（美术）
+- [XeKr](https://github.com/XeKr)（美术）
+- [LuanHongKezhen](https://github.com/LuanHongKezhen)（美术）
 
 通过 [Issue](https://github.com/WhereisFff/Anvilcraft-Plasticraft/issues) 反馈问题或提交 Pull Request 前，请阅读[贡献指南](CONTRIBUTING.md)。
 

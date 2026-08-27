@@ -38,17 +38,17 @@ public final class PlasticraftLanguageData {
         provider.add(PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "universal_plastic", "Universal Plastic");
         provider.add(
             PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "universal_plastic.tooltip",
-            "Universal plastic melt, granules and molded products"
+            "Universal plastic melt, granules and molded products; click the banner to expand or fold all 16 colors"
         );
         provider.add(PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "engineering_plastic", "Engineering Plastic");
         provider.add(
             PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "engineering_plastic.tooltip",
-            "Engineering plastic melt, granules and molded products"
+            "Engineering plastic melt, granules and molded products; click the banner to expand or fold all 16 colors"
         );
         provider.add(PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "clear_plastic", "Clear Plastic");
         provider.add(
             PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "clear_plastic.tooltip",
-            "Clear plastic melt, granules and molded products"
+            "Clear plastic melt, granules and molded products; click the banner to expand or fold all 16 colors"
         );
         provider.add(
             PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "heat_resistant_plastic",
@@ -56,7 +56,7 @@ public final class PlasticraftLanguageData {
         );
         provider.add(
             PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "heat_resistant_plastic.tooltip",
-            "Heat-resistant plastic melt, granules and molded products"
+            "Heat-resistant plastic melt, granules and molded products; click the banner to expand or fold all 16 colors"
         );
         provider.add("item.anvilcraftplasticraft.hardend_resin_anvil", "Hardened Resin Anvil");
         provider.add("item.anvilcraftplasticraft.hardend_resin_cauldron", "Hardened Resin Cauldron");
@@ -91,6 +91,12 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.allay.strategy", "Shortage strategy");
         provider.add("screen.anvilcraftplasticraft.allay.strategy.pause", "Pause and wait");
         provider.add("screen.anvilcraftplasticraft.allay.strategy.skip", "Skip");
+        provider.add("screen.anvilcraftplasticraft.allay.clearance", "Blank-cell clearance");
+        provider.add("screen.anvilcraftplasticraft.allay.clearance.clear_area", "Demolish the whole blueprint area");
+        provider.add(
+            "screen.anvilcraftplasticraft.allay.clearance.keep_blank",
+            "Keep blocks on cells the blueprint leaves blank"
+        );
         provider.add("screen.anvilcraftplasticraft.allay.coverage.inactive", "No chunk loading");
         provider.add("screen.anvilcraftplasticraft.allay.inventory", "Cargo");
         provider.add("screen.anvilcraftplasticraft.allay.unequip", "Remove hat");
@@ -100,6 +106,10 @@ public final class PlasticraftLanguageData {
         provider.add("container.anvilcraftplasticraft.allay_lounge", "Allay Lounge");
         provider.add("screen.anvilcraftplasticraft.allay_lounge.recall", "Recall nearby working allays");
         provider.add("screen.anvilcraftplasticraft.allay_lounge.strategy", "Shortage strategy for hosted allays");
+        provider.add(
+            "screen.anvilcraftplasticraft.allay_lounge.clearance",
+            "Blank-cell clearance for the claimed blueprint"
+        );
         provider.add(
             "tooltip.anvilcraftplasticraft.item.allay_lounge.permissions",
             "Only the owner or a current teammate can manage it; without FTB Teams, only the owner"
@@ -140,6 +150,9 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.molding.type.chest", "Chest");
         provider.add("screen.anvilcraftplasticraft.molding.type.tank", "Tank");
         provider.add("screen.anvilcraftplasticraft.molding.type.anvil", "Anvil");
+        provider.add("screen.anvilcraftplasticraft.molding.type.cauldron", "Cauldron");
+        // 大型炼药锅不在类型面板中显示，该名称只用于成品后缀。
+        provider.add("screen.anvilcraftplasticraft.molding.type.large_cauldron", "Large Cauldron");
         provider.add("screen.anvilcraftplasticraft.molding.type.tray", "Tray");
         provider.add("screen.anvilcraftplasticraft.molding.type.allay_hard_hat", "Allay Hard Hat");
         provider.add("screen.anvilcraftplasticraft.molding.type_invalid", "This shape does not seem able to do that");
@@ -305,11 +318,16 @@ public final class PlasticraftLanguageData {
         provider.add("tooltip.anvilcraftplasticraft.molded_chest", "A plastic chest that can store %s stacks of items");
         provider.add(
             "tooltip.anvilcraftplasticraft.molded_tank",
-            "A plastic tank that stores %s B of fluid and shatters when filled with lava"
+            "A plastic tank that stores %s B of fluid, including lava"
+        );
+        // 成型炼药锅按「大型 / 普通」二选一，所有塑料锅都可装熔岩。
+        provider.add(
+            "tooltip.anvilcraftplasticraft.molded_cauldron",
+            "A plastic cauldron that holds %s B of one fluid including lava, can be ignited, processes falling-anvil recipes, and auto-outputs recipe results through a switchable outlet"
         );
         provider.add(
-            "tooltip.anvilcraftplasticraft.molded_tank_heat_resistant",
-            "A heat-resistant plastic tank that stores %s B of fluid, including lava"
+            "tooltip.anvilcraftplasticraft.molded_large_cauldron",
+            "A large plastic cauldron that holds %s B across eight fluid layers including lava, processes falling-anvil recipes at multiplied efficiency, and auto-outputs recipe results through a switchable outlet"
         );
         provider.add("tooltip.anvilcraftplasticraft.molded_anvil", "A plastic anvil that can process falling-anvil recipes");
         provider.add(
@@ -359,6 +377,10 @@ public final class PlasticraftLanguageData {
         provider.add("message.anvilcraftplasticraft.molding.type_anvil_segments_disconnected", "The three anvil segments must connect along Y");
         provider.add("message.anvilcraftplasticraft.molding.type_anvil_segments_invalid", "The anvil segments do not meet the thickness rules");
         provider.add("message.anvilcraftplasticraft.molding.type_anvil_shape_unavailable", "The anvil shape analysis is unavailable");
+        provider.add("message.anvilcraftplasticraft.molding.type_cauldron_not_sealed", "A cauldron needs a closed bottom and side walls with an open top");
+        provider.add("message.anvilcraftplasticraft.molding.type_cauldron_opening_too_small", "A cauldron needs at least 144 px squared of top opening");
+        provider.add("message.anvilcraftplasticraft.molding.type_cauldron_too_shallow", "A cauldron needs at least 8 px of cavity depth");
+        provider.add("message.anvilcraftplasticraft.molding.type_cauldron_not_large", "A large cauldron needs more than 1600 px squared of top opening");
         provider.add("message.anvilcraftplasticraft.molding.type_tray_empty", "A tray model needs a solid bottom and top");
         provider.add("message.anvilcraftplasticraft.molding.type_tray_outside_center", "A tray must fit inside the 48 x 48 px modeling area");
         provider.add("message.anvilcraftplasticraft.molding.type_tray_too_tall", "A tray may be at most 4 px tall");
@@ -618,6 +640,14 @@ public final class PlasticraftLanguageData {
         provider.add("message.anvilcraftplasticraft.construction.wait.energy", "Construction is waiting");
         provider.add("message.anvilcraftplasticraft.construction.wait.demolition", "Construction is waiting for a demolition allay");
         provider.add("message.anvilcraftplasticraft.construction.wait.permission", "Construction is waiting for world permission");
+        provider.add(
+            "message.anvilcraftplasticraft.construction.wait.unreachable",
+            "Allays cannot reach a construction position and will retry later"
+        );
+        provider.add(
+            "message.anvilcraftplasticraft.construction.wait.observer",
+            "Construction is waiting for a spyglass allay to keep the work area ticking"
+        );
         provider.add("message.anvilcraftplasticraft.blueprint.not_structure_disk", "Hold a structure disk to import");
         provider.add(
             "message.anvilcraftplasticraft.blueprint.disk_in_molding_use",

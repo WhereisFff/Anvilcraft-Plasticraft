@@ -24,7 +24,7 @@ public final class UniversalPlasticMeltFluidExtension extends HighViscosityResin
     private final int defaultTint;
 
     public UniversalPlasticMeltFluidExtension() {
-        this(PlasticMaterial.UNIVERSAL, AnvilcraftPlasticraft.of("block/universal_plastic_melt"), true, 0xFFFFFFFF);
+        this(PlasticMaterial.UNIVERSAL, AnvilcraftPlasticraft.of("fluid/universal_plastic_melt"), true, 0xFFFFFFFF);
     }
 
     public UniversalPlasticMeltFluidExtension(ResourceLocation texture) {

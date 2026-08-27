@@ -3,7 +3,7 @@ package dev.anvilcraft.plasticraft.event;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
-import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
@@ -91,7 +91,7 @@ public final class ResinAnvilHammerEvents {
         player.resetAttackStrengthTicker();
         if (player.level().isClientSide) return;
 
-        if (event.getTarget() instanceof HardenedResinCauldronEntity) {
+        if (PlasticCauldrons.isCauldron(event.getTarget())) {
             event.getTarget().hurt(player.damageSources().playerAttack(player), 0.0F);
             return;
         }

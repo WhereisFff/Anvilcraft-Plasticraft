@@ -16,7 +16,7 @@ import java.util.Locale;
 import java.util.UUID;
 
 /**
- * 一份已部署蓝图对应的服务端权威任务。TODO 04 只区分未启动与已启动;
+ * 一份已部署蓝图对应的服务端权威任务。
  * 后续任务系统在 state 字节上追加新状态值,既有值保持不变。
  */
 public record ConstructionJob(

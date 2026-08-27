@@ -4,6 +4,7 @@ import dev.anvilcraft.plasticraft.allay.AllayFlightState;
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayWorkMotions;
 import dev.anvilcraft.plasticraft.allay.path.AllayPathPriority;
+import dev.anvilcraft.plasticraft.allay.transfer.ConstructionTransferService;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBuildOp;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
@@ -31,12 +32,17 @@ import java.util.UUID;
 /** 建设动作:无室从所有者背包取料,认领后从休息室下方容器取料,飞到工具触及处交付施工投影。 */
 public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
     public static final ConstructionAllayToolBehavior INSTANCE = new ConstructionAllayToolBehavior();
+    /** 同一目标累计确认不可达的次数上限;每次都要求悦灵完整卡住一轮,阈值内还回租约让别人先试。 */
+    private static final int UNREACHABLE_STRIKES = 4;
 
     private ConstructionAllayToolBehavior() {
     }
 
     public static boolean shouldHandle(WorkingAllayEntity worker, @Nullable ConstructionJob job) {
-        if (worker.isEvacuating() || !worker.hostedCarry().isEmpty()) {
+        // 只有台账里的施工余料才必须走建设调度;自由收集物交给收集调度入库
+        if (worker.isEvacuating()
+            || worker.hasEscrowCarry()
+            || ConstructionJobController.hasEscrowLedger(worker)) {
             return true;
         }
         if (worker.assignedJobId().isEmpty() || job == null) return false;
@@ -46,6 +52,7 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
             || job.state() == ConstructionJob.STATE_WAITING_MATERIAL
             || job.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE
             || job.state() == ConstructionJob.STATE_WAITING_DEMOLITION
+            || job.state() == ConstructionJob.STATE_WAITING_OBSERVER
             || job.state() == ConstructionJob.STATE_WAITING_PERMISSION
             || job.state() == ConstructionJob.STATE_COMMITTING;
     }
@@ -59,19 +66,46 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
             worker.clearAssignment(false);
             return;
         }
+        boolean hasEscrowLedger = ConstructionJobController.hasEscrowLedger(worker);
         ConstructionJob job = ConstructionJobController.jobForWorker(level, worker);
         ConstructionJobProgress progress = job == null
             ? null
             : ConstructionJobStore.get(level).get(job.jobId());
+        ConstructionBuildOp assignedOperation = progress == null
+            ? null
+            : progress.operation(worker.taskOpId());
+        boolean validAssignment = progress != null
+            && worker.assignedJobId().filter(job.jobId()::equals).isPresent()
+            && assignedOperation != null
+            && assignedOperation.leaseAllay().filter(worker.getUUID()::equals).isPresent();
+        if (progress != null && hasEscrowLedger && !validAssignment) {
+            // 实体字段可能在重载时先于任务租约恢复;先补回协调室绑定,再按台账认领原操作。
+            ConstructionJobController.restoreWorkerBinding(worker, progress);
+            assignedOperation = progress.operation(worker.taskOpId());
+            validAssignment = worker.assignedJobId().filter(job.jobId()::equals).isPresent()
+                && assignedOperation != null
+                && assignedOperation.leaseAllay().filter(worker.getUUID()::equals).isPresent();
+        }
         if (progress != null
-            && (worker.assignedJobId().isPresent() || !worker.hostedCarry().isEmpty())
+            && hasEscrowLedger
+            && !validAssignment
+            && worker.hostedCarry().isEmpty()
+            && !progress.carriedEntries(worker.getUUID()).isEmpty()) {
+            // 没有实体租约且手上没有材料时,不能把 CARRIED 台账当作尚未取出的预约重新生成。
+            ConstructionJobController.revokeWorker(worker, level, progress);
+            AllayWorkMotions.releaseToVanilla(worker);
+            return;
+        }
+        if (progress != null
+            && (worker.assignedJobId().isPresent() || worker.hasEscrowCarry() || hasEscrowLedger)
             && !ConstructionJobController.canContinueJob(worker, progress)) {
             ConstructionJobController.revokeWorker(worker, level, progress);
             AllayWorkMotions.releaseToVanilla(worker);
             return;
         }
-        if (job == null && (worker.assignedJobId().isPresent() || !worker.hostedCarry().isEmpty())) {
+        if (job == null && (worker.assignedJobId().isPresent() || worker.hasEscrowCarry() || hasEscrowLedger)) {
             worker.clearAssignment(false);
+            // 任务已消失,台账无从核销,只能就地实体化;丢出的物品带拾取延迟,不会被自己立刻捡回
             worker.dropCollectionAt(worker.position());
             AllayWorkMotions.releaseToVanilla(worker);
             return;
@@ -127,11 +161,14 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
         }
         if (job.state() == ConstructionJob.STATE_WAITING_MATERIAL
             || job.state() == ConstructionJob.STATE_WAITING_DEMOLITION
+            || job.state() == ConstructionJob.STATE_WAITING_OBSERVER
             || job.state() == ConstructionJob.STATE_WAITING_PERMISSION) {
             if (job.state() == ConstructionJob.STATE_WAITING_MATERIAL) {
                 worker.setWaitReason(ConstructionWaitReason.MATERIAL);
             } else if (job.state() == ConstructionJob.STATE_WAITING_DEMOLITION) {
                 worker.setWaitReason(ConstructionWaitReason.DEMOLITION);
+            } else if (job.state() == ConstructionJob.STATE_WAITING_OBSERVER) {
+                worker.setWaitReason(ConstructionWaitReason.OBSERVER);
             } else {
                 worker.setWaitReason(ConstructionWaitReason.PERMISSION);
             }
@@ -149,10 +186,22 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
         }
         boolean sealing = job.state() == ConstructionJob.STATE_SEALING_FLUID;
         if (worker.assignedJobId().filter(job.jobId()::equals).isEmpty() || worker.taskOpId() < 0) {
-            boolean claimed = sealing
+            // 自动恢复只认实体中确实存在的在途材料;公开认领入口仍可先登记尚未装载的预留
+            boolean claimed = hasEscrowLedger
+                ? ConstructionJobController.hasPhysicalCarriedMaterial(level.getServer(), progress, worker)
+                    && tryClaimCarried(worker, level, job, progress)
+                : sealing
                 ? tryClaimSeal(worker, level, job, progress)
                 : tryClaim(worker, level, job, progress);
             if (!claimed) {
+                if (hasEscrowLedger && !ConstructionJobController.hasPhysicalCarriedMaterial(
+                    level.getServer(), progress, worker
+                )) {
+                    // 台账数量大于实体实物时,只结清现存物并把缺失操作退回待供料,禁止凭空装载。
+                    ConstructionJobController.revokeWorker(worker, level, progress);
+                    AllayWorkMotions.releaseToVanilla(worker);
+                    return;
+                }
                 if (phaseResolved(progress, sealing)) {
                     finishThenRest(worker, level, job);
                 }
@@ -225,6 +274,10 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
         ConstructionJobProgress progress
     ) {
         if (!ConstructionJobController.canClaimJob(worker, progress)) return false;
+        if (!worker.hostedCarry().isEmpty()
+            && !ConstructionJobController.hasPhysicalCarriedMaterial(level.getServer(), progress, worker)) {
+            return false;
+        }
         return claimOp(
             worker,
             level,
@@ -291,6 +344,26 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
         worker.resetStuck();
         ConstructionTraffic.release(worker.level(), worker.getUUID());
         ConstructionJobStore.get(worker.level()).markDirty();
+    }
+
+    /**
+     * 交付途中确认飞不到时先还回租约让别的悦灵换个方向试,
+     * 连续 {@link #UNREACHABLE_STRIKES} 次都不行才把这个位置压一段退避。
+     * 只释放租约是不够的:托管材料仍记在台账上,下一 tick 同一只悦灵会立刻重领同一操作,
+     * 于是"领取 - 规划失败 - 释放"无限循环,悦灵原地不动、任务永远停在施工阶段。
+     * 退避只是暂时轮空,位置仍然是待办,不会因为飞不到就当作建完。
+     */
+    private static void abandonUnreachable(
+        WorkingAllayEntity worker,
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        ConstructionBuildOp op
+    ) {
+        int strikes = op.noteUnreachable();
+        if (strikes >= UNREACHABLE_STRIKES) {
+            ConstructionJobController.deferUnreachable(level, progress, op, worker);
+        }
+        releaseLease(worker);
     }
 
     public static boolean isActiveBuildCarry(WorkingAllayEntity worker, @Nullable ConstructionJob job) {
@@ -429,14 +502,14 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
             if (!depositAtLounge(worker, level)) return;
             ConstructionJobProgress progress = ConstructionJobStore.get(level).get(job.jobId());
             if (progress == null) {
-                restAtHome(worker);
+                restAtHome(worker, level);
                 return;
             }
             boolean claimed = job.state() == ConstructionJob.STATE_SEALING_FLUID
                 ? tryClaimSeal(worker, level, job, progress)
                 : tryClaim(worker, level, job, progress);
             if (!claimed && (progress.allPlaceResolved() || progress.allSealResolved())) {
-                restAtHome(worker);
+                restAtHome(worker, level);
             }
             return;
         }
@@ -471,7 +544,7 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
             if (!worker.hostedCarry().isEmpty() && !depositAtLounge(worker, level)) {
                 return;
             }
-            restAtHome(worker);
+            restAtHome(worker, level);
             return;
         }
         if (job != null) {
@@ -490,19 +563,21 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
             if (!worker.hostedCarry().isEmpty() && !depositAtLounge(worker, level)) {
                 return;
             }
-            restAtHome(worker);
+            restAtHome(worker, level);
             return;
         }
         continueOrIdle(worker);
     }
 
-    private static void restAtHome(WorkingAllayEntity worker) {
+    private static void restAtHome(WorkingAllayEntity worker, ServerLevel level) {
         BlockPos home = worker.homeLoungePos();
         if (home == null) {
             AllayWorkMotions.releaseToVanilla(worker);
             return;
         }
         worker.clearAssignment(false);
+        // 客工不入栈协调室,改为沿转运链返回原休息室
+        if (ConstructionTransferService.sendGuestHome(level, worker)) return;
         if (!worker.startDockingTo(home)) {
             worker.setHomeLounge(null);
             AllayWorkMotions.releaseToVanilla(worker);
@@ -609,17 +684,27 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
         worker.noteProgress();
         BlockPos approach = refreshApproach(worker, level, progress, op);
         if (approach == null && !isBlockedWait(op)) {
-            releaseLease(worker);
-            return;
-        }
-        if (worker.isMotionStuck() && !worker.hasPendingFlightTask()) {
-            releaseLease(worker);
+            // 连一个可用接近位都挑不出来,同样算一次"飞不到";只释放租约会让这一格反复空领
+            abandonUnreachable(worker, level, progress, op);
             return;
         }
         double reach = ConstructionJobController.reach(worker);
+        boolean sealInReach = boxInReach(worker, op, reach);
+        if (sealInReach) {
+            op.clearUnreachable();
+        }
+        if (worker.isMotionStuck() && !worker.hasPendingFlightTask()) {
+            // 已经够得到或只是在等世界清空,都不是"飞不过去",不能按不可达升级
+            if (sealInReach || isBlockedWait(op)) {
+                releaseLease(worker);
+            } else {
+                abandonUnreachable(worker, level, progress, op);
+            }
+            return;
+        }
         if (isBlockedWait(op)) {
             holdBlocked(worker, op);
-            if (!boxInReach(worker, op, reach)) {
+            if (!sealInReach) {
                 return;
             }
         } else {
@@ -673,11 +758,8 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
         }
         BlockPos approach = refreshApproach(worker, level, progress, op);
         if (approach == null && !isBlockedWait(op)) {
-            releaseLease(worker);
-            return;
-        }
-        if (worker.isMotionStuck() && !worker.hasPendingFlightTask()) {
-            releaseLease(worker);
+            // 连一个可用接近位都挑不出来,同样算一次"飞不到";只释放租约会让这一格反复空领
+            abandonUnreachable(worker, level, progress, op);
             return;
         }
         AABB box = worker.getBoundingBox();
@@ -686,6 +768,18 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
             ConstructionJobController.deliveryInteraction(progress, op, box, reach);
         boolean inReach = interaction.inReach();
         boolean inside = interaction.inside();
+        if (inReach) {
+            op.clearUnreachable();
+        }
+        if (worker.isMotionStuck() && !worker.hasPendingFlightTask()) {
+            // 已经够得到或只是在等世界清空,都不是"飞不过去",不能按不可达升级
+            if (inReach || isBlockedWait(op)) {
+                releaseLease(worker);
+            } else {
+                abandonUnreachable(worker, level, progress, op);
+            }
+            return;
+        }
         if (isBlockedWait(op)) {
             holdBlocked(worker, op);
             if (!inReach) {

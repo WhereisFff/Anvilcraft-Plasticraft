@@ -2,8 +2,12 @@ package dev.anvilcraft.plasticraft.block.entity;
 
 import com.mojang.serialization.Codec;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.allay.AllayClearanceStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
+import dev.anvilcraft.plasticraft.allay.observation.ObservationChunkLoader;
+import dev.anvilcraft.plasticraft.allay.transfer.AllayLoungeNetwork;
+import dev.anvilcraft.plasticraft.allay.transfer.ConstructionTransferService;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionPermission;
@@ -50,6 +54,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 
 /**
  * 悦灵休息室。最多托管 16 只戴帽悦灵,另有 1 个结构磁盘槽。
@@ -93,6 +98,7 @@ public class AllayLoungeBlockEntity extends BlockEntity {
     private long dockingSyncGameTime;
     private long dockingQueuePruneTime = Long.MIN_VALUE;
     private AllayShortageStrategy shortageStrategy = AllayShortageStrategy.PAUSE;
+    private AllayClearanceStrategy clearanceStrategy = AllayClearanceStrategy.CLEAR_AREA;
     private boolean loading;
     @Nullable
     private UUID lastDiskJobId;
@@ -115,6 +121,12 @@ public class AllayLoungeBlockEntity extends BlockEntity {
     public static void serverTick(Level level, BlockPos pos, BlockState state, AllayLoungeBlockEntity lounge) {
         lounge.tickDocking();
         lounge.retryDiskClaim();
+        if (level instanceof ServerLevel serverLevel) {
+            // 运行时转运图不落盘;每次实体刻重新登记,覆盖热加载、区块重载及早于 onLoad 建立的节点
+            AllayLoungeNetwork.register(lounge);
+            ConstructionTransferService.tickLoungeTransit(serverLevel, lounge);
+            ObservationChunkLoader.syncLoungeThrottled(lounge);
+        }
     }
 
     private void tickDocking() {
@@ -159,12 +171,16 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         }
         this.sendDockingUpdate();
         this.setChanged();
+        ObservationChunkLoader.syncLounge(this);
     }
 
     public record DockAssignment(boolean head, Vec3 target) {
     }
 
     public DockAssignment assignDockTarget(WorkingAllayEntity worker) {
+        if (!worker.isAlive() || worker.isDeadOrDying() || !canHost(worker)) {
+            return new DockAssignment(false, worker.position());
+        }
         this.registerDocking(worker);
         UUID id = worker.getUUID();
         boolean head = !this.dockingQueue.isEmpty() && this.dockingQueue.getFirst().equals(id);
@@ -174,7 +190,7 @@ public class AllayLoungeBlockEntity extends BlockEntity {
     }
 
     public void registerDocking(WorkingAllayEntity worker) {
-        if (!canHost(worker)) return;
+        if (!worker.isAlive() || worker.isDeadOrDying() || !canHost(worker)) return;
         this.pruneDockingQueue();
         UUID id = worker.getUUID();
         if (!this.dockingQueue.contains(id)) {
@@ -190,6 +206,15 @@ public class AllayLoungeBlockEntity extends BlockEntity {
             this.dockingQueue.add(insertAt, id);
         }
         this.dockingSlots.computeIfAbsent(id, ignored -> this.allocateDockingSlot());
+    }
+
+    /** 死亡或永久移除中的悦灵不能继续占用入库队列。 */
+    public void cancelDocking(WorkingAllayEntity worker) {
+        UUID id = worker.getUUID();
+        if (!this.dockingQueue.contains(id)) return;
+        this.removeDockingWorker(id);
+        if (this.level != null) ConstructionTraffic.release(this.level, id);
+        this.setChanged();
     }
 
     private int compareDockingOrder(UUID first, UUID second) {
@@ -209,6 +234,8 @@ public class AllayLoungeBlockEntity extends BlockEntity {
             Entity entity = serverLevel.getEntity(id);
             boolean remove = !(entity instanceof WorkingAllayEntity worker)
                 || worker.isRemoved()
+                || !worker.isAlive()
+                || worker.isDeadOrDying()
                 || !worker.isDockingTo(this.worldPosition);
             if (remove) {
                 this.dockingSlots.remove(id);
@@ -254,6 +281,10 @@ public class AllayLoungeBlockEntity extends BlockEntity {
 
     public boolean tryDock(WorkingAllayEntity worker) {
         if (this.level == null || this.level.isClientSide) return false;
+        if (!worker.isAlive() || worker.isDeadOrDying()) {
+            this.cancelDocking(worker);
+            return false;
+        }
         if (!canHost(worker)) return false;
         if (this.isBayBusy()) return false;
         if (this.hosted.size() >= HOST_CAPACITY) return false;
@@ -272,6 +303,8 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         );
         this.sendDockingUpdate();
         this.setChanged();
+        // 调用方随后就会销毁实体,休息室必须在此刻先接过观察覆盖,否则入库瞬间会断刻
+        ObservationChunkLoader.syncLounge(this);
         return true;
     }
 
@@ -320,6 +353,7 @@ public class AllayLoungeBlockEntity extends BlockEntity {
             .thenComparing(WorkingAllayEntity::getUUID));
         int recalled = 0;
         for (WorkingAllayEntity worker : workers) {
+            if (!worker.isAlive() || worker.isDeadOrDying()) continue;
             UUID workerOwner = worker.getOwner().orElse(null);
             if (workerOwner == null || !ConstructionPermission.areCollaborators(server, ownerId, workerOwner)) {
                 continue;
@@ -338,7 +372,10 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         if (this.isBayBusy()) return false;
         if (index < 0 || index >= this.hosted.size()) return false;
         AllayWorkRecord record = this.hosted.remove(index);
-        this.spawnBound(serverLevel, this.releasePoint(), record);
+        WorkingAllayEntity worker = this.spawnBound(serverLevel, this.releasePoint(), record);
+        // GUI 放出是玩家明确解除托管，不能保留 home/origin/transit 触发自动回库或转运。
+        worker.setHomeLounge(null);
+        ConstructionTransferService.detachManualRelease(worker);
         this.occupyOutboundBay();
         return true;
     }
@@ -358,17 +395,23 @@ public class AllayLoungeBlockEntity extends BlockEntity {
     }
 
     public boolean tryLaunch(Predicate<AllayWorkRecord> match) {
-        if (!(this.level instanceof ServerLevel serverLevel)) return false;
-        if (this.isBayBusy()) return false;
+        return this.tryLaunchFor(match) != null;
+    }
+
+    /** 出库并返回生成的悦灵实体(供转运转发继续编排),占 20 gt 出库通道。无匹配记录时返回 null。 */
+    @Nullable
+    public WorkingAllayEntity tryLaunchFor(Predicate<AllayWorkRecord> match) {
+        if (!(this.level instanceof ServerLevel serverLevel)) return null;
+        if (this.isBayBusy()) return null;
         for (int index = 0; index < this.hosted.size(); index++) {
             AllayWorkRecord record = this.hosted.get(index);
             if (!match.test(record)) continue;
             this.hosted.remove(index);
-            this.spawnBound(serverLevel, this.releasePoint(), record);
+            WorkingAllayEntity worker = this.spawnBound(serverLevel, this.releasePoint(), record);
             this.occupyOutboundBay();
-            return true;
+            return worker;
         }
-        return false;
+        return null;
     }
 
     public boolean hasHosted(Predicate<AllayWorkRecord> match) {
@@ -376,6 +419,15 @@ public class AllayLoungeBlockEntity extends BlockEntity {
             if (match.test(record)) return true;
         }
         return false;
+    }
+
+    /** 替换一条托管记录(转运字段清除等),找不到返回 false。 */
+    public boolean updateHostedRecord(UUID entityId, UnaryOperator<AllayWorkRecord> update) {
+        int index = this.hostedIndex(entityId);
+        if (index < 0) return false;
+        this.hosted.set(index, update.apply(this.hosted.get(index)));
+        this.setChanged();
+        return true;
     }
 
     private void occupyOutboundBay() {
@@ -406,6 +458,8 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         }
         this.hosted.clear();
         this.dropDisk();
+        // 托管记录都已放回世界并各自持票,休息室这份覆盖才可以退掉
+        ObservationChunkLoader.revokeLounge(serverLevel, this.worldPosition);
     }
 
     private void clearDockingQueue() {
@@ -433,6 +487,9 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         if (!this.canHost(worker)) {
             worker.setHomeLounge(null);
         }
+        // 先让出库的观察悦灵自己持票,再重算休息室覆盖,顺序反了就会在出库瞬间空窗
+        ObservationChunkLoader.syncObserver(worker);
+        ObservationChunkLoader.syncLounge(this);
         return worker;
     }
 
@@ -465,6 +522,30 @@ public class AllayLoungeBlockEntity extends BlockEntity {
     public boolean setShortageStrategy(ServerPlayer actor, AllayShortageStrategy strategy) {
         if (!ConstructionPermission.canUseLounge(actor, this)) return false;
         setShortageStrategy(strategy);
+        return true;
+    }
+
+    public AllayClearanceStrategy clearanceStrategy() {
+        return this.clearanceStrategy;
+    }
+
+    public void setClearanceStrategy(AllayClearanceStrategy strategy) {
+        this.clearanceStrategy = strategy == null ? AllayClearanceStrategy.CLEAR_AREA : strategy;
+        this.setChanged();
+        this.sendDockingUpdate();
+        if (this.level instanceof ServerLevel serverLevel) {
+            ConstructionJobController.onLoungeClearanceStrategyChanged(
+                serverLevel,
+                this.worldPosition,
+                this.clearanceStrategy
+            );
+        }
+    }
+
+    /** 网络入口：清场策略属于休息室设置，不能由陌生玩家修改。 */
+    public boolean setClearanceStrategy(ServerPlayer actor, AllayClearanceStrategy strategy) {
+        if (!ConstructionPermission.canUseLounge(actor, this)) return false;
+        setClearanceStrategy(strategy);
         return true;
     }
 
@@ -659,6 +740,7 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         super.saveAdditional(tag, registries);
         tag.put("Items", this.items.serializeNBT(registries));
         tag.putString("ShortageStrategy", this.shortageStrategy.getSerializedName());
+        tag.putString("ClearanceStrategy", this.clearanceStrategy.getSerializedName());
         HOSTS_CODEC.encodeStart(registries.createSerializationContext(NbtOps.INSTANCE), this.hosted)
             .resultOrPartial(error -> AnvilcraftPlasticraft.LOGGER.error("Failed to save lounge hosts: {}", error))
             .ifPresent(encoded -> tag.put("Hosted", encoded));
@@ -693,6 +775,10 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         this.shortageStrategy = AllayShortageStrategy.SKIP.getSerializedName().equals(tag.getString("ShortageStrategy"))
             ? AllayShortageStrategy.SKIP
             : AllayShortageStrategy.PAUSE;
+        this.clearanceStrategy =
+            AllayClearanceStrategy.KEEP_BLANK.getSerializedName().equals(tag.getString("ClearanceStrategy"))
+                ? AllayClearanceStrategy.KEEP_BLANK
+                : AllayClearanceStrategy.CLEAR_AREA;
         this.hosted.clear();
         if (tag.contains("Hosted")) {
             HOSTS_CODEC.parse(registries.createSerializationContext(NbtOps.INSTANCE), tag.get("Hosted"))
@@ -760,6 +846,38 @@ public class AllayLoungeBlockEntity extends BlockEntity {
             ItemStack.parse(registries, displays.getCompound(side.getSerializedName()))
                 .ifPresent(stack -> this.pickupDisplays.put(side, stack));
         }
+    }
+
+    @Override
+    public void onLoad() {
+        super.onLoad();
+        if (this.level instanceof ServerLevel) {
+            AllayLoungeNetwork.register(this);
+        }
+    }
+
+    @Override
+    public void onChunkUnloaded() {
+        if (this.level instanceof ServerLevel serverLevel) {
+            AllayLoungeNetwork.unregister(serverLevel, this.worldPosition);
+        }
+        super.onChunkUnloaded();
+    }
+
+    @Override
+    public void clearRemoved() {
+        super.clearRemoved();
+        if (this.level instanceof ServerLevel) {
+            AllayLoungeNetwork.register(this);
+        }
+    }
+
+    @Override
+    public void setRemoved() {
+        if (this.level instanceof ServerLevel serverLevel) {
+            AllayLoungeNetwork.unregister(serverLevel, this.worldPosition);
+        }
+        super.setRemoved();
     }
 
     @Override

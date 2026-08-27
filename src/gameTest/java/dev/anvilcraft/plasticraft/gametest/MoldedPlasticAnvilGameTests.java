@@ -2,8 +2,12 @@ package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.lib.v2.recipe.util.InWorldRecipeContext;
 import dev.anvilcraft.lib.v2.util.predicate.BlockStatePredicate;
+import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
+import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.EngineeringPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.MoldedPlasticAnvilAbilities;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldronWorkBlockFinder;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
@@ -17,32 +21,44 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
+import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
+import dev.dubhe.anvilcraft.init.item.ModItems;
+import dev.dubhe.anvilcraft.item.AnvilHammerItem;
 import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasAnvil;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.Container;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CampfireBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
@@ -51,6 +67,9 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class MoldedPlasticAnvilGameTests {
+    /** 木棍数量要多于大型锅的配方次数，剩余输入才能证明多余的通道没有空转。 */
+    private static final int RECIPE_INPUT_COUNT = 12;
+
     private MoldedPlasticAnvilGameTests() {
     }
 
@@ -323,6 +342,473 @@ public final class MoldedPlasticAnvilGameTests {
         helper.succeed();
     }
 
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "13x8x13", floor = true)
+    @TestHolder(description = "One impact runs a single cauldron recipe on a molded cauldron and nine on a large one")
+    static void moldedCauldronRecipePassesFollowTier(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity anvil = createProduct(
+            helper,
+            new BlockPos(1, 6, 1),
+            PlasticEntityOrientation.DEFAULT,
+            MoldingProductTypes.ANVIL_ID
+        );
+        anvil.setNoGravity(true);
+        UniversalPlasticEntity ordinary = createCauldronProduct(
+            helper,
+            new BlockPos(2, 2, 2),
+            17,
+            12,
+            12,
+            MoldingProductTypes.CAULDRON_ID
+        );
+        UniversalPlasticEntity large = createCauldronProduct(
+            helper,
+            new BlockPos(7, 2, 7),
+            2,
+            41,
+            8,
+            MoldingProductTypes.LARGE_CAULDRON_ID
+        );
+        loadCauldronInput(ordinary);
+        loadCauldronInput(large);
+
+        CauldronImpactRecipeProcessor.process(helper.getLevel(), anvil, ordinary);
+        CauldronImpactRecipeProcessor.process(helper.getLevel(), anvil, large);
+
+        checkRecipePasses(ordinary, "ordinary");
+        checkRecipePasses(large, "large");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "13x8x7", floor = true)
+    @TestHolder(description = "Molded cauldrons use processing blocks below their complete physical bottom for Anvil Hammer recipes")
+    static void moldedCauldronRecipesUseBottomWorkBlock(ExtendedGameTestHelper helper) {
+        BlockPos shortWork = new BlockPos(3, 2, 3);
+        BlockPos tallWork = new BlockPos(9, 2, 3);
+        BlockState litCampfire = Blocks.CAMPFIRE.defaultBlockState().setValue(CampfireBlock.LIT, true);
+        helper.setBlock(shortWork, litCampfire);
+        helper.setBlock(shortWork.east(), Blocks.STONE);
+        helper.setBlock(tallWork, litCampfire);
+
+        UniversalPlasticEntity shortPot = createCauldronProduct(
+            helper,
+            shortWork,
+            17,
+            12,
+            8,
+            MoldingProductTypes.CAULDRON_ID
+        );
+        UniversalPlasticEntity tallPot = createCauldronProduct(
+            helper,
+            tallWork,
+            17,
+            12,
+            32,
+            MoldingProductTypes.CAULDRON_ID
+        );
+        placeCauldronBottomOnWorkBlock(shortPot, helper.absolutePos(shortWork));
+        placeCauldronBottomOnWorkBlock(tallPot, helper.absolutePos(tallWork));
+        AABB shortBounds = shortPot.plasticraft$getCollisionBox().bounds();
+        double centerX = helper.absolutePos(shortWork).getX() + 1.25D;
+        shortPot.setPos(shortPot.position().add(centerX - shortBounds.getCenter().x, 0.0D, 0.0D));
+        shortPot.setStartPos(shortPot.blockPosition());
+        shortBounds = shortPot.plasticraft$getCollisionBox().bounds();
+        check(
+            BlockPos.containing(shortBounds.getCenter()).equals(helper.absolutePos(shortWork.east())),
+            "9 px molded cauldron center did not move above the non-processing block"
+        );
+        check(
+            shortBounds.minX < helper.absolutePos(shortWork).getX() + 1.0D
+                && shortBounds.maxX > helper.absolutePos(shortWork).getX() + 1.0D,
+            "9 px molded cauldron no longer covered the campfire at its bottom edge"
+        );
+        check(
+            PlasticCauldronWorkBlockFinder.findWorkBlockPositions(shortPot).contains(helper.absolutePos(shortWork)),
+            "9 px molded cauldron did not expose the edge campfire as a work-block candidate"
+        );
+
+        Player shortPlayer = helper.makeMockPlayer(GameType.SURVIVAL);
+        Player tallPlayer = helper.makeMockPlayer(GameType.SURVIVAL);
+        processCampfireResinRecipe(
+            shortPlayer,
+            shortPot,
+            helper.absolutePos(shortWork),
+            "9 px cauldron with an edge campfire",
+            false
+        );
+        processCampfireResinRecipe(
+            tallPlayer,
+            tallPot,
+            helper.absolutePos(tallWork),
+            "tall cauldron",
+            true
+        );
+        shortPlayer.discard();
+        tallPlayer.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x7x9", floor = true)
+    @TestHolder(description = "An Anvil Hammer impact processes only the struck molded cauldron when multiple share a campfire cell")
+    static void moldedCauldronHammerProcessesOnlyStruckEntity(ExtendedGameTestHelper helper) {
+        BlockPos impactCell = new BlockPos(4, 2, 4);
+        BlockPos workBlock = impactCell.below();
+        helper.setBlock(
+            workBlock,
+            Blocks.CAMPFIRE.defaultBlockState().setValue(CampfireBlock.LIT, true)
+        );
+        for (int x = impactCell.getX() - 1; x <= impactCell.getX() + 1; x++) {
+            for (int z = impactCell.getZ() - 1; z <= impactCell.getZ() + 1; z++) {
+                if (x != impactCell.getX() || z != impactCell.getZ()) {
+                    helper.setBlock(new BlockPos(x, workBlock.getY(), z), Blocks.AIR);
+                }
+            }
+        }
+        List<UniversalPlasticEntity> pots = List.of(
+            createCauldronProduct(helper, impactCell, 17, 12, 12, MoldingProductTypes.CAULDRON_ID),
+            createCauldronProduct(helper, impactCell, 17, 12, 12, MoldingProductTypes.CAULDRON_ID),
+            createCauldronProduct(helper, impactCell, 17, 12, 12, MoldingProductTypes.CAULDRON_ID),
+            createCauldronProduct(helper, impactCell, 17, 12, 12, MoldingProductTypes.CAULDRON_ID)
+        );
+        List<Vec3> offsets = List.of(
+            new Vec3(-0.51D, 0.0D, -0.51D),
+            new Vec3(0.51D, 0.0D, -0.51D),
+            new Vec3(-0.51D, 0.0D, 0.51D),
+            new Vec3(0.51D, 0.0D, 0.51D)
+        );
+        AABB impactBounds = new AABB(helper.absolutePos(impactCell));
+        for (int index = 0; index < pots.size(); index++) {
+            UniversalPlasticEntity pot = pots.get(index);
+            placeCauldronBottomOnWorkBlock(pot, helper.absolutePos(workBlock));
+            pot.setPos(pot.position().add(offsets.get(index)));
+            pot.setStartPos(pot.blockPosition());
+            check(pot.getBoundingBox().intersects(impactBounds),
+                "molded cauldron " + index + " did not enter the shared anvil landing cell");
+            int firstInput = pot.plasticraft$cauldronLayout().outputSlots();
+            check(pot.getItemHandler().insertItem(firstInput, new ItemStack(ModItems.RESIN.get(), 64), false).isEmpty(),
+                "molded cauldron " + index + " rejected resin input");
+        }
+
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.ANVIL_HAMMER.asStack());
+        UniversalPlasticEntity struck = pots.getFirst();
+        player.attack(struck);
+
+        for (int index = 0; index < pots.size(); index++) {
+            UniversalPlasticEntity pot = pots.get(index);
+            if (pot == struck) {
+                check(countItem(pot.getItemHandler(), ModItems.RESIN.get()) == 0,
+                    "struck molded cauldron retained resin after the hammer impact");
+                check(countItem(pot.getItemHandler(), ModItems.HARDEND_RESIN.get()) == 64,
+                    "struck molded cauldron did not turn its full resin stack into hardened resin");
+            } else {
+                check(countItem(pot.getItemHandler(), ModItems.RESIN.get()) == 64,
+                    "unstruck molded cauldron " + index + " was processed by the hammer impact");
+                check(countItem(pot.getItemHandler(), ModItems.HARDEND_RESIN.get()) == 0,
+                    "unstruck molded cauldron " + index + " produced hardened resin");
+            }
+            pot.discard();
+        }
+        player.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "11x6x7", floor = true)
+    @TestHolder(description = "Molded cauldrons accept held items and fluids, survive hammer impacts, and return only items on pickup")
+    static void moldedCauldronPlayerInteractionAndHammerRecovery(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity recipePot = createCauldronProduct(
+            helper,
+            new BlockPos(3, 2, 3),
+            17,
+            12,
+            12,
+            MoldingProductTypes.CAULDRON_ID
+        );
+        Player recipePlayer = helper.makeMockPlayer(GameType.SURVIVAL);
+        recipePlayer.moveTo(recipePot.position().add(0.0D, 0.0D, -2.0D));
+        recipePlayer.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.STICK));
+        check(recipePot.interact(recipePlayer, InteractionHand.MAIN_HAND).consumesAction(),
+            "right-clicking the molded cauldron did not insert the held item");
+        check(recipePlayer.getMainHandItem().isEmpty(), "molded cauldron insertion did not consume the held stick");
+        check(countItem(recipePot.getItemHandler(), Items.STICK) == 1,
+            "molded cauldron did not retain the inserted stick");
+
+        ItemStack recipeHammer = ModItems.ANVIL_HAMMER.asStack();
+        recipePlayer.setItemInHand(InteractionHand.MAIN_HAND, recipeHammer);
+        recipePlayer.attack(recipePot);
+        check(recipePot.isAlive(), "anvil hammer attack destroyed the molded cauldron");
+        check(countItem(recipePot.getItemHandler(), Items.STICK) == 0,
+            "anvil hammer attack did not consume the molded cauldron recipe input");
+        check(countItem(recipePot.getItemHandler(), Items.DIAMOND) == 1,
+            "anvil hammer attack did not return the recipe output to the molded cauldron");
+        check(recipeHammer.getDamageValue() == 1, "molded cauldron impact consumed the wrong hammer durability");
+
+        recipePlayer.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+        check(recipePot.interact(recipePlayer, InteractionHand.MAIN_HAND).consumesAction(),
+            "empty-hand interaction did not retrieve the molded cauldron output");
+        check(countInventoryItem(recipePlayer, Items.DIAMOND) == 1,
+            "empty-hand interaction did not return the molded cauldron output to the player");
+        recipePot.discard();
+        recipePlayer.discard();
+
+        UniversalPlasticEntity recoveryPot = createCauldronProduct(
+            helper,
+            new BlockPos(7, 2, 3),
+            17,
+            12,
+            12,
+            MoldingProductTypes.CAULDRON_ID
+        );
+        BlockPos recoveryCell = CauldronImpactRecipeProcessor.recipePotCell(recoveryPot);
+        Player recoveryPlayer = helper.makeMockPlayer(GameType.SURVIVAL);
+        recoveryPlayer.moveTo(recoveryPot.position().add(0.0D, 0.0D, -2.0D));
+        recoveryPlayer.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.WATER_BUCKET));
+        check(recoveryPot.interact(recoveryPlayer, InteractionHand.MAIN_HAND).consumesAction(),
+            "water bucket did not interact with the molded cauldron");
+        check(recoveryPot.getFluidHandler().getFluidInTank(0).is(Fluids.WATER)
+                && recoveryPot.getFluidHandler().getFluidInTank(0).getAmount() == 1000,
+            "molded cauldron did not retain one bucket of water");
+
+        recoveryPlayer.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_INGOT, 64));
+        check(recoveryPot.interact(recoveryPlayer, InteractionHand.MAIN_HAND).consumesAction(),
+            "right-clicking the filled molded cauldron did not insert iron ingots");
+        check(recoveryPlayer.getMainHandItem().isEmpty(), "molded cauldron did not consume the inserted iron stack");
+        check(countItem(recoveryPot.getItemHandler(), Items.IRON_INGOT) == 64,
+            "molded cauldron did not retain the inserted iron stack");
+
+        ItemStack recoveryHammer = ModItems.ANVIL_HAMMER.asStack();
+        recoveryPlayer.setItemInHand(InteractionHand.MAIN_HAND, recoveryHammer);
+        recoveryPlayer.attack(recoveryPot);
+        check(recoveryPot.isAlive(), "hammering a filled molded cauldron destroyed it");
+        check(countItem(recoveryPot.getItemHandler(), Items.IRON_INGOT) == 64,
+            "a non-matching hammer impact removed molded cauldron items");
+        check(recoveryPot.getFluidHandler().getFluidInTank(0).is(Fluids.WATER)
+                && recoveryPot.getFluidHandler().getFluidInTank(0).getAmount() == 1000,
+            "a non-matching hammer impact removed molded cauldron fluid");
+
+        recoveryPlayer.setShiftKeyDown(true);
+        check(recoveryPot.interact(recoveryPlayer, InteractionHand.MAIN_HAND).consumesAction(),
+            "sneak-using an anvil hammer did not recover the molded cauldron");
+        check(!recoveryPot.isAlive(), "recovered molded cauldron remained in the level");
+        check(countInventoryItem(recoveryPlayer, Items.IRON_INGOT) == 64,
+            "hammer recovery did not return every molded cauldron item");
+        check(helper.getLevel().getFluidState(recoveryCell).isEmpty(),
+            "hammer recovery placed the discarded cauldron water into the world");
+
+        ItemStack recovered = findMoldedProduct(recoveryPlayer, MoldingProductTypes.CAULDRON_ID);
+        MoldedPlasticData recoveredData = MoldedPlasticData.get(recovered).orElseThrow(() ->
+            new GameTestAssertException("hammer recovery did not return a molded cauldron item")
+        );
+        check(recoveredData.storageId().isEmpty(), "empty recovered cauldron retained an external storage id");
+        check(recoveredData.contents().items().isEmpty() && recoveredData.contents().fluids().isEmpty(),
+            "recovered cauldron item retained items or fluid");
+        recoveryPlayer.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x6x7", floor = true)
+    @TestHolder(description = "Molded cauldron outlets, ignition, fluid contents and orientation survive entity persistence")
+    static void moldedCauldronOutletAndPersistence(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity pot = createCauldronProduct(
+            helper,
+            new BlockPos(4, 2, 3),
+            17,
+            12,
+            12,
+            MoldingProductTypes.CAULDRON_ID
+        );
+        helper.setBlock(new BlockPos(5, 2, 3), Blocks.CHEST);
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.moveTo(pot.position().add(0.0D, 0.0D, -2.0D));
+        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.ANVIL_HAMMER.asStack());
+        check(pot.plasticraft$useAnvilHammer(player, InteractionHand.MAIN_HAND, Direction.EAST).consumesAction(),
+            "anvil hammer did not open a molded cauldron outlet");
+        check(pot.getOutletDirection() == Direction.EAST, "molded cauldron outlet opened on the wrong side");
+        check(pot.insertRecipeOutput(new ItemStack(Items.DIAMOND, 3)).isEmpty(),
+            "molded cauldron rejected recipe output with an open outlet");
+        check(helper.getBlockEntity(new BlockPos(5, 2, 3)) instanceof Container chest
+                && countContainerItem(chest, Items.DIAMOND) == 3,
+            "molded cauldron outlet did not transfer output into the adjacent chest");
+
+        check(pot.getFluidHandler().fill(
+            new FluidStack(PlasticraftFluids.HIGH_HEAT_FUEL.get(), 1000),
+            IFluidHandler.FluidAction.EXECUTE
+        ) == 1000, "molded cauldron rejected high-heat fuel");
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.FLINT_AND_STEEL));
+        check(pot.interact(player, InteractionHand.MAIN_HAND).consumesAction(),
+            "flint and steel did not interact with the molded cauldron");
+        check(pot.anvilcraft$isIgnited(), "flint and steel did not ignite the molded cauldron");
+
+        CompoundTag saved = pot.saveWithoutId(new CompoundTag());
+        pot.discard();
+        UniversalPlasticEntity loaded = new UniversalPlasticEntity(
+            PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
+            helper.getLevel()
+        );
+        loaded.load(saved);
+        check(loaded.isMoldedCauldron(), "persisted molded cauldron lost its product type");
+        check(loaded.getOutletDirection() == Direction.EAST, "molded cauldron outlet did not survive persistence");
+        check(loaded.anvilcraft$isIgnited(), "molded cauldron ignition did not survive persistence");
+        check(loaded.plasticraft$bottomFluid().is(PlasticraftFluids.HIGH_HEAT_FUEL.get())
+                && loaded.plasticraft$bottomFluid().getAmount() == 1000,
+            "molded cauldron fluid did not survive persistence");
+        loaded.getMoldedFluidHandler().discardFluids();
+        player.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "A bonded molded cauldron accepts held items and processes them through an anvil-hammer block impact")
+    static void bondedMoldedCauldronProcessesHammerImpact(ExtendedGameTestHelper helper) {
+        BlockPos relativePos = new BlockPos(3, 2, 3);
+        BlockPos pos = helper.absolutePos(relativePos);
+        UniversalPlasticEntity source = createCauldronProduct(
+            helper,
+            relativePos,
+            17,
+            12,
+            12,
+            MoldingProductTypes.CAULDRON_ID
+        );
+        BlockState fixedState = source.getDisplayState().setValue(AbstractPlasticEntityBlock.BONDED, true);
+        helper.setBlock(relativePos, fixedState);
+        check(helper.getLevel().getBlockEntity(pos) instanceof BondedEntityBlockEntity,
+            "bonded molded cauldron block entity was not created");
+        BondedEntityBlockEntity bonded = (BondedEntityBlockEntity) helper.getLevel().getBlockEntity(pos);
+        check(bonded.initialize(
+            source,
+            source.getDisplayState(),
+            Direction.UP,
+            PlasticEntityOrientation.DEFAULT,
+            true
+        ), "bonded molded cauldron could not capture its entity");
+        source.discard();
+
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.moveTo(pos.getCenter().add(0.0D, 0.0D, -2.0D));
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.STICK));
+        BlockHitResult hit = new BlockHitResult(pos.getCenter(), Direction.UP, pos, false);
+        check(bonded.interact(player, InteractionHand.MAIN_HAND, hit).consumesAction(),
+            "bonded molded cauldron did not accept the held stick");
+        IItemHandler items = bonded.getItemHandler();
+        check(items != null && countItem(items, Items.STICK) == 1,
+            "bonded molded cauldron did not retain the inserted stick");
+
+        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.ANVIL_HAMMER.asStack());
+        check(AnvilHammerItem.dropAnvil(player, helper.getLevel(), pos),
+            "anvil hammer did not publish a block impact for the bonded molded cauldron");
+        items = bonded.getItemHandler();
+        check(items != null && countItem(items, Items.STICK) == 0,
+            "bonded molded cauldron did not consume its recipe input");
+        check(items != null && countItem(items, Items.DIAMOND) == 1,
+            "bonded molded cauldron did not retain its recipe output");
+        check(helper.getBlockState(relativePos).is(PlasticraftBlocks.UNIVERSAL_PLASTIC.get())
+                && helper.getBlockState(relativePos).getValue(AbstractPlasticEntityBlock.BONDED),
+            "anvil-hammer processing removed the bonded molded cauldron block");
+
+        clearItems(items);
+        player.discard();
+        helper.succeed();
+    }
+
+    /** 完整底面加四壁、仅顶面开放；`interiorSize` 同时决定开口面积，因此也决定是否升级为大型锅。 */
+    private static UniversalPlasticEntity createCauldronProduct(
+        ExtendedGameTestHelper helper,
+        BlockPos occupiedPos,
+        int min,
+        int interiorSize,
+        int wallHeight,
+        ResourceLocation expectedType
+    ) {
+        int outer = min + interiorSize + 2;
+        int innerMin = min + 1;
+        int innerMax = min + interiorSize + 1;
+        int top = 1 + wallHeight;
+        EditableMoldingModel model = new EditableMoldingModel(
+            EditableMoldingModel.CURRENT_FORMAT_VERSION,
+            "Molded cauldron impact test",
+            MoldingProductTypes.CAULDRON_ID,
+            List.of(
+                MoldingElement.cube("Floor", vec(min, 0, min), vec(outer, 1, outer)),
+                MoldingElement.cube("West", vec(min, 1, min), vec(innerMin, top, outer)),
+                MoldingElement.cube("East", vec(innerMax, 1, min), vec(outer, top, outer)),
+                MoldingElement.cube("North", vec(innerMin, 1, min), vec(innerMax, top, innerMin)),
+                MoldingElement.cube("South", vec(innerMin, 1, innerMax), vec(innerMax, top, outer))
+            ),
+            List.of()
+        );
+        var baked = MoldingModelBaker.bake(model);
+        int melt = baked.analysis().minimumMeltMillibuckets();
+        MoldedPlasticData data = MoldedPlasticData.manufacture(
+            model,
+            baked,
+            new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), melt),
+            melt
+        );
+        // 开口够大的模型出锅即为大型锅，因此这里断言最终类型而不是请求类型。
+        check(expectedType.equals(data.finalType()),
+            "molded cauldron became " + data.finalType() + " instead of " + expectedType);
+        UniversalPlasticEntity pot = createProduct(helper, occupiedPos, PlasticEntityOrientation.DEFAULT, data);
+        pot.setNoGravity(true);
+        check(pot.isMoldedCauldron(), "manufactured cauldron entity lost its cauldron behavior");
+        return pot;
+    }
+
+    private static void loadCauldronInput(UniversalPlasticEntity pot) {
+        // 槽序是「先输出后输入」，第一个输入槽的编号正好等于输出槽数量。
+        int firstInput = pot.plasticraft$cauldronLayout().outputSlots();
+        ItemStack rejected = pot.getItemHandler().insertItem(
+            firstInput,
+            new ItemStack(Items.STICK, RECIPE_INPUT_COUNT),
+            false
+        );
+        check(rejected.isEmpty(), "molded cauldron rejected " + rejected.getCount() + " of its recipe inputs");
+    }
+
+    private static void placeCauldronBottomOnWorkBlock(UniversalPlasticEntity pot, BlockPos workBlock) {
+        double lift = workBlock.getY() + 7.0D / 16.0D - pot.getBoundingBox().minY;
+        pot.setPos(pot.position().add(0.0D, lift, 0.0D));
+        pot.setStartPos(pot.blockPosition());
+    }
+
+    private static void processCampfireResinRecipe(
+        Player player,
+        UniversalPlasticEntity pot,
+        BlockPos workBlock,
+        String name,
+        boolean verifyPrimaryWorkBlock
+    ) {
+        if (verifyPrimaryWorkBlock) {
+            check(CauldronImpactRecipeProcessor.recipePotCell(pot).equals(workBlock.above()),
+                name + " did not map its physical-bottom campfire to the recipe work position");
+        }
+        int firstInput = pot.plasticraft$cauldronLayout().outputSlots();
+        ItemStack rejected = pot.getItemHandler().insertItem(firstInput, ModItems.RESIN.asStack(), false);
+        check(rejected.isEmpty(), name + " rejected its resin recipe input");
+        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.ANVIL_HAMMER.asStack());
+        player.attack(pot);
+        check(countItem(pot.getItemHandler(), ModItems.RESIN.get()) == 0,
+            name + " retained resin after the campfire hammer recipe");
+        check(countItem(pot.getItemHandler(), ModItems.HARDEND_RESIN.get()) == 1,
+            name + " did not produce hardened resin from the campfire hammer recipe");
+    }
+
+    /** 测试配方每次执行只把一根木棍换成一颗钻石，因此产出数量就是这次撞击实际执行的配方次数。 */
+    private static void checkRecipePasses(UniversalPlasticEntity pot, String tier) {
+        int passes = pot.plasticraft$cauldronLayout().recipePasses();
+        int diamonds = countItem(pot.getItemHandler(), Items.DIAMOND);
+        int sticks = countItem(pot.getItemHandler(), Items.STICK);
+        check(diamonds == passes,
+            tier + " molded cauldron ran " + diamonds + " recipe passes instead of " + passes);
+        check(sticks == RECIPE_INPUT_COUNT - passes,
+            tier + " molded cauldron left " + sticks + " inputs instead of " + (RECIPE_INPUT_COUNT - passes));
+    }
+
     private static UniversalPlasticEntity createProduct(
         ExtendedGameTestHelper helper,
         BlockPos occupiedPos,
@@ -485,12 +971,52 @@ public final class MoldedPlasticAnvilGameTests {
     }
 
     private static int outputCount(LargeCauldronBlockEntity cauldron, Item item) {
+        return countItem(cauldron.getOutputHandler(), item);
+    }
+
+    private static int countItem(IItemHandler handler, Item item) {
         int count = 0;
-        for (int slot = 0; slot < cauldron.getOutputHandler().getSlots(); slot++) {
-            ItemStack stack = cauldron.getOutputHandler().getStackInSlot(slot);
+        for (int slot = 0; slot < handler.getSlots(); slot++) {
+            ItemStack stack = handler.getStackInSlot(slot);
             if (stack.is(item)) count += stack.getCount();
         }
         return count;
+    }
+
+    private static int countInventoryItem(Player player, Item item) {
+        int count = 0;
+        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            if (stack.is(item)) count += stack.getCount();
+        }
+        return count;
+    }
+
+    private static int countContainerItem(Container container, Item item) {
+        int count = 0;
+        for (int slot = 0; slot < container.getContainerSize(); slot++) {
+            ItemStack stack = container.getItem(slot);
+            if (stack.is(item)) count += stack.getCount();
+        }
+        return count;
+    }
+
+    private static ItemStack findMoldedProduct(Player player, ResourceLocation type) {
+        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            if (MoldedPlasticData.get(stack).filter(data -> type.equals(data.finalType())).isPresent()) {
+                return stack;
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    private static void clearItems(IItemHandler handler) {
+        for (int slot = 0; slot < handler.getSlots(); slot++) {
+            while (!handler.extractItem(slot, Integer.MAX_VALUE, false).isEmpty()) {
+                // 大型锅输入槽允许超过一个原版堆叠，必须抽到该槽为空。
+            }
+        }
     }
 
     private static MoldingVec3 vec(double x, double y, double z) {

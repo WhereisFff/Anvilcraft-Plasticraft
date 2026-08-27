@@ -2,14 +2,17 @@ package dev.anvilcraft.plasticraft.allay.tool;
 
 import dev.anvilcraft.plasticraft.allay.AllayFlightState;
 import dev.anvilcraft.plasticraft.allay.AllayWorkMotions;
+import dev.anvilcraft.plasticraft.allay.observation.ObservationCoverageService;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobProgress;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobStore;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionTraffic;
+import dev.anvilcraft.plasticraft.allay.transfer.ConstructionTransferService;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -20,6 +23,9 @@ import java.util.UUID;
  */
 public final class GeneralAllayToolBehavior implements AllayToolBehavior {
     public static final GeneralAllayToolBehavior INSTANCE = new GeneralAllayToolBehavior();
+
+    /** 结队跟随时与观察悦灵保持的水平间距,够近以留在同一份九柱内,又不至于挤在同一格。 */
+    private static final double FOLLOW_RADIUS = 3.0D;
 
     private GeneralAllayToolBehavior() {
     }
@@ -32,6 +38,11 @@ public final class GeneralAllayToolBehavior implements AllayToolBehavior {
         if (owner.isEmpty()) {
             worker.clearAssignment(false);
             AllayWorkMotions.releaseToVanilla(worker);
+            return;
+        }
+        if (ConstructionTransferService.isIdleTransitWorker(level, worker)) {
+            // 借调/返程悦灵在世界上只沿转运链走,不领取任务也不乱游荡
+            ConstructionTransferService.routeWorldWorkerHome(level, worker);
             return;
         }
         AllayToolDefinition definition = worker.toolDefinition();
@@ -82,6 +93,9 @@ public final class GeneralAllayToolBehavior implements AllayToolBehavior {
             CollectionAllayToolBehavior.INSTANCE.serverTick(worker);
             return;
         }
+        if (job != null && job.dimension().equals(level.dimension()) && followObserver(worker, level, job)) {
+            return;
+        }
         if (dockWhenNoWorkCanBeClaimed(worker, level)) {
             return;
         }
@@ -97,6 +111,31 @@ public final class GeneralAllayToolBehavior implements AllayToolBehavior {
         AllayWorkMotions.releaseToVanilla(worker);
     }
 
+    /**
+     * 观察窗口还没完全进入实体刻时结队跟随观察悦灵,窗口一建立就地开工,不必回库再出库。
+     * 只跟观察者实体本身:它永远在自己那份九柱里,跟随者因此不会越过前沿飞进未加载区块。
+     */
+    private static boolean followObserver(WorkingAllayEntity worker, ServerLevel level, ConstructionJob job) {
+        if (!worker.assignedJobId().isEmpty()
+            || worker.isEvacuating()
+            || worker.hasCollectionItems()) {
+            return false;
+        }
+        WorkingAllayEntity observer = ObservationCoverageService.convoyObserver(level, job, worker);
+        if (observer == null || observer == worker) return false;
+        worker.setActionState((byte) 0);
+        // 每只跟随者按自身 UUID 取一个固定角度散开,避免整队挤在观察者同一格里互相挤压
+        double angle = (worker.getUUID().getLeastSignificantBits() & 0xFFL) / 256.0D * Math.PI * 2.0D;
+        Vec3 goal = observer.position().add(Math.cos(angle) * FOLLOW_RADIUS, 1.0D, Math.sin(angle) * FOLLOW_RADIUS);
+        if (AllayWorkMotions.arrived(worker, goal)) {
+            AllayWorkMotions.holdStation(worker);
+            ConstructionTraffic.release(level, worker.getUUID());
+            return true;
+        }
+        AllayWorkMotions.flyTo(worker, goal);
+        return true;
+    }
+
     private static boolean dockWhenNoWorkCanBeClaimed(WorkingAllayEntity worker, ServerLevel level) {
         if (worker.homeLoungePos() == null
             || !worker.assignedJobId().isEmpty()
@@ -109,6 +148,8 @@ public final class GeneralAllayToolBehavior implements AllayToolBehavior {
         AllayWorkMotions.releaseToVanilla(worker);
         ConstructionTraffic.release(level, worker.getUUID());
         worker.resetStuck();
+        // 客工在协调室已无活可做时沿链返程,不挤占协调室的通道与托管位
+        if (ConstructionTransferService.sendGuestHome(level, worker)) return true;
         BlockPos home = worker.homeLoungePos();
         if (home != null && worker.startDockingTo(home)) return true;
         worker.setHomeLounge(null);
@@ -128,6 +169,7 @@ public final class GeneralAllayToolBehavior implements AllayToolBehavior {
             || job.state() == ConstructionJob.STATE_COMMITTING
             || job.state() == ConstructionJob.STATE_WAITING_MATERIAL
             || job.state() == ConstructionJob.STATE_WAITING_DEMOLITION
+            || job.state() == ConstructionJob.STATE_WAITING_OBSERVER
             || job.state() == ConstructionJob.STATE_WAITING_PERMISSION
             || job.state() == ConstructionJob.STATE_SOURCE_UNAVAILABLE;
     }

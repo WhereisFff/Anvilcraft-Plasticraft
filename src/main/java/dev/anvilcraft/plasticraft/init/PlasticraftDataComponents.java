@@ -3,6 +3,8 @@ package dev.anvilcraft.plasticraft.init;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionDebris;
+import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronContents;
+import dev.anvilcraft.plasticraft.entity.MoldedPlasticCauldronState;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
@@ -25,6 +27,26 @@ public final class PlasticraftDataComponents {
             .networkSynchronized(MoldedPlasticData.STREAM_CODEC)
             .build()
     );
+
+    /** 硬化树脂锅 Ctrl 中键复制时保留的物品、流体与功能状态。 */
+    public static final Supplier<DataComponentType<HardenedResinCauldronContents>> HARDENED_RESIN_CAULDRON_CONTENTS =
+        COMPONENTS.register(
+            "hardened_resin_cauldron_contents",
+            () -> DataComponentType.<HardenedResinCauldronContents>builder()
+                .persistent(HardenedResinCauldronContents.CODEC)
+                .networkSynchronized(HardenedResinCauldronContents.STREAM_CODEC)
+                .build()
+        );
+
+    /** 成型塑料锅 Ctrl 中键复制时保留的出料口与点燃状态。 */
+    public static final Supplier<DataComponentType<MoldedPlasticCauldronState>> MOLDED_PLASTIC_CAULDRON_STATE =
+        COMPONENTS.register(
+            "molded_plastic_cauldron_state",
+            () -> DataComponentType.<MoldedPlasticCauldronState>builder()
+                .persistent(MoldedPlasticCauldronState.CODEC)
+                .networkSynchronized(MoldedPlasticCauldronState.STREAM_CODEC)
+                .build()
+        );
 
     /** 结构磁盘上的施工蓝图引用:内容哈希、摘要与部署任务 UUID。 */
     public static final Supplier<DataComponentType<ConstructionBlueprintData>> BLUEPRINT_TASK = COMPONENTS.register(

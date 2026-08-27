@@ -13,7 +13,8 @@ items:
 Use High-Viscosity Resin to bond a Catalytic Press Lid directly above a compatible vessel. Its sealed royal-steel catalytic surface runs the Plastic Oil to Universal Plastic and chilled Universal Plastic to Engineering Plastic routes at full speed without an additional royal-steel item
 
 - The clear route still needs royal glass or frost glass inside the vessel and uses the glass catalysts' open multiplier
-- The heat-resistant branch counts distinct ember-metal items in the vessel inventory and loose items inside it, and still requires a heat source directly below
+- The heat-resistant branch counts distinct ember-metal items in the vessel inventory and loose items inside it, and still requires a heat source
+- Ordinary block vessels read heat and cold directly below. Upward-facing Hardened Resin and plastic cauldrons instead search from the center and every covered part of their physical bottom face along current gravity for one block. A valid processing block below the center takes priority, then the remaining covered bottom cells are tried
 - Heat, cold and branch priority otherwise follow [Plastic Melts](010_plastic_melts.md)
 
 After the reaction finishes, strike the press arm with a falling anvil. The melt first tries to leave through the vessel outlet or connected pipe network. If it cannot be exported, pressure ruptures the vessel and launches the lid

@@ -13,7 +13,9 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -25,8 +27,13 @@ public record ConstructionProjectionSectionPacket(
     long section,
     boolean clear,
     List<BlockPos> positions,
-    List<BlockState> states
+    List<BlockState> states,
+    List<SignMask> signMasks
 ) implements IClientboundPacket {
+    /** 告示牌未加工掩码只在极少数位置非零,单独走稀疏表,常规整段只多付一个长度字节。 */
+    public record SignMask(BlockPos pos, int pending) {
+    }
+
     public static final Type<ConstructionProjectionSectionPacket> TYPE = IPacket.type(
         AnvilcraftPlasticraft.of("construction_projection_section")
     );
@@ -39,7 +46,7 @@ public record ConstructionProjectionSectionPacket(
         );
 
     public static ConstructionProjectionSectionPacket clear(UUID jobId, long section) {
-        return new ConstructionProjectionSectionPacket(jobId, section, true, List.of(), List.of());
+        return new ConstructionProjectionSectionPacket(jobId, section, true, List.of(), List.of(), List.of());
     }
 
     private static void write(RegistryFriendlyByteBuf buffer, ConstructionProjectionSectionPacket packet) {
@@ -50,6 +57,11 @@ public record ConstructionProjectionSectionPacket(
         for (int index = 0; index < packet.positions.size(); index++) {
             buffer.writeBlockPos(packet.positions.get(index));
             BLOCK_STATE_CODEC.encode(buffer, packet.states.get(index));
+        }
+        buffer.writeVarInt(packet.signMasks.size());
+        for (SignMask mask : packet.signMasks) {
+            buffer.writeBlockPos(mask.pos());
+            buffer.writeVarInt(mask.pending());
         }
     }
 
@@ -64,7 +76,13 @@ public record ConstructionProjectionSectionPacket(
             positions.add(buffer.readBlockPos());
             states.add(BLOCK_STATE_CODEC.decode(buffer));
         }
-        return new ConstructionProjectionSectionPacket(jobId, section, clear, positions, states);
+        int masks = buffer.readVarInt();
+        List<SignMask> signMasks = new ArrayList<>(masks);
+        for (int index = 0; index < masks; index++) {
+            BlockPos pos = buffer.readBlockPos();
+            signMasks.add(new SignMask(pos, buffer.readVarInt()));
+        }
+        return new ConstructionProjectionSectionPacket(jobId, section, clear, positions, states, signMasks);
     }
 
     @Override
@@ -79,12 +97,17 @@ public record ConstructionProjectionSectionPacket(
             ConstructionProjectionIndex.clearClientSection(player.level(), this.jobId, this.section);
             return;
         }
+        Map<Long, Integer> pending = new HashMap<>(this.signMasks.size());
+        for (SignMask mask : this.signMasks) {
+            pending.put(mask.pos().asLong(), mask.pending());
+        }
         ConstructionProjectionIndex.applyClientSection(
             player.level(),
             this.jobId,
             this.section,
             this.positions,
-            this.states
+            this.states,
+            pending
         );
     }
 }

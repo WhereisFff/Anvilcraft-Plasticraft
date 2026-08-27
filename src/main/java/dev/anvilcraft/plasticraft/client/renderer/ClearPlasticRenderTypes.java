@@ -37,6 +37,23 @@ public final class ClearPlasticRenderTypes {
     );
     private static final RenderType FLUID = RenderType.create(
         AnvilcraftPlasticraft.MOD_ID + ":clear_plastic_fluid",
+        DefaultVertexFormat.BLOCK,
+        VertexFormat.Mode.QUADS,
+        1536,
+        false,
+        true,
+        RenderType.CompositeState.builder()
+            .setShaderState(new RenderStateShard.ShaderStateShard(GameRenderer::getRendertypeTranslucentMovingBlockShader))
+            .setTextureState(new RenderStateShard.TextureStateShard(TextureAtlas.LOCATION_BLOCKS, false, true))
+            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
+            .setOutputState(RenderStateShard.TRANSLUCENT_TARGET)
+            .setLightmapState(RenderStateShard.LIGHTMAP)
+            // 内部流体写入深度后，只有位于其前方的透明外壳会继续参与 alpha 混合。
+            .setWriteMaskState(RenderStateShard.COLOR_DEPTH_WRITE)
+            .createCompositeState(true)
+    );
+    private static final RenderType MOLDED_FLUID = RenderType.create(
+        AnvilcraftPlasticraft.MOD_ID + ":clear_plastic_molded_fluid",
         DefaultVertexFormat.NEW_ENTITY,
         VertexFormat.Mode.QUADS,
         1536,
@@ -51,7 +68,6 @@ public final class ClearPlasticRenderTypes {
             .setOutputState(RenderStateShard.TRANSLUCENT_TARGET)
             .setLightmapState(RenderStateShard.LIGHTMAP)
             .setOverlayState(RenderStateShard.OVERLAY)
-            // 内部流体写入深度后，只有位于其前方的透明外壳会继续参与 alpha 混合。
             .setWriteMaskState(RenderStateShard.COLOR_DEPTH_WRITE)
             .createCompositeState(true)
     );
@@ -84,6 +100,10 @@ public final class ClearPlasticRenderTypes {
 
     public static RenderType fluid() {
         return FLUID;
+    }
+
+    public static RenderType moldedFluid() {
+        return MOLDED_FLUID;
     }
 
     public static RenderType molded(ResourceLocation texture) {

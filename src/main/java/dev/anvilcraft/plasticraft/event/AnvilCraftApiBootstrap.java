@@ -2,7 +2,8 @@ package dev.anvilcraft.plasticraft.event;
 
 import dev.anvilcraft.plasticraft.block.piston.SlidingAdhesionStructureExtension;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
-import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.entity.redstone.MoldedTrayComponentLookup;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
@@ -19,7 +20,6 @@ import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.phys.AABB;
 
 /** 把塑料工艺接到铁砧工艺公开扩展点。不得在此初始化 JEI/Jade 等可选模组客户端 API。 */
 public final class AnvilCraftApiBootstrap {
@@ -37,15 +37,19 @@ public final class AnvilCraftApiBootstrap {
         SlidingStructureHooks.register(SlidingAdhesionStructureExtension.INSTANCE);
 
         HasCauldron.registerEntityCauldronSelector((context, pos, current) -> {
+            // 通用塑料实体无条件实现锅接口，成型类型不是锅时必须拒答，否则储罐等制品会被当成实体锅
+            if (current instanceof PlasticCauldron cauldron && !cauldron.plasticraft$isCauldron()) return null;
             if (!CauldronImpactRecipeProcessor.hasTargetedRecipe()) return current;
-            HardenedResinCauldronEntity target = CauldronImpactRecipeProcessor.activeRecipeTarget();
+            PlasticCauldron target = CauldronImpactRecipeProcessor.activeRecipeTarget();
+            BlockPos targetCell = CauldronImpactRecipeProcessor.activeRecipeTargetCell();
             if (target != null
                 && target.level() == context.getLevel()
                 && !target.isRemoved()
-                && target.getBoundingBox().intersects(new AABB(pos).inflate(0.0625D))) {
+                && targetCell != null
+                && targetCell.equals(pos)) {
                 return target;
             }
-            if (current instanceof HardenedResinCauldronEntity) return null;
+            if (PlasticCauldrons.isCauldron(current)) return null;
             return current;
         });
 

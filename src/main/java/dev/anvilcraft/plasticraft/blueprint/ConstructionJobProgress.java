@@ -1,9 +1,12 @@
 package dev.anvilcraft.plasticraft.blueprint;
 
+import dev.anvilcraft.plasticraft.allay.AllayClearanceStrategy;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -38,6 +41,9 @@ public final class ConstructionJobProgress {
     private final ConstructionCommitLog commitLog = new ConstructionCommitLog();
     @Nullable
     private BlockPos coordinatorLounge;
+    private final Map<Long, BlockState> declaredTargets = new HashMap<>();
+    private AllayClearanceStrategy clearanceStrategy = AllayClearanceStrategy.CLEAR_AREA;
+    private boolean clearanceStrategyRecorded;
     private int nextOpId;
     private int nextLedgerId;
     private long enclosureRevision;
@@ -51,6 +57,10 @@ public final class ConstructionJobProgress {
     private OperationStatusSummary statusCache = OperationStatusSummary.EMPTY;
     private long deliveredPositionCacheRevision = Long.MIN_VALUE;
     private Set<Long> deliveredPositionCache = Set.of();
+    private long deliveredCommitCacheRevision = Long.MIN_VALUE;
+    private List<ConstructionBuildOp> deliveredCommitCache = List.of();
+    private long deliveredCommitPositionCacheRevision = Long.MIN_VALUE;
+    private Set<Long> deliveredCommitPositionCache = Set.of();
     private long childrenCacheRevision = Long.MIN_VALUE;
     private Map<Integer, List<ConstructionBuildOp>> childrenCache = Map.of();
     private long materialCacheRevision = Long.MIN_VALUE;
@@ -151,6 +161,9 @@ public final class ConstructionJobProgress {
         this.missingOperationId = -1;
         this.nextOpId = 0;
         this.nextLedgerId = 0;
+        this.declaredTargets.clear();
+        this.clearanceStrategy = AllayClearanceStrategy.CLEAR_AREA;
+        this.clearanceStrategyRecorded = false;
         this.projectionIndexReady = false;
     }
 
@@ -358,6 +371,40 @@ public final class ConstructionJobProgress {
 
     public void setCoordinatorLounge(@Nullable BlockPos loungePos) {
         this.coordinatorLounge = loungePos == null ? null : loungePos.immutable();
+    }
+
+    /** 保存蓝图显式声明的格及目标状态，空状态也必须保留以区分稀疏空隙。 */
+    public void setDeclaredTargets(Map<Long, BlockState> targets) {
+        this.declaredTargets.clear();
+        this.declaredTargets.putAll(targets);
+    }
+
+    public boolean hasDeclaredTarget(BlockPos pos) {
+        return this.declaredTargets.containsKey(pos.asLong());
+    }
+
+    @Nullable
+    public BlockState declaredTarget(BlockPos pos) {
+        return this.declaredTargets.get(pos.asLong());
+    }
+
+    public Map<Long, BlockState> declaredTargets() {
+        return Map.copyOf(this.declaredTargets);
+    }
+
+    public AllayClearanceStrategy clearanceStrategy() {
+        return this.clearanceStrategy;
+    }
+
+    public boolean clearanceStrategyRecorded() {
+        return this.clearanceStrategyRecorded;
+    }
+
+    public void setClearanceStrategy(AllayClearanceStrategy strategy) {
+        this.clearanceStrategy = strategy == null
+            ? AllayClearanceStrategy.CLEAR_AREA
+            : strategy;
+        this.clearanceStrategyRecorded = true;
     }
 
     @Nullable
@@ -631,6 +678,20 @@ public final class ConstructionJobProgress {
         return this.statusSummary().openPlace();
     }
 
+    /**
+     * 剩余的建造位置是否全都压在不可达退避里。退避到期时间随游戏刻变化,不能进状态摘要缓存,
+     * 因此这里每次实扫;只有整个任务确实停下来了才对外报不可达,免得别处照常施工时误报。
+     */
+    public boolean stalledByUnreachable(long gameTime) {
+        boolean anyDeferred = false;
+        for (ConstructionBuildOp op : this.operations) {
+            if (!isPlaceMaterial(op) || !op.isOpen()) continue;
+            if (!op.isDeferred(gameTime)) return false;
+            anyDeferred = true;
+        }
+        return anyDeferred;
+    }
+
     int unleasedDemolishCount() {
         return this.statusSummary().unleasedDemolishCount();
     }
@@ -659,6 +720,27 @@ public final class ConstructionJobProgress {
         return this.statusSummary().deliveredProjections();
     }
 
+    /** 已交付投影加上由真实世界方块满足、仍需提交子内容的方块锚点。 */
+    List<ConstructionBuildOp> deliveredCommitOperations() {
+        if (this.deliveredCommitCacheRevision == this.statusRevision) {
+            return this.deliveredCommitCache;
+        }
+        List<ConstructionBuildOp> result = new ArrayList<>();
+        for (ConstructionBuildOp op : this.operations) {
+            if (op.status() != ConstructionBuildOp.Status.DELIVERED
+                || (!op.writesProjection()
+                    && (!op.worldSatisfied()
+                        || (op.kind() != ConstructionBuildOp.Kind.PLACE
+                            && op.kind() != ConstructionBuildOp.Kind.ATTACHED)))) {
+                continue;
+            }
+            result.add(op);
+        }
+        this.deliveredCommitCache = List.copyOf(result);
+        this.deliveredCommitCacheRevision = this.statusRevision;
+        return this.deliveredCommitCache;
+    }
+
     Set<Long> deliveredProjectionPositions() {
         if (this.deliveredPositionCacheRevision == this.statusRevision) {
             return this.deliveredPositionCache;
@@ -670,6 +752,19 @@ public final class ConstructionJobProgress {
         this.deliveredPositionCache = Set.copyOf(delivered);
         this.deliveredPositionCacheRevision = this.statusRevision;
         return this.deliveredPositionCache;
+    }
+
+    Set<Long> deliveredCommitPositions() {
+        if (this.deliveredCommitPositionCacheRevision == this.statusRevision) {
+            return this.deliveredCommitPositionCache;
+        }
+        Set<Long> positions = new HashSet<>();
+        for (ConstructionBuildOp op : this.deliveredCommitOperations()) {
+            positions.add(op.pos().asLong());
+        }
+        this.deliveredCommitPositionCache = Set.copyOf(positions);
+        this.deliveredCommitPositionCacheRevision = this.statusRevision;
+        return this.deliveredCommitPositionCache;
     }
 
     List<ConstructionBuildOp> deliveredEntityOperations() {
@@ -760,7 +855,8 @@ public final class ConstructionJobProgress {
         return op.kind() == ConstructionBuildOp.Kind.PLACE
             || op.kind() == ConstructionBuildOp.Kind.CONTENT
             || op.kind() == ConstructionBuildOp.Kind.FLUID
-            || op.kind() == ConstructionBuildOp.Kind.ENTITY;
+            || op.kind() == ConstructionBuildOp.Kind.ENTITY
+            || op.kind() == ConstructionBuildOp.Kind.DECORATE;
     }
 
     private static boolean isLaunchMaterial(ConstructionBuildOp op) {
@@ -835,6 +931,19 @@ public final class ConstructionJobProgress {
         if (this.coordinatorLounge != null) {
             tag.putLong("CoordinatorLounge", this.coordinatorLounge.asLong());
         }
+        ListTag declaredTag = new ListTag();
+        this.declaredTargets.entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> {
+                CompoundTag declared = new CompoundTag();
+                declared.putLong("Pos", entry.getKey());
+                declared.put("State", NbtUtils.writeBlockState(entry.getValue()));
+                declaredTag.add(declared);
+            });
+        tag.put("DeclaredTargets", declaredTag);
+        if (this.clearanceStrategyRecorded) {
+            tag.putString("ClearanceStrategy", this.clearanceStrategy.name());
+        }
         return tag;
     }
 
@@ -890,6 +999,25 @@ public final class ConstructionJobProgress {
         }
         if (tag.contains("CoordinatorLounge")) {
             progress.coordinatorLounge = BlockPos.of(tag.getLong("CoordinatorLounge"));
+        }
+        ListTag declaredTag = tag.getList("DeclaredTargets", Tag.TAG_COMPOUND);
+        for (int index = 0; index < declaredTag.size(); index++) {
+            CompoundTag declared = declaredTag.getCompound(index);
+            if (!declared.contains("State", Tag.TAG_COMPOUND)) continue;
+            BlockState state = NbtUtils.readBlockState(
+                registries.lookupOrThrow(Registries.BLOCK),
+                declared.getCompound("State")
+            );
+            progress.declaredTargets.put(declared.getLong("Pos"), state);
+        }
+        if (tag.contains("ClearanceStrategy")) {
+            try {
+                progress.setClearanceStrategy(
+                    AllayClearanceStrategy.valueOf(tag.getString("ClearanceStrategy"))
+                );
+            } catch (IllegalArgumentException ignored) {
+                progress.setClearanceStrategy(AllayClearanceStrategy.CLEAR_AREA);
+            }
         }
         return progress;
     }

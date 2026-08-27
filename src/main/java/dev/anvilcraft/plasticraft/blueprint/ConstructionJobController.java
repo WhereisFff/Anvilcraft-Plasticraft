@@ -1,10 +1,14 @@
 package dev.anvilcraft.plasticraft.blueprint;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.allay.AllayClearanceStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
+import dev.anvilcraft.plasticraft.allay.observation.ObservationCoverage;
+import dev.anvilcraft.plasticraft.allay.observation.ObservationCoverageService;
 import dev.anvilcraft.plasticraft.allay.tool.AllayCapability;
 import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinitions;
+import dev.anvilcraft.plasticraft.allay.transfer.ConstructionTransferService;
 import dev.anvilcraft.plasticraft.allay.tool.CollectionAllayToolBehavior;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
@@ -29,7 +33,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.neoforged.neoforge.fluids.FluidStack;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.StructureVoidBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -40,6 +44,7 @@ import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
 import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
@@ -59,6 +64,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.WeakHashMap;
 
 /**
@@ -71,8 +78,14 @@ public final class ConstructionJobController {
     public static final double REACH = 1.0D;
     public static final int MAX_PARTICIPANTS = 64;
     private static final int FAILED_ASSIGNMENT_RETRY_TICKS = 5;
+    /** 就近前沿一次考察的目标数上限;只重排队首一小段,不为每次派发扫描整张操作表。 */
+    private static final int FRONTIER_WINDOW = 24;
+    /** 不可达退避时长;够长到让别的位置先建完、周围形状发生变化,又不至于让任务停很久。 */
+    private static final int UNREACHABLE_RETRY_TICKS = 200;
     private static final Map<ConstructionJobProgress, AssignmentRuntime> ASSIGNMENT_RUNTIME = new WeakHashMap<>();
     private static final Map<ServerLevel, WorkerSnapshot> WORKER_SNAPSHOTS = new WeakHashMap<>();
+    private static final ThreadLocal<Integer> SUPPRESSED_WORLD_CHANGE_OBSERVATION =
+        ThreadLocal.withInitial(() -> 0);
 
     public static double reach(WorkingAllayEntity worker) {
         return worker.toolDefinition().reachDistance();
@@ -85,6 +98,422 @@ public final class ConstructionJobController {
     /** 已放置蓝图在世界中的方块包围盒,用于完工后把无人机带离工地。 */
     public static AABB worldBox(ConstructionJob job) {
         return AABB.of(BlueprintPlacement.of(job).bounds(job.size()));
+    }
+
+    /** 施工自身的真实写入不应被反应式监听再次解释为玩家改动。 */
+    public static boolean isWorldChangeObservationSuppressed() {
+        return SUPPRESSED_WORLD_CHANGE_OBSERVATION.get() > 0;
+    }
+
+    public static <T> T withoutWorldChangeObservation(Supplier<T> action) {
+        int depth = SUPPRESSED_WORLD_CHANGE_OBSERVATION.get();
+        SUPPRESSED_WORLD_CHANGE_OBSERVATION.set(depth + 1);
+        try {
+            return action.get();
+        } finally {
+            if (depth == 0) {
+                SUPPRESSED_WORLD_CHANGE_OBSERVATION.remove();
+            } else {
+                SUPPRESSED_WORLD_CHANGE_OBSERVATION.set(depth);
+            }
+        }
+    }
+
+    /**
+     * 观察真实世界方块变更:建造期间只把蓝图声明格中的不匹配方块转成新的拆除操作。
+     * 投影本身不写世界,而拆除/提交产生的空气或终态写入会被阶段过滤掉。
+     */
+    public static void onRealBlockStateChanged(
+        ServerLevel level,
+        BlockPos pos,
+        BlockState previous,
+        BlockState current
+    ) {
+        if (isWorldChangeObservationSuppressed() || previous.equals(current)) return;
+        MinecraftServer server = level.getServer();
+        if (server == null) return;
+        ConstructionJobStore store = ConstructionJobStore.get(server);
+        for (ConstructionJob job : ConstructionJobIndex.get(server).jobsIn(level)) {
+            if (!acceptsRuntimeDemolition(job.state())
+                || !worldBox(job).contains(Vec3.atCenterOf(pos))) {
+                continue;
+            }
+            ConstructionJobProgress progress = store.get(job.jobId());
+            if (progress == null || !progress.planned()) continue;
+            BlockState expected = progress.declaredTarget(pos);
+            // 未声明的稀疏空隙不属于清场声明区,即使它落在包围盒内也保持原样
+            if (expected == null) continue;
+            if (current.isAir()) {
+                // 已由真实世界满足的方块被外部移除后,重新进入建设队列;普通拆除写空气由抑制器绕过
+                if (hasOpenDemolitionAt(progress, pos) || !hasWorldSatisfiedPlaceAt(progress, pos)) continue;
+                boolean changed = resetRuntimeBuildOperations(level, progress, pos, pos);
+                if (!ConstructionPermission.canModify(level, pos, job.owner())) {
+                    if (changed) store.markDirty();
+                    enterPermissionWait(level, job, progress);
+                    continue;
+                }
+                if (changed) {
+                    store.markDirty();
+                    reconcileRuntimeState(server, level, job, progress);
+                }
+                continue;
+            }
+            BlockPos operationPos = DemolitionPlanner.runtimeCore(level, pos, progress);
+            if (expected.equals(current)) {
+                // 外部方块正好满足目标时,先结清正在途中的建设台账,避免留下 WAITING_WORLD
+                boolean changed = false;
+                if (hasActiveBuildWork(progress)) {
+                    interruptBuildWorkers(server, level, job, progress);
+                    changed = true;
+                }
+                if (cancelDemolitionsAt(level, job, progress, operationPos)) {
+                    resetRuntimeBuildOperations(level, progress, operationPos, pos);
+                    changed = true;
+                }
+                if (satisfyExternalPlace(level, progress, pos, current)) {
+                    changed = true;
+                }
+                if (changed) {
+                    store.markDirty();
+                }
+                if (!ConstructionPermission.canModify(level, pos, job.owner())
+                    || !ConstructionPermission.canModify(level, operationPos, job.owner())) {
+                    // 先记录真实世界已满足的状态,但禁止在权限恢复前继续派发或提交
+                    enterPermissionWait(level, job, progress);
+                } else if (changed) {
+                    reconcileRuntimeState(server, level, job, progress);
+                }
+                continue;
+            }
+            if (expected.isAir()
+                && progress.clearanceStrategy() == AllayClearanceStrategy.KEEP_BLANK
+                && !hasEntityTargetAt(progress, pos)) {
+                continue;
+            }
+            if (hasOpenDemolitionAt(progress, operationPos)) continue;
+            BlockState operationState = level.getBlockState(operationPos);
+            if (StonecutterSmashAdapter.isPermanentObstacle(level, operationPos, operationState)) {
+                if (hasActiveBuildWork(progress)) {
+                    interruptBuildWorkers(server, level, job, progress);
+                }
+                if (!ConstructionPermission.canModify(level, pos, job.owner())
+                    || !ConstructionPermission.canModify(level, operationPos, job.owner())) {
+                    // 永久障碍也不能借反应式路径绕过保护区权限
+                    DemolitionPlanner.addRuntimeDemolition(level, pos, progress);
+                    resetRuntimeBuildOperations(level, progress, operationPos, pos);
+                    progress.setWaitReason(ConstructionWaitReason.NONE);
+                    progress.setMissingMaterial(ItemStack.EMPTY);
+                    store.markDirty();
+                    enterPermissionWait(level, job, progress);
+                    continue;
+                }
+                skipPlaceAtIncludingDelivered(level, progress, operationPos);
+                progress.setIncomplete(true);
+                store.markDirty();
+                reconcileRuntimeState(server, level, job, progress);
+                continue;
+            }
+            boolean enteringDemolition = job.state() != ConstructionJob.STATE_DEMOLISHING
+                && job.state() != ConstructionJob.STATE_WAITING_DEMOLITION;
+            if (enteringDemolition) {
+                interruptBuildWorkers(server, level, job, progress);
+            }
+            DemolitionPlanner.addRuntimeDemolition(level, pos, progress);
+            resetRuntimeBuildOperations(level, progress, operationPos);
+            progress.setWaitReason(ConstructionWaitReason.NONE);
+            progress.setMissingMaterial(ItemStack.EMPTY);
+            store.markDirty();
+            if (enteringDemolition) {
+                setState(server, job, ConstructionJob.STATE_DEMOLISHING);
+            }
+        }
+    }
+
+    private static boolean hasEntityTargetAt(ConstructionJobProgress progress, BlockPos pos) {
+        for (ConstructionBuildOp op : progress.operationsAt(pos)) {
+            if (op.kind() == ConstructionBuildOp.Kind.ENTITY
+                && op.status() != ConstructionBuildOp.Status.SKIPPED) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasWorldSatisfiedPlaceAt(ConstructionJobProgress progress, BlockPos pos) {
+        for (ConstructionBuildOp op : progress.operationsAt(pos)) {
+            if ((op.kind() == ConstructionBuildOp.Kind.PLACE
+                    || op.kind() == ConstructionBuildOp.Kind.ATTACHED)
+                && op.worldSatisfied()
+                && op.status() == ConstructionBuildOp.Status.DELIVERED) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 外部变更可能结清等待项,也可能新增拆除项;把任务状态收敛到实际开放相位。 */
+    private static void reconcileRuntimeState(
+        MinecraftServer server,
+        ServerLevel level,
+        ConstructionJob sourceJob,
+        ConstructionJobProgress progress
+    ) {
+        ConstructionJob job = ConstructionJobIndex.get(server).job(sourceJob.jobId());
+        if (job == null) return;
+        if (progress.hasOpenDemolish()) {
+            if (job.state() != ConstructionJob.STATE_DEMOLISHING
+                && job.state() != ConstructionJob.STATE_WAITING_DEMOLITION) {
+                setState(server, job, ConstructionJob.STATE_DEMOLISHING);
+            }
+            return;
+        }
+        if (job.state() == ConstructionJob.STATE_WAITING_DEMOLITION) {
+            progress.setWaitReason(ConstructionWaitReason.NONE);
+            setState(server, job, nextPhase(progress));
+            return;
+        }
+        if (job.state() != ConstructionJob.STATE_WAITING_MATERIAL) return;
+        ConstructionBuildOp missing = progress.operation(progress.missingOperationId());
+        if (missing != null && missing.isOpen()) return;
+        if (missing == null && !progress.missingMaterial().isEmpty()) return;
+        progress.setWaitReason(ConstructionWaitReason.NONE);
+        progress.setMissingMaterial(ItemStack.EMPTY);
+        setState(server, job, nextPhase(progress));
+    }
+
+    private static boolean acceptsRuntimeDemolition(byte state) {
+        return state == ConstructionJob.STATE_BUILDING
+            || state == ConstructionJob.STATE_WAITING_MATERIAL
+            || state == ConstructionJob.STATE_WAITING_DEMOLITION
+            // 等观察窗口期间玩家仍可能改动已加载的那一部分,这些改动照样要排进运行期拆除
+            || state == ConstructionJob.STATE_WAITING_OBSERVER
+            || state == ConstructionJob.STATE_DEMOLISHING
+            || state == ConstructionJob.STATE_COLLECTING_DEBRIS;
+    }
+
+    private static boolean hasOpenDemolitionAt(ConstructionJobProgress progress, BlockPos pos) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH
+                || op.shell()
+                || !op.pos().equals(pos)) {
+                continue;
+            }
+            if (op.isOpen() || op.leaseAllay().isPresent()) return true;
+        }
+        return false;
+    }
+
+    private static boolean hasActiveBuildWork(ConstructionJobProgress progress) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (!op.isBuildMaterial()) continue;
+            if (op.leaseAllay().isPresent() || progress.hasCarriedMaterial(op.id())) return true;
+        }
+        return false;
+    }
+
+    private static void resetRuntimeBuildOperations(
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        BlockPos operationPos
+    ) {
+        resetRuntimeBuildOperations(level, progress, operationPos, operationPos);
+    }
+
+    private static boolean resetRuntimeBuildOperations(
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        BlockPos operationPos,
+        BlockPos requestedPos
+    ) {
+        Set<Integer> resetIds = new LinkedHashSet<>();
+        Set<BlockPos> affectedPositions = new LinkedHashSet<>();
+        affectedPositions.addAll(DemolitionPlanner.affectedPositions(level, operationPos));
+        affectedPositions.addAll(DemolitionPlanner.affectedPositions(level, requestedPos));
+        for (BlockPos affected : affectedPositions) {
+            ConstructionProjectionIndex.remove(level, progress.jobId(), affected);
+            for (ConstructionBuildOp op : List.copyOf(progress.operationsAt(affected))) {
+                // 外部方块覆盖实体或其内容子操作时,也要撤掉对应投影并重新交付
+                if (op.kind() == ConstructionBuildOp.Kind.PLACE
+                    || op.kind() == ConstructionBuildOp.Kind.ATTACHED
+                    || op.kind() == ConstructionBuildOp.Kind.CONTENT
+                    || op.kind() == ConstructionBuildOp.Kind.FLUID
+                    || op.kind() == ConstructionBuildOp.Kind.ENTITY
+                    || op.kind() == ConstructionBuildOp.Kind.DECORATE) {
+                    resetIds.add(op.id());
+                }
+            }
+        }
+        // 父方块被外部替换时,其内容/流体/实体子操作也必须回到待交付状态
+        boolean expanded;
+        do {
+            expanded = false;
+            for (ConstructionBuildOp op : progress.operations()) {
+                if (op.parentId() >= 0
+                    && resetIds.contains(op.parentId())
+                    && resetIds.add(op.id())) {
+                    expanded = true;
+                }
+            }
+        } while (expanded);
+        for (int operationId : resetIds) {
+            ConstructionBuildOp op = progress.operation(operationId);
+            if (op == null || op.status() == ConstructionBuildOp.Status.SKIPPED) continue;
+            if (op.status() == ConstructionBuildOp.Status.DELIVERED) {
+                returnRuntimeMaterial(level, progress, op);
+            }
+            if (op.kind() == ConstructionBuildOp.Kind.ENTITY) {
+                ConstructionEntityProjectionIndex.removeOperation(level, progress.jobId(), op.id());
+            }
+            op.setWorldSatisfied(false);
+            if (op.isOpen() || op.status() == ConstructionBuildOp.Status.DELIVERED) {
+                op.setStatus(ConstructionBuildOp.Status.PENDING);
+                op.setLeaseAllay(null);
+                op.setApproach(null);
+            }
+        }
+        progress.setProjectionIndexReady(false);
+        return !resetIds.isEmpty();
+    }
+
+    /** 精确目标到达后,旧的拆除租约也必须释放,否则拆除悦灵会继续执行过期操作。 */
+    private static boolean cancelDemolitionsAt(
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress,
+        BlockPos operationPos
+    ) {
+        Set<Integer> cancelledIds = new HashSet<>();
+        Set<UUID> cancelledAllays = new HashSet<>();
+        boolean changed = false;
+        for (ConstructionBuildOp op : List.copyOf(progress.operationsAt(operationPos))) {
+            if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH
+                || op.shell()
+                || !op.isOpen()) {
+                continue;
+            }
+            cancelledIds.add(op.id());
+            op.leaseAllay().ifPresent(cancelledAllays::add);
+            op.setStatus(ConstructionBuildOp.Status.SKIPPED);
+            op.setLeaseAllay(null);
+            op.setApproach(null);
+            changed = true;
+        }
+        if (!cancelledAllays.isEmpty()) {
+            for (WorkingAllayEntity worker : loadedWorkers(level)) {
+                if (!cancelledAllays.contains(worker.getUUID())
+                    || worker.assignedJobId().filter(job.jobId()::equals).isEmpty()) {
+                    continue;
+                }
+                worker.navigator().clear();
+                worker.clearAssignment(false);
+                worker.setActionState((byte) 0);
+                worker.setWaitReason(ConstructionWaitReason.NONE);
+                ConstructionTraffic.release(level, worker.getUUID());
+            }
+        }
+        // 失联悦灵的租约已清掉,下次加载时按操作状态重新领取,不会继续执行旧目标
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (cancelledIds.contains(op.id())) op.setLeaseAllay(null);
+        }
+        return changed;
+    }
+
+    private static boolean satisfyExternalPlace(
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        BlockPos pos,
+        BlockState current
+    ) {
+        boolean changed = false;
+        for (ConstructionBuildOp op : List.copyOf(progress.operationsAt(pos))) {
+            if (op.kind() != ConstructionBuildOp.Kind.PLACE
+                && op.kind() != ConstructionBuildOp.Kind.ATTACHED
+                || !op.target().equals(current)
+                || op.status() == ConstructionBuildOp.Status.SKIPPED) {
+                continue;
+            }
+            if (op.leaseAllay().isPresent() || progress.hasCarriedMaterial(op.id())) {
+                continue;
+            }
+            if (op.status() == ConstructionBuildOp.Status.DELIVERED) {
+                returnRuntimeMaterial(level, progress, op);
+            }
+            ConstructionProjectionIndex.remove(level, progress.jobId(), op.pos());
+            op.setWorldSatisfied(true);
+            op.setStatus(ConstructionBuildOp.Status.DELIVERED);
+            op.setLeaseAllay(null);
+            progress.markOperationDelivered(op.id());
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static void returnRuntimeMaterial(
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        ConstructionBuildOp op
+    ) {
+        ConstructionJob job = ConstructionJobIndex.get(level).job(progress.jobId());
+        if (job == null || ConstructionCommitService.hasCommittedMaterial(progress, op)) return;
+        returnOperationLedger(level, job, progress, op);
+    }
+
+    /** 外部方块插入时先结清建设悦灵的在途材料,再让拆除悦灵接管任务。 */
+    private static void interruptBuildWorkers(
+        MinecraftServer server,
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress
+    ) {
+        returnInTransit(server, level, job, progress);
+        for (WorkingAllayEntity worker : loadedWorkers(level)) {
+            if (worker.assignedJobId().filter(job.jobId()::equals).isEmpty()) continue;
+            ConstructionBuildOp op = progress.operation(worker.taskOpId());
+            if (op == null || op.kind() == ConstructionBuildOp.Kind.DEMOLISH) continue;
+            returnWorkerCarry(server, level, job, progress, worker);
+            worker.navigator().clear();
+            worker.clearAssignment(false);
+            worker.setActionState((byte) 0);
+            worker.setWaitReason(ConstructionWaitReason.NONE);
+            ConstructionTraffic.release(level, worker.getUUID());
+        }
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() == ConstructionBuildOp.Kind.DEMOLISH || !op.isOpen()) continue;
+            if (op.leaseAllay().isEmpty()) continue;
+            op.setStatus(ConstructionBuildOp.Status.PENDING);
+            op.setLeaseAllay(null);
+            op.setApproach(null);
+        }
+    }
+
+    private static void skipPlaceAtIncludingDelivered(
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        BlockPos pos
+    ) {
+        for (ConstructionBuildOp op : List.copyOf(progress.operationsAt(pos))) {
+            if (op.kind() != ConstructionBuildOp.Kind.PLACE
+                && op.kind() != ConstructionBuildOp.Kind.ATTACHED
+                && op.kind() != ConstructionBuildOp.Kind.CONTENT
+                && op.kind() != ConstructionBuildOp.Kind.FLUID
+                && op.kind() != ConstructionBuildOp.Kind.ENTITY
+                && op.kind() != ConstructionBuildOp.Kind.DECORATE) {
+                continue;
+            }
+            if (op.status() == ConstructionBuildOp.Status.SKIPPED) continue;
+            if (op.status() == ConstructionBuildOp.Status.DELIVERED) {
+                returnRuntimeMaterial(level, progress, op);
+            }
+            ConstructionProjectionIndex.remove(level, progress.jobId(), op.pos());
+            if (op.kind() == ConstructionBuildOp.Kind.ENTITY) {
+                ConstructionEntityProjectionIndex.removeOperation(level, progress.jobId(), op.id());
+            }
+            op.setWorldSatisfied(false);
+            op.setStatus(ConstructionBuildOp.Status.SKIPPED);
+            op.setLeaseAllay(null);
+            op.setApproach(null);
+            progress.setIncomplete(true);
+        }
     }
 
     private ConstructionJobController() {
@@ -169,7 +598,13 @@ public final class ConstructionJobController {
             }
             return;
         }
+        if (job.state() == ConstructionJob.STATE_WAITING_OBSERVER) {
+            tickWaitingObserver(server, level, job, progress);
+            return;
+        }
         if (job.state() == ConstructionJob.STATE_WAITING_DEMOLITION) {
+            // 缺拆除工时不能在这里直接返回:远程休息室借调必须先有机会把拆除工送来
+            tryLaunchForJob(level, job, progress);
             if (hasAvailableDemolitionAllay(level, job, progress)) {
                 progress.setWaitReason(ConstructionWaitReason.NONE);
                 setState(server, job, ConstructionJob.STATE_DEMOLISHING);
@@ -191,6 +626,8 @@ public final class ConstructionJobController {
             }
             return;
         }
+        // 提交只写已交付操作,不需要新的作业面;施工阶段则必须先有实体刻窗口才谈得上派发
+        if (enterIfObserverMissing(server, level, job, progress, job.state())) return;
         if (job.state() == ConstructionJob.STATE_SEALING_FLUID) {
             tickSealing(server, level, job, progress);
             return;
@@ -221,10 +658,52 @@ public final class ConstructionJobController {
             }
             return;
         }
-        ConstructionWaitReason reason = currentWait(progress);
+        ConstructionWaitReason reason = currentWait(progress, level.getGameTime());
         progress.setWaitReason(reason);
         reportOnce(server, job, progress, reason);
         store.markDirty();
+    }
+
+    /**
+     * 施工阶段的观察窗口闸。规划每刻都要跑:观察者飞行、玩家路过、他人加载器出现都会改变覆盖,
+     * 停在等待观察者的任务同样得靠它才能重新算出还缺几个窗口。
+     *
+     * @param phase 用于判定相关操作的阶段;等待观察者时传入将要恢复的阶段而不是等待状态本身
+     * @return true 表示这一刻已经无窗口可用,调用方应当停下
+     */
+    private static boolean enterIfObserverMissing(
+        MinecraftServer server,
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress,
+        byte phase
+    ) {
+        ObservationCoverageService.tick(server, level, job, progress, phase);
+        if (!ObservationCoverageService.isWaitingObserver(server, job)) return false;
+        // 观察者出库和远程借调都得先有机会推进,否则停在等待状态就再也没人去建立窗口
+        tryLaunchForJob(level, job, progress);
+        if (job.state() != ConstructionJob.STATE_WAITING_OBSERVER) {
+            setWait(server, job, progress, ConstructionWaitReason.OBSERVER);
+            setState(server, job, ConstructionJob.STATE_WAITING_OBSERVER);
+        }
+        return true;
+    }
+
+    /**
+     * 等待观察者:按恢复目标阶段继续规划,窗口一建立就回到该阶段。
+     * 恢复阶段必须由进度而不是等待状态推导,否则相关操作集合会与真正要干的活错位。
+     */
+    private static void tickWaitingObserver(
+        MinecraftServer server,
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress
+    ) {
+        byte phase = resumePhase(level, job, progress);
+        if (enterIfObserverMissing(server, level, job, progress, phase)) return;
+        progress.setWaitReason(ConstructionWaitReason.NONE);
+        setState(server, job, phase);
+        ConstructionJobStore.get(server).markDirty();
     }
 
     public static void plan(ServerLevel level, ConstructionJob job, ConstructionJobProgress progress) {
@@ -252,6 +731,15 @@ public final class ConstructionJobController {
                     continue;
                 }
                 worldTargets.put(placement.worldOf(entry.pos()).asLong(), target);
+            }
+            // 原版结构通常省略空气条目,但实体的所在格仍是蓝图声明范围的一部分
+            for (StructureSnapshot.EntityEntry entry : snapshot.entities()) {
+                BlockPos entityPos = placement.worldOf(entry.blockPos());
+                worldTargets.putIfAbsent(entityPos.asLong(), Blocks.AIR.defaultBlockState());
+            }
+            progress.setDeclaredTargets(worldTargets);
+            if (!progress.clearanceStrategyRecorded()) {
+                progress.setClearanceStrategy(ownerClearanceStrategy(level, progress));
             }
             for (StructureSnapshot.BlockEntry entry : snapshot.blocks()) {
                 BlockState local = snapshot.stateOf(entry);
@@ -406,12 +894,15 @@ public final class ConstructionJobController {
                     }
                 }
             }
+            for (StructureSnapshot.EntityEntry entry : snapshot.entities()) {
+                declared.add(placement.worldOf(entry.blockPos()));
+            }
             incomplete |= linkParents(progress);
             incomplete |= extractBlockEntityContents(progress, blockEntities, level.registryAccess());
             incomplete |= extractBlockEntityFluids(progress, blockEntities, level.registryAccess());
             incomplete |= planEntities(level, snapshot, placement, progress);
             FluidSealPlanner.plan(level, declared, progress);
-            DemolitionPlanner.plan(level, declared, progress);
+            DemolitionPlanner.plan(level, declared, demolishableCells(level, progress, declared, worldTargets), progress);
             skipOrphanedChildren(progress);
             ConstructionAssembler.assignBuildOrder(level, progress);
             ServerPlayer owner = ownerInLevel(level.getServer(), job, level);
@@ -434,6 +925,37 @@ public final class ConstructionJobController {
         }
     }
 
+    /**
+     * 协调室选择保留空白时,只允许拆除与蓝图实体格重合的世界方块;
+     * 蓝图里的空气格原样留下,未认领协调室时沿用整片清场。
+     */
+    private static Set<BlockPos> demolishableCells(
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        Set<BlockPos> declared,
+        Map<Long, BlockState> worldTargets
+    ) {
+        if (progress.clearanceStrategy() != AllayClearanceStrategy.KEEP_BLANK) return declared;
+        Set<BlockPos> occupied = new HashSet<>();
+        for (BlockPos pos : declared) {
+            BlockState target = worldTargets.get(pos.asLong());
+            if (target == null || (target.isAir() && !hasEntityTargetAt(progress, pos))) continue;
+            occupied.add(pos);
+        }
+        return occupied;
+    }
+
+    private static AllayClearanceStrategy ownerClearanceStrategy(
+        ServerLevel level,
+        ConstructionJobProgress progress
+    ) {
+        if (progress.hasCoordinator()
+            && level.getBlockEntity(progress.coordinatorLounge()) instanceof AllayLoungeBlockEntity lounge) {
+            return lounge.clearanceStrategy();
+        }
+        return AllayClearanceStrategy.CLEAR_AREA;
+    }
+
     public static void pause(MinecraftServer server, ConstructionJob job) {
         ServerLevel level = server.getLevel(job.dimension());
         ConstructionJobStore store = ConstructionJobStore.get(server);
@@ -447,6 +969,8 @@ public final class ConstructionJobController {
         ConstructionJob paused = job.withState(ConstructionJob.STATE_INACTIVE);
         ConstructionJobIndex.get(server).put(paused);
         BlueprintJobSync.syncPut(server, paused);
+        ObservationCoverageService.releaseJob(server, job.jobId());
+        ConstructionTransferService.onJobEnded(server, job.jobId());
     }
 
     public static boolean cancel(MinecraftServer server, ConstructionJob job) {
@@ -491,10 +1015,12 @@ public final class ConstructionJobController {
             ConstructionProjectionIndex.clearJob(level, job.jobId());
             ConstructionEntityProjectionIndex.clearJob(level, job.jobId());
         }
+        ConstructionTransferService.onJobEnded(server, job.jobId());
         clearOnlineDisks(server, job.jobId());
         store.remove(job.jobId());
         ConstructionJobIndex.get(server).remove(job.jobId());
         BlueprintJobSync.syncRemove(server, job.jobId());
+        ObservationCoverageService.releaseJob(server, job.jobId());
         return true;
     }
 
@@ -526,7 +1052,9 @@ public final class ConstructionJobController {
                     : "message.anvilcraftplasticraft.construction.completed_incomplete"
             ));
         }
+        ConstructionTransferService.onJobEnded(server, job.jobId());
         clearOnlineDisks(server, job.jobId());
+        ObservationCoverageService.releaseJob(server, job.jobId());
         return true;
     }
 
@@ -576,7 +1104,7 @@ public final class ConstructionJobController {
                 continue;
             }
             if (op.pos().getY() != lowestOpenY) continue;
-            if (!isWithinLoungeRange(progress, op.pos())) continue;
+            if (!isAssignable(level, progress, op.pos())) continue;
             if (!enterIfDenied(level, progress, op)) return null;
             if (op.material().isEmpty() || FluidSealFill.stateOf(op.material()) == null) continue;
             BlockState current = level.getBlockState(op.pos());
@@ -637,7 +1165,7 @@ public final class ConstructionJobController {
                 || op.status() == ConstructionBuildOp.Status.SKIPPED) {
                 continue;
             }
-            if (!isWithinLoungeRange(progress, op.pos())) continue;
+            if (!isAssignable(level, progress, op.pos())) continue;
             if (!enterIfDenied(level, progress, op)) return null;
             BlockState current = level.getBlockState(op.pos());
             if (current.isAir()) {
@@ -710,9 +1238,10 @@ public final class ConstructionJobController {
                 || !isStackBatchable(op)
                 || !ItemStack.isSameItemSameComponents(op.material(), seed.material())
                 || op.status() != ConstructionBuildOp.Status.PENDING
+                || op.isDeferred(level.getGameTime())
                 || op.leaseAllay().isPresent()
                 || progress.hasCarriedMaterial(op.id())
-                || !isWithinLoungeRange(progress, op.pos())
+                || !isAssignable(level, progress, op.pos())
                 || !ConstructionPlacementLimits.canDeliver(worker, op)
                 || !level.getBlockState(op.pos()).isAir()) {
                 continue;
@@ -746,71 +1275,143 @@ public final class ConstructionJobController {
     ) {
         Map<Long, BlockState> overlay = progress.overlayStates();
         ConstructionOverlayView view = new ConstructionOverlayView(level, overlay);
+        List<ConstructionBuildOp> frontier = worker == null
+            ? List.of()
+            : nearestFrontier(candidates, worker, level.getGameTime());
+        for (ConstructionBuildOp op : frontier) {
+            AssignVerdict verdict = evaluateAssignable(level, progress, worker, carriedBy, op, overlay, view);
+            if (verdict == AssignVerdict.DENIED) return null;
+            if (verdict == AssignVerdict.ACCEPT) return op;
+        }
         for (ConstructionBuildOp op : candidates) {
-            if (op.kind() != ConstructionBuildOp.Kind.PLACE
-                && op.kind() != ConstructionBuildOp.Kind.CONTENT
-                && op.kind() != ConstructionBuildOp.Kind.FLUID
-                && op.kind() != ConstructionBuildOp.Kind.ENTITY) {
-                continue;
+            if (frontier.contains(op)) continue;
+            AssignVerdict verdict = evaluateAssignable(level, progress, worker, carriedBy, op, overlay, view);
+            if (verdict == AssignVerdict.DENIED) return null;
+            if (verdict == AssignVerdict.ACCEPT) return op;
+        }
+        return null;
+    }
+
+    /**
+     * 取队首同一层的待办目标,按离悦灵的距离重排。剥离顺序在一层之内只是逐行扫描,
+     * 成环结构会让悦灵放一块就飞到对面再飞回来;同层目标之间不存在支撑先后,
+     * 拓扑安全仍由每个候选各自的接近位与封闭复核把关,因此就近领取安全且能绕着圈施工。
+     * 跨层不重排,以保住"先铺下层、再压上层"的剥离顺序。
+     */
+    private static List<ConstructionBuildOp> nearestFrontier(
+        List<ConstructionBuildOp> candidates,
+        WorkingAllayEntity worker,
+        long gameTime
+    ) {
+        List<ConstructionBuildOp> frontier = new ArrayList<>();
+        int layer = 0;
+        for (ConstructionBuildOp op : candidates) {
+            if (op.leaseAllay().isPresent() || !isFrontierOpen(op) || op.isDeferred(gameTime)) continue;
+            if (frontier.isEmpty()) {
+                layer = op.pos().getY();
+            } else if (op.pos().getY() != layer) {
+                break;
             }
-            if (worker != null
-                && (op.kind() == ConstructionBuildOp.Kind.PLACE || op.kind() == ConstructionBuildOp.Kind.ENTITY)
-                && !ConstructionPlacementLimits.canDeliver(worker, op)) {
-                continue;
-            }
-            if (op.leaseAllay().isPresent()
-                || op.status() == ConstructionBuildOp.Status.LEASED
-                || op.status() == ConstructionBuildOp.Status.DELIVERED
-                || op.status() == ConstructionBuildOp.Status.SKIPPED) {
-                continue;
-            }
-            if (carriedBy == null) {
-                if (progress.hasCarriedMaterial(op.id())) continue;
-            } else if (!progress.isCarriedBy(carriedBy, op.id())) {
-                continue;
-            }
-            if (!isWithinLoungeRange(progress, op.pos())) continue;
-            if (!enterIfDenied(level, progress, op)) return null;
-            if (op.kind() == ConstructionBuildOp.Kind.CONTENT || op.kind() == ConstructionBuildOp.Kind.FLUID) {
-                ConstructionBuildOp parent = progress.parentOf(op);
-                if (parent == null || parent.status() != ConstructionBuildOp.Status.DELIVERED) {
-                    continue;
-                }
-                BlockPos approach = chooseApproach(level, progress, op, worker);
-                if (approach == null) continue;
-                op.setStatus(ConstructionBuildOp.Status.PENDING);
-                op.setApproach(approach);
-                return op;
-            }
-            if (op.kind() == ConstructionBuildOp.Kind.ENTITY) {
-                if (hasOpenSupportPlace(progress, op.pos())) {
-                    continue;
-                }
-                BlockPos approach = chooseApproach(level, progress, op, worker);
-                if (approach == null) continue;
-                if (entityOccupied(level, op, null)) {
-                    op.setStatus(ConstructionBuildOp.Status.WAITING_OCCUPIED);
-                    continue;
-                }
-                op.setStatus(ConstructionBuildOp.Status.PENDING);
-                op.setApproach(approach);
-                return op;
-            }
-            if (!level.getBlockState(op.pos()).isAir()) {
-                op.setStatus(ConstructionBuildOp.Status.WAITING_WORLD);
-                continue;
+            frontier.add(op);
+            if (frontier.size() >= FRONTIER_WINDOW) break;
+        }
+        if (frontier.size() < 2) return List.of();
+        Vec3 from = worker.position();
+        frontier.sort(Comparator
+            .comparingDouble((ConstructionBuildOp op) -> from.distanceToSqr(Vec3.atCenterOf(op.pos())))
+            .thenComparingInt(ConstructionBuildOp::order)
+            .thenComparingInt(ConstructionBuildOp::id));
+        return frontier;
+    }
+
+    private static boolean isFrontierOpen(ConstructionBuildOp op) {
+        return op.status() == ConstructionBuildOp.Status.PENDING
+            || op.status() == ConstructionBuildOp.Status.WAITING_WORLD
+            || op.status() == ConstructionBuildOp.Status.WAITING_OCCUPIED;
+    }
+
+    /** {@link AssignVerdict#DENIED} 表示权限被拒,整轮派发必须中止而不是换个目标继续。 */
+    private enum AssignVerdict {
+        REJECT,
+        DENIED,
+        ACCEPT
+    }
+
+    private static AssignVerdict evaluateAssignable(
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        @Nullable WorkingAllayEntity worker,
+        @Nullable UUID carriedBy,
+        ConstructionBuildOp op,
+        Map<Long, BlockState> overlay,
+        ConstructionOverlayView view
+    ) {
+        if (op.kind() != ConstructionBuildOp.Kind.PLACE
+            && op.kind() != ConstructionBuildOp.Kind.CONTENT
+            && op.kind() != ConstructionBuildOp.Kind.FLUID
+            && op.kind() != ConstructionBuildOp.Kind.ENTITY
+            && op.kind() != ConstructionBuildOp.Kind.DECORATE) {
+            return AssignVerdict.REJECT;
+        }
+        if (worker != null
+            && (op.kind() == ConstructionBuildOp.Kind.PLACE || op.kind() == ConstructionBuildOp.Kind.ENTITY)
+            && !ConstructionPlacementLimits.canDeliver(worker, op)) {
+            return AssignVerdict.REJECT;
+        }
+        if (op.leaseAllay().isPresent()
+            || op.status() == ConstructionBuildOp.Status.LEASED
+            || op.status() == ConstructionBuildOp.Status.DELIVERED
+            || op.status() == ConstructionBuildOp.Status.SKIPPED) {
+            return AssignVerdict.REJECT;
+        }
+        if (op.isDeferred(level.getGameTime())) return AssignVerdict.REJECT;
+        if (carriedBy == null) {
+            if (progress.hasCarriedMaterial(op.id())) return AssignVerdict.REJECT;
+        } else if (!progress.isCarriedBy(carriedBy, op.id())) {
+            return AssignVerdict.REJECT;
+        }
+        if (!isAssignable(level, progress, op.pos())) return AssignVerdict.REJECT;
+        if (!enterIfDenied(level, progress, op)) return AssignVerdict.DENIED;
+        if (op.kind() == ConstructionBuildOp.Kind.CONTENT
+            || op.kind() == ConstructionBuildOp.Kind.FLUID
+            || op.kind() == ConstructionBuildOp.Kind.DECORATE) {
+            ConstructionBuildOp parent = progress.parentOf(op);
+            if (parent == null || parent.status() != ConstructionBuildOp.Status.DELIVERED) {
+                return AssignVerdict.REJECT;
             }
             BlockPos approach = chooseApproach(level, progress, op, worker);
-            if (approach == null) continue;
-            if (groupOccupied(level, progress, op, overlay, view, null)) {
+            if (approach == null) return AssignVerdict.REJECT;
+            op.setStatus(ConstructionBuildOp.Status.PENDING);
+            op.setApproach(approach);
+            return AssignVerdict.ACCEPT;
+        }
+        if (op.kind() == ConstructionBuildOp.Kind.ENTITY) {
+            if (hasOpenSupportPlace(progress, op.pos())) {
+                return AssignVerdict.REJECT;
+            }
+            BlockPos approach = chooseApproach(level, progress, op, worker);
+            if (approach == null) return AssignVerdict.REJECT;
+            if (entityOccupied(level, op, null)) {
                 op.setStatus(ConstructionBuildOp.Status.WAITING_OCCUPIED);
-                continue;
+                return AssignVerdict.REJECT;
             }
             op.setStatus(ConstructionBuildOp.Status.PENDING);
             op.setApproach(approach);
-            return op;
+            return AssignVerdict.ACCEPT;
         }
-        return null;
+        if (!level.getBlockState(op.pos()).isAir()) {
+            op.setStatus(ConstructionBuildOp.Status.WAITING_WORLD);
+            return AssignVerdict.REJECT;
+        }
+        BlockPos approach = chooseApproach(level, progress, op, worker);
+        if (approach == null) return AssignVerdict.REJECT;
+        if (groupOccupied(level, progress, op, overlay, view, null)) {
+            op.setStatus(ConstructionBuildOp.Status.WAITING_OCCUPIED);
+            return AssignVerdict.REJECT;
+        }
+        op.setStatus(ConstructionBuildOp.Status.PENDING);
+        op.setApproach(approach);
+        return AssignVerdict.ACCEPT;
     }
 
     public static boolean tryDeliver(ServerLevel level, ConstructionJobProgress progress, ConstructionBuildOp op) {
@@ -824,7 +1425,9 @@ public final class ConstructionJobController {
         @Nullable Entity ignore
     ) {
         if (!enterIfDenied(level, progress, op)) return false;
-        if (op.kind() == ConstructionBuildOp.Kind.CONTENT || op.kind() == ConstructionBuildOp.Kind.FLUID) {
+        if (op.kind() == ConstructionBuildOp.Kind.CONTENT
+            || op.kind() == ConstructionBuildOp.Kind.FLUID
+            || op.kind() == ConstructionBuildOp.Kind.DECORATE) {
             return tryDeliverContent(level, progress, op);
         }
         if (op.kind() == ConstructionBuildOp.Kind.ENTITY) {
@@ -862,6 +1465,7 @@ public final class ConstructionJobController {
             return false;
         }
         markOpDone(level, progress, op);
+        refreshSignDecoration(level, progress, op);
         deliverAttached(level, progress, op, overlay);
         ConstructionProjectionIndex.refreshNeighbors(level, op.pos(), overlay);
         return true;
@@ -877,7 +1481,29 @@ public final class ConstructionJobController {
             return false;
         }
         markOpDone(level, progress, op);
+        if (op.kind() == ConstructionBuildOp.Kind.DECORATE) {
+            refreshSignDecoration(level, progress, parent);
+        }
         return true;
+    }
+
+    /**
+     * 已交付假告示牌先空白,再随每条 DECORATE 交付逐项显示。
+     * 只有 DELIVERED 才清掉掩码位:跳过的加工项永远不会写进最终方块实体,
+     * 假方块也必须一直空着,否则会预告一个提交后并不存在的效果。
+     */
+    private static void refreshSignDecoration(
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        ConstructionBuildOp parent
+    ) {
+        int pending = 0;
+        for (ConstructionBuildOp child : progress.childrenOf(parent)) {
+            if (child.kind() != ConstructionBuildOp.Kind.DECORATE) continue;
+            if (child.status() == ConstructionBuildOp.Status.DELIVERED) continue;
+            pending |= SignDecorationAdapter.maskOf(child.slot());
+        }
+        ConstructionProjectionIndex.setPendingDecorations(level, progress.jobId(), parent.pos(), pending);
     }
 
     private static boolean tryDeliverEntity(
@@ -956,7 +1582,10 @@ public final class ConstructionJobController {
             op.setStatus(ConstructionBuildOp.Status.WAITING_OCCUPIED);
             return false;
         }
-        level.setBlockAndUpdate(op.pos(), fill);
+        withoutWorldChangeObservation(() -> {
+            level.setBlockAndUpdate(op.pos(), fill);
+            return null;
+        });
         markOpDone(level, progress, op);
         return true;
     }
@@ -1143,7 +1772,8 @@ public final class ConstructionJobController {
                 if ((op.kind() == ConstructionBuildOp.Kind.PLACE
                     || op.kind() == ConstructionBuildOp.Kind.CONTENT
                     || op.kind() == ConstructionBuildOp.Kind.FLUID
-                    || op.kind() == ConstructionBuildOp.Kind.ENTITY)
+                    || op.kind() == ConstructionBuildOp.Kind.ENTITY
+                    || op.kind() == ConstructionBuildOp.Kind.DECORATE)
                     && sameItem) {
                     op.setStatus(ConstructionBuildOp.Status.SKIPPED);
                     op.setLeaseAllay(null);
@@ -1168,6 +1798,36 @@ public final class ConstructionJobController {
         ConstructionJobStore.get(server).markDirty();
     }
 
+    /**
+     * 反复确认飞不到的目标只做退避,绝不作废。只释放租约会被托管台账立刻重领同一操作、
+     * 悦灵原地空转,所以这里把材料退回料源、把操作退回待办并压一段冷却:
+     * 冷却期内派发轮空,别的位置照常施工;冷却结束后由任意悦灵重新挑接近位再试。
+     * 未建成的位置永远留在施工阶段,不计入残缺,也不让任务提前收敛到完成。
+     */
+    public static void deferUnreachable(
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        ConstructionBuildOp op,
+        WorkingAllayEntity worker
+    ) {
+        if (op.status() == ConstructionBuildOp.Status.DELIVERED
+            || op.status() == ConstructionBuildOp.Status.SKIPPED) {
+            return;
+        }
+        op.deferUntil(level.getGameTime() + UNREACHABLE_RETRY_TICKS);
+        ConstructionJob job = ConstructionJobIndex.get(level).job(progress.jobId());
+        if (job != null) {
+            // 材料留在悦灵手上会一直锁住这个位置,先按台账退回休息室或所有者,让别的悦灵能重新取料
+            returnWorkerCarry(level.getServer(), level, job, progress, worker);
+        }
+        op.setLeaseAllay(null);
+        op.setApproach(null);
+        if (op.status() == ConstructionBuildOp.Status.LEASED) {
+            op.setStatus(ConstructionBuildOp.Status.PENDING);
+        }
+        ConstructionJobStore.get(level).markDirty();
+    }
+
     public static void onShortageStrategyChanged(ServerPlayer player, AllayShortageStrategy strategy) {
         ConstructionJob job = ConstructionJobIndex.get(player.server)
             .activeJobOf(player.server, player.getUUID())
@@ -1186,6 +1846,142 @@ public final class ConstructionJobController {
         if (jobId == null) return;
         ConstructionJob job = ConstructionJobIndex.get(level.getServer()).job(jobId);
         applySkipIfWaiting(level.getServer(), job, strategy);
+    }
+
+    /** 清场策略改动后同步已认领任务，避免任务仍沿用首次规划时的旧值。 */
+    public static void onLoungeClearanceStrategyChanged(
+        ServerLevel level,
+        BlockPos loungePos,
+        AllayClearanceStrategy strategy
+    ) {
+        AllayClearanceStrategy selected = strategy == null
+            ? AllayClearanceStrategy.CLEAR_AREA
+            : strategy;
+        MinecraftServer server = level.getServer();
+        ConstructionJobStore store = ConstructionJobStore.get(server);
+        for (ConstructionJob job : ConstructionJobIndex.get(server).jobsIn(level)) {
+            ConstructionJobProgress progress = store.get(job.jobId());
+            if (progress == null
+                || !loungePos.equals(progress.coordinatorLounge())) {
+                continue;
+            }
+            progress.setClearanceStrategy(selected);
+            if (!progress.planned()) {
+                store.markDirty();
+                continue;
+            }
+            boolean changed = reconcileClearanceDemolitions(level, job, progress, selected);
+            ConstructionJob current = ConstructionJobIndex.get(server).job(job.jobId());
+            if (current != null && current.isActive()) {
+                if (selected == AllayClearanceStrategy.CLEAR_AREA
+                    && progress.hasOpenDemolish()
+                    && current.state() != ConstructionJob.STATE_DEMOLISHING
+                    && current.state() != ConstructionJob.STATE_WAITING_DEMOLITION) {
+                    interruptBuildWorkers(server, level, current, progress);
+                    setState(server, current, ConstructionJob.STATE_DEMOLISHING);
+                } else if (selected == AllayClearanceStrategy.KEEP_BLANK
+                    && changed
+                    && (current.state() == ConstructionJob.STATE_DEMOLISHING
+                        || current.state() == ConstructionJob.STATE_WAITING_DEMOLITION)
+                    && progress.allDemolishResolved()) {
+                    setState(server, current, nextPhase(progress));
+                }
+            }
+            store.markDirty();
+        }
+    }
+
+    private static boolean reconcileClearanceDemolitions(
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress,
+        AllayClearanceStrategy strategy
+    ) {
+        Set<BlockPos> declared = new HashSet<>();
+        for (long packed : progress.declaredTargets().keySet()) {
+            declared.add(BlockPos.of(packed));
+        }
+        if (strategy == AllayClearanceStrategy.CLEAR_AREA) {
+            Set<BlockPos> blankCells = new HashSet<>();
+            for (BlockPos pos : declared) {
+                if (isExplicitBlankCell(progress, pos)) blankCells.add(pos);
+            }
+            boolean changed = reactivateSkippedBlankDemolitions(level, progress, blankCells);
+            int before = progress.operations().size();
+            // 这里只补扫显式空白格;非空白格的运行时冲突已经由世界变更观察器追加,
+            // 不能把已经满足的最终目标方块误当成需要重新拆除的旧方块。
+            DemolitionPlanner.plan(level, declared, blankCells, progress);
+            if (progress.operations().size() != before) changed = true;
+            if (changed) {
+                ConstructionAssembler.assignBuildOrder(level, progress);
+            }
+            return changed;
+        }
+
+        Set<UUID> cancelledAllays = new HashSet<>();
+        boolean changed = false;
+        for (ConstructionBuildOp op : List.copyOf(progress.operations())) {
+            if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH
+                || op.shell()
+                || !isExplicitBlankCell(progress, op.pos())
+                || op.status() == ConstructionBuildOp.Status.DELIVERED
+                || op.status() == ConstructionBuildOp.Status.SKIPPED) {
+                continue;
+            }
+            op.leaseAllay().ifPresent(cancelledAllays::add);
+            op.setStatus(ConstructionBuildOp.Status.SKIPPED);
+            op.setLeaseAllay(null);
+            op.setApproach(null);
+            changed = true;
+        }
+        if (!cancelledAllays.isEmpty()) {
+            for (WorkingAllayEntity worker : loadedWorkers(level)) {
+                if (!cancelledAllays.contains(worker.getUUID())
+                    || worker.assignedJobId().filter(job.jobId()::equals).isEmpty()) {
+                    continue;
+                }
+                worker.navigator().clear();
+                worker.clearAssignment(false);
+                worker.setActionState((byte) 0);
+                worker.setWaitReason(ConstructionWaitReason.NONE);
+                ConstructionTraffic.release(level, worker.getUUID());
+            }
+        }
+        return changed;
+    }
+
+    /** CLEAR_AREA 重新启用此前因 KEEP_BLANK 跳过、但世界中仍存在的空白格拆除。 */
+    private static boolean reactivateSkippedBlankDemolitions(
+        ServerLevel level,
+        ConstructionJobProgress progress,
+        Set<BlockPos> blankCells
+    ) {
+        boolean changed = false;
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH
+                || op.shell()
+                || op.status() != ConstructionBuildOp.Status.SKIPPED
+                || !blankCells.contains(op.pos())) {
+                continue;
+            }
+            BlockState current = level.getBlockState(op.pos());
+            if (current.isAir()
+                || FluidSealPlanner.isSealableFluid(current)
+                || StonecutterSmashAdapter.isPermanentObstacle(level, op.pos(), current)) {
+                continue;
+            }
+            op.setWorldSatisfied(false);
+            op.setStatus(ConstructionBuildOp.Status.PENDING);
+            op.setLeaseAllay(null);
+            op.setApproach(null);
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static boolean isExplicitBlankCell(ConstructionJobProgress progress, BlockPos pos) {
+        BlockState target = progress.declaredTarget(pos);
+        return target != null && target.isAir() && !hasEntityTargetAt(progress, pos);
     }
 
     private static void applySkipIfWaiting(
@@ -1504,7 +2300,8 @@ public final class ConstructionJobController {
         return op.kind() == ConstructionBuildOp.Kind.PLACE
             || op.kind() == ConstructionBuildOp.Kind.CONTENT
             || op.kind() == ConstructionBuildOp.Kind.FLUID
-            || op.kind() == ConstructionBuildOp.Kind.ENTITY;
+            || op.kind() == ConstructionBuildOp.Kind.ENTITY
+            || op.kind() == ConstructionBuildOp.Kind.DECORATE;
     }
 
     private static boolean canPlaceLongReach(WorkingAllayEntity worker) {
@@ -1644,16 +2441,31 @@ public final class ConstructionJobController {
     }
 
     private static void refreshWorldWaits(ServerLevel level, ConstructionJobProgress progress) {
-        for (ConstructionBuildOp op : progress.waitingWorldPlaces()) {
-            if (level.getBlockState(op.pos()).isAir()) {
+        for (ConstructionBuildOp op : List.copyOf(progress.operations())) {
+            if (op.kind() != ConstructionBuildOp.Kind.PLACE
+                || op.status() != ConstructionBuildOp.Status.WAITING_WORLD) {
+                continue;
+            }
+            // 世界等待复查同样要读方块状态,未加载区块只能等窗口推进过去再复查
+            if (!ObservationCoverageService.isWorkable(level, op.pos())) continue;
+            BlockState current = level.getBlockState(op.pos());
+            if (current.isAir()) {
                 op.setStatus(ConstructionBuildOp.Status.PENDING);
+            } else if (current.equals(op.target())
+                && op.leaseAllay().isEmpty()
+                && !progress.hasCarriedMaterial(op.id())) {
+                ConstructionProjectionIndex.remove(level, progress.jobId(), op.pos());
+                op.setWorldSatisfied(true);
+                op.setStatus(ConstructionBuildOp.Status.DELIVERED);
+                progress.markOperationDelivered(op.id());
             }
         }
     }
 
-    private static ConstructionWaitReason currentWait(ConstructionJobProgress progress) {
+    private static ConstructionWaitReason currentWait(ConstructionJobProgress progress, long gameTime) {
         if (progress.hasWaitingOccupied()) return ConstructionWaitReason.OCCUPIED;
         if (progress.hasWaitingWorld() && !progress.hasOpenPlace()) return ConstructionWaitReason.WORLD;
+        if (progress.stalledByUnreachable(gameTime)) return ConstructionWaitReason.UNREACHABLE;
         return ConstructionWaitReason.NONE;
     }
 
@@ -1795,10 +2607,18 @@ public final class ConstructionJobController {
         WorkingAllayEntity worker
     ) {
         ItemStack physical = worker.hostedCarry().copy();
-        int reservedForOtherJobs = otherTaskClaimCount(server, progress, worker.getUUID(), physical);
-        int available = physical.getCount() - reservedForOtherJobs;
+        int reservedForOtherJobs = Math.min(
+            physical.getCount(),
+            otherTaskClaimCount(server, progress, worker.getUUID(), physical)
+        );
+        int available = Math.max(0, physical.getCount() - reservedForOtherJobs);
         ServerPlayer owner = findOwner(server, level, job.owner());
         List<ConstructionLedgerEntry> entries = progress.carriedEntries(worker.getUUID());
+        boolean assigned = worker.assignedJobId().filter(job.jobId()::equals).isPresent();
+        if (!assigned && !entries.isEmpty()) {
+            // 旧版本在无租约时会把同一批材料落在悦灵脚边;先回收入库再结算台账,避免再次供料时复制。
+            returnNearbyOrphanDrops(level, job, progress, worker, entries);
+        }
         for (ConstructionLedgerEntry entry : entries) {
             ItemStack accounted = entry.stack().copy();
             int matching = matchingCount(physical.copyWithCount(available), accounted);
@@ -1807,8 +2627,8 @@ public final class ConstructionJobController {
                 giveOrDrop(owner, level, job, progress, returned);
                 available -= matching;
             }
-            // 若实体携带物少于台账，台账只标记结清，不再凭空补发同一物品。
             progress.markCarryReturned(entry);
+            resetReturnedOperation(progress, entry.operationId());
         }
         Set<Integer> returnedOperations = new HashSet<>();
         for (ConstructionLedgerEntry entry : progress.ledger()) {
@@ -1828,13 +2648,53 @@ public final class ConstructionJobController {
             available -= op.returnStack().getCount();
             progress.markDeliveredReturned(op.id());
         }
-        boolean assigned = worker.assignedJobId().filter(job.jobId()::equals).isPresent();
-        if (assigned && available > 0) {
+        if ((assigned || !entries.isEmpty()) && available > 0) {
             giveOrDrop(owner, level, job, progress, physical.copyWithCount(available));
             available = 0;
         }
-        int retained = reservedForOtherJobs + available;
+        int retained = Math.min(physical.getCount(), reservedForOtherJobs + available);
         worker.setHostedCarry(retained == 0 ? ItemStack.EMPTY : physical.copyWithCount(retained));
+        if (!entries.isEmpty()) ConstructionJobStore.get(server).markDirty();
+    }
+
+    private static void resetReturnedOperation(ConstructionJobProgress progress, int operationId) {
+        if (progress.hasCarriedMaterial(operationId)) return;
+        ConstructionBuildOp op = progress.operation(operationId);
+        if (op == null || op.status() == ConstructionBuildOp.Status.DELIVERED
+            || op.status() == ConstructionBuildOp.Status.SKIPPED) {
+            return;
+        }
+        op.setLeaseAllay(null);
+        op.setApproach(null);
+        if (op.status() == ConstructionBuildOp.Status.LEASED) {
+            op.setStatus(ConstructionBuildOp.Status.PENDING);
+        }
+    }
+
+    private static void returnNearbyOrphanDrops(
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress,
+        WorkingAllayEntity worker,
+        List<ConstructionLedgerEntry> entries
+    ) {
+        AABB search = worker.getBoundingBox().inflate(1.25D);
+        for (ItemEntity entity : level.getEntitiesOfClass(ItemEntity.class, search)) {
+            if (!entity.isAlive() || ConstructionDebris.isMarked(entity.getItem())) continue;
+            if (entity.getAge() <= 100 && entity.hasPickUpDelay()) continue;
+            ItemStack stack = entity.getItem();
+            boolean matches = entries.stream().anyMatch(entry ->
+                ItemStack.isSameItemSameComponents(stack, entry.stack()));
+            if (!matches) continue;
+            entity.discard();
+            giveOrDrop(
+                findOwner(level.getServer(), level, job.owner()),
+                level,
+                job,
+                progress,
+                stack.copy()
+            );
+        }
     }
 
     private static void settleCancelledWorkerCarry(
@@ -2049,6 +2909,134 @@ public final class ConstructionJobController {
         }
     }
 
+    /**
+     * 托管携带物是否登记在任一施工台账里。自由收集来的物品没有台账,
+     * 只能走收集卸货路径;调用方是携带物变化时的一次性判定,不适合每刻调用。
+     */
+    public static boolean hasEscrowCarry(WorkingAllayEntity drone) {
+        ItemStack carry = drone.hostedCarry();
+        if (carry.isEmpty() || !(drone.level() instanceof ServerLevel level)) return false;
+        UUID droneId = drone.getUUID();
+        for (ConstructionJobProgress progress : ConstructionJobStore.get(level).progresses()) {
+            if (!progress.carriedEntries(droneId).isEmpty()) return true;
+            if (hasPendingReturnCarry(progress, droneId, carry)) return true;
+        }
+        return false;
+    }
+
+    /** 台账仍记着悦灵在途,即使实体重载后手上的物品暂时为空也不能把它当作普通悦灵。 */
+    public static boolean hasEscrowLedger(WorkingAllayEntity drone) {
+        if (!(drone.level() instanceof ServerLevel level)) return false;
+        UUID droneId = drone.getUUID();
+        for (ConstructionJobProgress progress : ConstructionJobStore.get(level).progresses()) {
+            if (!progress.carriedEntries(droneId).isEmpty()) return true;
+        }
+        return false;
+    }
+
+    /** 判断实体当前实物是否足以兑现至少一条在途材料,避免按台账凭空装载。 */
+    public static boolean hasPhysicalCarriedMaterial(
+        MinecraftServer server,
+        ConstructionJobProgress progress,
+        WorkingAllayEntity worker
+    ) {
+        ItemStack physical = worker.hostedCarry();
+        if (physical.isEmpty()) return false;
+        int available = physical.getCount() - otherTaskClaimCount(server, progress, worker.getUUID(), physical);
+        if (available <= 0) return false;
+        ItemStack availableStack = physical.copyWithCount(available);
+        for (ConstructionLedgerEntry entry : progress.carriedEntries(worker.getUUID())) {
+            if (matchingCount(availableStack, entry.stack()) >= entry.stack().getCount()) return true;
+        }
+        return false;
+    }
+
+    /** 重载后补回协调室绑定;只有绑定恢复后才允许建设悦灵重新领取在途操作。 */
+    public static boolean restoreWorkerBinding(
+        WorkingAllayEntity worker,
+        ConstructionJobProgress progress
+    ) {
+        if (!(worker.level() instanceof ServerLevel level)) return false;
+        ConstructionJob job = ConstructionJobIndex.get(level).job(progress.jobId());
+        UUID workerOwner = worker.getOwner().orElse(null);
+        if (job == null
+            || !job.isActive()
+            || !job.dimension().equals(level.dimension())
+            || workerOwner == null
+            || !ConstructionPermission.areCollaborators(level.getServer(), workerOwner, job.owner())) {
+            return false;
+        }
+        if (progress.hasCoordinator()) {
+            BlockPos loungePos = progress.coordinatorLounge();
+            if (!(level.getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge)
+                || !lounge.canHost(worker)) {
+                return false;
+            }
+            if (!loungePos.equals(worker.homeLoungePos())) {
+                worker.setHomeLounge(loungePos);
+            }
+            if (!isBoundToCoordinator(worker, progress)) return false;
+        }
+        recoverNearbyCarry(worker, level, progress);
+        if (worker.assignedJobId().isPresent() || !hasPhysicalCarriedMaterial(level.getServer(), progress, worker)) {
+            return true;
+        }
+        ConstructionBuildOp op = nextAssignableCarried(level, progress, worker);
+        if (op == null) return true;
+        op.setStatus(ConstructionBuildOp.Status.LEASED);
+        op.setLeaseAllay(worker.getUUID());
+        worker.assign(progress.jobId(), op.id());
+        op.approach().ifPresent(approach -> ConstructionTraffic.reserveApproach(level, worker.getUUID(), approach));
+        ConstructionJobStore.get(level).markDirty();
+        return true;
+    }
+
+    /** 回收重载前同一悦灵在附近留下的无标记旧掉落,只认老化且与在途台账完全相同的物品。 */
+    private static void recoverNearbyCarry(
+        WorkingAllayEntity worker,
+        ServerLevel level,
+        ConstructionJobProgress progress
+    ) {
+        ItemStack carry = worker.hostedCarry().copy();
+        AABB search = worker.getBoundingBox().inflate(2.0D);
+        for (ItemEntity entity : level.getEntitiesOfClass(ItemEntity.class, search)) {
+            if (!entity.isAlive() || entity.getAge() <= 100 || ConstructionDebris.isMarked(entity.getItem())) continue;
+            ItemStack ground = entity.getItem();
+            boolean matches = progress.carriedEntries(worker.getUUID()).stream().anyMatch(entry ->
+                ItemStack.isSameItemSameComponents(ground, entry.stack()));
+            if (!matches || !ItemStack.isSameItemSameComponents(carry, ground)
+                && !carry.isEmpty()) {
+                continue;
+            }
+            int room = carry.isEmpty() ? ground.getMaxStackSize() : carry.getMaxStackSize() - carry.getCount();
+            if (room <= 0) break;
+            int taken = Math.min(room, ground.getCount());
+            if (carry.isEmpty()) carry = ground.copyWithCount(taken);
+            else carry.grow(taken);
+            ground.shrink(taken);
+            if (ground.isEmpty()) entity.discard();
+            if (carry.getCount() >= carry.getMaxStackSize()) break;
+        }
+        if (!ItemStack.matches(carry, worker.hostedCarry())) worker.setHostedCarry(carry);
+    }
+
+    /** 交付后手上剩下的空桶、树脂球等返还物同样归台账管,凭已交付条目登记的返还物匹配识别。 */
+    private static boolean hasPendingReturnCarry(ConstructionJobProgress progress, UUID droneId, ItemStack carry) {
+        for (ConstructionLedgerEntry entry : progress.ledger()) {
+            if (!droneId.equals(entry.allayId())
+                || entry.state() != ConstructionLedgerEntry.State.DELIVERED) {
+                continue;
+            }
+            ConstructionBuildOp op = progress.operation(entry.operationId());
+            if (op != null
+                && !op.returnStack().isEmpty()
+                && ItemStack.isSameItemSameComponents(carry, op.returnStack())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** 无人机飞到所有者触及范围后把托管携带物塞回背包,并勾掉对应台账。 */
     public static void depositHostedCarry(WorkingAllayEntity drone, ServerPlayer player) {
         ItemStack carry = drone.hostedCarry();
@@ -2136,7 +3124,6 @@ public final class ConstructionJobController {
             return false;
         }
         ConstructionJobIndex index = ConstructionJobIndex.get(player.server);
-        boolean foundJob = false;
         for (ConstructionJobProgress progress : ConstructionJobStore.get(player.server).progresses()) {
             boolean carriedByWorker = progress.ledger().stream().anyMatch(entry ->
                 drone.getUUID().equals(entry.allayId())
@@ -2151,9 +3138,9 @@ public final class ConstructionJobController {
                 || !ConstructionPermission.canModify(level, player.blockPosition(), job.owner())) {
                 return false;
             }
-            foundJob = true;
         }
-        return foundJob;
+        // 没有任何台账的携带物是自由收集物,只要协作权限允许就能交还,否则会永远卡在悦灵身上
+        return true;
     }
 
     private static boolean canDepositCarryToLounge(
@@ -2171,7 +3158,6 @@ public final class ConstructionJobController {
             return false;
         }
         ConstructionJobIndex index = ConstructionJobIndex.get(level.getServer());
-        boolean foundJob = false;
         for (ConstructionJobProgress progress : ConstructionJobStore.get(level.getServer()).progresses()) {
             boolean carriedByWorker = progress.ledger().stream().anyMatch(entry ->
                 drone.getUUID().equals(entry.allayId())
@@ -2187,9 +3173,9 @@ public final class ConstructionJobController {
                 || !ConstructionPermission.areCollaborators(level.getServer(), lounge.owner(), job.owner())) {
                 return false;
             }
-            foundJob = true;
         }
-        return foundJob;
+        // 没有任何台账的携带物是自由收集物,只要休息室权限允许就能入库,否则会永远塞不进容器
+        return true;
     }
 
     private static void giveOrDrop(
@@ -2429,6 +3415,7 @@ public final class ConstructionJobController {
         int count = 0;
         for (WorkingAllayEntity worker : loadedWorkers(level, job.owner())) {
             if (!worker.isAlive()) continue;
+            if (worker.transitJobId().filter(job.jobId()::equals).isPresent()) continue;
             UUID assigned = worker.assignedJobId().orElse(null);
             if (assigned != null && !assigned.equals(job.jobId())) continue;
             boolean bound = isBoundToCoordinator(worker, progress);
@@ -2445,7 +3432,8 @@ public final class ConstructionJobController {
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
-        return participantCount(level, job, progress) < MAX_PARTICIPANTS;
+        return participantCount(level, job, progress)
+            + ConstructionTransferService.inTransitCount(level.getServer(), job.jobId()) < MAX_PARTICIPANTS;
     }
 
     private static boolean hasSkippedPlace(ConstructionJobProgress progress) {
@@ -2453,7 +3441,8 @@ public final class ConstructionJobController {
             if ((op.kind() == ConstructionBuildOp.Kind.PLACE
                 || op.kind() == ConstructionBuildOp.Kind.CONTENT
                 || op.kind() == ConstructionBuildOp.Kind.FLUID
-                || op.kind() == ConstructionBuildOp.Kind.ENTITY)
+                || op.kind() == ConstructionBuildOp.Kind.ENTITY
+                || op.kind() == ConstructionBuildOp.Kind.DECORATE)
                 && op.status() == ConstructionBuildOp.Status.SKIPPED) {
                 return true;
             }
@@ -2500,7 +3489,9 @@ public final class ConstructionJobController {
             if (nbt == null) continue;
             BlockEntityContentAdapter.Extracted extracted =
                 BlockEntityContentAdapter.extract(place.target(), nbt, registries);
-            place.setBlockEntity(extracted.config());
+            SignDecorationAdapter.Extracted decorated =
+                SignDecorationAdapter.extract(place.target(), extracted.config(), registries);
+            place.setBlockEntity(decorated.config());
             if (extracted.unmapped()) {
                 progress.addOperation(
                     place.pos(),
@@ -2522,6 +3513,18 @@ public final class ConstructionJobController {
                 );
                 child.setParentId(place.id());
                 child.setSlot(content.slot());
+            }
+            for (SignDecorationAdapter.Decoration decoration : decorated.decorations()) {
+                ConstructionBuildOp child = progress.addOperation(
+                    place.pos(),
+                    place.target(),
+                    decoration.material(),
+                    ConstructionBuildOp.Kind.DECORATE,
+                    ConstructionBuildOp.Status.PENDING
+                );
+                child.setParentId(place.id());
+                child.setSlot(decoration.slot());
+                child.setBlockEntity(decoration.payload());
             }
         }
         return incomplete;
@@ -2751,11 +3754,7 @@ public final class ConstructionJobController {
         ConstructionJob job,
         ConstructionJobProgress progress
     ) {
-        if (!isSourceAvailable(server, level, job, progress)) {
-            setWait(server, job, progress, ConstructionWaitReason.SOURCE);
-            setState(server, job, ConstructionJob.STATE_SOURCE_UNAVAILABLE);
-            return;
-        }
+        // 拆除悦灵不取料;来源不可用只应阻断封堵/建设,不能让反应式拆除永远等箱子恢复
         tryLaunchForJob(level, job, progress);
         if (progress.allDemolishResolved()) {
             reconcileDebris(level, job, progress);
@@ -2767,7 +3766,9 @@ public final class ConstructionJobController {
             storeDirty(level);
             return;
         }
-        if (!progress.hasLeasedDemolish() && !hasAvailableDemolitionAllay(level, job, progress)) {
+        if (!progress.hasLeasedDemolish()
+            && ConstructionTransferService.inTransitCount(level.getServer(), job.jobId(), AllayCapability.DEMOLISH) == 0
+            && !hasAvailableDemolitionAllay(level, job, progress)) {
             applyDemolitionShortage(server, job, progress, ownerShortageStrategy(level, job, progress));
             return;
         }
@@ -2796,8 +3797,9 @@ public final class ConstructionJobController {
         ConstructionJobProgress progress
     ) {
         if (progress.hasCoordinator()) {
+            if (nextAssignableDemolish(level, progress) == null) return false;
             return hasBoundCapability(level, job, progress, AllayCapability.DEMOLISH)
-                && nextAssignableDemolish(level, progress) != null;
+                || ConstructionTransferService.inTransitCount(level.getServer(), job.jobId(), AllayCapability.DEMOLISH) > 0;
         }
         for (WorkingAllayEntity drone : loadedWorkers(level, job.owner())) {
             if (!isWorkerAvailableForJob(level, drone, job, progress)) continue;
@@ -3072,7 +4074,8 @@ public final class ConstructionJobController {
             && (op.writesProjection()
                 || op.kind() == ConstructionBuildOp.Kind.CONTENT
                 || op.kind() == ConstructionBuildOp.Kind.FLUID
-                || op.kind() == ConstructionBuildOp.Kind.ENTITY);
+                || op.kind() == ConstructionBuildOp.Kind.ENTITY
+                || op.kind() == ConstructionBuildOp.Kind.DECORATE);
     }
 
     private static byte resumeAfterPermission(ConstructionJobProgress progress) {
@@ -3355,6 +4358,8 @@ public final class ConstructionJobController {
                 }
                 ConstructionJobStore.get(server).markDirty();
             }
+            // 协调室被撤销后任务再无落脚点,清空在途台账,让已借调的悦灵沿链返程
+            ConstructionTransferService.onJobEnded(server, jobId);
         }
     }
 
@@ -3430,7 +4435,8 @@ public final class ConstructionJobController {
         if (progress.hasCoordinator()) return isBoundToCoordinator(worker, progress);
         if (hasActiveCoordinatorBindingToOtherJob(level, worker, job.jobId())) return false;
         if (worker.assignedJobId().filter(progress.jobId()::equals).isPresent()) return true;
-        return participantCount(level, job, progress) < MAX_PARTICIPANTS;
+        return participantCount(level, job, progress)
+            + ConstructionTransferService.inTransitCount(level.getServer(), job.jobId()) < MAX_PARTICIPANTS;
     }
 
     /** 返回悦灵当前已持有租约对应的任务，避免团队关系变化后切到另一份活动任务。 */
@@ -3438,9 +4444,15 @@ public final class ConstructionJobController {
     public static ConstructionJob jobForWorker(ServerLevel level, WorkingAllayEntity worker) {
         ConstructionJobIndex index = ConstructionJobIndex.get(level);
         UUID assigned = worker.assignedJobId().orElse(null);
-        if (assigned != null) return index.job(assigned);
+        if (assigned != null) {
+            ConstructionJob assignedJob = index.job(assigned);
+            if (assignedJob != null) return assignedJob;
+        }
         UUID owner = worker.getOwner().orElse(null);
         if (owner == null) return null;
+
+        ConstructionJob carried = carriedJobForWorker(level, worker, index, owner);
+        if (carried != null) return carried;
 
         ConstructionJob coordinated = coordinatorJobForWorker(level, worker, index);
         if (coordinated != null) return coordinated;
@@ -3473,6 +4485,37 @@ public final class ConstructionJobController {
             }
         }
         return own != null ? own : teammate;
+    }
+
+    @Nullable
+    private static ConstructionJob carriedJobForWorker(
+        ServerLevel level,
+        WorkingAllayEntity worker,
+        ConstructionJobIndex index,
+        UUID owner
+    ) {
+        ConstructionJobStore store = ConstructionJobStore.get(level);
+        ConstructionJob best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (ConstructionJobProgress progress : store.progresses()) {
+            if (progress.carriedEntries(worker.getUUID()).isEmpty()) continue;
+            ConstructionJob candidate = index.job(progress.jobId());
+            if (candidate == null
+                || !candidate.isActive()
+                || !candidate.dimension().equals(level.dimension())) {
+                continue;
+            }
+            double distance = distanceToJobSqr(worker.position(), candidate);
+            if (best == null
+                || candidate.owner().equals(owner) && !best.owner().equals(owner)
+                || candidate.owner().equals(owner) == best.owner().equals(owner)
+                    && (distance < bestDistance
+                        || distance == bestDistance && candidate.jobId().compareTo(best.jobId()) < 0)) {
+                best = candidate;
+                bestDistance = distance;
+            }
+        }
+        return best;
     }
 
     @Nullable
@@ -3652,6 +4695,15 @@ public final class ConstructionJobController {
         return Vec3.atCenterOf(progress.coordinatorLounge()).distanceTo(Vec3.atCenterOf(target)) <= DISCOVERY_RANGE;
     }
 
+    /**
+     * 目标是否可派发。除了协调室发现半径,还必须已经处在实体刻窗口内:
+     * 未加载区块里没有工人能到场,而 {@code getBlockState} 会把该区块同步拽进内存,
+     * 因此这道闸必须挡在任何读取世界状态之前。
+     */
+    static boolean isAssignable(ServerLevel level, ConstructionJobProgress progress, BlockPos target) {
+        return isWithinLoungeRange(progress, target) && ObservationCoverageService.isWorkable(level, target);
+    }
+
     public static boolean isSourceAvailable(
         MinecraftServer server,
         ServerLevel level,
@@ -3707,8 +4759,8 @@ public final class ConstructionJobController {
     private static void tryLaunchForJob(ServerLevel level, ConstructionJob job, ConstructionJobProgress progress) {
         if (!progress.hasCoordinator()) return;
         if (!(level.getBlockEntity(progress.coordinatorLounge()) instanceof AllayLoungeBlockEntity lounge)) return;
-        if (lounge.isBayBusy()) return;
         if (!canAcceptMoreParticipants(level, job, progress)) return;
+        launchObserverIfNeeded(level, job, progress, lounge);
         byte state = job.state();
         if (state == ConstructionJob.STATE_SEALING_FLUID || state == ConstructionJob.STATE_BUILDING) {
             launchIfNeeded(level, job, progress, lounge, AllayCapability.PICK_UP_MATERIAL);
@@ -3723,9 +4775,50 @@ public final class ConstructionJobController {
             }
             return;
         }
+        if (state == ConstructionJob.STATE_WAITING_DEMOLITION) {
+            launchIfNeeded(level, job, progress, lounge, AllayCapability.DEMOLISH);
+            return;
+        }
         if (state == ConstructionJob.STATE_COLLECTING_DEBRIS && hasWorldDebris(level, job, progress)) {
             launchIfNeeded(level, job, progress, lounge, AllayCapability.COLLECT_ITEMS);
         }
+    }
+
+    /**
+     * 观察悦灵出库与借调。缺口由覆盖规划给出:现场闲置的观察悦灵已经在规划里指派过租约,
+     * 这里只补真正需要从托管位放出或从外室借来的那几只。
+     *
+     * <p>协调室自身那一柱没进入实体刻时不能出库:出入库要读方块实体,窗口得先由它自己
+     * 托管的观察者或别处的自由观察者建立起来。
+     */
+    private static void launchObserverIfNeeded(
+        ServerLevel level,
+        ConstructionJob job,
+        ConstructionJobProgress progress,
+        AllayLoungeBlockEntity lounge
+    ) {
+        int wanted = ObservationCoverageService.wantedObservers(level.getServer(), job);
+        if (wanted <= 0) return;
+        if (!ObservationCoverageService.isCoordinatorTicking(level, progress)) return;
+        int inTransit = ConstructionTransferService.inTransitCount(
+            level.getServer(),
+            job.jobId(),
+            AllayCapability.CHUNK_LOADING
+        );
+        // 规划结论最多滞后一个校验周期,已在途的必须先扣掉,否则会一路超借
+        if (wanted <= inTransit) return;
+        Predicate<AllayWorkRecord> recordMatch = record -> hostedRecordAvailableForJob(level, record, job)
+            && ObservationCoverage.isEligible(record);
+        if (!lounge.isBayBusy()) lounge.tryLaunch(recordMatch);
+        ConstructionTransferService.considerBorrow(
+            level,
+            job,
+            lounge,
+            AllayCapability.CHUNK_LOADING,
+            recordMatch,
+            wanted,
+            0
+        );
     }
 
     private static void launchIfNeeded(
@@ -3735,10 +4828,12 @@ public final class ConstructionJobController {
         AllayLoungeBlockEntity lounge,
         AllayCapability capability
     ) {
-        if (lounge.isBayBusy()) return;
         if (!canAcceptMoreParticipants(level, job, progress)) return;
+        // 协调室出库通道忙只挡本室这一刻出库,不能挡住远程借调决策:
+        // 每个休息室各有一条 20 gt 出库通道,外室必须与协调室同步起飞而不是排在它后面
+        boolean bayBusy = lounge.isBayBusy();
         if (capability == AllayCapability.COLLECT_ITEMS) {
-            tryLaunchCollector(level, job, progress, lounge);
+            if (!bayBusy) tryLaunchCollector(level, job, progress, lounge);
             return;
         }
         boolean building = capability == AllayCapability.PICK_UP_MATERIAL
@@ -3748,7 +4843,8 @@ public final class ConstructionJobController {
         if (building && !shortWork && !longWork) {
             return;
         }
-        if (building
+        if (!bayBusy
+            && building
             && longWork
             && hasMorePotentialBuildWork(
                 level,
@@ -3763,10 +4859,25 @@ public final class ConstructionJobController {
         }
         if (!building && !hasAssignableForLaunch(level, job, progress, capability)) return;
         int workers = countLoadedBoundCapability(level, job, progress, capability);
-        if (!hasMorePotentiallyOpen(level, progress, capability, workers)) return;
-        lounge.tryLaunch(record -> hostedRecordAvailableForJob(level, record, job)
+        int inTransit = ConstructionTransferService.inTransitCount(level.getServer(), job.jobId(), capability);
+        if (!hasMorePotentiallyOpen(level, progress, capability, workers + inTransit)) return;
+        Predicate<AllayWorkRecord> recordMatch = record -> hostedRecordAvailableForJob(level, record, job)
             && AllayToolDefinitions.fromHeldItem(record.heldTool()).hasCapability(capability)
-            && (!building || canPlaceLongReach(record) || shortWork));
+            && (!building || canPlaceLongReach(record) || shortWork);
+        if (!bayBusy) lounge.tryLaunch(recordMatch);
+        // 本室出库与远程借调同时推进:是否借调只由预计完工时间判定,不再等本室托管记录耗尽
+        int remaining = capability == AllayCapability.DEMOLISH
+            ? progress.unleasedDemolishCount()
+            : progress.unleasedMaterialCount();
+        ConstructionTransferService.considerBorrow(
+            level,
+            job,
+            lounge,
+            capability,
+            recordMatch,
+            remaining,
+            workers
+        );
     }
 
     private static boolean hasMorePotentiallyOpen(
@@ -3788,6 +4899,7 @@ public final class ConstructionJobController {
                     || op.status() == ConstructionBuildOp.Status.SKIPPED) {
                     continue;
                 }
+                if (!isAssignable(level, progress, op.pos())) continue;
                 if (level.getBlockState(op.pos()).isAir()) continue;
                 if (++count > workers) return true;
             }
@@ -3798,6 +4910,7 @@ public final class ConstructionJobController {
                 && op.kind() != ConstructionBuildOp.Kind.CONTENT
                 && op.kind() != ConstructionBuildOp.Kind.FLUID
                 && op.kind() != ConstructionBuildOp.Kind.ENTITY
+                && op.kind() != ConstructionBuildOp.Kind.DECORATE
                 && op.kind() != ConstructionBuildOp.Kind.SEAL) {
                 continue;
             }
@@ -3806,7 +4919,10 @@ public final class ConstructionJobController {
                 || op.status() == ConstructionBuildOp.Status.SKIPPED) {
                 continue;
             }
-            if (op.kind() == ConstructionBuildOp.Kind.CONTENT || op.kind() == ConstructionBuildOp.Kind.FLUID) {
+            if (!isAssignable(level, progress, op.pos())) continue;
+            if (op.kind() == ConstructionBuildOp.Kind.CONTENT
+                || op.kind() == ConstructionBuildOp.Kind.FLUID
+                || op.kind() == ConstructionBuildOp.Kind.DECORATE) {
                 ConstructionBuildOp parent = progress.parentOf(op);
                 if (parent == null || parent.status() != ConstructionBuildOp.Status.DELIVERED) continue;
             }
@@ -3865,7 +4981,8 @@ public final class ConstructionJobController {
             if (op.kind() != ConstructionBuildOp.Kind.PLACE
                 && op.kind() != ConstructionBuildOp.Kind.CONTENT
                 && op.kind() != ConstructionBuildOp.Kind.FLUID
-                && op.kind() != ConstructionBuildOp.Kind.ENTITY) {
+                && op.kind() != ConstructionBuildOp.Kind.ENTITY
+                && op.kind() != ConstructionBuildOp.Kind.DECORATE) {
                 continue;
             }
             if (ConstructionPlacementLimits.requiresLongReach(op) != requiresLongReach) continue;
@@ -3874,8 +4991,10 @@ public final class ConstructionJobController {
                 || op.status() == ConstructionBuildOp.Status.SKIPPED) {
                 continue;
             }
-            if (!isWithinLoungeRange(progress, op.pos())) continue;
-            if (op.kind() == ConstructionBuildOp.Kind.CONTENT || op.kind() == ConstructionBuildOp.Kind.FLUID) {
+            if (!isAssignable(level, progress, op.pos())) continue;
+            if (op.kind() == ConstructionBuildOp.Kind.CONTENT
+                || op.kind() == ConstructionBuildOp.Kind.FLUID
+                || op.kind() == ConstructionBuildOp.Kind.DECORATE) {
                 ConstructionBuildOp parent = progress.parentOf(op);
                 if (parent == null || parent.status() != ConstructionBuildOp.Status.DELIVERED) continue;
             }
@@ -3896,6 +5015,7 @@ public final class ConstructionJobController {
     ) {
         int count = 0;
         for (WorkingAllayEntity worker : loadedWorkers(level, job.owner())) {
+            if (worker.transitJobId().filter(job.jobId()::equals).isPresent()) continue;
             if (!isWorkerAvailableForJob(level, worker, job, progress)) continue;
             if (!worker.toolDefinition().hasCapability(AllayCapability.PICK_UP_MATERIAL)) continue;
             if (canPlaceLongReach(worker)) count++;
@@ -3962,10 +5082,30 @@ public final class ConstructionJobController {
         if (hasLoadedBoundCapability(level, job, progress, AllayCapability.COLLECT_ITEMS)) {
             return;
         }
-        lounge.tryLaunch(record -> hostedRecordAvailableForJob(level, record, job)
+        Predicate<AllayWorkRecord> collector = record -> hostedRecordAvailableForJob(level, record, job)
             && AllayToolDefinitions.fromHeldItem(record.heldTool()).hasCapability(AllayCapability.COLLECT_ITEMS)
             && CollectionAllayToolBehavior.hasCollectionCapacity(record)
-            && CollectionAllayToolBehavior.canAttemptTask(record, level));
+            && CollectionAllayToolBehavior.canAttemptTask(record, level);
+        if (!lounge.tryLaunch(collector)) {
+            // 本地无收集记录,考虑远程借调收集工。上面已确认没有到场的收集工,故已到场数恒为 0;
+            // 收集同时只需要一只,已有在途收集工时不再重复借调
+            if (ConstructionTransferService.inTransitCount(
+                level.getServer(),
+                job.jobId(),
+                AllayCapability.COLLECT_ITEMS
+            ) > 0) {
+                return;
+            }
+            ConstructionTransferService.considerBorrow(
+                level,
+                job,
+                lounge,
+                AllayCapability.COLLECT_ITEMS,
+                collector,
+                1,
+                0
+            );
+        }
     }
 
     private static boolean hasLoadedVacuum(
@@ -4024,6 +5164,7 @@ public final class ConstructionJobController {
     ) {
         int count = 0;
         for (WorkingAllayEntity worker : loadedWorkers(level, job.owner())) {
+            if (worker.transitJobId().filter(job.jobId()::equals).isPresent()) continue;
             if (!isWorkerAvailableForJob(level, worker, job, progress)) continue;
             if (worker.toolDefinition().hasCapability(capability)
                 && (capability != AllayCapability.COLLECT_ITEMS

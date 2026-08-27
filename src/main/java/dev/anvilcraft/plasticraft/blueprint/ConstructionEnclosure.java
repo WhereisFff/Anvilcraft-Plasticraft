@@ -126,7 +126,7 @@ public final class ConstructionEnclosure {
             return new Geometry(true, Set.of(), false, false);
         }
         boolean enclosesWork = enclosesWork(level, progress, op, region.cavity(), cache);
-        boolean serialSeal = hasOtherLeasedWall(progress, op);
+        boolean serialSeal = hasOtherLeasedWall(progress, op, region.cavity());
         return new Geometry(false, region.cavity(), enclosesWork, serialSeal);
     }
 
@@ -274,10 +274,30 @@ public final class ConstructionEnclosure {
         return true;
     }
 
-    private static boolean hasOtherLeasedWall(ConstructionJobProgress progress, ConstructionBuildOp current) {
+    /**
+     * 最后缺口必须串行:两只悦灵同刻各封一个缺口会把对方或第三只悦灵关在里面。
+     * 但只有真正压在同一腔体边界上的租约才需要让行,否则任务另一头任意一份墙体租约
+     * 都会让这里永远拒绝施工;让行方按封堵序取较后的一方,较前的一方当选主封者先封,
+     * 避免双方互相让行谁都不动。无碰撞形状的方块(铁轨、红石粉等)封不住腔体,不参与串行。
+     */
+    private static boolean hasOtherLeasedWall(
+        ConstructionJobProgress progress,
+        ConstructionBuildOp current,
+        Set<Long> cavity
+    ) {
         for (ConstructionBuildOp op : progress.leasedWallOperations()) {
             if (op.id() == current.id() || op.parentId() == current.id()) continue;
+            if (!isCollidingWall(op) || !touchesCavity(cavity, op.pos())) continue;
+            if (compareSealOrder(current, op) < 0) continue;
             return true;
+        }
+        return false;
+    }
+
+    private static boolean touchesCavity(Set<Long> cavity, BlockPos pos) {
+        if (cavity.contains(pos.asLong())) return true;
+        for (Direction direction : Direction.values()) {
+            if (cavity.contains(pos.relative(direction).asLong())) return true;
         }
         return false;
     }
@@ -301,6 +321,7 @@ public final class ConstructionEnclosure {
                     && op.kind() != ConstructionBuildOp.Kind.CONTENT
                     && op.kind() != ConstructionBuildOp.Kind.FLUID
                     && op.kind() != ConstructionBuildOp.Kind.ENTITY
+                    && op.kind() != ConstructionBuildOp.Kind.DECORATE
                     && op.kind() != ConstructionBuildOp.Kind.SEAL
                     && op.kind() != ConstructionBuildOp.Kind.ATTACHED) {
                     continue;

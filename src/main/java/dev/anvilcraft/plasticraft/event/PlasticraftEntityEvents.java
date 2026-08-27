@@ -4,7 +4,8 @@ import dev.anvilcraft.lib.v2.recipe.event.ItemCacheEvent;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
-import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.SurfaceAdhesiveService;
@@ -60,9 +61,9 @@ public final class PlasticraftEntityEvents {
         if (item.isRemoved()) return;
         if (CauldronImpactRecipeProcessor.captureActiveRecipeOutput(item)) return;
         BlockPos cell = item.blockPosition();
-        HardenedResinCauldronEntity selected = null;
-        for (HardenedResinCauldronEntity cauldron : item.level().getEntitiesOfClass(
-            HardenedResinCauldronEntity.class,
+        PlasticCauldron selected = null;
+        for (PlasticCauldron cauldron : PlasticCauldrons.findIn(
+            item.level(),
             new AABB(cell),
             candidate -> !candidate.isRemoved()
                 && BlockPos.containing(candidate.getBoundingBox().getCenter()).equals(cell)

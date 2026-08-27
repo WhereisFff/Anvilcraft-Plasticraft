@@ -185,7 +185,7 @@ public final class PlasticItemTooltipManager {
             AnvilcraftPlasticraft.of("hardend_resin_cauldron"),
             "A light, portable cauldron assembled from hardened resin plates",
             """
-                Pushable cauldron for items and up to 1000 mB of fluid
+                Pushable cauldron for items and up to 1000 mB of fluid, including lava
                 Shift-use with any Anvil Hammer to retrieve it and its stored items
                 Connects to pipe heads, pumps, and control valves from any side
                 Creative players can Shift-use a magnet to magnetize it
@@ -222,19 +222,25 @@ public final class PlasticItemTooltipManager {
         );
         register(
             AnvilcraftPlasticraft.of("allay_lounge"),
-            "Hosts up to 16 hatted allays and sets their pause or skip mode",
+            "Hosts up to 16 hatted allays and sets their shortage and clearance modes",
             """
                 Stores 16 hosted allay records plus 1 structure disk
                 Does not join a power grid; recall, launch and docking always work
                 Breaking the lounge releases every hosted allay back into the world
                 Temporary cards show each allay hat and held tool
                 Pause and skip for missing materials or demolition are set here, not on each allay
+                Whether blocks on the blueprint's blank cells are demolished is set here and read when the job is planned
+                During building, a mismatching real block in a declared cell pauses construction and is removed with marked drops; an exact target state satisfies the cell
                 The bottom face takes and unloads items; leftovers that do not fit drop beside the lounge
                 Inserting a deployed disk claims that job; right-click the disk to start, and unhosted workers leave
                 A creative crate below supplies any blueprint item infinitely
                 Builders carry at most one stack of one block item per trip and recheck enclosure safety before every placement
+                Builders take the nearest open target on the current layer, so a ring or row is built around rather than crossed back and forth
                 Item collection launches magnet allays first
-                Multiple allays fly around delivered fake blocks and will not brick themselves into a cavity"""
+                Multiple allays fly around delivered fake blocks and will not brick themselves into a cavity
+                A target that cannot be flown to keeps its material returned and retries later; it is never counted as built
+                Lounges in the same dimension form transfer chains of up to 128 blocks per hop; distant workers are borrowed only when it shortens the job and return home along the chain when it ends
+                Borrowed workers only take and unload items at the job lounge; they never dock into it, so they cannot block its own allays"""
         );
     }
 
@@ -372,11 +378,12 @@ public final class PlasticItemTooltipManager {
                 ).withStyle(ChatFormatting.GRAY));
             } else if (MoldingProductTypes.isTank(data.finalType())) {
                 tooltip.add(Component.translatable(
-                    PlasticMaterial.fromMelt(data.material())
-                        .filter(material -> material == PlasticMaterial.HEAT_RESISTANT)
-                        .isPresent()
-                        ? "tooltip.anvilcraftplasticraft.molded_tank_heat_resistant"
-                        : "tooltip.anvilcraftplasticraft.molded_tank",
+                    "tooltip.anvilcraftplasticraft.molded_tank",
+                    data.capacity()
+                ).withStyle(ChatFormatting.GRAY));
+            } else if (MoldingProductTypes.isCauldron(data.finalType())) {
+                tooltip.add(Component.translatable(
+                    cauldronTooltipKey(data),
                     data.capacity()
                 ).withStyle(ChatFormatting.GRAY));
             } else if (MoldingProductTypes.isAnvil(data.finalType())) {
@@ -395,6 +402,13 @@ public final class PlasticItemTooltipManager {
                 ).withStyle(ChatFormatting.GRAY));
             }
         });
+    }
+
+    /** 锅的提示只随容量层数分流，所有成型塑料锅均可储存熔岩。 */
+    private static String cauldronTooltipKey(MoldedPlasticData data) {
+        return MoldingProductTypes.isLargeCauldron(data.finalType())
+            ? "tooltip.anvilcraftplasticraft.molded_large_cauldron"
+            : "tooltip.anvilcraftplasticraft.molded_cauldron";
     }
 
     private static String formatDimensions(MoldingVec3 size) {

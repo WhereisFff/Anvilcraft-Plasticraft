@@ -79,7 +79,7 @@ public final class AllayToolDefinitions {
         0.0D,
         0,
         List.of("idle", "observe"),
-        AllayToolBehavior.NONE
+        ObservationAllayToolBehavior.INSTANCE
     ));
 
     private AllayToolDefinitions() {

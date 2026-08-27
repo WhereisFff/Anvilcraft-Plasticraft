@@ -8,6 +8,7 @@ import dev.anvilcraft.plasticraft.blueprint.BlueprintPlacement;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionEntityProjectionIndex;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionProjectionIndex;
+import dev.anvilcraft.plasticraft.blueprint.SignDecorationAdapter;
 import dev.anvilcraft.plasticraft.blueprint.StructureSnapshot;
 import dev.anvilcraft.plasticraft.client.blueprint.BlueprintDeploySession;
 import dev.anvilcraft.plasticraft.client.blueprint.ClientBlueprintJobCache;
@@ -891,6 +892,10 @@ public final class BlueprintProjectionRenderer {
                 } catch (RuntimeException exception) {
                     skipOnce("delivered-ber-nbt:" + state, exception);
                 }
+            }
+            // 告示牌交付时是空白的,书写/染色/发光/打蜡各由一条 DECORATE 操作陆续完成,未完成项不能提前显示
+            if (nbt != null && SignDecorationAdapter.isSign(state)) {
+                nbt = SignDecorationAdapter.stripPending(nbt, collision.pendingDecorations(), registries);
             }
             BlockEntity blockEntity = createBlockEntity(level, registries, worldPos, state, nbt);
             if (blockEntity != null) result.add(blockEntity);

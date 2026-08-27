@@ -1,7 +1,8 @@
 package dev.anvilcraft.plasticraft.block;
 
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
-import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
@@ -76,7 +77,8 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
         if (state.getBlock() instanceof UniversalPlasticMeltCauldronBlock cauldron) {
             return cauldron.containsEntity(state, pos, entity);
         }
-        return false;
+        PlasticCauldron cauldron = boundCauldron(level, pos);
+        return cauldron != null && cauldron.plasticraft$isEntityInsidePlasticMelt(entity);
     }
 
     private static boolean containsPlasticMelt(Level level, BlockState state, BlockPos pos) {
@@ -92,15 +94,18 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
                 if (PlasticMaterial.isMelt(fluids.getFluidInTank(tank))) return true;
             }
         }
-        if (state.getBlock() instanceof HardenedResinCauldronBlock
-            && level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
-            && bonded.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron) {
-            return PlasticMaterial.isMelt(cauldron.getFluidHandler().getFluid());
-        }
+        PlasticCauldron cauldron = boundCauldron(level, pos);
+        if (cauldron != null) return PlasticMaterial.isMelt(cauldron.plasticraft$bottomFluid());
         if (state.getBlock() instanceof UniversalPlasticMeltCauldronBlock) {
             return state.getValue(UniversalPlasticMeltCauldronBlock.LEVEL) > 0;
         }
         return false;
+    }
+
+    /** 绑定态塑料制品没有独立的锅方块类型，只能从其持久化实体判断是否为锅。 */
+    private static PlasticCauldron boundCauldron(Level level, BlockPos pos) {
+        if (!(level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded)) return null;
+        return PlasticCauldrons.of(bonded.getOrCreateRenderEntity());
     }
 
     private static boolean isEntityInsideFishTank(Level level, BlockPos pos, Entity entity) {
@@ -212,10 +217,8 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
                             && isEntityInsideContainer(state, entity.level(), pos, entity))) {
                         return true;
                     }
-                    if (state.getBlock() instanceof HardenedResinCauldronBlock
-                        && entity.level().getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
-                        && bonded.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron
-                        && cauldron.plasticraft$isEntityInsidePlasticMelt(entity)) return true;
+                    PlasticCauldron cauldron = boundCauldron(entity.level(), pos);
+                    if (cauldron != null && cauldron.plasticraft$isEntityInsidePlasticMelt(entity)) return true;
                     if (containsPlasticMelt(entity.level(), state, pos)
                         && isEntityInsideContainer(state, entity.level(), pos, entity)) {
                         return true;

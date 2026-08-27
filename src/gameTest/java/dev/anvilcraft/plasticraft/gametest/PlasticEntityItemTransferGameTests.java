@@ -1,9 +1,11 @@
 package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronContents;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
+import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.dubhe.anvilcraft.block.ChuteBlock;
 import dev.dubhe.anvilcraft.block.entity.BaseChuteBlockEntity;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
@@ -22,7 +24,10 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.HopperBlock;
 import net.minecraft.world.level.block.entity.HopperBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
@@ -99,6 +104,69 @@ public final class PlasticEntityItemTransferGameTests {
         helper.succeed();
     }
 
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x5x7", floor = true)
+    @TestHolder(description = "Creative pick gives an empty hardened resin cauldron normally and restores contents with control")
+    static void creativePickSeparatesHardenedResinCauldronContents(ExtendedGameTestHelper helper) {
+        ItemStack sourceStack = PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack();
+        PlasticItemData.setMaterial(sourceStack, "hardened_resin");
+        PlasticItemData.setMagnetized(sourceStack, true);
+        HardenedResinCauldronEntity source = createCauldron(
+            helper,
+            new Vec3(1.5D, 2.0D, 1.5D),
+            sourceStack
+        );
+        check(source.insertRecipeOutput(new ItemStack(Items.DIAMOND, 2)).isEmpty(),
+            "hardened resin cauldron rejected a pick-state output item");
+        check(source.getItemHandler().insertItem(8, new ItemStack(Items.IRON_INGOT, 3), false).isEmpty(),
+            "hardened resin cauldron rejected a pick-state input item");
+        check(source.getFluidHandler().fill(new FluidStack(Fluids.WATER, 250), IFluidHandler.FluidAction.EXECUTE) == 250,
+            "hardened resin cauldron rejected a pick-state fluid");
+
+        ItemStack initial = source.getPickResult();
+        ItemStack complete = source.getCompletePickResult();
+        HardenedResinCauldronContents contents = HardenedResinCauldronContents.get(complete).orElseThrow(
+            () -> new GameTestAssertException("control creative pick lost hardened resin cauldron contents")
+        );
+        check(PlasticItemData.getMaterial(initial).equals("hardened_resin"),
+            "normal creative pick changed hardened resin material");
+        check(PlasticItemData.isMagnetized(initial), "normal creative pick lost hardened resin magnetization");
+        check(HardenedResinCauldronContents.get(initial).isEmpty(),
+            "normal creative pick retained hardened resin cauldron contents");
+        check(contents.items().stream().anyMatch(item -> item.slot() == 0
+                && item.stack().is(Items.DIAMOND) && item.stack().getCount() == 2)
+                && contents.items().stream().anyMatch(item -> item.slot() == 8
+                && item.stack().is(Items.IRON_INGOT) && item.stack().getCount() == 3),
+            "control creative pick changed hardened resin cauldron item slots");
+        check(contents.fluid().is(Fluids.WATER) && contents.fluid().getAmount() == 250,
+            "control creative pick changed hardened resin cauldron fluid");
+
+        HardenedResinCauldronEntity restoredComplete = createCauldron(
+            helper,
+            new Vec3(4.5D, 2.0D, 4.5D),
+            complete
+        );
+        check(restoredComplete.getItemHandler().getStackInSlot(0).is(Items.DIAMOND)
+                && restoredComplete.getItemHandler().getStackInSlot(0).getCount() == 2
+                && restoredComplete.getItemHandler().getStackInSlot(8).is(Items.IRON_INGOT)
+                && restoredComplete.getItemHandler().getStackInSlot(8).getCount() == 3,
+            "control creative pick did not restore hardened resin cauldron items");
+        check(restoredComplete.plasticraft$bottomFluid().is(Fluids.WATER)
+                && restoredComplete.plasticraft$bottomFluid().getAmount() == 250,
+            "control creative pick did not restore hardened resin cauldron fluid");
+
+        HardenedResinCauldronEntity restoredInitial = createCauldron(
+            helper,
+            new Vec3(4.5D, 2.0D, 1.5D),
+            initial
+        );
+        check(restoredInitial.getItemHandler().getStackInSlot(0).isEmpty()
+                && restoredInitial.getItemHandler().getStackInSlot(8).isEmpty()
+                && restoredInitial.plasticraft$bottomFluid().isEmpty(),
+            "normal creative pick did not restore an empty hardened resin cauldron");
+        helper.succeed();
+    }
+
     private static HopperBlockEntity placeHopper(
         ExtendedGameTestHelper helper,
         BlockPos relativePos,
@@ -140,13 +208,21 @@ public final class PlasticEntityItemTransferGameTests {
         ExtendedGameTestHelper helper,
         Vec3 relativePosition
     ) {
+        return createCauldron(helper, relativePosition, PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack());
+    }
+
+    private static HardenedResinCauldronEntity createCauldron(
+        ExtendedGameTestHelper helper,
+        Vec3 relativePosition,
+        ItemStack stack
+    ) {
         Level level = helper.getLevel();
         HardenedResinCauldronEntity cauldron = new HardenedResinCauldronEntity(
             PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
             level,
             helper.absoluteVec(relativePosition),
             PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
-            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(),
+            stack,
             PlasticEntityOrientation.DEFAULT
         );
         cauldron.setNoGravity(true);

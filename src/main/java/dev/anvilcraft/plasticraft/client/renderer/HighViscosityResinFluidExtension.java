@@ -26,7 +26,7 @@ public class HighViscosityResinFluidExtension extends ModClientFluidTypeExtensio
 
     public HighViscosityResinFluidExtension() {
         this(
-            AnvilcraftPlasticraft.of("block/liquid_high_viscosity_resin"),
+            AnvilcraftPlasticraft.of("fluid/liquid_high_viscosity_resin"),
             0x6B481D,
             1.5F,
             0xFFFFFFFF,

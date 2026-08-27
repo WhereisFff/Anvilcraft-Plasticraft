@@ -99,6 +99,12 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
     }
 
     @Override
+    protected ItemStack prepareInitialPickResult(ItemStack stack) {
+        stack.remove(ModComponents.SAVED_ENTITY);
+        return stack;
+    }
+
+    @Override
     public double anvilcraft$getShockBounceHeightMultiplier() {
         return 2.0D;
     }
@@ -139,7 +145,7 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
                 && !other.isSpectator()
                 // 塑料砧会形成相互推动的链，但树脂釜同样是有效的弹性冲击面和配方目标。
                 && (!(other instanceof AbstractPlasticEntity)
-                    || other instanceof HardenedResinCauldronEntity)
+                    || PlasticCauldrons.isCauldron(other))
                 && !this.isPassengerOfSameVehicle(other)
                 // 此处有意不复用船的碰撞检查：树脂会从可推动的生物实体，
                 // 以及明确提供碰撞箱的实体上反弹。

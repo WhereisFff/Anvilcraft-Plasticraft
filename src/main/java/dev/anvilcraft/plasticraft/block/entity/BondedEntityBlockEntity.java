@@ -7,13 +7,15 @@ import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
-import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.collision.BondedPlasticShapeIndex;
 import dev.anvilcraft.plasticraft.entity.redstone.MoldedTrayLightSource;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
+import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.dubhe.anvilcraft.api.fluid.IFluidHandlerHolder;
 import dev.dubhe.anvilcraft.api.injection.tooltip.ITooltipProviderExtension;
 import dev.dubhe.anvilcraft.item.AnvilHammerItem;
@@ -383,23 +385,17 @@ public class BondedEntityBlockEntity extends BlockEntity
             return;
         }
         if (functionalEntity instanceof UniversalPlasticEntity universal) {
-            if (universal.plasticraft$wasMoldedTankDestroyedByLava()
-                || universal.plasticraft$destroyMoldedTankIfFilledWithLava()) {
-                serverLevel.removeBlock(this.worldPosition, false);
-                return;
-            }
             universal.plasticraft$tickRedstoneConductor();
             if (universal.isMoldedTray()) {
                 universal.plasticraft$tickBondedTray();
                 return;
             }
         }
-        if (!(functionalEntity instanceof HardenedResinCauldronEntity cauldron)) return;
+        PlasticCauldron cauldron = PlasticCauldrons.of(functionalEntity);
+        if (cauldron == null) return;
         cauldron.plasticraft$tickBonded();
         if (cauldron.plasticraft$wasBurnedByLava()) {
-            if (!cauldron.plasticraft$leftLavaSource()) {
-                serverLevel.removeBlock(this.worldPosition, false);
-            }
+            serverLevel.removeBlock(this.worldPosition, false);
             return;
         }
         if (cauldron.plasticraft$consumeBondedDataDirty()) this.captureCachedEntity(true);
@@ -407,7 +403,8 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     public void processAnvilImpact(AbstractPlasticEntity anvil, Direction impactDirection) {
         if (!(this.level instanceof ServerLevel)
-            || !(this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron)) {
+            || !(this.getOrCreateRenderEntity() instanceof PlasticCauldron cauldron)
+            || !canAccessRecipeInventory(cauldron)) {
             return;
         }
         cauldron.processAnvilImpact(anvil, impactDirection);
@@ -416,14 +413,18 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     @Override
     public IFluidHandler getFluidHandler() {
-        return this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron
-            ? cauldron.getFluidHandler()
-            : EMPTY_FLUID_HANDLER;
+        Entity entity = this.getOrCreateRenderEntity();
+        if (entity instanceof PlasticCauldron cauldron) {
+            return canAccessRecipeInventory(cauldron) ? cauldron.getFluidHandler() : EMPTY_FLUID_HANDLER;
+        }
+        return EMPTY_FLUID_HANDLER;
     }
 
     public @Nullable IFluidHandler getCapabilityFluidHandler() {
         Entity entity = this.getOrCreateRenderEntity();
-        if (entity instanceof HardenedResinCauldronEntity cauldron) return cauldron.getFluidHandler();
+        if (entity instanceof PlasticCauldron cauldron) {
+            return canAccessRecipeInventory(cauldron) ? cauldron.getFluidHandler() : null;
+        }
         if (entity instanceof UniversalPlasticEntity universal
             && universal.getMoldedFluidHandler().getTanks() > 0) return universal.getMoldedFluidHandler();
         return null;
@@ -431,7 +432,9 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     public @Nullable IItemHandler getItemHandler() {
         Entity entity = this.getOrCreateRenderEntity();
-        if (entity instanceof HardenedResinCauldronEntity cauldron) return cauldron.getItemHandler();
+        if (entity instanceof PlasticCauldron cauldron) {
+            return canAccessRecipeInventory(cauldron) ? cauldron.getItemHandler() : null;
+        }
         if (entity instanceof UniversalPlasticEntity universal
             && universal.getMoldedItemHandler().getSlots() > 0) return universal.getMoldedItemHandler();
         return null;
@@ -439,7 +442,7 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     public boolean clearCauldronOutletFacing(Direction direction) {
         if (!(this.level instanceof ServerLevel)
-            || !(this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron)
+            || !(this.getOrCreateRenderEntity() instanceof PlasticCauldron cauldron)
             || !cauldron.clearOutletFacing(direction)) {
             return false;
         }
@@ -449,26 +452,36 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     @Override
     public IItemHandler getInput() {
-        return this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron
-            ? cauldron.getInput()
-            : EMPTY_ITEM_HANDLER;
+        Entity entity = this.getOrCreateRenderEntity();
+        if (entity instanceof PlasticCauldron cauldron) {
+            return canAccessRecipeInventory(cauldron) ? cauldron.getInput() : EMPTY_ITEM_HANDLER;
+        }
+        return EMPTY_ITEM_HANDLER;
     }
 
     @Override
     public IItemHandler getOutput() {
-        return this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron
-            ? cauldron.getOutput()
-            : EMPTY_ITEM_HANDLER;
+        Entity entity = this.getOrCreateRenderEntity();
+        if (entity instanceof PlasticCauldron cauldron) {
+            return canAccessRecipeInventory(cauldron) ? cauldron.getOutput() : EMPTY_ITEM_HANDLER;
+        }
+        return EMPTY_ITEM_HANDLER;
     }
 
     public @Nullable ItemStack insertRecipeOutput(ItemStack stack) {
         if (!(this.level instanceof ServerLevel)
-            || !(this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron)) {
+            || !(this.getOrCreateRenderEntity() instanceof PlasticCauldron cauldron)
+            || !canAccessRecipeInventory(cauldron)) {
             return stack;
         }
         ItemStack remaining = cauldron.insertRecipeOutput(stack);
         this.captureCachedEntity(true);
         return remaining;
+    }
+
+    private static boolean canAccessRecipeInventory(PlasticCauldron cauldron) {
+        return !cauldron.plasticraft$isCauldron()
+            || CauldronImpactRecipeProcessor.canAccessRecipeInventory(cauldron);
     }
 
     public boolean release() {

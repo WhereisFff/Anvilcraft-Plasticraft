@@ -7,6 +7,7 @@ import dev.anvilcraft.plasticraft.api.texture.PlasticTextureCache;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.client.hud.AdhesiveBondHud;
 import dev.anvilcraft.plasticraft.client.hud.BondedBlockTooltipProvider;
+import dev.anvilcraft.plasticraft.client.gui.PlasticraftCreativeTabState;
 import dev.anvilcraft.plasticraft.client.particle.EnhancedPlasmaJetsParticle;
 import dev.anvilcraft.plasticraft.client.particle.ExperienceVaporParticle;
 import dev.anvilcraft.plasticraft.client.particle.FluidVaporParticle;
@@ -79,6 +80,7 @@ public final class AnvilcraftPlasticraftClient {
         PlasticTextureCache.clear();
         DynamicPlasticTextureManager.INSTANCE.clear();
         MoldingViewportResources.INSTANCE.closeAll();
+        PlasticraftCreativeTabState.reset();
     }
 
     private static void clientSetup(FMLClientSetupEvent event) {

@@ -123,7 +123,7 @@ public final class MoldedPlasticStorageHandle {
         storage.setItems(items);
         storage.setFluids(fluids);
         store.orElseThrow().markDirty();
-        boolean renderFluids = MoldingProductTypes.isTank(current.finalType()) && !current.limitOverride();
+        boolean renderFluids = MoldingProductTypes.holdsFluids(current.finalType()) && !current.limitOverride();
         this.update.accept(current
             .withStorageId(Optional.of(id))
             .withSummary(MoldedPlasticContentSummary.create(

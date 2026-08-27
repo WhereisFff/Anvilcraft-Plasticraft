@@ -19,11 +19,13 @@ import dev.anvilcraft.plasticraft.blueprint.ConstructionOverlayView;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionPermission;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionProjectionIndex;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionDebris;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionEntityProjectionIndex;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionEnclosure;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionTraffic;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionWaitReason;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionWorkerSpace;
 import dev.anvilcraft.plasticraft.blueprint.DemolitionPlanner;
+import dev.anvilcraft.plasticraft.blueprint.SignDecorationAdapter;
 import dev.anvilcraft.plasticraft.blueprint.StonecutterSmashAdapter;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
@@ -31,6 +33,7 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
+import dev.anvilcraft.plasticraft.allay.AllayClearanceStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayDefaultHardHat;
 import dev.anvilcraft.plasticraft.allay.AllayFlightPlanner;
 import dev.anvilcraft.plasticraft.allay.AllayFlightState;
@@ -69,7 +72,11 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.DoubleTag;
 import net.minecraft.nbt.IntTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.NbtUtils;
+import net.minecraft.nbt.Tag;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
@@ -83,6 +90,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.vehicle.Boat;
 import net.minecraft.world.entity.vehicle.MinecartHopper;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
@@ -98,6 +106,8 @@ import net.minecraft.world.level.block.SlabBlock;
 import net.minecraft.world.level.block.RepeaterBlock;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.SignBlockEntity;
+import net.minecraft.world.level.block.entity.SignText;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import net.minecraft.world.level.block.piston.PistonHeadBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -706,6 +716,155 @@ public final class ConstructionJobGameTests {
         }).thenSucceed();
     }
 
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A repeatedly unreachable target is deferred with its material returned, never finished incomplete")
+    static void unreachableTargetIsDeferredInsteadOfSkipped(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob started = startCobbleJob(helper, player, 1);
+                try {
+                    ServerLevel level = helper.getLevel();
+                    WorkingAllayEntity worker = spawnConstructionAllay(
+                        helper,
+                        new Vec3(1.5D, 2.2D, 3.5D),
+                        null,
+                        0
+                    );
+                    player.getInventory().add(new ItemStack(Items.COBBLESTONE, 1));
+                    ConstructionBuildOp op = firstPlace(started.progress());
+                    check(
+                        ConstructionJobController.extractMaterial(player, started.progress(), op, worker.getUUID()),
+                        "取料必须成功，本例要复现悦灵手上已托管材料的处境"
+                    );
+                    worker.setHostedCarry(new ItemStack(Items.COBBLESTONE, 1));
+                    // 卡住时只释放租约不足以脱困:托管台账仍记着材料，下一 tick 同一只悦灵立刻重领同一操作
+                    check(
+                        ConstructionJobController.nextAssignableCarried(
+                            level,
+                            started.progress(),
+                            worker
+                        ) == op,
+                        "释放租约后托管材料必须仍能被同一只悦灵重领，否则本回归失去意义"
+                    );
+                    for (int strike = 1; strike <= 3; strike++) {
+                        check(op.noteUnreachable() == strike, "连续确认飞不到必须逐次累计");
+                    }
+                    op.clearUnreachable();
+                    check(op.noteUnreachable() == 1, "重新够得到目标后不可达记录必须作废");
+
+                    ConstructionJobController.deferUnreachable(level, started.progress(), op, worker);
+                    check(op.isDeferred(level.getGameTime()), "确认不可达的目标必须压一段重试退避");
+                    check(op.status() == ConstructionBuildOp.Status.PENDING, "退避的位置必须退回待办");
+                    check(op.isOpen(), "退避不得作废这个位置");
+                    check(op.leaseAllay().isEmpty(), "退避必须同时清掉租约");
+                    check(!started.progress().incomplete(), "飞不到不得计入残缺");
+                    check(!started.progress().allPlaceResolved(), "退避期间施工阶段必须仍有待办，任务不能收敛到完成");
+                    check(
+                        started.progress().stalledByUnreachable(level.getGameTime()),
+                        "剩余位置全在退避里时必须能对外报不可达"
+                    );
+                    // 材料留在悦灵手上会一直锁着这个位置,必须按台账退回料源,别的悦灵才能重新取料重规划
+                    check(worker.hostedCarry().isEmpty(), "退避必须收走悦灵手上的托管材料");
+                    check(
+                        player.getInventory().countItem(Items.COBBLESTONE) == 1,
+                        "退回的材料必须回到料源，不能凭空消失"
+                    );
+                    check(
+                        ConstructionJobController.nextAssignableCarried(
+                            level,
+                            started.progress(),
+                            worker
+                        ) == null,
+                        "退避期间不得靠托管台账重领同一操作，否则悦灵仍在原地空转"
+                    );
+                    // 先验退避结束后能重新派发:轮空的派发会给扫描压 5 刻退避，同刻再问必然还是轮空
+                    op.clearUnreachable();
+                    check(
+                        ConstructionJobController.nextAssignable(level, started.progress()) == op,
+                        "退避结束后这个位置必须重新可派发，由别的悦灵换个方向再试"
+                    );
+
+                    ConstructionJobController.deferUnreachable(level, started.progress(), op, worker);
+                    check(
+                        ConstructionJobController.nextAssignable(level, started.progress()) == null,
+                        "退避期间派发必须轮空"
+                    );
+                    ConstructionJobController.tickJob(level.getServer(), level, started.job());
+                    ConstructionJob building = ConstructionJobIndex.get(level).job(started.job().jobId());
+                    check(
+                        building != null && building.state() == ConstructionJob.STATE_BUILDING,
+                        "还有位置没建成时任务必须留在施工阶段"
+                    );
+                } finally {
+                    cancelQuietly(player, started.job().jobId());
+                }
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("unreachable defer setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction")
+    @EmptyTemplate(value = "9x5x9", floor = true)
+    @TestHolder(description = "A same-layer ring hands out the nearest open target instead of the scan-order first")
+    static void ringAssignsNearestSameLayerTarget(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob started = startStructureJob(
+                    helper,
+                    player,
+                    ringStructure(5),
+                    "cobble-ring",
+                    new BlockPos(2, 2, 2)
+                );
+                try {
+                    ServerLevel level = helper.getLevel();
+                    ConstructionBuildOp scanFirst = ConstructionJobController.nextAssignable(
+                        level,
+                        started.progress()
+                    );
+                    check(scanFirst != null, "平铺成环的蓝图必须有可派发目标");
+                    // 扫描序把这一圈的队首排在 (6,2,6),悦灵停在对角的 (1,3,1) 上方,
+                    // 与它斜对角相邻因此不占任何一格的接近位
+                    WorkingAllayEntity worker = spawnConstructionAllay(
+                        helper,
+                        new Vec3(1.5D, 3.2D, 1.5D),
+                        null,
+                        0
+                    );
+                    ConstructionBuildOp nearest = ConstructionJobController.nextAssignable(
+                        level,
+                        started.progress(),
+                        worker
+                    );
+                    check(nearest != null, "带上悦灵的派发必须仍能选出目标");
+                    ConstructionBuildOp expected = closestOpenPlace(started.progress(), worker.position());
+                    check(
+                        nearest == expected,
+                        "同层成环必须就近派发，期望 " + expected.pos() + " 实际 " + nearest.pos()
+                    );
+                    // 成环结构的剥离顺序在一层内只是逐行扫描,死板照搬会让悦灵放一块就飞到对面再飞回来
+                    check(
+                        centerDistanceSqr(worker, scanFirst) > centerDistanceSqr(worker, nearest) + 4.0D,
+                        "本例的扫描序首目标必须明显远于就近目标，否则回归失去意义，扫描序首 "
+                            + scanFirst.pos() + " 就近 " + nearest.pos()
+                    );
+                    check(
+                        nearest.pos().getY() == scanFirst.pos().getY(),
+                        "就近重排只允许发生在同一层内"
+                    );
+                } finally {
+                    cancelQuietly(player, started.job().jobId());
+                }
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("ring assignment setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
     @GameTest(timeoutTicks = 200, batch = "zzz_construction_return")
     @EmptyTemplate(value = "7x6x7", floor = true)
     @TestHolder(description = "Stopping a job makes a loaded drone fly back and insert carry beside the owner")
@@ -1038,6 +1197,392 @@ public final class ConstructionJobGameTests {
                 }
             } catch (ConstructionBlueprintException exception) {
                 throw new GameTestAssertException("demolish-before-place setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "9x5x9", floor = true)
+    @TestHolder(description = "The lounge clearance setting decides whether a blueprint blank cell is demolished, and seal fill is cleared either way")
+    static void loungeClearanceStrategyDecidesBlankCells(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            BlockPos clearAnchor = new BlockPos(4, 2, 1);
+            BlockPos keepAnchor = new BlockPos(4, 2, 5);
+            UUID[] running = {null, null};
+            try {
+                // 两格声明:锚点是蓝图空白格,东侧一格是毛石目标格,两格都先放世界石头
+                helper.setBlock(clearAnchor, Blocks.STONE);
+                helper.setBlock(clearAnchor.east(), Blocks.STONE);
+                AllayLoungeBlockEntity clearLounge = placeLounge(helper, new BlockPos(1, 2, 1));
+                clearLounge.setClearanceStrategy(AllayClearanceStrategy.CLEAR_AREA);
+                StartedJob cleared = claimStructureAtLounge(
+                    helper,
+                    player,
+                    blankCellStructure(false),
+                    "blank-clear",
+                    clearAnchor,
+                    clearLounge
+                );
+                running[0] = cleared.job().jobId();
+                BlockPos clearBlank = helper.absolutePos(clearAnchor);
+                check(
+                    hasKindAt(cleared.progress(), ConstructionBuildOp.Kind.DEMOLISH, clearBlank),
+                    "CLEAR_AREA must demolish the world stone on the blueprint's blank cell"
+                );
+                check(
+                    hasKindAt(cleared.progress(), ConstructionBuildOp.Kind.DEMOLISH, clearBlank.east()),
+                    "CLEAR_AREA must demolish the world stone on the blueprint's cobble cell"
+                );
+
+                // 三格声明:末格空白放水,验证封堵填充块的拆除不受清场策略影响
+                helper.setBlock(keepAnchor, Blocks.STONE);
+                helper.setBlock(keepAnchor.east(), Blocks.STONE);
+                helper.setBlock(keepAnchor.east().east(), Blocks.WATER);
+                AllayLoungeBlockEntity keepLounge = placeLounge(helper, new BlockPos(1, 2, 5));
+                keepLounge.setClearanceStrategy(AllayClearanceStrategy.KEEP_BLANK);
+                StartedJob kept = claimStructureAtLounge(
+                    helper,
+                    player,
+                    blankCellStructure(true),
+                    "blank-keep",
+                    keepAnchor,
+                    keepLounge
+                );
+                running[1] = kept.job().jobId();
+                BlockPos keepBlank = helper.absolutePos(keepAnchor);
+                check(
+                    !hasKindAt(kept.progress(), ConstructionBuildOp.Kind.DEMOLISH, keepBlank),
+                    "KEEP_BLANK must leave the world stone on the blueprint's blank cell"
+                );
+                check(
+                    hasKindAt(kept.progress(), ConstructionBuildOp.Kind.DEMOLISH, keepBlank.east()),
+                    "KEEP_BLANK must still demolish the world stone on the blueprint's cobble cell"
+                );
+                BlockPos sealed = keepBlank.east().east();
+                check(
+                    hasKindAt(kept.progress(), ConstructionBuildOp.Kind.SEAL, sealed),
+                    "the flooded blank cell must still be sealed under KEEP_BLANK"
+                );
+                check(
+                    hasKindAt(kept.progress(), ConstructionBuildOp.Kind.DEMOLISH, sealed),
+                    "seal fill on a blank cell must be demolished even under KEEP_BLANK"
+                );
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("clearance strategy setup failed: " + exception.reason());
+            } finally {
+                for (UUID jobId : running) {
+                    if (jobId != null) cancelQuietly(player, jobId);
+                }
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "7x5x7", floor = true)
+    @TestHolder(description = "Changing the claimed lounge clearance strategy reconciles unfinished blank-cell demolition")
+    static void loungeClearanceStrategyChangesPlannedJob(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            StartedJob started = null;
+            try {
+                BlockPos anchor = new BlockPos(4, 2, 3);
+                helper.setBlock(anchor, Blocks.STONE);
+                helper.setBlock(anchor.east(), Blocks.STONE);
+                AllayLoungeBlockEntity lounge = placeLounge(helper, new BlockPos(1, 2, 1));
+                lounge.setClearanceStrategy(AllayClearanceStrategy.KEEP_BLANK);
+                started = claimStructureAtLounge(
+                    helper,
+                    player,
+                    blankCellStructure(false),
+                    "clearance-toggle",
+                    anchor,
+                    lounge
+                );
+                BlockPos blank = helper.absolutePos(anchor);
+                ConstructionBuildOp blankDemolish = operationAt(
+                    started.progress(),
+                    ConstructionBuildOp.Kind.DEMOLISH,
+                    blank
+                );
+                check(started.progress().clearanceStrategy() == AllayClearanceStrategy.KEEP_BLANK,
+                    "the planned job did not record KEEP_BLANK");
+                check(blankDemolish == null,
+                    "KEEP_BLANK must not plan demolition on its explicit blank cell");
+
+                lounge.setClearanceStrategy(AllayClearanceStrategy.CLEAR_AREA);
+                check(started.progress().clearanceStrategy() == AllayClearanceStrategy.CLEAR_AREA,
+                    "CLEAR_AREA did not synchronize into the planned job");
+                blankDemolish = operationAt(started.progress(), ConstructionBuildOp.Kind.DEMOLISH, blank);
+                check(blankDemolish != null && blankDemolish.status() == ConstructionBuildOp.Status.PENDING,
+                    "CLEAR_AREA must add a pending demolition for an unfinished blank cell");
+
+                lounge.setClearanceStrategy(AllayClearanceStrategy.KEEP_BLANK);
+                check(blankDemolish.status() == ConstructionBuildOp.Status.SKIPPED,
+                    "KEEP_BLANK must skip the unfinished blank-cell demolition");
+
+                lounge.setClearanceStrategy(AllayClearanceStrategy.CLEAR_AREA);
+                check(blankDemolish.status() == ConstructionBuildOp.Status.PENDING,
+                    "CLEAR_AREA must reactivate a skipped blank-cell demolition while the block remains");
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("clearance toggle setup failed: " + exception.reason());
+            } finally {
+                if (started != null) cancelQuietly(player, started.job().jobId());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A real block placed during building is inserted as reactive demolition and keeps marked debris")
+    static void runtimePlacedBlockIsDemolishedAndMarked(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            StartedJob started = null;
+            try {
+                player.moveTo(helper.absoluteVec(new Vec3(2.5D, 2.0D, 1.5D)));
+                started = startCobbleJob(helper, player, 1);
+                BlockPos target = helper.absolutePos(new BlockPos(3, 2, 1));
+                helper.setBlock(new BlockPos(3, 2, 1), Blocks.STONE);
+                ConstructionJobIndex index = ConstructionJobIndex.get(helper.getLevel());
+                ConstructionJob live = index.job(started.job().jobId());
+                check(live != null && live.state() == ConstructionJob.STATE_DEMOLISHING,
+                    "a new mismatching block must pause building for demolition");
+                ConstructionBuildOp reactive = firstReactiveAt(started.progress(), target);
+                check(reactive.status() == ConstructionBuildOp.Status.PENDING,
+                    "reactive demolition must start pending");
+                check(ConstructionJobController.tryDemolish(helper.getLevel(), started.progress(), reactive),
+                    "the reactive demolition must use the normal smash path");
+                check(helper.getLevel().getBlockState(target).isAir(), "reactive demolition must clear the real block");
+                check(started.progress().debrisSpawned(reactive.id()) > 0,
+                    "reactive demolition must account for spawned debris");
+                boolean marked = false;
+                for (ItemEntity item : helper.getLevel().getEntitiesOfClass(ItemEntity.class, new AABB(target).inflate(1.5D))) {
+                    if (item.getItem().is(Items.COBBLESTONE) && ConstructionDebris.isMarked(item.getItem())) {
+                        marked = true;
+                        break;
+                    }
+                }
+                check(marked, "reactive demolition drops must carry the construction marker");
+                ConstructionJobController.tickJob(helper.getLevel().getServer(), helper.getLevel(), index.job(started.job().jobId()));
+                check(index.job(started.job().jobId()).state() == ConstructionJob.STATE_BUILDING,
+                    "the job must return to building after reactive demolition");
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("runtime demolition setup failed: " + exception.reason());
+            } finally {
+                if (started != null) cancelQuietly(player, started.job().jobId());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "9x5x9", floor = true)
+    @TestHolder(description = "KEEP_BLANK preserves a new blank-cell block but still reacts on a blueprint block cell")
+    static void runtimePlacedBlockHonorsKeepBlank(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            StartedJob started = null;
+            try {
+                AllayLoungeBlockEntity lounge = placeLounge(helper, new BlockPos(1, 2, 1));
+                lounge.setClearanceStrategy(AllayClearanceStrategy.KEEP_BLANK);
+                started = claimStructureAtLounge(
+                    helper,
+                    player,
+                    blankCellStructure(false),
+                    "runtime-keep-blank",
+                    new BlockPos(4, 2, 5),
+                    lounge
+                );
+                BlockPos blank = helper.absolutePos(new BlockPos(4, 2, 5));
+                BlockPos target = blank.east();
+                helper.getLevel().setBlockAndUpdate(blank, Blocks.STONE.defaultBlockState());
+                check(helper.getLevel().getBlockState(blank).is(Blocks.STONE),
+                    "KEEP_BLANK must preserve a new block on an explicit blank cell");
+                check(!hasReactiveAt(started.progress(), blank),
+                    "KEEP_BLANK must not add demolition for a new blank-cell block");
+                check(ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId()).state()
+                        == ConstructionJob.STATE_BUILDING,
+                    "preserving a blank-cell block must not pause the job");
+
+                helper.getLevel().setBlockAndUpdate(target, Blocks.STONE.defaultBlockState());
+                check(ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId()).state()
+                        == ConstructionJob.STATE_DEMOLISHING,
+                    "a new block on a blueprint target must enter demolition under KEEP_BLANK");
+                ConstructionBuildOp reactive = firstReactiveAt(started.progress(), target);
+                check(ConstructionJobController.tryDemolish(helper.getLevel(), started.progress(), reactive),
+                    "the KEEP_BLANK target conflict must be demolishable");
+                check(helper.getBlockState(target).isAir(), "the mismatching target block must be removed");
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("runtime KEEP_BLANK setup failed: " + exception.reason());
+            } finally {
+                if (started != null) cancelQuietly(player, started.job().jobId());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "6x4x5", floor = true)
+    @TestHolder(description = "Replacing a delivered projection returns its material before reassigning the PLACE op")
+    static void runtimeConflictReturnsDeliveredMaterial(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            StartedJob started = null;
+            try {
+                player.moveTo(helper.absoluteVec(new Vec3(1.5D, 2.0D, 1.5D)));
+                started = startCobbleJob(helper, player, 2);
+                player.getInventory().add(new ItemStack(Items.COBBLESTONE, 1));
+                ConstructionBuildOp place = firstPlace(started.progress());
+                int beforeExtract = countCobble(player);
+                check(ConstructionJobController.extractMaterial(player, started.progress(), place, player.getUUID()),
+                    "the delivered projection fixture must extract its material");
+                check(ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), place),
+                    "the delivered projection fixture must publish");
+                check(ConstructionProjectionIndex.has(helper.getLevel(), started.job().jobId(), place.pos()),
+                    "the fixture must have a delivered projection");
+
+                helper.getLevel().setBlockAndUpdate(place.pos(), Blocks.STONE.defaultBlockState());
+                check(ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId()).state()
+                        == ConstructionJob.STATE_DEMOLISHING,
+                    "replacing a projection with a real block must enter demolition");
+                check(place.status() == ConstructionBuildOp.Status.PENDING,
+                    "the replaced PLACE operation must be reassigned");
+                check(!ConstructionProjectionIndex.has(helper.getLevel(), started.job().jobId(), place.pos()),
+                    "the replaced projection must be removed");
+                check(countCobble(player) == beforeExtract,
+                    "material from the replaced projection must be returned exactly once");
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("runtime projection setup failed: " + exception.reason());
+            } finally {
+                if (started != null) cancelQuietly(player, started.job().jobId());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "An exact external target resolves a material wait and an externally removed target is buildable again")
+    static void runtimeExactTargetReconcilesWait(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            StartedJob started = null;
+            try {
+                started = startCobbleJob(helper, player, 1);
+                ConstructionBuildOp place = firstPlace(started.progress());
+                ConstructionJobController.applyShortage(
+                    helper.getLevel().getServer(),
+                    started.job(),
+                    started.progress(),
+                    AllayShortageStrategy.PAUSE,
+                    place
+                );
+                check(
+                    ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId()).state()
+                        == ConstructionJob.STATE_WAITING_MATERIAL,
+                    "the fixture must enter WAITING_MATERIAL before the external target arrives"
+                );
+                helper.getLevel().setBlockAndUpdate(place.pos(), place.target());
+                ConstructionJob live = ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId());
+                check(live != null && live.state() != ConstructionJob.STATE_WAITING_MATERIAL,
+                    "an exact external target must clear the stale material wait");
+                check(place.worldSatisfied() && place.status() == ConstructionBuildOp.Status.DELIVERED,
+                    "the exact external target must satisfy the PLACE operation");
+
+                helper.getLevel().setBlockAndUpdate(place.pos(), Blocks.AIR.defaultBlockState());
+                check(place.status() == ConstructionBuildOp.Status.PENDING && !place.worldSatisfied(),
+                    "removing an externally satisfied target must reopen the PLACE operation");
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("runtime exact target setup failed: " + exception.reason());
+            } finally {
+                if (started != null) cancelQuietly(player, started.job().jobId());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "KEEP_BLANK still demolishes a block placed on an explicit entity target cell")
+    static void runtimeEntityTargetHonorsKeepBlank(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            StartedJob started = null;
+            try {
+                AllayLoungeBlockEntity lounge = placeLounge(helper, new BlockPos(1, 2, 1));
+                lounge.setClearanceStrategy(AllayClearanceStrategy.KEEP_BLANK);
+                CompoundTag boat = new CompoundTag();
+                boat.putString("id", "minecraft:boat");
+                started = claimStructureAtLounge(
+                    helper,
+                    player,
+                    entityOnlyStructure(List.of(boat)),
+                    "runtime-entity-keep-blank",
+                    new BlockPos(4, 2, 3),
+                    lounge
+                );
+                ConstructionBuildOp entity = firstKind(started.progress(), ConstructionBuildOp.Kind.ENTITY);
+                helper.getLevel().setBlockAndUpdate(entity.pos(), Blocks.STONE.defaultBlockState());
+                check(
+                    hasReactiveAt(started.progress(), entity.pos()),
+                    "KEEP_BLANK must add demolition when an entity target cell is blocked"
+                );
+                check(
+                    ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId()).state()
+                        == ConstructionJob.STATE_DEMOLISHING,
+                    "an entity target conflict must enter demolition under KEEP_BLANK"
+                );
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("runtime entity KEEP_BLANK setup failed: " + exception.reason());
+            } finally {
+                if (started != null) cancelQuietly(player, started.job().jobId());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_demolish")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A real block replacing a delivered entity projection reopens the entity operation")
+    static void runtimeEntityProjectionReopensOnConflict(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            StartedJob started = null;
+            try {
+                CompoundTag boat = new CompoundTag();
+                boat.putString("id", "minecraft:boat");
+                started = startStructureJob(
+                    helper,
+                    player,
+                    entityOnlyStructure(List.of(boat)),
+                    "runtime-entity-projection",
+                    new BlockPos(2, 2, 2)
+                );
+                ConstructionBuildOp entity = firstKind(started.progress(), ConstructionBuildOp.Kind.ENTITY);
+                player.getInventory().add(new ItemStack(Items.OAK_BOAT));
+                int before = countItem(player, Items.OAK_BOAT);
+                check(
+                    ConstructionJobController.extractMaterial(player, started.progress(), entity, player.getUUID()),
+                    "the entity projection fixture must extract its material"
+                );
+                check(ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), entity),
+                    "the entity projection fixture must publish");
+                check(
+                    ConstructionEntityProjectionIndex.delivered(helper.getLevel(), started.job().jobId()).stream()
+                        .anyMatch(entry -> entry.opId() == entity.id()),
+                    "the entity projection must be present before the conflict"
+                );
+
+                helper.getLevel().setBlockAndUpdate(entity.pos(), Blocks.STONE.defaultBlockState());
+                check(entity.status() == ConstructionBuildOp.Status.PENDING,
+                    "a real block must reopen the replaced entity operation");
+                check(
+                    ConstructionEntityProjectionIndex.delivered(helper.getLevel(), started.job().jobId()).stream()
+                        .noneMatch(entry -> entry.opId() == entity.id()),
+                    "the replaced entity projection must be removed"
+                );
+                check(countItem(player, Items.OAK_BOAT) == before,
+                    "the replaced entity material must be returned exactly once");
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("runtime entity projection setup failed: " + exception.reason());
+            } finally {
+                if (started != null) cancelQuietly(player, started.job().jobId());
             }
         }).thenSucceed();
     }
@@ -2704,10 +3249,10 @@ public final class ConstructionJobGameTests {
                         sawExtended = true;
                     }
                 }
-                check(
-                    sawPorts && sawLocked && sawComparator && sawExtended,
-                    "fixture must commit AnvilCraft wire, comparator, locked repeater and extended piston"
-                );
+                check(sawPorts, "commit phase must keep the AnvilCraft wire delivered and restore its ports");
+                check(sawLocked, "commit phase must keep the locked repeater delivered");
+                check(sawComparator, "commit phase must keep the comparator delivered");
+                check(sawExtended, "commit phase must keep the extended piston delivered");
             } catch (ConstructionBlueprintException exception) {
                 throw new GameTestAssertException("redstone commit setup failed: " + exception.reason());
             }
@@ -2906,6 +3451,218 @@ public final class ConstructionJobGameTests {
                 check(countItem(player, Items.WATER_BUCKET) == 0, "the filled bucket must stay consumed");
             } catch (ConstructionBlueprintException exception) {
                 throw new GameTestAssertException("water bucket setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A written sign plans a blank face plus one DECORATE per aspect and charges dye, glow ink and honeycomb")
+    static void signPlansBlankFaceAndPerAspectDecorations(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob started = startStructureJob(
+                    helper,
+                    player,
+                    signStructure(
+                        helper.getLevel().registryAccess(),
+                        Component.literal("hello"),
+                        true,
+                        true,
+                        true
+                    ),
+                    "written-sign",
+                    new BlockPos(2, 2, 2)
+                );
+                ConstructionJobProgress progress = started.progress();
+                ConstructionBuildOp place = firstPlace(progress);
+                CompoundTag config = place.blockEntity();
+                check(config != null && config.contains("id"), "the sign PLACE must keep its block entity config");
+                check(
+                    !config.contains("front_text")
+                        && !config.contains("back_text")
+                        && !config.contains("is_waxed"),
+                    "planning must strip text, colour, glow and wax so commit cannot restore them for free"
+                );
+                ConstructionBuildOp frontText =
+                    signDecoration(progress, place, SignDecorationAdapter.Aspect.TEXT, true);
+                ConstructionBuildOp backText =
+                    signDecoration(progress, place, SignDecorationAdapter.Aspect.TEXT, false);
+                ConstructionBuildOp color =
+                    signDecoration(progress, place, SignDecorationAdapter.Aspect.COLOR, true);
+                ConstructionBuildOp glow =
+                    signDecoration(progress, place, SignDecorationAdapter.Aspect.GLOW, true);
+                ConstructionBuildOp wax =
+                    signDecoration(progress, place, SignDecorationAdapter.Aspect.WAX, true);
+                check(frontText != null && backText != null, "both faces must plan their own writing operation");
+                check(frontText.parentId() == place.id(), "DECORATE must hang on the sign PLACE");
+                check(
+                    frontText.material().isEmpty() && backText.material().isEmpty(),
+                    "writing text must cost nothing"
+                );
+                check(color != null && color.material().is(Items.RED_DYE), "colouring the front must charge red dye");
+                check(
+                    glow != null && glow.material().is(Items.GLOW_INK_SAC),
+                    "glowing the front must charge a glow ink sac"
+                );
+                check(wax != null && wax.material().is(Items.HONEYCOMB), "waxing must charge a honeycomb");
+                check(
+                    signDecoration(progress, place, SignDecorationAdapter.Aspect.COLOR, false) == null,
+                    "a default black face must not plan a dye operation"
+                );
+                check(
+                    signDecoration(progress, place, SignDecorationAdapter.Aspect.GLOW, false) == null,
+                    "a face without glowing text must not plan a glow ink sac operation"
+                );
+                check(
+                    !ConstructionJobController.tryDeliver(helper.getLevel(), progress, frontText),
+                    "writing must wait until the blank sign itself is delivered"
+                );
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("sign decoration planning setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Commit writes only the sign aspects that were really delivered and leaves the rest blank")
+    static void signCommitsOnlyDeliveredDecorations(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                StartedJob started = startStructureJob(
+                    helper,
+                    player,
+                    signStructure(
+                        helper.getLevel().registryAccess(),
+                        Component.literal("hello"),
+                        true,
+                        true,
+                        true
+                    ),
+                    "partial-sign",
+                    new BlockPos(2, 2, 2)
+                );
+                ConstructionJobProgress progress = started.progress();
+                ConstructionBuildOp place = firstPlace(progress);
+                player.getInventory().add(new ItemStack(Items.OAK_SIGN));
+                player.getInventory().add(new ItemStack(Items.RED_DYE));
+                player.getInventory().add(new ItemStack(Items.GLOW_INK_SAC));
+                player.getInventory().add(new ItemStack(Items.HONEYCOMB));
+                check(
+                    ConstructionJobController.extractMaterial(player, progress, place, UUID.randomUUID()),
+                    "extracting the sign must succeed"
+                );
+                check(
+                    ConstructionJobController.tryDeliver(helper.getLevel(), progress, place),
+                    "delivering the blank sign projection must succeed"
+                );
+                // 只交付正面书写与染色:发光、打蜡和反面书写留着不做,提交必须照样留空
+                deliverDecoration(
+                    helper,
+                    player,
+                    progress,
+                    signDecoration(progress, place, SignDecorationAdapter.Aspect.TEXT, true)
+                );
+                deliverDecoration(
+                    helper,
+                    player,
+                    progress,
+                    signDecoration(progress, place, SignDecorationAdapter.Aspect.COLOR, true)
+                );
+                check(countItem(player, Items.RED_DYE) == 0, "colouring must consume the dye");
+                ConstructionJobController.finish(
+                    helper.getLevel().getServer(),
+                    helper.getLevel(),
+                    started.job(),
+                    progress
+                );
+                check(helper.getLevel().getBlockState(place.pos()).is(Blocks.OAK_SIGN), "commit must write the sign");
+                BlockEntity blockEntity = helper.getLevel().getBlockEntity(place.pos());
+                check(blockEntity instanceof SignBlockEntity, "the committed sign must have a sign block entity");
+                SignBlockEntity sign = (SignBlockEntity) blockEntity;
+                check(
+                    sign.getFrontText().getMessage(0, false).getString().equals("hello"),
+                    "commit must write the delivered front text"
+                );
+                check(sign.getFrontText().getColor() == DyeColor.RED, "commit must write the delivered dye colour");
+                check(!sign.getFrontText().hasGlowingText(), "an undelivered glow must not be restored for free");
+                check(!sign.isWaxed(), "undelivered wax must not be restored for free");
+                check(
+                    sign.getBackText().getMessage(0, false).getString().isEmpty(),
+                    "an undelivered face must stay blank"
+                );
+                check(countItem(player, Items.GLOW_INK_SAC) == 1, "the unused glow ink sac must stay in the inventory");
+                check(countItem(player, Items.HONEYCOMB) == 1, "the unused honeycomb must stay in the inventory");
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("partial sign commit setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A blueprint sign carrying a run_command click event commits as plain text with nothing executable")
+    static void signCommandClickEventIsFlattenedOnCommit(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                Component command = Component.literal("click me").withStyle(style -> style.withClickEvent(
+                    new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/gamemode creative")
+                ));
+                StartedJob started = startStructureJob(
+                    helper,
+                    player,
+                    signStructure(helper.getLevel().registryAccess(), command, false, false, true),
+                    "command-sign",
+                    new BlockPos(2, 2, 2)
+                );
+                ConstructionJobProgress progress = started.progress();
+                ConstructionBuildOp place = firstPlace(progress);
+                player.getInventory().add(new ItemStack(Items.OAK_SIGN));
+                player.getInventory().add(new ItemStack(Items.HONEYCOMB));
+                check(
+                    ConstructionJobController.extractMaterial(player, progress, place, UUID.randomUUID()),
+                    "extracting the sign must succeed"
+                );
+                check(
+                    ConstructionJobController.tryDeliver(helper.getLevel(), progress, place),
+                    "delivering the blank sign projection must succeed"
+                );
+                deliverDecoration(
+                    helper,
+                    player,
+                    progress,
+                    signDecoration(progress, place, SignDecorationAdapter.Aspect.TEXT, true)
+                );
+                deliverDecoration(
+                    helper,
+                    player,
+                    progress,
+                    signDecoration(progress, place, SignDecorationAdapter.Aspect.WAX, true)
+                );
+                ConstructionJobController.finish(
+                    helper.getLevel().getServer(),
+                    helper.getLevel(),
+                    started.job(),
+                    progress
+                );
+                BlockEntity blockEntity = helper.getLevel().getBlockEntity(place.pos());
+                check(blockEntity instanceof SignBlockEntity, "the committed sign must have a sign block entity");
+                SignBlockEntity sign = (SignBlockEntity) blockEntity;
+                Component committed = sign.getFrontText().getMessage(0, false);
+                check(committed.getString().equals("click me"), "flattening must keep the visible characters");
+                check(committed.getStyle().getClickEvent() == null, "flattening must drop the click event");
+                // 原版只在上蜡的牌子上执行点击命令,所以蜡必须真的交付,否则这条断言会因为没上蜡而虚假通过
+                check(sign.isWaxed(), "the wax aspect must be delivered or this regression asserts nothing");
+                check(
+                    !sign.canExecuteClickCommands(true, player),
+                    "a committed sign must never carry an executable command: vanilla runs it at permission level 2"
+                );
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("command sign setup failed: " + exception.reason());
             }
         }).thenSucceed();
     }
@@ -3580,6 +4337,123 @@ public final class ConstructionJobGameTests {
                 ConstructionBlueprintService.cancel(player, started.job().jobId());
             } catch (ConstructionBlueprintException exception) {
                 throw new GameTestAssertException("evict carry setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 80, batch = "zzz_construction_lounge")
+    @EmptyTemplate(value = "9x6x9", floor = true)
+    @TestHolder(description = "A reloaded worker restores its carried construction ledger and coordinator binding")
+    static void reloadRestoresCarriedConstructionWorker(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                AllayLoungeBlockEntity lounge = placeLoungeWithChest(
+                    helper,
+                    new BlockPos(2, 2, 2),
+                    new ItemStack(Items.COBBLESTONE, 4)
+                );
+                StartedJob started = claimCobbleAtLounge(helper, player, 1, lounge);
+                WorkingAllayEntity worker = spawnConstructionAllay(
+                    helper,
+                    new Vec3(4.5D, 3.0D, 4.5D),
+                    player,
+                    0
+                );
+                worker.setHomeLounge(lounge.getBlockPos());
+                ConstructionBuildOp operation = firstPlace(started.progress());
+                check(
+                    ConstructionJobController.extractMaterialFromLounge(
+                        helper.getLevel(),
+                        started.progress(),
+                        operation,
+                        worker.getUUID()
+                    ),
+                    "the coordinator chest must provide the carried material"
+                );
+                worker.setHostedCarry(new ItemStack(Items.COBBLESTONE));
+                // 模拟实体 NBT 重载后丢失运行时租约、协调室字段与路径快照。
+                operation.setStatus(ConstructionBuildOp.Status.PENDING);
+                operation.setLeaseAllay(null);
+                operation.setApproach(null);
+                worker.clearAssignment(false);
+                worker.setHomeLounge(null);
+                worker.navigator().clear();
+
+                ConstructionAllayToolBehavior.INSTANCE.serverTick(worker);
+
+                check(
+                    worker.assignedJobId().filter(started.job().jobId()::equals).isPresent(),
+                    "a carried ledger must restore the worker's construction assignment"
+                );
+                check(worker.taskOpId() == operation.id(), "the original carried operation must be restored");
+                check(lounge.getBlockPos().equals(worker.homeLoungePos()),
+                    "the coordinator binding must be restored from the progress ledger");
+                check(operation.leaseAllay().filter(worker.getUUID()::equals).isPresent(),
+                    "restored operation must reacquire its allay lease");
+                check(worker.hostedCarry().is(Items.COBBLESTONE),
+                    "restoring the ledger must not discard the physical carried item");
+                check(
+                    helper.getLevel().getEntitiesOfClass(
+                        ItemEntity.class,
+                        worker.getBoundingBox().inflate(1.5D),
+                        item -> item.getItem().is(Items.COBBLESTONE)
+                    ).isEmpty(),
+                    "restoring a valid carried ledger must not drop a duplicate item"
+                );
+                ConstructionBlueprintService.cancel(player, started.job().jobId());
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("reload carried-worker setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_lounge")
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "A carried ledger without physical material is returned instead of recreated")
+    static void missingCarriedMaterialIsNotRecreated(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                AllayLoungeBlockEntity lounge = placeLoungeWithChest(
+                    helper,
+                    new BlockPos(2, 2, 2),
+                    new ItemStack(Items.COBBLESTONE, 1)
+                );
+                StartedJob started = claimCobbleAtLounge(helper, player, 1, lounge);
+                WorkingAllayEntity worker = spawnConstructionAllay(
+                    helper,
+                    new Vec3(4.5D, 3.0D, 4.5D),
+                    player,
+                    0
+                );
+                ConstructionBuildOp operation = firstPlace(started.progress());
+                started.progress().addLedger(
+                    operation.id(),
+                    new ItemStack(Items.COBBLESTONE),
+                    worker.getUUID()
+                );
+                operation.setStatus(ConstructionBuildOp.Status.PENDING);
+                operation.setLeaseAllay(null);
+                operation.setApproach(null);
+
+                ConstructionAllayToolBehavior.INSTANCE.serverTick(worker);
+
+                check(worker.assignedJobId().isEmpty(),
+                    "a worker without the carried item must not keep a synthetic assignment");
+                check(worker.hostedCarry().isEmpty(),
+                    "missing carried material must not be recreated on the worker");
+                check(carriedCount(started.progress()) == 0,
+                    "missing carried material must close its stale ledger entry");
+                check(operation.status() == ConstructionBuildOp.Status.PENDING,
+                    "missing carried material must return the operation to pending");
+                check(
+                    countInChest(helper, lounge.getBlockPos().below(), Items.COBBLESTONE) == 1,
+                    "missing carried material must not consume another chest item"
+                );
+                ConstructionBlueprintService.cancel(player, started.job().jobId());
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("missing carried-worker setup failed: " + exception.reason());
             }
         }).thenSucceed();
     }
@@ -4655,9 +5529,33 @@ public final class ConstructionJobGameTests {
         helper.succeed();
     }
 
-    @GameTest(timeoutTicks = 20, batch = "zzz_construction_flight")
-    @EmptyTemplate(value = "5x4x5", floor = true)
-    @TestHolder(description = "A pending path search and short backtracking cannot erase the worker stall watchdog")
+    @GameTest(timeoutTicks = 80, batch = "zzz_construction_flight")
+    @EmptyTemplate(value = "5x5x5", floor = true)
+    @TestHolder(description = "A worker buried by a block escapes to free space instead of suffocating in place")
+    static void buriedWorkerEscapesInsteadOfSuffocating(ExtendedGameTestHelper helper) {
+        WorkingAllayEntity worker = spawnConstructionAllay(helper, new Vec3(2.5D, 3.2D, 2.5D), null, 0);
+        // 提交阶段把投影换成真实方块时悦灵可能正停在这一格里:碰撞钳制会吃掉全部位移,
+        // 寻路却以为自己一直在走,于是悦灵原地窒息;这里锁住"被包住就必须自己挪出去"
+        helper.setBlock(new BlockPos(2, 3, 2), Blocks.STONE);
+        BlockPos buried = helper.absolutePos(new BlockPos(2, 3, 2));
+        check(
+            !helper.getLevel().noBlockCollision(worker, worker.getBoundingBox()),
+            "测试前置必须让悦灵确实被方块包住，否则本回归失去意义"
+        );
+        helper.startSequence().thenExecuteAfter(40, () -> {
+            check(worker.isAlive(), "被包住的悦灵必须先脱困，而不是一直窒息到死");
+            check(
+                helper.getLevel().noBlockCollision(worker, worker.getBoundingBox()),
+                "被方块包住的悦灵必须自行挪到空位"
+            );
+            check(
+                !new AABB(buried).intersects(worker.getBoundingBox()),
+                "脱困后不得还留在实心格里"
+            );
+        }).thenSucceed();
+    }
+
+
     static void pendingFlightKeepsStallWatchdog(ExtendedGameTestHelper helper) {
         WorkingAllayEntity worker = spawnConstructionAllay(helper, new Vec3(2.5D, 2.0D, 2.5D), null, 0);
         worker.resetStuck();
@@ -4713,6 +5611,42 @@ public final class ConstructionJobGameTests {
             worker.move(MoverType.SELF, worker.getDeltaMovement());
         }
         check(worker.position().distanceTo(goal) < 0.4D, "allay oscillated instead of crossing the block edge");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20, batch = "zzz_construction_flight")
+    @EmptyTemplate(value = "5x5x5", floor = true)
+    @TestHolder(description = "A navigation point centers the worker box in its cell with margin above and below")
+    static void navigationPointCentersWorkerBoxInCell(ExtendedGameTestHelper helper) {
+        BlockPos cell = helper.absolutePos(new BlockPos(2, 2, 2));
+        AABB box = ConstructionWorkerSpace.boxAt(ConstructionWorkerSpace.navigationPoint(cell));
+        double below = box.minY - cell.getY();
+        double above = cell.getY() + 1.0D - box.maxY;
+        check(Math.abs(below - above) < 1.0E-9D, "落脚点必须在格内竖直居中");
+        check(below > 0.1D, "落脚点距格底的余量必须足够吸收到达误差，紧贴格底会让包围盒探进正下方的目标格");
+        check(new AABB(cell).contains(box.getCenter()), "落脚点包围盒必须留在本格内");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_flight")
+    @EmptyTemplate(value = "5x5x5", floor = true)
+    @TestHolder(description = "An arrival inside the final-waypoint tolerance settles exactly onto the waypoint")
+    static void flightSettlesExactlyOnFinalWaypoint(ExtendedGameTestHelper helper) {
+        BlockPos target = helper.absolutePos(new BlockPos(2, 2, 2));
+        Vec3 approach = ConstructionWorkerSpace.navigationPoint(target.above());
+        WorkingAllayEntity worker = spawnConstructionAllay(helper, new Vec3(2.5D, 3.0D, 2.5D), null, 0);
+        // 从下方抬升到接近位时,终点判定容差之内的欠冲会让包围盒探进正下方的目标格,
+        // 交付判定据此认为工人占着目标格,而这点位移又小到无法执行,于是永久卡住
+        Vec3 undershoot = approach.subtract(0.0D, 0.22D, 0.0D);
+        worker.moveTo(undershoot.x, undershoot.y, undershoot.z);
+        check(undershoot.distanceToSqr(approach) < 0.09D, "本例必须落在终点判定容差之内");
+        check(worker.getBoundingBox().intersects(new AABB(target)), "欠冲位置必须确实探进目标格，否则本回归失去意义");
+
+        worker.navigator().setPath(List.of(approach));
+        check(!worker.navigator().follow(worker), "抵达终点这一刻不应再发出移动指令");
+        check(worker.position().distanceToSqr(approach) < 1.0E-9D, "抵达终点必须精确落位");
+        check(!worker.getBoundingBox().intersects(new AABB(target)), "落位后包围盒不得再探进目标格");
+        check(worker.getDeltaMovement().lengthSqr() < 1.0E-12D, "落位后必须停稳");
         helper.succeed();
     }
 
@@ -4862,6 +5796,43 @@ public final class ConstructionJobGameTests {
         helper.succeed();
     }
 
+    @GameTest(timeoutTicks = 20, batch = "zzz_construction_flight")
+    @EmptyTemplate(value = "7x5x5", floor = true)
+    @TestHolder(description = "A sub-cell hover drift under a ceiling still plans the short same-layer hop")
+    static void driftedHoverStillPlansUnderCeiling(ExtendedGameTestHelper helper) {
+        helper.setBlock(new BlockPos(2, 3, 2), Blocks.STONE);
+        helper.setBlock(new BlockPos(3, 3, 2), Blocks.STONE);
+        // 悦灵停靠常有亚格漂移,包围盒顶面探进上一格;那一格正好是天花板时,
+        // 每一步扫掠都会连带把它算进去并整体否决,明明只差两格也规划不出路径
+        WorkingAllayEntity worker = spawnConstructionAllay(helper, new Vec3(4.3987D, 2.4013D, 2.5D), null, 0);
+        Vec3 goal = ConstructionWorkerSpace.navigationPoint(helper.absolutePos(new BlockPos(2, 2, 2)));
+        check(
+            worker.getBoundingBox().intersects(new AABB(helper.absolutePos(new BlockPos(4, 3, 2)))),
+            "漂移姿态必须确实探进上一格，否则本回归失去意义"
+        );
+        check(
+            !AllayFlightPlanner.isClear(worker, worker.position(), goal),
+            "漂移姿态的直线扫掠必须被天花板否决"
+        );
+        Vec3 aligned = AllayFlightPlanner.alignToGrid(worker, worker.position());
+        check(
+            aligned.distanceToSqr(ConstructionWorkerSpace.navigationPoint(worker.blockPosition())) < 1.0E-9D,
+            "规划起点必须拉回所在格的落脚点"
+        );
+        List<Vec3> path = AllayFlightPlanner.plan(worker, goal);
+        check(!path.isEmpty(), "对齐起点后同层两格的短跳必须能规划出路径");
+        Vec3 previous = worker.position();
+        for (Vec3 point : path) {
+            check(
+                AllayFlightPlanner.isClear(worker, previous, point),
+                "路径分段 " + previous + " -> " + point + " 撞上了天花板"
+            );
+            previous = point;
+        }
+        check(path.get(path.size() - 1).distanceToSqr(goal) < 1.0E-9D, "路径终点必须精确落在目标落脚点上");
+        helper.succeed();
+    }
+
     private static StartedJob startCobbleJob(ExtendedGameTestHelper helper, GameTestPlayer player, int count)
         throws ConstructionBlueprintException {
         return startCobbleJob(helper, player, count, new BlockPos(3, 2, 1));
@@ -4915,12 +5886,22 @@ public final class ConstructionJobGameTests {
         int count,
         BlockPos relativeAnchor
     ) throws ConstructionBlueprintException {
+        return deployStructureDisk(helper, player, cobbleStructure(count), "cobble-wall-" + count, relativeAnchor);
+    }
+
+    private static ItemStack deployStructureDisk(
+        ExtendedGameTestHelper helper,
+        GameTestPlayer player,
+        CompoundTag structure,
+        String name,
+        BlockPos relativeAnchor
+    ) throws ConstructionBlueprintException {
         ItemStack disk = new ItemStack(ModItems.STRUCTURE_DISK.get());
         ConstructionBlueprintService.importIntoDisk(
             helper.getLevel().getServer(),
             disk,
-            cobbleStructure(count),
-            "cobble-wall-" + count,
+            structure,
+            name,
             BlueprintSource.VANILLA_FILE
         );
         player.setItemInHand(InteractionHand.MAIN_HAND, disk);
@@ -4948,24 +5929,45 @@ public final class ConstructionJobGameTests {
         int count,
         AllayLoungeBlockEntity lounge
     ) throws ConstructionBlueprintException {
+        return claimStructureAtLounge(
+            helper,
+            player,
+            cobbleStructure(count),
+            "cobble-wall-" + count,
+            new BlockPos(4, 2, 4),
+            lounge
+        );
+    }
+
+    private static StartedJob claimStructureAtLounge(
+        ExtendedGameTestHelper helper,
+        GameTestPlayer player,
+        CompoundTag structure,
+        String name,
+        BlockPos relativeAnchor,
+        AllayLoungeBlockEntity lounge
+    ) throws ConstructionBlueprintException {
         lounge.setOwner(player.getUUID());
-        ItemStack disk = deployDisk(helper, player, count, new BlockPos(4, 2, 4));
+        ItemStack disk = deployStructureDisk(helper, player, structure, name, relativeAnchor);
         UUID jobId = ConstructionBlueprintData.get(disk).flatMap(ConstructionBlueprintData::jobId).orElse(null);
-        check(jobId != null, "deployed lounge disk must carry a job id");
+        check(jobId != null, "deployed " + name + " lounge disk must carry a job id");
         lounge.items().setStackInSlot(AllayLoungeBlockEntity.DISK_SLOT, disk);
         MinecraftServer server = helper.getLevel().getServer();
         ConstructionJob claimed = ConstructionJobIndex.get(server).job(jobId);
         ConstructionJobProgress claimedProgress = ConstructionJobStore.get(server).get(jobId);
-        check(claimed != null && !claimed.isActive(), "inserting the disk must claim without starting");
+        check(claimed != null && !claimed.isActive(), "inserting the " + name + " disk must claim without starting");
         check(
             claimedProgress != null && lounge.getBlockPos().equals(claimedProgress.coordinatorLounge()),
-            "inserting the disk must record this lounge"
+            "inserting the " + name + " disk must record this lounge"
         );
         ConstructionBlueprintService.start(server, jobId);
         ConstructionJob started = ConstructionJobIndex.get(server).job(jobId);
-        check(started != null && started.isActive(), "right-click start after the claim must activate the job");
+        check(
+            started != null && started.isActive(),
+            "right-click start after the " + name + " claim must activate the job"
+        );
         ConstructionJobProgress progress = ConstructionJobStore.get(server).get(jobId);
-        check(progress != null && progress.planned(), "started claimed job must be planned");
+        check(progress != null && progress.planned(), "started claimed " + name + " job must be planned");
         return new StartedJob(started, progress);
     }
 
@@ -5075,6 +6077,24 @@ public final class ConstructionJobGameTests {
         return sizedStructure(5, 3, 5, positions, states, List.of());
     }
 
+    /**
+     * 沿 X 排列的声明格:锚点格声明空气,东侧一格声明毛石。
+     * {@code trailingBlank} 再追加一格空气,用于放水验证封堵填充块的拆除。
+     */
+    private static CompoundTag blankCellStructure(boolean trailingBlank) {
+        List<BlockPos> positions = new ArrayList<>();
+        List<BlockState> states = new ArrayList<>();
+        positions.add(BlockPos.ZERO);
+        states.add(Blocks.AIR.defaultBlockState());
+        positions.add(new BlockPos(1, 0, 0));
+        states.add(Blocks.COBBLESTONE.defaultBlockState());
+        if (trailingBlank) {
+            positions.add(new BlockPos(2, 0, 0));
+            states.add(Blocks.AIR.defaultBlockState());
+        }
+        return multiBlockStructure(positions, states);
+    }
+
     private static CompoundTag chestWithDiamonds(HolderLookup.Provider registries) {
         CompoundTag item = (CompoundTag) new ItemStack(Items.DIAMOND, 3).save(registries);
         item.putByte("Slot", (byte) 0);
@@ -5084,6 +6104,73 @@ public final class ConstructionJobGameTests {
         items.add(item);
         nbt.put("Items", items);
         return singleBlockStructure(Blocks.CHEST.defaultBlockState(), nbt);
+    }
+
+    /**
+     * 带字告示牌的规范快照:正面写第一行并可选染红/发光,反面固定写一行,再按需打蜡。
+     * 走 {@link SignText#DIRECT_CODEC} 编码而不是手写 {@code messages} 列表,
+     * 免得测试自己去猜 FLAT_CODEC 的落盘形状,与原版 {@code saveAdditional} 保持同一条路径。
+     */
+    private static CompoundTag signStructure(
+        HolderLookup.Provider registries,
+        Component frontLine,
+        boolean colored,
+        boolean glowing,
+        boolean waxed
+    ) {
+        SignText front = new SignText().setMessage(0, frontLine);
+        if (colored) front = front.setColor(DyeColor.RED);
+        if (glowing) front = front.setHasGlowingText(true);
+        SignText back = new SignText().setMessage(0, Component.literal("back"));
+        CompoundTag nbt = new CompoundTag();
+        nbt.putString("id", "minecraft:sign");
+        nbt.put("front_text", encodeSignText(registries, front));
+        nbt.put("back_text", encodeSignText(registries, back));
+        if (waxed) nbt.putBoolean("is_waxed", true);
+        return singleBlockStructure(Blocks.OAK_SIGN.defaultBlockState(), nbt);
+    }
+
+    private static CompoundTag encodeSignText(HolderLookup.Provider registries, SignText text) {
+        Tag encoded = SignText.DIRECT_CODEC
+            .encodeStart(registries.createSerializationContext(NbtOps.INSTANCE), text)
+            .result()
+            .orElse(null);
+        if (!(encoded instanceof CompoundTag compound)) {
+            throw new GameTestAssertException("a sign face must encode to a compound");
+        }
+        return compound;
+    }
+
+    /** 按加工面向和正反面取那条 DECORATE 子操作;没排这条加工时返回 null。 */
+    private static ConstructionBuildOp signDecoration(
+        ConstructionJobProgress progress,
+        ConstructionBuildOp parent,
+        SignDecorationAdapter.Aspect aspect,
+        boolean front
+    ) {
+        int slot = SignDecorationAdapter.slotOf(aspect, front);
+        for (ConstructionBuildOp child : progress.childrenOf(parent)) {
+            if (child.kind() == ConstructionBuildOp.Kind.DECORATE && child.slot() == slot) return child;
+        }
+        return null;
+    }
+
+    /** 交付一条告示牌加工;书写没有材料,取料会因为 needsMaterial 为假直接放行。 */
+    private static void deliverDecoration(
+        ExtendedGameTestHelper helper,
+        GameTestPlayer player,
+        ConstructionJobProgress progress,
+        ConstructionBuildOp decoration
+    ) {
+        check(decoration != null, "the decoration operation to deliver must exist");
+        check(
+            ConstructionJobController.extractMaterial(player, progress, decoration, UUID.randomUUID()),
+            "extracting sign decoration slot " + decoration.slot() + " must succeed"
+        );
+        check(
+            ConstructionJobController.tryDeliver(helper.getLevel(), progress, decoration),
+            "delivering sign decoration slot " + decoration.slot() + " must succeed"
+        );
     }
 
     private static CompoundTag doubleChestStructure(HolderLookup.Provider registries) {
@@ -5509,6 +6596,20 @@ public final class ConstructionJobGameTests {
         );
     }
 
+    /** 平铺成环的规范快照:size×size 外框一圈鹅卵石，全部落在同一层。 */
+    private static CompoundTag ringStructure(int size) {
+        List<BlockPos> positions = new ArrayList<>();
+        List<BlockState> states = new ArrayList<>();
+        for (int x = 0; x < size; x++) {
+            for (int z = 0; z < size; z++) {
+                if (x != 0 && x != size - 1 && z != 0 && z != size - 1) continue;
+                positions.add(new BlockPos(x, 0, z));
+                states.add(Blocks.COBBLESTONE.defaultBlockState());
+            }
+        }
+        return multiBlockStructure(positions, states);
+    }
+
     private static CompoundTag multiBlockStructure(List<BlockPos> positions, List<BlockState> states) {
         int maxX = 0;
         int maxY = 0;
@@ -5628,7 +6729,8 @@ public final class ConstructionJobGameTests {
     }
 
     private static CompoundTag entityOnlyStructure(List<CompoundTag> entities) {
-        CompoundTag tag = sizedStructure(1, 1, 1, List.of(BlockPos.ZERO), List.of(Blocks.AIR.defaultBlockState()), List.of());
+        // 原版结构通常省略全为空气的 blocks 条目,实体所在格仍必须被任务声明
+        CompoundTag tag = sizedStructure(1, 1, 1, List.of(), List.of(Blocks.AIR.defaultBlockState()), List.of());
         ListTag list = new ListTag();
         for (CompoundTag nbt : entities) {
             CompoundTag entry = new CompoundTag();
@@ -5718,6 +6820,28 @@ public final class ConstructionJobGameTests {
         throw new GameTestAssertException("planned job has no " + kind + " operation");
     }
 
+    private static ConstructionBuildOp firstReactiveAt(ConstructionJobProgress progress, BlockPos pos) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() == ConstructionBuildOp.Kind.DEMOLISH
+                && op.reactive()
+                && op.pos().equals(pos)) {
+                return op;
+            }
+        }
+        throw new GameTestAssertException("planned job has no reactive demolition at " + pos);
+    }
+
+    private static boolean hasReactiveAt(ConstructionJobProgress progress, BlockPos pos) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() == ConstructionBuildOp.Kind.DEMOLISH
+                && op.reactive()
+                && op.pos().equals(pos)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static ConstructionBuildOp firstOpenKind(ConstructionJobProgress progress, ConstructionBuildOp.Kind kind) {
         for (ConstructionBuildOp op : progress.operations()) {
             if (op.kind() == kind && op.isOpen()) return op;
@@ -5731,6 +6855,28 @@ public final class ConstructionJobGameTests {
             if (op.kind() == kind) count++;
         }
         return count;
+    }
+
+    private static boolean hasKindAt(
+        ConstructionJobProgress progress,
+        ConstructionBuildOp.Kind kind,
+        BlockPos pos
+    ) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() == kind && op.pos().equals(pos)) return true;
+        }
+        return false;
+    }
+
+    private static ConstructionBuildOp operationAt(
+        ConstructionJobProgress progress,
+        ConstructionBuildOp.Kind kind,
+        BlockPos pos
+    ) {
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() == kind && op.pos().equals(pos)) return op;
+        }
+        return null;
     }
 
     private static int countContainer(Container container, Item item) {
@@ -5774,6 +6920,25 @@ public final class ConstructionJobGameTests {
             if (op.kind() == ConstructionBuildOp.Kind.PLACE && op.isOpen()) return op;
         }
         throw new GameTestAssertException("planned job has no remaining PLACE operation");
+    }
+
+    private static ConstructionBuildOp closestOpenPlace(ConstructionJobProgress progress, Vec3 from) {
+        ConstructionBuildOp best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (ConstructionBuildOp op : progress.operations()) {
+            if (op.kind() != ConstructionBuildOp.Kind.PLACE || !op.isOpen()) continue;
+            double distance = from.distanceToSqr(Vec3.atCenterOf(op.pos()));
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = op;
+            }
+        }
+        if (best == null) throw new GameTestAssertException("planned job has no open PLACE operation");
+        return best;
+    }
+
+    private static double centerDistanceSqr(WorkingAllayEntity worker, ConstructionBuildOp op) {
+        return worker.position().distanceToSqr(Vec3.atCenterOf(op.pos()));
     }
 
     private static int deliveredCount(ConstructionJobProgress progress) {

@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.inventory;
 
+import dev.anvilcraft.plasticraft.allay.AllayClearanceStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
@@ -26,7 +27,8 @@ import org.jetbrains.annotations.Nullable;
 public class AllayLoungeMenu extends AbstractContainerMenu {
     public static final int DATA_HOSTED_COUNT = 0;
     public static final int DATA_STRATEGY = 1;
-    public static final int DATA_COUNT = 2;
+    public static final int DATA_CLEARANCE = 2;
+    public static final int DATA_COUNT = 3;
     public static final int DISK_SLOT_X = 134;
     public static final int DISK_SLOT_Y = 27;
     public static final int PLAYER_INVENTORY_Y = 104;
@@ -59,6 +61,7 @@ public class AllayLoungeMenu extends AbstractContainerMenu {
                     return switch (index) {
                         case DATA_HOSTED_COUNT -> lounge.hosted().size();
                         case DATA_STRATEGY -> lounge.shortageStrategy().ordinal();
+                        case DATA_CLEARANCE -> lounge.clearanceStrategy().ordinal();
                         default -> 0;
                     };
                 }
@@ -142,6 +145,12 @@ public class AllayLoungeMenu extends AbstractContainerMenu {
         int id = this.data.get(DATA_STRATEGY);
         AllayShortageStrategy[] values = AllayShortageStrategy.values();
         return id >= 0 && id < values.length ? values[id] : AllayShortageStrategy.PAUSE;
+    }
+
+    public AllayClearanceStrategy clearanceStrategy() {
+        int id = this.data.get(DATA_CLEARANCE);
+        AllayClearanceStrategy[] values = AllayClearanceStrategy.values();
+        return id >= 0 && id < values.length ? values[id] : AllayClearanceStrategy.CLEAR_AREA;
     }
 
     @Nullable

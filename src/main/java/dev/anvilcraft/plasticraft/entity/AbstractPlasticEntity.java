@@ -16,11 +16,14 @@ import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityContactResolver;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticCarrierPrediction;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticPushChain;
+import dev.anvilcraft.plasticraft.entity.physics.PlasticBlockEpoch;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityGridSnapping;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
+import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityRestState;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFallingBlockSupport;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFluidPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticMagnetism;
+import dev.anvilcraft.plasticraft.entity.physics.PlasticRestIndex;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticSlidingRailPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticWallSnapping;
 import dev.anvilcraft.plasticraft.entity.redstone.PlasticObserverContact;
@@ -82,6 +85,7 @@ import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.common.NeoForge;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -128,6 +132,11 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     private static final EntityDataAccessor<Long> HAMMER_RETURN_STARTED = SynchedEntityData.defineId(
         AbstractPlasticEntity.class,
         EntityDataSerializers.LONG
+    );
+    /** 客户端 Ctrl 中键需要完整物品状态，不能依赖仅用于显示的方块状态。 */
+    private static final EntityDataAccessor<ItemStack> PICK_STACK = SynchedEntityData.defineId(
+        AbstractPlasticEntity.class,
+        EntityDataSerializers.ITEM_STACK
     );
     private static final String TAG_HAMMER_STABLE_ORIENTATION = "HammerStableOrientation";
     private static final String TAG_HAMMER_RETURN_AT = "HammerReturnAt";
@@ -191,6 +200,16 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     private Set<BlockPos> observerContacts = Set.of();
     private boolean observerContactsDirty = true;
     private boolean silentObserverContactHydration;
+    private long supportCacheGameTime = Long.MIN_VALUE;
+    private long supportCacheBlockEpoch = Long.MIN_VALUE;
+    private Vec3 supportCachePosition;
+    private byte supportCacheOrientation;
+    private final Entity[] cachedFindSupport = new Entity[6];
+    private final boolean[] cachedFindSupportReady = new boolean[6];
+    private final byte[] cachedHasBlockSupport = new byte[6];
+    private Vec3 lastBroadcastDeltaMovement = Vec3.ZERO;
+    private boolean lastFluidContact;
+    private final PlasticEntityRestState restState = new PlasticEntityRestState();
 
     protected AbstractPlasticEntity(
         EntityType<? extends AbstractPlasticEntity> entityType,
@@ -232,7 +251,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             .define(MAGNETIZED, false)
             .define(HAMMER_STABLE_ORIENTATION, NO_HAMMER_ORIENTATION)
             .define(HAMMER_RETURN_FROM, (byte) PlasticEntityOrientation.DEFAULT.pack())
-            .define(HAMMER_RETURN_STARTED, -1L);
+            .define(HAMMER_RETURN_STARTED, -1L)
+            .define(PICK_STACK, ItemStack.EMPTY);
     }
 
     public final BlockState getDisplayState() {
@@ -476,6 +496,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             PlasticItemData.setMaterial(this.dropStack, this.materialKey());
             if (!this.supportsDyeing()) PlasticItemData.clearColor(this.dropStack);
         }
+        this.entityData.set(PICK_STACK, this.dropStack.copy());
         this.onDropStackChanged(this.dropStack.copy());
     }
 
@@ -605,13 +626,78 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     }
 
     private void markObserverContactsDirty(Vec3 previousPosition) {
-        if (!this.position().equals(previousPosition)) this.observerContactsDirty = true;
+        if (this.position().equals(previousPosition)) return;
+        this.observerContactsDirty = true;
+        // 自身移动会改变周围实体的支撑与侧向接触关系。索引登记时已外扩一格，
+        // 因此用移动后的包围盒直接查询即可命中所有一格内的休眠实体（含自身）。
+        if (!this.level().isClientSide) {
+            PlasticRestIndex.wakeInBounds(this.level(), this.getBoundingBox());
+        }
+    }
+
+    /**
+     * 支撑查询在单次 {@code tick} 内会被重复问到五六次，这里按刻记忆化。
+     *
+     * <p>缓存键取 {@code (gameTime, 方块纪元, position() 引用, 朝向)}：{@code Entity#setPosRaw} 只在坐标真正
+     * 变化时才新建 {@link Vec3}，因此引用比较就是一次零成本的「本实体是否移动过」判定。实体逐个 tick，
+     * 本实体不动时其它实体也不可能被本实体的推挤链移动，所以引用未变即代表可见的实体布局未变；
+     * 方块纪元额外覆盖刻内的方块写入。几何体（含显示状态）变化经 {@link #invalidatePlasticGeometry()} 失效。</p>
+     */
+    private void ensureSupportCacheValid() {
+        long gameTime = this.level().getGameTime();
+        long blockEpoch = PlasticBlockEpoch.current();
+        Vec3 position = this.position();
+        byte orientation = (byte) this.getOrientation().pack();
+        if (this.supportCacheGameTime == gameTime
+            && this.supportCacheBlockEpoch == blockEpoch
+            && this.supportCachePosition == position
+            && this.supportCacheOrientation == orientation) {
+            return;
+        }
+        this.supportCacheGameTime = gameTime;
+        this.supportCacheBlockEpoch = blockEpoch;
+        this.supportCachePosition = position;
+        this.supportCacheOrientation = orientation;
+        Arrays.fill(this.cachedFindSupport, null);
+        Arrays.fill(this.cachedFindSupportReady, false);
+        Arrays.fill(this.cachedHasBlockSupport, (byte) 0);
+    }
+
+    /**
+     * {@code null} 是合法结果，因此用单独的就绪标记区分「未算过」和「算过且没有支撑」。
+     *
+     * <p>撞击回调（锅体配方、铁砧砸伤）可能在同一刻内移除支撑实体，而本实体位置并未改变。
+     * {@code findSupport} 本身会过滤已移除实体，这里对缓存值补一次同样的判定以保持行为一致。</p>
+     */
+    private Entity cachedFindSupport(Direction gravityDirection) {
+        this.ensureSupportCacheValid();
+        int index = gravityDirection.ordinal();
+        Entity cached = this.cachedFindSupport[index];
+        if (!this.cachedFindSupportReady[index] || (cached != null && cached.isRemoved())) {
+            cached = PlasticEntityPhysics.findSupport(this, gravityDirection);
+            this.cachedFindSupport[index] = cached;
+            this.cachedFindSupportReady[index] = true;
+        }
+        return cached;
+    }
+
+    /** 0 未算过、1 无支撑、2 有支撑。 */
+    private boolean cachedHasBlockSupport(Direction gravityDirection) {
+        this.ensureSupportCacheValid();
+        int index = gravityDirection.ordinal();
+        byte cached = this.cachedHasBlockSupport[index];
+        if (cached != 0) return cached == 2;
+        boolean supported = PlasticEntityPhysics.hasBlockSupport(this, gravityDirection);
+        this.cachedHasBlockSupport[index] = (byte) (supported ? 2 : 1);
+        return supported;
     }
 
     @Override
     public void tick() {
         Vec3 pistonTarget = PlasticPistonOccupancy.movementTarget(this);
         if (pistonTarget != null) {
+            // 活塞分支在休眠检查之前返回，若不在此唤醒，被推动的休眠实体会留下过期的索引登记。
+            this.plasticraft$wakeFromRest();
             this.tickPistonMovement(pistonTarget);
             this.refreshObserverContacts();
             return;
@@ -669,6 +755,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             this.firstTick = false;
             return;
         }
+
+        if (this.restState.isResting() && !this.tickWhileResting()) return;
 
         this.supportedFallingBlocks = PlasticFallingBlockSupport.updateSupportChecks(
             this,
@@ -744,7 +832,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
                 : PlasticEntityPhysics.findSupport(this, boxBeforeAcceleration, gravityDirection);
             Entity accelerationPostSupport = gravityDirection == null
                 ? null
-                : PlasticEntityPhysics.findSupport(this, gravityDirection);
+                : this.cachedFindSupport(gravityDirection);
             this.handleEntityImpact(
                 gravityDirection,
                 accelerationPostSupport,
@@ -791,7 +879,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         if (this.isRemoved()) return;
         Entity support = gravityDirection == null
             ? null
-            : PlasticEntityPhysics.findSupport(this, gravityDirection);
+            : this.cachedFindSupport(gravityDirection);
         PlasticEntityPhysics.SupportObservation preMoveObservation = support == null
             ? null
             : PlasticEntityPhysics.SupportObservation.capture(support);
@@ -808,9 +896,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
         support = gravityDirection == null
             ? null
-            : PlasticEntityPhysics.findSupport(this, gravityDirection);
+            : this.cachedFindSupport(gravityDirection);
         boolean hadBlockSupportBeforeMove = gravityDirection != null
-            && PlasticEntityPhysics.hasBlockSupport(this, gravityDirection);
+            && this.cachedHasBlockSupport(gravityDirection);
         boolean hadEntitySupportBeforeMove = support != null
             && PlasticEntityPhysics.hasImmediateEntityContact(this, support, gravityDirection);
 
@@ -837,11 +925,11 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         );
         Entity entitySupportAfterMove = gravityDirection == null
             ? null
-            : PlasticEntityPhysics.findSupport(this, gravityDirection);
+            : this.cachedFindSupport(gravityDirection);
         boolean entitySupportCollision = gravityDirection != null
             && entitySupportAfterMove != null
             && PlasticEntityPhysics.collidedAlongGravity(requestedMovement, actualMovement, gravityDirection)
-            && !PlasticEntityPhysics.hasBlockSupport(this, gravityDirection);
+            && !this.cachedHasBlockSupport(gravityDirection);
         if (entitySupportCollision) {
             velocityAfterMove = PlasticEntityPhysics.removeIntoSupportVelocity(velocityAfterMove, gravityDirection);
             this.handleEntityImpact(
@@ -886,7 +974,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         }
         Entity postMoveSupport = gravityDirection == null
             ? null
-            : PlasticEntityPhysics.findSupport(this, gravityDirection);
+            : this.cachedFindSupport(gravityDirection);
         this.updateLandingState(
             gravityDirection,
             requestedMovement,
@@ -922,12 +1010,109 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
                 this.sideEntityPushInProgress = false;
             }
         }
-        if (postMoveFluid.isPresent() || !actualMovement.equals(requestedMovement)) {
+        // 原版 ServerEntity 对 hurtMarked 无条件每刻广播一次运动包。重力每刻给 y 加 -0.04 又被
+        // move() 裁回 0，令 actualMovement 与 requestedMovement 对任何静止实体永远不等，若照此
+        // 置位会持续每刻广播。改为仅当广播用速度实质变化、或流体接触状态翻转时才广播。
+        boolean fluidContactChanged = postMoveFluid.isPresent() != this.lastFluidContact;
+        this.lastFluidContact = postMoveFluid.isPresent();
+        Vec3 broadcastMovement = this.getDeltaMovement();
+        if (fluidContactChanged
+            || broadcastMovement.distanceToSqr(this.lastBroadcastDeltaMovement)
+                > PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
+            this.lastBroadcastDeltaMovement = broadcastMovement;
             this.hasImpulse = true;
             this.hurtMarked = true;
         }
         this.refreshObserverContacts();
         this.checkBelowWorld();
+        this.evaluateRestEntry(
+            gravityDirection,
+            postMoveFluid,
+            onSlidingRail || onSlidingRailAfterMove,
+            accelerationRequestedMovement
+        );
+    }
+
+    /**
+     * 休眠期间跳过整条支撑、移动与碰撞流水线，只推进插值与边沿状态记账。
+     *
+     * <p>返回 {@code true} 表示错峰复核判定必须唤醒，本刻继续按完整流水线执行。</p>
+     */
+    private boolean tickWhileResting() {
+        if (this.restState.shouldAudit(this.level().getGameTime(), this.getId())
+            && this.restState.auditRequiresWake(this)) {
+            this.plasticraft$wakeFromRest();
+            return true;
+        }
+        this.xo = this.getX();
+        this.yo = this.getY();
+        this.zo = this.getZ();
+        this.xRotO = this.getXRot();
+        this.yRotO = this.getYRot();
+        this.previousImpactContactMask = this.impactContactMask;
+        this.impactContactMask = 0;
+        if (this.time < Integer.MAX_VALUE) {
+            this.time++;
+        }
+        return false;
+    }
+
+    /**
+     * 只有「完全静止 + 纯方块支撑 + 无任何外力来源」的实体才允许休眠。
+     *
+     * <p>实体支撑链（{@link #supportObservation} 非空）与胶合组件保持清醒，因为 {@code carriedMovement}
+     * 和组件领导者位移都依赖逐刻观察，休眠会破坏其语义。加速请求需连续为零若干刻，避免加速环边界
+     * 抖动时反复进出休眠。</p>
+     */
+    private void evaluateRestEntry(
+        Direction gravityDirection,
+        PlasticFluidPhysics.FluidContact fluidContact,
+        boolean onSlidingRail,
+        Vec3 accelerationRequestedMovement
+    ) {
+        boolean calm = accelerationRequestedMovement.lengthSqr()
+            <= PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON;
+        if (!this.restState.updateCalmStreak(calm)
+            || this.isRemoved()
+            || gravityDirection == null
+            || this.supportObservation != null
+            || this.observerContactsDirty
+            || fluidContact.isPresent()
+            || onSlidingRail
+            || this.isHammerDeflected()
+            || this.hammerReturnAt >= 0L
+            || EntityBondManager.hasBonds(this)
+            || PlasticPistonOccupancy.movementTarget(this) != null) {
+            return;
+        }
+        Vec3 velocity = this.getDeltaMovement();
+        if (Math.abs(velocity.x) >= PlasticEntityPhysics.FACE_EPSILON
+            || Math.abs(velocity.y) >= PlasticEntityPhysics.FACE_EPSILON
+            || Math.abs(velocity.z) >= PlasticEntityPhysics.FACE_EPSILON
+            || !this.cachedHasBlockSupport(gravityDirection)) {
+            return;
+        }
+        // 休眠期间速度不再被重力与阻力刷新，这里归零以免残留量在唤醒后被当成真实冲量。
+        this.setDeltaMovement(Vec3.ZERO);
+        this.restState.enter(this, gravityDirection);
+    }
+
+    /** 休眠中的实体跳过物理流水线，托盘光源等只依赖位置与朝向的派生状态可以一并省掉刷新。 */
+    public final boolean plasticraft$isResting() {
+        return this.restState.isResting();
+    }
+
+    /**
+     * 退出休眠并恢复到「与从未休眠完全一致」的起点：清空支撑观察、强制重算观察者接触、
+     * 作废按刻记忆化的支撑缓存（唤醒原因往往正是世界发生了变化）。
+     */
+    public final void plasticraft$wakeFromRest() {
+        if (!this.restState.isResting()) return;
+        this.restState.exit(this);
+        this.supportObservation = null;
+        this.supportDirection = null;
+        this.observerContactsDirty = true;
+        this.supportCacheGameTime = Long.MIN_VALUE;
     }
 
     private void refreshObserverContacts() {
@@ -963,7 +1148,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         }
         Entity support = gravityDirection == null
             ? null
-            : PlasticEntityPhysics.findSupport(this, gravityDirection);
+            : this.cachedFindSupport(gravityDirection);
         this.supportObservation = support == null
             ? null
             : PlasticEntityPhysics.SupportObservation.capture(support);
@@ -998,7 +1183,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     }
 
     private AbstractPlasticEntity findSurfaceFrictionMember(Direction gravityDirection) {
-        if (PlasticEntityPhysics.hasBlockSupport(this, gravityDirection)) return this;
+        if (this.cachedHasBlockSupport(gravityDirection)) return this;
         if (!EntityBondManager.hasBonds(this) || EntityBondManager.isFollower(this)) return null;
         for (Entity member : EntityBondManager.component(this.level(), this)) {
             if (!(member instanceof AbstractPlasticEntity plastic) || plastic == this) continue;
@@ -1040,7 +1225,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         }
 
         int directionMask = PlasticEntityPhysics.directionMask(gravityDirection);
-        boolean blockContact = PlasticEntityPhysics.hasBlockSupport(this, gravityDirection);
+        boolean blockContact = this.cachedHasBlockSupport(gravityDirection);
         boolean newImpact = blockContact
             && (this.blockContactMask & directionMask) == 0
             && this.impactTrackingArmed
@@ -1074,7 +1259,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             || support == null
             || hadBlockSupportBeforeMove
             || hadEntitySupportBeforeMove
-            || PlasticEntityPhysics.hasBlockSupport(this, gravityDirection)
+            || this.cachedHasBlockSupport(gravityDirection)
             || !PlasticEntityPhysics.collidedAlongGravity(requestedMovement, actualMovement, gravityDirection)) {
             return;
         }
@@ -1093,7 +1278,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     /** 有效重力面首次与另一实体碰撞时调用一次。 */
     protected void onEntityImpact(Entity support, Direction impactDirection, float fallDistance) {
-        if (support instanceof HardenedResinCauldronEntity pot) {
+        PlasticCauldron pot = PlasticCauldrons.of(support);
+        if (pot != null) {
             pot.processAnvilImpact(this, impactDirection);
         }
     }
@@ -1153,11 +1339,11 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         for (Direction direction : Direction.values()) {
             if ((newContacts & PlasticEntityPhysics.directionMask(direction)) == 0) continue;
             this.playImpactSound(direction, Math.abs(requested.get(direction.getAxis())));
-            if (PlasticEntityPhysics.hasBlockSupport(this, direction)) {
+            if (this.cachedHasBlockSupport(direction)) {
                 this.onBondedBlockImpact(direction);
                 continue;
             }
-            Entity contact = PlasticEntityPhysics.findSupport(this, direction);
+            Entity contact = this.cachedFindSupport(direction);
             if (contact != null) {
                 this.onEntityImpact(contact, direction, (float) Math.abs(requested.get(direction.getAxis())));
             }
@@ -1172,13 +1358,14 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             .move(-movement.x, -movement.y, -movement.z)
             .expandTowards(movement)
             .inflate(PlasticEntityPhysics.FACE_EPSILON);
-        if (this instanceof HardenedResinCauldronEntity pot) {
+        PlasticCauldron self = PlasticCauldrons.of(this);
+        if (self != null) {
             for (AbstractPlasticEntity anvil : this.level().getEntitiesOfClass(
                 AbstractPlasticEntity.class,
                 sweptBounds,
                 candidate -> candidate != this && candidate.isAlive()
             )) {
-                pot.processSweptAnvilImpact(
+                self.processSweptAnvilImpact(
                     anvil,
                     anvil.position(),
                     anvil.position(),
@@ -1188,11 +1375,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             }
             return;
         }
-        for (HardenedResinCauldronEntity pot : this.level().getEntitiesOfClass(
-            HardenedResinCauldronEntity.class,
-            sweptBounds,
-            Entity::isAlive
-        )) {
+        for (PlasticCauldron pot : PlasticCauldrons.findIn(this.level(), sweptBounds)) {
             pot.processSweptAnvilImpact(
                 this,
                 startPosition,
@@ -1599,6 +1782,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         // 相接的塑料实体静止时保持稳定。其主动位移由 PlasticPushChain 传播一次；
         // 原版相互冲量会在下一次连续推动前制造间隙。
         if (entity instanceof AbstractPlasticEntity) return;
+        this.plasticraft$wakeFromRest();
         if (this.wasRecentlyMovedBySidePushCarrier(entity)) return;
         if (this.isCurrentSupport(entity, entity.getBoundingBox())) {
             return;
@@ -1611,6 +1795,17 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             && this.transfersSidePushWithCarrier(entity)
             && PlasticEntityPhysics.isContinuousSidePushCarrier(this, entity, entity.getBoundingBox())) return;
         super.push(entity);
+    }
+
+    @Override
+    public void setDeltaMovement(Vec3 deltaMovement) {
+        // 爆炸击退、命令与外部模组都直接写速度，既不经过 push(Entity) 也不改变重力场、加速环、
+        // 流体或方块支撑，因此错峰复核发现不了。休眠分支不读速度，这里是唯一的唤醒出口。
+        if (deltaMovement.lengthSqr()
+            > PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
+            this.plasticraft$wakeFromRest();
+        }
+        super.setDeltaMovement(deltaMovement);
     }
 
     private boolean wasRecentlyMovedBySidePushCarrier(Entity entity) {
@@ -1668,11 +1863,26 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     @Override
     public void remove(RemovalReason reason) {
-        if (!this.level().isClientSide && reason.shouldDestroy() && !this.observerContacts.isEmpty()) {
-            PlasticObserverContact.clear(this.level(), this.observerContacts);
-            this.observerContacts = Set.of();
+        if (!this.level().isClientSide) {
+            // 索引持有实体强引用，注销必须先于移除；同时唤醒周围实体重算失去本实体后的接触关系。
+            this.plasticraft$wakeFromRest();
+            PlasticRestIndex.wakeInBounds(this.level(), this.getBoundingBox());
+            if (reason.shouldDestroy() && !this.observerContacts.isEmpty()) {
+                PlasticObserverContact.clear(this.level(), this.observerContacts);
+                this.observerContacts = Set.of();
+            }
         }
         super.remove(reason);
+    }
+
+    /**
+     * 区块卸载走 {@code setRemoved(UNLOADED_TO_CHUNK)}，不经过 {@link #remove}，因此注销必须挂在这里：
+     * 本方法是所有移除路径的共同出口，能确保索引不会残留实体强引用。
+     */
+    @Override
+    public void onRemovedFromLevel() {
+        this.plasticraft$wakeFromRest();
+        super.onRemovedFromLevel();
     }
 
     @Override
@@ -1722,6 +1932,9 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     /** 供后续由同步模型数据派生几何的实体主动刷新碰撞和宽阶段范围。 */
     protected final void invalidatePlasticGeometry() {
+        // 几何体变化会改写碰撞子盒，已登记的休眠格随之失效；这里统一覆盖锤击旋转、
+        // 展示方块替换、托盘内容变化等所有几何来源，无需在各调用点单独挂唤醒钩子。
+        this.plasticraft$wakeFromRest();
         this.cachedGeometry = null;
         this.cachedGeometryOrientation = null;
         this.cachedOrientedGeometry = null;
@@ -1730,6 +1943,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         this.cachedInteractionShapePosition = null;
         this.cachedInteractionShape = Shapes.empty();
         this.observerContactsDirty = true;
+        // 几何体变化会改变碰撞子盒，位置与朝向却可能都没动，必须显式作废支撑缓存。
+        this.supportCacheGameTime = Long.MIN_VALUE;
         if (this.plasticGeometryReady) {
             this.setBoundingBox(this.makeBoundingBox());
         }
@@ -1823,7 +2038,24 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     @Override
     public ItemStack getPickResult() {
-        return this.getDropStack();
+        return this.prepareInitialPickResult(this.getCompletePickResult());
+    }
+
+    /** 返回 Ctrl 中键使用的完整物品状态。 */
+    public ItemStack getCompletePickResult() {
+        if (!this.level().isClientSide) return this.getDropStack();
+        ItemStack synchronizedStack = this.entityData.get(PICK_STACK);
+        if (synchronizedStack.isEmpty()) return this.getDropStack();
+        ItemStack result = synchronizedStack.copyWithCount(1);
+        PlasticItemData.setMaterial(result, this.materialKey());
+        if (!this.supportsDyeing()) PlasticItemData.clearColor(result);
+        PlasticItemData.setMagnetized(result, this.isMagnetized());
+        return this.prepareDropStack(result);
+    }
+
+    /** 普通中键从完整结果中去除可变内容，材料、颜色和磁化状态仍由完整物品保留。 */
+    protected ItemStack prepareInitialPickResult(ItemStack stack) {
+        return stack;
     }
 
     @Override
@@ -1847,11 +2079,12 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             return InteractionResult.PASS;
         }
 
-        ItemStack drop = this.getDropStack();
-        if (drop.isEmpty()) return InteractionResult.FAIL;
+        if (this.getDropStack().isEmpty()) return InteractionResult.FAIL;
         if (this.level().isClientSide) return InteractionResult.SUCCESS;
 
         this.prepareAnvilHammerPickup(player);
+        ItemStack drop = this.getDropStack();
+        if (drop.isEmpty()) return InteractionResult.FAIL;
         player.getInventory().placeItemBackInInventory(drop);
         this.level().playSound(
             null,
@@ -2118,6 +2351,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     @Override
     public InteractionResult interactAt(Player player, Vec3 location, InteractionHand hand) {
+        this.plasticraft$wakeFromRest();
         ItemStack stack = player.getItemInHand(hand);
         if (!player.isShiftKeyDown() && stack.getItem() instanceof AnvilHammerItem) {
             return this.plasticraft$useAnvilHammer(player, hand, this.nearestInteractionFace(location));

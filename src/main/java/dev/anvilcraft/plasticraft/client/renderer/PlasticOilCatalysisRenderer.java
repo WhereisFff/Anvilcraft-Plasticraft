@@ -102,6 +102,45 @@ public final class PlasticOilCatalysisRenderer {
         int packedLight,
         boolean renderBottom
     ) {
+        renderContainerOverlay(
+            level,
+            pos,
+            partialTick,
+            fluid,
+            minX,
+            minY,
+            minZ,
+            maxX,
+            maxY,
+            maxZ,
+            buffers,
+            pose,
+            packedLight,
+            renderBottom,
+            false
+        );
+    }
+
+    /**
+     * 在透明塑料实体的延迟半透明阶段使用不写深度的流体批次，避免催化覆层遮住锅壳后侧。
+     */
+    public static void renderContainerOverlay(
+        Level level,
+        BlockPos pos,
+        float partialTick,
+        FluidStack fluid,
+        float minX,
+        float minY,
+        float minZ,
+        float maxX,
+        float maxY,
+        float maxZ,
+        MultiBufferSource buffers,
+        PoseStack pose,
+        int packedLight,
+        boolean renderBottom,
+        boolean deferredTransparent
+    ) {
         if (!isReactiveSource(fluid)) return;
         float progress = progress(level, pos, partialTick);
         if (progress <= 0.0F) return;
@@ -117,7 +156,8 @@ public final class PlasticOilCatalysisRenderer {
             buffers,
             pose,
             packedLight,
-            renderBottom
+            renderBottom,
+            deferredTransparent
         );
     }
 
@@ -180,6 +220,7 @@ public final class PlasticOilCatalysisRenderer {
                     buffers,
                     pose,
                     packedLight,
+                    false,
                     false
                 );
             } else {
@@ -196,7 +237,8 @@ public final class PlasticOilCatalysisRenderer {
                     buffers,
                     pose,
                     packedLight,
-                    true
+                    true,
+                    false
                 );
             }
             pose.popPose();
@@ -233,7 +275,8 @@ public final class PlasticOilCatalysisRenderer {
         MultiBufferSource buffers,
         PoseStack pose,
         int packedLight,
-        boolean renderBottom
+        boolean renderBottom,
+        boolean deferredTransparent
     ) {
         float opacity = smoothStep(Mth.clamp(progress, 0.0F, 1.0F));
         PlasticMaterial sourceMaterial = PlasticMaterial.fromMelt(source).orElse(PlasticMaterial.UNIVERSAL);
@@ -253,7 +296,7 @@ public final class PlasticOilCatalysisRenderer {
             maxX + BOX_OFFSET,
             maxY + BOX_OFFSET,
             maxZ + BOX_OFFSET,
-            buffers.getBuffer(RenderType.translucent()),
+            buffers.getBuffer(deferredTransparent ? ClearPlasticRenderTypes.fluid() : RenderType.translucent()),
             pose,
             packedLight,
             renderBottom,

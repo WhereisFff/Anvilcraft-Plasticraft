@@ -19,7 +19,7 @@ public final class PlasticTextureGenerator {
     public static final int VERSION = 8;
 
     private static final int PADDING = 1;
-    private static final int MAX_ATLAS_SIZE = 4096;
+    public static final int MAX_ATLAS_SIZE = 4096;
 
     private PlasticTextureGenerator() {
     }

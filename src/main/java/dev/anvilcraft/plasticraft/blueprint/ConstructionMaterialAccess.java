@@ -30,6 +30,8 @@ import java.util.Map;
  * 下方若是创造板条箱,则按创造模式无限给出蓝图所需物品,不消耗箱内过滤物。
  */
 public final class ConstructionMaterialAccess {
+    private static final int GIVE_UP_PICKUP_DELAY_TICKS = 100;
+
     private final ServerLevel level;
     private final BlockPos loungePos;
     @Nullable
@@ -181,7 +183,10 @@ public final class ConstructionMaterialAccess {
             return;
         }
         Vec3 drop = Vec3.atCenterOf(this.loungePos).add(0.0D, 0.25D, 0.75D);
-        this.level.addFreshEntity(new ItemEntity(this.level, drop.x, drop.y, drop.z, stack.copy()));
+        ItemEntity dropped = new ItemEntity(this.level, drop.x, drop.y, drop.z, stack.copy());
+        // 容器塞不下才落地,必须短暂禁止拾取,否则收集悦灵会立刻把它吸回来反复丢在同一处
+        dropped.setPickUpDelay(GIVE_UP_PICKUP_DELAY_TICKS);
+        this.level.addFreshEntity(dropped);
     }
 
     public ItemStack insertOrDrop(ItemStack stack) {

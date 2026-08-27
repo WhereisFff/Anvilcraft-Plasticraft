@@ -7,6 +7,7 @@ import dev.dubhe.anvilcraft.block.RedstoneWireNetworkManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
@@ -65,6 +66,11 @@ public final class ConstructionCommitService {
 
     /** @return 是否已经发布完成 */
     public static boolean tick(Level level, ConstructionJobProgress progress) {
+        // 导线拓扑重建和端口编辑都是真实写入,若被反应式观察当成外部干扰,已交付操作会在提交途中被撤回
+        return ConstructionJobController.withoutWorldChangeObservation(() -> runPhases(level, progress));
+    }
+
+    private static boolean runPhases(Level level, ConstructionJobProgress progress) {
         if (!hasCommitPermission(level, progress)) return false;
         ConstructionCommitLog log = progress.commitLog();
         if (log.phase() == ConstructionCommitLog.Phase.NONE) {
@@ -133,7 +139,7 @@ public final class ConstructionCommitService {
 
     private static boolean writeStates(Level level, ConstructionJobProgress progress, ConstructionCommitLog log) {
         List<ConstructionBuildOp> ops = deliveredProjections(progress);
-        Set<Long> delivered = progress.deliveredProjectionPositions();
+        Set<Long> delivered = progress.deliveredCommitPositions();
         int budget = Math.max(1, blocksPerTick);
         int index = log.nextIndex();
         while (index < ops.size() && budget > 0) {
@@ -181,24 +187,35 @@ public final class ConstructionCommitService {
             try {
                 List<BlockEntityContentAdapter.SlotStack> contents = new ArrayList<>();
                 List<FluidBuildAdapter.TankFluid> fluids = new ArrayList<>();
+                List<SignDecorationAdapter.Decoration> decorations = new ArrayList<>();
                 for (ConstructionBuildOp child : progress.childrenOf(op)) {
                     if (child.status() != ConstructionBuildOp.Status.DELIVERED) continue;
                     if (child.kind() == ConstructionBuildOp.Kind.CONTENT) {
                         contents.add(new BlockEntityContentAdapter.SlotStack(child.slot(), child.material()));
                     } else if (child.kind() == ConstructionBuildOp.Kind.FLUID) {
                         fluids.add(new FluidBuildAdapter.TankFluid(child.slot(), child.fluid()));
+                    } else if (child.kind() == ConstructionBuildOp.Kind.DECORATE) {
+                        decorations.add(new SignDecorationAdapter.Decoration(
+                            child.slot(),
+                            child.material(),
+                            child.blockEntity()
+                        ));
                     }
                 }
+                // 告示牌的文字、颜色、发光与蜡在规划期已从配置里剥离,只有真的交付过才在此合回去
+                CompoundTag config = decorations.isEmpty()
+                    ? op.blockEntity()
+                    : SignDecorationAdapter.compose(op.blockEntity(), decorations, registries);
                 BlockEntity blockEntity = level.isInWorldBounds(op.pos()) ? level.getBlockEntity(op.pos()) : null;
                 boolean expected = op.target().hasBlockEntity()
-                    || op.blockEntity() != null
+                    || config != null
                     || !contents.isEmpty()
                     || !fluids.isEmpty();
                 if (blockEntity == null) {
                     if (expected) progress.setIncomplete(true);
                 } else {
-                    if (op.blockEntity() != null) {
-                        blockEntity.loadWithComponents(op.blockEntity(), registries);
+                    if (config != null) {
+                        blockEntity.loadWithComponents(config, registries);
                     }
                     BlockEntityContentAdapter.insert(blockEntity, contents, registries);
                     FluidBuildAdapter.insert(blockEntity, fluids);
@@ -331,7 +348,8 @@ public final class ConstructionCommitService {
             if (!op.writesProjection()
                 && op.kind() != ConstructionBuildOp.Kind.CONTENT
                 && op.kind() != ConstructionBuildOp.Kind.FLUID
-                && op.kind() != ConstructionBuildOp.Kind.ENTITY) {
+                && op.kind() != ConstructionBuildOp.Kind.ENTITY
+                && op.kind() != ConstructionBuildOp.Kind.DECORATE) {
                 continue;
             }
             if (!ConstructionJobController.enterIfDenied(serverLevel, progress, op)) return false;
@@ -353,7 +371,10 @@ public final class ConstructionCommitService {
         if (op.writesProjection() || op.kind() == ConstructionBuildOp.Kind.ENTITY) {
             return log.isWritten(op.id());
         }
-        if (op.kind() != ConstructionBuildOp.Kind.CONTENT && op.kind() != ConstructionBuildOp.Kind.FLUID) {
+        // DECORATE 与 CONTENT/FLUID 同属方块实体阶段写入,判定沿用父方块的提交游标
+        if (op.kind() != ConstructionBuildOp.Kind.CONTENT
+            && op.kind() != ConstructionBuildOp.Kind.FLUID
+            && op.kind() != ConstructionBuildOp.Kind.DECORATE) {
             return false;
         }
         ConstructionBuildOp parent = progress.parentOf(op);
@@ -403,7 +424,7 @@ public final class ConstructionCommitService {
         ConstructionCommitLog log
     ) {
         List<ConstructionBuildOp> ops = deliveredProjections(progress);
-        Set<Long> committed = progress.deliveredProjectionPositions();
+        Set<Long> committed = progress.deliveredCommitPositions();
         int budget = Math.max(1, blocksPerTick);
         int index = log.nextIndex();
         while (index < ops.size() && budget > 0) {
@@ -506,7 +527,7 @@ public final class ConstructionCommitService {
         ConstructionCommitLog.Phase nextPhase
     ) {
         List<ConstructionBuildOp> ops = deliveredProjections(progress);
-        Set<Long> delivered = progress.deliveredProjectionPositions();
+        Set<Long> delivered = progress.deliveredCommitPositions();
         int budget = Math.max(1, blocksPerTick);
         int index = log.nextIndex();
         while (index < ops.size() && budget > 0) {
@@ -616,6 +637,10 @@ public final class ConstructionCommitService {
 
     /** 拆除临时封堵壳后再校正一次导线端口，避免壳的邻居更新覆盖蓝图方向。 */
     public static boolean restoreWirePorts(Level level, ConstructionJobProgress progress) {
+        return ConstructionJobController.withoutWorldChangeObservation(() -> restoreWirePortsQuietly(level, progress));
+    }
+
+    private static boolean restoreWirePortsQuietly(Level level, ConstructionJobProgress progress) {
         if (!(level instanceof ServerLevel serverLevel)) return true;
         List<ConstructionBuildOp> wires = new ArrayList<>();
         for (ConstructionBuildOp op : deliveredProjections(progress)) {
@@ -673,6 +698,6 @@ public final class ConstructionCommitService {
     }
 
     private static List<ConstructionBuildOp> deliveredProjections(ConstructionJobProgress progress) {
-        return progress.deliveredProjectionOperations();
+        return progress.deliveredCommitOperations();
     }
 }

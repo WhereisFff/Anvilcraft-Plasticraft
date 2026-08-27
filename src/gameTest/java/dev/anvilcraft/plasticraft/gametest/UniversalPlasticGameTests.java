@@ -23,6 +23,7 @@ import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.dubhe.anvilcraft.block.sliding.SlidingRailBlock;
+import dev.dubhe.anvilcraft.block.HeaterBlock;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.util.AccelerateManager;
 import net.minecraft.core.BlockPos;
@@ -30,6 +31,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
@@ -46,9 +48,11 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CampfireBlock;
 import net.minecraft.world.level.block.ObserverBlock;
 import net.minecraft.world.level.block.entity.BeaconBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
@@ -102,11 +106,39 @@ public final class UniversalPlasticGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "13x7x7", floor = true)
-    @TestHolder(description = "Lava shatters non-heat-resistant molded tanks without spilling and leaves heat-resistant tanks intact")
-    static void moldedTankLavaHazardsFollowMaterial(ExtendedGameTestHelper helper) {
-        assertLavaDestroysMoldedTank(helper, new BlockPos(2, 2, 3));
-        assertHeatResistantMoldedTankRetainsLava(helper, new BlockPos(6, 2, 3));
-        assertLavaDestroysBondedMoldedTank(helper, new BlockPos(10, 2, 3));
+    @TestHolder(description = "Molded tanks and cauldrons retain lava in free and bonded forms")
+    static void moldedFluidContainersRetainLava(ExtendedGameTestHelper helper) {
+        assertMoldedTankRetainsLava(helper, PlasticMaterial.UNIVERSAL, new BlockPos(2, 2, 3));
+        assertMoldedTankRetainsLava(helper, PlasticMaterial.HEAT_RESISTANT, new BlockPos(6, 2, 3));
+        assertBondedMoldedTankRetainsLava(helper, new BlockPos(10, 2, 3));
+        assertBondedMoldedCauldronRetainsLava(helper, new BlockPos(10, 2, 5));
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "11x6x7", floor = true)
+    @TestHolder(description = "Lit campfires and active electric heaters destroy non-heat-resistant plastic entities")
+    static void hotSupportsDamagePlasticEntities(ExtendedGameTestHelper helper) {
+        assertHeatSourceDamage(
+            helper,
+            new BlockPos(2, 2, 3),
+            Blocks.CAMPFIRE.defaultBlockState().setValue(CampfireBlock.LIT, true),
+            "campfire"
+        );
+        assertHeatSourceDamage(
+            helper,
+            new BlockPos(5, 2, 3),
+            Blocks.SOUL_CAMPFIRE.defaultBlockState().setValue(CampfireBlock.LIT, true),
+            "soul campfire"
+        );
+        assertHeatSourceDamage(
+            helper,
+            new BlockPos(8, 2, 3),
+            ModBlocks.HEATER.get().defaultBlockState()
+                .setValue(HeaterBlock.POWERED, false)
+                .setValue(HeaterBlock.OVERLOAD, false),
+            "electric heater"
+        );
         helper.succeed();
     }
 
@@ -1249,46 +1281,315 @@ public final class UniversalPlasticGameTests {
         });
     }
 
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate(value = "7x7x7", floor = true)
+    @TestHolder(description = "A resting plastic entity resumes falling once its supporting block is removed")
+    static void restingPlasticResumesFallingWhenSupportIsRemoved(ExtendedGameTestHelper helper) {
+        BlockPos supportPos = new BlockPos(3, 2, 3);
+        helper.setBlock(supportPos, Blocks.STONE);
+        UniversalPlasticEntity plastic = createUniversal(
+            helper,
+            helper.absoluteVec(new Vec3(3.5D, 3.0D, 3.5D)),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack()
+        );
+        double restY = plastic.getY();
+
+        helper.startSequence()
+            .thenIdle(8)
+            .thenExecute(() -> {
+                check(plastic.plasticraft$isResting(), "block-supported plastic never entered rest");
+                // 抽掉支撑与唤醒断言必须在同一刻完成，否则无法区分「即时唤醒」和「靠错峰复核兜底」。
+                helper.setBlock(supportPos, Blocks.AIR);
+                check(!plastic.plasticraft$isResting(), "plastic stayed asleep after its support block was removed");
+            })
+            .thenIdle(10)
+            .thenExecute(() -> {
+                check(plastic.getY() < restY - 0.5D, "woken plastic did not resume falling");
+                check(plastic.plasticraft$isResting(), "plastic never settled again on the floor");
+            })
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate(value = "7x7x7", floor = true)
+    @TestHolder(description = "A block write next to a resting plastic entity wakes it and it settles again")
+    static void restingPlasticWakesOnNeighbourBlockWriteAndSettlesAgain(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity plastic = createUniversal(
+            helper,
+            helper.absoluteVec(new Vec3(3.5D, 2.0D, 3.5D)),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack()
+        );
+        double restY = plastic.getY();
+        double restX = plastic.getX();
+
+        helper.startSequence()
+            .thenIdle(8)
+            .thenExecute(() -> {
+                check(plastic.plasticraft$isResting(), "block-supported plastic never entered rest");
+                helper.setBlock(new BlockPos(4, 2, 3), Blocks.STONE);
+                check(!plastic.plasticraft$isResting(), "plastic stayed asleep after a neighbouring block write");
+            })
+            .thenIdle(10)
+            .thenExecute(() -> {
+                // 唤醒后必须重新收敛。若这里仍然清醒，说明唤醒与休眠在互相打架。
+                check(plastic.plasticraft$isResting(), "plastic never returned to rest after being woken");
+                check(close(plastic.getY(), restY), "woken plastic drifted vertically");
+                check(close(plastic.getX(), restX), "woken plastic drifted horizontally");
+            })
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 50)
+    @EmptyTemplate(value = "7x7x7", floor = true)
+    @TestHolder(description = "Moving one plastic entity wakes the resting plastic entity beside it")
+    static void restingPlasticWakesWhenAdjacentPlasticMoves(ExtendedGameTestHelper helper) {
+        BlockState state = PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState();
+        ItemStack drop = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        UniversalPlasticEntity mover = createUniversal(
+            helper,
+            helper.absoluteVec(new Vec3(2.5D, 2.0D, 3.5D)),
+            state,
+            drop
+        );
+        UniversalPlasticEntity neighbour = createUniversal(
+            helper,
+            helper.absoluteVec(new Vec3(3.5D, 2.0D, 3.5D)),
+            state,
+            drop
+        );
+        double neighbourY = neighbour.getY();
+
+        helper.startSequence()
+            .thenIdle(8)
+            .thenExecute(() -> {
+                check(mover.plasticraft$isResting(), "the moving side of the pair never entered rest");
+                check(neighbour.plasticraft$isResting(), "the neighbouring side of the pair never entered rest");
+                mover.setPos(mover.position().add(0.0D, 1.0D, 0.0D));
+                check(!neighbour.plasticraft$isResting(), "a resting plastic ignored its neighbour moving away");
+            })
+            .thenIdle(14)
+            .thenExecute(() -> {
+                check(mover.plasticraft$isResting(), "the displaced plastic never settled back onto the floor");
+                check(neighbour.plasticraft$isResting(), "the woken neighbour never returned to rest");
+                check(close(neighbour.getY(), neighbourY), "the woken neighbour was displaced by its neighbour moving");
+            })
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate(value = "7x7x7", floor = true)
+    @TestHolder(description = "A piston still pushes a resting plastic entity")
+    static void restingPlasticIsStillMovedByAPiston(ExtendedGameTestHelper helper) {
+        BlockPos pistonPos = new BlockPos(1, 2, 2);
+        BlockPos occupied = new BlockPos(2, 2, 2);
+        helper.setBlock(
+            pistonPos,
+            Blocks.PISTON.defaultBlockState().setValue(BlockStateProperties.FACING, Direction.EAST)
+        );
+        UniversalPlasticEntity plastic = createUniversal(
+            helper,
+            helper.absoluteVec(new Vec3(2.5D, 2.0D, 2.5D)),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack()
+        );
+
+        helper.startSequence()
+            .thenIdle(8)
+            .thenExecute(() -> {
+                check(plastic.plasticraft$isResting(), "block-supported plastic never entered rest");
+                // 从活塞背面供电，避免红石方块本身落在休眠实体的登记格内而混淆唤醒来源。
+                helper.getLevel().setBlockAndUpdate(
+                    helper.absolutePos(pistonPos.west()),
+                    Blocks.REDSTONE_BLOCK.defaultBlockState()
+                );
+            })
+            .thenIdle(8)
+            .thenExecute(() -> check(
+                plastic.plasticraft$getAnchorBlockPos().equals(helper.absolutePos(occupied.east())),
+                "a resting plastic entity was not pushed by the piston"
+            ))
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 30)
+    @EmptyTemplate(value = "7x7x7", floor = true)
+    @TestHolder(description = "A resting plastic entity still carries a standing player")
+    static void restingPlasticKeepsSupportingAStandingPlayer(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity plastic = createUniversal(
+            helper,
+            helper.absoluteVec(new Vec3(3.5D, 2.0D, 3.5D)),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack()
+        );
+
+        helper.startSequence()
+            .thenIdle(8)
+            .thenExecute(() -> {
+                check(plastic.plasticraft$isResting(), "block-supported plastic never entered rest");
+                AABB collision = plastic.plasticraft$getCollisionBox().bounds();
+                Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+                player.setPos(plastic.getX(), collision.maxY, plastic.getZ());
+                double standingY = player.getY();
+                player.move(MoverType.SELF, new Vec3(0.0D, -0.08D, 0.0D));
+                check(close(player.getY(), standingY), "player fell through a resting plastic entity");
+                check(player.verticalCollisionBelow, "a resting plastic entity reported no lower collision");
+                player.discard();
+            })
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate(value = "9x7x9", floor = true)
+    @TestHolder(description = "A resting plastic entity wakes on a raw velocity write and on a pushing entity")
+    static void restingPlasticWakesOnExternalImpulse(ExtendedGameTestHelper helper) {
+        BlockState state = PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState();
+        ItemStack drop = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        UniversalPlasticEntity impulsed = createUniversal(
+            helper,
+            helper.absoluteVec(new Vec3(1.5D, 2.0D, 1.5D)),
+            state,
+            drop
+        );
+        UniversalPlasticEntity pushed = createUniversal(
+            helper,
+            helper.absoluteVec(new Vec3(6.5D, 2.0D, 6.5D)),
+            state,
+            drop
+        );
+        double impulsedX = impulsed.getX();
+
+        helper.startSequence()
+            .thenIdle(8)
+            .thenExecute(() -> {
+                check(impulsed.plasticraft$isResting(), "the impulse target never entered rest");
+                check(pushed.plasticraft$isResting(), "the push target never entered rest");
+                // 爆炸击退与命令只写速度，既不经过 push(Entity) 也不改变错峰复核关心的任何条件。
+                impulsed.push(0.4D, 0.0D, 0.0D);
+                check(!impulsed.plasticraft$isResting(), "a resting plastic entity swallowed a raw velocity impulse");
+                Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+                AABB collision = pushed.plasticraft$getCollisionBox().bounds();
+                player.setPos(collision.maxX + 0.4D, collision.minY, pushed.getZ());
+                pushed.push(player);
+                check(!pushed.plasticraft$isResting(), "a resting plastic entity ignored a pushing entity");
+                player.discard();
+            })
+            .thenIdle(4)
+            .thenExecute(() -> check(
+                impulsed.getX() > impulsedX + 0.1D,
+                "a woken plastic entity did not travel under its impulse"
+            ))
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 60)
+    @EmptyTemplate(value = "7x7x7", floor = true)
+    @TestHolder(description = "An entity-supported plastic stays awake and a settled one stops broadcasting motion")
+    static void entitySupportedPlasticStaysAwakeWithoutMotionSpam(ExtendedGameTestHelper helper) {
+        BlockState state = PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState();
+        ItemStack drop = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        UniversalPlasticEntity lower = createUniversal(
+            helper,
+            helper.absoluteVec(new Vec3(3.5D, 2.0D, 3.5D)),
+            state,
+            drop
+        );
+        UniversalPlasticEntity upper = createUniversal(
+            helper,
+            helper.absoluteVec(new Vec3(3.5D, 3.0D, 3.5D)),
+            state,
+            drop
+        );
+        double upperY = upper.getY();
+
+        helper.startSequence()
+            .thenIdle(10)
+            .thenExecute(() -> {
+                check(lower.plasticraft$isResting(), "the block-supported carrier never entered rest");
+                check(!upper.plasticraft$isResting(), "an entity-supported plastic entered rest");
+                // 重力每刻给速度加负值又被 move() 裁回零，逐刻置位 hurtMarked 会让每个静止实体
+                // 每秒广播二十个运动包。清醒但静止的实体同样不允许广播。
+                helper.failIfEver(() -> {
+                    check(!upper.plasticraft$isResting(), "an entity-supported plastic entered rest");
+                    check(!upper.hurtMarked, "a settled plastic entity broadcast a motion packet while standing still");
+                    check(!lower.hurtMarked, "a resting plastic entity broadcast a motion packet");
+                });
+            })
+            .thenIdle(20)
+            .thenExecute(() -> check(close(upper.getY(), upperY), "an entity-supported plastic slid off its carrier"))
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate(value = "7x7x7", floor = true)
+    @TestHolder(description = "A resting plastic entity still holds a vanilla falling block above it")
+    static void restingPlasticKeepsSupportingFallingBlocks(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity plastic = createUniversal(
+            helper,
+            helper.absoluteVec(new Vec3(3.5D, 2.0D, 3.5D)),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack()
+        );
+        BlockPos sandPos = new BlockPos(3, 3, 3);
+
+        helper.startSequence()
+            .thenIdle(8)
+            .thenExecute(() -> {
+                check(plastic.plasticraft$isResting(), "block-supported plastic never entered rest");
+                helper.setBlock(sandPos, Blocks.SAND);
+            })
+            .thenIdle(12)
+            .thenExecute(() -> {
+                // 休眠期间跳过 updateSupportChecks，登记必须在唤醒的那一刻完成并在再次休眠后保留。
+                check(plastic.plasticraft$isResting(), "plastic never returned to rest under the sand");
+                check(helper.getBlockState(sandPos).is(Blocks.SAND), "sand fell through a resting plastic entity");
+                check(
+                    helper.getLevel().getEntitiesOfClass(
+                        FallingBlockEntity.class,
+                        new AABB(helper.absolutePos(sandPos)).inflate(2.0D),
+                        entity -> entity.getBlockState().is(Blocks.SAND)
+                    ).isEmpty(),
+                    "sand became a falling entity above a resting plastic entity"
+                );
+            })
+            .thenSucceed();
+    }
+
     private static void placeMelt(ExtendedGameTestHelper helper, BlockPos relativePos, DyeColor color) {
         placeMeltAt(helper, helper.absolutePos(relativePos), color);
     }
 
-    private static void assertLavaDestroysMoldedTank(ExtendedGameTestHelper helper, BlockPos relativePos) {
-        UniversalPlasticEntity tank = newMoldedTank(helper, PlasticMaterial.UNIVERSAL, relativePos);
-        check(helper.getLevel().addFreshEntity(tank), "failed to add molded tank entity");
+    private static void assertMoldedTankRetainsLava(
+        ExtendedGameTestHelper helper,
+        PlasticMaterial material,
+        BlockPos relativePos
+    ) {
+        UniversalPlasticEntity tank = newMoldedProduct(
+            helper,
+            material,
+            relativePos,
+            MoldingProductTypes.TANK_ID,
+            "tank"
+        );
+        check(helper.getLevel().addFreshEntity(tank), "failed to add " + material.key() + " molded tank entity");
         int capacity = tank.getMoldedFluidHandler().getTankCapacity(0);
         int water = capacity / 2;
-        BlockPos effectPos = BlockPos.containing(tank.getBoundingBox().getCenter());
         check(tank.getMoldedFluidHandler().fill(new FluidStack(Fluids.WATER, water), IFluidHandler.FluidAction.EXECUTE)
                 == water,
-            "molded tank rejected water before lava");
+            material.key() + " molded tank rejected water before lava");
         check(tank.getMoldedFluidHandler().fill(
             new FluidStack(Fluids.LAVA, capacity - water),
             IFluidHandler.FluidAction.EXECUTE
-        ) == capacity - water, "molded tank reported the wrong lava transfer");
-        check(tank.isRemoved(), "non-heat-resistant molded tank did not shatter on lava");
-        check(tank.getMoldedFluidHandler().getFluidInTank(0).isEmpty(),
-            "shattered molded tank retained a previous fluid");
-        check(helper.getLevel().getFluidState(effectPos).isEmpty(),
-            "shattered molded tank left lava in the world");
+        ) == capacity - water, material.key() + " molded tank reported the wrong lava transfer");
+        check(!tank.isRemoved(), material.key() + " molded tank was destroyed by lava");
+        check(tank.getMoldedFluidHandler().getFluidInTank(0).is(Fluids.WATER),
+            material.key() + " molded tank lost water after filling lava");
+        check(tank.getMoldedFluidHandler().getFluidInTank(1).is(Fluids.LAVA),
+            material.key() + " molded tank did not retain lava");
     }
 
-    private static void assertHeatResistantMoldedTankRetainsLava(
-        ExtendedGameTestHelper helper,
-        BlockPos relativePos
-    ) {
-        UniversalPlasticEntity tank = newMoldedTank(helper, PlasticMaterial.HEAT_RESISTANT, relativePos);
-        check(helper.getLevel().addFreshEntity(tank), "failed to add heat-resistant molded tank entity");
-        int capacity = tank.getMoldedFluidHandler().getTankCapacity(0);
-        check(tank.getMoldedFluidHandler().fill(new FluidStack(Fluids.LAVA, capacity), IFluidHandler.FluidAction.EXECUTE)
-                == capacity,
-            "heat-resistant molded tank rejected lava");
-        check(!tank.isRemoved(), "heat-resistant molded tank shattered on lava");
-        check(tank.getMoldedFluidHandler().getFluidInTank(0).is(Fluids.LAVA),
-            "heat-resistant molded tank did not retain lava");
-    }
-
-    private static void assertLavaDestroysBondedMoldedTank(ExtendedGameTestHelper helper, BlockPos relativePos) {
+    private static void assertBondedMoldedTankRetainsLava(ExtendedGameTestHelper helper, BlockPos relativePos) {
         BlockPos pos = helper.absolutePos(relativePos);
         BlockState fixedState = PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState()
             .setValue(AbstractPlasticEntityBlock.BONDED, true);
@@ -1296,7 +1597,13 @@ public final class UniversalPlasticGameTests {
         check(helper.getLevel().getBlockEntity(pos) instanceof BondedEntityBlockEntity,
             "bonded molded tank block entity was not created");
         BondedEntityBlockEntity bonded = (BondedEntityBlockEntity) helper.getLevel().getBlockEntity(pos);
-        UniversalPlasticEntity source = newMoldedTank(helper, PlasticMaterial.UNIVERSAL, relativePos);
+        UniversalPlasticEntity source = newMoldedProduct(
+            helper,
+            PlasticMaterial.UNIVERSAL,
+            relativePos,
+            MoldingProductTypes.TANK_ID,
+            "tank"
+        );
         check(bonded.initialize(
             source,
             source.getDisplayState(),
@@ -1315,30 +1622,114 @@ public final class UniversalPlasticGameTests {
                 == capacity - water,
             "bonded molded tank reported the wrong lava transfer");
         bonded.tickFunctionalEntity();
-        check(helper.getBlockState(relativePos).isAir(), "bonded molded tank did not shatter on lava");
-        check(helper.getLevel().getFluidState(pos).isEmpty(), "bonded molded tank left lava in the world");
+        check(helper.getBlockState(relativePos).is(fixedState.getBlock()), "bonded molded tank was destroyed by lava");
+        check(fluids.getFluidInTank(0).is(Fluids.WATER), "bonded molded tank lost water after filling lava");
+        check(fluids.getFluidInTank(1).is(Fluids.LAVA), "bonded molded tank did not retain lava");
     }
 
-    private static UniversalPlasticEntity newMoldedTank(
+    private static void assertBondedMoldedCauldronRetainsLava(ExtendedGameTestHelper helper, BlockPos relativePos) {
+        BlockPos pos = helper.absolutePos(relativePos);
+        BlockState fixedState = PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState()
+            .setValue(AbstractPlasticEntityBlock.BONDED, true);
+        helper.setBlock(relativePos, fixedState);
+        check(helper.getLevel().getBlockEntity(pos) instanceof BondedEntityBlockEntity,
+            "bonded molded cauldron block entity was not created");
+        BondedEntityBlockEntity bonded = (BondedEntityBlockEntity) helper.getLevel().getBlockEntity(pos);
+        UniversalPlasticEntity source = newMoldedProduct(
+            helper,
+            PlasticMaterial.UNIVERSAL,
+            relativePos,
+            MoldingProductTypes.CAULDRON_ID,
+            "cauldron"
+        );
+        check(bonded.initialize(
+            source,
+            source.getDisplayState(),
+            Direction.UP,
+            PlasticEntityOrientation.DEFAULT,
+            true
+        ), "bonded molded cauldron could not be initialized");
+
+        IFluidHandler fluids = bonded.getCapabilityFluidHandler();
+        check(fluids != null, "bonded molded cauldron did not expose its fluid handler");
+        int amount = Math.min(1000, fluids.getTankCapacity(0));
+        check(amount > 0, "bonded molded cauldron had no usable fluid capacity");
+        FluidStack lava = new FluidStack(Fluids.LAVA, amount);
+        check(fluids.fill(lava, IFluidHandler.FluidAction.SIMULATE) == amount,
+            "bonded molded cauldron reported the wrong simulated lava transfer");
+        check(fluids.fill(lava, IFluidHandler.FluidAction.EXECUTE) == amount,
+            "bonded molded cauldron reported the wrong lava transfer");
+        bonded.tickFunctionalEntity();
+        check(helper.getBlockState(relativePos).is(fixedState.getBlock()),
+            "bonded molded cauldron was destroyed by lava");
+        check(fluids.getFluidInTank(0).is(Fluids.LAVA)
+                && fluids.getFluidInTank(0).getAmount() == amount,
+            "bonded molded cauldron did not retain lava");
+    }
+
+    private static void assertHeatSourceDamage(
+        ExtendedGameTestHelper helper,
+        BlockPos relativeSource,
+        BlockState sourceState,
+        String sourceName
+    ) {
+        helper.setBlock(relativeSource, sourceState);
+        for (PlasticMaterial material : PlasticMaterial.values()) {
+            UniversalPlasticEntity plastic = createPlasticOnHeatSource(helper, material, relativeSource);
+            plastic.tick();
+            if (material == PlasticMaterial.HEAT_RESISTANT) {
+                check(!plastic.isRemoved(), sourceName + " destroyed heat-resistant plastic");
+                plastic.discard();
+            } else {
+                check(plastic.isRemoved(), sourceName + " did not destroy " + material.key() + " plastic");
+            }
+        }
+    }
+
+    private static UniversalPlasticEntity createPlasticOnHeatSource(
         ExtendedGameTestHelper helper,
         PlasticMaterial material,
-        BlockPos relativePos
+        BlockPos relativeSource
     ) {
-        ItemStack stack = MoldedPlasticDemoItemStacks.product(material, MoldingProductTypes.TANK_ID).orElseThrow(
-            () -> new GameTestAssertException(material.key() + " tank demonstration stack was unavailable")
+        BlockPos source = helper.absolutePos(relativeSource);
+        BlockState sourceState = helper.getLevel().getBlockState(source);
+        UniversalPlasticEntity entity = material.createEntity(
+            helper.getLevel(),
+            new Vec3(source.getX() + 0.5D, source.getY() + 1.0D, source.getZ() + 0.5D),
+            material.displayState(DyeColor.WHITE),
+            material.productStack(DyeColor.WHITE),
+            PlasticEntityOrientation.DEFAULT
+        );
+        entity.setNoGravity(true);
+        double sourceTop = source.getY() + sourceState.getCollisionShape(helper.getLevel(), source).bounds().maxY;
+        entity.setPos(entity.getX(), entity.getY() + sourceTop - entity.getBoundingBox().minY, entity.getZ());
+        entity.setStartPos(entity.blockPosition());
+        check(helper.getLevel().addFreshEntity(entity), "failed to add plastic above " + sourceState.getBlock());
+        return entity;
+    }
+
+    private static UniversalPlasticEntity newMoldedProduct(
+        ExtendedGameTestHelper helper,
+        PlasticMaterial material,
+        BlockPos relativePos,
+        ResourceLocation type,
+        String productName
+    ) {
+        ItemStack stack = MoldedPlasticDemoItemStacks.product(material, type).orElseThrow(
+            () -> new GameTestAssertException(material.key() + " " + productName + " demonstration stack was unavailable")
         );
         MoldedPlasticData data = MoldedPlasticData.get(stack).orElseThrow(
-            () -> new GameTestAssertException(material.key() + " tank demonstration stack lost molded data")
+            () -> new GameTestAssertException(material.key() + " " + productName + " demonstration stack lost molded data")
         );
-        UniversalPlasticEntity tank = material.createEntity(
+        UniversalPlasticEntity product = material.createEntity(
             helper.getLevel(),
             data.geometry().placementPosition(helper.absolutePos(relativePos), PlasticEntityOrientation.DEFAULT),
             material.displayState(DyeColor.WHITE),
             stack,
             PlasticEntityOrientation.DEFAULT
         );
-        tank.setNoGravity(true);
-        return tank;
+        product.setNoGravity(true);
+        return product;
     }
 
     private static void placeMeltAt(ExtendedGameTestHelper helper, BlockPos pos, DyeColor color) {

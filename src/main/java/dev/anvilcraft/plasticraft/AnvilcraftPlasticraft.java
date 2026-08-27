@@ -7,6 +7,7 @@ import dev.anvilcraft.lib.v2.registrum.Registrum;
 import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
 import dev.anvilcraft.plasticraft.allay.AllayHardHatTraits;
 import dev.anvilcraft.plasticraft.allay.AllayHardHatTraits.AllayMaterialTrait;
+import dev.anvilcraft.plasticraft.allay.observation.ObservationChunkLoader;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
 import dev.anvilcraft.plasticraft.data.PlasticraftDatagen;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveInvisibilityService;
@@ -106,6 +107,7 @@ public final class AnvilcraftPlasticraft {
         modEventBus.addListener(AnvilcraftPlasticraft::registerCapabilities);
         modEventBus.addListener(AnvilcraftPlasticraft::registerPayloads);
         modEventBus.addListener(AnvilcraftPlasticraft::registerEntityAttributes);
+        modEventBus.addListener(ObservationChunkLoader::registerTicketController);
         LOGGER.info("Loading {}", MOD_NAME);
     }
 
@@ -285,7 +287,9 @@ public final class AnvilcraftPlasticraft {
         event.registerItem(
             Capabilities.ItemHandler.ITEM,
             (stack, ignored) -> MoldedPlasticData.get(stack)
-                .filter(data -> stack.getCount() == 1 && MoldingProductTypes.isChest(data.finalType()))
+                .filter(data -> stack.getCount() == 1
+                    && (MoldingProductTypes.isChest(data.finalType())
+                        || MoldingProductTypes.isCauldron(data.finalType())))
                 .map(data -> new MoldedPlasticItemHandler(
                     () -> MoldedPlasticData.get(stack),
                     replacement -> MoldedPlasticData.set(stack, replacement)
@@ -299,12 +303,11 @@ public final class AnvilcraftPlasticraft {
         event.registerItem(
             Capabilities.FluidHandler.ITEM,
             (stack, ignored) -> MoldedPlasticData.get(stack)
-                .filter(data -> stack.getCount() == 1 && MoldingProductTypes.isTank(data.finalType()))
+                .filter(data -> stack.getCount() == 1 && MoldingProductTypes.holdsFluids(data.finalType()))
                 .map(data -> new MoldedPlasticFluidHandler(
                     () -> MoldedPlasticData.get(stack),
                     replacement -> MoldedPlasticData.set(stack, replacement),
-                    () -> stack,
-                    () -> stack.shrink(1)
+                    () -> stack
                 ))
                 .orElse(null),
             PlasticraftBlocks.UNIVERSAL_PLASTIC.asItem(),

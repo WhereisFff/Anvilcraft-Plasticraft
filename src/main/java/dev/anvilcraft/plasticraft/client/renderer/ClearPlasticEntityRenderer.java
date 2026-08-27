@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.client.renderer;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.pipeline.RenderTarget;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
@@ -14,7 +15,9 @@ import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -57,6 +60,10 @@ public final class ClearPlasticEntityRenderer {
 
     @SubscribeEvent
     public static void renderLevel(RenderLevelStageEvent event) {
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
+            renderOpaqueFluidPrepass(event);
+            return;
+        }
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
@@ -75,34 +82,79 @@ public final class ClearPlasticEntityRenderer {
         ClearPlasticRenderTypes.beginDeferredPass(camera, partialTick);
         dispatcher.setRenderShadow(false);
         try {
-            List<DeferredPlastic> plastics = new ArrayList<>();
-            for (Entity entity : level.entitiesForRendering()) {
-                if (!(entity instanceof UniversalPlasticEntity plastic)
-                    || !plastic.isAlive()
-                    || !PlasticEntityRenderHelper.isTransparent(plastic)
-                    || PlasticHammerScreen.getPreview(plastic) != null) {
-                    continue;
-                }
-                plastics.add(new DeferredPlastic(plastic, partialTick));
-            }
-            for (BondedEntityBlockEntity blockEntity : DEFERRED_BLOCK_ENTITIES) {
-                UniversalPlasticEntity plastic = queuedPlastic(blockEntity, level);
-                if (plastic == null || !plastic.isAlive()) continue;
-                plastics.add(new DeferredPlastic(plastic, 1.0F));
-            }
+            List<DeferredPlastic> plastics = collectPlastics(level, partialTick);
             plastics.sort(Comparator.<DeferredPlastic>comparingDouble(
                 entry -> distanceToCamera(entry, camera)
             ).reversed());
             for (DeferredPlastic plastic : plastics) {
-                if (!renderPlastic(event, pose, buffers, dispatcher, plastic.entity, plastic.partialTick)) continue;
-                buffers.endBatch();
+                renderPlastic(event, pose, buffers, dispatcher, plastic.entity, plastic.partialTick);
             }
+            // 逐实体刷写会把批次数量钉死在实体数量上。共享同一图集的相邻实体交给 BufferSource 自然合批：
+            // RenderType 切换（例如壳体与内部流体交替）本就会强制刷写，因此绘制顺序仍是排序后的由远及近。
+            buffers.endBatch();
         } finally {
             dispatcher.setRenderShadow(true);
             ClearPlasticRenderTypes.endDeferredPass();
             pose.popPose();
             DEFERRED_BLOCK_ENTITIES.clear();
         }
+    }
+
+    /** 在半透明目标复制主深度前绘制不透明内容，延迟锅壳据此只覆盖位于液面前方的像素。 */
+    private static void renderOpaqueFluidPrepass(RenderLevelStageEvent event) {
+        Minecraft minecraft = Minecraft.getInstance();
+        ClientLevel level = minecraft.level;
+        if (level == null) {
+            DEFERRED_BLOCK_ENTITIES.clear();
+            return;
+        }
+        float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(minecraft.isPaused());
+        Vec3 camera = event.getCamera().getPosition();
+        PoseStack pose = event.getPoseStack();
+        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
+        EntityRenderDispatcher dispatcher = minecraft.getEntityRenderDispatcher();
+        pose.pushPose();
+        pose.translate(-camera.x, -camera.y, -camera.z);
+        minecraft.getMainRenderTarget().bindWrite(false);
+        try {
+            for (DeferredPlastic plastic : collectPlastics(level, partialTick)) {
+                renderOpaqueFluidContents(event, pose, buffers, dispatcher, plastic.entity, plastic.partialTick);
+            }
+            buffers.endBatch(RenderType.cutout());
+            buffers.endBatch(RenderType.entityCutoutNoCull(InventoryMenu.BLOCK_ATLAS));
+            syncItemEntityDepth(minecraft);
+        } finally {
+            pose.popPose();
+        }
+    }
+
+    /** 延迟阶段的锅内物品绘制到 ITEM_ENTITY_TARGET；预绘后重新复制主深度使其遮挡关系更新。 */
+    private static void syncItemEntityDepth(Minecraft minecraft) {
+        RenderTarget mainTarget = minecraft.getMainRenderTarget();
+        RenderTarget itemTarget = minecraft.levelRenderer.getItemEntityTarget();
+        if (itemTarget != null) {
+            itemTarget.copyDepthFrom(mainTarget);
+        }
+        mainTarget.bindWrite(false);
+    }
+
+    private static List<DeferredPlastic> collectPlastics(ClientLevel level, float partialTick) {
+        List<DeferredPlastic> plastics = new ArrayList<>();
+        for (Entity entity : level.entitiesForRendering()) {
+            if (!(entity instanceof UniversalPlasticEntity plastic)
+                || !plastic.isAlive()
+                || !PlasticEntityRenderHelper.isTransparent(plastic)
+                || PlasticHammerScreen.getPreview(plastic) != null) {
+                continue;
+            }
+            plastics.add(new DeferredPlastic(plastic, partialTick));
+        }
+        for (BondedEntityBlockEntity blockEntity : DEFERRED_BLOCK_ENTITIES) {
+            UniversalPlasticEntity plastic = queuedPlastic(blockEntity, level);
+            if (plastic == null || !plastic.isAlive()) continue;
+            plastics.add(new DeferredPlastic(plastic, 1.0F));
+        }
+        return plastics;
     }
 
     private static double distanceToCamera(DeferredPlastic plastic, Vec3 camera) {
@@ -139,6 +191,35 @@ public final class ClearPlasticEntityRenderer {
                 UniversalPlasticEntityRenderer.packedLight(plastic)
             );
             return true;
+        } finally {
+            pose.popPose();
+        }
+    }
+
+    private static void renderOpaqueFluidContents(
+        RenderLevelStageEvent event,
+        PoseStack pose,
+        MultiBufferSource buffers,
+        EntityRenderDispatcher dispatcher,
+        UniversalPlasticEntity plastic,
+        float partialTick
+    ) {
+        Vec3 position = plastic.getPosition(partialTick);
+        AABB bounds = plastic.getBoundingBox().move(position.subtract(plastic.position()));
+        if (!event.getFrustum().isVisible(bounds)
+            || !(dispatcher.getRenderer(plastic) instanceof UniversalPlasticEntityRenderer renderer)) {
+            return;
+        }
+        pose.pushPose();
+        pose.translate(position.x, position.y, position.z);
+        try {
+            renderer.renderOpaqueFluidContents(
+                plastic,
+                partialTick,
+                pose,
+                buffers,
+                UniversalPlasticEntityRenderer.packedLight(plastic)
+            );
         } finally {
             pose.popPose();
         }

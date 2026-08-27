@@ -8,7 +8,8 @@ public record MoldingFunctionalAnalysis(
     int shellVolume,
     boolean internalDecoration,
     MoldingAnvilShapeAnalysis anvilShape,
-    MoldingTrayShapeAnalysis trayShape
+    MoldingTrayShapeAnalysis trayShape,
+    MoldingCauldronShapeAnalysis cauldronShape
 ) {
     public MoldingFunctionalAnalysis(
         MoldingVolumeMask cavityMask,
@@ -47,6 +48,27 @@ public record MoldingFunctionalAnalysis(
         );
     }
 
+    public MoldingFunctionalAnalysis(
+        MoldingVolumeMask cavityMask,
+        int cavityCount,
+        int cavityVolume,
+        int shellVolume,
+        boolean internalDecoration,
+        MoldingAnvilShapeAnalysis anvilShape,
+        MoldingTrayShapeAnalysis trayShape
+    ) {
+        this(
+            cavityMask,
+            cavityCount,
+            cavityVolume,
+            shellVolume,
+            internalDecoration,
+            anvilShape,
+            trayShape,
+            MoldingCauldronShapeAnalysis.invalid("cauldron_shape_unavailable")
+        );
+    }
+
     public MoldingFunctionalAnalysis {
         cavityMask = cavityMask.copy();
         anvilShape = anvilShape == null
@@ -55,6 +77,9 @@ public record MoldingFunctionalAnalysis(
         trayShape = trayShape == null
             ? MoldingTrayShapeAnalysis.invalid("tray_shape_unavailable")
             : trayShape;
+        cauldronShape = cauldronShape == null
+            ? MoldingCauldronShapeAnalysis.invalid("cauldron_shape_unavailable")
+            : cauldronShape;
         if (cavityCount < 0 || cavityVolume < 0 || shellVolume < 0) {
             throw new IllegalArgumentException("Invalid molding functional analysis");
         }
@@ -73,7 +98,8 @@ public record MoldingFunctionalAnalysis(
             this.shellVolume,
             this.internalDecoration,
             this.anvilShape,
-            replacement
+            replacement,
+            this.cauldronShape
         );
     }
 
@@ -85,7 +111,21 @@ public record MoldingFunctionalAnalysis(
             this.shellVolume,
             this.internalDecoration,
             replacement,
-            this.trayShape
+            this.trayShape,
+            this.cauldronShape
+        );
+    }
+
+    public MoldingFunctionalAnalysis withCauldronShape(MoldingCauldronShapeAnalysis replacement) {
+        return new MoldingFunctionalAnalysis(
+            this.cavityMask,
+            this.cavityCount,
+            this.cavityVolume,
+            this.shellVolume,
+            this.internalDecoration,
+            this.anvilShape,
+            this.trayShape,
+            replacement
         );
     }
 }

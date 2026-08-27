@@ -6,7 +6,8 @@ import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
-import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldronWorkBlockFinder;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
@@ -44,6 +45,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
+import javax.annotation.Nullable;
 
 /** 皇家钢和浮霜金属在受热流体中催化塑料油的通用服务端过程。 */
 public final class PlasticOilCatalysis {
@@ -176,17 +178,22 @@ public final class PlasticOilCatalysis {
         );
     }
 
-    /** 硬化树脂锅只在开口向上时接受正下方热源。 */
-    public static void tickResinCauldron(ServerLevel level, HardenedResinCauldronEntity cauldron) {
+    /** 实体炼药锅只在开口向上时接受重力面一格内的工作方块。 */
+    public static void tickResinCauldron(ServerLevel level, PlasticCauldron cauldron) {
         if (cauldron.getOrientation().attachmentFace() != Direction.UP) return;
-        BlockPos pos = CatalyticPressProcess.occupiedPos(cauldron);
+        BlockPos pos = CatalyticPressProcess.occupiedPos(cauldron.plasticraft$cauldronEntity());
+        @Nullable CauldronWorkConditions work = PlasticCauldronWorkBlockFinder.find(
+            cauldron,
+            PlasticOilCatalysis::cauldronWorkConditions
+        );
+        if (work == null) work = CauldronWorkConditions.NONE;
         tickFluidContainer(
             level,
             pos,
             cauldron.getFluidHandler(),
             countCatalysts(cauldron.getItemHandler()),
-            CatalyticPressHeat.power(level.getBlockState(pos.below())),
-            PlasticCatalysisCold.isCold(level.getBlockState(pos.below())),
+            work.heat(),
+            work.cold(),
             true
         );
     }
@@ -513,6 +520,12 @@ public final class PlasticOilCatalysis {
         level.playSound(null, pos, SoundEvents.FIRE_EXTINGUISH, SoundSource.BLOCKS, 0.7F, 0.85F);
     }
 
+    private static @Nullable CauldronWorkConditions cauldronWorkConditions(BlockState state) {
+        int heat = CatalyticPressHeat.power(state);
+        boolean cold = PlasticCatalysisCold.isCold(state);
+        return heat > 0 || cold ? new CauldronWorkConditions(heat, cold) : null;
+    }
+
     @FunctionalInterface
     private interface Transformation {
         boolean apply();
@@ -528,6 +541,10 @@ public final class PlasticOilCatalysis {
         private boolean hasGlass() {
             return this.royalGlassItems > 0 || this.frostGlassItems > 0;
         }
+    }
+
+    private record CauldronWorkConditions(double heat, boolean cold) {
+        private static final CauldronWorkConditions NONE = new CauldronWorkConditions(0.0D, false);
     }
 
     /** 没有方块实体的反应位置也通过维度数据持久化进度。 */

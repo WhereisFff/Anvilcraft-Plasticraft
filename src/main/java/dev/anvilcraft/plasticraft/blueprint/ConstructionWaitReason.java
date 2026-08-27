@@ -9,7 +9,9 @@ public enum ConstructionWaitReason {
     SOURCE,
     ENERGY,
     DEMOLITION,
-    PERMISSION;
+    PERMISSION,
+    UNREACHABLE,
+    OBSERVER;
 
     public static ConstructionWaitReason byId(int id) {
         ConstructionWaitReason[] values = values();

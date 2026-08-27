@@ -99,10 +99,11 @@ public final class PlasticEntityPhysics {
         AABB queryBox = entityShapes.isEmpty()
             ? supportProbe(entityBox, gravityDirection)
             : enclosingShapeBounds(entityShapes).inflate(SUPPORT_PROBE_DEPTH + FACE_EPSILON);
+        // 宽阶段谓词只做廉价过滤：凸体接触求解留给下面的循环，避免每个候选被求解两次。
         List<Entity> candidates = entity.level().getEntities(
             entity,
             queryBox,
-            other -> isSupportCandidate(entity, entityBox, other, gravityDirection)
+            other -> canSupport(entity, other) && ShapedCollisionEntity.collisionBounds(other).intersects(queryBox)
         );
         Entity best = null;
         double bestDistance = Double.POSITIVE_INFINITY;
@@ -162,13 +163,7 @@ public final class PlasticEntityPhysics {
         AABB candidateBox,
         Direction gravityDirection
     ) {
-        if (candidate.isRemoved()
-            || candidate.isSpectator()
-            || entity.isPassengerOfSameVehicle(candidate)
-            || EntityBondManager.areInSameComponent(entity, candidate)
-            || !entity.canCollideWith(candidate)) {
-            return false;
-        }
+        if (!canSupport(entity, candidate)) return false;
         return PlasticEntityContactResolver.supportContact(
             entity,
             entityBox,
@@ -177,6 +172,15 @@ public final class PlasticEntityPhysics {
             gravityDirection,
             SUPPORT_PROBE_DEPTH
         ) != null;
+    }
+
+    /** 支撑判定的廉价前置条件，不涉及任何凸体求解，可安全用作宽阶段谓词。 */
+    private static boolean canSupport(FallingBlockEntity entity, Entity candidate) {
+        return !candidate.isRemoved()
+            && !candidate.isSpectator()
+            && !entity.isPassengerOfSameVehicle(candidate)
+            && !EntityBondManager.areInSameComponent(entity, candidate)
+            && entity.canCollideWith(candidate);
     }
 
     /** 仅当两个支撑面实际接触时返回 true，而非仅位于捕获探针内。 */

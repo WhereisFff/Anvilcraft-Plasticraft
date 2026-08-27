@@ -1,10 +1,12 @@
 package dev.anvilcraft.plasticraft.client.renderer;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import dev.anvilcraft.plasticraft.entity.MoldedPlasticCauldronState;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.BlockEntityWithoutLevelRenderer;
@@ -12,6 +14,7 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.Sheets;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.core.Direction;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
@@ -62,6 +65,11 @@ public final class UniversalPlasticItemRenderer extends BlockEntityWithoutLevelR
             return;
         }
         AABB bounds = MoldedTrayComponentRenderer.renderBounds(data);
+        Direction outlet = MoldingProductTypes.isCauldron(data.finalType())
+            ? MoldedPlasticCauldronState.get(stack).flatMap(MoldedPlasticCauldronState::outletSide).orElse(null)
+            : null;
+        if (outlet != null) bounds = bounds.minmax(MoldedPlasticMeshRenderer.cauldronOutletBounds(data, outlet));
+        boolean translucent = PlasticMaterial.fromMelt(data.material()).map(PlasticMaterial::isTransparent).orElse(false);
         double largestSize = Math.max(bounds.getXsize(), Math.max(bounds.getYsize(), bounds.getZsize()));
         if (!Double.isFinite(largestSize) || largestSize <= 0.0D) return;
         Vec3 center = bounds.getCenter();
@@ -76,8 +84,18 @@ public final class UniversalPlasticItemRenderer extends BlockEntityWithoutLevelR
             buffers,
             packedLight,
             0xFFFFFFFF,
-            PlasticMaterial.fromMelt(data.material()).map(PlasticMaterial::isTransparent).orElse(false)
+            translucent
         );
+        if (outlet != null) {
+            MoldedPlasticMeshRenderer.renderCauldronOutlet(
+                data,
+                outlet,
+                pose,
+                buffers,
+                packedLight,
+                translucent
+            );
+        }
         MoldedTrayComponentRenderer.render(
             data,
             Minecraft.getInstance().getBlockRenderer(),

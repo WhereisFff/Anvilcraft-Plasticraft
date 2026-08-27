@@ -103,6 +103,7 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CampfireBlock;
 import net.minecraft.world.level.block.piston.PistonStructureResolver;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluids;
@@ -2579,6 +2580,219 @@ public final class PlasticAnvilGameTests {
         );
 
         pot.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "A hardened resin cauldron shares a campfire cell and processes its resin through an Anvil Hammer")
+    static void hardenedResinCauldronRecipesUseBottomWorkBlock(ExtendedGameTestHelper helper) {
+        BlockPos relativeWorkBlock = new BlockPos(3, 2, 3);
+        BlockPos workBlock = helper.absolutePos(relativeWorkBlock);
+        helper.setBlock(
+            relativeWorkBlock,
+            Blocks.CAMPFIRE.defaultBlockState().setValue(CampfireBlock.LIT, true)
+        );
+        HardenedResinCauldronEntity pot = createPot(
+            helper,
+            new Vec3(3.5D, 2.0D, 3.5D),
+            PlasticEntityOrientation.DEFAULT
+        );
+        pot.setNoGravity(true);
+        double lift = workBlock.getY() + 7.0D / 16.0D - pot.plasticraft$getCollisionBox().bounds().minY;
+        pot.setPos(pot.position().add(0.0D, lift, 0.0D));
+        pot.setStartPos(pot.blockPosition());
+        check(BlockPos.containing(pot.plasticraft$getCollisionBox().bounds().getCenter()).equals(workBlock),
+            "hardened resin cauldron did not share the campfire block cell");
+        check(CauldronImpactRecipeProcessor.recipePotCell(pot).equals(workBlock.above()),
+            "hardened resin cauldron did not map its physical-bottom campfire to the recipe work position");
+        check(pot.getInput().insertItem(0, ModItems.RESIN.asStack(), false).isEmpty(),
+            "hardened resin cauldron rejected its resin recipe input");
+
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.ANVIL_HAMMER.asStack());
+        player.attack(pot);
+        check(countItem(pot.getInput(), ModItems.RESIN.get()) == 0,
+            "hardened resin cauldron retained resin after the campfire hammer recipe");
+        check(countItem(pot.getOutput(), ModItems.HARDEND_RESIN.get()) == 1,
+            "hardened resin cauldron did not produce hardened resin from the campfire hammer recipe");
+        player.discard();
+        pot.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x7x9", floor = true)
+    @TestHolder(description = "A Resin Anvil Hammer impact processes only the struck resin cauldron when multiple share a campfire cell")
+    static void anvilHammerProcessesOnlyStruckResinCauldron(ExtendedGameTestHelper helper) {
+        BlockPos impactCell = new BlockPos(4, 2, 4);
+        BlockPos workBlock = impactCell.below();
+        helper.setBlock(
+            workBlock,
+            Blocks.CAMPFIRE.defaultBlockState().setValue(CampfireBlock.LIT, true)
+        );
+        List<HardenedResinCauldronEntity> pots = List.of(
+            createPot(helper, new Vec3(3.99D, 2.0D, 3.99D), PlasticEntityOrientation.DEFAULT),
+            createPot(helper, new Vec3(4.99D, 2.0D, 3.99D), PlasticEntityOrientation.DEFAULT),
+            createPot(helper, new Vec3(3.99D, 2.0D, 4.99D), PlasticEntityOrientation.DEFAULT),
+            createPot(helper, new Vec3(4.99D, 2.0D, 4.99D), PlasticEntityOrientation.DEFAULT)
+        );
+        AABB impactBounds = new AABB(helper.absolutePos(impactCell));
+        for (int index = 0; index < pots.size(); index++) {
+            HardenedResinCauldronEntity pot = pots.get(index);
+            pot.setNoGravity(true);
+            check(pot.getBoundingBox().intersects(impactBounds),
+                "cauldron " + index + " did not enter the shared anvil landing cell");
+            check(
+                CauldronImpactRecipeProcessor.isPotentialRecipePotCell(
+                    pot,
+                    helper.absolutePos(impactCell)
+                ),
+                "cauldron " + index + " did not cover the shared campfire work cell"
+            );
+            check(pot.getInput().insertItem(0, new ItemStack(ModItems.RESIN.get(), 64), false).isEmpty(),
+                "cauldron " + index + " rejected resin input");
+        }
+
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.RESIN_ANVIL_HAMMER.asStack());
+        HardenedResinCauldronEntity struck = pots.getFirst();
+        player.attack(struck);
+
+        for (int index = 0; index < pots.size(); index++) {
+            HardenedResinCauldronEntity pot = pots.get(index);
+            if (pot == struck) {
+                check(countItem(pot.getInput(), ModItems.RESIN.get()) == 0,
+                    "struck resin cauldron retained resin after the hammer impact");
+                check(countItem(pot.getOutput(), ModItems.HARDEND_RESIN.get()) == 64,
+                    "struck resin cauldron did not turn its full resin stack into hardened resin");
+            } else {
+                check(countItem(pot.getInput(), ModItems.RESIN.get()) == 64,
+                    "unstruck resin cauldron " + index + " was processed by the hammer impact");
+                check(countItem(pot.getOutput(), ModItems.HARDEND_RESIN.get()) == 0,
+                    "unstruck resin cauldron " + index + " produced hardened resin");
+            }
+            pot.discard();
+        }
+        player.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x7x9", floor = true)
+    @TestHolder(description = "One anvil recipe event processes every resin cauldron sharing its campfire work cell")
+    static void anvilImpactProcessesAllTouchedCauldrons(ExtendedGameTestHelper helper) {
+        BlockPos impactCell = new BlockPos(4, 2, 4);
+        BlockPos workBlock = impactCell.below();
+        helper.setBlock(
+            workBlock,
+            Blocks.CAMPFIRE.defaultBlockState().setValue(CampfireBlock.LIT, true)
+        );
+        List<HardenedResinCauldronEntity> pots = List.of(
+            createPot(helper, new Vec3(3.99D, 2.0D, 3.99D), PlasticEntityOrientation.DEFAULT),
+            createPot(helper, new Vec3(4.99D, 2.0D, 3.99D), PlasticEntityOrientation.DEFAULT),
+            createPot(helper, new Vec3(3.99D, 2.0D, 4.99D), PlasticEntityOrientation.DEFAULT),
+            createPot(helper, new Vec3(4.99D, 2.0D, 4.99D), PlasticEntityOrientation.DEFAULT)
+        );
+        AABB impactBounds = new AABB(helper.absolutePos(impactCell));
+        for (int index = 0; index < pots.size(); index++) {
+            HardenedResinCauldronEntity pot = pots.get(index);
+            pot.setNoGravity(true);
+            check(pot.getBoundingBox().intersects(impactBounds),
+                "cauldron " + index + " did not enter the shared anvil landing cell");
+            check(
+                CauldronImpactRecipeProcessor.isPotentialRecipePotCell(
+                    pot,
+                    helper.absolutePos(impactCell)
+                ),
+                "cauldron " + index + " did not cover the shared campfire work cell"
+            );
+            check(pot.getInput().insertItem(0, new ItemStack(ModItems.RESIN.get(), 64), false).isEmpty(),
+                "cauldron " + index + " rejected resin input");
+        }
+
+        ServerLevel level = helper.getLevel();
+        FallingBlockEntity anvil = new FallingBlockEntity(EntityType.FALLING_BLOCK, level);
+        anvil.blockState = Blocks.ANVIL.defaultBlockState();
+        AnvilEvent.OnLand event = new AnvilEvent.OnLand(
+            level,
+            helper.absolutePos(impactCell).above(),
+            anvil,
+            1.0F
+        );
+        NeoForge.EVENT_BUS.post(new AnvilEvent.BeforeInWorldRecipe(event));
+        NeoForge.EVENT_BUS.post(new AnvilEvent.AfterInWorldRecipe(event));
+
+        for (int index = 0; index < pots.size(); index++) {
+            HardenedResinCauldronEntity pot = pots.get(index);
+            check(countItem(pot.getInput(), ModItems.RESIN.get()) == 0,
+                "cauldron " + index + " retained resin after the shared anvil impact");
+            check(countItem(pot.getOutput(), ModItems.HARDEND_RESIN.get()) == 64,
+                "cauldron " + index + " did not turn its full resin stack into hardened resin");
+            pot.discard();
+        }
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x7x9", floor = true)
+    @TestHolder(description = "An anvil landing cell processes only cauldrons whose collision boxes enter that exact cell")
+    static void anvilImpactDoesNotExpandToAdjacentCauldrons(ExtendedGameTestHelper helper) {
+        BlockPos impactCell = new BlockPos(4, 2, 4);
+        AABB impactBounds = new AABB(helper.absolutePos(impactCell));
+        List<HardenedResinCauldronEntity> pots = new ArrayList<>();
+        HardenedResinCauldronEntity center = null;
+        for (int x = 3; x <= 5; x++) {
+            for (int z = 3; z <= 5; z++) {
+                helper.setBlock(
+                    new BlockPos(x, 1, z),
+                    Blocks.CAMPFIRE.defaultBlockState().setValue(CampfireBlock.LIT, true)
+                );
+                HardenedResinCauldronEntity pot = createPot(
+                    helper,
+                    new Vec3(x + 0.5D, 2.0D, z + 0.5D),
+                    PlasticEntityOrientation.DEFAULT
+                );
+                pot.setNoGravity(true);
+                boolean isCenter = x == impactCell.getX() && z == impactCell.getZ();
+                check(
+                    pot.getBoundingBox().intersects(impactBounds) == isCenter,
+                    "cauldron at " + x + ", " + z + " had the wrong exact landing-cell intersection"
+                );
+                check(pot.getInput().insertItem(0, ModItems.RESIN.asStack(), false).isEmpty(),
+                    "cauldron at " + x + ", " + z + " rejected resin input");
+                pots.add(pot);
+                if (isCenter) center = pot;
+            }
+        }
+        check(center != null, "test setup did not create the center cauldron");
+
+        ServerLevel level = helper.getLevel();
+        FallingBlockEntity anvil = new FallingBlockEntity(EntityType.FALLING_BLOCK, level);
+        anvil.blockState = Blocks.ANVIL.defaultBlockState();
+        AnvilEvent.OnLand event = new AnvilEvent.OnLand(
+            level,
+            helper.absolutePos(impactCell).above(),
+            anvil,
+            1.0F
+        );
+        NeoForge.EVENT_BUS.post(new AnvilEvent.BeforeInWorldRecipe(event));
+        NeoForge.EVENT_BUS.post(new AnvilEvent.AfterInWorldRecipe(event));
+
+        for (HardenedResinCauldronEntity pot : pots) {
+            if (pot == center) {
+                check(countItem(pot.getInput(), ModItems.RESIN.get()) == 0,
+                    "center cauldron retained resin after the anvil impact");
+                check(countItem(pot.getOutput(), ModItems.HARDEND_RESIN.get()) == 1,
+                    "center cauldron did not produce hardened resin");
+            } else {
+                check(countItem(pot.getInput(), ModItems.RESIN.get()) == 1,
+                    "adjacent cauldron was processed outside the landing cell");
+                check(countItem(pot.getOutput(), ModItems.HARDEND_RESIN.get()) == 0,
+                    "adjacent cauldron produced a recipe result outside the landing cell");
+            }
+            pot.discard();
+        }
         helper.succeed();
     }
 

@@ -3,6 +3,8 @@ package dev.anvilcraft.plasticraft.block;
 import dev.anvilcraft.lib.v2.piston.IMoveableEntityBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.collision.BuiltInPlasticEntityModels;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
@@ -16,6 +18,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -144,6 +147,15 @@ public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity
     @Override
     public RenderShape getRenderShape(BlockState state) {
         return state.getValue(BONDED) ? RenderShape.INVISIBLE : super.getRenderShape(state);
+    }
+
+    /** 方块化的锅同样要让锅内熔体减速穿过它的实体；非锅制品由 {@link PlasticCauldrons#of} 挡掉。 */
+    @Override
+    public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
+        if (!state.getValue(BONDED)
+            || !(level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded)) return;
+        PlasticCauldron cauldron = PlasticCauldrons.of(bonded.getOrCreateRenderEntity());
+        if (cauldron != null) cauldron.plasticraft$stickEntityInPlasticMelt(entity);
     }
 
     @Override

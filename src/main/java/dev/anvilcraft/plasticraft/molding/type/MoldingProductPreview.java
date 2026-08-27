@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.molding.type;
 import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
 import dev.anvilcraft.plasticraft.molding.bake.ManufacturedMoldingGeometry;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingBarrierFace;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingCauldronShapeAnalyzer;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingFunctionalAnalysis;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
@@ -33,8 +34,21 @@ public record MoldingProductPreview(
         return this.formedVolume.copy();
     }
 
+    /** 升级为大型炼药锅不算降级，只有落回普通方块或其它非升级结果才算。 */
     public boolean downgraded() {
-        return !this.requestedType.equals(this.finalType);
+        return !this.requestedType.equals(this.finalType) && !this.upgraded();
+    }
+
+    public boolean upgraded() {
+        return !this.requestedType.equals(this.finalType)
+            && this.finalType.equals(upgradedType(this.requestedType, this.analysis));
+    }
+
+    /** 存入制品数据的内腔掩码；炼药锅用它自己的开顶内腔，保证与派生容量自洽。 */
+    public MoldingVolumeMask cavityMask() {
+        return this.analysis.cauldronShape().valid() && MoldingProductTypes.isCauldron(this.finalType)
+            ? this.analysis.cauldronShape().cavityMask()
+            : this.analysis.cavityMask();
     }
 
     public static MoldingProductPreview evaluate(
@@ -83,27 +97,52 @@ public record MoldingProductPreview(
                 MoldingTrayShapeAnalyzer.analyze(formedVolume, geometry.surfaceMesh())
             );
         boolean fullyFormed = formedProportion >= 1.0D - 1.0E-7D;
+        if (fullyFormed && !typeOverride && !creativeOverride) {
+            analysis = MoldingProductTypes.functionalAnalysis(model.requestedType(), model, baked);
+        }
         MoldingTypeValidation validation = fullyFormed
             ? MoldingProductTypes.validate(model.requestedType(), model, baked)
             : MoldingProductTypes.validate(model.requestedType(), analysis);
         boolean forced = typeOverride || creativeOverride;
         boolean retainsFunction = validation.valid()
             && (fullyFormed || !MoldingProductTypes.isTray(model.requestedType()));
-        ResourceLocation finalType = forced || retainsFunction
-            ? model.requestedType()
+        ResourceLocation resolvedType = forced || retainsFunction
+            ? upgradedType(model.requestedType(), analysis)
             : EditableMoldingModel.NORMAL_TYPE;
         int capacity = forced
-            ? MoldingProductTypes.unitsPerCapacity(model.requestedType()) == 0
-                ? 0
-                : analysis.cavityVolume() / MoldingProductTypes.unitsPerCapacity(model.requestedType())
-            : retainsFunction ? validation.capacity() : 0;
+            ? MoldingProductTypes.capacityFor(resolvedType, analysis.cavityVolume())
+            : retainsFunction ? capacityFor(resolvedType, analysis, validation) : 0;
         return new MoldingProductPreview(
             model.requestedType(),
-            finalType,
+            resolvedType,
             capacity,
             formedVolume,
             analysis
         );
+    }
+
+    /**
+     * 炼药锅的容量必须与 {@link #cavityMask()} 写入的开顶内腔同源，否则制品数据的容量自洽校验会失败；
+     * 其余类型沿用类型校验返回的容量。
+     */
+    private static int capacityFor(
+        ResourceLocation resolvedType,
+        MoldingFunctionalAnalysis analysis,
+        MoldingTypeValidation validation
+    ) {
+        return MoldingProductTypes.isCauldron(resolvedType)
+            ? MoldingProductTypes.capacityFor(resolvedType, analysis.cauldronShape().cavityVolume())
+            : validation.capacity();
+    }
+
+    /** 请求炼药锅且开口超过阈值时升级为大型塑料炼药锅，其余类型原样返回。 */
+    private static ResourceLocation upgradedType(
+        ResourceLocation requestedType,
+        MoldingFunctionalAnalysis analysis
+    ) {
+        return MoldingProductTypes.CAULDRON_ID.equals(requestedType) && analysis.cauldronShape().large()
+            ? MoldingProductTypes.LARGE_CAULDRON_ID
+            : requestedType;
     }
 
     private static MoldingFunctionalAnalysis maximumCaseAnalysis(
@@ -154,7 +193,8 @@ public record MoldingProductPreview(
             0,
             false,
             baked.functionalAnalysis().anvilShape(),
-            MoldingTrayShapeAnalyzer.analyze(dimensions, geometry.surfaceMesh())
+            MoldingTrayShapeAnalyzer.analyze(dimensions, geometry.surfaceMesh()),
+            MoldingCauldronShapeAnalyzer.maximumCase(maximumCavity)
         );
     }
 }

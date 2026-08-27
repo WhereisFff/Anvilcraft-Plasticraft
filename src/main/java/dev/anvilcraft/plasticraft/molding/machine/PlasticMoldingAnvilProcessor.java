@@ -272,9 +272,9 @@ public final class PlasticMoldingAnvilProcessor {
         ).isEmpty()) {
             throw new IllegalArgumentException("Molding output region is occupied");
         }
-        FluidStack material = snapshot.batchFluid().isEmpty()
-            ? new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 1)
-            : snapshot.batchFluid();
+        FluidStack material = snapshot.batchFluid();
+        if (material.isEmpty()) material = match.chamber.stagingFluid();
+        if (material.isEmpty()) material = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 1);
         PlasticMaterial plasticMaterial = PlasticMaterial.fromMelt(material)
             .orElseThrow(() -> new IllegalArgumentException("Unsupported molding material"));
         MoldedPlasticData data = MoldedPlasticData.manufacture(

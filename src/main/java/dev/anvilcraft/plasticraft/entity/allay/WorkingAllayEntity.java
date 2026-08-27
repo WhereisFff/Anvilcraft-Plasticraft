@@ -9,11 +9,14 @@ import dev.anvilcraft.plasticraft.allay.AllayHardHatTraits;
 import dev.anvilcraft.plasticraft.allay.AllayHardHats;
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
+import dev.anvilcraft.plasticraft.allay.observation.ObservationChunkLoader;
+import dev.anvilcraft.plasticraft.allay.transfer.ConstructionTransferService;
 import dev.anvilcraft.plasticraft.allay.path.AllayPathPriority;
 import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinition;
 import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinitions;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionDebris;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionLeaseService;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionMaterialAccess;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionPermission;
@@ -38,6 +41,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.MoverType;
+import net.minecraft.world.entity.ai.control.FlyingMoveControl;
 import net.minecraft.world.entity.ai.control.MoveControl;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.animal.allay.Allay;
@@ -67,26 +71,44 @@ public class WorkingAllayEntity extends Allay {
         SynchedEntityData.defineId(WorkingAllayEntity.class, EntityDataSerializers.BYTE);
     private static final EntityDataAccessor<ItemStack> DATA_CARRIED_ITEM =
         SynchedEntityData.defineId(WorkingAllayEntity.class, EntityDataSerializers.ITEM_STACK);
+    private static final byte CARRY_ORIGIN_UNKNOWN = 0;
+    private static final byte CARRY_ORIGIN_ESCROW = 1;
+    private static final byte CARRY_ORIGIN_FREE = 2;
+    /** 放弃入库而丢出的物品要短暂禁止拾取,否则收集悦灵会立刻把它吸回来,原地反复丢捡同一堆物品。 */
+    private static final int GIVE_UP_PICKUP_DELAY_TICKS = 100;
 
     private UUID owner;
     private AllayShortageStrategy shortageStrategy = AllayShortageStrategy.PAUSE;
     private List<ItemStack> collectionInventory = new ArrayList<>();
+    /** 托管携带物的归属:施工余料要按台账返还,自由收集物要走收集卸货,只在携带物变化时重新判定以避免每刻扫描台账。 */
+    private byte carryOrigin = CARRY_ORIGIN_UNKNOWN;
     @Nullable
     private BlockPos dockLoungePos;
     @Nullable
     private BlockPos homeLoungePos;
+    /** 转运状态只记“真正的家”与正在前往的任务,与当前宿主(homeLounge)区分;沿链经每座宿主室时 homeLounge 被改写,origin/transit 不变,到达或返程时由转发规则清除。 */
+    @Nullable
+    private BlockPos originLoungePos;
+    private Optional<UUID> transitJobId = Optional.empty();
+    /** 世界内转运兜底的重试冷却(游戏刻)。 */
+    private long nextTransitRetryTick = Long.MIN_VALUE;
     private Optional<UUID> assignedJobId = Optional.empty();
     private int taskOpId = -1;
     private ConstructionWaitReason waitReason = ConstructionWaitReason.NONE;
     private final AllayFlightNavigator navigator = new AllayFlightNavigator();
-    private final MoveControl vanillaMoveControl;
     /** 取放拆收等动手间隔,够到后先转向再执行。 */
     public static final int ACTION_INTERVAL_TICKS = 4;
+    /** 与原版悦灵一致的飞行转向上限,保证交还控制权后的游荡手感不变。 */
+    private static final int VANILLA_FLIGHT_TURN = 20;
     private static final float ACTION_TURN_STEP = 22.0F;
     private static final float ACTION_PITCH_STEP = 16.0F;
     private static final double ACTION_FACE_DOT = 0.85D;
     private static final int PROGRESS_SAMPLE_TICKS = 20;
     private static final double PROGRESS_DISTANCE_SQR = 0.25D;
+    /** 被方块包住多久后强制脱困;取一秒,既让正常的擦碰自行恢复,也把窒息伤害压到一次以内。 */
+    private static final int EMBEDDED_RESCUE_TICKS = 20;
+    /** 脱困搜索的最大半径;整层墙体都压过来时也够跳到墙外。 */
+    private static final int EMBEDDED_RESCUE_RADIUS = 6;
     private int lastActionTick;
     private boolean holdingForAction;
     @Nullable
@@ -95,16 +117,18 @@ public class WorkingAllayEntity extends Allay {
     private AllayFlightPlanner.FlightTask flightTask;
     private int stuckTicks;
     private int progressSampleTicks;
+    /** 连续被方块包住的刻数,用于触发脱困。 */
+    private int embeddedTicks;
     private Vec3 lastProgressPos = Vec3.ZERO;
     private boolean evacuating;
     @Nullable
     private Vec3 evacuationTarget;
+    private boolean deathLootDropped;
 
     public WorkingAllayEntity(EntityType<? extends Allay> type, Level level) {
         super(type, level);
         this.setPersistenceRequired();
         this.setNoGravity(true);
-        this.vanillaMoveControl = this.moveControl;
         this.moveControl = new CommandAwareMoveControl(this);
     }
 
@@ -120,14 +144,42 @@ public class WorkingAllayEntity extends Allay {
     @Override
     public void aiStep() {
         this.setNoGravity(true);
-        if (!this.level().isClientSide) {
+        if (!this.level().isClientSide && this.isAlive() && !this.isDeadOrDying()) {
+            // 自救必须先于工具行为:入库飞行等状态会直接 return,一旦被方块包住就没人来救
+            this.serverEmbeddedTick();
             this.toolDefinition().behavior().serverTick(this);
             this.serverFlightTick();
+            // 接管飞行时作废原版航线:否则原版寻路会在整个任务期间空跑重算,
+            // 交还控制权后还会先沿一条早已过期的旧路径飞一段
+            if (this.isCommanded()) {
+                this.getNavigation().stop();
+            }
         }
         super.aiStep();
         if (!this.level().isClientSide && this.holdingForAction && this.actionLookTarget != null) {
             this.turnToward(this.actionLookTarget);
         }
+    }
+
+    /**
+     * 提交阶段把投影换成真实方块、或世界方块压在悦灵身上时的自救。
+     * 碰撞钳制会把指令位移全部吃掉,寻路却认为自己一直在走,于是悦灵原地窒息到死;
+     * 这里连续确认若干刻仍被包住就直接挪到最近的空位,并作废在途航线重新规划。
+     */
+    private void serverEmbeddedTick() {
+        if (this.level().noBlockCollision(this, this.getBoundingBox())) {
+            this.embeddedTicks = 0;
+            return;
+        }
+        if (++this.embeddedTicks < EMBEDDED_RESCUE_TICKS) return;
+        this.embeddedTicks = 0;
+        Vec3 free = AllayFlightPlanner.escapeSolid(this, EMBEDDED_RESCUE_RADIUS);
+        if (free == null) return;
+        this.cancelFlightTask();
+        this.navigator.clear();
+        this.moveTo(free.x, free.y, free.z, this.getYRot(), this.getXRot());
+        this.setDeltaMovement(Vec3.ZERO);
+        this.resetStuck();
     }
 
     @Override
@@ -262,6 +314,18 @@ public class WorkingAllayEntity extends Allay {
     }
 
     private void serverDockingTick() {
+        if (!this.isAlive() || this.isDeadOrDying()) {
+            if (this.dockLoungePos != null
+                && this.level().getBlockEntity(this.dockLoungePos) instanceof AllayLoungeBlockEntity lounge) {
+                lounge.cancelDocking(this);
+            }
+            ConstructionTraffic.release(this.level(), this.getUUID());
+            this.dockLoungePos = null;
+            this.setHomeLounge(null);
+            this.cancelFlightTask();
+            this.setFlightState(AllayFlightState.HOVERING);
+            return;
+        }
         BlockPos loungePos = this.dockLoungePos;
         AllayLoungeBlockEntity lounge = loungePos != null
             && this.level().getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity found
@@ -317,7 +381,7 @@ public class WorkingAllayEntity extends Allay {
     }
 
     public boolean startDockingTo(BlockPos loungePos) {
-        if (this.level().isClientSide || this.isRemoved()) return false;
+        if (this.level().isClientSide || this.isRemoved() || !this.isAlive() || this.isDeadOrDying()) return false;
         if (this.flightState() == AllayFlightState.DOCKING) return false;
         if (!(this.level().getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge)
             || !lounge.canHost(this)) {
@@ -377,6 +441,7 @@ public class WorkingAllayEntity extends Allay {
         if (vanilla == null) return false;
         UUID id = this.getUUID();
         vanilla.moveTo(this.getX(), this.getY(), this.getZ(), this.getYRot(), this.getXRot());
+        copyPose(this, vanilla);
         vanilla.setUUID(id);
         vanilla.setCustomName(this.getCustomName());
         vanilla.setItemSlot(EquipmentSlot.MAINHAND, this.getMainHandItem().copy());
@@ -401,6 +466,8 @@ public class WorkingAllayEntity extends Allay {
 
     @Override
     protected void dropAllDeathLoot(ServerLevel level, DamageSource damageSource) {
+        if (this.deathLootDropped) return;
+        this.deathLootDropped = true;
         super.dropAllDeathLoot(level, damageSource);
         this.spawnAtLocation(this.getHardHat());
         this.spawnAtLocation(this.hostedCarry());
@@ -417,6 +484,7 @@ public class WorkingAllayEntity extends Allay {
         }
         UUID id = source.getUUID();
         worker.moveTo(source.getX(), source.getY(), source.getZ(), source.getYRot(), source.getXRot());
+        copyPose(source, worker);
         worker.setUUID(id);
         worker.setCustomName(source.getCustomName());
         worker.setItemSlot(EquipmentSlot.MAINHAND, source.getMainHandItem().copy());
@@ -429,6 +497,21 @@ public class WorkingAllayEntity extends Allay {
         source.discard();
         level.addFreshEntity(worker);
         return worker;
+    }
+
+    /**
+     * 戴帽与脱帽都是"换一个实体",必须把姿态整体搬过去。
+     * {@code moveTo} 只搬 yRot/xRot,渲染用的头部与身体朝向仍留在初始的 0 度(正南),
+     * 生成包又是按头部朝向同时给客户端的身体与头部赋值,于是换装瞬间会硬生生转向;
+     * 动量与落地状态一并继承,免得原地顿一下才恢复飞行。
+     */
+    private static void copyPose(Allay source, Allay target) {
+        target.setYHeadRot(source.getYHeadRot());
+        target.setYBodyRot(source.yBodyRot);
+        target.yHeadRotO = source.yHeadRotO;
+        target.yBodyRotO = source.yBodyRotO;
+        target.setDeltaMovement(source.getDeltaMovement());
+        target.setOnGround(source.onGround());
     }
 
     public AllayToolDefinition toolDefinition() {
@@ -488,6 +571,33 @@ public class WorkingAllayEntity extends Allay {
         return this.homeLoungePos;
     }
 
+    public void setOriginLounge(@Nullable BlockPos loungePos) {
+        this.originLoungePos = loungePos == null ? null : loungePos.immutable();
+    }
+
+    @Nullable
+    public BlockPos originLoungePos() {
+        return this.originLoungePos;
+    }
+
+    public void setTransitJob(@Nullable UUID jobId) {
+        this.transitJobId = jobId == null ? Optional.empty() : Optional.of(jobId);
+    }
+
+    public Optional<UUID> transitJobId() {
+        return this.transitJobId;
+    }
+
+    /** 世界内转运兜底的重试冷却;由转运服务在重试前推进。 */
+    public void setNextTransitRetryTick(long tick) {
+        this.nextTransitRetryTick = tick;
+    }
+
+    /** 世界内转运兜底是否仍在冷却中。 */
+    public boolean transitRetryCooldownActive(long gameTime) {
+        return gameTime < this.nextTransitRetryTick;
+    }
+
     public Optional<UUID> assignedJobId() {
         return this.assignedJobId;
     }
@@ -528,7 +638,7 @@ public class WorkingAllayEntity extends Allay {
 
     public boolean hasCollectionItems() {
         if (this.toolDefinition().inventorySize() <= 0) {
-            return !this.hostedCarry().isEmpty() && this.assignedJobId.isEmpty();
+            return !this.hostedCarry().isEmpty() && !this.hasEscrowCarry();
         }
         for (ItemStack stack : this.collectionInventory) {
             if (!stack.isEmpty()) return true;
@@ -571,6 +681,7 @@ public class WorkingAllayEntity extends Allay {
             ItemStack take = incoming.copy();
             ConstructionDebris.clear(take);
             this.setHostedCarry(take.copyWithCount(1));
+            this.carryOrigin = CARRY_ORIGIN_FREE;
             return 1;
         }
         this.ensureCollectionSlots();
@@ -595,44 +706,50 @@ public class WorkingAllayEntity extends Allay {
         return before - moving.getCount();
     }
 
-    public void unloadCollectionTo(Player player) {
+    /** 返回是否已全部收进目标;塞不下的部分会落地,调用方据此给自己加冷却避免立刻吸回来。 */
+    public boolean unloadCollectionTo(Player player) {
         if (this.toolDefinition().inventorySize() <= 0) {
-            ItemStack carry = this.hostedCarry();
-            if (carry.isEmpty()) return;
-            player.getInventory().add(carry);
-            if (!carry.isEmpty()) {
-                dropBeside(player.level(), player.position(), carry.copy());
-            }
+            if (this.hostedCarry().isEmpty() || this.hasEscrowCarry()) return true;
+            // 携带物是同步数据,必须先取副本再交给背包,否则 add 的就地缩减不会同步到客户端
+            ItemStack carry = this.hostedCarry().copy();
             this.setHostedCarry(ItemStack.EMPTY);
-            return;
+            player.getInventory().add(carry);
+            if (carry.isEmpty()) return true;
+            dropBeside(player.level(), player.position(), carry);
+            return false;
         }
         this.ensureCollectionSlots();
+        boolean stored = true;
         for (int index = 0; index < this.collectionInventory.size(); index++) {
             ItemStack slot = this.collectionInventory.get(index);
             if (slot.isEmpty()) continue;
             player.getInventory().add(slot);
             if (!slot.isEmpty()) {
                 dropBeside(player.level(), player.position(), slot.copy());
+                stored = false;
             }
             this.collectionInventory.set(index, ItemStack.EMPTY);
         }
+        return stored;
     }
 
-    public void unloadCollectionTo(ConstructionMaterialAccess access) {
+    /** 返回是否已全部收进容器;溢出的部分会落在休息室旁,调用方据此给自己加冷却。 */
+    public boolean unloadCollectionTo(ConstructionMaterialAccess access) {
         if (this.toolDefinition().inventorySize() <= 0) {
-            ItemStack carry = this.hostedCarry();
-            if (carry.isEmpty()) return;
-            access.insertOrDrop(carry.copy());
+            if (this.hostedCarry().isEmpty() || this.hasEscrowCarry()) return true;
+            ItemStack carry = this.hostedCarry().copy();
             this.setHostedCarry(ItemStack.EMPTY);
-            return;
+            return access.insertOrDrop(carry).isEmpty();
         }
         this.ensureCollectionSlots();
+        boolean stored = true;
         for (int index = 0; index < this.collectionInventory.size(); index++) {
             ItemStack slot = this.collectionInventory.get(index);
             if (slot.isEmpty()) continue;
-            access.insertOrDrop(slot.copy());
+            stored &= access.insertOrDrop(slot.copy()).isEmpty();
             this.collectionInventory.set(index, ItemStack.EMPTY);
         }
+        return stored;
     }
 
     /** 权限失效或来源不可用时，把临时收集库存安全实体化到指定位置。 */
@@ -656,7 +773,9 @@ public class WorkingAllayEntity extends Allay {
 
     private static void dropBeside(Level level, Vec3 pos, ItemStack stack) {
         if (stack.isEmpty()) return;
-        level.addFreshEntity(new ItemEntity(level, pos.x, pos.y, pos.z, stack));
+        ItemEntity dropped = new ItemEntity(level, pos.x, pos.y, pos.z, stack);
+        dropped.setPickUpDelay(GIVE_UP_PICKUP_DELAY_TICKS);
+        level.addFreshEntity(dropped);
     }
 
     private void ensureCollectionSlots() {
@@ -679,6 +798,23 @@ public class WorkingAllayEntity extends Allay {
 
     public void setHostedCarry(ItemStack stack) {
         this.entityData.set(DATA_CARRIED_ITEM, stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
+        this.carryOrigin = CARRY_ORIGIN_UNKNOWN;
+    }
+
+    /**
+     * 携带物是否是施工台账里的材料或返还物。自由收集来的物品没有台账,
+     * 必须交给收集卸货路径,否则既塞不进容器又会被反复丢在地上。
+     */
+    public boolean hasEscrowCarry() {
+        if (this.hostedCarry().isEmpty()) return false;
+        if (this.carryOrigin == CARRY_ORIGIN_UNKNOWN) {
+            // 客户端没有台账,按施工余料显示即可;服务端只在携带物变化后判定一次
+            if (this.level().isClientSide) return true;
+            this.carryOrigin = ConstructionJobController.hasEscrowCarry(this)
+                ? CARRY_ORIGIN_ESCROW
+                : CARRY_ORIGIN_FREE;
+        }
+        return this.carryOrigin == CARRY_ORIGIN_ESCROW;
     }
 
     public ConstructionWaitReason waitReason() {
@@ -761,10 +897,25 @@ public class WorkingAllayEntity extends Allay {
                 && this.flightState() == AllayFlightState.DOCKING
                 && this.dockLoungePos == null;
             if (reason.shouldDestroy()) {
+                if (this.dockLoungePos != null
+                    && this.level().getBlockEntity(this.dockLoungePos) instanceof AllayLoungeBlockEntity lounge) {
+                    lounge.cancelDocking(this);
+                }
                 this.clearAssignment(false);
                 if (!storedByLounge && !this.hostedCarry().isEmpty()) {
                     ConstructionLeaseService.markCarriesUntracked(this);
                 }
+                // 入栈托管只是转运途中的一站,不能当作离开世界去清在途台账
+                if (!storedByLounge && this.level() instanceof ServerLevel serverLevel) {
+                    ConstructionTransferService.onEntityRemove(serverLevel.getServer(), this.getUUID());
+                }
+                this.dockLoungePos = null;
+                this.setHomeLounge(null);
+            }
+            // 换维度会以同一 UUID 在目标维度重建实体,旧维度这份九柱票没有持票人,必须在这里退掉
+            if ((reason.shouldDestroy() || reason == Entity.RemovalReason.CHANGED_DIMENSION)
+                && this.level() instanceof ServerLevel observerLevel) {
+                ObservationChunkLoader.revokeObserver(observerLevel, this.getUUID());
             }
             this.cancelFlightTask();
             ConstructionTraffic.release(this.level(), this.getUUID());
@@ -786,7 +937,9 @@ public class WorkingAllayEntity extends Allay {
             List.copyOf(this.collectionInventory),
             this.assignedJobId,
             this.hostedCarry().copy(),
-            Optional.ofNullable(this.getCustomName())
+            Optional.ofNullable(this.getCustomName()),
+            this.originLoungePos == null ? Optional.empty() : Optional.of(this.originLoungePos.asLong()),
+            this.transitJobId
         );
     }
 
@@ -800,6 +953,8 @@ public class WorkingAllayEntity extends Allay {
         this.assignedJobId = record.assignedJobId();
         this.setHostedCarry(record.hostedCarry());
         this.setCustomName(record.customName().orElse(null));
+        this.originLoungePos = record.originLounge().map(BlockPos::of).orElse(null);
+        this.transitJobId = record.transitJob();
         this.setPersistenceRequired();
         this.setFlightState(AllayFlightState.HOVERING);
     }
@@ -865,19 +1020,31 @@ public class WorkingAllayEntity extends Allay {
         }
     }
 
-    /** 执行任务时关掉原版飞行控制器,空闲时再交给它游荡。 */
-    private static final class CommandAwareMoveControl extends MoveControl {
+    /**
+     * 执行任务时关掉原版飞行控制器,空闲时再交给它游荡。
+     * 必须自己继承 {@link FlyingMoveControl} 而不是包装另一个实例:
+     * 寻路与大脑把目标点写在悦灵当前挂载的移动控制器上,委派给另一个对象后那份目标点永远读不到,
+     * 原版控制器的状态一直停在等待,空闲悦灵就再也不会飞。
+     */
+    private static final class CommandAwareMoveControl extends FlyingMoveControl {
         private final WorkingAllayEntity worker;
 
         private CommandAwareMoveControl(WorkingAllayEntity worker) {
-            super(worker);
+            super(worker, VANILLA_FLIGHT_TURN, true);
             this.worker = worker;
         }
 
         @Override
         public void tick() {
-            if (this.worker.isCommanded()) return;
-            this.worker.vanillaMoveControl.tick();
+            if (this.worker.isCommanded()) {
+                // 丢掉指挥期间堆积的目标点与残留移动输入,交还控制权后不会先朝一个过期目标猛冲
+                this.operation = MoveControl.Operation.WAIT;
+                this.worker.setXxa(0.0F);
+                this.worker.setYya(0.0F);
+                this.worker.setZza(0.0F);
+                return;
+            }
+            super.tick();
         }
     }
 }

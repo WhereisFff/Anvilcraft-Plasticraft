@@ -4,6 +4,7 @@ import dev.anvilcraft.plasticraft.allay.AllayFlightState;
 import dev.anvilcraft.plasticraft.allay.AllayWorkMotions;
 import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
 import dev.anvilcraft.plasticraft.allay.path.AllayPathPriority;
+import dev.anvilcraft.plasticraft.allay.transfer.ConstructionTransferService;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionDebris;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
@@ -112,7 +113,7 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
             AllayWorkMotions.releaseToVanilla(worker);
             return;
         }
-        if (worker.isCollectionFull()) {
+        if (worker.isCollectionFull() && worker.hasCollectionItems()) {
             worker.setActionState((byte) 0);
             if (sameSite && onSite(worker, job)) {
                 leaveSiteThenIdle(worker, level, job);
@@ -219,7 +220,7 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
             if (worker.hasCollectionItems()) {
                 tryUnload(worker, level, ownerId);
             } else {
-                restOrIdle(worker);
+                restOrIdle(worker, level);
             }
             return;
         }
@@ -240,7 +241,7 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
                 if (worker.hasCollectionItems()) {
                     tryUnload(worker, level, ownerId);
                 } else {
-                    restOrIdle(worker);
+                    restOrIdle(worker, level);
                 }
             }
             return;
@@ -252,7 +253,7 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
                 tryUnload(worker, level, ownerId);
                 return;
             }
-            restOrIdle(worker);
+            restOrIdle(worker, level);
             return;
         }
         pursue(worker, level, target, null, null, ownerId);
@@ -368,12 +369,16 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
             progress.releaseDebrisLease(target.getUUID());
             ConstructionJobStore.get(level).markDirty();
         }
-        TASK_RETRY_AFTER.computeIfAbsent(level, ignored -> new HashMap<>())
-            .put(worker.getUUID(), level.getGameTime() + TASK_RETRY_DELAY_TICKS);
+        delayTask(worker.getUUID(), level);
         worker.setActionState((byte) 0);
         worker.clearAssignment(false);
         worker.resetStuck();
         AllayWorkMotions.releaseToVanilla(worker);
+    }
+
+    private static void delayTask(UUID workerId, ServerLevel level) {
+        TASK_RETRY_AFTER.computeIfAbsent(level, ignored -> new HashMap<>())
+            .put(workerId, level.getGameTime() + TASK_RETRY_DELAY_TICKS);
     }
 
     private static boolean canAttemptTask(UUID workerId, ServerLevel level) {
@@ -441,6 +446,8 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
                 return;
             }
             worker.clearAssignment(false);
+            // 客工不入栈协调室,改为沿转运链返回原休息室
+            if (ConstructionTransferService.sendGuestHome(level, worker)) return;
             worker.startDockingTo(worker.homeLoungePos());
             return;
         }
@@ -553,8 +560,13 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
                 }
                 return;
             }
-            worker.unloadCollectionTo(ConstructionMaterialAccess.below(level, home));
+            if (!worker.unloadCollectionTo(ConstructionMaterialAccess.below(level, home))) {
+                // 容器塞不下的部分落在休息室旁,必须给自己上冷却,否则会立刻吸回来反复丢
+                delayTask(worker.getUUID(), level);
+            }
             if (!worker.hasCollectionItems()) {
+                // 客工只在协调室下方容器卸货,卸完不入栈
+                if (ConstructionTransferService.isGuest(worker)) return;
                 worker.startDockingTo(home);
             }
             return;
@@ -584,16 +596,20 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
         if (!ConstructionPermission.areCollaborators(level.getServer(), ownerId, owner.getUUID())) {
             return;
         }
-        worker.unloadCollectionTo(owner);
+        if (!worker.unloadCollectionTo(owner)) {
+            delayTask(worker.getUUID(), level);
+        }
         if (!worker.hasCollectionItems()) {
             worker.clearAssignment(false);
             AllayWorkMotions.releaseToVanilla(worker);
         }
     }
 
-    private static void restOrIdle(WorkingAllayEntity worker) {
+    private static void restOrIdle(WorkingAllayEntity worker, ServerLevel level) {
         BlockPos home = worker.homeLoungePos();
         if (home != null && isVacuum(worker)) {
+            // 客工不入栈协调室,改为沿转运链返回原休息室
+            if (ConstructionTransferService.sendGuestHome(level, worker)) return;
             worker.startDockingTo(home);
             return;
         }

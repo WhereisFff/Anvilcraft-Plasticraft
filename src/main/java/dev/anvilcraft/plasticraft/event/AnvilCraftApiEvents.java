@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.event;
 
+import dev.anvilcraft.lib.v2.recipe.event.InWorldRecipeEvent;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
@@ -74,6 +75,11 @@ public final class AnvilCraftApiEvents {
         if (event.getLanding().getLevel() instanceof ServerLevel) {
             CauldronImpactRecipeProcessor.finishEventRecipeProcessing();
         }
+    }
+
+    @SubscribeEvent
+    public static void onInWorldRecipe(InWorldRecipeEvent event) {
+        CauldronImpactRecipeProcessor.markRecipeMatched(event.getContext());
     }
 
     @SubscribeEvent

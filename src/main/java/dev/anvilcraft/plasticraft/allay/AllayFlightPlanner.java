@@ -3,11 +3,13 @@ package dev.anvilcraft.plasticraft.allay;
 import dev.anvilcraft.plasticraft.allay.path.AllayPathExecutor;
 import dev.anvilcraft.plasticraft.allay.path.AllayPathPriority;
 import dev.anvilcraft.plasticraft.allay.path.AllayPathSnapshot;
+import dev.anvilcraft.plasticraft.allay.path.AllayPlasticAvoidance;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionWorkerSpace;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,12 +35,12 @@ public final class AllayFlightPlanner {
     /** 测试与调试用同步入口;玩法路径走 {@link FlightTask#advance}。 */
     public static List<Vec3> plan(Entity worker, Vec3 goal) {
         Vec3 actual = worker.position();
-        Vec3 start = snapToFree(worker, actual);
+        Vec3 start = alignToGrid(worker, snapToFree(worker, actual));
         Vec3 safeGoal = snapToFree(worker, goal);
         List<Vec3> path;
         if (start.distanceToSqr(safeGoal) < 0.04D) {
             path = List.of(safeGoal);
-        } else if (isClear(worker, start, safeGoal)) {
+        } else if (isClear(worker, start, safeGoal, true)) {
             path = List.of(safeGoal);
         } else {
             Vec3 localGoal = AllayPathSnapshot.nextLocalGoal(worker, start, safeGoal);
@@ -86,7 +88,64 @@ public final class AllayFlightPlanner {
         return best != null ? best : goal;
     }
 
+    /**
+     * 已经被方块包住时的脱困点。碰撞钳制会把指令位移全部吃掉,悦灵只会原地抖动并持续窒息,
+     * 所以先按标准吸附窗口找,再逐圈扩大搜索半径;彻底找不到才返回 {@code null} 交给上层放弃。
+     */
+    @Nullable
+    public static Vec3 escapeSolid(Entity worker, int maxRadius) {
+        Vec3 from = worker.position();
+        Vec3 snapped = snapToFree(worker, from);
+        if (!snapped.equals(from)) return snapped;
+        BlockPos origin = BlockPos.containing(from);
+        for (int radius = 4; radius <= maxRadius; radius++) {
+            Vec3 best = null;
+            double bestDist = Double.MAX_VALUE;
+            for (int x = -radius; x <= radius; x++) {
+                for (int y = -radius; y <= radius; y++) {
+                    for (int z = -radius; z <= radius; z++) {
+                        if (Math.max(Math.abs(x), Math.max(Math.abs(y), Math.abs(z))) != radius) continue;
+                        Vec3 candidate = ConstructionWorkerSpace.navigationPoint(
+                            origin.getX() + x,
+                            origin.getY() + y,
+                            origin.getZ() + z
+                        );
+                        if (!worker.level().noBlockCollision(worker, boxAt(worker, candidate))) continue;
+                        double dist = candidate.distanceToSqr(from);
+                        if (dist < bestDist) {
+                            bestDist = dist;
+                            best = candidate;
+                        }
+                    }
+                }
+            }
+            if (best != null) return best;
+        }
+        return null;
+    }
+
+    /**
+     * 把规划起点拉回所在格的导航点。悦灵实际停靠位常有亚格漂移,包围盒会同时压住上一格,
+     * 于是每一步扫掠都要连带检测那一格的天花板并被整体否决,明明只差两格也规划不出路径;
+     * 对齐后包围盒只落在本格内,不会改变实际站位,吸附失败时保持原姿态。
+     */
+    public static Vec3 alignToGrid(Entity worker, Vec3 from) {
+        Vec3 aligned = ConstructionWorkerSpace.navigationPoint(BlockPos.containing(from));
+        if (aligned.distanceToSqr(from) < 1.0E-6D) return from;
+        if (!worker.level().noBlockCollision(worker, boxAt(worker, aligned))) return from;
+        if (!isClear(worker, from, aligned)) return from;
+        return aligned;
+    }
+
     public static boolean isClear(Entity worker, Vec3 from, Vec3 to) {
+        return isClear(worker, from, to, false);
+    }
+
+    /**
+     * {@code avoidPlastic} 为真时塑料实体的整体包围盒也算阻挡,只用于否决直飞捷径,
+     * 让后续 A* 用绕行代价重新选路;抬升兜底仍按可推动处理,不因塑料判定无路可走。
+     */
+    public static boolean isClear(Entity worker, Vec3 from, Vec3 to, boolean avoidPlastic) {
         double distance = from.distanceTo(to);
         if (distance < 1.0E-4D) return true;
         int steps = Math.max(1, (int) Math.ceil(distance));
@@ -97,7 +156,9 @@ public final class AllayFlightPlanner {
             if (!worker.level().noBlockCollision(worker, swept)) return false;
             previous = point;
         }
-        return true;
+        if (!avoidPlastic) return true;
+        AABB corridor = boxAt(worker, from).minmax(boxAt(worker, to)).deflate(0.002D);
+        return !AllayPlasticAvoidance.blocked(worker.level(), corridor);
     }
 
     static AABB boxAt(Entity worker, Vec3 pos) {
@@ -209,10 +270,13 @@ public final class AllayFlightPlanner {
                 }
                 return this.finishSearch(worker, actual);
             }
-            if (this.complete && this.path.isEmpty() && this.failCooldown++ < 10) {
+            // 上一次规划失败就退避,不能只看 path 是否为空:失败时也可能产出一个脱困跳点,
+            // 那条"路径"一到达就消耗完,若不退避就会每 tick 重跑一次局部 A* 空转烧 CPU。
+            if (this.complete && (this.path.isEmpty() || this.failedPlans > 0) && this.failCooldown++ < 10) {
                 return false;
             }
-            Vec3 start = snapToFree(worker, actual);
+            Vec3 free = snapToFree(worker, actual);
+            Vec3 start = alignToGrid(worker, free);
             Vec3 safeGoal = snapToFree(worker, this.goal);
             if (start.distanceToSqr(safeGoal) < 0.04D) {
                 this.path = escape(actual, start, List.of(safeGoal));
@@ -221,7 +285,7 @@ public final class AllayFlightPlanner {
                 this.failedPlans = 0;
                 return true;
             }
-            if (isClear(worker, start, safeGoal)) {
+            if (isClear(worker, start, safeGoal, true)) {
                 this.path = escape(actual, start, List.of(safeGoal));
                 this.complete = true;
                 this.failCooldown = 0;
@@ -230,8 +294,17 @@ public final class AllayFlightPlanner {
             }
             if (!this.submitted) {
                 if (!AllayPathSnapshot.acquireCapturePermit(worker)) return false;
-                this.snapshotStart = start;
-                Vec3 localGoal = AllayPathSnapshot.nextLocalGoal(worker, start, safeGoal);
+                // 失效判定衡量的是"悦灵离拍快照时的位置有多远",必须锚在真实姿态上,
+                // 否则起点对齐带来的固定偏移会把静止不动的悦灵也判成移动过。
+                this.snapshotStart = actual;
+                // 连续失败时交替走"分段走廊"与"直取目标":同一份失败计划重跑再多次也是同样结果,
+                // 换掉局部目标才可能让 A* 走出另一侧的绕行。
+                Vec3 localGoal = AllayPathSnapshot.nextLocalGoal(
+                    worker,
+                    start,
+                    safeGoal,
+                    this.failedPlans % 2 == 1
+                );
                 AllayPathSnapshot.Capture capture;
                 try {
                     capture = AllayPathSnapshot.capture(worker, start, localGoal);
@@ -243,7 +316,7 @@ public final class AllayFlightPlanner {
                     this.failedPlans = elevated.isEmpty() ? this.failedPlans + 1 : 0;
                     return true;
                 }
-                AllayPathPriority effective = start.distanceToSqr(actual) > 0.25D
+                AllayPathPriority effective = free.distanceToSqr(actual) > 0.25D
                     ? AllayPathPriority.ESCAPE
                     : this.priority;
                 this.future = AllayPathExecutor.submit(this.allayId, effective, cancelled ->
@@ -274,7 +347,7 @@ public final class AllayFlightPlanner {
         }
 
         private boolean finish(Entity worker, Vec3 actual, List<Vec3> found) {
-            Vec3 start = snapToFree(worker, actual);
+            Vec3 start = alignToGrid(worker, snapToFree(worker, actual));
             if (found.isEmpty()) {
                 Vec3 safeGoal = snapToFree(worker, this.goal);
                 found = elevate(worker, start, safeGoal);

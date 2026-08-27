@@ -38,6 +38,7 @@ public final class MoldingShellAnalyzer {
             }
         }
         decoration |= hasInteriorBarrierDecoration(volume, barriers, exterior, cavity);
+        // 开顶容器的内腔与外界连通，上面的密闭腔洪泛对它只会得到空腔，炼药锅另行扫描并复用这里的外界可达集
         return new MoldingFunctionalAnalysis(
             MoldingVolumeMask.fromLongArray(
                 volume.sizeX(),
@@ -50,10 +51,10 @@ public final class MoldingShellAnalyzer {
             shell.cardinality(),
             decoration,
             MoldingAnvilShapeAnalyzer.analyze(volume)
-        );
+        ).withCauldronShape(MoldingCauldronShapeAnalyzer.analyze(volume, barriers, exterior));
     }
 
-    private static void floodExterior(
+    static void floodExterior(
         MoldingVolumeMask volume,
         Set<MoldingBarrierFace> barriers,
         BitSet exterior
@@ -181,8 +182,11 @@ public final class MoldingShellAnalyzer {
     }
 
     private static boolean isExterior(MoldingVolumeMask volume, Cell cell, BitSet exterior) {
-        return inPaddedBounds(volume, cell.x, cell.y, cell.z)
-            && exterior.get(paddedIndex(volume, cell.x, cell.y, cell.z));
+        return isExterior(volume, cell.x, cell.y, cell.z, exterior);
+    }
+
+    static boolean isExterior(MoldingVolumeMask volume, int x, int y, int z, BitSet exterior) {
+        return inPaddedBounds(volume, x, y, z) && exterior.get(paddedIndex(volume, x, y, z));
     }
 
     private static boolean blocked(
@@ -191,9 +195,17 @@ public final class MoldingShellAnalyzer {
         Cell cell,
         MoldingFaceDirection direction
     ) {
-        int x = cell.x;
-        int y = cell.y;
-        int z = cell.z;
+        return blocked(volume, barriers, cell.x, cell.y, cell.z, direction);
+    }
+
+    static boolean blocked(
+        MoldingVolumeMask volume,
+        Set<MoldingBarrierFace> barriers,
+        int x,
+        int y,
+        int z,
+        MoldingFaceDirection direction
+    ) {
         return switch (direction.axis()) {
             case X -> transitionCoordinate(x, direction.stepX(), volume.sizeX())
                 && y >= 0 && y < volume.sizeY() && z >= 0 && z < volume.sizeZ()

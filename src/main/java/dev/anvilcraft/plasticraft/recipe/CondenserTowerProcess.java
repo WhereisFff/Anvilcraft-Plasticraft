@@ -6,7 +6,8 @@ import dev.anvilcraft.lib.v2.util.predicate.ItemIngredientPredicate;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
-import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.init.PlasticraftParticles;
 import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
 import dev.anvilcraft.plasticraft.mixin.VillagerExperienceAccessor;
@@ -155,8 +156,8 @@ public final class CondenserTowerProcess {
         boolean bondedCauldron = level.getBlockEntity(targetPos) instanceof BondedEntityBlockEntity bonded
             && bonded.isInitialized()
             && bonded.isPlastic()
-            && bonded.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity;
-        if (endpoint != null && (endpoint.cauldron() || endpoint.entity() instanceof HardenedResinCauldronEntity
+            && PlasticCauldrons.isCauldron(bonded.getOrCreateRenderEntity());
+        if (endpoint != null && (endpoint.cauldron() || PlasticCauldrons.isCauldron(endpoint.entity())
             || bondedCauldron)) {
             FluidStack stored = findVaporizableFluid(endpoint.handler());
             if (!stored.isEmpty()) {
@@ -936,14 +937,15 @@ public final class CondenserTowerProcess {
         BlockPos pos,
         FluidContainerLookup.Result endpoint
     ) {
-        if (endpoint.entity() instanceof HardenedResinCauldronEntity pot) {
-            Vec3 center = pot.getBoundingBox().getCenter();
-            return new Vec3(center.x, pot.getFluidSurfaceY(), center.z);
+        PlasticCauldron entityPot = PlasticCauldrons.of(endpoint.entity());
+        if (entityPot != null) {
+            Vec3 center = entityPot.getBoundingBox().getCenter();
+            return new Vec3(center.x, entityPot.getFluidSurfaceY(), center.z);
         }
         if (level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
             && bonded.isInitialized()
             && bonded.isPlastic()
-            && bonded.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity pot) {
+            && PlasticCauldrons.of(bonded.getOrCreateRenderEntity()) instanceof PlasticCauldron pot) {
             Vec3 center = pot.getBoundingBox().getCenter();
             return new Vec3(center.x, pot.getFluidSurfaceY(), center.z);
         }

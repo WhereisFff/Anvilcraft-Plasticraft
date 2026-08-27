@@ -200,10 +200,7 @@ public final class MoldingAnvilShapeAnalyzer {
 
         for (SourceElement element : elements) {
             List<MoldingVec3> vertices = element.vertices();
-            MoldingVec3 xEdge = vertices.get(1).subtract(vertices.get(0));
-            MoldingVec3 yEdge = vertices.get(2).subtract(vertices.get(0));
-            MoldingVec3 zEdge = vertices.get(4).subtract(vertices.get(0));
-            if (xEdge.cross(yEdge).dot(zEdge) >= -EPSILON) continue;
+            if (!MoldingModelBaker.hasNegativeOrientation(vertices)) continue;
             for (int[] face : CUBE_FACES) {
                 if (!isLowestHorizontalFace(vertices, face, minimumY)) continue;
                 double minimumX = Double.POSITIVE_INFINITY;

@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.allay.AllayDefaultHardHat;
+import dev.anvilcraft.plasticraft.allay.AllayHardHats;
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
@@ -306,13 +307,14 @@ public final class AllayLoungeGameTests {
             .thenSucceed();
     }
 
-    @GameTest(timeoutTicks = 80)
+    @GameTest(timeoutTicks = 100)
     @EmptyTemplate(value = "5x4x5", floor = true)
-    @TestHolder(description = "Released lounge allays follow the lounge pause or skip setting")
-    static void releasedAllayFollowsLoungeStrategy(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "A manually released allay becomes unbound and does not return to its lounge")
+    static void manuallyReleasedAllayBecomesUnbound(ExtendedGameTestHelper helper) {
         AllayLoungeBlockEntity lounge = placeLounge(helper);
         lounge.setShortageStrategy(AllayShortageStrategy.SKIP);
         check(lounge.addHosted(fillerRecord()), "failed to host an allay record");
+        WorkingAllayEntity[] released = new WorkingAllayEntity[1];
         helper.startSequence()
             .thenExecute(() -> check(lounge.releaseHosted(0), "lounge must release the hosted allay"))
             .thenExecuteAfter(5, () -> {
@@ -322,10 +324,52 @@ public final class AllayLoungeGameTests {
                 );
                 check(!workers.isEmpty(), "released allay is missing");
                 WorkingAllayEntity worker = workers.getFirst();
-                check(lounge.getBlockPos().equals(worker.homeLoungePos()), "released allay must remember the lounge");
-                check(worker.shortageStrategy() == AllayShortageStrategy.SKIP, "released allay must use the lounge skip setting");
-                lounge.setShortageStrategy(AllayShortageStrategy.PAUSE);
-                check(worker.shortageStrategy() == AllayShortageStrategy.PAUSE, "changing the lounge must update the released allay");
+                released[0] = worker;
+                check(worker.homeLoungePos() == null, "a manually released allay must not retain a home lounge");
+                check(worker.originLoungePos() == null, "a manually released allay must not retain a transfer origin");
+                check(worker.transitJobId().isEmpty(), "a manually released allay must not retain a transfer job");
+                check(worker.shortageStrategy() == AllayShortageStrategy.PAUSE,
+                    "an unbound allay must use the fixed PAUSE strategy");
+            })
+            .thenExecuteAfter(35, () -> {
+                // 放出的悦灵会像原版一样飞开,必须精确引用自己那只:按休息室周边扫描会把正常游荡误判成回库
+                check(!released[0].isRemoved(), "an unbound released allay was recalled into the lounge");
+                check(released[0].homeLoungePos() == null, "an unbound released allay rebound itself to the lounge");
+                check(lounge.hosted().isEmpty(), "manual release unexpectedly recreated a hosted record");
+            })
+            .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 100)
+    @EmptyTemplate(value = "5x5x5", floor = true)
+    @TestHolder(description = "A released allay killed during its death animation drops one hard hat and never docks")
+    static void releasedAllayDeathDoesNotRedockOrDuplicateHat(ExtendedGameTestHelper helper) {
+        AllayLoungeBlockEntity lounge = placeLounge(helper);
+        check(lounge.addHosted(fillerRecord()), "failed to host an allay record");
+        helper.startSequence()
+            .thenExecute(() -> check(lounge.releaseHosted(0), "lounge must release the hosted allay"))
+            .thenExecute(() -> {
+                List<WorkingAllayEntity> workers = helper.getLevel().getEntitiesOfClass(
+                    WorkingAllayEntity.class,
+                    new AABB(helper.absolutePos(LOUNGE_POS)).inflate(3.0D)
+                );
+                check(!workers.isEmpty(), "released allay is missing");
+                WorkingAllayEntity worker = workers.getFirst();
+                check(worker.hurt(helper.getLevel().damageSources().generic(), 100.0F),
+                    "released allay did not accept lethal damage");
+            })
+            .thenExecuteAfter(40, () -> {
+                check(lounge.hosted().isEmpty(), "a dying released allay was put back into the lounge");
+                List<ItemEntity> hats = helper.getLevel().getEntitiesOfClass(
+                    ItemEntity.class,
+                    new AABB(helper.absolutePos(LOUNGE_POS)).inflate(3.0D),
+                    item -> AllayHardHats.isHardHat(item.getItem())
+                );
+                check(hats.size() == 1, "released allay death dropped " + hats.size() + " hard hats instead of one");
+                check(helper.getLevel().getEntitiesOfClass(
+                    WorkingAllayEntity.class,
+                    new AABB(helper.absolutePos(LOUNGE_POS)).inflate(3.0D)
+                ).isEmpty(), "the dead released allay remained in the world");
             })
             .thenSucceed();
     }
@@ -339,10 +383,16 @@ public final class AllayLoungeGameTests {
             .thenExecute(() -> {
                 check(lounge.addHosted(fillerRecord()), "failed to host the first record");
                 check(lounge.addHosted(fillerRecord()), "failed to host the second record");
-                check(lounge.tryLaunch(record -> true), "lounge must launch the first hosted allay");
+                WorkingAllayEntity launched = lounge.tryLaunchFor(record -> true);
+                if (launched == null) {
+                    throw new GameTestAssertException("lounge must launch the first hosted allay");
+                }
                 check(lounge.isBayBusy(), "launch must occupy the bay");
                 check(!lounge.releaseHosted(0), "GUI release must fail while the bay is busy");
                 check(lounge.hosted().size() == 1, "the remaining hosted record must stay");
+                // 出库通道的吞吐契约与出库悦灵之后干什么无关:任何无活可做的悦灵都会自行返库
+                // 再占一次通道,留着它就测不到通道自己是否按 20 gt 释放
+                launched.discard();
             })
             .thenExecuteAfter(AllayLoungeBlockEntity.DOCKING_DURATION_TICKS + 1, () -> {
                 check(!lounge.isBayBusy(), "the bay must clear after 20 gt");

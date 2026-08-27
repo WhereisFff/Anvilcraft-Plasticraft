@@ -90,6 +90,10 @@ public final class PlasticPistonOccupancy {
             occupants.putIfAbsent(plastic.getUUID(), plastic);
         }
 
+        // 活塞接管的实体必须立刻退出休眠：tick 的活塞分支在休眠检查之前返回，
+        // 留在索引里的登记格会随实体被推走而失效。在 MOVEMENTS 锁之外唤醒，避免与索引锁嵌套。
+        for (AbstractPlasticEntity occupant : occupants.values()) occupant.plasticraft$wakeFromRest();
+
         synchronized (MOVEMENTS) {
             MovementIndex index = MOVEMENTS.computeIfAbsent(level, ignored -> new MovementIndex());
             index.cleanup(level.getGameTime());

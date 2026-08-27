@@ -1,5 +1,5 @@
 {
   "textures": {
-    "particle": "anvilcraftplasticraft:block/high_heat_fuel"
+    "particle": "anvilcraftplasticraft:fluid/high_heat_fuel"
   }
 }

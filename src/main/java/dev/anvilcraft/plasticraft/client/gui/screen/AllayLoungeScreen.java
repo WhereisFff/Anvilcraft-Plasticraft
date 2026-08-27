@@ -1,10 +1,12 @@
 package dev.anvilcraft.plasticraft.client.gui.screen;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.allay.AllayClearanceStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.inventory.AllayLoungeMenu;
+import dev.anvilcraft.plasticraft.network.AllayLoungeClearancePacket;
 import dev.anvilcraft.plasticraft.network.AllayLoungeRecallPacket;
 import dev.anvilcraft.plasticraft.network.AllayLoungeReleasePacket;
 import dev.anvilcraft.plasticraft.network.AllayLoungeSettingsPacket;
@@ -19,7 +21,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
 
-/** 悦灵休息室界面:4x4 托管卡片、磁盘槽、召回与暂停/跳过。 */
+/** 悦灵休息室界面:4x4 托管卡片、磁盘槽、召回、暂停/跳过与整片清场/保留空白。 */
 public class AllayLoungeScreen extends AbstractContainerScreen<AllayLoungeMenu> {
     private static final ResourceLocation TEXTURE =
         AnvilcraftPlasticraft.of("textures/gui/background/allay_lounge.png");
@@ -29,11 +31,17 @@ public class AllayLoungeScreen extends AbstractContainerScreen<AllayLoungeMenu> 
         AnvilcraftPlasticraft.of("textures/gui/button/allay/pause.png");
     private static final ResourceLocation SKIP_BUTTON =
         AnvilcraftPlasticraft.of("textures/gui/button/allay/skip.png");
+    private static final ResourceLocation CLEAR_AREA_BUTTON =
+        AnvilcraftPlasticraft.of("textures/gui/button/allay/clear_area.png");
+    private static final ResourceLocation KEEP_BLANK_BUTTON =
+        AnvilcraftPlasticraft.of("textures/gui/button/allay/keep_blank.png");
     private static final int BUTTON_SIZE = 16;
     private static final int RECALL_BUTTON_X = 9;
     private static final int RECALL_BUTTON_Y = 66;
     private static final int PAUSE_BUTTON_X = 9;
     private static final int SKIP_BUTTON_X = 27;
+    private static final int CLEAR_AREA_BUTTON_X = 134;
+    private static final int KEEP_BLANK_BUTTON_X = 152;
     private static final int STRATEGY_BUTTON_Y = 84;
     private static final int CARD_SIZE = 18;
 
@@ -67,6 +75,20 @@ public class AllayLoungeScreen extends AbstractContainerScreen<AllayLoungeMenu> 
             graphics.renderTooltip(
                 this.font,
                 Component.translatable("screen.anvilcraftplasticraft.allay.strategy.skip"),
+                mouseX,
+                mouseY
+            );
+        } else if (this.isHovering(CLEAR_AREA_BUTTON_X, STRATEGY_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, mouseX, mouseY)) {
+            graphics.renderTooltip(
+                this.font,
+                Component.translatable("screen.anvilcraftplasticraft.allay.clearance.clear_area"),
+                mouseX,
+                mouseY
+            );
+        } else if (this.isHovering(KEEP_BLANK_BUTTON_X, STRATEGY_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, mouseX, mouseY)) {
+            graphics.renderTooltip(
+                this.font,
+                Component.translatable("screen.anvilcraftplasticraft.allay.clearance.keep_blank"),
                 mouseX,
                 mouseY
             );
@@ -116,6 +138,23 @@ public class AllayLoungeScreen extends AbstractContainerScreen<AllayLoungeMenu> 
         AllayShortageStrategy strategy = this.menu.shortageStrategy();
         this.renderStrategyButton(graphics, PAUSE_BUTTON, PAUSE_BUTTON_X, strategy == AllayShortageStrategy.PAUSE, mouseX, mouseY);
         this.renderStrategyButton(graphics, SKIP_BUTTON, SKIP_BUTTON_X, strategy == AllayShortageStrategy.SKIP, mouseX, mouseY);
+        AllayClearanceStrategy clearance = this.menu.clearanceStrategy();
+        this.renderStrategyButton(
+            graphics,
+            CLEAR_AREA_BUTTON,
+            CLEAR_AREA_BUTTON_X,
+            clearance == AllayClearanceStrategy.CLEAR_AREA,
+            mouseX,
+            mouseY
+        );
+        this.renderStrategyButton(
+            graphics,
+            KEEP_BLANK_BUTTON,
+            KEEP_BLANK_BUTTON_X,
+            clearance == AllayClearanceStrategy.KEEP_BLANK,
+            mouseX,
+            mouseY
+        );
     }
 
     private void renderStrategyButton(
@@ -174,6 +213,22 @@ public class AllayLoungeScreen extends AbstractContainerScreen<AllayLoungeMenu> 
         }
         if (button == 0 && this.isHovering(SKIP_BUTTON_X, STRATEGY_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, (int) mouseX, (int) mouseY)) {
             PacketDistributor.sendToServer(new AllayLoungeSettingsPacket(this.menu.loungePos(), AllayShortageStrategy.SKIP));
+            this.playClick();
+            return true;
+        }
+        if (button == 0
+            && this.isHovering(CLEAR_AREA_BUTTON_X, STRATEGY_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, (int) mouseX, (int) mouseY)) {
+            PacketDistributor.sendToServer(
+                new AllayLoungeClearancePacket(this.menu.loungePos(), AllayClearanceStrategy.CLEAR_AREA)
+            );
+            this.playClick();
+            return true;
+        }
+        if (button == 0
+            && this.isHovering(KEEP_BLANK_BUTTON_X, STRATEGY_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, (int) mouseX, (int) mouseY)) {
+            PacketDistributor.sendToServer(
+                new AllayLoungeClearancePacket(this.menu.loungePos(), AllayClearanceStrategy.KEEP_BLANK)
+            );
             this.playClick();
             return true;
         }

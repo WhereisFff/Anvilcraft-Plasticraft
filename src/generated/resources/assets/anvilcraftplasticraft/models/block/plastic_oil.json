@@ -1,5 +1,5 @@
 {
   "textures": {
-    "particle": "anvilcraftplasticraft:block/plastic_oil"
+    "particle": "anvilcraftplasticraft:fluid/plastic_oil"
   }
 }

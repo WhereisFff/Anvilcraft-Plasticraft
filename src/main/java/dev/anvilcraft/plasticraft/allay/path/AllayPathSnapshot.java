@@ -43,6 +43,8 @@ public final class AllayPathSnapshot {
     public static final int NODE_BUDGET = 65536;
     private static final int SECTION_BUDGET = 96;
     private static final int CAPTURES_PER_TICK = 2;
+    /** 穿过塑料实体的额外步数代价;塑料可推动,只能是绕行偏好而不是硬墙。 */
+    private static final int PLASTIC_DETOUR_COST = 8;
     private static final Direction[] DIRECTIONS = Direction.values();
     private static final Map<Level, CaptureBudget> CAPTURE_BUDGETS = new WeakHashMap<>();
 
@@ -50,7 +52,17 @@ public final class AllayPathSnapshot {
     }
 
     public static Vec3 nextLocalGoal(Entity worker, Vec3 start, Vec3 goal) {
+        return nextLocalGoal(worker, start, goal, false);
+    }
+
+    /**
+     * {@code bypassCorridor} 为真时跳过区块段走廊,直接朝最终目标裁一个局部目标。
+     * 走廊的段级连通判定比实体尺度粗,选出的门洞可能根本挤不过去,
+     * 反复重跑只会得到同一条失败计划;换成直取目标能让局部 A* 自己找另一侧的绕行。
+     */
+    public static Vec3 nextLocalGoal(Entity worker, Vec3 start, Vec3 goal, boolean bypassCorridor) {
         if (start.distanceTo(goal) <= LOCAL_RANGE) return goal;
+        if (bypassCorridor) return boundedLocalGoal(worker, start, goal);
         SectionPos from = SectionPos.of(BlockPos.containing(start));
         SectionPos to = SectionPos.of(BlockPos.containing(goal));
         if (from.equals(to) || adjacent(from, to)) return boundedLocalGoal(worker, start, goal);
@@ -103,10 +115,16 @@ public final class AllayPathSnapshot {
             extras.addAll(collision.worldShape().toAabbs());
         }
         AABB relative = ConstructionWorkerSpace.boxAt(Vec3.ZERO);
-        return new Capture(blocks, List.copyOf(extras), relative, worker.level().getWorldBorder().getMinX(),
+        return new Capture(
+            blocks,
+            List.copyOf(extras),
+            AllayPlasticAvoidance.gather(worker.level(), bounds),
+            relative,
+            worker.level().getWorldBorder().getMinX(),
             worker.level().getWorldBorder().getMaxX(),
             worker.level().getWorldBorder().getMinZ(),
-            worker.level().getWorldBorder().getMaxZ());
+            worker.level().getWorldBorder().getMaxZ()
+        );
     }
 
     public static List<Vec3> search(@Nullable Capture capture, Vec3 start, Vec3 goal) {
@@ -124,7 +142,11 @@ public final class AllayPathSnapshot {
         if (collision == null || cancelled.getAsBoolean()) return List.of();
         List<Vec3> path = astar(collision, start, goal, cancelled);
         if (path.isEmpty()) return List.of();
-        return simplify(collision, collapse(path), start, cancelled);
+        List<Vec3> collapsed = collapse(path);
+        // 先按“连塑料实体也不碰”的口径拉直,拉不通时才退回只避真实碰撞,保住绕行偏好。
+        List<Vec3> avoiding = simplify(collision, collapsed, start, cancelled, true);
+        if (!avoiding.isEmpty()) return avoiding;
+        return simplify(collision, collapsed, start, cancelled, false);
     }
 
     private static Vec3 boundedLocalGoal(Entity worker, Vec3 start, Vec3 candidate) {
@@ -325,7 +347,8 @@ public final class AllayPathSnapshot {
                 if (next < 0 || closed[next]) continue;
                 Vec3 nextPos = ConstructionWorkerSpace.navigationPoint(nx, ny, nz);
                 if (!collision.sweptClear(currentPos, nextPos, false)) continue;
-                int nextCost = costs[current] + 1;
+                int nextCost = costs[current] + 1
+                    + (collision.sweptPlastic(currentPos, nextPos) ? PLASTIC_DETOUR_COST : 0);
                 if (nextCost >= costs[next]) continue;
                 costs[next] = nextCost;
                 parents[next] = current;
@@ -379,7 +402,8 @@ public final class AllayPathSnapshot {
         SearchCollision collision,
         List<Vec3> path,
         Vec3 start,
-        BooleanSupplier cancelled
+        BooleanSupplier cancelled,
+        boolean avoidPlastic
     ) {
         if (path.isEmpty()) return path;
         List<Vec3> simplified = new ArrayList<>();
@@ -389,10 +413,10 @@ public final class AllayPathSnapshot {
             if (cancelled.getAsBoolean()) return List.of();
             int best = -1;
             for (int probe = path.size() - 1; probe >= index; probe--) {
-                if (collision.sweptClear(current, path.get(probe), probe == path.size() - 1)) {
-                    best = probe;
-                    break;
-                }
+                if (!collision.sweptClear(current, path.get(probe), probe == path.size() - 1)) continue;
+                if (avoidPlastic && collision.sweptPlastic(current, path.get(probe))) continue;
+                best = probe;
+                break;
             }
             if (best < 0) return List.of();
             Vec3 next = path.get(best);
@@ -406,6 +430,7 @@ public final class AllayPathSnapshot {
     public record Capture(
         CapturedBlockGetter blocks,
         List<AABB> extras,
+        List<AABB> plastics,
         AABB relative,
         double borderMinX,
         double borderMaxX,
@@ -436,22 +461,16 @@ public final class AllayPathSnapshot {
             }
             for (AABB extra : this.extras) {
                 if (cancelled.getAsBoolean()) return null;
-                int minX = (int) Math.floor(extra.minX);
-                int minY = (int) Math.floor(extra.minY);
-                int minZ = (int) Math.floor(extra.minZ);
-                int maxX = (int) Math.floor(Math.nextDown(extra.maxX));
-                int maxY = (int) Math.floor(Math.nextDown(extra.maxY));
-                int maxZ = (int) Math.floor(Math.nextDown(extra.maxZ));
-                for (int x = minX; x <= maxX; x++) {
-                    for (int y = minY; y <= maxY; y++) {
-                        for (int z = minZ; z <= maxZ; z++) {
-                            boxes.computeIfAbsent(BlockPos.asLong(x, y, z), ignored -> new ArrayList<>()).add(extra);
-                        }
-                    }
-                }
+                bucket(boxes, extra);
+            }
+            Map<Long, List<AABB>> plasticBoxes = new HashMap<>();
+            for (AABB plastic : this.plastics) {
+                if (cancelled.getAsBoolean()) return null;
+                bucket(plasticBoxes, plastic);
             }
             return new SearchCollision(
                 boxes,
+                plasticBoxes,
                 this.relative,
                 this.borderMinX,
                 this.borderMaxX,
@@ -459,10 +478,27 @@ public final class AllayPathSnapshot {
                 this.borderMaxZ
             );
         }
+
+        private static void bucket(Map<Long, List<AABB>> target, AABB box) {
+            int minX = (int) Math.floor(box.minX);
+            int minY = (int) Math.floor(box.minY);
+            int minZ = (int) Math.floor(box.minZ);
+            int maxX = (int) Math.floor(Math.nextDown(box.maxX));
+            int maxY = (int) Math.floor(Math.nextDown(box.maxY));
+            int maxZ = (int) Math.floor(Math.nextDown(box.maxZ));
+            for (int x = minX; x <= maxX; x++) {
+                for (int y = minY; y <= maxY; y++) {
+                    for (int z = minZ; z <= maxZ; z++) {
+                        target.computeIfAbsent(BlockPos.asLong(x, y, z), ignored -> new ArrayList<>()).add(box);
+                    }
+                }
+            }
+        }
     }
 
     private record SearchCollision(
         Map<Long, List<AABB>> boxes,
+        Map<Long, List<AABB>> plastics,
         AABB relative,
         double borderMinX,
         double borderMaxX,
@@ -479,6 +515,14 @@ public final class AllayPathSnapshot {
             return !this.blocked(swept);
         }
 
+        /** 只判断是否压到塑料实体整体包围盒;贴边不算,避免与相邻格塑料互相排斥。 */
+        private boolean sweptPlastic(Vec3 from, Vec3 to) {
+            if (this.plastics.isEmpty()) return false;
+            AABB start = this.relative.move(from);
+            AABB end = this.relative.move(to);
+            return intersects(this.plastics, start.minmax(end).deflate(0.002D));
+        }
+
         private boolean blocked(AABB query) {
             if (query.minX < this.borderMinX
                 || query.maxX > this.borderMaxX
@@ -486,6 +530,10 @@ public final class AllayPathSnapshot {
                 || query.maxZ > this.borderMaxZ) {
                 return true;
             }
+            return intersects(this.boxes, query);
+        }
+
+        private static boolean intersects(Map<Long, List<AABB>> boxes, AABB query) {
             int minX = (int) Math.floor(query.minX);
             int minY = (int) Math.floor(query.minY);
             int minZ = (int) Math.floor(query.minZ);
@@ -495,7 +543,7 @@ public final class AllayPathSnapshot {
             for (int x = minX; x <= maxX; x++) {
                 for (int y = minY; y <= maxY; y++) {
                     for (int z = minZ; z <= maxZ; z++) {
-                        List<AABB> local = this.boxes.get(BlockPos.asLong(x, y, z));
+                        List<AABB> local = boxes.get(BlockPos.asLong(x, y, z));
                         if (local == null) continue;
                         for (AABB box : local) {
                             if (box.intersects(query)) return true;

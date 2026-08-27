@@ -201,9 +201,7 @@ public record MoldedPlasticData(
         MoldingProductType productType = MoldingProductTypes.get(finalType)
             .orElseThrow(() -> new IllegalArgumentException("Unknown molded plastic product type " + finalType));
         if (capacity < 0) throw new IllegalArgumentException("Molded plastic capacity must not be negative");
-        int unitsPerCapacity = productType.unitsPerCapacity();
-        if (unitsPerCapacity > 0
-            && capacity != cavityMask.volume() / unitsPerCapacity) {
+        if (!productType.validateCapacity(capacity, cavityMask)) {
             throw new IllegalArgumentException("Molded plastic capacity does not match its cavity volume");
         }
         switch (productType.storageKind()) {
@@ -219,10 +217,35 @@ public record MoldedPlasticData(
                 if (contents.items().stream().anyMatch(item -> item.slot() >= capacity)) {
                     throw new IllegalArgumentException("Molded chest item slot exceeds its capacity");
                 }
+                if (contents.items().stream()
+                    .anyMatch(item -> item.stack().getCount() > item.stack().getMaxStackSize())) {
+                    throw new IllegalArgumentException("Molded chest item exceeds its stack limit");
+                }
             }
             case FLUIDS -> {
-                if (!contents.items().isEmpty() || !contents.trayComponents().isEmpty()) {
+                PlasticCauldronLayout layout = PlasticCauldronLayout.of(finalType);
+                if (layout == null && !contents.items().isEmpty()) {
                     throw new IllegalArgumentException("Molded tank cannot carry items");
+                }
+                if (!contents.trayComponents().isEmpty()) {
+                    throw new IllegalArgumentException("Molded tank cannot carry tray components");
+                }
+                if (layout != null) {
+                    if (contents.items().stream().anyMatch(item -> item.slot() >= layout.totalSlots())) {
+                        throw new IllegalArgumentException("Molded cauldron item slot exceeds its layout");
+                    }
+                    if (contents.items().stream().anyMatch(item ->
+                        item.stack().getCount() > layout.slotLimit(item.slot(), item.stack()))) {
+                        throw new IllegalArgumentException("Molded cauldron item exceeds its slot limit");
+                    }
+                    // 分层锅按 AnvilCraft 大型锅语义限制层数与单层容量，普通锅只允许一种流体
+                    if (contents.fluids().size() > layout.fluidLayers()) {
+                        throw new IllegalArgumentException("Molded cauldron holds too many fluids");
+                    }
+                    if (contents.fluids().stream()
+                        .anyMatch(fluid -> fluid.getAmount() > layout.fluidLayerCapacity(capacity))) {
+                        throw new IllegalArgumentException("Molded cauldron fluid layer exceeds its capacity");
+                    }
                 }
                 long fluidAmount = contents.fluids().stream()
                     .mapToLong(FluidStack::getAmount)
@@ -339,7 +362,7 @@ public record MoldedPlasticData(
             CURRENT_FORMAT_VERSION,
             baked.modelHash(),
             paidVolume,
-            preview.analysis().cavityMask(),
+            preview.cavityMask(),
             surface,
             material.isEmpty()
                 ? new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 1)
@@ -402,6 +425,21 @@ public record MoldedPlasticData(
         return this.cavityMask.copy();
     }
 
+    /**
+     * 内腔在模型局部空间的包围盒。渲染侧会逐层解多边形液面，服务端的点燃伤害与液面高度
+     * 只需要一个盖住内腔的盒，因此这里只取内腔掩码的像素极值。
+     */
+    public Optional<AABB> cavityBounds() {
+        return this.cavityMask.bounds().map(bounds -> new AABB(
+            bounds.minX() / PIXELS_PER_BLOCK,
+            bounds.minY() / PIXELS_PER_BLOCK,
+            bounds.minZ() / PIXELS_PER_BLOCK,
+            (bounds.maxX() + 1) / PIXELS_PER_BLOCK,
+            (bounds.maxY() + 1) / PIXELS_PER_BLOCK,
+            (bounds.maxZ() + 1) / PIXELS_PER_BLOCK
+        ));
+    }
+
     public MoldedPlasticData withFunction(
         ResourceLocation type,
         int replacementCapacity,
@@ -448,6 +486,30 @@ public record MoldedPlasticData(
             this.limitOverride,
             this.storageId,
             this.summary
+        );
+    }
+
+    /** 返回保留制品形状与材料、清空所有可变存储状态的初始制品数据。 */
+    public MoldedPlasticData withoutContents() {
+        if (this.contents.isEmpty() && this.storageId.isEmpty() && this.summary.isVacant()) return this;
+        return new MoldedPlasticData(
+            this.formatVersion,
+            this.modelHash,
+            this.volumeMask,
+            this.cavityMask,
+            this.surfaceMesh,
+            this.material,
+            this.finalType,
+            this.capacity,
+            MoldedPlasticContents.EMPTY,
+            this.name,
+            this.rotationPivot,
+            this.entityOrigin,
+            this.orientation,
+            this.collisionHulls,
+            this.limitOverride,
+            Optional.empty(),
+            MoldedPlasticContentSummary.EMPTY
         );
     }
 

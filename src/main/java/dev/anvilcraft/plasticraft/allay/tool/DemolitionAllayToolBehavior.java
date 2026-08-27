@@ -4,6 +4,7 @@ import dev.anvilcraft.plasticraft.allay.AllayFlightState;
 import dev.anvilcraft.plasticraft.allay.AllayHardHatTraits;
 import dev.anvilcraft.plasticraft.allay.AllayWorkMotions;
 import dev.anvilcraft.plasticraft.allay.path.AllayPathPriority;
+import dev.anvilcraft.plasticraft.allay.transfer.ConstructionTransferService;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBuildOp;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
@@ -46,7 +47,7 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
                 worker.setHomeLounge(null);
             }
             if (worker.homeLoungePos() != null) {
-                restAtHome(worker);
+                restAtHome(worker, level);
                 return;
             }
             continueOrIdle(worker);
@@ -68,17 +69,20 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
             return;
         }
         if (job.state() == ConstructionJob.STATE_WAITING_DEMOLITION
+            || job.state() == ConstructionJob.STATE_WAITING_OBSERVER
             || job.state() == ConstructionJob.STATE_WAITING_PERMISSION
             || job.state() == ConstructionJob.STATE_WAITING_MATERIAL) {
             if (job.state() == ConstructionJob.STATE_WAITING_DEMOLITION) {
                 worker.setWaitReason(ConstructionWaitReason.DEMOLITION);
+            } else if (job.state() == ConstructionJob.STATE_WAITING_OBSERVER) {
+                worker.setWaitReason(ConstructionWaitReason.OBSERVER);
             } else if (job.state() == ConstructionJob.STATE_WAITING_PERMISSION) {
                 worker.setWaitReason(ConstructionWaitReason.PERMISSION);
             } else {
                 worker.setWaitReason(ConstructionWaitReason.MATERIAL);
             }
             if (job.state() != ConstructionJob.STATE_WAITING_PERMISSION && worker.homeLoungePos() != null) {
-                restAtHome(worker);
+                restAtHome(worker, level);
                 return;
             }
             if (worker.flightState() == AllayFlightState.FLYING) {
@@ -88,7 +92,7 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
         }
         if (job.state() != ConstructionJob.STATE_DEMOLISHING) {
             if (job.state() == ConstructionJob.STATE_COMMITTING || job.state() == ConstructionJob.STATE_BUILDING) {
-                finishThenRest(worker, job);
+                finishThenRest(worker, level, job);
             }
             return;
         }
@@ -96,7 +100,7 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
         if (worker.assignedJobId().filter(job.jobId()::equals).isEmpty() || worker.taskOpId() < 0) {
             if (!tryClaim(worker, level, job, progress)) {
                 if (progress.allDemolishResolved()) {
-                    finishThenRest(worker, job);
+                    finishThenRest(worker, level, job);
                 }
                 return;
             }
@@ -108,7 +112,7 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
             worker.clearAssignment(false);
             worker.setActionState((byte) 0);
             if (progress.allDemolishResolved()) {
-                finishThenRest(worker, job);
+                finishThenRest(worker, level, job);
             }
             return;
         }
@@ -182,7 +186,7 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
                 return;
             }
             if (current != null && progress.allDemolishResolved()) {
-                finishThenRest(worker, current);
+                finishThenRest(worker, level, current);
             }
         }
     }
@@ -197,21 +201,23 @@ public final class DemolitionAllayToolBehavior implements AllayToolBehavior {
         ConstructionJobStore.get(level).markDirty();
     }
 
-    private static void finishThenRest(WorkingAllayEntity worker, ConstructionJob job) {
+    private static void finishThenRest(WorkingAllayEntity worker, ServerLevel level, ConstructionJob job) {
         if (worker.homeLoungePos() != null) {
-            restAtHome(worker);
+            restAtHome(worker, level);
             return;
         }
         leaveSiteThenIdle(worker, job);
     }
 
-    private static void restAtHome(WorkingAllayEntity worker) {
+    private static void restAtHome(WorkingAllayEntity worker, ServerLevel level) {
         BlockPos home = worker.homeLoungePos();
         if (home == null) {
             AllayWorkMotions.releaseToVanilla(worker);
             return;
         }
         worker.clearAssignment(false);
+        // 客工不入栈协调室,改为沿转运链返回原休息室
+        if (ConstructionTransferService.sendGuestHome(level, worker)) return;
         if (!worker.startDockingTo(home)) {
             worker.setHomeLounge(null);
             AllayWorkMotions.releaseToVanilla(worker);

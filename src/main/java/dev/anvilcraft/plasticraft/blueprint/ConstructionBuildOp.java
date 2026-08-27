@@ -24,7 +24,9 @@ public final class ConstructionBuildOp {
         DEMOLISH,
         CONTENT,
         FLUID,
-        ENTITY
+        ENTITY,
+        /** 已交付方块上的二次加工,例如告示牌书写、染色、发光、打蜡。 */
+        DECORATE
     }
 
     public enum Status {
@@ -57,6 +59,14 @@ public final class ConstructionBuildOp {
     private CompoundTag entityNbt;
     private ItemStack returnStack = ItemStack.EMPTY;
     private boolean longReach;
+    /** 该方块由世界中已有的精确状态满足,不再写入虚拟投影。 */
+    private boolean worldSatisfied;
+    /** 施工阶段由外部方块变更反应式追加的拆除操作。 */
+    private boolean reactive;
+    /** 连续确认"飞不到"的次数;累计到阈值才压一段重试冷却,避免悦灵原地重领同一操作空转。 */
+    private int unreachableStrikes;
+    /** 不可达退避到期的游戏刻;冷却期内派发轮空,该位置仍然是待办,不作废也不计入残缺。 */
+    private long retryAfter;
     private Runnable enclosureInvalidator = () -> {
     };
     private Runnable orderInvalidator = () -> {
@@ -154,6 +164,31 @@ public final class ConstructionBuildOp {
         this.approach = approach == null ? null : approach.immutable();
     }
 
+    /** 记一次"飞不到"并返回累计次数。 */
+    public int noteUnreachable() {
+        return ++this.unreachableStrikes;
+    }
+
+    /** 悦灵已经能够到该目标,之前的不可达记录与退避一并作废。 */
+    public void clearUnreachable() {
+        this.unreachableStrikes = 0;
+        this.retryAfter = 0L;
+    }
+
+    /** 压一段不可达退避:清零计数重新开始累计,冷却期内不再派发这个位置。 */
+    public void deferUntil(long gameTime) {
+        this.unreachableStrikes = 0;
+        this.retryAfter = gameTime;
+    }
+
+    public boolean isDeferred(long gameTime) {
+        return this.retryAfter > gameTime;
+    }
+
+    public long retryAfter() {
+        return this.retryAfter;
+    }
+
     public boolean shell() {
         return this.shell;
     }
@@ -227,6 +262,28 @@ public final class ConstructionBuildOp {
         this.longReach = longReach;
     }
 
+    public boolean worldSatisfied() {
+        return this.worldSatisfied;
+    }
+
+    public void setWorldSatisfied(boolean worldSatisfied) {
+        if (this.worldSatisfied == worldSatisfied) return;
+        this.worldSatisfied = worldSatisfied;
+        this.layoutInvalidator.run();
+        this.statusInvalidator.run();
+    }
+
+    public boolean reactive() {
+        return this.reactive;
+    }
+
+    public void setReactive(boolean reactive) {
+        if (this.reactive == reactive) return;
+        this.reactive = reactive;
+        this.orderInvalidator.run();
+        this.statusInvalidator.run();
+    }
+
     void bindInvalidators(
         Runnable enclosureInvalidator,
         Runnable orderInvalidator,
@@ -252,7 +309,8 @@ public final class ConstructionBuildOp {
         return (this.kind == Kind.PLACE
             || this.kind == Kind.SEAL
             || this.kind == Kind.CONTENT
-            || this.kind == Kind.ENTITY)
+            || this.kind == Kind.ENTITY
+            || this.kind == Kind.DECORATE)
             && !this.material.isEmpty();
     }
 
@@ -261,12 +319,16 @@ public final class ConstructionBuildOp {
             || this.kind == Kind.ATTACHED
             || this.kind == Kind.CONTENT
             || this.kind == Kind.FLUID
-            || this.kind == Kind.ENTITY;
+            || this.kind == Kind.ENTITY
+            || this.kind == Kind.DECORATE;
     }
 
-    /** PLACE/ATTACHED 才写入施工投影;SEAL/DEMOLISH 的 DELIVERED 只表示该阶段完成。 */
+    /**
+     * PLACE/ATTACHED 才写入施工投影;SEAL/DEMOLISH 的 DELIVERED 只表示该阶段完成。
+     * DECORATE 只更新父方块已有投影的加工掩码,不自己占格。
+     */
     public boolean writesProjection() {
-        return this.kind == Kind.PLACE || this.kind == Kind.ATTACHED;
+        return (this.kind == Kind.PLACE || this.kind == Kind.ATTACHED) && !this.worldSatisfied;
     }
 
     public boolean isOpen() {
@@ -317,6 +379,18 @@ public final class ConstructionBuildOp {
         if (this.longReach) {
             tag.putBoolean("LongReach", true);
         }
+        if (this.worldSatisfied) {
+            tag.putBoolean("WorldSatisfied", true);
+        }
+        if (this.reactive) {
+            tag.putBoolean("Reactive", true);
+        }
+        if (this.unreachableStrikes > 0) {
+            tag.putInt("Unreachable", this.unreachableStrikes);
+        }
+        if (this.retryAfter > 0L) {
+            tag.putLong("RetryAfter", this.retryAfter);
+        }
         return tag;
     }
 
@@ -365,6 +439,10 @@ public final class ConstructionBuildOp {
             op.returnStack = ItemStack.parse(registries, tag.getCompound("Return")).orElse(ItemStack.EMPTY);
         }
         op.longReach = tag.getBoolean("LongReach");
+        op.worldSatisfied = tag.getBoolean("WorldSatisfied");
+        op.reactive = tag.getBoolean("Reactive");
+        op.unreachableStrikes = tag.getInt("Unreachable");
+        op.retryAfter = tag.getLong("RetryAfter");
         return op;
     }
 }

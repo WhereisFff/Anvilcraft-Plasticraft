@@ -2,14 +2,19 @@ package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.MoldedPlasticCauldronState;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
+import dev.anvilcraft.plasticraft.item.PlasticItemData;
+import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingBarrierFace;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingAnvilShapeAnalysis;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingAnvilShapeAnalyzer;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingCauldronShapeAnalysis;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingCauldronShapeAnalyzer;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingFaceDirection;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingFunctionalAnalysis;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
@@ -26,6 +31,7 @@ import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticFluidHandler;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticItemHandler;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTankFluidGeometry;
+import dev.anvilcraft.plasticraft.molding.product.PlasticCauldronLayout;
 import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticStorage;
 import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticStorageHandle;
 import dev.anvilcraft.plasticraft.molding.product.storage.PlasticraftStorages;
@@ -48,11 +54,15 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
@@ -61,6 +71,7 @@ import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -74,7 +85,7 @@ public final class MoldingProductGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "Chest and tank capacity boundaries remain exact")
+    @TestHolder(description = "Chest, tank and cauldron capacity boundaries remain exact")
     static void capacityBoundaries(ExtendedGameTestHelper helper) {
         checkCapacity(helper, MoldingProductTypes.CHEST_ID, 1728, 27, true);
         checkCapacity(helper, MoldingProductTypes.CHEST_ID, 64, 1, true);
@@ -82,6 +93,119 @@ public final class MoldingProductGameTests {
         checkCapacity(helper, MoldingProductTypes.TANK_ID, 2744, 16, true);
         checkCapacity(helper, MoldingProductTypes.TANK_ID, 171, 1, true);
         checkCapacity(helper, MoldingProductTypes.TANK_ID, 170, 0, false);
+        // 炼药锅只按整 B 计量：不足 1 B 也算 1 B，之后每凑满一个 1728 px³ 才多 1 B
+        checkCauldronCapacity(stubbedCauldron(12, 12), 1727, 1);
+        checkCauldronCapacity(squareCauldron(12, 12), 1728, 1);
+        checkCauldronCapacity(stubbedCauldron(12, 24), 3455, 1);
+        checkCauldronCapacity(squareCauldron(12, 24), 3456, 2);
+        checkCauldronCapacity(stubbedCauldron(12, 36), 5183, 2);
+        checkCauldronCapacity(squareCauldron(12, 36), 5184, 3);
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Cauldrons need a 144 square pixel opening and 8 pixel deep walls, and upgrade past 1600 square pixels")
+    static void cauldronShapeBoundaries(ExtendedGameTestHelper helper) {
+        // 原版炼药锅内腔 12×12×12：开口 144 px²、深 12 px，正好压在开口与深度两条阈值上
+        MoldingCauldronShapeAnalysis vanilla = analyzeCauldron(squareCauldron(12, 12));
+        check(vanilla.valid(), "vanilla-shaped cauldron cavity was rejected: " + vanilla.reason());
+        check(vanilla.cavityVolume() == 1728 && vanilla.openingArea() == 144 && vanilla.depth() == 12,
+            "vanilla-shaped cauldron measured " + vanilla.cavityVolume() + " cubic pixels, opening "
+                + vanilla.openingArea() + " and depth " + vanilla.depth());
+        check(!vanilla.large(), "a 144 square pixel opening upgraded to a large cauldron");
+
+        // 开口按暴露的像素列数计，不看外接矩形：内腔立柱只吃掉一列，外接矩形仍是 12×12
+        checkCauldronRejected(cauldronMask(pillarInterior(12), 12), "cauldron_opening_too_small",
+            "a 143 pixel opening whose bounding rectangle is still 12x12");
+        checkCauldronRejected(cauldronMask(rectangleInterior(11, 13), 12), "cauldron_opening_too_small",
+            "an 11x13 opening");
+
+        // 深度取内腔的整体高度，等价于最矮的一面侧壁
+        check(analyzeCauldron(squareCauldron(12, 8)).depth() == 8,
+            "8 pixel walls did not measure 8 pixels of depth");
+        checkCauldronRejected(squareCauldron(12, 7), "cauldron_too_shallow", "7 pixel walls");
+
+        // 侧壁允许不等高，内腔在最矮的那面封顶
+        MoldingCauldronShapeAnalysis uneven = analyzeCauldron(unevenWallCauldron(12, 12, 8));
+        check(uneven.valid(), "unevenly walled cauldron was rejected: " + uneven.reason());
+        check(uneven.cavityVolume() == 1152 && uneven.openingArea() == 144 && uneven.depth() == 8,
+            "unevenly walled cauldron measured " + uneven.cavityVolume() + " cubic pixels, opening "
+                + uneven.openingArea() + " and depth " + uneven.depth());
+        checkCauldronRejected(unevenWallCauldron(12, 12, 7), "cauldron_too_shallow", "a 7 pixel low wall");
+
+        // 侧壁底层漏一格，内腔就顺着漏孔与外界连通，什么都留不住
+        checkCauldronRejected(leakingCauldron(12, 12), "cauldron_not_sealed", "a side wall leak");
+
+        // 圆形开口同样只看面积：直径 14 px 有 156 px²，直径 13 px 只有 137 px²
+        MoldingCauldronShapeAnalysis disc = analyzeCauldron(cauldronMask(discInterior(14), 12));
+        check(disc.valid(), "a 14 pixel wide round cauldron was rejected: " + disc.reason());
+        check(disc.openingArea() == 156, "round cauldron opening measured " + disc.openingArea());
+        checkCauldronRejected(cauldronMask(discInterior(13), 12), "cauldron_opening_too_small",
+            "a 13 pixel wide round opening");
+
+        // 升级线是严格大于 1600 px²
+        MoldingCauldronShapeAnalysis exact = analyzeCauldron(cauldronMask(rectangleInterior(40, 40), 8));
+        check(exact.valid() && exact.openingArea() == 1600 && !exact.large(),
+            "a 1600 square pixel opening upgraded to a large cauldron: opening " + exact.openingArea()
+                + ", large=" + exact.large());
+        MoldingTypeValidation exactNormal = MoldingProductTypes.validate(
+            MoldingProductTypes.CAULDRON_ID,
+            cauldronAnalysis(exact)
+        );
+        check(exactNormal.valid() && exactNormal.capacity() == 7,
+            "a 12800 cubic pixel cavity did not hold 7B: " + exactNormal.capacity());
+        MoldingTypeValidation refusedLarge = MoldingProductTypes.validate(
+            MoldingProductTypes.LARGE_CAULDRON_ID,
+            cauldronAnalysis(exact)
+        );
+        check(!refusedLarge.valid() && "cauldron_not_large".equals(refusedLarge.reason()),
+            "the large cauldron type accepted a 1600 square pixel opening: " + refusedLarge.reason());
+
+        MoldingCauldronShapeAnalysis bumped = analyzeCauldron(cauldronMask(bumpedInterior(40), 8));
+        check(bumped.valid() && bumped.openingArea() == 1601 && bumped.large(),
+            "a 1601 square pixel opening did not upgrade: opening " + bumped.openingArea()
+                + ", large=" + bumped.large());
+        MoldingTypeValidation large = MoldingProductTypes.validate(
+            MoldingProductTypes.LARGE_CAULDRON_ID,
+            cauldronAnalysis(bumped)
+        );
+        check(large.valid() && large.capacity() == 512,
+            "the large cauldron type did not fix its capacity at 512B: " + large.capacity());
+
+        // 完整模型走一遍预览与制造：请求普通锅，开口够大时算升级而不是降级
+        EditableMoldingModel largeCauldron = cauldronModel(MoldingProductTypes.CAULDRON_ID, 2, 41, 8);
+        var baked = MoldingModelBaker.bake(largeCauldron);
+        MoldingProductPreview preview = MoldingProductPreview.evaluate(
+            largeCauldron,
+            baked,
+            baked.analysis().minimumMeltMillibuckets()
+        );
+        check(MoldingProductTypes.LARGE_CAULDRON_ID.equals(preview.finalType()),
+            "a 1681 square pixel model did not preview as a large cauldron: " + preview.finalType());
+        check(preview.upgraded() && !preview.downgraded(),
+            "the large cauldron upgrade was reported as a downgrade");
+        check(preview.capacity() == 512,
+            "the previewed large cauldron did not hold 512B: " + preview.capacity());
+        MoldedPlasticData data = completeData(largeCauldron);
+        check(MoldingProductTypes.LARGE_CAULDRON_ID.equals(data.finalType()) && data.capacity() == 512,
+            "manufacturing dropped the large cauldron upgrade: " + data.finalType() + " " + data.capacity());
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "3x3x3", floor = true)
+    @TestHolder(description = "Inward-facing cubes can be contained cavities or walls for chests, tanks and cauldrons")
+    static void negativeCubesFillContainerCavities(ExtendedGameTestHelper helper) {
+        for (ResourceLocation type : List.of(MoldingProductTypes.CHEST_ID, MoldingProductTypes.TANK_ID)) {
+            checkNegativeSealedCavity(type, false);
+            checkNegativeSealedCavity(type, true);
+            checkNegativeSealedWalls(type);
+        }
+        checkNegativeCauldronCavity(false, false);
+        checkNegativeCauldronCavity(true, false);
+        checkNegativeCauldronCavity(false, true);
+        checkNegativeCauldronWalls();
         helper.succeed();
     }
 
@@ -456,44 +580,303 @@ public final class MoldingProductGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "Only heat-resistant molded tanks retain lava; other materials discard every fluid")
-    static void tankLavaHazardsFollowMaterial(ExtendedGameTestHelper helper) {
-        EditableMoldingModel model = model(MoldingProductTypes.TANK_ID);
+    @TestHolder(description = "Molded cauldrons keep their output/input slot split, input stack multiplier and fluid layers")
+    static void cauldronCapabilityRoundTrips(ExtendedGameTestHelper helper) {
+        MoldedPlasticData ordinaryData = completeData(cauldronModel(MoldingProductTypes.CAULDRON_ID, 17, 12, 12));
+        check(MoldingProductTypes.CAULDRON_ID.equals(ordinaryData.finalType()) && ordinaryData.capacity() == 1,
+            "the vanilla-shaped cauldron model did not manufacture a 1B cauldron: "
+                + ordinaryData.finalType() + " " + ordinaryData.capacity());
+        final MoldedPlasticData[] ordinary = {ordinaryData};
+        MoldedPlasticItemHandler ordinaryItems = new MoldedPlasticItemHandler(
+            () -> Optional.of(ordinary[0]),
+            replacement -> ordinary[0] = replacement
+        );
+        check(ordinaryItems.getSlots() == 16,
+            "ordinary cauldron did not expose 8 output and 8 input slots: " + ordinaryItems.getSlots());
+        check(!ordinaryItems.insertItem(0, new ItemStack(Items.DIAMOND, 1), false).isEmpty(),
+            "ordinary cauldron accepted an insertion into an output slot");
+        check(ordinaryItems.getSlotLimit(8) == 64,
+            "ordinary cauldron input slot changed its stack limit: " + ordinaryItems.getSlotLimit(8));
+        check(ordinaryItems.insertItem(8, new ItemStack(Items.DIAMOND, 64), false).isEmpty(),
+            "ordinary cauldron rejected a full stack in its first input slot");
+        check(ordinaryItems.getStackInSlot(8).getCount() == 64, "ordinary cauldron lost its input stack");
+        check(ordinary[0].storageId().isPresent(),
+            "ordinary cauldron did not allocate an external storage id");
+
+        MoldedPlasticFluidHandler ordinaryFluids = new MoldedPlasticFluidHandler(
+            () -> Optional.of(ordinary[0]),
+            replacement -> ordinary[0] = replacement
+        );
+        check(ordinaryFluids.getTanks() == 1,
+            "ordinary cauldron exposed more than one fluid layer: " + ordinaryFluids.getTanks());
+        check(ordinaryFluids.getTankCapacity(0) == 1000,
+            "ordinary cauldron layer did not hold its whole 1B: " + ordinaryFluids.getTankCapacity(0));
+        check(ordinaryFluids.fill(new FluidStack(Fluids.WATER, 500), IFluidHandler.FluidAction.EXECUTE) == 500,
+            "ordinary cauldron rejected its first fluid");
+        check(ordinaryFluids.fill(new FluidStack(PlasticraftFluids.PLASTIC_OIL.get(), 500),
+            IFluidHandler.FluidAction.EXECUTE) == 0,
+            "ordinary cauldron accepted a second fluid layer");
+        check(ordinaryFluids.fill(new FluidStack(Fluids.WATER, 700), IFluidHandler.FluidAction.EXECUTE) == 500,
+            "ordinary cauldron did not cap its single layer at 1B");
+        check(ordinaryFluids.getBottomFluid().is(Fluids.WATER)
+                && ordinaryFluids.getBottomFluid().getAmount() == 1000,
+            "ordinary cauldron lost its bottom layer");
+        check(handleFluids(ordinary).size() == 1,
+            "ordinary cauldron did not keep exactly one layer in external storage");
+
+        MoldedPlasticData largeData = completeData(cauldronModel(MoldingProductTypes.CAULDRON_ID, 2, 41, 8));
+        check(MoldingProductTypes.LARGE_CAULDRON_ID.equals(largeData.finalType()) && largeData.capacity() == 512,
+            "the wide cauldron model did not manufacture a 512B large cauldron: "
+                + largeData.finalType() + " " + largeData.capacity());
+        final MoldedPlasticData[] large = {largeData};
+        MoldedPlasticItemHandler largeItems = new MoldedPlasticItemHandler(
+            () -> Optional.of(large[0]),
+            replacement -> large[0] = replacement
+        );
+        check(largeItems.getSlots() == 40,
+            "large cauldron did not expose 32 output and 8 input slots: " + largeItems.getSlots());
+        check(largeItems.getSlotLimit(0) == 64,
+            "large cauldron output slot gained the input stack multiplier: " + largeItems.getSlotLimit(0));
+        check(largeItems.getSlotLimit(32) == 576,
+            "large cauldron input slot did not stack 9 times the vanilla limit: " + largeItems.getSlotLimit(32));
+        ItemStack overflow = largeItems.insertItem(32, new ItemStack(Items.DIAMOND, 600), false);
+        check(overflow.getCount() == 24,
+            "large cauldron input slot did not cap at 576 items: " + overflow.getCount());
+        check(largeItems.getStackInSlot(32).getCount() == 576, "large cauldron lost its stacked input");
+        check(largeItems.extractItem(32, 600, false).getCount() == 64,
+            "large cauldron extraction did not cap at a single stack");
+        check(largeItems.getStackInSlot(32).getCount() == 512,
+            "large cauldron extraction removed the wrong amount: " + largeItems.getStackInSlot(32).getCount());
+
+        MoldedPlasticFluidHandler largeFluids = new MoldedPlasticFluidHandler(
+            () -> Optional.of(large[0]),
+            replacement -> large[0] = replacement
+        );
+        check(largeFluids.getTanks() == 8,
+            "large cauldron did not expose 8 fluid layers: " + largeFluids.getTanks());
+        check(largeFluids.getTankCapacity(0) == 64_000,
+            "large cauldron layer did not hold 64B: " + largeFluids.getTankCapacity(0));
+        List<Fluid> layers = List.of(
+            Fluids.WATER,
+            PlasticraftFluids.PLASTIC_OIL.get(),
+            PlasticraftFluids.CRUDE_OIL_ACID.get(),
+            PlasticraftFluids.HIGH_HEAT_FUEL.get(),
+            PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(),
+            PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get(),
+            PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT.get(),
+            PlasticraftFluids.CLEAR_PLASTIC_MELT.get()
+        );
+        check(largeFluids.fill(new FluidStack(layers.getFirst(), 70_000), IFluidHandler.FluidAction.EXECUTE) == 64_000,
+            "large cauldron bottom layer did not cap at 64B");
+        for (int layer = 1; layer < layers.size(); layer++) {
+            check(largeFluids.fill(new FluidStack(layers.get(layer), 1000), IFluidHandler.FluidAction.EXECUTE) == 1000,
+                "large cauldron rejected fluid layer " + layer);
+        }
+        check(largeFluids.fill(new FluidStack(PlasticraftFluids.LIQUID_HIGH_VISCOSITY_RESIN.get(), 1000),
+            IFluidHandler.FluidAction.EXECUTE) == 0,
+            "large cauldron accepted a ninth fluid layer");
+        check(largeFluids.getBottomFluid().is(layers.getFirst()),
+            "large cauldron changed its bottom layer");
+        check(largeFluids.drain(500, IFluidHandler.FluidAction.EXECUTE).is(layers.getLast()),
+            "large cauldron amount drain did not start at the top layer");
+        check(largeFluids.getFluidInTank(7).getAmount() == 500,
+            "large cauldron drained the wrong layer: " + largeFluids.getFluidInTank(7).getAmount());
+        check(largeFluids.bottomAccess().drain(1000, IFluidHandler.FluidAction.EXECUTE).is(layers.getFirst()),
+            "the bottom layer view drained a different layer");
+        check(largeFluids.getFluidInTank(0).getAmount() == 63_000,
+            "the bottom layer view drained the wrong amount: " + largeFluids.getFluidInTank(0).getAmount());
+        check(handleFluids(large).size() == 8,
+            "large cauldron lost a fluid layer in external storage: " + handleFluids(large).size());
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x5x7", floor = true)
+    @TestHolder(description = "Creative pick returns an empty molded cauldron normally and preserves its full state with control")
+    static void creativePickSeparatesMoldedCauldronContents(ExtendedGameTestHelper helper) {
+        MoldedPlasticData sourceData = completeData(cauldronModel(MoldingProductTypes.CAULDRON_ID, 17, 12, 12));
+        UniversalPlasticEntity source = createProduct(
+            helper,
+            new BlockPos(1, 1, 1),
+            sourceData,
+            PlasticMaterial.ENGINEERING,
+            DyeColor.CYAN
+        );
+        source.setMagnetized(true);
+        check(source.getMoldedItemHandler().insertItem(8, new ItemStack(Items.DIAMOND, 3), false).isEmpty(),
+            "molded cauldron rejected a pick-state input item");
+        check(source.getMoldedFluidHandler().fill(
+            new FluidStack(PlasticraftFluids.HIGH_HEAT_FUEL.get(), 500),
+            IFluidHandler.FluidAction.EXECUTE
+        ) == 500, "molded cauldron rejected a pick-state fluid");
+        source.anvilcraft$setIgnited(true);
+        check(source.anvilcraft$isIgnited(), "molded cauldron did not retain its ignited state before pick");
+
+        ItemStack initial = source.getPickResult();
+        ItemStack complete = source.getCompletePickResult();
+        MoldedPlasticData initialData = MoldedPlasticData.get(initial).orElseThrow(
+            () -> new GameTestAssertException("normal creative pick lost molded cauldron data")
+        );
+        MoldedPlasticData completeData = MoldedPlasticData.get(complete).orElseThrow(
+            () -> new GameTestAssertException("control creative pick lost molded cauldron data")
+        );
+
+        check(initialData.finalType().equals(sourceData.finalType())
+                && initialData.capacity() == sourceData.capacity()
+                && initialData.modelHash().equals(sourceData.modelHash()),
+            "normal creative pick changed the molded cauldron identity");
+        check(PlasticItemData.getMaterial(initial).equals(PlasticMaterial.ENGINEERING.key()),
+            "normal creative pick changed the plastic material");
+        check(PlasticMeltColor.get(initial) == DyeColor.CYAN,
+            "normal creative pick changed the plastic color");
+        check(PlasticItemData.isMagnetized(initial), "normal creative pick lost magnetization");
+        check(initialData.contents().isEmpty()
+                && initialData.storageId().isEmpty()
+                && initialData.summary().isVacant(),
+            "normal creative pick retained molded cauldron contents");
+        check(MoldedPlasticCauldronState.get(initial).isEmpty(),
+            "normal creative pick retained molded cauldron runtime state");
+        check(completeData.storageId().equals(source.getMoldedData().flatMap(MoldedPlasticData::storageId)),
+            "control creative pick did not retain molded cauldron storage");
+        check(MoldedPlasticCauldronState.get(complete).map(MoldedPlasticCauldronState::ignited).orElse(false),
+            "control creative pick did not retain the ignited cauldron state");
+
+        UniversalPlasticEntity restoredComplete = createProduct(
+            helper,
+            new BlockPos(4, 1, 4),
+            complete,
+            PlasticMaterial.ENGINEERING,
+            DyeColor.CYAN
+        );
+        check(restoredComplete.getMoldedItemHandler().getStackInSlot(8).is(Items.DIAMOND)
+                && restoredComplete.getMoldedItemHandler().getStackInSlot(8).getCount() == 3,
+            "control creative pick did not restore molded cauldron items");
+        check(restoredComplete.plasticraft$bottomFluid().is(PlasticraftFluids.HIGH_HEAT_FUEL.get())
+                && restoredComplete.plasticraft$bottomFluid().getAmount() == 500,
+            "control creative pick did not restore molded cauldron fluid");
+        check(restoredComplete.anvilcraft$isIgnited(),
+            "control creative pick did not restore molded cauldron ignition");
+
+        UniversalPlasticEntity restoredInitial = createProduct(
+            helper,
+            new BlockPos(4, 1, 1),
+            initial,
+            PlasticMaterial.ENGINEERING,
+            DyeColor.CYAN
+        );
+        check(restoredInitial.getMoldedItemHandler().getStackInSlot(8).isEmpty()
+                && restoredInitial.plasticraft$bottomFluid().isEmpty()
+                && !restoredInitial.anvilcraft$isIgnited(),
+            "normal creative pick did not restore an empty molded cauldron");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x5x7", floor = true)
+    @TestHolder(description = "Molded tanks and cauldrons retain lava for every plastic material")
+    static void fluidContainersRetainLavaForEveryMaterial(ExtendedGameTestHelper helper) {
+        MoldedPlasticData tank = fullData(model(MoldingProductTypes.TANK_ID));
+        MoldedPlasticData cauldron = completeData(cauldronModel(MoldingProductTypes.CAULDRON_ID, 17, 12, 12));
+        MoldedPlasticData largeCauldron = completeData(cauldronModel(MoldingProductTypes.CAULDRON_ID, 2, 41, 8));
         for (PlasticMaterial material : PlasticMaterial.values()) {
-            final MoldedPlasticData[] tank = {
-                fullData(model).withMaterial(new FluidStack(material.melt(), 250))
-            };
-            boolean[] destroyed = {false};
-            MoldedPlasticFluidHandler fluids = new MoldedPlasticFluidHandler(
-                () -> Optional.of(tank[0]),
-                replacement -> tank[0] = replacement,
-                () -> ItemStack.EMPTY,
-                () -> destroyed[0] = true
-            );
-            int capacity = fluids.getTankCapacity(0);
-            int water = capacity / 2;
-            check(water > 0, material.key() + " tank had no usable capacity");
-            check(fluids.fill(new FluidStack(Fluids.WATER, water), IFluidHandler.FluidAction.EXECUTE) == water,
-                material.key() + " tank rejected water before the lava check");
-
-            int lava = capacity - water;
-            check(fluids.fill(new FluidStack(Fluids.LAVA, lava), IFluidHandler.FluidAction.SIMULATE) == lava,
-                material.key() + " tank reported the wrong simulated lava transfer");
-            check(!destroyed[0], material.key() + " tank was destroyed by simulated lava");
-            check(fluids.fill(new FluidStack(Fluids.LAVA, lava), IFluidHandler.FluidAction.EXECUTE) == lava,
-                material.key() + " tank reported the wrong executed lava transfer");
-
-            if (material == PlasticMaterial.HEAT_RESISTANT) {
-                check(!destroyed[0], "heat-resistant tank was destroyed by lava");
-                check(fluids.getFluidInTank(0).is(Fluids.WATER)
-                        && fluids.getFluidInTank(1).is(Fluids.LAVA),
-                    "heat-resistant tank did not retain its fluids after lava fill");
-            } else {
-                check(destroyed[0], material.key() + " tank was not destroyed by lava");
-                check(handleFluids(tank).isEmpty(), material.key() + " tank retained fluid after lava destruction");
-            }
+            checkLavaStorage(tank, material, "tank");
+            checkLavaStorage(cauldron, material, "cauldron");
+            checkLavaStorage(largeCauldron, material, "large cauldron");
+            checkCauldronEntityLavaStorage(helper, cauldron, material, "cauldron");
+            checkCauldronEntityLavaStorage(helper, largeCauldron, material, "large cauldron");
         }
         helper.succeed();
+    }
+
+    /** 普通锅只有一层流体，因此只让可分层的载体预装水来验证熔岩会保留已有内容。 */
+    private static void checkLavaStorage(
+        MoldedPlasticData template,
+        PlasticMaterial material,
+        String carrier
+    ) {
+        final MoldedPlasticData[] holder = {template.withMaterial(new FluidStack(material.melt(), 250))};
+        MoldedPlasticFluidHandler fluids = new MoldedPlasticFluidHandler(
+            () -> Optional.of(holder[0]),
+            replacement -> holder[0] = replacement,
+            () -> ItemStack.EMPTY
+        );
+        PlasticCauldronLayout layout = PlasticCauldronLayout.of(holder[0].finalType());
+        int portion = Math.min(1000, fluids.getTankCapacity(0));
+        check(portion > 0, material.key() + " " + carrier + " had no usable capacity");
+        int water = layout == null || layout.fluidLayers() > 1 ? portion : 0;
+        if (water > 0) {
+            check(fluids.fill(new FluidStack(Fluids.WATER, water), IFluidHandler.FluidAction.EXECUTE) == water,
+                material.key() + " " + carrier + " rejected water before the lava check");
+        }
+
+        check(fluids.fill(new FluidStack(Fluids.LAVA, portion), IFluidHandler.FluidAction.SIMULATE) == portion,
+            material.key() + " " + carrier + " reported the wrong simulated lava transfer");
+        check(fluids.fill(new FluidStack(Fluids.LAVA, portion), IFluidHandler.FluidAction.EXECUTE) == portion,
+            material.key() + " " + carrier + " reported the wrong executed lava transfer");
+        check(fluids.getFluidInTank(water > 0 ? 1 : 0).is(Fluids.LAVA),
+            material.key() + " " + carrier + " did not retain lava");
+        if (water > 0) {
+            check(fluids.getFluidInTank(0).is(Fluids.WATER),
+                material.key() + " " + carrier + " lost the layer below its lava");
+        }
+        fluids.discardFluids();
+        check(holder[0].storageId().isEmpty(),
+            material.key() + " " + carrier + " leaked its storage id after cleanup");
+    }
+
+    /** 用真实成型锅验证熔岩存储与外部仓储清理。 */
+    private static void checkCauldronEntityLavaStorage(
+        ExtendedGameTestHelper helper,
+        MoldedPlasticData template,
+        PlasticMaterial material,
+        String carrier
+    ) {
+        MoldedPlasticData data = template.withMaterial(new FluidStack(
+            material.melt(),
+            template.material().getAmount()
+        ));
+        UniversalPlasticEntity entity = createProduct(
+            helper,
+            new BlockPos(3, 2, 3),
+            data,
+            material
+        );
+        PlasticCauldronLayout layout = PlasticCauldronLayout.of(data.finalType());
+        check(layout != null, material.key() + " " + carrier + " lost its cauldron layout");
+        check(entity.getMoldedItemHandler().insertItem(
+            layout.outputSlots(),
+            new ItemStack(Items.DIAMOND),
+            false
+        ).isEmpty(), material.key() + " " + carrier + " rejected its storage cleanup marker");
+        UUID storageId = entity.getMoldedData().flatMap(MoldedPlasticData::storageId).orElseThrow(() ->
+            new GameTestAssertException(material.key() + " " + carrier + " did not allocate external storage")
+        );
+        var server = helper.getLevel().getServer();
+        check(server != null, "game test level has no server");
+        check(PlasticraftStorages.get(server).get(storageId).isPresent(),
+            material.key() + " " + carrier + " storage marker was not persisted");
+
+        IFluidHandler fluids = entity.getFluidHandler();
+        int portion = Math.min(1000, fluids.getTankCapacity(0));
+        check(portion > 0, material.key() + " " + carrier + " entity had no usable fluid capacity");
+        FluidStack lava = new FluidStack(Fluids.LAVA, portion);
+        check(fluids.fill(lava, IFluidHandler.FluidAction.SIMULATE) == portion,
+            material.key() + " " + carrier + " entity reported the wrong simulated lava transfer");
+        check(entity.isAlive(), material.key() + " " + carrier + " entity was destroyed by simulated lava");
+
+        check(fluids.fill(lava, IFluidHandler.FluidAction.EXECUTE) == portion,
+            material.key() + " " + carrier + " entity reported the wrong executed lava transfer");
+        check(entity.isAlive(), material.key() + " " + carrier + " entity was destroyed by lava");
+        check(fluids.getFluidInTank(0).is(Fluids.LAVA)
+                && fluids.getFluidInTank(0).getAmount() == portion,
+            material.key() + " " + carrier + " entity did not retain lava");
+        entity.getMoldedItemHandler().extractItem(layout.outputSlots(), 1, false);
+        entity.getMoldedFluidHandler().discardFluids();
+        check(entity.getMoldedData().flatMap(MoldedPlasticData::storageId).isEmpty(),
+            material.key() + " " + carrier + " entity retained its storage id after cleanup");
+        entity.discard();
+        check(PlasticraftStorages.get(server).get(storageId).isEmpty(),
+            material.key() + " " + carrier + " leaked its external storage record");
     }
 
     @GameTest(timeoutTicks = 20)
@@ -701,6 +1084,12 @@ public final class MoldingProductGameTests {
         checkProductName(MoldingProductTypes.CHEST_ID, "screen.anvilcraftplasticraft.molding.type.chest");
         checkProductName(MoldingProductTypes.TANK_ID, "screen.anvilcraftplasticraft.molding.type.tank");
         checkProductName(MoldingProductTypes.ANVIL_ID, "screen.anvilcraftplasticraft.molding.type.anvil");
+        checkProductName(MoldingProductTypes.CAULDRON_ID, "screen.anvilcraftplasticraft.molding.type.cauldron");
+        // 大型锅由普通锅升级得到，名字必须跟随最终类型而不是请求类型
+        checkProductName(
+            cauldronModel(MoldingProductTypes.CAULDRON_ID, 2, 41, 8),
+            "screen.anvilcraftplasticraft.molding.type.large_cauldron"
+        );
         checkProductName(MoldingProductTypes.TRAY_ID, "screen.anvilcraftplasticraft.molding.type.tray");
         helper.succeed();
     }
@@ -709,19 +1098,25 @@ public final class MoldingProductGameTests {
         ResourceLocation type,
         String suffixKey
     ) {
-        EditableMoldingModel selectedModel = MoldingProductTypes.ANVIL_ID.equals(type)
-            ? anvilModel(type)
-            : MoldingProductTypes.TRAY_ID.equals(type) ? trayModel(type) : model(type);
-        var baked = MoldingModelBaker.bake(selectedModel);
-        int melt = baked.analysis().minimumMeltMillibuckets();
-        MoldedPlasticData data = MoldedPlasticData.manufacture(
-            selectedModel,
-            baked,
-            new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), melt),
-            melt
-        );
+        EditableMoldingModel selectedModel;
+        if (MoldingProductTypes.ANVIL_ID.equals(type)) {
+            selectedModel = anvilModel(type);
+        } else if (MoldingProductTypes.TRAY_ID.equals(type)) {
+            selectedModel = trayModel(type);
+        } else if (MoldingProductTypes.CAULDRON_ID.equals(type)) {
+            selectedModel = cauldronModel(type, 17, 12, 12);
+        } else {
+            selectedModel = model(type);
+        }
+        checkProductName(selectedModel, suffixKey);
+    }
+
+    private static void checkProductName(
+        EditableMoldingModel model,
+        String suffixKey
+    ) {
         ItemStack stack = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
-        MoldedPlasticData.set(stack, data);
+        MoldedPlasticData.set(stack, completeData(model));
         Component expected = Component.translatable(
             "item.anvilcraftplasticraft.molded_product_name",
             Component.translatable("material.anvilcraftplasticraft.universal_plastic"),
@@ -748,6 +1143,162 @@ public final class MoldingProductGameTests {
         MoldingTypeValidation result = MoldingProductTypes.validate(type, analysis);
         check(result.valid() == expectedValid, "unexpected type validation at cavity " + cavity);
         check(result.capacity() == expectedCapacity, "unexpected capacity at cavity " + cavity);
+    }
+
+    private static void checkCauldronCapacity(
+        MoldingVolumeMask mask,
+        int expectedCavity,
+        int expectedCapacity
+    ) {
+        MoldingCauldronShapeAnalysis shape = analyzeCauldron(mask);
+        check(shape.valid(), "cauldron capacity fixture was rejected: " + shape.reason());
+        check(shape.cavityVolume() == expectedCavity,
+            "cauldron fixture measured " + shape.cavityVolume() + " instead of "
+                + expectedCavity + " cubic pixels");
+        MoldingTypeValidation result = MoldingProductTypes.validate(
+            MoldingProductTypes.CAULDRON_ID,
+            cauldronAnalysis(shape)
+        );
+        check(result.valid(),
+            "cauldron type rejected a " + expectedCavity + " cubic pixel cavity: " + result.reason());
+        check(result.capacity() == expectedCapacity,
+            "cauldron cavity " + expectedCavity + " produced " + result.capacity()
+                + "B instead of " + expectedCapacity + "B");
+    }
+
+    private static MoldingCauldronShapeAnalysis analyzeCauldron(MoldingVolumeMask mask) {
+        return MoldingCauldronShapeAnalyzer.analyze(mask, Set.of());
+    }
+
+    /** 炼药锅校验只读 cauldronShape，其余组件按空壳填充即可。 */
+    private static MoldingFunctionalAnalysis cauldronAnalysis(MoldingCauldronShapeAnalysis shape) {
+        return new MoldingFunctionalAnalysis(
+            shape.cavityMask(),
+            1,
+            shape.cavityVolume(),
+            0,
+            false
+        ).withCauldronShape(shape);
+    }
+
+    private static void checkCauldronRejected(MoldingVolumeMask mask, String reason, String description) {
+        MoldingCauldronShapeAnalysis shape = analyzeCauldron(mask);
+        check(!shape.valid() && reason.equals(shape.reason()),
+            "expected " + reason + " for " + description + " but received "
+                + shape.reason() + " (valid=" + shape.valid() + ")");
+    }
+
+    /** 锅体掩码留出的边距，保证四周的壁和外界洪泛都落在工作区内。 */
+    private static final int CAULDRON_ORIGIN = 2;
+
+    /**
+     * 开顶锅掩码：内腔由 {@code interior} 的 (x,z) 布尔网格给出，底板铺满内腔投影，
+     * 每个与内腔四邻接的非内腔格都立起一道 {@code wallHeight} 高的壁。
+     * 从外界到内腔的任何四邻接路径都必须经过这样的格子，所以圆形和异形轮廓无需另写几何。
+     */
+    private static MoldingVolumeMask cauldronMask(boolean[][] interior, int wallHeight) {
+        MoldingVolumeMask mask = new MoldingVolumeMask();
+        for (int x = 0; x < interior.length; x++) {
+            for (int z = 0; z < interior[x].length; z++) {
+                if (!interior[x][z]) continue;
+                mask.set(CAULDRON_ORIGIN + x, 0, CAULDRON_ORIGIN + z);
+                markCauldronWall(mask, interior, x - 1, z, wallHeight);
+                markCauldronWall(mask, interior, x + 1, z, wallHeight);
+                markCauldronWall(mask, interior, x, z - 1, wallHeight);
+                markCauldronWall(mask, interior, x, z + 1, wallHeight);
+            }
+        }
+        return mask;
+    }
+
+    private static void markCauldronWall(
+        MoldingVolumeMask mask,
+        boolean[][] interior,
+        int x,
+        int z,
+        int wallHeight
+    ) {
+        if (x >= 0 && x < interior.length && z >= 0 && z < interior[x].length && interior[x][z]) return;
+        for (int y = 0; y <= wallHeight; y++) mask.set(CAULDRON_ORIGIN + x, y, CAULDRON_ORIGIN + z);
+    }
+
+    private static boolean[][] rectangleInterior(int sizeX, int sizeZ) {
+        boolean[][] interior = new boolean[sizeX][sizeZ];
+        for (boolean[] row : interior) Arrays.fill(row, true);
+        return interior;
+    }
+
+    /** 内腔中央立一根通高柱子：开口面积掉到 143 px²，但开口的外接矩形仍是 12×12。 */
+    private static boolean[][] pillarInterior(int size) {
+        boolean[][] interior = rectangleInterior(size, size);
+        interior[size / 2][size / 2] = false;
+        return interior;
+    }
+
+    /** 圆形开口：格心落在圆内即算内腔，直径 14 px 得 156 px²，直径 13 px 只有 137 px²。 */
+    private static boolean[][] discInterior(int diameter) {
+        boolean[][] interior = new boolean[diameter][diameter];
+        double radius = diameter / 2.0D;
+        for (int x = 0; x < diameter; x++) {
+            for (int z = 0; z < diameter; z++) {
+                double offsetX = x + 0.5D - radius;
+                double offsetZ = z + 0.5D - radius;
+                interior[x][z] = offsetX * offsetX + offsetZ * offsetZ <= radius * radius;
+            }
+        }
+        return interior;
+    }
+
+    /** 1601 是质数，只能在 40×40 的一条边上多凸出一格，才能刚好越过 1600 px² 的升级线。 */
+    private static boolean[][] bumpedInterior(int size) {
+        boolean[][] interior = new boolean[size + 1][size];
+        for (int x = 0; x < size; x++) Arrays.fill(interior[x], true);
+        interior[size][0] = true;
+        return interior;
+    }
+
+    private static MoldingVolumeMask squareCauldron(int interiorSize, int wallHeight) {
+        return cauldronMask(rectangleInterior(interiorSize, interiorSize), wallHeight);
+    }
+
+    /** 内腔底面立一格凸起，只吃掉 1 px³，用来压容量的整 B 边界。 */
+    private static MoldingVolumeMask stubbedCauldron(int interiorSize, int wallHeight) {
+        MoldingVolumeMask mask = squareCauldron(interiorSize, wallHeight);
+        mask.set(CAULDRON_ORIGIN, 1, CAULDRON_ORIGIN);
+        return mask;
+    }
+
+    /** 西壁只有 {@code lowWallHeight} 高，其余三面仍是 {@code wallHeight}。 */
+    private static MoldingVolumeMask unevenWallCauldron(
+        int interiorSize,
+        int wallHeight,
+        int lowWallHeight
+    ) {
+        MoldingVolumeMask mask = new MoldingVolumeMask();
+        int wallMin = CAULDRON_ORIGIN - 1;
+        int wallMax = CAULDRON_ORIGIN + interiorSize;
+        fillBox(mask, wallMin, 0, wallMin, wallMax + 1, 1, wallMax + 1);
+        fillBox(mask, wallMin, 1, wallMin, wallMin + 1, lowWallHeight + 1, wallMax + 1);
+        fillBox(mask, wallMax, 1, wallMin, wallMax + 1, wallHeight + 1, wallMax + 1);
+        fillBox(mask, CAULDRON_ORIGIN, 1, wallMin, wallMax, wallHeight + 1, CAULDRON_ORIGIN);
+        fillBox(mask, CAULDRON_ORIGIN, 1, wallMax, wallMax, wallHeight + 1, wallMax + 1);
+        return mask;
+    }
+
+    /** 西壁最底层缺一格，内腔会顺着漏孔与外界连通。 */
+    private static MoldingVolumeMask leakingCauldron(int interiorSize, int wallHeight) {
+        MoldingVolumeMask mask = new MoldingVolumeMask();
+        int wallMin = CAULDRON_ORIGIN - 1;
+        int wallMax = CAULDRON_ORIGIN + interiorSize;
+        int leakZ = CAULDRON_ORIGIN;
+        fillBox(mask, wallMin, 0, wallMin, wallMax + 1, 1, wallMax + 1);
+        fillBox(mask, wallMin, 1, wallMin, wallMin + 1, wallHeight + 1, leakZ);
+        fillBox(mask, wallMin, 1, leakZ + 1, wallMin + 1, wallHeight + 1, wallMax + 1);
+        fillBox(mask, wallMin, 2, leakZ, wallMin + 1, wallHeight + 1, leakZ + 1);
+        fillBox(mask, wallMax, 1, wallMin, wallMax + 1, wallHeight + 1, wallMax + 1);
+        fillBox(mask, CAULDRON_ORIGIN, 1, wallMin, wallMax, wallHeight + 1, CAULDRON_ORIGIN);
+        fillBox(mask, CAULDRON_ORIGIN, 1, wallMax, wallMax, wallHeight + 1, wallMax + 1);
+        return mask;
     }
 
     private static MoldingVolumeMask hollowCube(int size) {
@@ -957,6 +1508,182 @@ public final class MoldingProductGameTests {
         );
     }
 
+    /**
+     * 开顶锅模型：底板加四面等高侧壁，顶面留空，壁厚固定 1 px。
+     * {@code min} 是外壁最小角，{@code interiorSize} 是内腔的水平边长。
+     */
+    private static EditableMoldingModel cauldronModel(
+        ResourceLocation type,
+        int min,
+        int interiorSize,
+        int wallHeight
+    ) {
+        int outer = min + interiorSize + 2;
+        int innerMin = min + 1;
+        int innerMax = min + interiorSize + 1;
+        int top = 1 + wallHeight;
+        return new EditableMoldingModel(
+            EditableMoldingModel.CURRENT_FORMAT_VERSION,
+            "Cauldron shape test",
+            type,
+            List.of(
+                MoldingElement.cube("Floor", vec(min, 0, min), vec(outer, 1, outer)),
+                MoldingElement.cube("West", vec(min, 1, min), vec(innerMin, top, outer)),
+                MoldingElement.cube("East", vec(innerMax, 1, min), vec(outer, top, outer)),
+                MoldingElement.cube("North", vec(innerMin, 1, min), vec(innerMax, top, innerMin)),
+                MoldingElement.cube("South", vec(innerMin, 1, innerMax), vec(innerMax, top, outer))
+            ),
+            List.of()
+        );
+    }
+
+    private static void checkNegativeSealedCavity(ResourceLocation type, boolean partialFill) {
+        EditableMoldingModel model = negativeSealedContainerModel(type, partialFill);
+        var baked = MoldingModelBaker.bake(model);
+        int expectedCavity = 14 * 14 * 14;
+        int expectedCapacity = MoldingProductTypes.capacityFor(type, expectedCavity);
+        check(baked.functionalAnalysis().cavityVolume() < expectedCavity,
+            "raw " + type.getPath() + " analysis counted a " + (partialFill ? "partial" : "full")
+                + " inward-facing fill as a cavity");
+        MoldingTypeValidation validation = MoldingProductTypes.validate(type, model, baked);
+        check(validation.valid() && validation.capacity() == expectedCapacity,
+            "inward-facing " + (partialFill ? "partial" : "full") + " fill did not restore the "
+                + type.getPath() + " cavity: " + validation);
+        MoldingProductPreview preview = MoldingProductPreview.evaluate(
+            model,
+            baked,
+            baked.analysis().minimumMeltMillibuckets()
+        );
+        check(type.equals(preview.finalType()) && preview.cavityMask().volume() == expectedCavity,
+            "preview did not persist the inward-facing " + type.getPath() + " cavity: " + preview);
+        MoldedPlasticData product = completeData(model);
+        check(type.equals(product.finalType())
+                && product.capacity() == expectedCapacity
+                && product.cavityMask().volume() == expectedCavity,
+            "manufactured inward-facing " + type.getPath() + " lost its cavity or capacity");
+    }
+
+    private static void checkNegativeSealedWalls(ResourceLocation type) {
+        EditableMoldingModel model = negativeSealedWallContainerModel(type);
+        var baked = MoldingModelBaker.bake(model);
+        MoldingTypeValidation validation = MoldingProductTypes.validate(type, model, baked);
+        check(validation.valid(), "inward-facing " + type.getPath() + " walls were treated only as cavities");
+        MoldingProductPreview preview = MoldingProductPreview.evaluate(
+            model,
+            baked,
+            baked.analysis().minimumMeltMillibuckets()
+        );
+        check(type.equals(preview.finalType()) && preview.cavityMask().volume() == 14 * 14 * 14,
+            "inward-facing " + type.getPath() + " walls did not retain their enclosed cavity");
+    }
+
+    private static void checkNegativeCauldronCavity(boolean partialFill, boolean splitFill) {
+        String fillDescription = splitFill ? "split" : partialFill ? "partial" : "full";
+        EditableMoldingModel model = negativeCauldronModel(partialFill, splitFill);
+        var baked = MoldingModelBaker.bake(model);
+        int expectedCavity = 12 * 12 * 12;
+        check(!baked.functionalAnalysis().cauldronShape().valid(),
+            "raw cauldron analysis accepted a " + fillDescription + " inward-facing fill");
+        MoldingTypeValidation validation = MoldingProductTypes.validate(MoldingProductTypes.CAULDRON_ID, model, baked);
+        check(validation.valid() && validation.capacity() == 1,
+            "inward-facing " + fillDescription + " fill did not restore the cauldron cavity: " + validation);
+        MoldingProductPreview preview = MoldingProductPreview.evaluate(
+            model,
+            baked,
+            baked.analysis().minimumMeltMillibuckets()
+        );
+        check(MoldingProductTypes.CAULDRON_ID.equals(preview.finalType())
+                && preview.cavityMask().volume() == expectedCavity,
+            "preview did not persist the inward-facing cauldron cavity: " + preview);
+        MoldedPlasticData product = completeData(model);
+        check(MoldingProductTypes.CAULDRON_ID.equals(product.finalType())
+                && product.capacity() == 1
+                && product.cavityMask().volume() == expectedCavity,
+            "manufactured inward-facing cauldron lost its cavity or capacity");
+    }
+
+    private static void checkNegativeCauldronWalls() {
+        EditableMoldingModel model = negativeCauldronWallModel();
+        var baked = MoldingModelBaker.bake(model);
+        MoldingTypeValidation validation = MoldingProductTypes.validate(MoldingProductTypes.CAULDRON_ID, model, baked);
+        check(validation.valid(), "inward-facing cauldron walls were treated only as cavities");
+        MoldingProductPreview preview = MoldingProductPreview.evaluate(
+            model,
+            baked,
+            baked.analysis().minimumMeltMillibuckets()
+        );
+        check(MoldingProductTypes.CAULDRON_ID.equals(preview.finalType())
+                && preview.cavityMask().volume() == 12 * 12 * 12,
+            "inward-facing cauldron walls did not retain their open cavity");
+    }
+
+    private static EditableMoldingModel negativeSealedContainerModel(ResourceLocation type, boolean partialFill) {
+        List<MoldingElement> elements = new ArrayList<>(sealedContainerWalls());
+        int top = partialFill ? 24 : 31;
+        elements.add(MoldingElement.cube(
+            "Inner negative volume",
+            vec(31, top, 31),
+            vec(17, 17, 17)
+        ));
+        return new EditableMoldingModel(
+            EditableMoldingModel.CURRENT_FORMAT_VERSION,
+            "Negative cavity container",
+            type,
+            elements,
+            List.of()
+        );
+    }
+
+    private static EditableMoldingModel negativeSealedWallContainerModel(ResourceLocation type) {
+        return new EditableMoldingModel(
+            EditableMoldingModel.CURRENT_FORMAT_VERSION,
+            "Negative wall container",
+            type,
+            sealedContainerWalls().stream().map(MoldingProductGameTests::reverseX).toList(),
+            List.of()
+        );
+    }
+
+    private static List<MoldingElement> sealedContainerWalls() {
+        return List.of(
+            MoldingElement.cube("Floor", vec(16, 16, 16), vec(32, 17, 32)),
+            MoldingElement.cube("Ceiling", vec(16, 31, 16), vec(32, 32, 32)),
+            MoldingElement.cube("West", vec(16, 17, 16), vec(17, 31, 32)),
+            MoldingElement.cube("East", vec(31, 17, 16), vec(32, 31, 32)),
+            MoldingElement.cube("North", vec(17, 17, 16), vec(31, 31, 17)),
+            MoldingElement.cube("South", vec(17, 17, 31), vec(31, 31, 32))
+        );
+    }
+
+    private static EditableMoldingModel negativeCauldronModel(boolean partialFill, boolean splitFill) {
+        EditableMoldingModel base = cauldronModel(MoldingProductTypes.CAULDRON_ID, 17, 12, 12);
+        List<MoldingElement> elements = new ArrayList<>(base.elements());
+        if (splitFill) {
+            elements.add(MoldingElement.cube("Inner negative volume west", vec(24, 13, 30), vec(18, 1, 18)));
+            elements.add(MoldingElement.cube("Inner negative volume east", vec(30, 13, 30), vec(24, 1, 18)));
+        } else {
+            elements.add(MoldingElement.cube(
+                "Inner negative volume",
+                vec(30, partialFill ? 7 : 13, 30),
+                vec(18, 1, 18)
+            ));
+        }
+        return base.withElements(elements);
+    }
+
+    private static EditableMoldingModel negativeCauldronWallModel() {
+        EditableMoldingModel base = cauldronModel(MoldingProductTypes.CAULDRON_ID, 17, 12, 12);
+        return base.withElements(base.elements().stream().map(MoldingProductGameTests::reverseX).toList());
+    }
+
+    private static MoldingElement reverseX(MoldingElement element) {
+        return MoldingElement.cube(
+            element.name(),
+            vec(element.to().x(), element.from().y(), element.from().z()),
+            vec(element.from().x(), element.to().y(), element.to().z())
+        );
+    }
+
     private static EditableMoldingModel zeroThicknessSealedModel(ResourceLocation type) {
         return new EditableMoldingModel(
             EditableMoldingModel.CURRENT_FORMAT_VERSION,
@@ -1007,6 +1734,62 @@ public final class MoldingProductGameTests {
         return entity;
     }
 
+    private static UniversalPlasticEntity createProduct(
+        ExtendedGameTestHelper helper,
+        BlockPos occupiedPos,
+        MoldedPlasticData data,
+        PlasticMaterial material,
+        DyeColor color
+    ) {
+        ItemStack stack = material.productStack(color);
+        MoldedPlasticData.set(stack, data);
+        return createProduct(helper, occupiedPos, stack, material, color);
+    }
+
+    private static UniversalPlasticEntity createProduct(
+        ExtendedGameTestHelper helper,
+        BlockPos occupiedPos,
+        ItemStack stack,
+        PlasticMaterial material,
+        DyeColor color
+    ) {
+        MoldedPlasticData data = MoldedPlasticData.get(stack).orElseThrow(
+            () -> new GameTestAssertException("product stack lost molded data")
+        );
+        BlockPos absolutePos = helper.absolutePos(occupiedPos);
+        UniversalPlasticEntity entity = material.createEntity(
+            helper.getLevel(),
+            data.geometry().placementPosition(absolutePos, PlasticEntityOrientation.DEFAULT),
+            material.displayState(color),
+            stack.copy(),
+            PlasticEntityOrientation.DEFAULT
+        );
+        entity.setNoGravity(true);
+        check(helper.getLevel().addFreshEntity(entity), "failed to add " + material.key() + " colored molded product");
+        return entity;
+    }
+
+    private static UniversalPlasticEntity createProduct(
+        ExtendedGameTestHelper helper,
+        BlockPos occupiedPos,
+        MoldedPlasticData data,
+        PlasticMaterial material
+    ) {
+        ItemStack stack = material.productBlock().asItem().getDefaultInstance();
+        MoldedPlasticData.set(stack, data);
+        BlockPos absolutePos = helper.absolutePos(occupiedPos);
+        UniversalPlasticEntity entity = material.createEntity(
+            helper.getLevel(),
+            data.geometry().placementPosition(absolutePos, PlasticEntityOrientation.DEFAULT),
+            material.productBlock().defaultBlockState(),
+            stack,
+            PlasticEntityOrientation.DEFAULT
+        );
+        entity.setNoGravity(true);
+        check(helper.getLevel().addFreshEntity(entity), "failed to add " + material.key() + " molded product");
+        return entity;
+    }
+
     private static MoldedPlasticData fullData(EditableMoldingModel model) {
         var baked = MoldingModelBaker.bake(model);
         return MoldedPlasticData.manufacture(
@@ -1014,6 +1797,18 @@ public final class MoldingProductGameTests {
             baked,
             new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 250),
             250
+        );
+    }
+
+    /** 按模型自身的最小熔体量制造，供 250 mB 不够成型的大件使用。 */
+    private static MoldedPlasticData completeData(EditableMoldingModel model) {
+        var baked = MoldingModelBaker.bake(model);
+        int melt = baked.analysis().minimumMeltMillibuckets();
+        return MoldedPlasticData.manufacture(
+            model,
+            baked,
+            new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), melt),
+            melt
         );
     }
 

@@ -1795,6 +1795,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private List<MoldingProductType> filteredProductTypes() {
         String query = this.leftSearch == null ? "" : this.leftSearch.getValue().trim().toLowerCase(Locale.ROOT);
         return MoldingProductTypes.values().stream()
+            .filter(MoldingProductType::selectable)
             .filter(type -> query.isEmpty()
                 || Component.translatable(type.translationKey()).getString().toLowerCase(Locale.ROOT).contains(query)
                 || type.id().toString().toLowerCase(Locale.ROOT).contains(query))
@@ -1976,6 +1977,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         if (MoldingProductTypes.CHEST_ID.equals(type)) return Items.CHEST.getDefaultInstance();
         if (MoldingProductTypes.TANK_ID.equals(type)) return ModBlocks.FLUID_TANK.asStack();
         if (MoldingProductTypes.ANVIL_ID.equals(type)) return Items.ANVIL.getDefaultInstance();
+        // 锅类型图标用原版炼药锅物品，不用默认蓝图模型
+        if (MoldingProductTypes.isCauldron(type)) return Items.CAULDRON.getDefaultInstance();
         if (MoldingProductTypes.TRAY_ID.equals(type)) return MoldingTrayTypeIcon.stack();
         if (MoldingProductTypes.ALLAY_HARD_HAT_ID.equals(type)) return MoldingHardHatTypeIcon.stack();
         return PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();

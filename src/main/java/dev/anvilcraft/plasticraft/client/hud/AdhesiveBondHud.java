@@ -43,7 +43,8 @@ public final class AdhesiveBondHud {
             ? plastic.getMoldedContentSummary()
             : MoldedPlasticContentSummary.EMPTY;
         boolean functional = MoldingProductTypes.isChest(summary.type())
-            || MoldingProductTypes.isTank(summary.type());
+            || MoldingProductTypes.isTank(summary.type())
+            || MoldingProductTypes.isCauldron(summary.type());
         if (!bonded && !functional) {
             return;
         }

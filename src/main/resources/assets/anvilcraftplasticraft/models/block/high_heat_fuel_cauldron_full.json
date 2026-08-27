@@ -3,7 +3,7 @@
   "render_type": "minecraft:translucent",
   "textures": {
     "bottom": "minecraft:block/cauldron_bottom",
-    "content": "anvilcraftplasticraft:block/high_heat_fuel",
+    "content": "anvilcraftplasticraft:fluid/high_heat_fuel",
     "inside": "minecraft:block/cauldron_inner",
     "particle": "minecraft:block/cauldron_side",
     "side": "minecraft:block/cauldron_side",
