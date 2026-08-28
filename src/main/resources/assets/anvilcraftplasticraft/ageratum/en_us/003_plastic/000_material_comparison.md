@@ -22,7 +22,7 @@ items:
 <item id="anvilcraftplasticraft:heat_resistant_plastic"/>
 </row>
 
-All four plastics support all 16 dye colors and can be used for movable products. Melts, melt buckets and granules use their material's own palette. Clear Plastic uses a stained-glass appearance; hardness and blast resistance below are the values of the corresponding plastic blocks
+All four plastics take all 16 dye colors and all four work as movable products. Melts, melt buckets and granules use their own material's palette, and Clear Plastic looks just like stained glass. Hardness and blast resistance below are the values of the corresponding plastic blocks:
 
 | Material | Dyeing | Hardness / blast resistance | Distinct ability |
 | --- | --- | ---: | --- |
@@ -31,15 +31,15 @@ All four plastics support all 16 dye colors and can be used for movable products
 | Clear Plastic | 16 colors (stained glass) | 1.5 / 3.0 | Spectral Anvils and lasers pass through it; each color tints beacon beams |
 | Heat-Resistant Plastic | 16 colors | 3.5 / 10.0 | Fire-resistant material; its dedicated products can provide Smelting demolition |
 
-Universal, Engineering and Heat-Resistant Plastic all block lasers. Lasers can damage entities from level 5 onward and also destroy the Universal or Engineering Plastic they hit. Clear Plastic lets lasers pass and is immune to laser damage; Heat-Resistant Plastic blocks lasers but is also immune to laser damage. Each Clear Plastic color tints beacon beams passing through it like the matching stained glass
+Lasers deserve their own paragraph. Universal, Engineering and Heat-Resistant Plastic all block them; lasers can damage entities from level 5 onward and also destroy the Universal or Engineering Plastic they hit. Clear Plastic simply lets lasers through and is immune to laser damage, while Heat-Resistant Plastic blocks lasers and is immune as well. On top of that, each Clear Plastic color tints beacon beams passing through it like the matching stained glass
 
-Catalysts, heat and cold conditions for every melt are listed in [Plastic Melts](../002_refining/010_plastic_melts.md). Once a molding batch receives its first melt, its material and color are fixed until that batch is emptied
+Catalysts, heat and cold conditions for every melt are listed in [Plastic Melts](../002_refining/010_plastic_melts.md). Keep in mind that once a molding batch receives its first melt, its material and color are fixed until that batch is emptied
 
 ## Cooling and granules
 
-A one-block world melt source solidifies in place when it meets rain above, adjacent water, ice or snow. It becomes a special 16x16x14px product of the matching material and does not drop granules. This differs from the standard 16x16x16px block in the creative inventory
+A one-block world melt source solidifies on the spot when it meets rain above, adjacent water, ice or snow. It becomes a special 16x16x14px product of the matching material and drops no granules. Note that this is not the same thing as the standard 16x16x16px block in the creative inventory
 
-For every 1000mB of melt, any one of these coolants produces 16 granules of the same material and color:
+If you want granules, you need a coolant. For every 1000mB of melt, any one of these produces 16 granules of the same material, keeping the melt's color:
 
 - 1000mB water
 - 1000mB powder snow
@@ -51,8 +51,8 @@ For every 1000mB of melt, any one of these coolants produces 16 granules of the 
 <recipe id="anvilcraftplasticraft:solid_liquid/cool_universal_plastic_melt"/>
 </row>
 
-Equivalent recipes exist for all four materials. The [Catalytic Press Lid](../002_refining/020_catalytic_press_lid.md) can also turn melt into granules. All four melts accept any dye, and fluid type and amount are unchanged; Clear Plastic Melt keeps its stained-glass appearance after solidification
+Equivalent recipes exist for all four materials, and the [Catalytic Press Lid](../002_refining/020_catalytic_press_lid.md) can press melt into granules too. All four melts accept any dye, with fluid type and amount unchanged; Clear Plastic Melt keeps its stained-glass appearance after solidification
 
 ## Jeweler trade
 
-An AnvilCraft novice Jeweler randomly chooses one color and buys 8 <ref item="anvilcraftplasticraft:universal_plastic_granule"/> of that exact color for 2 emeralds. Each offer has 16 uses. Engineering, Clear and Heat-Resistant Granules do not match this trade
+An AnvilCraft novice Jeweler randomly picks one color and buys 8 <ref item="anvilcraftplasticraft:universal_plastic_granule"/> of that exact color for 2 emeralds, with 16 uses per offer. Engineering, Clear and Heat-Resistant Granules are of no interest to them

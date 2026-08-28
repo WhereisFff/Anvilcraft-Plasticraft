@@ -1,6 +1,6 @@
 .gradle/
 .idea/
-/docs/.obsidian/
+.obsidian/
 *.iml
 *.ipr
 *.iws

@@ -4,4 +4,4 @@ navigation:
   icon: "anvilcraftplasticraft:plastic_oil_bucket"
 ---
 
-Plasticraft starts with resin and ends with movable, functional or construction-ready plastic products
+The whole line starts with a single block of resin and ends with plastic products you can carry around, store things in, or hand off to a construction crew

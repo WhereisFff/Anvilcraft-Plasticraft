@@ -482,16 +482,49 @@ public final class ConstructionProjectionIndex {
         return new ConstructionProjectionSectionPacket(jobId, section, false, positions, states, masks);
     }
 
+    /**
+     * 每刻最多同步的区段数。载荷已按段内调色板与位集压缩,但 64 只悦灵同刻交付仍可能脏掉几十个区段,
+     * 一次全发会把整份蓝图的可见区段塞进同一刻;超出预算的区段留在队列里下一刻继续。
+     */
+    private static final int MAX_SECTIONS_PER_TICK = 16;
+
     public static void flushDirty(ServerLevel level) {
         List<DirtySection> dirty;
         synchronized (DIRTY_SECTIONS) {
-            Set<DirtySection> pending = DIRTY_SECTIONS.remove(level);
+            Set<DirtySection> pending = DIRTY_SECTIONS.get(level);
             if (pending == null || pending.isEmpty()) return;
-            dirty = List.copyOf(pending);
+            // 没有玩家看得到的区段直接丢弃:玩家开始追踪该区块时 ChunkWatchEvent.Sent 会补一份完整快照
+            pending.removeIf(section -> visibleDistanceSqr(level, section.section) < 0.0D);
+            if (pending.size() <= MAX_SECTIONS_PER_TICK) {
+                dirty = List.copyOf(pending);
+                DIRTY_SECTIONS.remove(level);
+            } else {
+                // 就近可见优先:远处区段晚一刻到达看不出来,近处区段晚到会让玩家撞进看不见的假方块
+                List<DirtySection> ordered = new ArrayList<>(pending);
+                ordered.sort(Comparator.comparingDouble(section -> visibleDistanceSqr(level, section.section)));
+                dirty = List.copyOf(ordered.subList(0, MAX_SECTIONS_PER_TICK));
+                dirty.forEach(pending::remove);
+            }
         }
         for (DirtySection section : dirty) {
             syncSection(level, section.jobId, section.section);
         }
+    }
+
+    /** 该区段到最近玩家的水平距离平方;没有任何玩家能看到时返回负值。 */
+    private static double visibleDistanceSqr(ServerLevel level, long section) {
+        double centerX = SectionPos.sectionToBlockCoord(SectionPos.x(section)) + 8.0D;
+        double centerZ = SectionPos.sectionToBlockCoord(SectionPos.z(section)) + 8.0D;
+        double limit = level.getServer().getPlayerList().getViewDistance() * 16.0D + 32.0D;
+        double best = -1.0D;
+        for (ServerPlayer player : level.players()) {
+            double dx = player.getX() - centerX;
+            double dz = player.getZ() - centerZ;
+            double distance = dx * dx + dz * dz;
+            if (distance > limit * limit) continue;
+            if (best < 0.0D || distance < best) best = distance;
+        }
+        return best;
     }
 
     public static boolean isOwnedBy(Level level, BlockPos pos, UUID jobId) {

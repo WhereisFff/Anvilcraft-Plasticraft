@@ -6,7 +6,6 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -69,18 +68,9 @@ public final class ObservationLoadingIndex extends SavedData {
                 index.coverage.put(ObservationOwner.lounge(dimension, BlockPos.of(row.getLong("Lounge"))), center);
             }
         }
-        ListTag leasesTag = tag.getList("Leases", Tag.TAG_COMPOUND);
-        for (int entry = 0; entry < leasesTag.size(); entry++) {
-            CompoundTag row = leasesTag.getCompound(entry);
-            if (!row.hasUUID("Job") || !row.hasUUID("Observer")) continue;
-            UUID jobId = row.getUUID("Job");
-            ObservationLease lease = new ObservationLease(
-                readDimension(row),
-                new ChunkPos(row.getLong("Center")),
-                row.getUUID("Observer")
-            );
-            index.leases.computeIfAbsent(jobId, key -> new ArrayList<>()).add(lease);
-        }
+        // 覆盖记录必须落盘:重启首刻要靠它补票,指望悦灵自己唤醒自己会死锁——它所在区块正是要靠这张票才加载。
+        // 观察租约不落盘:它只是"这个窗口交给谁去罩住"的运行时调度结论,任务规划每 20 刻重算一次。
+        // 留着会让重启后的任务守着一份持票人可能已经不存在的旧租约,反而谁都不去建立窗口。
         return index;
     }
 
@@ -103,18 +93,6 @@ public final class ObservationLoadingIndex extends SavedData {
             coverageTag.add(row);
         }
         tag.put("Coverage", coverageTag);
-        ListTag leasesTag = new ListTag();
-        for (Map.Entry<UUID, List<ObservationLease>> entry : this.leases.entrySet()) {
-            for (ObservationLease lease : entry.getValue()) {
-                CompoundTag row = new CompoundTag();
-                row.putUUID("Job", entry.getKey());
-                row.putString("Dimension", lease.dimension().location().toString());
-                row.putLong("Center", lease.center().toLong());
-                row.putUUID("Observer", lease.observer());
-                leasesTag.add(row);
-            }
-        }
-        tag.put("Leases", leasesTag);
         return tag;
     }
 

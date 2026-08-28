@@ -4,7 +4,7 @@ navigation:
   icon: "anvilcraftplasticraft:universal_plastic"
 ---
 
-塑料熔体冷却后可以成为方块，也可以在[塑料成型](../004_molding/index.md)中制成箱子、储罐、炼药锅、铁砧、支架和悦灵安全帽。四种材料共用移动和成型规则，差异集中在[材料比较](000_material_comparison.md)
+塑料熔体凉下来就是方块，送进[塑料成型](../004_molding/index.md)则能变成箱子、储罐、炼药锅、铁砧、支架和悦灵安全帽。四种材料的移动和成型规则完全一样，真正的区别都收在[材料比较](000_material_comparison.md)里
 
 ## 阅读顺序
 
@@ -14,4 +14,4 @@ navigation:
 4. [塑料铁砧](030_plastic_anvils.md)
 5. [支架与悦灵安全帽](040_plastic_components.md)
 
-熔体的获取与催化见[塑料熔体](../002_refining/010_plastic_melts.md)，模型的编辑与加工见[塑料成型](../004_molding/index.md)
+熔体从哪来、怎么催化，回头看[塑料熔体](../002_refining/010_plastic_melts.md)；模型怎么编、怎么加工，往前看[塑料成型](../004_molding/index.md)

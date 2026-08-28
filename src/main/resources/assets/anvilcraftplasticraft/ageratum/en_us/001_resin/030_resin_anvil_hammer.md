@@ -10,16 +10,16 @@ items:
 
 <recipe id="anvilcraftplasticraft:resin_anvil_hammer"/>
 
-The Resin Anvil Hammer retains every function of a standard <ref item="anvilcraft:anvil_hammer"/> except the portable anvil menu, and adds the following behavior:
+Everything a standard <ref item="anvilcraft:anvil_hammer"/> does, this one does too, minus the portable anvil menu. In exchange you get three new tricks:
 
-- Left-clicking an entity deals no damage and applies Knockback V
-- Left-clicking a block performs one Resin Anvil impact and launches the player opposite the view direction; looking down launches upward and looking up launches downward
+- Left-clicking an entity deals no damage but hands it a shove worth Knockback V
+- Left-clicking a block performs one Resin Anvil impact and launches you opposite your view direction — look down to fly up, look up to slam down
 - Short-use a movable plastic product for its quick interaction, or hold use to adjust its orientation in place
 
-Striking an entity or block consumes durability; other Anvil Hammer actions do not. The Resin Anvil Hammer has 35 durability and can be repaired with resin
+Only striking entities and blocks costs durability; every other Anvil Hammer action is free. The hammer has 35 durability and can be repaired with resin
 
 Repairing it with resin in a Hardened Resin Anvil costs no experience and does not increase the item's prior-work penalty
 
 ## Wearing it
 
-When worn on the head, Elytra wall impacts deal no damage and rebound with a 0.75 coefficient; upward impacts against a ceiling rebound with a 1.2 coefficient. Upward headbutts launch entities with a 1.5 multiplier, capped at 1.2, and consume 1 durability
+Worn on the head, Elytra wall impacts stop hurting and rebound with a 0.75 coefficient; upward impacts against a ceiling rebound with a 1.2 coefficient. Upward headbutts launch entities with a 1.5 multiplier, capped at 1.2, at the cost of 1 durability

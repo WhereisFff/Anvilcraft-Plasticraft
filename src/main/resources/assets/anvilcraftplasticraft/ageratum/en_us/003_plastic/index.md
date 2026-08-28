@@ -4,7 +4,7 @@ navigation:
   icon: "anvilcraftplasticraft:universal_plastic"
 ---
 
-Plastic Melt can cool into a block or become a chest, tank, cauldron, anvil, tray or Allay Hard Hat in the [Plastic Molding](../004_molding/index.md) system. All four materials share the same movement and molding rules; their differences are collected in [Material Comparison](000_material_comparison.md)
+Plastic Melt left to cool becomes a block; sent through [Plastic Molding](../004_molding/index.md) it becomes a chest, tank, cauldron, anvil, tray or Allay Hard Hat. All four materials share exactly the same movement and molding rules, and the differences that actually matter are collected in [Material Comparison](000_material_comparison.md)
 
 ## Reading order
 
@@ -14,4 +14,4 @@ Plastic Melt can cool into a block or become a chest, tank, cauldron, anvil, tra
 4. [Plastic Anvils](030_plastic_anvils.md)
 5. [Trays and Allay Hard Hats](040_plastic_components.md)
 
-See [Plastic Melts](../002_refining/010_plastic_melts.md) for catalysts and [Plastic Molding](../004_molding/index.md) for model production
+For where melts come from and how to catalyze them, look back at [Plastic Melts](../002_refining/010_plastic_melts.md); for editing and processing models, look ahead to [Plastic Molding](../004_molding/index.md)

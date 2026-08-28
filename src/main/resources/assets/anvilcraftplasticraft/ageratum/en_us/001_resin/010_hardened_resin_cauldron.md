@@ -13,17 +13,17 @@ items:
 <recipe id="anvilcraftplasticraft:magnetic_hardend_resin_cauldron"/>
 </row>
 
-A Hardened Resin Cauldron is a movable entity vessel affected by gravity and buoyancy. It can also attach to blocks in 24 orientations
+A cauldron you can carry away. Like a resin anvil it is an entity affected by gravity and buoyancy, and it attaches to blocks in 24 orientations
 
-- It has 8 input slots, 8 output slots, and holds up to 1B of fluid, including lava
-- Pipe Heads, Pumps, and Control Valves can connect to all six faces
-- Use it with an empty hand to retrieve items, or with a fluid container to insert or extract fluid
-- Sneak-use it with any Anvil Hammer to retrieve the cauldron and its stored items; fluid is not preserved by hammer pickup
-- A non-magnetic cauldron pours when its opening faces sideways or downward: partial fluid is discarded, a full tank creates a source when the target accepts it, and otherwise empties without placing a block; a magnetic cauldron does not pour by itself
+- 8 input slots, 8 output slots, and up to 1B of fluid, lava included
+- Pipe Heads, Pumps, and Control Valves connect to all six faces
+- Use it with an empty hand to take items back, or with a fluid container to insert or extract fluid
+- Sneak-use it with any Anvil Hammer to collect the cauldron together with its items, though fluid does not come along
+- A non-magnetic cauldron pours the moment its opening faces sideways or downward: partial fluid is discarded, a full tank creates a source when the target accepts it, and otherwise it just empties. A magnetized cauldron never pours on its own
 - Catalysis and cauldron recipes require the opening to face up
-- When facing up, catalysis, plasma jets, and every falling-anvil cauldron recipe search from the center and every covered part of the physical bottom face along current gravity for one block. A valid processing block below the center takes priority, then the remaining covered bottom cells are tried; a small cauldron can share a cell with a campfire or another processing block, while a cauldron taller than one block still reads the block beside its actual bottom
-- Striking a cauldron with an Anvil Hammer processes only that entity. A falling anvil instead processes every cauldron whose collision box actually enters its landing cell, never cauldrons in neighboring cells
-- Non-placeable fluids such as milk are still emptied without placing a block
+- When facing up, catalysis, plasma jets, and every falling-anvil cauldron recipe search from the center and every covered part of the physical bottom face along current gravity for one block. A valid processing block below the center takes priority, then the remaining covered bottom cells are tried; that is why a small cauldron can share a cell with a campfire, and a cauldron taller than one block still reads the block beside its actual bottom
+- Striking a cauldron with an Anvil Hammer processes only the one you actually hit. A falling anvil instead processes every cauldron whose collision box actually enters its landing cell, never cauldrons in neighboring cells
+- Non-placeable fluids such as milk are still emptied, they simply leave no block behind
 - In Creative mode, sneak-use a Magnet or a magnet-mode multitool to magnetize the cauldron
 
 <warning>

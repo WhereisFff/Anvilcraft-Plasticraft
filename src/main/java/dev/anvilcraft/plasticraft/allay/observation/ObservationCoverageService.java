@@ -38,6 +38,15 @@ public final class ObservationCoverageService {
     public static final int MAX_WINDOWS = 4;
     /** 规划节流间隔:一次规划要走一遍未完成操作表,与区块票校验同频。 */
     private static final int PLAN_INTERVAL_TICKS = ObservationChunkLoader.VERIFY_INTERVAL_TICKS;
+    /** 非拆除阶段仍要靠窗口推进的建造种类,拆除核心另外单列。 */
+    private static final ConstructionBuildOp.Kind[] RELEVANT_BUILD_KINDS = {
+        ConstructionBuildOp.Kind.PLACE,
+        ConstructionBuildOp.Kind.CONTENT,
+        ConstructionBuildOp.Kind.FLUID,
+        ConstructionBuildOp.Kind.ENTITY,
+        ConstructionBuildOp.Kind.DECORATE,
+        ConstructionBuildOp.Kind.SEAL
+    };
 
     private static final Map<MinecraftServer, Map<UUID, JobPlan>> PLANS = new WeakHashMap<>();
 
@@ -183,9 +192,11 @@ public final class ObservationCoverageService {
         }
         boolean workable = false;
         int budget = Math.max(0, MAX_WINDOWS - leases.size() - wanted.size());
-        for (ConstructionBuildOp op : progress.operations()) {
-            if (!isRelevant(phase, op)) continue;
+        // 一份蓝图动辄数万条操作却只横跨十几个区块柱,按柱去重后才不会每 20 刻做数万次区块查询
+        Set<ChunkPos> visited = new HashSet<>();
+        for (ConstructionBuildOp op : relevantOperations(progress, phase)) {
             ChunkPos chunk = new ChunkPos(op.pos());
+            if (!visited.add(chunk)) continue;
             markUseful(leases, chunk, useful);
             if (ObservationCoverage.isTicking(level, chunk)) {
                 workable = true;
@@ -268,27 +279,21 @@ public final class ObservationCoverageService {
         return current == null || worker.getUUID().compareTo(current.getUUID()) < 0;
     }
 
-    /** 当前阶段真正要靠观察窗口才能推进的操作。 */
-    private static boolean isRelevant(byte phase, ConstructionBuildOp op) {
-        if (op.status() == ConstructionBuildOp.Status.DELIVERED
-            || op.status() == ConstructionBuildOp.Status.SKIPPED) {
-            return false;
-        }
+    /** 当前阶段真正要靠观察窗口才能推进的未完成操作,直接取未完成索引,不扫已交付的大多数。 */
+    private static List<ConstructionBuildOp> relevantOperations(ConstructionJobProgress progress, byte phase) {
         if (phase == ConstructionJob.STATE_SEALING_FLUID) {
-            return op.kind() == ConstructionBuildOp.Kind.SEAL;
+            return List.copyOf(progress.openOperations(ConstructionBuildOp.Kind.SEAL));
         }
         if (phase == ConstructionJob.STATE_DEMOLISHING
             || phase == ConstructionJob.STATE_WAITING_DEMOLITION
             || phase == ConstructionJob.STATE_COLLECTING_DEBRIS) {
-            return op.kind() == ConstructionBuildOp.Kind.DEMOLISH && !op.shell();
+            return List.copyOf(progress.openDemolitionCores());
         }
-        if (op.kind() == ConstructionBuildOp.Kind.DEMOLISH) return !op.shell();
-        return op.kind() == ConstructionBuildOp.Kind.PLACE
-            || op.kind() == ConstructionBuildOp.Kind.CONTENT
-            || op.kind() == ConstructionBuildOp.Kind.FLUID
-            || op.kind() == ConstructionBuildOp.Kind.ENTITY
-            || op.kind() == ConstructionBuildOp.Kind.DECORATE
-            || op.kind() == ConstructionBuildOp.Kind.SEAL;
+        List<ConstructionBuildOp> relevant = new ArrayList<>(progress.openDemolitionCores());
+        for (ConstructionBuildOp.Kind kind : RELEVANT_BUILD_KINDS) {
+            relevant.addAll(progress.openOperations(kind));
+        }
+        return relevant;
     }
 
     private static void markUseful(List<ObservationLease> leases, ChunkPos chunk, Set<ChunkPos> useful) {

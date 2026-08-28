@@ -509,6 +509,203 @@ public final class ConstructionJobGameTests {
 
     @GameTest(timeoutTicks = 20, batch = "zzz_construction")
     @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "Reloading world data resumes a job once: delivered seal, demolition and carried ledger are neither replayed nor duplicated")
+    static void reloadResumesWithoutReplayingDeliveredWork(ExtendedGameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        UUID jobId = UUID.randomUUID();
+        UUID allayId = UUID.randomUUID();
+        ConstructionJobProgress progress = new ConstructionJobProgress(jobId);
+        progress.setPlanned(true);
+        BlockPos sealPos = helper.absolutePos(new BlockPos(1, 2, 1));
+        BlockPos demolishPos = helper.absolutePos(new BlockPos(2, 2, 1));
+        BlockPos deliveredPos = helper.absolutePos(new BlockPos(3, 2, 1));
+        BlockPos pendingPos = helper.absolutePos(new BlockPos(1, 2, 2));
+        // 重启前的真实世界结果:填充块已经放下,拆除格已经砸空
+        level.setBlockAndUpdate(sealPos, Blocks.DIRT.defaultBlockState());
+        level.setBlockAndUpdate(demolishPos, Blocks.AIR.defaultBlockState());
+
+        progress.addOperation(
+            sealPos,
+            Blocks.AIR.defaultBlockState(),
+            new ItemStack(Items.DIRT),
+            ConstructionBuildOp.Kind.SEAL,
+            ConstructionBuildOp.Status.DELIVERED
+        );
+        progress.addOperation(
+            demolishPos,
+            Blocks.STONE.defaultBlockState(),
+            ItemStack.EMPTY,
+            ConstructionBuildOp.Kind.DEMOLISH,
+            ConstructionBuildOp.Status.DELIVERED
+        );
+        ConstructionBuildOp delivered = progress.addOperation(
+            deliveredPos,
+            Blocks.COBBLESTONE.defaultBlockState(),
+            new ItemStack(Items.COBBLESTONE),
+            ConstructionBuildOp.Kind.PLACE,
+            ConstructionBuildOp.Status.DELIVERED
+        );
+        ConstructionBuildOp pending = progress.addOperation(
+            pendingPos,
+            Blocks.COBBLESTONE.defaultBlockState(),
+            new ItemStack(Items.COBBLESTONE),
+            ConstructionBuildOp.Kind.PLACE,
+            ConstructionBuildOp.Status.PENDING
+        );
+        progress.addLedger(pending.id(), new ItemStack(Items.COBBLESTONE), allayId);
+
+        CompoundTag saved = progress.save(level.registryAccess());
+        ConstructionJobProgress reloaded = ConstructionJobProgress.load(saved, level.registryAccess());
+
+        check(reloaded.allSealResolved(), "a delivered seal must stay resolved after reload");
+        check(
+            ConstructionJobController.nextAssignableSeal(level, reloaded) == null,
+            "reload must not re-dispatch an already placed seal fill"
+        );
+        check(
+            level.getBlockState(sealPos).is(Blocks.DIRT),
+            "the fill block placed before the restart must stay in the world"
+        );
+        check(reloaded.allDemolishResolved(), "a delivered demolition must stay resolved after reload");
+        check(
+            ConstructionJobController.nextAssignableDemolish(level, reloaded) == null,
+            "reload must not re-dispatch an already smashed cell"
+        );
+        check(
+            level.getBlockState(demolishPos).isAir(),
+            "an already demolished cell must not be restored by reload"
+        );
+        check(
+            reloaded.carriedEntries(allayId).size() == 1,
+            "reload must keep exactly one carried ledger entry, was " + reloaded.carriedEntries(allayId).size()
+        );
+        ItemStack carried = reloaded.carriedBy(allayId, pending.id());
+        check(
+            carried != null && carried.getCount() == 1,
+            "the reloaded ledger must still describe the same in-transit stack"
+        );
+        check(
+            reloaded.isCarriedBy(allayId, pending.id()),
+            "the reloaded operation must still be recognised as already claimed by that allay"
+        );
+        check(
+            reloaded.hasCarriedMaterial(pending.id()),
+            "the reloaded unclaimed index must be rebuilt from the ledger, not treat the cell as free"
+        );
+        check(!reloaded.allPlaceResolved(), "the still pending cell must remain buildable after reload");
+        check(reloaded.hasDelivered(), "reload must keep the delivered operation counted");
+
+        // 投影补发必须幂等:同一格重复恢复不能在索引里留下第二份
+        Map<Long, BlockState> overlay = reloaded.overlayStates();
+        try {
+            for (int attempt = 0; attempt < 2; attempt++) {
+                check(
+                    ConstructionProjectionIndex.tryDeliver(
+                        level,
+                        jobId,
+                        deliveredPos,
+                        delivered.target(),
+                        overlay
+                    ),
+                    "projection recovery must accept the delivered cell on attempt " + attempt
+                );
+            }
+            check(
+                ConstructionProjectionIndex.deliveredIn(level, jobId).size() == 1,
+                "repeated projection recovery must not duplicate the delivered cell"
+            );
+        } finally {
+            ConstructionProjectionIndex.clearJob(level, jobId);
+        }
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction")
+    @EmptyTemplate(value = "5x4x5", floor = true)
+    @TestHolder(description = "A commit interrupted by a restart resumes from the saved cursor and publishes exactly once")
+    static void reloadedCommitLogResumesAndPublishesOnce(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        UUID[] jobId = {null};
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            int previous = ConstructionCommitService.blocksPerTick;
+            ConstructionCommitService.blocksPerTick = 1;
+            try {
+                StartedJob started = startCobbleJob(helper, player, 2);
+                jobId[0] = started.job().jobId();
+                player.getInventory().add(new ItemStack(Items.COBBLESTONE, 2));
+                for (ConstructionBuildOp op : started.progress().operations()) {
+                    if (op.kind() != ConstructionBuildOp.Kind.PLACE) continue;
+                    check(
+                        ConstructionJobController.extractMaterial(player, started.progress(), op, UUID.randomUUID()),
+                        "reload commit setup must extract both blocks"
+                    );
+                    check(
+                        ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), op),
+                        "reload commit setup must deliver both projections"
+                    );
+                }
+                check(
+                    !ConstructionCommitService.tick(helper.getLevel(), started.progress()),
+                    "budget one must leave the commit unfinished before the restart"
+                );
+
+                HolderLookup.Provider registries = helper.getLevel().registryAccess();
+                ConstructionJobProgress resumed = ConstructionJobProgress.load(
+                    started.progress().save(registries),
+                    registries
+                );
+                check(
+                    resumed.commitLog().phase() == ConstructionCommitLog.Phase.STATES,
+                    "the reloaded commit log must resume in STATES"
+                );
+                check(
+                    resumed.commitLog().nextIndex() == 1,
+                    "the reloaded commit log must resume from the saved cursor, was "
+                        + resumed.commitLog().nextIndex()
+                );
+
+                int ticks = 0;
+                while (!ConstructionCommitService.tick(helper.getLevel(), resumed) && ticks++ < 64) {
+                    // 分 tick 续写剩余分区
+                }
+                check(
+                    resumed.commitLog().phase() == ConstructionCommitLog.Phase.DONE,
+                    "the reloaded commit must reach DONE instead of restarting from the first block"
+                );
+                ConstructionBuildOp firstOp = firstPlace(resumed);
+                BlockPos first = firstOp.pos();
+                BlockPos second = firstPlaceAfter(resumed, firstOp.id()).pos();
+                check(
+                    helper.getLevel().getBlockState(first).is(Blocks.COBBLESTONE)
+                        && helper.getLevel().getBlockState(second).is(Blocks.COBBLESTONE),
+                    "resuming from the saved cursor must still finish every delivered block"
+                );
+                check(
+                    !ConstructionProjectionIndex.has(helper.getLevel(), first),
+                    "the resumed commit must clear projections at its single publish point"
+                );
+
+                // 发布点只能过一次:再 tick 已完成的日志不得重写世界
+                helper.getLevel().setBlockAndUpdate(second, Blocks.AIR.defaultBlockState());
+                check(
+                    ConstructionCommitService.tick(helper.getLevel(), resumed),
+                    "a finished commit log must report done without another publish"
+                );
+                check(
+                    helper.getLevel().getBlockState(second).isAir(),
+                    "a finished commit log must not write the region a second time"
+                );
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("reload commit setup failed: " + exception.reason());
+            } finally {
+                ConstructionCommitService.blocksPerTick = previous;
+                if (jobId[0] != null) cancelQuietly(player, jobId[0]);
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 20, batch = "zzz_construction")
+    @EmptyTemplate(value = "5x4x5", floor = true)
     @TestHolder(description = "An occupying entity blocks projection delivery")
     static void occupiedShapeRejectsDeliver(ExtendedGameTestHelper helper) {
         ServerLevel level = helper.getLevel();

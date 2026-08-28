@@ -14,8 +14,12 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,12 +57,10 @@ public final class ConstructionJobProgress {
     private long topologyRevision;
     private long overlayCacheRevision = Long.MIN_VALUE;
     private Map<Long, BlockState> overlayCache = Map.of();
-    private long statusCacheRevision = Long.MIN_VALUE;
-    private OperationStatusSummary statusCache = OperationStatusSummary.EMPTY;
-    private long deliveredPositionCacheRevision = Long.MIN_VALUE;
-    private Set<Long> deliveredPositionCache = Set.of();
     private long deliveredCommitCacheRevision = Long.MIN_VALUE;
     private List<ConstructionBuildOp> deliveredCommitCache = List.of();
+    private long deliveredEntityCacheRevision = Long.MIN_VALUE;
+    private List<ConstructionBuildOp> deliveredEntityCache = List.of();
     private long deliveredCommitPositionCacheRevision = Long.MIN_VALUE;
     private Set<Long> deliveredCommitPositionCache = Set.of();
     private long childrenCacheRevision = Long.MIN_VALUE;
@@ -68,8 +70,175 @@ public final class ConstructionJobProgress {
     private final Map<Item, Integer> materialFirstUnresolved = new HashMap<>();
     private boolean projectionIndexReady;
 
+    /** 建造材料操作种类:{@link ConstructionBuildOp#isBuildMaterial()} 的种类清单。 */
+    static final ConstructionBuildOp.Kind[] BUILD_MATERIAL_KINDS = {
+        ConstructionBuildOp.Kind.PLACE,
+        ConstructionBuildOp.Kind.ATTACHED,
+        ConstructionBuildOp.Kind.CONTENT,
+        ConstructionBuildOp.Kind.FLUID,
+        ConstructionBuildOp.Kind.ENTITY,
+        ConstructionBuildOp.Kind.DECORATE
+    };
+    /** 需要真实取料并按位置派发的建造种类,不含随核心交付的 ATTACHED。 */
+    static final ConstructionBuildOp.Kind[] PLACE_MATERIAL_KINDS = {
+        ConstructionBuildOp.Kind.PLACE,
+        ConstructionBuildOp.Kind.CONTENT,
+        ConstructionBuildOp.Kind.FLUID,
+        ConstructionBuildOp.Kind.ENTITY,
+        ConstructionBuildOp.Kind.DECORATE
+    };
+    /** 会占用出库额度的取料种类:建造材料加临时封堵填充。 */
+    static final ConstructionBuildOp.Kind[] LAUNCH_MATERIAL_KINDS = {
+        ConstructionBuildOp.Kind.PLACE,
+        ConstructionBuildOp.Kind.CONTENT,
+        ConstructionBuildOp.Kind.FLUID,
+        ConstructionBuildOp.Kind.ENTITY,
+        ConstructionBuildOp.Kind.DECORATE,
+        ConstructionBuildOp.Kind.SEAL
+    };
+
+    private static final int BIT_OPEN = 1;
+    private static final int BIT_SHELL = 1 << 1;
+    private static final int BIT_LEASE_ALLAY = 1 << 2;
+    private static final int BIT_WAITING_WORLD = 1 << 3;
+    private static final int BIT_WAITING_OCCUPIED = 1 << 4;
+    private static final int BIT_DELIVERED = 1 << 5;
+    private static final int BIT_SKIPPED_PLACE = 1 << 6;
+    private static final int BIT_UNLEASED = 1 << 7;
+    /** 世界满足标记不进任何桶,但它决定提交表的成员,必须让贡献位变化以顶起摘要 revision。 */
+    private static final int BIT_WORLD_SATISFIED = 1 << 8;
+
+    /**
+     * 未完成操作按种类分桶的增量索引。派发、出库判据和观察规划每刻都要问"还剩什么活",
+     * 若每次都线性扫描整份蓝图,64 只悦灵下就是每刻数百万次访问;这里随状态变化就地增删。
+     * DEMOLISH 另按核心与区外壳分开:壳在拆除阶段不派发,却可能占多数条目。
+     */
+    private final Map<ConstructionBuildOp.Kind, Map<Integer, ConstructionBuildOp>> openByKind =
+        new EnumMap<>(ConstructionBuildOp.Kind.class);
+    private final Map<Integer, ConstructionBuildOp> openDemolishCores = new LinkedHashMap<>();
+    private final Map<Integer, ConstructionBuildOp> openDemolishShells = new LinkedHashMap<>();
+    /** 当前持有租约的操作;上限是任务参与悦灵数,因此可以直接遍历。 */
+    private final Map<Integer, ConstructionBuildOp> leasedOps = new LinkedHashMap<>();
+    private final Map<Integer, ConstructionBuildOp> waitingWorldPlaces = new LinkedHashMap<>();
+    private int waitingWorldCount;
+    private int waitingOccupiedCount;
+    private int deliveredCount;
+    private int skippedPlaceCount;
+    private int unleasedDemolishCount;
+    private int unleasedMaterialCount;
+
     public ConstructionJobProgress(UUID jobId) {
         this.jobId = jobId;
+        for (ConstructionBuildOp.Kind kind : ConstructionBuildOp.Kind.values()) {
+            this.openByKind.put(kind, new LinkedHashMap<>());
+        }
+    }
+
+    /**
+     * 重新登记一项操作在各增量索引中的位置。状态、外壳标记、租约归属、世界满足标记以及该操作
+     * 是否还有在途台账都会改变它属于哪些桶,统一由这里按贡献位差量维护,避免与集合分叉。
+     */
+    private void reindex(ConstructionBuildOp op) {
+        int bits = this.indexBitsOf(op);
+        int previous = op.indexBits();
+        if (bits == previous) return;
+        op.setIndexBits(bits);
+        this.statusRevision++;
+        ConstructionBuildOp.Kind kind = op.kind();
+        boolean demolish = kind == ConstructionBuildOp.Kind.DEMOLISH;
+        boolean open = (bits & BIT_OPEN) != 0;
+        boolean shell = (bits & BIT_SHELL) != 0;
+        index(this.openByKind.get(kind), op, open && !demolish);
+        index(this.openDemolishCores, op, open && demolish && !shell);
+        index(this.openDemolishShells, op, open && demolish && shell);
+        index(this.leasedOps, op, (bits & BIT_LEASE_ALLAY) != 0);
+        index(
+            this.waitingWorldPlaces,
+            op,
+            (bits & BIT_WAITING_WORLD) != 0 && kind == ConstructionBuildOp.Kind.PLACE
+        );
+        this.waitingWorldCount += delta(previous, bits, BIT_WAITING_WORLD);
+        this.waitingOccupiedCount += delta(previous, bits, BIT_WAITING_OCCUPIED);
+        this.deliveredCount += delta(previous, bits, BIT_DELIVERED);
+        this.skippedPlaceCount += delta(previous, bits, BIT_SKIPPED_PLACE);
+        // 外壳标记会在登记之后才被规划器改写,因此"未认领的拆除核心"必须按新旧两组位一起判定,
+        // 只看未认领位的差量会让一份先登记后标壳的操作永远多算一个待办
+        this.unleasedDemolishCount += count(demolish && has(bits, BIT_UNLEASED) && !has(bits, BIT_SHELL))
+            - count(demolish && has(previous, BIT_UNLEASED) && !has(previous, BIT_SHELL));
+        if (isLaunchMaterial(op)) {
+            this.unleasedMaterialCount += delta(previous, bits, BIT_UNLEASED);
+        }
+    }
+
+    private int indexBitsOf(ConstructionBuildOp op) {
+        ConstructionBuildOp.Status status = op.status();
+        boolean open = op.isOpen();
+        int bits = 0;
+        if (open) bits |= BIT_OPEN;
+        if (op.shell()) bits |= BIT_SHELL;
+        if (op.leaseAllay().isPresent()) bits |= BIT_LEASE_ALLAY;
+        if (status == ConstructionBuildOp.Status.WAITING_WORLD) bits |= BIT_WAITING_WORLD;
+        if (status == ConstructionBuildOp.Status.WAITING_OCCUPIED) bits |= BIT_WAITING_OCCUPIED;
+        if (status == ConstructionBuildOp.Status.DELIVERED) bits |= BIT_DELIVERED;
+        if (status == ConstructionBuildOp.Status.SKIPPED && isPlaceMaterial(op)) bits |= BIT_SKIPPED_PLACE;
+        if (op.worldSatisfied()) bits |= BIT_WORLD_SATISFIED;
+        if (open
+            && status != ConstructionBuildOp.Status.LEASED
+            && op.leaseAllay().isEmpty()
+            && !this.hasCarriedMaterial(op.id())) {
+            bits |= BIT_UNLEASED;
+        }
+        return bits;
+    }
+
+    private static int delta(int previous, int bits, int mask) {
+        return count(has(bits, mask)) - count(has(previous, mask));
+    }
+
+    private static boolean has(int bits, int mask) {
+        return (bits & mask) != 0;
+    }
+
+    private static int count(boolean member) {
+        return member ? 1 : 0;
+    }
+
+    private static void index(Map<Integer, ConstructionBuildOp> bucket, ConstructionBuildOp op, boolean member) {
+        if (member) {
+            bucket.put(op.id(), op);
+        } else {
+            bucket.remove(op.id());
+        }
+    }
+
+    private void reindexOperation(int operationId) {
+        ConstructionBuildOp op = this.operationsById.get(operationId);
+        if (op != null) this.reindex(op);
+    }
+
+    /** 加载或整表重建后按当前状态重新登记全部操作。 */
+    private void reindexAll() {
+        this.clearIndexes();
+        for (ConstructionBuildOp op : this.operations) {
+            op.setIndexBits(0);
+            this.reindex(op);
+        }
+    }
+
+    private void clearIndexes() {
+        for (Map<Integer, ConstructionBuildOp> bucket : this.openByKind.values()) {
+            bucket.clear();
+        }
+        this.openDemolishCores.clear();
+        this.openDemolishShells.clear();
+        this.leasedOps.clear();
+        this.waitingWorldPlaces.clear();
+        this.waitingWorldCount = 0;
+        this.waitingOccupiedCount = 0;
+        this.deliveredCount = 0;
+        this.skippedPlaceCount = 0;
+        this.unleasedDemolishCount = 0;
+        this.unleasedMaterialCount = 0;
     }
 
     public UUID jobId() {
@@ -136,6 +305,7 @@ public final class ConstructionJobProgress {
         this.operations.clear();
         this.operationsById.clear();
         this.operationsByPosition.clear();
+        this.clearIndexes();
         this.enclosureRevision++;
         this.operationOrderRevision++;
         this.invalidateLayout();
@@ -298,16 +468,16 @@ public final class ConstructionJobProgress {
             this::invalidateEnclosure,
             this::invalidateOperationOrder,
             this::invalidateLayout,
-            this::invalidateStatus,
+            () -> this.reindex(op),
             this::invalidateTopology
         );
         this.operations.add(op);
         this.operationsById.put(op.id(), op);
         this.operationsByPosition.computeIfAbsent(op.pos().asLong(), ignored -> new ArrayList<>()).add(op);
+        this.reindex(op);
         this.invalidateEnclosure();
         this.invalidateOperationOrder();
         this.invalidateLayout();
-        this.invalidateStatus();
         this.invalidateTopology();
         this.projectionIndexReady = false;
         return op;
@@ -336,7 +506,7 @@ public final class ConstructionJobProgress {
         );
         this.ledger.add(entry);
         this.indexCarriedEntry(entry);
-        this.invalidateStatus();
+        this.reindexOperation(operationId);
         return entry;
     }
 
@@ -347,7 +517,7 @@ public final class ConstructionJobProgress {
 
     @Nullable
     public ConstructionBuildOp leasedBy(UUID droneId) {
-        for (ConstructionBuildOp op : this.operations) {
+        for (ConstructionBuildOp op : this.leasedOps.values()) {
             if (op.status() == ConstructionBuildOp.Status.LEASED
                 && op.leaseAllay().filter(droneId::equals).isPresent()) {
                 return op;
@@ -616,6 +786,7 @@ public final class ConstructionJobProgress {
         if (entry.allayId() != null) {
             removeIndexedEntry(this.carriedLedgerByAllay, entry.allayId(), entry);
         }
+        this.reindexOperation(entry.operationId());
         this.invalidateStatus();
         return true;
     }
@@ -647,77 +818,123 @@ public final class ConstructionJobProgress {
     }
 
     public boolean allSealResolved() {
-        return !this.statusSummary().openSeal();
+        return !this.hasOpenSeal();
     }
 
     public boolean allDemolishResolved() {
-        return !this.statusSummary().openDemolish();
+        return this.openDemolishCores.isEmpty();
     }
 
     public boolean hasOpenSeal() {
-        return this.statusSummary().openSeal();
+        return !this.openByKind.get(ConstructionBuildOp.Kind.SEAL).isEmpty();
     }
 
     public boolean hasOpenDemolish() {
-        return this.statusSummary().openDemolish();
+        return !this.openDemolishCores.isEmpty();
     }
 
     public boolean hasLeasedDemolish() {
-        return this.statusSummary().leasedDemolish();
+        for (ConstructionBuildOp op : this.leasedOps.values()) {
+            if (op.kind() == ConstructionBuildOp.Kind.DEMOLISH && !op.shell()) return true;
+        }
+        return false;
     }
 
     public boolean allPlaceResolved() {
-        return !this.statusSummary().openBuildMaterial();
+        for (ConstructionBuildOp.Kind kind : BUILD_MATERIAL_KINDS) {
+            if (!this.openByKind.get(kind).isEmpty()) return false;
+        }
+        return true;
     }
 
     public boolean hasDelivered() {
-        return this.statusSummary().delivered();
+        return this.deliveredCount > 0;
     }
 
     public boolean hasOpenPlace() {
-        return this.statusSummary().openPlace();
+        for (ConstructionBuildOp.Kind kind : PLACE_MATERIAL_KINDS) {
+            if (!this.openByKind.get(kind).isEmpty()) return true;
+        }
+        return false;
+    }
+
+    /** 是否有需要真实取料的建造操作被记为跳过,用于区分完成与残缺完成。 */
+    public boolean hasSkippedPlaceMaterial() {
+        return this.skippedPlaceCount > 0;
     }
 
     /**
-     * 剩余的建造位置是否全都压在不可达退避里。退避到期时间随游戏刻变化,不能进状态摘要缓存,
-     * 因此这里每次实扫;只有整个任务确实停下来了才对外报不可达,免得别处照常施工时误报。
+     * 某一种类当前未完成(既非已交付也非已跳过)的操作。返回的是索引视图,遍历中若要改状态先自行复制。
+     * DEMOLISH 不走这里,拆除核心与区外壳分别用 {@link #openDemolitionCores()} 与
+     * {@link #openDemolitionShells()}。
+     */
+    public Collection<ConstructionBuildOp> openOperations(ConstructionBuildOp.Kind kind) {
+        if (kind == ConstructionBuildOp.Kind.DEMOLISH) {
+            throw new IllegalArgumentException("Use openDemolitionCores/openDemolitionShells for DEMOLISH");
+        }
+        return Collections.unmodifiableCollection(this.openByKind.get(kind).values());
+    }
+
+    /** 未完成的拆除操作,不含留到提交后再砸的区外封堵壳。 */
+    public Collection<ConstructionBuildOp> openDemolitionCores() {
+        return Collections.unmodifiableCollection(this.openDemolishCores.values());
+    }
+
+    /** 未完成的区外封堵壳拆除,拆除阶段不派发。 */
+    public Collection<ConstructionBuildOp> openDemolitionShells() {
+        return Collections.unmodifiableCollection(this.openDemolishShells.values());
+    }
+
+    /** 当前持有租约的操作,上限是任务参与悦灵数。 */
+    public Collection<ConstructionBuildOp> leasedOperations() {
+        return Collections.unmodifiableCollection(this.leasedOps.values());
+    }
+
+    /**
+     * 剩余的建造位置是否全都压在不可达退避里。退避到期时间随游戏刻变化,不能进增量索引,
+     * 因此这里实扫未完成桶;只有整个任务确实停下来了才对外报不可达,免得别处照常施工时误报。
      */
     public boolean stalledByUnreachable(long gameTime) {
         boolean anyDeferred = false;
-        for (ConstructionBuildOp op : this.operations) {
-            if (!isPlaceMaterial(op) || !op.isOpen()) continue;
-            if (!op.isDeferred(gameTime)) return false;
-            anyDeferred = true;
+        for (ConstructionBuildOp.Kind kind : PLACE_MATERIAL_KINDS) {
+            for (ConstructionBuildOp op : this.openByKind.get(kind).values()) {
+                if (!op.isDeferred(gameTime)) return false;
+                anyDeferred = true;
+            }
         }
         return anyDeferred;
     }
 
     int unleasedDemolishCount() {
-        return this.statusSummary().unleasedDemolishCount();
+        return this.unleasedDemolishCount;
     }
 
     int unleasedMaterialCount() {
-        return this.statusSummary().unleasedMaterialCount();
+        return this.unleasedMaterialCount;
     }
 
     boolean hasWaitingWorld() {
-        return this.statusSummary().waitingWorld();
+        return this.waitingWorldCount > 0;
     }
 
     boolean hasWaitingOccupied() {
-        return this.statusSummary().waitingOccupied();
+        return this.waitingOccupiedCount > 0;
     }
 
+    /** 等待真实世界让位的 PLACE 操作;每刻复查只需要这一小撮,不必扫整份蓝图。 */
     List<ConstructionBuildOp> waitingWorldPlaces() {
-        return this.statusSummary().waitingWorldPlaces();
+        return List.copyOf(this.waitingWorldPlaces.values());
     }
 
+    /** 已租出的墙体与封堵操作,供封口串行判定;上限是任务参与悦灵数。 */
     List<ConstructionBuildOp> leasedWallOperations() {
-        return this.statusSummary().leasedWalls();
-    }
-
-    List<ConstructionBuildOp> deliveredProjectionOperations() {
-        return this.statusSummary().deliveredProjections();
+        List<ConstructionBuildOp> walls = new ArrayList<>();
+        for (ConstructionBuildOp op : this.leasedOps.values()) {
+            if (op.kind() == ConstructionBuildOp.Kind.PLACE || op.kind() == ConstructionBuildOp.Kind.SEAL) {
+                walls.add(op);
+            }
+        }
+        return walls;
     }
 
     /** 已交付投影加上由真实世界方块满足、仍需提交子内容的方块锚点。 */
@@ -741,19 +958,6 @@ public final class ConstructionJobProgress {
         return this.deliveredCommitCache;
     }
 
-    Set<Long> deliveredProjectionPositions() {
-        if (this.deliveredPositionCacheRevision == this.statusRevision) {
-            return this.deliveredPositionCache;
-        }
-        Set<Long> delivered = new HashSet<>();
-        for (ConstructionBuildOp op : this.statusSummary().deliveredProjections()) {
-            delivered.add(op.pos().asLong());
-        }
-        this.deliveredPositionCache = Set.copyOf(delivered);
-        this.deliveredPositionCacheRevision = this.statusRevision;
-        return this.deliveredPositionCache;
-    }
-
     Set<Long> deliveredCommitPositions() {
         if (this.deliveredCommitPositionCacheRevision == this.statusRevision) {
             return this.deliveredCommitPositionCache;
@@ -768,87 +972,19 @@ public final class ConstructionJobProgress {
     }
 
     List<ConstructionBuildOp> deliveredEntityOperations() {
-        return this.statusSummary().deliveredEntities();
-    }
-
-    private OperationStatusSummary statusSummary() {
-        if (this.statusCacheRevision == this.statusRevision) {
-            return this.statusCache;
+        if (this.deliveredEntityCacheRevision == this.statusRevision) {
+            return this.deliveredEntityCache;
         }
-        boolean openSeal = false;
-        boolean openDemolish = false;
-        boolean leasedDemolish = false;
-        boolean openBuildMaterial = false;
-        boolean openPlace = false;
-        boolean delivered = false;
-        boolean waitingWorld = false;
-        boolean waitingOccupied = false;
-        int unleasedDemolishCount = 0;
-        int unleasedMaterialCount = 0;
-        List<ConstructionBuildOp> waitingWorldPlaces = new ArrayList<>();
-        List<ConstructionBuildOp> leasedWalls = new ArrayList<>();
-        List<ConstructionBuildOp> deliveredProjections = new ArrayList<>();
-        List<ConstructionBuildOp> deliveredEntities = new ArrayList<>();
+        List<ConstructionBuildOp> result = new ArrayList<>();
         for (ConstructionBuildOp op : this.operations) {
-            boolean open = op.isOpen();
-            if (op.kind() == ConstructionBuildOp.Kind.SEAL && open) {
-                openSeal = true;
-            }
-            if (op.kind() == ConstructionBuildOp.Kind.DEMOLISH && !op.shell()) {
-                if (open) openDemolish = true;
-                if (op.leaseAllay().isPresent()) leasedDemolish = true;
-                if (isUnleased(op)) unleasedDemolishCount++;
-            }
-            if (op.isBuildMaterial() && open) {
-                openBuildMaterial = true;
-            }
-            if (isPlaceMaterial(op) && open) {
-                openPlace = true;
-            }
-            if (isLaunchMaterial(op) && isUnleased(op)) {
-                unleasedMaterialCount++;
-            }
-            if (op.status() == ConstructionBuildOp.Status.DELIVERED) {
-                delivered = true;
-                if (op.writesProjection()) deliveredProjections.add(op);
-                if (op.kind() == ConstructionBuildOp.Kind.ENTITY) deliveredEntities.add(op);
-            } else if (op.status() == ConstructionBuildOp.Status.WAITING_WORLD) {
-                waitingWorld = true;
-                if (op.kind() == ConstructionBuildOp.Kind.PLACE) waitingWorldPlaces.add(op);
-            } else if (op.status() == ConstructionBuildOp.Status.WAITING_OCCUPIED) {
-                waitingOccupied = true;
-            }
-            if (op.leaseAllay().isPresent()
-                && (op.kind() == ConstructionBuildOp.Kind.PLACE || op.kind() == ConstructionBuildOp.Kind.SEAL)) {
-                leasedWalls.add(op);
+            if (op.status() == ConstructionBuildOp.Status.DELIVERED
+                && op.kind() == ConstructionBuildOp.Kind.ENTITY) {
+                result.add(op);
             }
         }
-        this.statusCache = new OperationStatusSummary(
-            openSeal,
-            openDemolish,
-            leasedDemolish,
-            openBuildMaterial,
-            openPlace,
-            delivered,
-            waitingWorld,
-            waitingOccupied,
-            unleasedDemolishCount,
-            unleasedMaterialCount,
-            List.copyOf(waitingWorldPlaces),
-            List.copyOf(leasedWalls),
-            List.copyOf(deliveredProjections),
-            List.copyOf(deliveredEntities)
-        );
-        this.statusCacheRevision = this.statusRevision;
-        return this.statusCache;
-    }
-
-    private boolean isUnleased(ConstructionBuildOp op) {
-        return op.leaseAllay().isEmpty()
-            && !this.hasCarriedMaterial(op.id())
-            && op.status() != ConstructionBuildOp.Status.LEASED
-            && op.status() != ConstructionBuildOp.Status.DELIVERED
-            && op.status() != ConstructionBuildOp.Status.SKIPPED;
+        this.deliveredEntityCache = List.copyOf(result);
+        this.deliveredEntityCacheRevision = this.statusRevision;
+        return this.deliveredEntityCache;
     }
 
     private static boolean isPlaceMaterial(ConstructionBuildOp op) {
@@ -861,40 +997,6 @@ public final class ConstructionJobProgress {
 
     private static boolean isLaunchMaterial(ConstructionBuildOp op) {
         return isPlaceMaterial(op) || op.kind() == ConstructionBuildOp.Kind.SEAL;
-    }
-
-    private record OperationStatusSummary(
-        boolean openSeal,
-        boolean openDemolish,
-        boolean leasedDemolish,
-        boolean openBuildMaterial,
-        boolean openPlace,
-        boolean delivered,
-        boolean waitingWorld,
-        boolean waitingOccupied,
-        int unleasedDemolishCount,
-        int unleasedMaterialCount,
-        List<ConstructionBuildOp> waitingWorldPlaces,
-        List<ConstructionBuildOp> leasedWalls,
-        List<ConstructionBuildOp> deliveredProjections,
-        List<ConstructionBuildOp> deliveredEntities
-    ) {
-        private static final OperationStatusSummary EMPTY = new OperationStatusSummary(
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            0,
-            0,
-            List.of(),
-            List.of(),
-            List.of(),
-            List.of()
-        );
     }
 
     public CompoundTag save(HolderLookup.Provider registries) {
@@ -969,7 +1071,7 @@ public final class ConstructionJobProgress {
                 progress::invalidateEnclosure,
                 progress::invalidateOperationOrder,
                 progress::invalidateLayout,
-                progress::invalidateStatus,
+                () -> progress.reindex(op),
                 progress::invalidateTopology
             );
             progress.operations.add(op);
@@ -987,6 +1089,8 @@ public final class ConstructionJobProgress {
             progress.ledger.add(entry);
             progress.indexCarriedEntry(entry);
         }
+        // 在途台账参与"未认领数"判定,因此增量索引必须等台账装完再整表重建一次
+        progress.reindexAll();
         ListTag debrisTag = tag.getList("Debris", Tag.TAG_COMPOUND);
         for (int index = 0; index < debrisTag.size(); index++) {
             progress.debris.add(ConstructionDebrisAccount.load(debrisTag.getCompound(index)));

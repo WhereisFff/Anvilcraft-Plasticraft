@@ -6,7 +6,7 @@ navigation:
 
 # Plastic Anvils
 
-After selecting Anvil as the product type, the molding chamber checks the model as three Y-axis sections: bottom, middle and top
+Pick Anvil as the product type and your model has to grow three sections along the world Y axis: bottom, middle and top. Miss one and it is not an anvil
 
 ## Ordinary anvil
 
@@ -15,7 +15,7 @@ After selecting Anvil as the product type, the molding chamber checks the model 
 - The middle projection must be strictly inset on all four sides, and the top projection may be at most 16px² smaller in area than the bottom
 - Only an impact on the local bottom face while it points down can trigger anvil processing; right-clicking or using an Anvil Hammer opens the vanilla anvil interface
 
-Material abilities:
+The material decides what falls out when it breaks a block:
 
 - Universal Plastic Anvils use ordinary drops
 - Engineering Plastic Anvils use Silk Touch drops when breaking a block above a stonecutter
@@ -24,6 +24,8 @@ Material abilities:
 
 ## Giant anvil
 
-A complete flat rectangle of at least 40x40px on the lowest layer adds Giant Anvil abilities. It can perform AnvilCraft multiblock conversions and crafting, Giant Anvil Ground Pound and Large Cauldron processing; a 39x40px bottom can still make an ordinary Plastic Anvil but cannot perform these functions
+If that flat rectangle on the lowest layer reaches a complete 40x40px or more, the anvil also unlocks Giant Anvil abilities: AnvilCraft multiblock conversions and crafting, Giant Anvil Ground Pound, and Large Cauldron processing
+
+Close is not enough — a 39x40px bottom still makes a perfectly good ordinary Plastic Anvil, but none of those functions come with it
 
 See [Material Comparison](000_material_comparison.md) and [Plastic Molding](../004_molding/index.md) for material and production rules

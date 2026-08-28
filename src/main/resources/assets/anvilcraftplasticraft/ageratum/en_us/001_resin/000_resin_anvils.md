@@ -14,19 +14,19 @@ items:
 <recipe id="anvilcraftplasticraft:magnetic_resin_anvil"/>
 </row>
 
-Resin Anvils and Hardened Resin Anvils are movable entities affected by gravity and buoyancy. They can attach to any block face in four directions, giving 24 placement orientations
+A Resin Anvil is an anvil that bounces. It and the Hardened Resin Anvil are both entities affected by gravity and buoyancy, and both attach to any block face — four rotations per face, 24 orientations in all, sideways or upside down included
 
-- Only an impact with the bottom face pointing down can perform anvil processing
-- Sneak-use either anvil with any Anvil Hammer to retrieve it; magnetism is preserved, and captured mobs remain in a Resin Anvil
+- Only an impact with the bottom face pointing down performs anvil processing; every other orientation is decoration
+- Sneak-use either anvil with any Anvil Hammer to retrieve it; magnetism is preserved, and a mob captured inside comes along too
 - A Resin Anvil rebounds from blocks and entities, while a Hardened Resin Anvil does not
-- A falling block landing on a Resin Anvil rebounds before settling; right-clicking a Resin Anvil does not open the vanilla anvil menu
-- Both anvils use fixed resin colors and cannot be dyed
+- A falling block landing on a Resin Anvil bounces once before settling; using a Resin Anvil with an empty hand does not open the vanilla anvil menu
+- Both anvils keep their natural resin color, and dye does nothing to them
 
 ## Capture and hardening
 
-A Resin Anvil retains Resin Block behavior for capturing mobs and spawners and for time-warp recipes. Mobs must meet the Resin Block size limit, and hostile mobs must also have Weakness
+Everything a Resin Block can do, a Resin Anvil can do too: capture mobs, hold spawners, take part in time-warp recipes. Mobs must meet the Resin Block size limit, and hostile mobs need Weakness first
 
-A Resin Anvil with no captured mob can be hardened by fast cooking in a dry cauldron. A magnetic anvil remains magnetic
+A Resin Anvil with no mob inside hardens by fast cooking in a dry cauldron, and magnetism survives the trip
 
 <row halign="center">
 <recipe id="anvilcraftplasticraft:fast_cooking/harden_resin_anvil"/>
@@ -35,4 +35,4 @@ A Resin Anvil with no captured mob can be hardened by fast cooking in a dry caul
 
 ## Hardened Resin Anvil
 
-Hardening removes the elastic bounce and enables the vanilla anvil menu. Repair and enchantment merging follow vanilla rules; renaming alone costs no experience and does not increase the prior-work penalty
+Hardening trades the elastic bounce for the vanilla anvil menu. Repair and enchantment merging follow vanilla rules; renaming alone costs no experience and does not increase the prior-work penalty

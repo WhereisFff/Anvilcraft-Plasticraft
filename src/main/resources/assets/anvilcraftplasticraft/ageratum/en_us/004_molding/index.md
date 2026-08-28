@@ -6,7 +6,7 @@ navigation:
 
 # Plastic Molding
 
-The Plastic Molding Chamber turns editable Cube models into plastic entities or plastic products. Prepare the chamber and a model, then use Casting or 3D Printing as appropriate
+The molding chamber does one simple thing: it turns the Cube models you build in the editor into plastic entities or plastic products out in the world. Three steps, really — get the chamber ready, get a model ready, then pick Casting or 3D Printing to suit the model
 
 ## Workflow
 
@@ -15,4 +15,4 @@ The Plastic Molding Chamber turns editable Cube models into plastic entities or 
 3. [Cast and print](020_casting_and_printing.md)
 4. [Production modes, platform and logistics](030_production_modes.md)
 
-Construction Structure Disks are covered in [Blueprint Deployment](../005_construction/020_blueprint_deployment.md)
+The same disk item also carries construction blueprints; that side is covered in [Blueprint Deployment](../005_construction/020_blueprint_deployment.md)

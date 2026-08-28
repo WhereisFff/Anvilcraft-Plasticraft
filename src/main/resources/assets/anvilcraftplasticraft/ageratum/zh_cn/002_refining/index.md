@@ -4,4 +4,4 @@ navigation:
   icon: "anvilcraftplasticraft:condenser_tower"
 ---
 
-使用冷凝塔分离原油，再将塑料油催化为不同材料的塑料熔体
+先用冷凝塔把原油拆开，再把分出来的塑料油催化成不同材料的塑料熔体

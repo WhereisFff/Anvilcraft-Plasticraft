@@ -4,6 +4,7 @@ import dev.anvilcraft.lib.v2.network.packet.IClientboundPacket;
 import dev.anvilcraft.lib.v2.network.packet.IPacket;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionEntityProjectionIndex;
+import dev.anvilcraft.plasticraft.blueprint.StructureSnapshotCodec;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -61,7 +62,8 @@ public record ConstructionEntityProjectionPacket(
     private static ConstructionEntityProjectionPacket read(RegistryFriendlyByteBuf buffer) {
         UUID jobId = UUIDUtil.STREAM_CODEC.decode(buffer);
         boolean clear = buffer.readBoolean();
-        int count = buffer.readVarInt();
+        // 规范快照的实体条目上限就是这个数,声明再多也不先分配再校验
+        int count = Math.clamp(buffer.readVarInt(), 0, StructureSnapshotCodec.MAX_ENTITY_ENTRIES);
         List<ConstructionEntityProjectionIndex.Entry> entries = new ArrayList<>(count);
         for (int index = 0; index < count; index++) {
             int opId = buffer.readVarInt();

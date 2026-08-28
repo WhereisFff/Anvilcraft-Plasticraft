@@ -72,35 +72,15 @@ public final class PlasticraftLanguageData {
         provider.add("item.anvilcraftplasticraft.molded_product_name", "%1$s %2$s");
         provider.add("item.anvilcraftplasticraft.molded_product_suffix.block", "Block");
 
-        // 戴帽悦灵设置界面。
-        provider.add("screen.anvilcraftplasticraft.allay.tool", "Tool: %s");
+        // 休息室按钮提示与卡片工种名。施工悦灵本身没有设置界面,已删除的工人面板文案不要再生成。
         provider.add("screen.anvilcraftplasticraft.allay.tool.none", "None");
-        provider.add("screen.anvilcraftplasticraft.allay.owner", "Owner: %s");
-        provider.add("screen.anvilcraftplasticraft.allay.state.hovering", "Hovering");
-        provider.add("screen.anvilcraftplasticraft.allay.state.docking", "Docking");
-        provider.add("screen.anvilcraftplasticraft.allay.state.flying", "Flying");
-        provider.add("screen.anvilcraftplasticraft.allay.wait.none", "");
-        provider.add("screen.anvilcraftplasticraft.allay.wait.material", "Waiting for materials");
-        provider.add("screen.anvilcraftplasticraft.allay.wait.occupied", "Construction position occupied");
-        provider.add("screen.anvilcraftplasticraft.allay.wait.world", "Waiting for the world block to clear");
-        provider.add("screen.anvilcraftplasticraft.allay.wait.source", "Owner is not in this dimension");
-        provider.add("screen.anvilcraftplasticraft.allay.wait.source_lounge", "Below-lounge logistics is unavailable");
-        provider.add("screen.anvilcraftplasticraft.allay.wait.demolition", "Waiting for a demolition allay");
-        provider.add("screen.anvilcraftplasticraft.allay.wait.permission", "Waiting for world permission");
-        provider.add("screen.anvilcraftplasticraft.allay.carry", "Carrying: %s");
-        provider.add("screen.anvilcraftplasticraft.allay.strategy", "Shortage strategy");
         provider.add("screen.anvilcraftplasticraft.allay.strategy.pause", "Pause and wait");
         provider.add("screen.anvilcraftplasticraft.allay.strategy.skip", "Skip");
-        provider.add("screen.anvilcraftplasticraft.allay.clearance", "Blank-cell clearance");
         provider.add("screen.anvilcraftplasticraft.allay.clearance.clear_area", "Demolish the whole blueprint area");
         provider.add(
             "screen.anvilcraftplasticraft.allay.clearance.keep_blank",
             "Keep blocks on cells the blueprint leaves blank"
         );
-        provider.add("screen.anvilcraftplasticraft.allay.coverage.inactive", "No chunk loading");
-        provider.add("screen.anvilcraftplasticraft.allay.inventory", "Cargo");
-        provider.add("screen.anvilcraftplasticraft.allay.unequip", "Remove hat");
-        provider.add("screen.anvilcraftplasticraft.allay.unequip.blocked", "Return the carried item first");
 
         // 悦灵休息室界面。
         provider.add("container.anvilcraftplasticraft.allay_lounge", "Allay Lounge");

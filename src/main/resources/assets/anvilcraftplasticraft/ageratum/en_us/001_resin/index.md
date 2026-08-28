@@ -4,4 +4,4 @@ navigation:
   icon: "anvilcraftplasticraft:resin_anvil"
 ---
 
-Resin can become lightweight anvils and vessels, or be refined into an adhesive material
+Resin can become lightweight anvils and vessels, or be boiled down into an adhesive that sticks to everything

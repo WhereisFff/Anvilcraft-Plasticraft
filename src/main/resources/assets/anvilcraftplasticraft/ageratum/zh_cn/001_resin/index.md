@@ -4,4 +4,4 @@ navigation:
   icon: "anvilcraftplasticraft:resin_anvil"
 ---
 
-树脂既可以制成轻便的铁砧与容器，也可以进一步加工为粘合材料
+树脂能捏成轻便的铁砧和锅，也能熬成到处乱粘的胶

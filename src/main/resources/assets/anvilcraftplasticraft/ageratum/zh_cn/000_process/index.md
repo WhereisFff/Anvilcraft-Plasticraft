@@ -4,4 +4,4 @@ navigation:
   icon: "anvilcraftplasticraft:plastic_oil_bucket"
 ---
 
-塑料工艺从树脂开始，最后得到可移动、可储存或可自动施工的塑料制品
+整条线从一块树脂起步，走到最后你会拿到能搬走、能装东西、还能替你自动施工的塑料制品

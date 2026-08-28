@@ -31,6 +31,7 @@ import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.IntTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -530,6 +531,56 @@ public final class ObservationAllayGameTests {
             .thenWaitUntil(() -> check(lounge.hosted().size() == 1,
                 "窗口需求消失后观察悦灵必须自行返库，而不是留在世界里空等"))
             .thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 20, batch = "zzz_observation")
+    @EmptyTemplate(value = "5x5x5", floor = true)
+    @TestHolder(description = "重启只按世界级索引补一次票：覆盖中心落盘且重复补票不加引用，观察租约不落盘")
+    static void restartReissuesCoverageOnceWithoutKeepingLeases(ExtendedGameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        ObservationLoadingIndex index = ObservationLoadingIndex.get(level);
+        UUID observerId = UUID.randomUUID();
+        UUID jobId = UUID.randomUUID();
+        ObservationOwner owner = ObservationOwner.observer(level.dimension(), observerId);
+        ChunkPos center = new ChunkPos(helper.absolutePos(new BlockPos(1, 2, 1)));
+        try {
+            check(index.putCoverage(owner, center), "首次登记覆盖必须写入索引");
+            check(!index.putCoverage(owner, center), "重启补票时同一持票人的同一份覆盖不得再写第二次");
+            check(
+                index.refCount(level.dimension(), center) == 1,
+                "重复补票后引用计数必须仍是 1，否则重启一次就会多出一份无主加载区，实际为 "
+                    + index.refCount(level.dimension(), center)
+            );
+            index.addLease(jobId, new ObservationLease(level.dimension(), center, observerId));
+            CompoundTag saved = index.save(new CompoundTag(), level.registryAccess());
+            ListTag coverage = saved.getList("Coverage", Tag.TAG_COMPOUND);
+            check(
+                coverage.size() == index.owners().size(),
+                "覆盖记录必须逐条落盘：重启首刻要靠它补票，指望悦灵自己唤醒自己会死锁"
+            );
+            boolean stored = false;
+            for (int entry = 0; entry < coverage.size(); entry++) {
+                CompoundTag row = coverage.getCompound(entry);
+                if (row.hasUUID("Entity")
+                    && observerId.equals(row.getUUID("Entity"))
+                    && row.getLong("Center") == center.toLong()) {
+                    stored = true;
+                }
+            }
+            check(stored, "落盘的覆盖记录必须包含该持票人的维度与覆盖中心");
+            check(
+                !saved.contains("Leases"),
+                "观察租约不得落盘：它只是运行时调度结论，留着会让重启后的任务守住持票人可能已经消失的旧租约"
+            );
+            check(
+                index.leaseOf(observerId) != null,
+                "本次运行中的租约仍必须可以按观察者反查，落盘与否是两回事"
+            );
+        } finally {
+            index.removeLeases(jobId);
+            index.removeCoverage(owner);
+        }
+        helper.succeed();
     }
 
     /**

@@ -78,6 +78,14 @@ public final class LitematicaImporter {
         }
         Vec3i size = new Vec3i(max.getX() - min.getX() + 1, max.getY() - min.getY() + 1, max.getZ() - min.getZ() + 1);
         long volume = (long) size.getX() * size.getY() * size.getZ();
+        // 体积必须先为正再谈上限:损坏文件里 Integer.MIN_VALUE 之类的尺寸取绝对值仍是负数,
+        // 只比上限会直接放行,随后按负长度分配数组当场崩掉
+        if (size.getX() <= 0 || size.getY() <= 0 || size.getZ() <= 0 || volume <= 0L) {
+            throw new ConstructionBlueprintException(
+                "corrupt_size",
+                size.getX() + "x" + size.getY() + "x" + size.getZ()
+            );
+        }
         if (size.getX() > StructureSnapshotCodec.MAX_AXIS
             || size.getY() > StructureSnapshotCodec.MAX_AXIS
             || size.getZ() > StructureSnapshotCodec.MAX_AXIS
@@ -278,6 +286,14 @@ public final class LitematicaImporter {
             position.getZ() + Math.min(rawSize.getZ() + 1, 0)
         );
         Vec3i extent = new Vec3i(Math.abs(rawSize.getX()), Math.abs(rawSize.getY()), Math.abs(rawSize.getZ()));
+        // Math.abs(Integer.MIN_VALUE) 仍是负数,区域尺寸必须逐轴确认为正再算体积
+        if (extent.getX() <= 0 || extent.getY() <= 0 || extent.getZ() <= 0) {
+            throw new ConstructionBlueprintException(
+                "corrupt_litematic",
+                "region " + name + " has invalid size "
+                    + rawSize.getX() + "x" + rawSize.getY() + "x" + rawSize.getZ()
+            );
+        }
         BlockPos max = new BlockPos(
             min.getX() + extent.getX() - 1,
             min.getY() + extent.getY() - 1,

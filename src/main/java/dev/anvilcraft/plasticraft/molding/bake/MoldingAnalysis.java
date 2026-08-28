@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.molding.bake;
 
-/** TODO-01 需要实时显示的制造派生统计。 */
+/** 建模器需要实时显示的制造派生统计。 */
 public record MoldingAnalysis(
     int volume,
     int barrierFaceCount,

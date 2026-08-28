@@ -16,6 +16,8 @@ import java.util.Set;
 /** 当前注册的戴帽悦灵工具定义。工种由主手物品解析,不存盘。空手是通用工,特殊物品改写能力。 */
 public final class AllayToolDefinitions {
     private static final Map<ResourceLocation, AllayToolDefinition> DEFINITIONS = new LinkedHashMap<>();
+    /** 注册完成后的只读快照。主手解析在每只悦灵每刻要跑好几次,不该为此反复加锁。 */
+    private static volatile List<AllayToolDefinition> ordered = List.of();
     private static final Set<AllayCapability> CONSTRUCT = Set.of(
         AllayCapability.PICK_UP_MATERIAL,
         AllayCapability.CARRY_ITEM,
@@ -86,9 +88,7 @@ public final class AllayToolDefinitions {
     }
 
     public static List<AllayToolDefinition> values() {
-        synchronized (DEFINITIONS) {
-            return List.copyOf(DEFINITIONS.values());
-        }
+        return ordered;
     }
 
     public static Optional<AllayToolDefinition> get(ResourceLocation id) {
@@ -103,10 +103,10 @@ public final class AllayToolDefinitions {
 
     public static AllayToolDefinition fromHeldItem(ItemStack stack) {
         if (stack.isEmpty()) return NONE;
-        synchronized (DEFINITIONS) {
-            for (AllayToolDefinition definition : DEFINITIONS.values()) {
-                if (definition.matchesToolItem(stack)) return definition;
-            }
+        List<AllayToolDefinition> definitions = ordered;
+        for (int index = 0; index < definitions.size(); index++) {
+            AllayToolDefinition definition = definitions.get(index);
+            if (definition.matchesToolItem(stack)) return definition;
         }
         return NONE;
     }
@@ -117,6 +117,7 @@ public final class AllayToolDefinitions {
             if (DEFINITIONS.putIfAbsent(definition.id(), definition) != null) {
                 throw new IllegalStateException("Duplicate allay tool definition " + definition.id());
             }
+            ordered = List.copyOf(DEFINITIONS.values());
         }
         return definition;
     }

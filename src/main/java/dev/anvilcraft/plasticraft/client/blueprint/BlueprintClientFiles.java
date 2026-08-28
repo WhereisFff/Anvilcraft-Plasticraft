@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
 
 /**
  * 客户端蓝图文件目录:{@code <gameDir>/anvilcraftplasticraft/structures/}。
- * 扫描、大小校验与分块上传都在这里完成;TODO 05 在扩展名清单中追加 .litematic。
+ * 扫描、大小校验与分块上传都在这里完成;扩展名清单含原版/Create 的 .nbt 与 Litematica 的 .litematic。
  */
 public final class BlueprintClientFiles {
     private static final Pattern SAFE_FILE_NAME = Pattern.compile("[^/\\\\]{1,128}");

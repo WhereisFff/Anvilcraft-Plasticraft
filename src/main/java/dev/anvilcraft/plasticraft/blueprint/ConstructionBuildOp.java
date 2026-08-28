@@ -11,6 +11,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.fluids.FluidStack;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -63,6 +64,8 @@ public final class ConstructionBuildOp {
     private boolean worldSatisfied;
     /** 施工阶段由外部方块变更反应式追加的拆除操作。 */
     private boolean reactive;
+    /** 上一次登记进任务索引时的贡献位,见 ConstructionJobProgress 的增量索引;只由进度对象读写。 */
+    private int indexBits;
     /** 连续确认"飞不到"的次数;累计到阈值才压一段重试冷却,避免悦灵原地重领同一操作空转。 */
     private int unreachableStrikes;
     /** 不可达退避到期的游戏刻;冷却期内派发轮空,该位置仍然是待办,不作废也不计入残缺。 */
@@ -153,7 +156,18 @@ public final class ConstructionBuildOp {
     }
 
     public void setLeaseAllay(@Nullable UUID allayId) {
+        if (Objects.equals(this.leaseAllay, allayId)) return;
         this.leaseAllay = allayId;
+        // 租约归属决定"未认领数"和串行封口集合,必须和状态一起进增量索引
+        this.statusInvalidator.run();
+    }
+
+    int indexBits() {
+        return this.indexBits;
+    }
+
+    void setIndexBits(int indexBits) {
+        this.indexBits = indexBits;
     }
 
     public Optional<BlockPos> approach() {

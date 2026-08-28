@@ -8,23 +8,25 @@ navigation:
 
 ## Editing Cubes
 
-The chamber editor builds models from Cubes. Cubes can be moved, resized, rotated and grouped around shared pivots; groups also share visibility and lock state
+The chamber editor only speaks Cube: boxes stacked into a model. Cubes can be moved, resized, rotated and grouped around shared pivots, and a group shares visibility and lock state
 
-At least one Cube is required before locking. A model outside the current forming range can only be edited; zero-thickness planes remain in the model but add no casting volume
+At least one Cube is required before locking. A model outside the current forming range can only be edited, never locked. Zero-thickness planes stay in the model but add no casting volume
 
 ## Structure Disks
 
-The editor's disk slot accepts only an AnvilCraft <ref item="anvilcraft:structure_disk"/>. Loading copies its molding model into the editor and keeps it editable; storing writes a copy of the current model. Molding and construction blueprints use the same disk item but cannot coexist, and a construction projection cannot be processed directly as a molding model
+The editor's disk slot accepts only an AnvilCraft <ref item="anvilcraft:structure_disk"/>. Loading copies its molding model into the editor and keeps it editable; storing writes a copy of the current model
+
+Molding models and construction blueprints share the same disk item, but one disk cannot hold both, and a construction projection cannot be processed directly as a molding model
 
 ## Shared model library
 
-The world stores up to 512 shared `.json` models below `anvilcraftplasticraft/blueprints/`; a Structure Disk also keeps an embedded copy that loads independently. Shared models can be loaded, copied and renamed. Deleting a shared file does not affect a copy already on a disk or in a chamber
+The world stores up to 512 shared `.json` models below `anvilcraftplasticraft/blueprints/`, while a Structure Disk keeps an embedded copy that loads independently. Shared models can be loaded, copied and renamed, and deleting a shared file does not affect a copy already on a disk or in a chamber
 
 ## Importing model files
 
-Open the model folder from Model Management, add a Minecraft Java `.json` or Blockbench `.bbmodel` file no larger than 1MiB, then refresh the model list. Cubes, groups, pivots and supported rotations are imported; textures, animations and display transforms are omitted, while non-Cube geometry is rejected
+Open the model folder from Model Management, drop in a Minecraft Java `.json` or Blockbench `.bbmodel` file no larger than 1MiB, then refresh the model list. Cubes, groups, pivots and supported rotations come across; textures, animations and display transforms are omitted, and non-Cube geometry that cannot be converted is rejected
 
-An imported model outside the forming range is not scaled; its source dimensions are retained and it can be saved, loaded and edited, but it cannot be locked. A model that fits the range but sits outside the workspace is first offered a whole-model translation and imported after confirmation
+An imported model outside the forming range is not scaled down to fit; its source dimensions are retained and it can be saved, loaded and edited, but it cannot be locked. A model that fits the range but sits outside the workspace is first offered a whole-model translation and imported after you confirm it
 
 ## Related
 

@@ -4,4 +4,4 @@ navigation:
   icon: "anvilcraftplasticraft:condenser_tower"
 ---
 
-Separate crude oil with Condenser Towers, then catalyze Plastic Oil into different plastic melts
+First split crude oil apart with Condenser Towers, then catalyze the Plastic Oil you get into different plastic melts

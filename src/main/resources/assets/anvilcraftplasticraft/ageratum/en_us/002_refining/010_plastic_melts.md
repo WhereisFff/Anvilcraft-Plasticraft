@@ -20,7 +20,7 @@ items:
 <item id="anvilcraftplasticraft:heat_resistant_plastic_melt_bucket"/>
 </row>
 
-Plastic melts are produced by environmental catalysis through four routes:
+Melts do not come from a recipe, they come from environmental catalysis: drop a catalyst into the fluid, give it the right surroundings, and it changes on its own. There are four routes:
 
 | Input | Catalyst | Environment | Output |
 | --- | --- | --- | --- |
@@ -29,37 +29,37 @@ Plastic melts are produced by environmental catalysis through four routes:
 | Universal Plastic Melt | Royal steel or frost metal | Royal steel needs cold directly below | Engineering Plastic Melt |
 | Universal Plastic Melt | Ember metal | A heat source directly below | Heat-Resistant Plastic Melt |
 
-Plastic Oil Cauldrons, Universal Plastic Melt Cauldrons, Fish Tanks, Large Cauldrons, upward-facing Hardened Resin and plastic cauldrons, and fluid source blocks in the world all support open catalysis
+Plenty of vessels support open catalysis: Plastic Oil Cauldrons, Universal Plastic Melt Cauldrons, Fish Tanks, Large Cauldrons, upward-facing Hardened Resin and plastic cauldrons, and even fluid source blocks out in the world
 
-Ordinary block containers and fluid sources still read the condition directly beneath their container cell. An upward-facing Hardened Resin or plastic cauldron instead searches from the center and every covered part of its physical bottom face along current gravity for one block. A valid processing block below the center takes priority, then the remaining covered bottom cells are tried. A small cauldron can therefore share a cell with a campfire or another processing block, while a cauldron taller than one block still reads the block outside its actual bottom
+Ordinary block containers and fluid sources read the condition directly beneath their container cell. An upward-facing Hardened Resin or plastic cauldron instead searches from the center and every covered part of its physical bottom face along current gravity for one block. A valid processing block below the center takes priority, then the remaining covered bottom cells are tried. That is why a small cauldron can share a cell with a campfire, while a cauldron taller than one block still reads the block outside its actual bottom
 
 ## Catalyst count
 
-Open catalysis counts distinct item types. Extra copies of the same item do not increase speed. Royal steel, royal glass and ember metal contribute at full efficiency; frost metal and frost glass contribute at half efficiency. Adding more types gives diminishing returns, and catalysts are not consumed
+Catalysis counts types, not stacks — a whole chest of the same item is no faster. Royal steel, royal glass and ember metal contribute at full efficiency; frost metal and frost glass contribute at half. Adding more types does speed things up, but with diminishing returns. The good news is that catalysts are never consumed
 
-For royal or ember materials, one type gives a 0.25 multiplier and eight types give 0.5; the multiplier is capped at 0.55. Frost materials use half of the corresponding multiplier
+For royal or ember materials, one type gives a 0.25 multiplier and eight types give 0.5, with the ceiling at 0.55. Frost materials use half of the corresponding multiplier
 
 For paired royal and frost materials, including glass, let their distinct type counts be `R` and `F`. Their mixed multiplier is `M(R) + 0.5 * (M(R + F) - M(R))`, where `M(n) = min(0.55, 0.25 + log2(n) / 12)` and `M(0) = 0`
 
 ## Plastic Oil catalysis
 
-Plastic Oil must be heated from directly below and progresses with the heat source's actual output. Royal steel and frost metal produce Universal Plastic Melt. If royal glass or frost glass is also present, the clear branch takes priority
+Plastic Oil must be heated from directly below, and the hotter the source's actual output, the faster it progresses. Royal steel and frost metal turn it into Universal Plastic Melt, but if royal glass or frost glass is also present, the clear branch cuts in front
 
-Clear Plastic Melt supports all 16 dye colors; its color is retained through molding, cooling and buckets, but it cannot continue into the metal Engineering Plastic branch
+Clear Plastic Melt supports all 16 dye colors, and that color carries through molding, cooling and buckets. The trade-off is that it stops there — it cannot continue into the metal Engineering Plastic branch
 
 ## Engineering Plastic Melt
 
-- Royal steel contributes only while a cold block is directly below the melt; one type takes 400gt and eight take 200gt
-- Frost metal needs neither cooling nor heat but runs at half efficiency; one type takes 800gt and eight take 400gt
+- Royal steel is picky: it only contributes while a cold block sits directly below the melt. One type takes 400gt, eight take 200gt
+- Frost metal is not picky at all, needing neither cooling nor heat, but it runs at half efficiency. One type takes 800gt, eight take 400gt
 
 ## Heat-Resistant Plastic Melt
 
-The heat-resistant branch needs at least one ember-metal type and a heat source below. More heat and more distinct ember-metal types make it faster, with diminishing returns from extra types
+The heat-resistant branch needs at least one ember-metal type plus a heat source below. More heat and more distinct ember-metal types make it faster, again with diminishing returns from extra types
 
 When both the engineering and heat-resistant conditions are met, the heat-resistant branch takes priority
 
 ## Batches and dyeing
 
-A Large Cauldron uses the average actual heat output of the nine blocks in the 3x3 area directly beneath its floor and can process a full fluid layer at once. The engineering branch reads cold only from the center block
+A Large Cauldron uses the average actual heat output of the nine blocks in the 3x3 area directly beneath its floor and can process a full fluid layer at once. The engineering branch is the exception: it reads cold only from the center block
 
-All four Plastic Melts can be dyed. Catalysis preserves the melt's amount and color, and Clear Plastic products use a stained-glass appearance. Each color tints beacon beams like the matching stained glass
+All four Plastic Melts can be dyed, and catalysis preserves the melt's amount and color. Clear Plastic products look like stained glass, and each color tints beacon beams passing through it exactly like the matching stained glass

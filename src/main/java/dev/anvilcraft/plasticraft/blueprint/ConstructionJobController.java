@@ -1024,6 +1024,10 @@ public final class ConstructionJobController {
         return true;
     }
 
+    /**
+     * 一次性把剩余提交跑完再收尾。玩法路径走 {@link #tickJob} 的 COMMITTING 分支按 tick 预算分区写入,
+     * 这条同步入口只服务"必须当场结束"的调用方(取消收尾与 GameTest 的终态断言),不是玩家入口。
+     */
     public static boolean finish(MinecraftServer server, ServerLevel level, ConstructionJob job, ConstructionJobProgress progress) {
         if (!ConstructionCommitService.commitDelivered(level, progress)) return false;
         return complete(server, level, job, progress);
@@ -1123,12 +1127,7 @@ public final class ConstructionJobController {
 
     private static int lowestOpenSealY(ConstructionJobProgress progress) {
         int lowest = Integer.MAX_VALUE;
-        for (ConstructionBuildOp op : progress.operations()) {
-            if (op.kind() != ConstructionBuildOp.Kind.SEAL) continue;
-            if (op.status() == ConstructionBuildOp.Status.DELIVERED
-                || op.status() == ConstructionBuildOp.Status.SKIPPED) {
-                continue;
-            }
+        for (ConstructionBuildOp op : progress.openOperations(ConstructionBuildOp.Kind.SEAL)) {
             lowest = Math.min(lowest, op.pos().getY());
         }
         return lowest;
@@ -2441,11 +2440,9 @@ public final class ConstructionJobController {
     }
 
     private static void refreshWorldWaits(ServerLevel level, ConstructionJobProgress progress) {
-        for (ConstructionBuildOp op : List.copyOf(progress.operations())) {
-            if (op.kind() != ConstructionBuildOp.Kind.PLACE
-                || op.status() != ConstructionBuildOp.Status.WAITING_WORLD) {
-                continue;
-            }
+        // 只有等待世界让位的 PLACE 需要复查,按索引取这一小撮,不再每刻复制整份操作表
+        for (ConstructionBuildOp op : progress.waitingWorldPlaces()) {
+            if (op.status() != ConstructionBuildOp.Status.WAITING_WORLD) continue;
             // 世界等待复查同样要读方块状态,未加载区块只能等窗口推进过去再复查
             if (!ObservationCoverageService.isWorkable(level, op.pos())) continue;
             BlockState current = level.getBlockState(op.pos());
@@ -3204,8 +3201,8 @@ public final class ConstructionJobController {
     }
 
     private static void releaseLeases(ConstructionJobProgress progress) {
-        for (ConstructionBuildOp op : progress.operations()) {
-            if (op.isOpen() && op.leaseAllay().isPresent()) {
+        for (ConstructionBuildOp op : List.copyOf(progress.leasedOperations())) {
+            if (op.isOpen()) {
                 op.setStatus(ConstructionBuildOp.Status.PENDING);
                 op.setLeaseAllay(null);
             }
@@ -3437,17 +3434,7 @@ public final class ConstructionJobController {
     }
 
     private static boolean hasSkippedPlace(ConstructionJobProgress progress) {
-        for (ConstructionBuildOp op : progress.operations()) {
-            if ((op.kind() == ConstructionBuildOp.Kind.PLACE
-                || op.kind() == ConstructionBuildOp.Kind.CONTENT
-                || op.kind() == ConstructionBuildOp.Kind.FLUID
-                || op.kind() == ConstructionBuildOp.Kind.ENTITY
-                || op.kind() == ConstructionBuildOp.Kind.DECORATE)
-                && op.status() == ConstructionBuildOp.Status.SKIPPED) {
-                return true;
-            }
-        }
-        return progress.incomplete();
+        return progress.hasSkippedPlaceMaterial() || progress.incomplete();
     }
 
     private static boolean linkParents(ConstructionJobProgress progress) {
@@ -3804,12 +3791,7 @@ public final class ConstructionJobController {
         for (WorkingAllayEntity drone : loadedWorkers(level, job.owner())) {
             if (!isWorkerAvailableForJob(level, drone, job, progress)) continue;
             if (!drone.toolDefinition().hasCapability(AllayCapability.DEMOLISH)) continue;
-            for (ConstructionBuildOp op : progress.operations()) {
-                if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH || op.shell()) continue;
-                if (op.status() == ConstructionBuildOp.Status.DELIVERED
-                    || op.status() == ConstructionBuildOp.Status.SKIPPED) {
-                    continue;
-                }
+            for (ConstructionBuildOp op : progress.openDemolitionCores()) {
                 if (drone.position().distanceTo(Vec3.atCenterOf(op.pos())) <= DISCOVERY_RANGE) {
                     return true;
                 }
@@ -4199,12 +4181,7 @@ public final class ConstructionJobController {
     }
 
     private static boolean smashRemainingShells(ServerLevel level, ConstructionJobProgress progress) {
-        for (ConstructionBuildOp op : progress.operations()) {
-            if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH || !op.shell()) continue;
-            if (op.status() == ConstructionBuildOp.Status.SKIPPED
-                || op.status() == ConstructionBuildOp.Status.DELIVERED) {
-                continue;
-            }
+        for (ConstructionBuildOp op : List.copyOf(progress.openDemolitionShells())) {
             if (!enterIfDenied(level, progress, op)) return false;
             try {
                 if (!level.isInWorldBounds(op.pos())) {
@@ -4241,23 +4218,14 @@ public final class ConstructionJobController {
     }
 
     private static boolean needsFillMaterial(ConstructionJobProgress progress) {
-        for (ConstructionBuildOp op : progress.operations()) {
-            if (op.kind() == ConstructionBuildOp.Kind.SEAL
-                && op.status() != ConstructionBuildOp.Status.SKIPPED
-                && op.material().isEmpty()) {
-                return true;
-            }
+        for (ConstructionBuildOp op : progress.openOperations(ConstructionBuildOp.Kind.SEAL)) {
+            if (op.material().isEmpty()) return true;
         }
         return false;
     }
 
     private static void skipPlaceOnRemainingFluids(ServerLevel level, ConstructionJobProgress progress) {
-        for (ConstructionBuildOp op : progress.operations()) {
-            if (op.kind() != ConstructionBuildOp.Kind.PLACE) continue;
-            if (op.status() == ConstructionBuildOp.Status.DELIVERED
-                || op.status() == ConstructionBuildOp.Status.SKIPPED) {
-                continue;
-            }
+        for (ConstructionBuildOp op : List.copyOf(progress.openOperations(ConstructionBuildOp.Kind.PLACE))) {
             if (FluidSealPlanner.isSealableFluid(level.getBlockState(op.pos()))) {
                 op.setStatus(ConstructionBuildOp.Status.SKIPPED);
                 op.setLeaseAllay(null);
@@ -4892,44 +4860,29 @@ public final class ConstructionJobController {
         if (upperBound <= workers) return false;
         int count = 0;
         if (capability == AllayCapability.DEMOLISH) {
-            for (ConstructionBuildOp op : progress.operations()) {
-                if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH || op.shell()) continue;
-                if (op.status() == ConstructionBuildOp.Status.LEASED
-                    || op.status() == ConstructionBuildOp.Status.DELIVERED
-                    || op.status() == ConstructionBuildOp.Status.SKIPPED) {
-                    continue;
-                }
+            for (ConstructionBuildOp op : progress.openDemolitionCores()) {
+                if (op.status() == ConstructionBuildOp.Status.LEASED) continue;
                 if (!isAssignable(level, progress, op.pos())) continue;
                 if (level.getBlockState(op.pos()).isAir()) continue;
                 if (++count > workers) return true;
             }
             return false;
         }
-        for (ConstructionBuildOp op : progress.operations()) {
-            if (op.kind() != ConstructionBuildOp.Kind.PLACE
-                && op.kind() != ConstructionBuildOp.Kind.CONTENT
-                && op.kind() != ConstructionBuildOp.Kind.FLUID
-                && op.kind() != ConstructionBuildOp.Kind.ENTITY
-                && op.kind() != ConstructionBuildOp.Kind.DECORATE
-                && op.kind() != ConstructionBuildOp.Kind.SEAL) {
-                continue;
+        for (ConstructionBuildOp.Kind kind : ConstructionJobProgress.LAUNCH_MATERIAL_KINDS) {
+            for (ConstructionBuildOp op : progress.openOperations(kind)) {
+                if (op.status() == ConstructionBuildOp.Status.LEASED) continue;
+                if (!isAssignable(level, progress, op.pos())) continue;
+                if (kind == ConstructionBuildOp.Kind.CONTENT
+                    || kind == ConstructionBuildOp.Kind.FLUID
+                    || kind == ConstructionBuildOp.Kind.DECORATE) {
+                    ConstructionBuildOp parent = progress.parentOf(op);
+                    if (parent == null || parent.status() != ConstructionBuildOp.Status.DELIVERED) continue;
+                }
+                if (kind == ConstructionBuildOp.Kind.PLACE && !level.getBlockState(op.pos()).isAir()) {
+                    continue;
+                }
+                if (++count > workers) return true;
             }
-            if (op.status() == ConstructionBuildOp.Status.LEASED
-                || op.status() == ConstructionBuildOp.Status.DELIVERED
-                || op.status() == ConstructionBuildOp.Status.SKIPPED) {
-                continue;
-            }
-            if (!isAssignable(level, progress, op.pos())) continue;
-            if (op.kind() == ConstructionBuildOp.Kind.CONTENT
-                || op.kind() == ConstructionBuildOp.Kind.FLUID
-                || op.kind() == ConstructionBuildOp.Kind.DECORATE) {
-                ConstructionBuildOp parent = progress.parentOf(op);
-                if (parent == null || parent.status() != ConstructionBuildOp.Status.DELIVERED) continue;
-            }
-            if (op.kind() == ConstructionBuildOp.Kind.PLACE && !level.getBlockState(op.pos()).isAir()) {
-                continue;
-            }
-            if (++count > workers) return true;
         }
         return false;
     }
@@ -4977,33 +4930,24 @@ public final class ConstructionJobController {
         int workers
     ) {
         int count = 0;
-        for (ConstructionBuildOp op : progress.operations()) {
-            if (op.kind() != ConstructionBuildOp.Kind.PLACE
-                && op.kind() != ConstructionBuildOp.Kind.CONTENT
-                && op.kind() != ConstructionBuildOp.Kind.FLUID
-                && op.kind() != ConstructionBuildOp.Kind.ENTITY
-                && op.kind() != ConstructionBuildOp.Kind.DECORATE) {
-                continue;
+        for (ConstructionBuildOp.Kind kind : ConstructionJobProgress.PLACE_MATERIAL_KINDS) {
+            for (ConstructionBuildOp op : progress.openOperations(kind)) {
+                if (ConstructionPlacementLimits.requiresLongReach(op) != requiresLongReach) continue;
+                if (op.status() == ConstructionBuildOp.Status.LEASED) continue;
+                if (!isAssignable(level, progress, op.pos())) continue;
+                if (kind == ConstructionBuildOp.Kind.CONTENT
+                    || kind == ConstructionBuildOp.Kind.FLUID
+                    || kind == ConstructionBuildOp.Kind.DECORATE) {
+                    ConstructionBuildOp parent = progress.parentOf(op);
+                    if (parent == null || parent.status() != ConstructionBuildOp.Status.DELIVERED) continue;
+                }
+                if (kind == ConstructionBuildOp.Kind.PLACE && !level.getBlockState(op.pos()).isAir()) continue;
+                if (kind == ConstructionBuildOp.Kind.ENTITY
+                    && (hasOpenSupportPlace(progress, op.pos()) || entityOccupied(level, op, null))) {
+                    continue;
+                }
+                if (chooseApproach(level, progress, op) != null && ++count > workers) return true;
             }
-            if (ConstructionPlacementLimits.requiresLongReach(op) != requiresLongReach) continue;
-            if (op.status() == ConstructionBuildOp.Status.LEASED
-                || op.status() == ConstructionBuildOp.Status.DELIVERED
-                || op.status() == ConstructionBuildOp.Status.SKIPPED) {
-                continue;
-            }
-            if (!isAssignable(level, progress, op.pos())) continue;
-            if (op.kind() == ConstructionBuildOp.Kind.CONTENT
-                || op.kind() == ConstructionBuildOp.Kind.FLUID
-                || op.kind() == ConstructionBuildOp.Kind.DECORATE) {
-                ConstructionBuildOp parent = progress.parentOf(op);
-                if (parent == null || parent.status() != ConstructionBuildOp.Status.DELIVERED) continue;
-            }
-            if (op.kind() == ConstructionBuildOp.Kind.PLACE && !level.getBlockState(op.pos()).isAir()) continue;
-            if (op.kind() == ConstructionBuildOp.Kind.ENTITY
-                && (hasOpenSupportPlace(progress, op.pos()) || entityOccupied(level, op, null))) {
-                continue;
-            }
-            if (chooseApproach(level, progress, op) != null && ++count > workers) return true;
         }
         return false;
     }
@@ -5209,6 +5153,10 @@ public final class ConstructionJobController {
     private static final class WorkerSnapshot {
         private final long gameTime;
         private final Map<UUID, List<WorkingAllayEntity>> workersByOwner = new HashMap<>();
+        /** 同一刻内按调用方所有者缓存合并结果:64 只悦灵下每刻会问上百次,不能每次都重建并复制。 */
+        private final Map<UUID, List<WorkingAllayEntity>> collaboratorCache = new HashMap<>();
+        @Nullable
+        private List<WorkingAllayEntity> allCache;
 
         private WorkerSnapshot(long gameTime) {
             this.gameTime = gameTime;
@@ -5232,32 +5180,44 @@ public final class ConstructionJobController {
                 );
                 if (!workers.contains(worker)) {
                     workers.add(worker);
+                    this.invalidate();
                 }
             });
         }
 
         private void remove(WorkingAllayEntity worker) {
             for (List<WorkingAllayEntity> workers : this.workersByOwner.values()) {
-                workers.remove(worker);
+                if (workers.remove(worker)) this.invalidate();
             }
         }
 
+        private void invalidate() {
+            this.collaboratorCache.clear();
+            this.allCache = null;
+        }
+
         private List<WorkingAllayEntity> ownedBy(MinecraftServer server, UUID ownerId) {
+            List<WorkingAllayEntity> cached = this.collaboratorCache.get(ownerId);
+            if (cached != null) return cached;
             List<WorkingAllayEntity> result = new ArrayList<>();
             for (Map.Entry<UUID, List<WorkingAllayEntity>> entry : this.workersByOwner.entrySet()) {
                 if (ConstructionPermission.areCollaborators(server, ownerId, entry.getKey())) {
                     result.addAll(entry.getValue());
                 }
             }
-            return List.copyOf(result);
+            List<WorkingAllayEntity> workers = List.copyOf(result);
+            this.collaboratorCache.put(ownerId, workers);
+            return workers;
         }
 
         private List<WorkingAllayEntity> all() {
+            if (this.allCache != null) return this.allCache;
             List<WorkingAllayEntity> result = new ArrayList<>();
             for (List<WorkingAllayEntity> workers : this.workersByOwner.values()) {
                 result.addAll(workers);
             }
-            return List.copyOf(result);
+            this.allCache = List.copyOf(result);
+            return this.allCache;
         }
     }
 
