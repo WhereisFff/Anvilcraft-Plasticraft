@@ -2062,19 +2062,24 @@ public final class ConstructionJobController {
     ) {
         if (approach == null) return false;
         if (isApproachReserved(progress, op, approach)) return false;
+        // 先跑便宜的占位与触及判定,再谈防自封分析:洪泛是这条每刻复查里最贵的一步,
+        // 接近位本来就被占住或已经够不到时不该为它付这个代价
+        UUID except = worker == null ? null : worker.getUUID();
+        if (!ConstructionWorkerSpace.fitsWorker(level, approach, except)) return false;
+        AABB workerBox = ConstructionWorkerSpace.boxAt(approach);
+        boolean inReach = false;
+        for (BlockPos target : approachTargets(progress, op)) {
+            if (workerBox.intersects(new AABB(target).inflate(REACH))) {
+                inReach = true;
+                break;
+            }
+        }
+        if (!inReach) return false;
         if (op.kind() != ConstructionBuildOp.Kind.DEMOLISH) {
             ConstructionEnclosure.Analysis analysis = ConstructionEnclosure.analyze(level, progress, op, worker);
             if (analysis.wouldEnclose() || !analysis.approachSafe(approach)) return false;
         }
-        UUID except = worker == null ? null : worker.getUUID();
-        if (!ConstructionWorkerSpace.fitsWorker(level, approach, except)) return false;
-        AABB workerBox = ConstructionWorkerSpace.boxAt(approach);
-        for (BlockPos target : approachTargets(progress, op)) {
-            if (workerBox.intersects(new AABB(target).inflate(REACH))) {
-                return true;
-            }
-        }
-        return false;
+        return true;
     }
 
     public static DeliveryInteraction deliveryInteraction(

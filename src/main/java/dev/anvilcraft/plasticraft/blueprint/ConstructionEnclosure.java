@@ -147,8 +147,10 @@ public final class ConstructionEnclosure {
         for (BlockPos seed : floodSeeds(op, progress)) {
             long seedKey = seed.asLong();
             if (forced.contains(seedKey) || explored.contains(seedKey)) continue;
-            if (!flyable(level, forced, seed)) continue;
+            // 先判外部再判可飞:开放工地上六个种子多半已经落在外包络里,
+            // 可飞判定要跑一次真实碰撞扫掠,是这里最贵的一步,不该为注定跳过的种子付这个代价
             if (outside(seed, cache.exterior, cache.site)) continue;
+            if (!flyable(level, cache, forced, seed)) continue;
             ArrayDeque<BlockPos> queue = new ArrayDeque<>();
             Set<Long> region = new HashSet<>();
             explored.add(seedKey);
@@ -170,7 +172,7 @@ public final class ConstructionEnclosure {
                     BlockPos next = pos.relative(direction);
                     long nextKey = next.asLong();
                     if (forced.contains(nextKey) || explored.contains(nextKey)) continue;
-                    if (!flyable(level, forced, next)) continue;
+                    if (!flyable(level, cache, forced, next)) continue;
                     explored.add(nextKey);
                     region.add(nextKey);
                     queue.addLast(next);
@@ -261,17 +263,13 @@ public final class ConstructionEnclosure {
 
     private static boolean flyable(
         ServerLevel level,
+        JobCache cache,
         Set<Long> forced,
         BlockPos pos
     ) {
-        if (forced.contains(pos.asLong())) return false;
-        AABB box = ConstructionWorkerSpace.boxAt(pos);
-        if (!level.noBlockCollision(null, box)) return false;
-        VoxelShape workerShape = Shapes.create(box);
-        for (ConstructionProjectionIndex.Collision collision : ConstructionProjectionIndex.collisions(level, box)) {
-            if (Shapes.joinIsNotEmpty(workerShape, collision.worldShape(), BooleanOp.AND)) return false;
-        }
-        return true;
+        long key = pos.asLong();
+        if (forced.contains(key)) return false;
+        return cache.freeCell(level, pos, key);
     }
 
     /**
@@ -423,6 +421,7 @@ public final class ConstructionEnclosure {
         synchronized (CACHES) {
             long enclosureRevision = progress.enclosureRevision();
             long layoutRevision = progress.layoutRevision();
+            long geometryRevision = progress.geometryRevision();
             long gameTime = level.getGameTime();
             JobCache cache = CACHES.get(progress);
             if (cache == null || cache.level != level || cache.layoutRevision != layoutRevision) {
@@ -432,12 +431,20 @@ public final class ConstructionEnclosure {
                     level,
                     enclosureRevision,
                     layoutRevision,
+                    geometryRevision,
                     gameTime,
                     Set.copyOf(ConstructionAssembler.exteriorOf(collidingCells(progress, view))),
                     siteBox(progress)
                 );
                 CACHES.put(progress, cache);
-            } else if (cache.enclosureRevision != enclosureRevision || cache.analysisTick != gameTime) {
+                return cache;
+            }
+            // 可飞判定只看真实方块与已交付投影,租约变化不影响它;一刻内同一格不必反复跑碰撞扫掠
+            if (cache.geometryRevision != geometryRevision || cache.analysisTick != gameTime) {
+                cache.geometryRevision = geometryRevision;
+                cache.freeCells.clear();
+            }
+            if (cache.enclosureRevision != enclosureRevision || cache.analysisTick != gameTime) {
                 cache.enclosureRevision = enclosureRevision;
                 cache.analysisTick = gameTime;
                 cache.geometry.clear();
@@ -460,16 +467,20 @@ public final class ConstructionEnclosure {
         private final ServerLevel level;
         private long enclosureRevision;
         private final long layoutRevision;
+        private long geometryRevision;
         private long analysisTick;
         private final Set<Long> exterior;
         private final AABB site;
         private final Map<Integer, Geometry> geometry = new HashMap<>();
         private final Map<GeometryKey, ClosedRegion> closedRegions = new HashMap<>();
+        /** 逐格可飞判定结果,按几何版本与服务器 tick 复用;洪泛与多只悦灵会反复问到同一批格子。 */
+        private final Map<Long, Boolean> freeCells = new HashMap<>();
 
         private JobCache(
             ServerLevel level,
             long enclosureRevision,
             long layoutRevision,
+            long geometryRevision,
             long analysisTick,
             Set<Long> exterior,
             AABB site
@@ -477,9 +488,22 @@ public final class ConstructionEnclosure {
             this.level = level;
             this.enclosureRevision = enclosureRevision;
             this.layoutRevision = layoutRevision;
+            this.geometryRevision = geometryRevision;
             this.analysisTick = analysisTick;
             this.exterior = exterior;
             this.site = site;
+        }
+
+        /**
+         * 该格是否容得下悦灵。{@code noBlockCollision} 已由碰撞 mixin 把已交付投影和粘合制品
+         * 溢出轮廓一并算进去,不必再单独查一遍投影索引。
+         */
+        private boolean freeCell(ServerLevel level, BlockPos pos, long key) {
+            Boolean cached = this.freeCells.get(key);
+            if (cached != null) return cached;
+            boolean free = level.noBlockCollision(null, ConstructionWorkerSpace.boxAt(pos));
+            this.freeCells.put(key, free);
+            return free;
         }
     }
 }

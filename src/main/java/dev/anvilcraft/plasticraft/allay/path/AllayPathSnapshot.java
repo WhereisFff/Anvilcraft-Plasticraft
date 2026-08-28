@@ -234,15 +234,7 @@ public final class AllayPathSnapshot {
         int index = chunk.getSectionIndex(section.minBlockY());
         if (index < 0 || index >= chunk.getSectionsCount()) return false;
         LevelChunkSection chunkSection = chunk.getSection(index);
-        AABB box = new AABB(
-            section.minBlockX(),
-            section.minBlockY(),
-            section.minBlockZ(),
-            section.minBlockX() + 16,
-            section.minBlockY() + 16,
-            section.minBlockZ() + 16
-        );
-        boolean projections = !ConstructionProjectionIndex.collisions(level, box).isEmpty();
+        boolean projections = ConstructionProjectionIndex.hasSectionEntries(level, section.asLong());
         if (chunkSection.hasOnlyAir() && !projections) return true;
         Vec3[] samples = {
             ConstructionWorkerSpace.navigationPoint(sample),

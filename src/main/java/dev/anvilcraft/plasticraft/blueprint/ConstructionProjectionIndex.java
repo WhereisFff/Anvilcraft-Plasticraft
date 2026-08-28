@@ -362,6 +362,17 @@ public final class ConstructionProjectionIndex {
         }
     }
 
+    /**
+     * 该区块段是否存在任意已交付投影。区块段走廊搜索每个节点都要问一次"这一段是不是纯空气",
+     * 为此把整段最多 4096 个条目 materialize 成列表只是为了判空,代价随施工进度线性膨胀。
+     */
+    public static boolean hasSectionEntries(Level level, long section) {
+        synchronized (LEVELS) {
+            LevelIndex index = LEVELS.get(level);
+            return index != null && index.hasSection(section);
+        }
+    }
+
     public static Map<BlockPos, BlockState> deliveredIn(Level level, UUID jobId) {
         synchronized (LEVELS) {
             LevelIndex index = LEVELS.get(level);
@@ -595,12 +606,21 @@ public final class ConstructionProjectionIndex {
     }
 
     private static final class LevelIndex {
+        /**
+         * 按格直查的格数上限。飞行碰撞、接近位判定与封闭洪泛每刻要问上万次,这些盒子都只有一两格大;
+         * 一个区块段最多装 4096 格已交付投影,遍历整段会让查询代价随施工进度线性膨胀。
+         */
+        private static final int POSITION_QUERY_CELLS = 512;
+
         private final Map<Long, Map<Long, Collision>> bySection = new HashMap<>();
         private final Map<UUID, JobData> byJob = new HashMap<>();
+        /** 已登记形状伸出自身格的最大格数;按格直查要按它外扩,单调只增避免反复重算。 */
+        private int maxOverhang;
 
         private void put(Collision collision) {
             long section = SectionPos.asLong(collision.pos());
             Map<Long, Collision> entries = this.bySection.computeIfAbsent(section, ignored -> new HashMap<>());
+            this.trackOverhang(collision);
             Collision previous = entries.put(collision.pos().asLong(), collision);
             if (previous == null) {
                 this.changed(collision.jobId(), section, 1);
@@ -610,6 +630,21 @@ public final class ConstructionProjectionIndex {
                 this.changed(previous.jobId(), section, -1);
                 this.changed(collision.jobId(), section, 1);
             }
+        }
+
+        private void trackOverhang(Collision collision) {
+            if (collision.worldShape().isEmpty()) return;
+            AABB shape = collision.worldShape().bounds();
+            BlockPos pos = collision.pos();
+            double overhang = Math.max(
+                Math.max(pos.getX() - shape.minX, shape.maxX - (pos.getX() + 1)),
+                Math.max(
+                    Math.max(pos.getY() - shape.minY, shape.maxY - (pos.getY() + 1)),
+                    Math.max(pos.getZ() - shape.minZ, shape.maxZ - (pos.getZ() + 1))
+                )
+            );
+            if (overhang <= 0.0D) return;
+            this.maxOverhang = Math.max(this.maxOverhang, Mth.ceil(overhang));
         }
 
         private void remove(BlockPos pos) {
@@ -630,7 +665,54 @@ public final class ConstructionProjectionIndex {
             return this.bySection.isEmpty();
         }
 
+        private boolean hasSection(long section) {
+            Map<Long, Collision> entries = this.bySection.get(section);
+            return entries != null && !entries.isEmpty();
+        }
+
         private List<Collision> query(AABB bounds) {
+            if (this.bySection.isEmpty()) return List.of();
+            int pad = this.maxOverhang;
+            int minX = Mth.floor(bounds.minX) - pad;
+            int maxX = Mth.floor(bounds.maxX) + pad;
+            int minY = Mth.floor(bounds.minY) - pad;
+            int maxY = Mth.floor(bounds.maxY) + pad;
+            int minZ = Mth.floor(bounds.minZ) - pad;
+            int maxZ = Mth.floor(bounds.maxZ) + pad;
+            long cells = (long) (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+            if (cells <= POSITION_QUERY_CELLS) {
+                return this.queryCells(bounds, minX, maxX, minY, maxY, minZ, maxZ);
+            }
+            return this.querySections(bounds);
+        }
+
+        /** 小盒子按格直查:两次哈希查表就够,不必遍历整段已交付格。 */
+        private List<Collision> queryCells(
+            AABB bounds,
+            int minX,
+            int maxX,
+            int minY,
+            int maxY,
+            int minZ,
+            int maxZ
+        ) {
+            List<Collision> result = null;
+            BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+            for (int x = minX; x <= maxX; x++) {
+                for (int y = minY; y <= maxY; y++) {
+                    for (int z = minZ; z <= maxZ; z++) {
+                        Collision collision = this.get(cursor.set(x, y, z));
+                        if (collision == null || collision.worldShape().isEmpty()) continue;
+                        if (!collision.worldShape().bounds().intersects(bounds)) continue;
+                        if (result == null) result = new ArrayList<>(4);
+                        result.add(collision);
+                    }
+                }
+            }
+            return result == null ? List.of() : result;
+        }
+
+        private List<Collision> querySections(AABB bounds) {
             int minY = SectionPos.blockToSectionCoord(Mth.floor(bounds.minY));
             int maxY = SectionPos.blockToSectionCoord(Mth.floor(bounds.maxY));
             int minX = SectionPos.blockToSectionCoord(Mth.floor(bounds.minX));
@@ -743,6 +825,7 @@ public final class ConstructionProjectionIndex {
             int removed = before - entries.size();
             if (removed > 0) countChanges.put(jobId, -removed);
             for (Collision collision : replacements) {
+                this.trackOverhang(collision);
                 Collision previous = entries.put(collision.pos().asLong(), collision);
                 if (previous != null) countChanges.merge(previous.jobId(), -1, Integer::sum);
                 countChanges.merge(collision.jobId(), 1, Integer::sum);

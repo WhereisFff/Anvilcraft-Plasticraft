@@ -126,6 +126,8 @@ public final class ConstructionJobProgress {
     private int skippedPlaceCount;
     private int unleasedDemolishCount;
     private int unleasedMaterialCount;
+    /** 真实/投影几何的变更序号,只随交付、跳过与世界满足变化,不随租约来去变化。 */
+    private long geometryRevision;
 
     public ConstructionJobProgress(UUID jobId) {
         this.jobId = jobId;
@@ -161,6 +163,12 @@ public final class ConstructionJobProgress {
         this.waitingOccupiedCount += delta(previous, bits, BIT_WAITING_OCCUPIED);
         this.deliveredCount += delta(previous, bits, BIT_DELIVERED);
         this.skippedPlaceCount += delta(previous, bits, BIT_SKIPPED_PLACE);
+        // 只有交付、跳过和世界满足会改变真实/投影几何;租约来去不动几何,可飞判定的逐格缓存据此保留
+        if (delta(previous, bits, BIT_DELIVERED) != 0
+            || delta(previous, bits, BIT_SKIPPED_PLACE) != 0
+            || delta(previous, bits, BIT_WORLD_SATISFIED) != 0) {
+            this.geometryRevision++;
+        }
         // 外壳标记会在登记之后才被规划器改写,因此"未认领的拆除核心"必须按新旧两组位一起判定,
         // 只看未认领位的差量会让一份先登记后标壳的操作永远多算一个待办
         this.unleasedDemolishCount += count(demolish && has(bits, BIT_UNLEASED) && !has(bits, BIT_SHELL))
@@ -347,6 +355,10 @@ public final class ConstructionJobProgress {
 
     long layoutRevision() {
         return this.layoutRevision;
+    }
+
+    long geometryRevision() {
+        return this.geometryRevision;
     }
 
     boolean projectionIndexReady() {
