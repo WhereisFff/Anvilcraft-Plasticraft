@@ -8,7 +8,7 @@
 		"3": "anvilcraft:block/pipe_end",
 		"4": "anvilcraft:block/control_valve",
 		"5": "anvilcraft:block/advanced_comparator",
-		"particle": "anvilcraftplasticraft:block/plastic_molding_chamber"
+		"particle": "anvilcraftplasticraft:block/plastic_molding_chamber_particle"
 	},
 	"elements": [
 		{

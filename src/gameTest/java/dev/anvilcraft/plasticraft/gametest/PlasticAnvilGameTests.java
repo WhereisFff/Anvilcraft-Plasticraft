@@ -4463,22 +4463,35 @@ public final class PlasticAnvilGameTests {
     }
 
     @GameTest(timeoutTicks = 50)
-    @EmptyTemplate(value = "5x8x5", floor = true)
-    @TestHolder(description = "AnvilCraft receives exactly one landing-edge event with accumulated fall distance")
+    @EmptyTemplate(value = "9x8x5", floor = true)
+    @TestHolder(description = "Each landing edge publishes exactly one event, including a drop that reaches the support probe before being clipped")
     static void landingEventFiresOnce(ExtendedGameTestHelper helper) {
         HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 5.0D, 2.5D));
+        // 自由落体逐刻位移是固定序列，落差 1.375 的第八刻正好停在地面上方 0.0002 格：
+        // 支撑探针已经报告接触，位移却没有被裁剪，落地边沿因此被拆成「先接触、后裁剪」两刻。
+        HardenedResinAnvilEntity settlingAnvil = createAnvil(helper, new Vec3(6.5D, 3.375D, 2.5D));
         AtomicInteger eventCount = new AtomicInteger();
+        AtomicInteger settlingEventCount = new AtomicInteger();
         float[] fallDistance = {0.0F};
+        float[] settlingFallDistance = {0.0F};
         helper.addTemporaryListener((AnvilEvent.OnLand event) -> {
             if (event.getEntity() == anvil) {
                 eventCount.incrementAndGet();
                 fallDistance[0] = event.getFallDistance();
+            }
+            if (event.getEntity() == settlingAnvil) {
+                settlingEventCount.incrementAndGet();
+                settlingFallDistance[0] = event.getFallDistance();
             }
         });
         helper.runAfterDelay(35, () -> {
             check(anvil.isAlive(), "landing event converted or discarded the persistent anvil");
             check(eventCount.get() == 1, "expected one landing edge event, got " + eventCount.get());
             check(fallDistance[0] > 1.0F, "landing event did not carry accumulated fall distance");
+            check(settlingEventCount.get() == 1,
+                "expected one landing edge event for the 1.375 drop, got " + settlingEventCount.get());
+            check(settlingFallDistance[0] > 1.3F,
+                "1.375 drop reported only " + settlingFallDistance[0] + " fall distance");
             helper.succeed();
         });
     }

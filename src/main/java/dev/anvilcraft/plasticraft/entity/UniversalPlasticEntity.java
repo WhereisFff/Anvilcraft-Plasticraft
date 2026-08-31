@@ -98,6 +98,8 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
     private Optional<MoldedPlasticData> cachedMoldedData = Optional.empty();
     private PlasticEntityGeometry cachedMoldedGeometry;
     private boolean moldedDataCached;
+    private MoldedPlasticData typeNameData;
+    private Component cachedTypeName;
     private final MoldedPlasticItemHandler moldedItemHandler = new MoldedPlasticItemHandler(
         this::getMoldedData,
         this::replaceMoldedData,
@@ -479,11 +481,20 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
         return (MoldingTrayShapeAnalyzer.supportedCellMask(data.volumeMask()) & cell.bit()) != 0;
     }
 
+    /**
+     * NeoForge 为每个实体每帧构造一次 {@code RenderNameTagEvent}，即使没有名牌要画也会调用
+     * {@link #getDisplayName()}，而它会取两次名称。名称只由材质键和最终功能类型决定，
+     * 因此按同步到的制品数据实例缓存，避免逐帧复制掉落物栈再拼一次可翻译文本。
+     */
     @Override
     protected Component getTypeName() {
-        return this.getMoldedData()
-            .map(data -> MoldedPlasticNames.create(this.getDropStack(), data))
-            .orElseGet(super::getTypeName);
+        MoldedPlasticData data = this.getMoldedData().orElse(null);
+        if (data == null) return super.getTypeName();
+        if (this.cachedTypeName == null || this.typeNameData != data) {
+            this.typeNameData = data;
+            this.cachedTypeName = MoldedPlasticNames.create(this.getDropStack(), data);
+        }
+        return this.cachedTypeName;
     }
 
     @Override
@@ -786,6 +797,11 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
     @Override
     protected boolean triggersAnvilCraftLandingEvents(Direction impactDirection) {
         return this.isMoldedAnvil() && super.triggersAnvilCraftLandingEvents(impactDirection);
+    }
+
+    @Override
+    protected void handleLandingOnce(BlockPos centerPos, float fallDistance) {
+        MoldedPlasticAnvilAbilities.handleLandingOnce(this, centerPos, fallDistance);
     }
 
     @Override

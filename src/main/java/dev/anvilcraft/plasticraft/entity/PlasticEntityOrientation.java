@@ -27,6 +27,8 @@ public record PlasticEntityOrientation(Direction attachmentFace, int quarterTurn
     private static final int TURN_MASK = 0b11;
     private static final int PACKED_MASK = FACE_MASK | (TURN_MASK << TURN_SHIFT);
     private static final double HIT_CENTER_EPSILON = 1.0E-7D;
+    /** 朝向只有 24 种，解码走查表可以让实体每帧的朝向问询完全不产生分配。 */
+    private static final PlasticEntityOrientation[] BY_PACKED = createPackedTable();
 
     public PlasticEntityOrientation {
         Objects.requireNonNull(attachmentFace, "attachmentFace");
@@ -179,14 +181,20 @@ public record PlasticEntityOrientation(Direction attachmentFace, int quarterTurn
         if ((packed & ~PACKED_MASK) != 0) {
             return DEFAULT;
         }
-        int faceId = packed & FACE_MASK;
-        if (faceId >= Direction.values().length) {
-            return DEFAULT;
+        PlasticEntityOrientation orientation = BY_PACKED[packed];
+        return orientation == null ? DEFAULT : orientation;
+    }
+
+    private static PlasticEntityOrientation[] createPackedTable() {
+        PlasticEntityOrientation[] table = new PlasticEntityOrientation[PACKED_MASK + 1];
+        for (Direction attachmentFace : Direction.values()) {
+            for (int quarterTurn = 0; quarterTurn < 4; quarterTurn++) {
+                PlasticEntityOrientation orientation =
+                    new PlasticEntityOrientation(attachmentFace, quarterTurn);
+                table[Byte.toUnsignedInt(orientation.pack())] = orientation;
+            }
         }
-        return new PlasticEntityOrientation(
-            Direction.from3DDataValue(faceId),
-            (packed >> TURN_SHIFT) & TURN_MASK
-        );
+        return table;
     }
 
     /**

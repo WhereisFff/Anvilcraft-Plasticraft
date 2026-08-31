@@ -11,14 +11,17 @@ import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
@@ -36,7 +39,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-/** 覆盖悦灵休息室召回节流、稳定队列、满员拒绝、破坏放出与磁铁优先出库。 */
+/** 覆盖悦灵休息室召回节流、稳定队列、满员拒绝、破坏打包与磁铁优先出库。 */
 public final class AllayLoungeGameTests {
     private AllayLoungeGameTests() {
     }
@@ -403,10 +406,16 @@ public final class AllayLoungeGameTests {
 
     @GameTest(timeoutTicks = 40)
     @EmptyTemplate(value = "5x4x5", floor = true)
-    @TestHolder(description = "Breaking the lounge releases hosted allays and drops the disk")
-    static void breakingLoungeReleasesAllays(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "Breaking the lounge packs hosted allays into the dropped item")
+    static void breakingLoungePacksAllays(ExtendedGameTestHelper helper) {
         AllayLoungeBlockEntity lounge = placeLounge(helper);
-        lounge.addHosted(fillerRecord());
+        List<UUID> hostedIds = new ArrayList<>();
+        for (int index = 0; index < AllayLoungeBlockEntity.HOST_CAPACITY; index++) {
+            UUID id = UUID.randomUUID();
+            hostedIds.add(id);
+            check(lounge.addHosted(hostedRecord(id, new ItemStack(Items.SPYGLASS), Optional.of(AllayGameTests.TEST_OWNER))),
+                "failed to host allay record " + index);
+        }
         lounge.items().setStackInSlot(AllayLoungeBlockEntity.DISK_SLOT, new ItemStack(ModItems.STRUCTURE_DISK.get()));
         helper.getLevel().destroyBlock(helper.absolutePos(LOUNGE_POS), true);
         helper.startSequence()
@@ -415,13 +424,37 @@ public final class AllayLoungeGameTests {
                     WorkingAllayEntity.class,
                     new AABB(helper.absolutePos(LOUNGE_POS)).inflate(3.0D)
                 );
-                check(!workers.isEmpty(), "broken lounge did not release hosted allays");
-                List<ItemEntity> disks = helper.getLevel().getEntitiesOfClass(
+                check(workers.isEmpty(), "broken lounge released hosted allays into the world");
+                List<ItemEntity> lounges = helper.getLevel().getEntitiesOfClass(
                     ItemEntity.class,
                     new AABB(helper.absolutePos(LOUNGE_POS)).inflate(2.0D),
-                    item -> item.getItem().is(ModItems.STRUCTURE_DISK.get())
+                    item -> item.getItem().is(PlasticraftBlocks.ALLAY_LOUNGE.asItem())
                 );
-                check(!disks.isEmpty(), "broken lounge did not drop the structure disk");
+                check(lounges.size() == 1, "broken lounge did not drop exactly one packed lounge");
+                ItemStack packed = lounges.getFirst().getItem().copy();
+                CustomData data = packed.get(DataComponents.BLOCK_ENTITY_DATA);
+                check(data != null, "packed lounge is missing block entity data");
+                CompoundTag saved = data.copyTag();
+                ListTag hosted = saved.getList("Hosted", Tag.TAG_COMPOUND);
+                check(hosted.size() == AllayLoungeBlockEntity.HOST_CAPACITY,
+                    "packed lounge stored " + hosted.size() + " hosted records instead of 16");
+                check(saved.contains("Items", Tag.TAG_COMPOUND), "packed lounge lost its structure disk slot");
+
+                BlockPos restoredPos = new BlockPos(3, 2, 1);
+                helper.setBlock(restoredPos, PlasticraftBlocks.ALLAY_LOUNGE.get());
+                check(BlockItem.updateCustomBlockEntityTag(
+                        helper.getLevel(),
+                        null,
+                        helper.absolutePos(restoredPos),
+                        packed
+                    ), "packed lounge data was not applied on placement");
+                if (!(helper.getBlockEntity(restoredPos) instanceof AllayLoungeBlockEntity restored)) {
+                    throw new GameTestAssertException("restored lounge block entity is missing");
+                }
+                check(restored.hosted().size() == AllayLoungeBlockEntity.HOST_CAPACITY,
+                    "restored lounge did not recover all 16 hosted records");
+                check(restored.hosted().stream().map(AllayWorkRecord::entityId).toList().equals(hostedIds),
+                    "restored lounge changed the hosted allay UUID order");
             })
             .thenSucceed();
     }

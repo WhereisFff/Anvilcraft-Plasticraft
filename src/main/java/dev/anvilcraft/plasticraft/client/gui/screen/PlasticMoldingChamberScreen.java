@@ -1600,6 +1600,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         int atlasHeight = Math.max(1, Math.round(spriteHeight / (sprite.getV1() - sprite.getV0())));
 
         // 手工裁切边缘纹理块，避免先换算到屏幕整数坐标后再裁剪造成像素偏移
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
         graphics.setColor(red, green, blue, alpha);
         try {
             for (int tileY = bottom - 16; tileY > top - 16; tileY -= 16) {
@@ -1627,6 +1629,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             }
         } finally {
             graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.disableBlend();
         }
     }
 

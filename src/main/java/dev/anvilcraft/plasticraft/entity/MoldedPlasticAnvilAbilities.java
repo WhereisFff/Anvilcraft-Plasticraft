@@ -24,26 +24,37 @@ public final class MoldedPlasticAnvilAbilities {
     private MoldedPlasticAnvilAbilities() {
     }
 
-    /** 返回普通落砧事件是否已由大型炼药锅专用流程消费。 */
+    /**
+     * 巨型落地的冲击波与多方块判定按整次落地只执行一次，不随底面覆盖的格数重复。
+     * 传入位置为底面中心格，即 AnvilCraft 巨型铁砧的底层格。
+     */
+    public static void handleLandingOnce(
+        UniversalPlasticEntity entity,
+        BlockPos centerPos,
+        float fallDistance
+    ) {
+        if (!entity.isMoldedGiantAnvil()) return;
+        // 巨型事件把实体类型固定为 FallingGiantAnvilEntity，直接复用公开处理器可避免伪造代理实体。
+        AnvilEvent.GiantOnLand giantEvent = new AnvilEvent.GiantOnLand(
+            entity.level(),
+            centerPos.above(),
+            null,
+            fallDistance
+        );
+        GiantAnvilLandingEventListener.handleMultiblock(giantEvent);
+        GiantAnvilShockEventListener.onLand(giantEvent);
+    }
+
+    /** 返回该格的普通落砧事件是否已由大型炼药锅专用流程消费。 */
     public static boolean handleLanding(
         UniversalPlasticEntity entity,
         AnvilEvent.OnLand event
     ) {
-        if (entity.isMoldedGiantAnvil() && handleGiantLanding(event)) return true;
+        if (entity.isMoldedGiantAnvil() && handleLargeCauldronImpact(event)) return true;
         return handleStonecutterBreaking(entity, event);
     }
 
-    private static boolean handleGiantLanding(AnvilEvent.OnLand event) {
-        // 巨型事件把实体类型固定为 FallingGiantAnvilEntity，直接复用公开处理器可避免伪造代理实体。
-        AnvilEvent.GiantOnLand giantEvent = new AnvilEvent.GiantOnLand(
-            event.getLevel(),
-            event.getPos().above(),
-            null,
-            event.getFallDistance()
-        );
-        GiantAnvilLandingEventListener.handleMultiblock(giantEvent);
-        GiantAnvilShockEventListener.onLand(giantEvent);
-
+    private static boolean handleLargeCauldronImpact(AnvilEvent.OnLand event) {
         BlockPos hitPos = event.getPos().below();
         BlockState hitState = event.getLevel().getBlockState(hitPos);
         if (!(hitState.getBlock() instanceof LargeCauldronBlock)) return false;

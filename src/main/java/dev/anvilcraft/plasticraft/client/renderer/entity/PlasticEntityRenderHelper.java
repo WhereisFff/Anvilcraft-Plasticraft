@@ -10,6 +10,7 @@ import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.dubhe.anvilcraft.AnvilCraft;
 import dev.dubhe.anvilcraft.client.init.ModRenderTypes;
 import net.minecraft.client.Minecraft;
@@ -93,12 +94,13 @@ public final class PlasticEntityRenderHelper {
         renderBlock(entity, dispatcher, pose, buffers, packedLight);
     }
 
+    /** 逐帧多次问询，因此避开熔体栈复制和 Optional 链。 */
     public static boolean isTransparent(UniversalPlasticEntity entity) {
-        return entity.getDisplayState().is(PlasticraftBlocks.CLEAR_PLASTIC.get())
-            || entity.getMoldedData()
-                .flatMap(data -> PlasticMaterial.fromMelt(data.material()))
-                .map(PlasticMaterial::isTransparent)
-                .orElse(false);
+        if (entity.getDisplayState().is(PlasticraftBlocks.CLEAR_PLASTIC.get())) return true;
+        MoldedPlasticData data = entity.getMoldedData().orElse(null);
+        if (data == null) return false;
+        PlasticMaterial material = PlasticMaterial.fromMeltOrNull(data.materialView());
+        return material != null && material.isTransparent();
     }
 
     /** 使用本体铁砧锤的蓝色半透明材质渲染方向预览。 */

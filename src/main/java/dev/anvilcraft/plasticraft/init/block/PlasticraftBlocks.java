@@ -65,6 +65,11 @@ import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.material.PushReaction;
+import net.minecraft.world.level.storage.loot.LootPool;
+import net.minecraft.world.level.storage.loot.LootTable;
+import net.minecraft.world.level.storage.loot.entries.LootItem;
+import net.minecraft.world.level.storage.loot.functions.CopyComponentsFunction;
+import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
 import net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent;
 import net.neoforged.neoforge.client.model.generators.ConfiguredModel;
 import net.neoforged.neoforge.client.model.generators.ModelBuilder;
@@ -116,7 +121,12 @@ public final class PlasticraftBlocks {
             .pushReaction(PushReaction.BLOCK))
         .lang("Allay Lounge")
         .tag(BlockTags.MINEABLE_WITH_PICKAXE)
-        .loot((tables, block) -> tables.dropSelf(block))
+        .loot((tables, block) -> tables.add(block, LootTable.lootTable()
+            .withPool(tables.applyExplosionCondition(block, LootPool.lootPool()
+                .setRolls(ConstantValue.exactly(1.0F))
+                .add(LootItem.lootTableItem(block)
+                    .apply(CopyComponentsFunction.copyComponents(CopyComponentsFunction.Source.BLOCK_ENTITY)
+                        .include(DataComponents.BLOCK_ENTITY_DATA)))))))
         .blockstate((context, provider) -> {
             // 休息室不耗电,始终使用同一套烘焙模型。
             ModelFile model = provider.models().getExistingFile(provider.modLoc("block/allay_lounge"));

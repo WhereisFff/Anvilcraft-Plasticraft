@@ -10,7 +10,7 @@ import net.minecraft.world.phys.Vec3;
 
 /** 可移动塑料实体的磁性节点状态和选择性点力行为。 */
 public final class PlasticMagnetism {
-    private static final double SOURCE_STRENGTH = 10.0D;
+    private static final double SOURCE_STRENGTH = 25.0D;
     private static final double MAX_ACCELERATION = 0.35D;
     private static final double EPSILON_SQR = 1.0E-8D;
 

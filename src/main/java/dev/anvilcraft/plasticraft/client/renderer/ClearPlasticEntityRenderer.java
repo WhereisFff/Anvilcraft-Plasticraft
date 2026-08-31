@@ -82,10 +82,9 @@ public final class ClearPlasticEntityRenderer {
         ClearPlasticRenderTypes.beginDeferredPass(camera, partialTick);
         dispatcher.setRenderShadow(false);
         try {
-            List<DeferredPlastic> plastics = collectPlastics(level, partialTick);
-            plastics.sort(Comparator.<DeferredPlastic>comparingDouble(
-                entry -> distanceToCamera(entry, camera)
-            ).reversed());
+            List<DeferredPlastic> plastics = collectPlastics(level, partialTick, camera);
+            // 距离在收集时就算好；交给比较器每次比较时再算等于把包围盒运算乘上排序的比较次数。
+            plastics.sort(Comparator.comparingDouble(DeferredPlastic::cameraDistance).reversed());
             for (DeferredPlastic plastic : plastics) {
                 renderPlastic(event, pose, buffers, dispatcher, plastic.entity, plastic.partialTick);
             }
@@ -110,6 +109,9 @@ public final class ClearPlasticEntityRenderer {
         }
         float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(minecraft.isPaused());
         Vec3 camera = event.getCamera().getPosition();
+        List<DeferredPlastic> plastics = collectPlastics(level, partialTick, camera);
+        // 没有透明塑料时不必绑定目标，也不必为延迟阶段复制一次全屏深度。
+        if (plastics.isEmpty()) return;
         PoseStack pose = event.getPoseStack();
         MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
         EntityRenderDispatcher dispatcher = minecraft.getEntityRenderDispatcher();
@@ -117,7 +119,7 @@ public final class ClearPlasticEntityRenderer {
         pose.translate(-camera.x, -camera.y, -camera.z);
         minecraft.getMainRenderTarget().bindWrite(false);
         try {
-            for (DeferredPlastic plastic : collectPlastics(level, partialTick)) {
+            for (DeferredPlastic plastic : plastics) {
                 renderOpaqueFluidContents(event, pose, buffers, dispatcher, plastic.entity, plastic.partialTick);
             }
             buffers.endBatch(RenderType.cutout());
@@ -138,7 +140,7 @@ public final class ClearPlasticEntityRenderer {
         mainTarget.bindWrite(false);
     }
 
-    private static List<DeferredPlastic> collectPlastics(ClientLevel level, float partialTick) {
+    private static List<DeferredPlastic> collectPlastics(ClientLevel level, float partialTick, Vec3 camera) {
         List<DeferredPlastic> plastics = new ArrayList<>();
         for (Entity entity : level.entitiesForRendering()) {
             if (!(entity instanceof UniversalPlasticEntity plastic)
@@ -147,19 +149,18 @@ public final class ClearPlasticEntityRenderer {
                 || PlasticHammerScreen.getPreview(plastic) != null) {
                 continue;
             }
-            plastics.add(new DeferredPlastic(plastic, partialTick));
+            plastics.add(new DeferredPlastic(plastic, partialTick, cameraDistance(plastic, partialTick, camera)));
         }
         for (BondedEntityBlockEntity blockEntity : DEFERRED_BLOCK_ENTITIES) {
             UniversalPlasticEntity plastic = queuedPlastic(blockEntity, level);
             if (plastic == null || !plastic.isAlive()) continue;
-            plastics.add(new DeferredPlastic(plastic, 1.0F));
+            plastics.add(new DeferredPlastic(plastic, 1.0F, cameraDistance(plastic, 1.0F, camera)));
         }
         return plastics;
     }
 
-    private static double distanceToCamera(DeferredPlastic plastic, Vec3 camera) {
-        UniversalPlasticEntity entity = plastic.entity;
-        Vec3 position = entity.getPosition(plastic.partialTick);
+    private static double cameraDistance(UniversalPlasticEntity entity, float partialTick, Vec3 camera) {
+        Vec3 position = entity.getPosition(partialTick);
         AABB bounds = entity.getBoundingBox().move(position.subtract(entity.position()));
         return bounds.getCenter().distanceToSqr(camera);
     }
@@ -251,6 +252,6 @@ public final class ClearPlasticEntityRenderer {
         return proxy;
     }
 
-    private record DeferredPlastic(UniversalPlasticEntity entity, float partialTick) {
+    private record DeferredPlastic(UniversalPlasticEntity entity, float partialTick, double cameraDistance) {
     }
 }

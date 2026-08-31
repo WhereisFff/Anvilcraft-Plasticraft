@@ -569,11 +569,15 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
     }
 
     /** 后续塑料类型可用自身的损坏状态或耐久模型替代销毁行为。 */
-    protected void handleAnvilCraftLandingDamage(AnvilEvent.OnLand event) {
-        this.applyAnvilCraftRecipeDamage(event.getPos());
+    protected void handleAnvilCraftLandingDamage(BlockPos centerPos) {
+        this.applyAnvilCraftRecipeDamage(centerPos);
     }
 
-    /** 功能类型可在普通落砧配方发布前执行并消费专用落地流程。 */
+    /** 功能类型可在逐格落砧事件之前执行只按整次落地生效的流程。 */
+    protected void handleLandingOnce(BlockPos centerPos, float fallDistance) {
+    }
+
+    /** 功能类型可在普通落砧配方发布前执行并消费单格落地流程。 */
     protected boolean handleAdditionalAnvilCraftLanding(AnvilEvent.OnLand event) {
         return false;
     }
@@ -1226,10 +1230,14 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
         int directionMask = PlasticEntityPhysics.directionMask(gravityDirection);
         boolean blockContact = this.cachedHasBlockSupport(gravityDirection);
+        // 支撑探针有厚度，落体可能先落进探针深度、下一刻才真正被裁剪。若只认裁剪，接触那一刻会抢先
+        // 占掉落地边沿，随后真正停下的一刻反被当成本来就站在地面上，整次落地一个事件都发不出来。
+        boolean gainedBlockContact = blockContact && !hadBlockSupportBeforeMove;
         boolean newImpact = blockContact
             && (this.blockContactMask & directionMask) == 0
             && this.impactTrackingArmed
-            && PlasticEntityPhysics.collidedAlongGravity(requestedMovement, actualMovement, gravityDirection)
+            && (gainedBlockContact
+                || PlasticEntityPhysics.collidedAlongGravity(requestedMovement, actualMovement, gravityDirection))
             && this.directionalFallDistance > PlasticEntityPhysics.FACE_EPSILON;
         if (newImpact) {
             this.playImpactSound(gravityDirection, requestedMovement.length());
@@ -1452,18 +1460,27 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     private void postLandingEvent(Direction gravityDirection) {
         if (this.level().isClientSide || !this.triggersAnvilCraftLandingEvents(gravityDirection)) return;
-        BlockPos landingPos = PlasticEntityPhysics.landingPosition(this, gravityDirection);
-        AnvilEvent.OnLand event = new AnvilEvent.OnLand(
-            this.level(),
-            landingPos,
-            this,
-            this.directionalFallDistance
-        );
-        if (!this.handleAdditionalAnvilCraftLanding(event)) {
-            NeoForge.EVENT_BUS.post(event);
+        List<BlockPos> landingPositions = PlasticEntityPhysics.landingPositions(this, gravityDirection);
+        BlockPos centerPos = landingPositions.getFirst();
+        float fallDistance = this.directionalFallDistance;
+        this.handleLandingOnce(centerPos, fallDistance);
+        boolean anvilDamage = false;
+        for (BlockPos landingPos : landingPositions) {
+            // 逐格配方可能直接销毁制品，剩余格不能再拿已移除的实体当落砧来源。
+            if (this.isRemoved()) break;
+            AnvilEvent.OnLand event = new AnvilEvent.OnLand(
+                this.level(),
+                landingPos,
+                this,
+                fallDistance
+            );
+            if (!this.handleAdditionalAnvilCraftLanding(event)) {
+                NeoForge.EVENT_BUS.post(event);
+            }
+            anvilDamage |= event.isAnvilDamage();
         }
-        if (event.isAnvilDamage()) {
-            this.handleAnvilCraftLandingDamage(event);
+        if (anvilDamage) {
+            this.handleAnvilCraftLandingDamage(centerPos);
         }
     }
 

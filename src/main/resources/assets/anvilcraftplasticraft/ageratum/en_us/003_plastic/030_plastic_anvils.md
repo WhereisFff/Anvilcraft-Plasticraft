@@ -14,6 +14,7 @@ Pick Anvil as the product type and your model has to grow three sections along t
 - Total height must be at least 10px; bottom, middle and top sections must be at least 3px, 3px and 4px thick, with the top strictly thicker than the bottom and all three sections connected along Y
 - The middle projection must be strictly inset on all four sides, and the top projection may be at most 16px² smaller in area than the bottom
 - Only an impact on the local bottom face while it points down can trigger anvil processing; right-clicking or using an Anvil Hammer opens the vanilla anvil interface
+- Every cell the bottom face lands on is processed on its own, even one only clipped by the very edge of that face, so a bottom that spans several cells processes all of them in a single landing — a 40x40px bottom covers exactly 3x3 cells
 
 The material decides what falls out when it breaks a block:
 

@@ -24,6 +24,8 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
 import net.neoforged.neoforge.fluids.FluidStack;
+import org.joml.Matrix4f;
+import org.joml.Vector3f;
 
 import java.util.List;
 import java.util.LinkedHashMap;
@@ -119,8 +121,8 @@ public final class MoldedPlasticMeshRenderer {
         if (cullingEntity != null) {
             consumer = TransparentPlasticFaceCullingVertexConsumer.wrap(cullingEntity, consumer);
         }
-        renderMesh(mesh.volumeVertices, pose, consumer, packedLight, color, true, true, textureRef);
-        renderMesh(mesh.zeroThicknessVertices, pose, consumer, packedLight, color, true, false, textureRef);
+        renderMesh(mesh.volumeVertices, pose, consumer, packedLight, color, true, textureRef);
+        renderMesh(mesh.zeroThicknessVertices, pose, consumer, packedLight, color, false, textureRef);
         TransparentPlasticFaceCullingVertexConsumer.finish(consumer);
         return renderType;
     }
@@ -177,7 +179,7 @@ public final class MoldedPlasticMeshRenderer {
         if (cullingEntity != null) {
             consumer = TransparentPlasticFaceCullingVertexConsumer.wrap(cullingEntity, consumer);
         }
-        renderMesh(vertices, pose, consumer, packedLight, color, true, volumeCullable, textureRef);
+        renderMesh(vertices, pose, consumer, packedLight, color, volumeCullable, textureRef);
         TransparentPlasticFaceCullingVertexConsumer.finish(consumer);
     }
 
@@ -197,7 +199,6 @@ public final class MoldedPlasticMeshRenderer {
             consumer,
             LightTexture.FULL_BLOCK,
             valid ? 0xFFFFFFFF : INVALID_PREVIEW_COLOR,
-            false,
             true,
             textureRef
         );
@@ -207,7 +208,6 @@ public final class MoldedPlasticMeshRenderer {
             consumer,
             LightTexture.FULL_BLOCK,
             valid ? 0xFFFFFFFF : INVALID_PREVIEW_COLOR,
-            false,
             false,
             textureRef
         );
@@ -239,7 +239,6 @@ public final class MoldedPlasticMeshRenderer {
             packedLight,
             0xFFFFFFFF,
             true,
-            true,
             textureRef
         );
     }
@@ -262,7 +261,6 @@ public final class MoldedPlasticMeshRenderer {
             buffers.getBuffer(renderType),
             LightTexture.FULL_BLOCK,
             valid ? 0xFFFFFFFF : INVALID_PREVIEW_COLOR,
-            false,
             true,
             textureRef
         );
@@ -341,23 +339,25 @@ public final class MoldedPlasticMeshRenderer {
         int packedLight,
         int color
     ) {
+        Matrix4f transform = pose.pose();
+        Vector3f position = new Vector3f();
+        Vector3f normal = new Vector3f();
         for (int offset = 0; offset < vertices.length; offset += VERTEX_STRIDE) {
+            transform.transformPosition(vertices[offset], vertices[offset + 1], vertices[offset + 2], position);
+            pose.transformNormal(vertices[offset + 3], vertices[offset + 4], vertices[offset + 5], normal);
             consumer.addVertex(
-                    pose.pose(),
-                    vertices[offset],
-                    vertices[offset + 1],
-                    vertices[offset + 2]
-                )
-                .setColor(color)
-                .setUv(sprite.getU(vertices[offset + 6]), sprite.getV(vertices[offset + 7]))
-                .setLight(packedLight)
-                .setOverlay(OverlayTexture.NO_OVERLAY)
-                .setNormal(
-                    pose,
-                    vertices[offset + 3],
-                    vertices[offset + 4],
-                    vertices[offset + 5]
-                );
+                position.x,
+                position.y,
+                position.z,
+                color,
+                sprite.getU(vertices[offset + 6]),
+                sprite.getV(vertices[offset + 7]),
+                OverlayTexture.NO_OVERLAY,
+                packedLight,
+                normal.x,
+                normal.y,
+                normal.z
+            );
         }
     }
 
@@ -372,6 +372,10 @@ public final class MoldedPlasticMeshRenderer {
 
         private PreparedTankFluids(List<PreparedFluidLayer> layers) {
             this.layers = layers;
+        }
+
+        public boolean isEmpty() {
+            return this.layers.isEmpty();
         }
 
         private static PreparedTankFluids create(List<MoldedTankFluidGeometry.Layer> layers) {
@@ -450,38 +454,57 @@ public final class MoldedPlasticMeshRenderer {
         }
     }
 
+    /**
+     * 逐帧重发制品网格。
+     *
+     * <p>vanilla 的 {@code VertexConsumer} 默认方法会为每个顶点的位置和法线各新建一个
+     * {@code Vector3f}，几百个制品实体同屏时这是渲染线程最大的分配来源；因此这里复用暂存向量，
+     * 并改用一次写满整个顶点的重载，让 {@code BufferBuilder} 走直接写内存的快路径。</p>
+     */
     private static void renderMesh(
         float[] vertices,
         PoseStack pose,
         VertexConsumer consumer,
         int packedLight,
         int color,
-        boolean entityFormat,
         boolean volumeCullable,
         MoldedTextureRef textureRef
     ) {
         PoseStack.Pose lastPose = pose.last();
-        for (int offset = 0; offset < vertices.length; offset += VERTEX_STRIDE) {
-            if (offset % (VERTEX_STRIDE * 4) == 0) {
-                TransparentPlasticFaceCullingVertexConsumer.beginQuad(consumer, !volumeCullable);
-            }
-            VertexConsumer vertex = consumer.addVertex(
-                    lastPose.pose(),
+        Matrix4f transform = lastPose.pose();
+        Vector3f position = new Vector3f();
+        Vector3f normal = new Vector3f();
+        int quadStride = VERTEX_STRIDE * 4;
+        for (int quad = 0; quad < vertices.length; quad += quadStride) {
+            TransparentPlasticFaceCullingVertexConsumer.beginQuad(consumer, !volumeCullable);
+            int end = Math.min(quad + quadStride, vertices.length);
+            for (int offset = quad; offset < end; offset += VERTEX_STRIDE) {
+                transform.transformPosition(
                     vertices[offset],
                     vertices[offset + 1],
-                    vertices[offset + 2]
-                )
-                .setColor(color)
-                .setUv(vertices[offset + 6], textureRef.mapV(vertices[offset + 7]));
-            if (entityFormat) vertex.setOverlay(OverlayTexture.NO_OVERLAY);
-            vertex
-                .setLight(packedLight)
-                .setNormal(
-                    lastPose,
+                    vertices[offset + 2],
+                    position
+                );
+                lastPose.transformNormal(
                     vertices[offset + 3],
                     vertices[offset + 4],
-                    vertices[offset + 5]
+                    vertices[offset + 5],
+                    normal
                 );
+                consumer.addVertex(
+                    position.x,
+                    position.y,
+                    position.z,
+                    color,
+                    vertices[offset + 6],
+                    textureRef.mapV(vertices[offset + 7]),
+                    OverlayTexture.NO_OVERLAY,
+                    packedLight,
+                    normal.x,
+                    normal.y,
+                    normal.z
+                );
+            }
         }
     }
 

@@ -20,6 +20,8 @@ import dev.dubhe.anvilcraft.init.item.ModItems;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.component.DataComponentMap;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
@@ -35,6 +37,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -58,7 +61,7 @@ import java.util.function.UnaryOperator;
 
 /**
  * 悦灵休息室。最多托管 16 只戴帽悦灵,另有 1 个结构磁盘槽。
- * 不接入电网,有无供电都能召回、出库与入库。破坏时把托管悦灵生成回世界。
+ * 不接入电网,有无供电都能召回、出库与入库。破坏时把托管悦灵随休息室物品保存。
  */
 public class AllayLoungeBlockEntity extends BlockEntity {
     public static final int HOST_CAPACITY = 16;
@@ -100,6 +103,9 @@ public class AllayLoungeBlockEntity extends BlockEntity {
     private AllayShortageStrategy shortageStrategy = AllayShortageStrategy.PAUSE;
     private AllayClearanceStrategy clearanceStrategy = AllayClearanceStrategy.CLEAR_AREA;
     private boolean loading;
+    /** 生存模式移除方块后才生成掉落物,先缓存破坏前的数据以跨过 onRemove 回调。 */
+    @Nullable
+    private CompoundTag removalData;
     @Nullable
     private UUID lastDiskJobId;
     /** 休息室放置者；无所有者时保持拒绝访问，不进行隐式认领。 */
@@ -462,6 +468,27 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         ObservationChunkLoader.revokeLounge(serverLevel, this.worldPosition);
     }
 
+    /** 破坏前保留可搬运数据,只解除世界级运行时引用,不把托管悦灵生成到世界。 */
+    public void prepareForRemoval() {
+        if (this.level == null || this.removalData != null) return;
+        this.removalData = this.savePortableData(this.level.registryAccess());
+        if (this.level instanceof ServerLevel serverLevel) {
+            ConstructionJobController.unclaimLounge(serverLevel, this.worldPosition, this.diskJobId());
+            this.lastDiskJobId = null;
+            this.clearDockingQueue();
+            ObservationChunkLoader.revokeLounge(serverLevel, this.worldPosition);
+        }
+    }
+
+    public boolean hasPortableData() {
+        return !this.hosted.isEmpty()
+            || this.dockingRecord != null
+            || !this.items.getStackInSlot(DISK_SLOT).isEmpty()
+            || this.owner != null
+            || this.shortageStrategy != AllayShortageStrategy.PAUSE
+            || this.clearanceStrategy != AllayClearanceStrategy.CLEAR_AREA;
+    }
+
     private void clearDockingQueue() {
         if (this.level != null) {
             for (UUID id : this.dockingQueue) {
@@ -751,6 +778,27 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         }
     }
 
+    @Override
+    protected void collectImplicitComponents(DataComponentMap.Builder components) {
+        super.collectImplicitComponents(components);
+        CompoundTag tag = this.removalData == null
+            ? this.level == null ? null : this.savePortableData(this.level.registryAccess())
+            : this.removalData.copy();
+        if (tag == null) return;
+        BlockEntity.addEntityType(tag, this.getType());
+        components.set(DataComponents.BLOCK_ENTITY_DATA, CustomData.of(tag));
+    }
+
+    private CompoundTag savePortableData(HolderLookup.Provider registries) {
+        CompoundTag tag = this.saveCustomOnly(registries);
+        tag.remove("PickupDisplays");
+        if (!tag.contains("DockingAllay", Tag.TAG_COMPOUND)) {
+            tag.remove("DockingProgress");
+            tag.remove("DockingRunning");
+        }
+        return tag;
+    }
+
     private void saveDockingState(CompoundTag tag, HolderLookup.Provider registries) {
         if (this.dockingRecord != null) {
             AllayWorkRecord.CODEC
@@ -867,6 +915,7 @@ public class AllayLoungeBlockEntity extends BlockEntity {
     @Override
     public void clearRemoved() {
         super.clearRemoved();
+        this.removalData = null;
         if (this.level instanceof ServerLevel) {
             AllayLoungeNetwork.register(this);
         }

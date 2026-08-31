@@ -91,6 +91,19 @@ public class AllayLoungeBlock extends BaseEntityBlock {
     }
 
     @Override
+    public BlockState playerWillDestroy(Level level, BlockPos pos, BlockState state, Player player) {
+        if (!level.isClientSide
+            && player.isCreative()
+            && level.getBlockEntity(pos) instanceof AllayLoungeBlockEntity lounge
+            && lounge.hasPortableData()) {
+            ItemStack stack = new ItemStack(this);
+            lounge.saveToItem(stack, level.registryAccess());
+            Block.popResource(level, pos, stack);
+        }
+        return super.playerWillDestroy(level, pos, state, player);
+    }
+
+    @Override
     protected void onRemove(
         BlockState state,
         Level level,
@@ -100,7 +113,7 @@ public class AllayLoungeBlock extends BaseEntityBlock {
     ) {
         if (!state.is(newState.getBlock()) && !level.isClientSide
             && level.getBlockEntity(pos) instanceof AllayLoungeBlockEntity lounge) {
-            lounge.releaseAllToWorld();
+            lounge.prepareForRemoval();
         }
         super.onRemove(state, level, pos, newState, movedByPiston);
     }

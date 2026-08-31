@@ -20,6 +20,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.minecraft.world.item.DyeColor;
+import net.neoforged.neoforge.fluids.FluidStack;
 
 import javax.annotation.Nullable;
 
@@ -52,10 +53,11 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
      * <p>只有真正被请求到的颜色才会生成并上传对应行，避免首次见到新形状时付出十六倍的生成开销。</p>
      */
     public synchronized MoldedTextureRef textureRef(MoldedPlasticData data) {
-        List<PlasticSurface> surfaces = data.plasticSurfaces();
         String shapeHash = data.shapeHash();
-        DyeColor color = PlasticMeltColor.get(data.material());
-        PlasticMaterial material = PlasticMaterial.fromMelt(data.material()).orElse(PlasticMaterial.UNIVERSAL);
+        FluidStack melt = data.materialView();
+        DyeColor color = PlasticMeltColor.get(melt);
+        PlasticMaterial resolved = PlasticMaterial.fromMeltOrNull(melt);
+        PlasticMaterial material = resolved == null ? PlasticMaterial.UNIVERSAL : resolved;
         ResourceInputs currentResources = this.loadResources(material);
         PlasticTextureLayout layout = data.textureLayout();
         AtlasKey key = new AtlasKey(
@@ -74,7 +76,7 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
                 .computeIfAbsent(key, ignored -> new HashMap<>())
                 .computeIfAbsent(color, ignored -> this.createOversizedTexture(
                     shapeHash,
-                    surfaces,
+                    data.plasticSurfaces(),
                     color,
                     material,
                     currentResources,
@@ -83,19 +85,21 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
             return new MoldedTextureRef(oversized, 0, 1);
         }
 
-        ColorAtlas atlas = this.atlases.computeIfAbsent(key, ignored -> createAtlas(
-            shapeHash,
-            material,
-            layout,
-            rowCount
-        ));
-        atlas.fillRow(paletteRow, () -> this.generate(
-            shapeHash,
-            surfaces,
-            material,
-            currentResources,
-            paletteRow
-        ));
+        ColorAtlas atlas = this.atlases.get(key);
+        if (atlas == null) {
+            atlas = createAtlas(shapeHash, material, layout, rowCount);
+            this.atlases.put(key, atlas);
+        }
+        // 行已填充时不进入生成分支，避免逐帧为已就绪的颜色行构造捕获式回调。
+        if (!atlas.hasRow(paletteRow)) {
+            atlas.fillRow(paletteRow, () -> this.generate(
+                shapeHash,
+                data.plasticSurfaces(),
+                material,
+                currentResources,
+                paletteRow
+            ));
+        }
         return new MoldedTextureRef(atlas.id, paletteRow, rowCount);
     }
 
@@ -255,6 +259,10 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
             this.texture = texture;
             this.rowHeight = rowHeight;
             this.filledRows = new boolean[rowCount];
+        }
+
+        private boolean hasRow(int row) {
+            return this.filledRows[row];
         }
 
         private void fillRow(int row, Supplier<GeneratedPlasticTexture> generator) {

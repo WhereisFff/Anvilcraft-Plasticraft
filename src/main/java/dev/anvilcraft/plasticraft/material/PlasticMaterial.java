@@ -35,6 +35,9 @@ public enum PlasticMaterial {
     CLEAR("clear_plastic"),
     HEAT_RESISTANT("heat_resistant_plastic");
 
+    // Enum.values() 每次调用都会克隆数组，材质反查在渲染和碰撞路径里逐帧发生，必须共用同一份。
+    private static final PlasticMaterial[] VALUES = values();
+
     private final String key;
 
     PlasticMaterial(String key) {
@@ -203,49 +206,55 @@ public enum PlasticMaterial {
     }
 
     public static Optional<PlasticMaterial> fromMelt(FluidStack stack) {
-        if (stack.isEmpty()) return Optional.empty();
-        for (PlasticMaterial material : values()) {
-            if (stack.getFluid().getFluidType() == material.meltType()) return Optional.of(material);
+        return Optional.ofNullable(fromMeltOrNull(stack));
+    }
+
+    /** 供逐帧判定复用的无分配反查入口。 */
+    public static PlasticMaterial fromMeltOrNull(FluidStack stack) {
+        if (stack.isEmpty()) return null;
+        FluidType type = stack.getFluid().getFluidType();
+        for (PlasticMaterial material : VALUES) {
+            if (type == material.meltType()) return material;
         }
-        return Optional.empty();
+        return null;
     }
 
     public static Optional<PlasticMaterial> fromMeltBlock(BlockState state) {
-        for (PlasticMaterial material : values()) {
+        for (PlasticMaterial material : VALUES) {
             if (state.is(material.meltBlock())) return Optional.of(material);
         }
         return Optional.empty();
     }
 
     public static Optional<PlasticMaterial> fromMeltCauldron(BlockState state) {
-        for (PlasticMaterial material : values()) {
+        for (PlasticMaterial material : VALUES) {
             if (state.is(material.meltCauldron())) return Optional.of(material);
         }
         return Optional.empty();
     }
 
     public static Optional<PlasticMaterial> fromProductBlock(BlockState state) {
-        for (PlasticMaterial material : values()) {
+        for (PlasticMaterial material : VALUES) {
             if (state.is(material.productBlock())) return Optional.of(material);
         }
         return Optional.empty();
     }
 
     public static Optional<PlasticMaterial> fromGranule(ItemStack stack) {
-        for (PlasticMaterial material : values()) {
+        for (PlasticMaterial material : VALUES) {
             if (stack.is(material.granule())) return Optional.of(material);
         }
         return Optional.empty();
     }
 
     public static Optional<PlasticMaterial> fromKey(String key) {
-        for (PlasticMaterial material : values()) {
+        for (PlasticMaterial material : VALUES) {
             if (material.key.equals(key)) return Optional.of(material);
         }
         return Optional.empty();
     }
 
     public static boolean isMelt(FluidStack stack) {
-        return fromMelt(stack).isPresent();
+        return fromMeltOrNull(stack) != null;
     }
 }

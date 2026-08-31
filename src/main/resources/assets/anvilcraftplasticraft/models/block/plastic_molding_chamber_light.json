@@ -5,7 +5,7 @@
 	"render_type": "minecraft:cutout",
 	"textures": {
 		"2": "anvilcraft:item/supercapacitor",
-		"particle": "anvilcraftplasticraft:block/plastic_molding_chamber"
+		"particle": "anvilcraftplasticraft:block/plastic_molding_chamber_particle"
 	},
 	"elements": [
 		{

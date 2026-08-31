@@ -592,6 +592,15 @@ public record MoldedPlasticData(
         return this.material.copy();
     }
 
+    /**
+     * 返回材质熔体栈本身，仅供只读判定使用，调用方不得修改。
+     *
+     * <p>{@link #material()} 每次都要复制熔体栈，逐帧问询材质和颜色的渲染路径不能付这份开销。</p>
+     */
+    public FluidStack materialView() {
+        return this.material;
+    }
+
     public List<MoldingQuad> zeroThicknessQuads() {
         return zeroThicknessQuads(this.surfaceMesh);
     }

@@ -18,7 +18,7 @@ The lounge is the site's logistics hub: it hosts up to 16 hatted allays and has 
 
 - The recall button looks within 16 blocks and only counts working allays owned by the lounge owner or a current teammate
 - The top bay serves both docking and launch, one allay at a time; each trip occupies it for 20gt, which works out to about one allay per second
-- Breaking the lounge releases hosted and docking allays into the world and drops the structure disk
+- Breaking the lounge packs hosted and docking allay data into the lounge item, including the structure disk
 
 ## Chunk loading
 

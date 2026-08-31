@@ -54,19 +54,8 @@ public final class PlasticItemTooltipManager {
             AnvilcraftPlasticraft.of("liquid_high_viscosity_resin_bucket"),
             "Highly adhesive and non-volatile; it appears to need thousands of years to solidify",
             """
-                Right-click an entity, then a block or another entity to bond them
-                Exposed adhesive still catches later blocks or a falling giant anvil after an entity is already stuck
-                Moving selections use their selected position; movement over 2 blocks or lasting 2 seconds refreshes the route
-                Endpoints align the selected face to the target face; fixed 4 px checker cells tile the complete selected face
-                Unanchored bonded groups move together under knockback; block-anchored groups rebound together
-                A moving white dashed line means the server is still searching
-                The colored solid line shows the server result; bondable routes match the later white transit trail
-                Green and yellow can bond; red cannot
-                Valid endpoint models use the standard pale-blue overlay; rejected endpoints use pale red
-                Route collision and endpoint previews include every member's model and mounted tray components
-                Pistons and sliding rails move bonded groups together, including levers and other breakable blocks
-                A block glued to a sliding rail ignores that rail and is not carried as cargo
-                Splash or lingering Invisibility potions permanently hide adhesive without weakening its bond"""
+                Right-click an entity, then right-click a block or another entity to bond the two
+                Right-click a block to place a blob of adhesive that sticks entities it touches"""
         );
         register(
             AnvilcraftPlasticraft.of("condenser_tower"),
@@ -76,31 +65,21 @@ public final class PlasticItemTooltipManager {
                 Oil is separated into high-heat fuel, plastic oil, and crude-oil essence across the first three layers
                 Capping the top-center outlet makes a full module apply backpressure to the entire stack"""
         );
-        register(
+        registerNormal(
             AnvilcraftPlasticraft.of("plastic_3d_printing_component"),
-            "Stores up to 8192 mB from the chamber and consumes 1 mB/gt to print when installed directly above it",
-            "Right-click opens the Plastic Molding Chamber GUI"
+            "Installed above the Plastic Molding Chamber, it prints precise plastic products"
         );
-        register(
+        registerNormal(
             AnvilcraftPlasticraft.of("high_heat_fuel_bucket"),
-            "Ignitable fuel for the blue enhanced plasma jet",
-            """
-                An enhanced jet vaporizes 50 mB each tick while consuming 10 mB of high-heat fuel
-                Each 250 mB layer of a full layered cauldron extends the enhanced jet by 50 game ticks"""
+            "Ignites high-temperature plasma jets; they burn fiercely but consume fuel quickly"
         );
-        register(
+        registerNormal(
             AnvilcraftPlasticraft.of("plastic_oil_bucket"),
-            "The second-layer condensate and primary feedstock for later plastic processing",
-            """
-                Heat it from directly below with royal or frost glass to create clear plastic melt
-                Royal or frost metal instead creates universal plastic melt
-                Royal glass starts at 25% speed and reaches 50% with eight distinct items; frost glass runs at half speed
-                Frost metal can continue directly from newly formed universal melt into engineering plastic melt
-                A Large Cauldron averages the actual heat output of all nine blocks beneath it"""
+            "Can be converted into different plastic melts in several ways"
         );
         registerNormal(
             AnvilcraftPlasticraft.of("crude_oil_acid_bucket"),
-            "The third-layer essence separated from gaseous crude oil"
+            "Contains mysterious power and can be converted into many forms"
         );
         registerNormal(
             AnvilcraftPlasticraft.of("universal_plastic"),
@@ -175,25 +154,16 @@ public final class PlasticItemTooltipManager {
             AnvilcraftPlasticraft.of("hardend_resin_anvil"),
             "A hardened resin anvil that functions as a complete anvil",
             """
-                Pushable anvil with the vanilla anvil workflow
-                Shift-use with any Anvil Hammer to retrieve it directly
-                Renaming costs no experience and adds no prior-work penalty
-                Creative players can Shift-use a magnet to magnetize it
-                Can be placed in any direction; only impacts on its bottom face can process recipes"""
+                Rename it for free; falling does not damage it
+                Only impacts on its bottom face process anvil recipes; inserting a magnet lets magnets pull it"""
         );
-        register(
+        registerNormal(
             AnvilcraftPlasticraft.of("hardend_resin_cauldron"),
-            "A light, portable cauldron assembled from hardened resin plates",
-            """
-                Pushable cauldron for items and up to 1000 mB of fluid, including lava
-                Shift-use with any Anvil Hammer to retrieve it and its stored items
-                Connects to pipe heads, pumps, and control valves from any side
-                Creative players can Shift-use a magnet to magnetize it
-                Can be placed in any direction; when it does not face up, it looks like the fluid will spill"""
+            "A light, portable cauldron assembled from hardened resin plates"
         );
         register(
             AnvilcraftPlasticraft.of("high_viscosity_resin_block"),
-            "Bonds two pieces of metal firmly and provides an excellent seal",
+            "A well-sealed resin block that is genuinely sticky",
             """
                 Elastic and strongly sticks to adjacent blocks
                 Captures creatures of any size; hostile creatures must be weakened
@@ -203,44 +173,19 @@ public final class PlasticItemTooltipManager {
             AnvilcraftPlasticraft.of("resin_anvil_hammer"),
             "A lightweight anvil hammer made from an elastic resin anvil",
             """
-                Retains every standard Anvil Hammer function except the portable anvil menu
-                Left-clicking any entity deals no damage and applies Knockback V
-                Left-clicking a block launches you opposite your full view direction with Knockback V
-                Has 35 durability and can be repaired with resin
-                Repairs in a Hardened Resin Anvil cost no experience and add no prior-work penalty"""
+                Attacks deal no damage but launch targets a long way; hitting a block launches you too
+                Can be repaired with resin; repairs in a Hardened Resin Anvil cost no experience"""
         );
         register(
             AnvilcraftPlasticraft.of("resin_anvil"),
             "A resin block kneaded into an anvil shape, full of elasticity",
             """
-                Elastic and pushable; rebounds from blocks and entities
-                Shift-use with any Anvil Hammer to retrieve it directly
-                Retains Resin Block capture and time-warp behavior
-                Dry fast cooking hardens it
-                Creative players can Shift-use a magnet to magnetize it
-                Can be placed in any direction; only impacts on its bottom face can process recipes"""
+                Its elasticity means it cannot repair equipment or enchantments
+                Only impacts on its bottom face process anvil recipes; inserting a magnet lets magnets pull it"""
         );
-        register(
+        registerNormal(
             AnvilcraftPlasticraft.of("allay_lounge"),
-            "Hosts up to 16 hatted allays and sets their shortage and clearance modes",
-            """
-                Stores 16 hosted allay records plus 1 structure disk
-                Does not join a power grid; recall, launch and docking always work
-                Breaking the lounge releases every hosted allay back into the world
-                Temporary cards show each allay hat and held tool
-                Pause and skip for missing materials or demolition are set here, not on each allay
-                Whether blocks on the blueprint's blank cells are demolished is set here and read when the job is planned
-                During building, a mismatching real block in a declared cell pauses construction and is removed with marked drops; an exact target state satisfies the cell
-                The bottom face takes and unloads items; leftovers that do not fit drop beside the lounge
-                Inserting a deployed disk claims that job; right-click the disk to start, and unhosted workers leave
-                A creative crate below supplies any blueprint item infinitely
-                Builders carry at most one stack of one block item per trip and recheck enclosure safety before every placement
-                Builders take the nearest open target on the current layer, so a ring or row is built around rather than crossed back and forth
-                Item collection launches magnet allays first
-                Multiple allays fly around delivered fake blocks and will not brick themselves into a cavity
-                A target that cannot be flown to keeps its material returned and retries later; it is never counted as built
-                Lounges in the same dimension form transfer chains of up to 128 blocks per hop; distant workers are borrowed only when it shortens the job and return home along the chain when it ends
-                Borrowed workers only take and unload items at the job lounge; they never dock into it, so they cannot block its own allays"""
+            "Hosts up to 16 hatted Allays and keeps them with the lounge item when broken"
         );
     }
 
@@ -265,8 +210,9 @@ public final class PlasticItemTooltipManager {
         boolean demonstrationModel = specializedMoldedProduct
             && PlasticItemData.isDemonstrationModel(stack);
         boolean shiftDown = Screen.hasShiftDown();
+        boolean showShiftHint = SHIFT.containsKey(itemId) || demonstrationModel;
         int dynamicTooltipIndex = 1;
-        if (SHIFT.containsKey(itemId) || demonstrationModel) {
+        if (showShiftHint) {
             if (shiftDown) {
                 if (SHIFT.containsKey(itemId)) {
                     dynamicTooltipIndex += addTranslatedTooltip(tooltip, getTranslationKeyShift(itemId));
@@ -284,19 +230,19 @@ public final class PlasticItemTooltipManager {
                 if (NORMAL.containsKey(itemId) && !specializedMoldedProduct) {
                     dynamicTooltipIndex += addTranslatedTooltip(tooltip, getTranslationKey(itemId));
                 }
-                tooltip.add(
-                    1,
-                    Component.translatable(
-                        "tooltip.anvilcraft.press_key",
-                        Component.literal("[Shift]").withStyle(ChatFormatting.WHITE)
-                    ).withStyle(ChatFormatting.DARK_GRAY)
-                );
-                dynamicTooltipIndex++;
             }
         } else if (NORMAL.containsKey(itemId) && !specializedMoldedProduct) {
             dynamicTooltipIndex += addTranslatedTooltip(tooltip, getTranslationKey(itemId));
         }
         addDynamicTooltip(stack, context, tooltip, dynamicTooltipIndex);
+        if (showShiftHint && !shiftDown) {
+            tooltip.add(
+                Component.translatable(
+                    "tooltip.anvilcraft.press_key",
+                    Component.literal("[Shift]").withStyle(ChatFormatting.WHITE)
+                ).withStyle(ChatFormatting.DARK_GRAY)
+            );
+        }
     }
 
     /** 动态提示只读取当前物品堆数据，不参与语言原文注册。 */
@@ -339,8 +285,8 @@ public final class PlasticItemTooltipManager {
             || stack.getItem() instanceof UniversalPlasticBlockItem
         ) {
             if (stack.getItem() instanceof UniversalPlasticBlockItem) {
-                addPlasticSizeTooltip(stack, dynamicTooltip);
                 addMoldedProductTooltip(stack, dynamicTooltip);
+                addPlasticSizeTooltip(stack, dynamicTooltip);
             }
             if (PlasticMaterial.fromKey(PlasticItemData.getMaterial(stack))
                 .map(PlasticMaterial::supportsDyeing)
@@ -374,34 +320,49 @@ public final class PlasticItemTooltipManager {
             if (MoldingProductTypes.isChest(data.finalType())) {
                 tooltip.add(Component.translatable(
                     "tooltip.anvilcraftplasticraft.molded_chest",
-                    data.capacity()
+                    data.capacity(),
+                    moldedFeature(data, false)
                 ).withStyle(ChatFormatting.GRAY));
             } else if (MoldingProductTypes.isTank(data.finalType())) {
                 tooltip.add(Component.translatable(
                     "tooltip.anvilcraftplasticraft.molded_tank",
-                    data.capacity()
+                    data.capacity(),
+                    moldedFeature(data, false)
                 ).withStyle(ChatFormatting.GRAY));
             } else if (MoldingProductTypes.isCauldron(data.finalType())) {
-                tooltip.add(Component.translatable(
-                    cauldronTooltipKey(data),
-                    data.capacity()
+                String key = cauldronTooltipKey(data);
+                tooltip.add((MoldingProductTypes.isLargeCauldron(data.finalType())
+                    ? Component.translatable(key)
+                    : Component.translatable(key, data.capacity(), moldedFeature(data, false))
                 ).withStyle(ChatFormatting.GRAY));
             } else if (MoldingProductTypes.isAnvil(data.finalType())) {
-                tooltip.add(Component.translatable(
-                    data.hasGiantAnvilAbility()
-                        ? "tooltip.anvilcraftplasticraft.molded_giant_anvil"
-                        : "tooltip.anvilcraftplasticraft.molded_anvil"
-                ).withStyle(ChatFormatting.GRAY));
+                String key = data.hasGiantAnvilAbility()
+                    ? "tooltip.anvilcraftplasticraft.molded_giant_anvil"
+                    : "tooltip.anvilcraftplasticraft.molded_anvil";
+                tooltip.add(Component.translatable(key, moldedFeature(data, true)).withStyle(ChatFormatting.GRAY));
             } else if (MoldingProductTypes.isTray(data.finalType())) {
                 tooltip.add(Component.translatable(
                     "tooltip.anvilcraftplasticraft.molded_tray"
                 ).withStyle(ChatFormatting.GRAY));
             } else if (MoldingProductTypes.ALLAY_HARD_HAT_ID.equals(data.finalType())) {
                 tooltip.add(Component.translatable(
-                    "tooltip.anvilcraftplasticraft.molded_allay_hard_hat"
+                    "tooltip.anvilcraftplasticraft.molded_allay_hard_hat",
+                    moldedFeature(data, false)
                 ).withStyle(ChatFormatting.GRAY));
             }
         });
+    }
+
+    private static Component moldedFeature(MoldedPlasticData data, boolean anvil) {
+        PlasticMaterial material = PlasticMaterial.fromMelt(data.material()).orElse(null);
+        String key = material == PlasticMaterial.HEAT_RESISTANT
+            ? "tooltip.anvilcraftplasticraft.molded_feature.heat_resistant"
+            : material == PlasticMaterial.CLEAR
+                ? "tooltip.anvilcraftplasticraft.molded_feature.clear"
+                : anvil && material == PlasticMaterial.ENGINEERING
+                    ? "tooltip.anvilcraftplasticraft.molded_feature.engineering_anvil"
+                    : null;
+        return key == null ? Component.empty() : Component.translatable(key);
     }
 
     /** 锅的提示只随容量层数分流，所有成型塑料锅均可储存熔岩。 */

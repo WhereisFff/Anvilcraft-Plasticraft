@@ -98,7 +98,7 @@ public final class PlasticraftLanguageData {
         // 塑料成型舱物品说明、容器标题和建模器界面语言文件生成。
         provider.add(
             "tooltip.anvilcraftplasticraft.plastic_molding_chamber",
-            "Collects nearby clay balls and casts blueprint models with a Giant Anvil, or prints them with the component above"
+            "Models and produces all kinds of plastic products"
         );
         provider.add(
             "container.anvilcraftplasticraft.plastic_molding_chamber",
@@ -295,21 +295,21 @@ public final class PlasticraftLanguageData {
         );
         provider.add("tooltip.anvilcraftplasticraft.molding.clay", "Clay slot %1$s, molded %2$s / %3$s");
         provider.add("tooltip.anvilcraftplasticraft.molding.partial_downgrade", "This result will downgrade to a normal product");
-        provider.add("tooltip.anvilcraftplasticraft.molded_chest", "A plastic chest that can store %s stacks of items");
+        provider.add("tooltip.anvilcraftplasticraft.molded_chest", "A plastic chest that stores %1$s stacks of items%2$s");
         provider.add(
             "tooltip.anvilcraftplasticraft.molded_tank",
-            "A plastic tank that stores %s B of fluid, including lava"
+            "A plastic tank that stores %1$s B of fluid%2$s"
         );
         // 成型炼药锅按「大型 / 普通」二选一，所有塑料锅都可装熔岩。
         provider.add(
             "tooltip.anvilcraftplasticraft.molded_cauldron",
-            "A plastic cauldron that holds %s B of one fluid including lava, can be ignited, processes falling-anvil recipes, and auto-outputs recipe results through a switchable outlet"
+            "A plastic cauldron that stores %1$s B of one fluid%2$s"
         );
         provider.add(
             "tooltip.anvilcraftplasticraft.molded_large_cauldron",
-            "A large plastic cauldron that holds %s B across eight fluid layers including lava, processes falling-anvil recipes at multiplied efficiency, and auto-outputs recipe results through a switchable outlet"
+            "A large plastic cauldron, little different from an iron one"
         );
-        provider.add("tooltip.anvilcraftplasticraft.molded_anvil", "A plastic anvil that can process falling-anvil recipes");
+        provider.add("tooltip.anvilcraftplasticraft.molded_anvil", "Does not break when falling%1$s");
         provider.add(
             PlasticItemTooltipManager.DEMONSTRATION_TOOLTIP_KEY,
             "This is only a demonstration model\n"
@@ -317,11 +317,11 @@ public final class PlasticraftLanguageData {
         );
         provider.add(
             "tooltip.anvilcraftplasticraft.molded_allay_hard_hat",
-            "A plastic hard hat that turns an allay into a working allay"
+            "Can be worn on an allay's head%1$s"
         );
         provider.add(
             "tooltip.anvilcraftplasticraft.molded_giant_anvil",
-            "A giant plastic anvil for falling-anvil recipes, multiblock processing, ground shocks, and large cauldrons"
+            "Has giant anvil abilities%1$s"
         );
         provider.add(
             "tooltip.anvilcraftplasticraft.molded_tray",
@@ -330,6 +330,9 @@ public final class PlasticraftLanguageData {
         provider.add("tooltip.anvilcraftplasticraft.molded_chest_contents", "Occupied slots: %1$s/%2$s");
         provider.add("tooltip.anvilcraftplasticraft.molded_tank_contents", "Stored fluid: %1$s mB/%2$s B");
         provider.add("tooltip.anvilcraftplasticraft.molded_more_contents", "%s more content types");
+        provider.add("tooltip.anvilcraftplasticraft.molded_feature.heat_resistant", ", fireproof");
+        provider.add("tooltip.anvilcraftplasticraft.molded_feature.clear", ", transparent");
+        provider.add("tooltip.anvilcraftplasticraft.molded_feature.engineering_anvil", ", Silk Touch");
 
         // 塑料成型舱编辑会话与服务端命令拒绝原因语言文件生成。
         provider.add("message.anvilcraftplasticraft.molding.invalid_session", "Editing session expired");

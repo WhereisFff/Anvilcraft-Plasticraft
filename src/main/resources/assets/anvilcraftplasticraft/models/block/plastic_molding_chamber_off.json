@@ -9,7 +9,7 @@
 		"4": "anvilcraft:block/control_valve",
 		"5": "anvilcraft:block/advanced_comparator",
 		"6": "anvilcraft:item/supercapacitor_empty",
-		"particle": "anvilcraftplasticraft:block/plastic_molding_chamber_off"
+		"particle": "anvilcraftplasticraft:block/plastic_molding_chamber_particle"
 	},
 	"elements": [
 		{

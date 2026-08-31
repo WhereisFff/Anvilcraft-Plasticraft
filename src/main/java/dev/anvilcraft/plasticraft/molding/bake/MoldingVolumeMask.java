@@ -25,6 +25,8 @@ public final class MoldingVolumeMask {
     private final int sizeY;
     private final int sizeZ;
     private int volume;
+    /** 极值扫描的代价与体素数量成正比，而渲染侧每帧要多次问询内腔范围；置位时作废。 */
+    private volatile Optional<Bounds> cachedBounds;
 
     public MoldingVolumeMask() {
         this(SIZE, SIZE, SIZE);
@@ -113,6 +115,7 @@ public final class MoldingVolumeMask {
         if (!this.cells.get(index)) {
             this.cells.set(index);
             this.volume++;
+            this.cachedBounds = null;
         }
     }
 
@@ -126,6 +129,14 @@ public final class MoldingVolumeMask {
 
     /** 已置位格子的像素包围盒；空掩码返回空。 */
     public Optional<Bounds> bounds() {
+        Optional<Bounds> cached = this.cachedBounds;
+        if (cached != null) return cached;
+        Optional<Bounds> resolved = this.computeBounds();
+        this.cachedBounds = resolved;
+        return resolved;
+    }
+
+    private Optional<Bounds> computeBounds() {
         if (this.cells.isEmpty()) return Optional.empty();
         int minX = Integer.MAX_VALUE;
         int minY = Integer.MAX_VALUE;

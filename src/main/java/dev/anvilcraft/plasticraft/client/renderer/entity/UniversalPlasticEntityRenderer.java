@@ -15,6 +15,7 @@ import dev.anvilcraft.plasticraft.client.renderer.MoldedTrayComponentRenderer;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.molding.product.PlasticCauldronLayout;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
 import net.minecraft.client.Minecraft;
@@ -50,8 +51,10 @@ import java.util.WeakHashMap;
 /** 只读取实体已同步显示状态的通用塑料实体渲染器。 */
 public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlasticEntity> {
     private static final double LIGHT_SAMPLE_OFFSET = 1.0E-4D;
+    private static final Vec3 WORLD_UP = new Vec3(0.0D, 1.0D, 0.0D);
     private static final Map<UniversalPlasticEntity, GravitySample> GRAVITY_SAMPLES = new WeakHashMap<>();
     private static final Map<UniversalPlasticEntity, FluidMeshSample> FLUID_MESH_SAMPLES = new WeakHashMap<>();
+    private static final Map<UniversalPlasticEntity, LightSample> LIGHT_SAMPLES = new WeakHashMap<>();
     private final BlockRenderDispatcher dispatcher;
     private final RandomSource random = RandomSource.create();
 
@@ -102,16 +105,13 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
             return;
         }
         boolean deferredPass = ClearPlasticRenderTypes.isDeferredPassActive();
-        if (PlasticEntityRenderHelper.isTransparent(entity)
-            && isLiveWorldEntity(entity)
-            && !deferredPass) {
+        boolean transparent = PlasticEntityRenderHelper.isTransparent(entity);
+        if (transparent && isLiveWorldEntity(entity) && !deferredPass) {
             super.render(entity, yaw, partialTick, pose, buffers, packedLight);
             return;
         }
         OptionalRenderData renderData = OptionalRenderData.of(entity.getMoldedData().orElse(null));
-        boolean transparentCauldronPass = renderData.cauldron()
-            && deferredPass
-            && PlasticEntityRenderHelper.isTransparent(entity);
+        boolean transparentCauldronPass = renderData.cauldron() && deferredPass && transparent;
         if (transparentCauldronPass) {
             // 世界重力对齐的物品不乘锅壳旋转，但透明锅仍必须最后覆盖在它们外面。
             this.renderCauldronGravityItems(entity, renderData.data(), pose, buffers, packedLight);
@@ -121,34 +121,39 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
         if (renderData.cauldron()) {
             this.renderCauldron(entity, renderData.data(), deferredPass, pose, buffers, packedLight, partialTick);
         } else {
-            boolean deferredTransparentContents = deferredPass && PlasticEntityRenderHelper.isTransparent(entity);
+            boolean deferredTransparentContents = deferredPass && transparent;
             // 储罐沿用按实际内腔求解的多流体网格；炼药锅不能走这条储罐路径。
             if (renderData.data() != null && MoldingProductTypes.isTank(renderData.data().finalType())) {
                 Vec3 localUp = localUp(entity, partialTick, pose);
+                PreparedTankFluids tankFluids = preparedTankFluids(entity, renderData.data(), localUp);
                 MoldedPlasticMeshRenderer.renderTankFluids(
-                    preparedTankFluids(entity, renderData.data(), localUp),
+                    tankFluids,
                     pose,
                     buffers,
                     packedLight,
-                    deferredPass && PlasticEntityRenderHelper.isTransparent(entity)
+                    deferredTransparentContents
                         ? FluidLayerRenderPass.TRANSLUCENT_ONLY
                         : FluidLayerRenderPass.ALL
                 );
-                if (deferredTransparentContents) flush(buffers);
+                // 空罐没有液面需要与透明壳体分隔，逐实体刷批只会白拆一次批次。
+                if (deferredTransparentContents && !tankFluids.isEmpty()) flush(buffers);
             }
             // 流体先写深度，透明壳体随后只会覆盖位于液面前方的像素。
             PlasticEntityRenderHelper.renderModel(entity, this.dispatcher, pose, buffers, packedLight);
         }
-        entity.getMoldedData().ifPresent(data -> MoldedTrayComponentRenderer.render(
-            data,
-            this.dispatcher,
-            entity.plasticraft$getTrayBlockEntities(),
-            partialTick,
-            pose,
-            buffers,
-            packedLight,
-            OverlayTexture.NO_OVERLAY
-        ));
+        MoldedPlasticData trayData = renderData.data();
+        if (trayData != null && MoldingProductTypes.isTray(trayData.finalType())) {
+            MoldedTrayComponentRenderer.render(
+                trayData,
+                this.dispatcher,
+                entity.plasticraft$getTrayBlockEntities(),
+                partialTick,
+                pose,
+                buffers,
+                packedLight,
+                OverlayTexture.NO_OVERLAY
+            );
+        }
         pose.popPose();
         if (renderData.cauldron() && !transparentCauldronPass) {
             // 侧放或倒置的锅中物品要服从世界重力，不能继续乘上锅壳的离散旋转。
@@ -213,35 +218,45 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
         FluidStack bottomFluid = fluids.isEmpty() ? FluidStack.EMPTY : fluids.getFirst();
         CauldronFluidMetrics metrics = CauldronFluidMetrics.of(entity, data, fluids);
         boolean gravityAlignedItems = !items.isEmpty() && entity.shouldUseGravityAlignedItemLayout();
+        boolean renderStoredItems = !items.isEmpty()
+            && !gravityAlignedItems
+            && !entity.shouldEjectStoredItems();
+        // 刷批只用来分隔锅壳、物品和液面的绘制次序；空锅没有内容可排序，逐实体刷批只会把批次
+        // 数量钉死在锅的数量上。
+        boolean hasContents = renderStoredItems || !fluids.isEmpty();
 
         boolean transparent = deferredPass && PlasticEntityRenderHelper.isTransparent(entity);
         FluidLayerRenderPass fluidRenderPass = transparent
             ? FluidLayerRenderPass.TRANSLUCENT_ONLY
             : FluidLayerRenderPass.ALL;
         if (transparent) {
-            if (!items.isEmpty() && !gravityAlignedItems && !entity.shouldEjectStoredItems()) {
+            if (renderStoredItems) {
                 this.renderItems(entity, items, metrics, false, false, pose, buffers, packedLight);
             }
-            flush(buffers);
-            this.renderCauldronFluids(
-                entity, fluids, metrics, fluidRenderPass, true, pose, buffers, packedLight, partialTick
-            );
-            flush(buffers);
+            if (hasContents) flush(buffers);
+            if (!fluids.isEmpty()) {
+                this.renderCauldronFluids(
+                    entity, fluids, metrics, fluidRenderPass, true, pose, buffers, packedLight, partialTick
+                );
+                flush(buffers);
+            }
             PlasticEntityRenderHelper.renderModel(entity, this.dispatcher, pose, buffers, packedLight);
             this.renderOutlet(entity, data, pose, buffers, packedLight);
-            flush(buffers);
+            if (hasContents) flush(buffers);
         } else {
             PlasticEntityRenderHelper.renderModel(entity, this.dispatcher, pose, buffers, packedLight);
             this.renderOutlet(entity, data, pose, buffers, packedLight);
-            flush(buffers);
-            if (!items.isEmpty() && !gravityAlignedItems && !entity.shouldEjectStoredItems()) {
+            if (hasContents) flush(buffers);
+            if (renderStoredItems) {
                 this.renderItems(entity, items, metrics, false, false, pose, buffers, packedLight);
+                flush(buffers);
             }
-            flush(buffers);
-            this.renderCauldronFluids(
-                entity, fluids, metrics, fluidRenderPass, true, pose, buffers, packedLight, partialTick
-            );
-            flush(buffers);
+            if (!fluids.isEmpty()) {
+                this.renderCauldronFluids(
+                    entity, fluids, metrics, fluidRenderPass, true, pose, buffers, packedLight, partialTick
+                );
+                flush(buffers);
+            }
         }
 
         if (!bottomFluid.isEmpty() && entity.anvilcraft$isIgnited()) {
@@ -523,12 +538,11 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
             List<FluidStack> fluids
         ) {
             AABB cavity = data.cavityBounds().orElse(data.surfaceBounds());
-            int layerCapacity = entity.plasticraft$cauldronLayout().fluidLayerCapacity(data.capacity());
-            int totalCapacity = Math.max(
-                1,
-                Math.multiplyExact(layerCapacity, entity.plasticraft$cauldronLayout().fluidLayers())
-            );
-            long totalAmount = fluids.stream().mapToLong(FluidStack::getAmount).sum();
+            PlasticCauldronLayout layout = entity.plasticraft$cauldronLayout();
+            int layerCapacity = layout.fluidLayerCapacity(data.capacity());
+            int totalCapacity = Math.max(1, Math.multiplyExact(layerCapacity, layout.fluidLayers()));
+            long totalAmount = 0L;
+            for (FluidStack fluid : fluids) totalAmount += fluid.getAmount();
             float fill = Mth.clamp(totalAmount / (float) totalCapacity, 0.0F, 1.0F);
             float cavityMinX = (float) cavity.minX;
             float cavityMinY = (float) cavity.minY;
@@ -582,22 +596,40 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
 
     @Override
     protected int getSkyLightLevel(UniversalPlasticEntity entity, BlockPos ignored) {
-        return sampleLight(entity.level(), LightLayer.SKY, entity.getBoundingBox());
+        return lightSample(entity).skyLight;
     }
 
     @Override
     protected int getBlockLightLevel(UniversalPlasticEntity entity, BlockPos ignored) {
-        return entity.isOnFire()
-            ? 15
-            : sampleLight(entity.level(), LightLayer.BLOCK, entity.getBoundingBox());
+        return entity.isOnFire() ? 15 : lightSample(entity).blockLight;
     }
 
     public static int packedLight(UniversalPlasticEntity entity) {
-        int blockLight = entity.isOnFire()
-            ? 15
-            : sampleLight(entity.level(), LightLayer.BLOCK, entity.getBoundingBox());
-        int skyLight = sampleLight(entity.level(), LightLayer.SKY, entity.getBoundingBox());
-        return LightTexture.pack(blockLight, skyLight);
+        LightSample sample = lightSample(entity);
+        return LightTexture.pack(entity.isOnFire() ? 15 : sample.blockLight, sample.skyLight);
+    }
+
+    /**
+     * 按刻缓存包围盒六面的亮度采样。
+     *
+     * <p>同一实体每帧会被主实体阶段、不透明预绘和延迟透明阶段分别问询亮度，逐次重采样等于把
+     * 十四次光照查询乘上阶段数量；包围盒实例在位置、朝向或几何变化时必然被替换，因此与游戏刻
+     * 一起作为失效条件。方块光变化最多推迟一刻生效。</p>
+     */
+    private static LightSample lightSample(UniversalPlasticEntity entity) {
+        Level level = entity.level();
+        AABB bounds = entity.getBoundingBox();
+        long gameTime = level.getGameTime();
+        LightSample sample = LIGHT_SAMPLES.get(entity);
+        if (sample != null && sample.gameTime == gameTime && sample.bounds == bounds) return sample;
+        sample = new LightSample(
+            gameTime,
+            bounds,
+            sampleLight(level, LightLayer.BLOCK, bounds),
+            sampleLight(level, LightLayer.SKY, bounds)
+        );
+        LIGHT_SAMPLES.put(entity, sample);
+        return sample;
     }
 
     private static int sampleLight(Level level, LightLayer layer, AABB bounds) {
@@ -672,15 +704,15 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
     }
 
     private static Vec3 gravitySample(UniversalPlasticEntity entity, float partialTick) {
-        Vec3 effectiveGravity = entity.plasticraft$getEffectiveGravityVector();
         GravitySample sample = GRAVITY_SAMPLES.get(entity);
         long gameTime = entity.level().getGameTime();
+        // 有效重力要采样流体接触和重力场，逐帧调用会白付一次邻域扫描；每刻只解一次即可。
         if (sample == null) {
-            Vec3 up = stableUp(effectiveGravity, new Vec3(0.0D, 1.0D, 0.0D));
+            Vec3 up = stableUp(entity.plasticraft$getEffectiveGravityVector(), WORLD_UP);
             sample = new GravitySample(up, up, gameTime);
             GRAVITY_SAMPLES.put(entity, sample);
         } else if (sample.gameTime != gameTime) {
-            Vec3 up = stableUp(effectiveGravity, sample.current);
+            Vec3 up = stableUp(entity.plasticraft$getEffectiveGravityVector(), sample.current);
             sample = new GravitySample(sample.current, up, gameTime);
             GRAVITY_SAMPLES.put(entity, sample);
         }
@@ -692,6 +724,9 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
     }
 
     private record GravitySample(Vec3 previous, Vec3 current, long gameTime) {
+    }
+
+    private record LightSample(long gameTime, AABB bounds, int blockLight, int skyLight) {
     }
 
     private record FluidMeshSample(MoldedPlasticData data, Vec3 localUp, PreparedTankFluids prepared) {

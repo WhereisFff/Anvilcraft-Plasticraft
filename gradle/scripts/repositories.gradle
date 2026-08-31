@@ -3,7 +3,7 @@ repositories {
     def centralRepository = mavenCentral()
     def anvilRepository = maven {
         name = 'Cjsah Maven'
-        url = 'https://server.cjsah.net:1002/maven/'
+        url = 'https://server.cjsah.net:1002/maven/releases/'
         content {
             includeGroup 'dev.anvilcraft.lib'
             includeGroup 'dev.dubhe'

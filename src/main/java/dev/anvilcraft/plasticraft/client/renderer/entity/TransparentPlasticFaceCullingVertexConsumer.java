@@ -8,21 +8,20 @@ import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
-import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingConvexHull;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.util.FastColor;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
-import javax.annotation.Nullable;
-
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -31,6 +30,8 @@ import java.util.WeakHashMap;
 public final class TransparentPlasticFaceCullingVertexConsumer implements VertexConsumer {
     private static final double CONTACT_EPSILON = 1.0E-3D;
     private static final double PIXELS_PER_BLOCK = 16.0D;
+    // 仅投影轴对齐凸体，避免逐像素点测试拖慢复杂模型。
+    private static final double PLANE_EPSILON = 1.0E-2D;
 
     /**
      * 按实体缓存的世界坐标遮挡面。
@@ -43,10 +44,17 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
     private final UniversalPlasticEntity entity;
     private final VertexConsumer delegate;
     private final OccluderBuckets occluders;
-    private final List<VolumeOccluder> volumes;
+    private final List<VolumeBox> volumes;
     private final Vec3 camera;
     private final boolean shadeBlockFaces;
-    private final List<Vertex> quad = new ArrayList<>(4);
+    /** 顶点、来面和覆盖矩形都只在单个四边形内有效，逐帧重发网格时必须复用而不是重新分配。 */
+    private final Vertex[] quad = Vertex.array(4);
+    private final Face face = new Face();
+    private final RectangleBuffer covered = new RectangleBuffer();
+    private final Vertex emitted = Vertex.empty();
+    private double[] firstBounds = new double[8];
+    private double[] secondBounds = new double[8];
+    private int quadSize;
     private Vertex current;
     private boolean currentDoubleSided;
 
@@ -54,7 +62,7 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
         UniversalPlasticEntity entity,
         VertexConsumer delegate,
         OccluderBuckets occluders,
-        List<VolumeOccluder> volumes,
+        List<VolumeBox> volumes,
         Vec3 camera,
         boolean shadeBlockFaces
     ) {
@@ -85,10 +93,7 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
         // 成型网格按源 Cube 保留表面，自身内部相接的实体面同样参与遮挡。
         CachedOccluders self = cached(entity, partialTick);
         List<PlanarOccluder> neighbours = new ArrayList<>();
-        List<VolumeOccluder> volumes = new ArrayList<>(1);
-        if (!self.hulls().isEmpty()) {
-            volumes.add(new VolumeOccluder(entity, self.hulls(), camera, sourcePartialTick(entity, partialTick)));
-        }
+        List<VolumeBox> volumes = self.volumes();
         addBlockOccluders(entity, partialTick, neighbours);
         for (UniversalPlasticEntity other : entity.level().getEntitiesOfClass(
             UniversalPlasticEntity.class,
@@ -97,10 +102,10 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
             if (other == entity || !other.isAlive() || !matches(entity, other)) continue;
             CachedOccluders neighbour = cached(other, partialTick);
             neighbours.addAll(neighbour.shared());
-            if (!neighbour.hulls().isEmpty()) {
-                volumes.add(
-                    new VolumeOccluder(other, neighbour.hulls(), camera, sourcePartialTick(other, partialTick))
-                );
+            if (!neighbour.volumes().isEmpty()) {
+                // 自身的凸体集合来自缓存，追加邻居时才需要另建一份可变列表。
+                if (volumes == self.volumes()) volumes = new ArrayList<>(volumes);
+                volumes.addAll(neighbour.volumes());
             }
         }
         // 孤立摆放时邻居集合为空，直接复用缓存好的分桶结果，整帧不产生遮挡面分配。
@@ -129,11 +134,7 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
     }
 
     private static boolean isTransparent(UniversalPlasticEntity entity) {
-        return entity.getDisplayState().is(PlasticraftBlocks.CLEAR_PLASTIC.get())
-            || entity.getMoldedData()
-                .flatMap(data -> PlasticMaterial.fromMelt(data.material()))
-                .map(PlasticMaterial::isTransparent)
-                .orElse(false);
+        return PlasticEntityRenderHelper.isTransparent(entity);
     }
 
     private static boolean matches(UniversalPlasticEntity source, UniversalPlasticEntity other) {
@@ -185,15 +186,24 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
                 own,
                 moldedOccluders(entity, data, source, true),
                 OccluderBuckets.of(own, List.of()),
-                data.collisionHulls()
-                    .stream()
-                    .map(VolumeOccluder.VolumeHull::new)
-                    .filter(VolumeOccluder.VolumeHull::axisAligned)
-                    .toList()
+                volumeBoxes(entity, data, source)
             );
         }
         OCCLUDER_CACHE.put(entity, result);
         return result;
+    }
+
+    private static List<VolumeBox> volumeBoxes(
+        UniversalPlasticEntity entity,
+        MoldedPlasticData data,
+        float partialTick
+    ) {
+        List<VolumeBox> boxes = new ArrayList<>(data.collisionHulls().size());
+        for (MoldingConvexHull hull : data.collisionHulls()) {
+            if (!VolumeBox.isAxisAligned(hull)) continue;
+            boxes.add(VolumeBox.of(entity, hull, partialTick));
+        }
+        return List.copyOf(boxes);
     }
 
     private static void addBlockOccluders(
@@ -269,30 +279,28 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
         boolean includeDoubleSided
     ) {
         List<PlanarOccluder> occluders = new ArrayList<>();
-        List<Vertex> vertices = new ArrayList<>(4);
-        List<Vertex> reversed = new ArrayList<>(4);
+        Vertex[] vertices = Vertex.array(4);
+        Vertex[] reversed = Vertex.array(4);
+        Face face = new Face();
         for (MoldingQuad quad : data.surfaceMesh()) {
             if (!includeDoubleSided && quad.doubleSided()) continue;
-            vertices.clear();
-            vertices.add(vertex(entity, quad.first(), quad.normal(), partialTick));
-            vertices.add(vertex(entity, quad.second(), quad.normal(), partialTick));
-            vertices.add(vertex(entity, quad.third(), quad.normal(), partialTick));
-            vertices.add(vertex(entity, quad.fourth(), quad.normal(), partialTick));
-            Face face = Face.create(vertices);
-            if (face != null) occluders.add(PlanarOccluder.of(face));
-            // 零厚度面两侧都参与遮挡。法线朝向仍交给 Face.create 判定，因为它在法线退化时会回退到
+            vertex(vertices[0], entity, quad.first(), quad.normal(), partialTick);
+            vertex(vertices[1], entity, quad.second(), quad.normal(), partialTick);
+            vertex(vertices[2], entity, quad.third(), quad.normal(), partialTick);
+            vertex(vertices[3], entity, quad.fourth(), quad.normal(), partialTick);
+            if (face.init(vertices, 4)) occluders.add(PlanarOccluder.of(face));
+            // 零厚度面两侧都参与遮挡。法线朝向仍交给 Face 判定，因为它在法线退化时会回退到
             // 顶点叉积，那种情况下反向面的朝向与正向面相同，不能简单取反。
             if (includeDoubleSided && quad.doubleSided()) {
-                reversed.clear();
-                for (Vertex vertex : vertices) reversed.add(vertex.reverseNormal());
-                Face reverseFace = Face.create(reversed);
-                if (reverseFace != null) occluders.add(PlanarOccluder.of(reverseFace));
+                for (int index = 0; index < 4; index++) reversed[index].setReversedNormal(vertices[index]);
+                if (face.init(reversed, 4)) occluders.add(PlanarOccluder.of(face));
             }
         }
         return List.copyOf(occluders);
     }
 
-    private static Vertex vertex(
+    private static void vertex(
+        Vertex target,
         UniversalPlasticEntity entity,
         MoldingVec3 position,
         MoldingVec3 normal,
@@ -307,14 +315,10 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
             new Vec3(normal.x(), normal.y(), normal.z()),
             entity.getOrientation()
         );
-        return new Vertex(
-            transformed.x,
-            transformed.y,
-            transformed.z,
-            (float) transformedNormal.x,
-            (float) transformedNormal.y,
-            (float) transformedNormal.z
-        );
+        target.reset(transformed.x, transformed.y, transformed.z);
+        target.normalX = (float) transformedNormal.x;
+        target.normalY = (float) transformedNormal.y;
+        target.normalZ = (float) transformedNormal.z;
     }
 
     private static Vec3 transformPoint(UniversalPlasticEntity entity, Vec3 point, float partialTick) {
@@ -347,7 +351,7 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
 
     public void finish() {
         if (this.current != null) {
-            this.quad.add(this.current);
+            this.quadSize++;
             this.current = null;
         }
         this.flushQuad();
@@ -355,9 +359,9 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
 
     @Override
     public VertexConsumer addVertex(float x, float y, float z) {
-        if (this.current != null) this.quad.add(this.current);
-        if (this.quad.size() == 4) this.flushQuad();
-        this.current = new Vertex(x, y, z);
+        if (this.current != null) this.quadSize++;
+        if (this.quadSize == 4) this.flushQuad();
+        this.current = this.quad[this.quadSize].reset(x, y, z);
         return this;
     }
 
@@ -430,58 +434,57 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
     }
 
     private void flushQuad() {
-        if (this.quad.isEmpty()) return;
-        if (this.quad.size() != 4) {
-            this.quad.forEach(this::emit);
-            this.quad.clear();
+        int size = this.quadSize;
+        this.quadSize = 0;
+        if (size == 0) return;
+        if (size != 4 || !this.face.init(this.quad, size)) {
+            for (int index = 0; index < size; index++) this.emit(this.quad[index]);
             return;
         }
-        Face face = Face.create(this.quad);
-        if (face == null) {
-            this.quad.forEach(this::emit);
-        } else {
-            this.emitVisible(face, !this.currentDoubleSided);
-        }
-        this.quad.clear();
+        this.emitVisible(this.face, !this.currentDoubleSided);
     }
 
     private void emitVisible(Face face, boolean volumeCullable) {
-        List<Rectangle> covered = new ArrayList<>();
+        this.covered.clear();
         for (PlanarOccluder occluder : this.occluders.facing(face.planeAxis, face.normalDirection)) {
-            Rectangle rectangle = this.coveredBy(face, occluder);
-            if (rectangle != null) covered.add(rectangle);
+            this.addCoveredBy(face, occluder);
         }
         if (volumeCullable) {
-            for (VolumeOccluder volume : this.volumes) {
-                covered.addAll(volume.coveredBy(face));
+            double worldPlane = face.plane + component(this.camera, face.planeAxis);
+            for (VolumeBox volume : this.volumes) {
+                this.addCoveredBy(face, worldPlane, volume);
             }
         }
-        if (covered.isEmpty()) {
-            face.vertices.forEach(this::emit);
+        if (this.covered.isEmpty()) {
+            for (int index = 0; index < face.vertexCount; index++) this.emit(face.vertices[index]);
             return;
         }
 
-        List<Double> firstBounds = boundaries(face.minFirst, face.maxFirst, covered, true);
-        List<Double> secondBounds = boundaries(face.minSecond, face.maxSecond, covered, false);
-        for (int firstIndex = 0; firstIndex < firstBounds.size() - 1; firstIndex++) {
-            double firstMin = firstBounds.get(firstIndex);
-            double firstMax = firstBounds.get(firstIndex + 1);
+        this.firstBounds = this.covered.grow(this.firstBounds);
+        this.secondBounds = this.covered.grow(this.secondBounds);
+        int firstCount = this.covered.boundaries(this.firstBounds, face.minFirst, face.maxFirst, true);
+        int secondCount = this.covered.boundaries(this.secondBounds, face.minSecond, face.maxSecond, false);
+        for (int firstIndex = 0; firstIndex < firstCount - 1; firstIndex++) {
+            double firstMin = this.firstBounds[firstIndex];
+            double firstMax = this.firstBounds[firstIndex + 1];
             if (firstMax - firstMin <= CONTACT_EPSILON) continue;
-            for (int secondIndex = 0; secondIndex < secondBounds.size() - 1; secondIndex++) {
-                double secondMin = secondBounds.get(secondIndex);
-                double secondMax = secondBounds.get(secondIndex + 1);
+            for (int secondIndex = 0; secondIndex < secondCount - 1; secondIndex++) {
+                double secondMin = this.secondBounds[secondIndex];
+                double secondMax = this.secondBounds[secondIndex + 1];
                 if (secondMax - secondMin <= CONTACT_EPSILON
-                    || isCovered((firstMin + firstMax) * 0.5D, (secondMin + secondMax) * 0.5D, covered)) {
+                    || this.covered.contains((firstMin + firstMax) * 0.5D, (secondMin + secondMax) * 0.5D)) {
                     continue;
                 }
-                for (Vertex vertex : face.vertices) {
+                for (int index = 0; index < face.vertexCount; index++) {
+                    Vertex vertex = face.vertices[index];
                     double first = Face.value(vertex, face.firstAxis) <= face.minFirst + CONTACT_EPSILON
                         ? firstMin
                         : firstMax;
                     double second = Face.value(vertex, face.secondAxis) <= face.minSecond + CONTACT_EPSILON
                         ? secondMin
                         : secondMax;
-                    this.emit(face.interpolate(first, second));
+                    face.interpolate(first, second, this.emitted);
+                    this.emit(this.emitted);
                 }
             }
         }
@@ -493,10 +496,9 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
      * <p>遮挡面存的是世界坐标而来面是相机坐标，因此用相机偏移换算比较值，
      * 而不是每帧把整套遮挡面平移到相机坐标系重建一遍。同轴与法线反向已由分桶保证。</p>
      */
-    @Nullable
-    private Rectangle coveredBy(Face face, PlanarOccluder occluder) {
+    private void addCoveredBy(Face face, PlanarOccluder occluder) {
         if (Math.abs(face.plane + component(this.camera, face.planeAxis) - occluder.plane()) > CONTACT_EPSILON) {
-            return null;
+            return;
         }
         double firstOffset = component(this.camera, face.firstAxis);
         double secondOffset = component(this.camera, face.secondAxis);
@@ -504,37 +506,21 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
         double maxFirst = Math.min(face.maxFirst, occluder.maxFirst() - firstOffset);
         double minSecond = Math.max(face.minSecond, occluder.minSecond() - secondOffset);
         double maxSecond = Math.min(face.maxSecond, occluder.maxSecond() - secondOffset);
-        return maxFirst - minFirst <= CONTACT_EPSILON || maxSecond - minSecond <= CONTACT_EPSILON
-            ? null
-            : new Rectangle(minFirst, maxFirst, minSecond, maxSecond);
+        if (maxFirst - minFirst <= CONTACT_EPSILON || maxSecond - minSecond <= CONTACT_EPSILON) return;
+        this.covered.add(minFirst, maxFirst, minSecond, maxSecond);
     }
 
-    private static List<Double> boundaries(
-        double minimum,
-        double maximum,
-        List<Rectangle> rectangles,
-        boolean first
-    ) {
-        List<Double> result = new ArrayList<>();
-        addBoundary(result, minimum);
-        addBoundary(result, maximum);
-        for (Rectangle rectangle : rectangles) {
-            addBoundary(result, first ? rectangle.minFirst : rectangle.minSecond);
-            addBoundary(result, first ? rectangle.maxFirst : rectangle.maxSecond);
-        }
-        result.sort(Double::compare);
-        return result;
-    }
-
-    private static void addBoundary(List<Double> boundaries, double value) {
-        for (double existing : boundaries) {
-            if (Math.abs(existing - value) <= CONTACT_EPSILON) return;
-        }
-        boundaries.add(value);
-    }
-
-    private static boolean isCovered(double first, double second, List<Rectangle> rectangles) {
-        return rectangles.stream().anyMatch(rectangle -> rectangle.contains(first, second));
+    /** 朝向实心凸体内部的面被该凸体在世界坐标下的横截范围覆盖。 */
+    private void addCoveredBy(Face face, double worldPlane, VolumeBox volume) {
+        if (!volume.facesInterior(face.planeAxis, worldPlane, face.normalDirection)) return;
+        double firstOffset = component(this.camera, face.firstAxis);
+        double secondOffset = component(this.camera, face.secondAxis);
+        double minFirst = Math.max(face.minFirst, volume.minimum(face.firstAxis) - firstOffset);
+        double maxFirst = Math.min(face.maxFirst, volume.maximum(face.firstAxis) - firstOffset);
+        double minSecond = Math.max(face.minSecond, volume.minimum(face.secondAxis) - secondOffset);
+        double maxSecond = Math.min(face.maxSecond, volume.maximum(face.secondAxis) - secondOffset);
+        if (maxFirst - minFirst <= CONTACT_EPSILON || maxSecond - minSecond <= CONTACT_EPSILON) return;
+        this.covered.add(minFirst, maxFirst, minSecond, maxSecond);
     }
 
     private void emit(Vertex vertex) {
@@ -547,17 +533,24 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
             green = shade(green, shade);
             blue = shade(blue, shade);
         }
-        this.delegate.addVertex((float) vertex.x, (float) vertex.y, (float) vertex.z)
-            .setColor(
+        this.delegate.addVertex(
+            (float) vertex.x,
+            (float) vertex.y,
+            (float) vertex.z,
+            FastColor.ARGB32.color(
+                Math.clamp(vertex.alpha, 0, 255),
                 Math.clamp(red, 0, 255),
                 Math.clamp(green, 0, 255),
-                Math.clamp(blue, 0, 255),
-                Math.clamp(vertex.alpha, 0, 255)
-            )
-            .setUv(vertex.u, vertex.v)
-            .setUv1(vertex.overlay & 0xFFFF, vertex.overlay >>> 16)
-            .setUv2(vertex.light & 0xFFFF, vertex.light >>> 16)
-            .setNormal(vertex.normalX, vertex.normalY, vertex.normalZ);
+                Math.clamp(blue, 0, 255)
+            ),
+            vertex.u,
+            vertex.v,
+            vertex.overlay,
+            vertex.light,
+            vertex.normalX,
+            vertex.normalY,
+            vertex.normalZ
+        );
     }
 
     private static int shade(int channel, float shade) {
@@ -573,7 +566,7 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
         List<PlanarOccluder> own,
         List<PlanarOccluder> shared,
         OccluderBuckets ownBuckets,
-        List<VolumeOccluder.VolumeHull> hulls
+        List<VolumeBox> volumes
     ) {
         private boolean matches(
             Vec3 renderPosition,
@@ -660,70 +653,62 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
         }
     }
 
+    /** 单个候选四边形的轴对齐解析结果；实例在同一消费者内复用，只在填入到用完之间有效。 */
     private static final class Face {
-        private final List<Vertex> vertices;
-        private final int planeAxis;
-        private final int firstAxis;
-        private final int secondAxis;
-        private final double plane;
-        private final double minFirst;
-        private final double maxFirst;
-        private final double minSecond;
-        private final double maxSecond;
-        private final int normalDirection;
+        private Vertex[] vertices = Vertex.EMPTY;
+        private int vertexCount;
+        private int planeAxis;
+        private int firstAxis;
+        private int secondAxis;
+        private double plane;
+        private double minFirst;
+        private double maxFirst;
+        private double minSecond;
+        private double maxSecond;
+        private int normalDirection;
 
-        private Face(
-            List<Vertex> vertices,
-            int planeAxis,
-            int firstAxis,
-            int secondAxis,
-            double plane,
-            double minFirst,
-            double maxFirst,
-            double minSecond,
-            double maxSecond,
-            int normalDirection
-        ) {
-            this.vertices = List.copyOf(vertices);
-            this.planeAxis = planeAxis;
-            this.firstAxis = firstAxis;
-            this.secondAxis = secondAxis;
-            this.plane = plane;
-            this.minFirst = minFirst;
-            this.maxFirst = maxFirst;
-            this.minSecond = minSecond;
-            this.maxSecond = maxSecond;
-            this.normalDirection = normalDirection;
-        }
-
-        private static Face create(List<Vertex> vertices) {
-            double[] minima = {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY};
-            double[] maxima = {Double.NEGATIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NEGATIVE_INFINITY};
-            for (Vertex vertex : vertices) {
-                minima[0] = Math.min(minima[0], vertex.x);
-                minima[1] = Math.min(minima[1], vertex.y);
-                minima[2] = Math.min(minima[2], vertex.z);
-                maxima[0] = Math.max(maxima[0], vertex.x);
-                maxima[1] = Math.max(maxima[1], vertex.y);
-                maxima[2] = Math.max(maxima[2], vertex.z);
+        /** 填入候选四边形，返回它是否是可参与遮挡运算的轴对齐矩形。 */
+        private boolean init(Vertex[] vertices, int count) {
+            this.vertices = vertices;
+            this.vertexCount = count;
+            double minimumX = Double.POSITIVE_INFINITY;
+            double minimumY = Double.POSITIVE_INFINITY;
+            double minimumZ = Double.POSITIVE_INFINITY;
+            double maximumX = Double.NEGATIVE_INFINITY;
+            double maximumY = Double.NEGATIVE_INFINITY;
+            double maximumZ = Double.NEGATIVE_INFINITY;
+            for (int index = 0; index < count; index++) {
+                Vertex vertex = vertices[index];
+                minimumX = Math.min(minimumX, vertex.x);
+                minimumY = Math.min(minimumY, vertex.y);
+                minimumZ = Math.min(minimumZ, vertex.z);
+                maximumX = Math.max(maximumX, vertex.x);
+                maximumY = Math.max(maximumY, vertex.y);
+                maximumZ = Math.max(maximumZ, vertex.z);
             }
+            double spanX = maximumX - minimumX;
+            double spanY = maximumY - minimumY;
+            double spanZ = maximumZ - minimumZ;
             int planeAxis = 0;
-            for (int axis = 1; axis < 3; axis++) {
-                if (maxima[axis] - minima[axis] < maxima[planeAxis] - minima[planeAxis]) planeAxis = axis;
-            }
-            if (maxima[planeAxis] - minima[planeAxis] > CONTACT_EPSILON) return null;
+            if (spanY < spanX) planeAxis = 1;
+            if (spanZ < (planeAxis == 0 ? spanX : spanY)) planeAxis = 2;
+            double planeSpan = planeAxis == 0 ? spanX : planeAxis == 1 ? spanY : spanZ;
+            if (planeSpan > CONTACT_EPSILON) return false;
             int firstAxis = planeAxis == 0 ? 1 : 0;
             int secondAxis = planeAxis == 2 ? 1 : 2;
-            if (maxima[firstAxis] - minima[firstAxis] <= CONTACT_EPSILON
-                || maxima[secondAxis] - minima[secondAxis] <= CONTACT_EPSILON) {
-                return null;
+            double minFirst = axisValue(firstAxis, minimumX, minimumY, minimumZ);
+            double maxFirst = axisValue(firstAxis, maximumX, maximumY, maximumZ);
+            double minSecond = axisValue(secondAxis, minimumX, minimumY, minimumZ);
+            double maxSecond = axisValue(secondAxis, maximumX, maximumY, maximumZ);
+            if (maxFirst - minFirst <= CONTACT_EPSILON || maxSecond - minSecond <= CONTACT_EPSILON) {
+                return false;
             }
             double normal = 0.0D;
-            for (Vertex vertex : vertices) normal += value(vertex, planeAxis + 3);
+            for (int index = 0; index < count; index++) normal += value(vertices[index], planeAxis + 3);
             if (Math.abs(normal) <= CONTACT_EPSILON) {
-                Vertex first = vertices.getFirst();
-                Vertex second = vertices.get(1);
-                Vertex third = vertices.get(2);
+                Vertex first = vertices[0];
+                Vertex second = vertices[1];
+                Vertex third = vertices[2];
                 double firstX = second.x - first.x;
                 double firstY = second.y - first.y;
                 double firstZ = second.z - first.z;
@@ -738,49 +723,58 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
             }
             if (Math.abs(normal) <= CONTACT_EPSILON || !isRectangle(
                 vertices,
+                count,
                 firstAxis,
                 secondAxis,
-                minima[firstAxis],
-                maxima[firstAxis],
-                minima[secondAxis],
-                maxima[secondAxis]
-            )) return null;
-            return new Face(
-                vertices,
-                planeAxis,
-                firstAxis,
-                secondAxis,
-                (minima[planeAxis] + maxima[planeAxis]) * 0.5D,
-                minima[firstAxis],
-                maxima[firstAxis],
-                minima[secondAxis],
-                maxima[secondAxis],
-                normal > 0.0D ? 1 : -1
-            );
+                minFirst,
+                maxFirst,
+                minSecond,
+                maxSecond
+            )) return false;
+            this.planeAxis = planeAxis;
+            this.firstAxis = firstAxis;
+            this.secondAxis = secondAxis;
+            this.plane = (axisValue(planeAxis, minimumX, minimumY, minimumZ)
+                + axisValue(planeAxis, maximumX, maximumY, maximumZ)) * 0.5D;
+            this.minFirst = minFirst;
+            this.maxFirst = maxFirst;
+            this.minSecond = minSecond;
+            this.maxSecond = maxSecond;
+            this.normalDirection = normal > 0.0D ? 1 : -1;
+            return true;
         }
 
-        private Vertex interpolate(double first, double second) {
+        private static double axisValue(int axis, double x, double y, double z) {
+            return switch (axis) {
+                case 0 -> x;
+                case 1 -> y;
+                default -> z;
+            };
+        }
+
+        private void interpolate(double first, double second, Vertex target) {
             double firstProgress = (first - this.minFirst) / (this.maxFirst - this.minFirst);
             double secondProgress = (second - this.minSecond) / (this.maxSecond - this.minSecond);
-            Vertex result = Vertex.empty();
-            for (Vertex vertex : this.vertices) {
+            target.clear();
+            for (int index = 0; index < this.vertexCount; index++) {
+                Vertex vertex = this.vertices[index];
                 boolean highFirst = value(vertex, this.firstAxis) > (this.minFirst + this.maxFirst) * 0.5D;
                 boolean highSecond = value(vertex, this.secondAxis) > (this.minSecond + this.maxSecond) * 0.5D;
                 double weight = (highFirst ? firstProgress : 1.0D - firstProgress)
                     * (highSecond ? secondProgress : 1.0D - secondProgress);
-                result.add(vertex, weight);
+                target.add(vertex, weight);
             }
-            Vertex firstVertex = this.vertices.getFirst();
-            result.overlay = firstVertex.overlay;
-            result.light = firstVertex.light;
-            result.normalX = firstVertex.normalX;
-            result.normalY = firstVertex.normalY;
-            result.normalZ = firstVertex.normalZ;
-            return result;
+            Vertex firstVertex = this.vertices[0];
+            target.overlay = firstVertex.overlay;
+            target.light = firstVertex.light;
+            target.normalX = firstVertex.normalX;
+            target.normalY = firstVertex.normalY;
+            target.normalZ = firstVertex.normalZ;
         }
 
         private static boolean isRectangle(
-            List<Vertex> vertices,
+            Vertex[] vertices,
+            int count,
             int firstAxis,
             int secondAxis,
             double minFirst,
@@ -788,9 +782,10 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
             double minSecond,
             double maxSecond
         ) {
-            if (vertices.size() != 4) return false;
-            boolean[] corners = new boolean[4];
-            for (Vertex vertex : vertices) {
+            if (count != 4) return false;
+            int corners = 0;
+            for (int index = 0; index < count; index++) {
+                Vertex vertex = vertices[index];
                 double first = value(vertex, firstAxis);
                 double second = value(vertex, secondAxis);
                 boolean lowFirst = Math.abs(first - minFirst) <= CONTACT_EPSILON;
@@ -798,14 +793,11 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
                 boolean lowSecond = Math.abs(second - minSecond) <= CONTACT_EPSILON;
                 boolean highSecond = Math.abs(second - maxSecond) <= CONTACT_EPSILON;
                 if (lowFirst == highFirst || lowSecond == highSecond) return false;
-                int index = (highFirst ? 1 : 0) | (highSecond ? 2 : 0);
-                if (corners[index]) return false;
-                corners[index] = true;
+                int corner = 1 << ((highFirst ? 1 : 0) | (highSecond ? 2 : 0));
+                if ((corners & corner) != 0) return false;
+                corners |= corner;
             }
-            for (boolean corner : corners) {
-                if (!corner) return false;
-            }
-            return true;
+            return corners == 0b1111;
         }
 
         private static double value(Vertex vertex, int axis) {
@@ -836,170 +828,157 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
         }
     }
 
-    private static final class VolumeOccluder {
-        // 仅投影轴对齐凸体，避免逐像素点测试拖慢复杂模型。
-        private static final double PLANE_EPSILON = 1.0E-2D;
-        private static final double CONTAINMENT_EPSILON = 1.0E-5D;
-        private final UniversalPlasticEntity entity;
-        private final List<VolumeHull> hulls;
-        private final Vec3 camera;
-        private final float partialTick;
+    /**
+     * 实体某个轴对齐碰撞凸体的世界坐标范围。
+     *
+     * <p>凸体在模型空间轴对齐，离散朝向又只做 90 度旋转，所以它在世界坐标下同样轴对齐；
+     * 于是「面朝向实体内部实心区域」这一判定退化为纯标量比较，不必逐面把来面变换回模型空间
+     * 再把凸体投影回相机空间——那条路每个面每个凸体要走几十次 {@link Vec3} 运算。</p>
+     */
+    private record VolumeBox(
+        double minX,
+        double minY,
+        double minZ,
+        double maxX,
+        double maxY,
+        double maxZ
+    ) {
+        // 采样偏移和包容裕度沿用像素空间的原始取值，这里按每格 16 像素换算到方块单位。
+        private static final double SAMPLE_OFFSET = CONTACT_EPSILON / PIXELS_PER_BLOCK;
+        private static final double CONTAINMENT_EPSILON = 1.0E-5D / PIXELS_PER_BLOCK;
 
-        private VolumeOccluder(
-            UniversalPlasticEntity entity,
-            List<VolumeHull> hulls,
-            Vec3 camera,
-            float partialTick
-        ) {
-            this.entity = entity;
-            this.hulls = hulls;
-            this.camera = camera;
-            this.partialTick = partialTick;
-        }
-
-        private List<Rectangle> coveredBy(Face face) {
-            Vertex reference = face.vertices.getFirst();
-            Vec3 localNormal = inverseRotate(
-                new Vec3(reference.normalX, reference.normalY, reference.normalZ),
-                this.entity.getOrientation()
+        private static VolumeBox of(UniversalPlasticEntity entity, MoldingConvexHull hull, float partialTick) {
+            MoldingConvexHull.Bounds bounds = hull.bounds();
+            Vec3 first = transformPoint(entity, toBlocks(bounds.minimum()), partialTick);
+            Vec3 second = transformPoint(entity, toBlocks(bounds.maximum()), partialTick);
+            return new VolumeBox(
+                Math.min(first.x, second.x),
+                Math.min(first.y, second.y),
+                Math.min(first.z, second.z),
+                Math.max(first.x, second.x),
+                Math.max(first.y, second.y),
+                Math.max(first.z, second.z)
             );
-            int planeAxis = dominantAxis(localNormal);
-            if (Math.abs(component(localNormal, planeAxis)) < 1.0D - PLANE_EPSILON) return List.of();
-
-            double[] minima = {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY};
-            double[] maxima = {Double.NEGATIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NEGATIVE_INFINITY};
-            for (int index = 0; index < face.vertices.size(); index++) {
-                Vec3 local = toLocal(face.vertices.get(index));
-                minima[0] = Math.min(minima[0], local.x);
-                minima[1] = Math.min(minima[1], local.y);
-                minima[2] = Math.min(minima[2], local.z);
-                maxima[0] = Math.max(maxima[0], local.x);
-                maxima[1] = Math.max(maxima[1], local.y);
-                maxima[2] = Math.max(maxima[2], local.z);
-            }
-            double plane = (minima[planeAxis] + maxima[planeAxis]) * 0.5D;
-            int firstAxis = planeAxis == 0 ? 1 : 0;
-            int secondAxis = planeAxis == 2 ? 1 : 2;
-            int direction = component(localNormal, planeAxis) < 0.0D ? -1 : 1;
-            List<Rectangle> result = new ArrayList<>();
-            for (VolumeHull hull : this.hulls) {
-                if (!hull.containsPlane(planeAxis, plane, direction)) continue;
-                double firstLower = component(hull.bounds.minimum(), firstAxis);
-                double firstUpper = component(hull.bounds.maximum(), firstAxis);
-                double secondLower = component(hull.bounds.minimum(), secondAxis);
-                double secondUpper = component(hull.bounds.maximum(), secondAxis);
-                Vec3 lower = fromLocal(firstAxis, firstLower, secondAxis, secondLower, planeAxis, plane);
-                Vec3 upperFirst = fromLocal(firstAxis, firstUpper, secondAxis, secondLower, planeAxis, plane);
-                Vec3 upperSecond = fromLocal(firstAxis, firstLower, secondAxis, secondUpper, planeAxis, plane);
-                Vec3 upper = fromLocal(firstAxis, firstUpper, secondAxis, secondUpper, planeAxis, plane);
-                double minFirst = Math.max(face.minFirst, minValue(face.firstAxis, lower, upperFirst, upperSecond, upper));
-                double maxFirst = Math.min(face.maxFirst, maxValue(face.firstAxis, lower, upperFirst, upperSecond, upper));
-                double minSecond = Math.max(face.minSecond, minValue(face.secondAxis, lower, upperFirst, upperSecond, upper));
-                double maxSecond = Math.min(face.maxSecond, maxValue(face.secondAxis, lower, upperFirst, upperSecond, upper));
-                if (maxFirst - minFirst > CONTACT_EPSILON && maxSecond - minSecond > CONTACT_EPSILON) {
-                    result.add(new Rectangle(minFirst, maxFirst, minSecond, maxSecond));
-                }
-            }
-            return result;
         }
 
-        private Vec3 toLocal(Vertex vertex) {
-            Vec3 world = new Vec3(vertex.x + this.camera.x, vertex.y + this.camera.y, vertex.z + this.camera.z);
-            Vec3 pivot = this.entity.plasticraft$getGeometry().rotationPivot();
-            Vec3 origin = this.entity.plasticraft$getGeometry().entityOrigin();
-            Vec3 relative = world.subtract(this.entity.getPosition(this.partialTick)).subtract(pivot).add(origin);
-            return inverseRotate(relative, this.entity.getOrientation()).add(pivot).scale(PIXELS_PER_BLOCK);
-        }
-
-        private Vec3 fromLocal(int firstAxis, double first, int secondAxis, double second, int planeAxis, double plane) {
-            double[] coordinates = {0.0D, 0.0D, 0.0D};
-            coordinates[firstAxis] = first / PIXELS_PER_BLOCK;
-            coordinates[secondAxis] = second / PIXELS_PER_BLOCK;
-            coordinates[planeAxis] = plane / PIXELS_PER_BLOCK;
-            Vec3 local = new Vec3(coordinates[0], coordinates[1], coordinates[2]);
-            Vec3 world = transformPoint(this.entity, local, this.partialTick);
-            return world.subtract(this.camera);
-        }
-
-        private static Vec3 inverseRotate(Vec3 vector, PlasticEntityOrientation orientation) {
-            Direction xAxis = orientation.orthogonalAxis();
-            Direction yAxis = orientation.attachmentFace();
-            Direction zAxis = orientation.longAxis();
+        private static Vec3 toBlocks(MoldingVec3 point) {
             return new Vec3(
-                vector.x * xAxis.getStepX() + vector.y * xAxis.getStepY() + vector.z * xAxis.getStepZ(),
-                vector.x * yAxis.getStepX() + vector.y * yAxis.getStepY() + vector.z * yAxis.getStepZ(),
-                vector.x * zAxis.getStepX() + vector.y * zAxis.getStepY() + vector.z * zAxis.getStepZ()
+                point.x() / PIXELS_PER_BLOCK,
+                point.y() / PIXELS_PER_BLOCK,
+                point.z() / PIXELS_PER_BLOCK
             );
         }
 
-        private static int dominantAxis(Vec3 vector) {
-            int axis = 0;
-            if (Math.abs(vector.y) > Math.abs(component(vector, axis))) axis = 1;
-            if (Math.abs(vector.z) > Math.abs(component(vector, axis))) axis = 2;
-            return axis;
-        }
-
-        private static double component(MoldingVec3 vector, int axis) {
+        private double minimum(int axis) {
             return switch (axis) {
-                case 0 -> vector.x();
-                case 1 -> vector.y();
-                default -> vector.z();
+                case 0 -> this.minX;
+                case 1 -> this.minY;
+                default -> this.minZ;
             };
         }
 
-        // 嵌套类一旦声明同名方法就会按名字隐藏外层重载，Vec3 版本必须在此处重新给出。
-        private static double component(Vec3 vector, int axis) {
+        private double maximum(int axis) {
             return switch (axis) {
-                case 0 -> vector.x;
-                case 1 -> vector.y;
-                default -> vector.z;
+                case 0 -> this.maxX;
+                case 1 -> this.maxY;
+                default -> this.maxZ;
             };
         }
 
-        private static double minValue(int axis, Vec3... vertices) {
-            double result = Double.POSITIVE_INFINITY;
-            for (Vec3 vertex : vertices) result = Math.min(result, component(vertex, axis));
-            return result;
+        /** 沿来面法线微移后仍落在凸体内，说明这一面朝向实心内部。 */
+        private boolean facesInterior(int axis, double worldPlane, int normalDirection) {
+            double sample = worldPlane + normalDirection * SAMPLE_OFFSET;
+            return sample >= this.minimum(axis) - CONTAINMENT_EPSILON
+                && sample <= this.maximum(axis) + CONTAINMENT_EPSILON;
         }
 
-        private static double maxValue(int axis, Vec3... vertices) {
-            double result = Double.NEGATIVE_INFINITY;
-            for (Vec3 vertex : vertices) result = Math.max(result, component(vertex, axis));
-            return result;
-        }
-
-        private record VolumeHull(MoldingConvexHull hull, MoldingConvexHull.Bounds bounds, boolean axisAligned) {
-            private VolumeHull(MoldingConvexHull hull) {
-                this(hull, hull.bounds(), isAxisAligned(hull));
+        private static boolean isAxisAligned(MoldingConvexHull hull) {
+            for (var face : hull.faces()) {
+                double x = Math.abs(face.normal().x());
+                double y = Math.abs(face.normal().y());
+                double z = Math.abs(face.normal().z());
+                if (Math.max(x, Math.max(y, z)) < 1.0D - PLANE_EPSILON) return false;
             }
-
-            private boolean containsPlane(int axis, double plane, int direction) {
-                double sample = plane + direction * CONTACT_EPSILON;
-                double minimum = component(this.bounds.minimum(), axis);
-                double maximum = component(this.bounds.maximum(), axis);
-                return sample >= minimum - CONTAINMENT_EPSILON && sample <= maximum + CONTAINMENT_EPSILON;
-            }
-
-            private static boolean isAxisAligned(MoldingConvexHull hull) {
-                for (var face : hull.faces()) {
-                    double x = Math.abs(face.normal().x());
-                    double y = Math.abs(face.normal().y());
-                    double z = Math.abs(face.normal().z());
-                    if (Math.max(x, Math.max(y, z)) < 1.0D - PLANE_EPSILON) return false;
-                }
-                return true;
-            }
+            return true;
         }
     }
 
-    private record Rectangle(double minFirst, double maxFirst, double minSecond, double maxSecond) {
+    /**
+     * 一个来面上的覆盖矩形集合。
+     *
+     * <p>覆盖判定和边界切分只用到四个标量，逐面新建矩形对象和装箱边界列表会让分配量随四边形数量
+     * 线性膨胀，因此改用可复用的扁平数组。</p>
+     */
+    private static final class RectangleBuffer {
+        private static final int STRIDE = 4;
+        private double[] values = new double[STRIDE * 4];
+        private int count;
+
+        private void clear() {
+            this.count = 0;
+        }
+
+        private boolean isEmpty() {
+            return this.count == 0;
+        }
+
+        private void add(double minFirst, double maxFirst, double minSecond, double maxSecond) {
+            if ((this.count + 1) * STRIDE > this.values.length) {
+                this.values = Arrays.copyOf(this.values, this.values.length * 2);
+            }
+            int offset = this.count * STRIDE;
+            this.values[offset] = minFirst;
+            this.values[offset + 1] = maxFirst;
+            this.values[offset + 2] = minSecond;
+            this.values[offset + 3] = maxSecond;
+            this.count++;
+        }
+
         private boolean contains(double first, double second) {
-            return first > this.minFirst + CONTACT_EPSILON && first < this.maxFirst - CONTACT_EPSILON
-                && second > this.minSecond + CONTACT_EPSILON && second < this.maxSecond - CONTACT_EPSILON;
+            for (int index = 0; index < this.count; index++) {
+                int offset = index * STRIDE;
+                if (first > this.values[offset] + CONTACT_EPSILON
+                    && first < this.values[offset + 1] - CONTACT_EPSILON
+                    && second > this.values[offset + 2] + CONTACT_EPSILON
+                    && second < this.values[offset + 3] - CONTACT_EPSILON) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /** 返回能容纳当前矩形数量对应边界个数的数组，必要时换成更大的一块。 */
+        private double[] grow(double[] target) {
+            int required = 2 + this.count * 2;
+            return target.length >= required ? target : new double[required];
+        }
+
+        /** 把去重后的切分边界写入 target 并返回个数；顺序与矩形加入顺序无关。 */
+        private int boundaries(double[] target, double minimum, double maximum, boolean first) {
+            int size = addBoundary(target, 0, minimum);
+            size = addBoundary(target, size, maximum);
+            int offset = first ? 0 : 2;
+            for (int index = 0; index < this.count; index++) {
+                int base = index * STRIDE + offset;
+                size = addBoundary(target, size, this.values[base]);
+                size = addBoundary(target, size, this.values[base + 1]);
+            }
+            Arrays.sort(target, 0, size);
+            return size;
+        }
+
+        private static int addBoundary(double[] target, int size, double value) {
+            for (int index = 0; index < size; index++) {
+                if (Math.abs(target[index] - value) <= CONTACT_EPSILON) return size;
+            }
+            target[size] = value;
+            return size + 1;
         }
     }
 
     private static final class Vertex {
+        private static final Vertex[] EMPTY = new Vertex[0];
+
         private double x;
         private double y;
         private double z;
@@ -1015,39 +994,59 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
         private float normalY;
         private float normalZ;
 
-        private Vertex(double x, double y, double z) {
-            this.x = x;
-            this.y = y;
-            this.z = z;
-        }
-
-        private Vertex(double x, double y, double z, float normalX, float normalY, float normalZ) {
-            this(x, y, z);
-            this.normalX = normalX;
-            this.normalY = normalY;
-            this.normalZ = normalZ;
+        private static Vertex[] array(int size) {
+            Vertex[] result = new Vertex[size];
+            for (int index = 0; index < size; index++) result[index] = new Vertex();
+            return result;
         }
 
         private static Vertex empty() {
-            Vertex result = new Vertex(0.0D, 0.0D, 0.0D);
-            result.red = 0;
-            result.green = 0;
-            result.blue = 0;
-            result.alpha = 0;
-            return result;
+            return new Vertex();
         }
 
-        private Vertex reverseNormal() {
-            Vertex result = new Vertex(this.x, this.y, this.z, -this.normalX, -this.normalY, -this.normalZ);
-            result.red = this.red;
-            result.green = this.green;
-            result.blue = this.blue;
-            result.alpha = this.alpha;
-            result.u = this.u;
-            result.v = this.v;
-            result.overlay = this.overlay;
-            result.light = this.light;
-            return result;
+        /** 恢复到刚写入位置、尚未写入任何顶点属性的状态。 */
+        private Vertex reset(double x, double y, double z) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.red = 255;
+            this.green = 255;
+            this.blue = 255;
+            this.alpha = 255;
+            this.u = 0.0F;
+            this.v = 0.0F;
+            this.overlay = 0;
+            this.light = 0;
+            this.normalX = 0.0F;
+            this.normalY = 0.0F;
+            this.normalZ = 0.0F;
+            return this;
+        }
+
+        /** 清零全部分量，供加权累加求插值顶点。 */
+        private void clear() {
+            this.reset(0.0D, 0.0D, 0.0D);
+            this.red = 0;
+            this.green = 0;
+            this.blue = 0;
+            this.alpha = 0;
+        }
+
+        private void setReversedNormal(Vertex source) {
+            this.x = source.x;
+            this.y = source.y;
+            this.z = source.z;
+            this.red = source.red;
+            this.green = source.green;
+            this.blue = source.blue;
+            this.alpha = source.alpha;
+            this.u = source.u;
+            this.v = source.v;
+            this.overlay = source.overlay;
+            this.light = source.light;
+            this.normalX = -source.normalX;
+            this.normalY = -source.normalY;
+            this.normalZ = -source.normalZ;
         }
 
         private void add(Vertex other, double weight) {

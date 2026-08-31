@@ -11,13 +11,16 @@ import dev.dubhe.anvilcraft.util.GravityManager;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySelector;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /** 可移动塑料实体共用的重力、支撑、承载和侧推几何逻辑。 */
@@ -656,6 +659,58 @@ public final class PlasticEntityPhysics {
         };
         Vec3 inward = Vec3.atLowerCornerOf(gravityDirection.getNormal()).scale(-FACE_EPSILON);
         return BlockPos.containing(faceCenter.add(inward));
+    }
+
+    /**
+     * 返回本次落地要逐格发布落砧事件的全部位置，首个元素固定为 {@link #landingPosition} 的中心格。
+     * 制品底面可以横跨多格，只要某格被底面压到就算被砸到，因此按重力面所在平面上的碰撞子盒逐格展开覆盖范围。
+     * 只取抵达该平面的子盒：悬在上方的部位没有参与这次冲击，否则紧贴其下方的侧面方块会被误判为被砸。
+     */
+    public static List<BlockPos> landingPositions(
+        FallingBlockEntity entity,
+        Direction gravityDirection
+    ) {
+        BlockPos centerCell = landingPosition(entity, gravityDirection);
+        List<AABB> components = collisionComponents(entity, entity.getBoundingBox());
+        if (components.isEmpty()) return List.of(centerCell);
+        double facePlane = faceCoordinate(enclosingBounds(components), gravityDirection);
+        Set<BlockPos> positions = new LinkedHashSet<>();
+        positions.add(centerCell);
+        for (AABB component : components) {
+            if (Math.abs(faceCoordinate(component, gravityDirection) - facePlane) > FACE_EPSILON) continue;
+            addFaceCells(positions, component, gravityDirection.getAxis(), centerCell);
+        }
+        return List.copyOf(positions);
+    }
+
+    /** 重力轴固定在底面所在格，另两轴按子盒的覆盖范围展开。 */
+    private static void addFaceCells(
+        Set<BlockPos> positions,
+        AABB component,
+        Direction.Axis axis,
+        BlockPos centerCell
+    ) {
+        boolean alongX = axis == Direction.Axis.X;
+        boolean alongY = axis == Direction.Axis.Y;
+        boolean alongZ = axis == Direction.Axis.Z;
+        int minX = alongX ? centerCell.getX() : coveredCell(component.minX, FACE_EPSILON);
+        int maxX = alongX ? centerCell.getX() : coveredCell(component.maxX, -FACE_EPSILON);
+        int minY = alongY ? centerCell.getY() : coveredCell(component.minY, FACE_EPSILON);
+        int maxY = alongY ? centerCell.getY() : coveredCell(component.maxY, -FACE_EPSILON);
+        int minZ = alongZ ? centerCell.getZ() : coveredCell(component.minZ, FACE_EPSILON);
+        int maxZ = alongZ ? centerCell.getZ() : coveredCell(component.maxZ, -FACE_EPSILON);
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    positions.add(new BlockPos(x, y, z));
+                }
+            }
+        }
+    }
+
+    /** 两端各向内收一个面容差，子盒恰好贴住格边界时不把相邻格算成被覆盖。 */
+    private static int coveredCell(double coordinate, double inset) {
+        return Mth.floor(coordinate + inset);
     }
 
     /** 构造仅查询侧推的宽阶段区域，不包含两个水平面。 */

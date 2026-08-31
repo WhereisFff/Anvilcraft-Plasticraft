@@ -63,7 +63,9 @@ import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class MoldedPlasticAnvilGameTests {
@@ -118,8 +120,8 @@ public final class MoldedPlasticAnvilGameTests {
     }
 
     @GameTest(timeoutTicks = 50)
-    @EmptyTemplate(value = "15x9x7", floor = true)
-    @TestHolder(description = "Only a bottom-down molded anvil publishes one AnvilCraft landing event")
+    @EmptyTemplate(value = "19x9x7", floor = true)
+    @TestHolder(description = "Only bottom-down molded anvils publish landing events, one per cell their bottom covers")
     static void landingRequiresAnvilTypeAndBottomDownOrientation(ExtendedGameTestHelper helper) {
         UniversalPlasticEntity bottomDown = createProduct(
             helper,
@@ -139,23 +141,38 @@ public final class MoldedPlasticAnvilGameTests {
             new PlasticEntityOrientation(Direction.NORTH, 0),
             MoldingProductTypes.ANVIL_ID
         );
+        // 40 x 40 底面横跨三格，只砸中中心格的旧行为会让边缘格的加工方块永远不触发。
+        BlockPos giantCell = new BlockPos(15, 6, 3);
+        UniversalPlasticEntity giant = createGiantProduct(helper, giantCell);
         AtomicInteger bottomDownEvents = new AtomicInteger();
         AtomicInteger ordinaryEvents = new AtomicInteger();
         AtomicInteger wallEvents = new AtomicInteger();
+        Set<BlockPos> giantCells = new HashSet<>();
         helper.addTemporaryListener((AnvilEvent.OnLand event) -> {
             if (event.getEntity() == bottomDown) bottomDownEvents.incrementAndGet();
             if (event.getEntity() == ordinaryProduct) ordinaryEvents.incrementAndGet();
             if (event.getEntity() == wallOriented) wallEvents.incrementAndGet();
+            if (event.getEntity() == giant) giantCells.add(event.getPos().immutable());
         });
 
         helper.runAfterDelay(35, () -> {
             check(bottomDownEvents.get() == 1,
-                "bottom-down molded anvil published " + bottomDownEvents.get() + " landing events");
+                "single-cell molded anvil published " + bottomDownEvents.get() + " landing events");
             check(ordinaryEvents.get() == 0,
                 "ordinary molded product published " + ordinaryEvents.get() + " landing events");
             check(wallEvents.get() == 0,
                 "wall-oriented molded anvil published " + wallEvents.get() + " landing events");
-            check(bottomDown.isAlive() && ordinaryProduct.isAlive() && wallOriented.isAlive(),
+            Set<BlockPos> expectedGiantCells = new HashSet<>();
+            for (int x = -1; x <= 1; x++) {
+                for (int z = -1; z <= 1; z++) {
+                    expectedGiantCells.add(helper.absolutePos(
+                        new BlockPos(giantCell.getX() + x, 2, giantCell.getZ() + z)
+                    ));
+                }
+            }
+            check(giantCells.equals(expectedGiantCells),
+                "giant molded anvil struck " + giantCells + " instead of " + expectedGiantCells);
+            check(bottomDown.isAlive() && ordinaryProduct.isAlive() && wallOriented.isAlive() && giant.isAlive(),
                 "landing unexpectedly removed a molded product");
             helper.succeed();
         });
@@ -948,9 +965,11 @@ public final class MoldedPlasticAnvilGameTests {
         BlockPos landingPos,
         float fallDistance
     ) {
+        BlockPos absoluteLandingPos = helper.absolutePos(landingPos);
+        MoldedPlasticAnvilAbilities.handleLandingOnce(anvil, absoluteLandingPos, fallDistance);
         return MoldedPlasticAnvilAbilities.handleLanding(
             anvil,
-            new AnvilEvent.OnLand(helper.getLevel(), helper.absolutePos(landingPos), anvil, fallDistance)
+            new AnvilEvent.OnLand(helper.getLevel(), absoluteLandingPos, anvil, fallDistance)
         );
     }
 
