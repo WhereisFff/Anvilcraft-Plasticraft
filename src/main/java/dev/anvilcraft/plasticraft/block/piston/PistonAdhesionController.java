@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.block.piston;
 
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityAdhesion;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -32,8 +32,6 @@ public final class PistonAdhesionController {
 
     public static void beginMovement(Level level, List<BlockPos> positions, Direction movementDirection) {
         if (positions.isEmpty()) return;
-        // 客户端在原版活塞事件前已经收到服务端迁移后的区块和实体附件。
-        if (level.isClientSide) return;
         long expiresAt = level.getGameTime() + MOVEMENT_LIFETIME;
         MovementIndex index = MOVEMENTS.computeIfAbsent(level, ignored -> new MovementIndex());
         index.cleanup(level.getGameTime());
@@ -46,22 +44,35 @@ public final class PistonAdhesionController {
                 expiresAt
             );
             movementsBySource.put(movement.source(), movement);
+            // 支撑先被换成移动活塞时，源位置上的 DESTROY 方块还会收到邻接更新。
+            index.movingBlocks.put(movement.source(), expiresAt);
+            index.movingBlocks.put(movement.destination(), expiresAt);
         }
+
+        // 客户端在原版活塞事件前已经收到服务端迁移后的区块和实体附件。
+        if (level.isClientSide) return;
 
         BondedFallingBlocks.moveAll(level, positions, movementDirection);
         AABB searchBounds = structureBounds(positions).inflate(ENTITY_SEARCH_MARGIN);
         for (Entity entity : level.getEntities(
             (Entity) null,
             searchBounds,
-            candidate -> candidate.hasData(ModAttachments.ENTITY_ADHESION)
+            candidate -> candidate.hasData(PlasticraftAttachments.ENTITY_ADHESION)
         )) {
-            EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+            EntityAdhesion adhesion = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
             if (adhesion == null) continue;
             PistonMovement movement = movementsBySource.get(adhesion.supportPos());
             if (movement == null) continue;
-            entity.setData(ModAttachments.ENTITY_ADHESION, adhesion.moved(movement.direction()));
+            entity.setData(PlasticraftAttachments.ENTITY_ADHESION, adhesion.moved(movement.direction()));
             index.byEntity.put(entity.getUUID(), movement);
         }
+    }
+
+    public static boolean isMovingPosition(Level level, BlockPos pos) {
+        MovementIndex index = MOVEMENTS.get(level);
+        if (index == null) return false;
+        index.cleanup(level.getGameTime());
+        return index.movingBlocks.containsKey(pos.immutable());
     }
 
     public static @Nullable MotionTarget entityTarget(Entity entity, EntityAdhesion adhesion) {
@@ -77,7 +88,7 @@ public final class PistonAdhesionController {
         EntityAdhesion movedAdhesion = adhesion;
         if (adhesion.supportPos().equals(movement.source())) {
             movedAdhesion = adhesion.moved(movement.direction());
-            entity.setData(ModAttachments.ENTITY_ADHESION, movedAdhesion);
+            entity.setData(PlasticraftAttachments.ENTITY_ADHESION, movedAdhesion);
         } else if (!adhesion.supportPos().equals(movement.destination())) {
             index.byEntity.remove(entity.getUUID());
             return null;
@@ -237,9 +248,11 @@ public final class PistonAdhesionController {
 
     private static final class MovementIndex {
         private final Map<UUID, PistonMovement> byEntity = new HashMap<>();
+        private final Map<BlockPos, Long> movingBlocks = new HashMap<>();
 
         private void cleanup(long gameTime) {
             this.byEntity.values().removeIf(movement -> movement.expiresAt() < gameTime);
+            this.movingBlocks.values().removeIf(expiresAt -> expiresAt < gameTime);
         }
     }
 }

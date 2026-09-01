@@ -1,0 +1,10 @@
+{
+  "type": "anvilcraft:solid_liquid",
+  "fluid": "anvilcraftplasticraft:clear_plastic_melt",
+  "ingredients": [
+    {
+      "items": "minecraft:yellow_dye"
+    }
+  ],
+  "results": []
+}

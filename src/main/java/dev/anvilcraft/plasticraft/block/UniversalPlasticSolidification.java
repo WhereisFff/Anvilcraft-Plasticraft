@@ -1,15 +1,21 @@
 package dev.anvilcraft.plasticraft.block;
 
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.item.CooledPlasticItemStacks;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 
 /** 世界中单格通用塑料熔体的唯一固化结算服务。 */
 public final class UniversalPlasticSolidification {
@@ -26,15 +32,36 @@ public final class UniversalPlasticSolidification {
      */
     public static boolean solidify(ServerLevel level, BlockPos pos) {
         BlockState meltState = level.getBlockState(pos);
-        if (!meltState.is(ModBlocks.UNIVERSAL_PLASTIC_MELT.get())) return false;
+        PlasticMaterial material = PlasticMaterial.fromMeltBlock(meltState).orElse(null);
+        if (material == null) return false;
 
         DyeColor color = level.getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity melt
             ? melt.getColor()
             : DyeColor.WHITE;
-        BlockState product = ModBlocks.UNIVERSAL_PLASTIC.get()
-            .defaultBlockState()
-            .setValue(DyeableMaterial.COLOR, color);
-        if (!level.setBlock(pos, product, Block.UPDATE_ALL)) return false;
+        BlockState displayState = material.productBlock().defaultBlockState();
+        if (material.supportsDyeing() && displayState.hasProperty(DyeableMaterial.COLOR)) {
+            displayState = displayState.setValue(DyeableMaterial.COLOR, color);
+        }
+        ItemStack dropStack = CooledPlasticItemStacks.create(material, color);
+        PlasticEntityOrientation orientation = PlasticEntityOrientation.DEFAULT;
+        UniversalPlasticEntity entity = material.createEntity(
+            level,
+            Vec3.atBottomCenterOf(pos),
+            displayState,
+            dropStack,
+            orientation
+        );
+        entity.setPos(entity.plasticraft$placementPosition(pos, orientation));
+        entity.setStartPos(entity.blockPosition());
+
+        if (!level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)) return false;
+        if (!level.addFreshEntity(entity)) {
+            level.setBlock(pos, meltState, Block.UPDATE_ALL);
+            if (level.getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity restoredMelt) {
+                restoredMelt.setColor(color);
+            }
+            return false;
+        }
 
         level.playSound(
             null,

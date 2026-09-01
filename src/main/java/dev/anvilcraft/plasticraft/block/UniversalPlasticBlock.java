@@ -3,7 +3,7 @@ package dev.anvilcraft.plasticraft.block;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
-import dev.anvilcraft.plasticraft.init.entity.ModEntities;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
@@ -17,7 +17,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.phys.HitResult;
@@ -31,60 +33,88 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /** 由世界熔体凝固得到的无专用功能通用塑料制品。 */
 public class UniversalPlasticBlock extends AbstractPlasticEntityBlock<UniversalPlasticEntity> {
-    private static final Map<PlasticEntityOrientation, VoxelShape> BONDED_SHAPES = new ConcurrentHashMap<>();
+    private static final Map<PlasticEntityOrientation, VoxelShape> BONDED_INTERACTION_SHAPES = new ConcurrentHashMap<>();
+    private static final Map<PlasticEntityOrientation, VoxelShape> BONDED_COLLISION_SHAPES = new ConcurrentHashMap<>();
 
     public UniversalPlasticBlock(Properties properties) {
         super(properties);
-        this.registerDefaultState(this.defaultBlockState()
+        BlockState defaultState = this.defaultBlockState()
             .setValue(FACING, Direction.NORTH)
             .setValue(MAGNETIZED, false)
-            .setValue(BONDED, false)
-            .setValue(DyeableMaterial.COLOR, DyeColor.WHITE));
+            .setValue(BONDED, false);
+        if (this.hasColorState()) defaultState = defaultState.setValue(DyeableMaterial.COLOR, DyeColor.WHITE);
+        this.registerDefaultState(defaultState);
     }
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         super.createBlockStateDefinition(builder);
-        builder.add(DyeableMaterial.COLOR);
+        if (this.hasColorState()) builder.add(DyeableMaterial.COLOR);
+    }
+
+    protected boolean hasColorState() {
+        return true;
     }
 
     @Override
     public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
         if (!state.getValue(BONDED)) return UniversalPlasticShape.COLLISION;
-        PlasticEntityOrientation orientation = level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
+        if (level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
             && bonded.isInitialized()
-            && bonded.isPlastic()
-            ? bonded.getPlasticOrientation()
-            : PlasticEntityOrientation.fromLegacyState(state);
-        return BONDED_SHAPES.computeIfAbsent(
+            && bonded.isPlastic()) {
+            VoxelShape bondedShape = bonded.getBondedInteractionShape();
+            if (bondedShape != null) return bondedShape;
+        }
+        PlasticEntityOrientation orientation = PlasticEntityOrientation.fromLegacyState(state);
+        return BONDED_INTERACTION_SHAPES.computeIfAbsent(
+            orientation,
+            UniversalPlasticShape.GEOMETRY::placedInteractionShape
+        );
+    }
+
+    @Override
+    public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        if (!state.getValue(BONDED)) return UniversalPlasticShape.COLLISION;
+        if (level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded
+            && bonded.isInitialized()
+            && bonded.isPlastic()) {
+            VoxelShape bondedShape = bonded.getBondedCollisionShape();
+            if (bondedShape != null) return bondedShape;
+        }
+        PlasticEntityOrientation orientation = PlasticEntityOrientation.fromLegacyState(state);
+        return BONDED_COLLISION_SHAPES.computeIfAbsent(
             orientation,
             UniversalPlasticShape.GEOMETRY::placedCollisionShape
         );
     }
 
     @Override
-    public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
-        return this.getShape(state, level, pos, context);
-    }
-
-    @Override
     protected EntityType<? extends UniversalPlasticEntity> getPlasticEntityType() {
-        return ModEntities.UNIVERSAL_PLASTIC.get();
+        return PlasticraftEntities.UNIVERSAL_PLASTIC.get();
     }
 
     @Override
     protected ItemStack createDropStack(BlockState state) {
         ItemStack stack = new ItemStack(this);
-        PlasticItemData.setMaterial(stack, "universal_plastic");
-        PlasticMeltColor.set(stack, state.getValue(DyeableMaterial.COLOR));
+        PlasticItemData.setMaterial(stack, this.materialKey());
+        if (state.hasProperty(DyeableMaterial.COLOR)) {
+            PlasticMeltColor.set(stack, state.getValue(DyeableMaterial.COLOR));
+        }
         if (state.getValue(MAGNETIZED)) {
             PlasticItemData.setMagnetized(stack, true);
         }
         return stack;
     }
 
+    protected String materialKey() {
+        return "universal_plastic";
+    }
+
     @Override
     protected List<ItemStack> getDrops(BlockState state, LootParams.Builder params) {
+        BlockEntity blockEntity = params.getOptionalParameter(LootContextParams.BLOCK_ENTITY);
+        ItemStack bondedDrop = this.getBondedDrop(blockEntity);
+        if (!bondedDrop.isEmpty()) return List.of(bondedDrop);
         return List.of(this.createDropStack(state));
     }
 
@@ -96,7 +126,18 @@ public class UniversalPlasticBlock extends AbstractPlasticEntityBlock<UniversalP
         BlockPos pos,
         Player player
     ) {
+        ItemStack bondedDrop = this.getBondedDrop(level.getBlockEntity(pos));
+        if (!bondedDrop.isEmpty()) return bondedDrop;
         return this.createDropStack(state);
+    }
+
+    private ItemStack getBondedDrop(BlockEntity blockEntity) {
+        if (!(blockEntity instanceof BondedEntityBlockEntity bonded)
+            || !bonded.isInitialized()
+            || !bonded.isPlastic()) {
+            return ItemStack.EMPTY;
+        }
+        return bonded.getStoredDropStack();
     }
 
     @Override

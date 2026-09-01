@@ -148,6 +148,8 @@ public final class PlasticFallingBlockSupport {
     ) {
         if (!(support.level() instanceof ServerLevel level)) return Set.of();
         Set<BlockPos> currentPositions = fallingBlockPositions(level, support);
+        // 绝大多数塑料实体头顶没有下落方块，此时两个集合都为空，直接省掉整个记账与集合分配。
+        if (currentPositions.isEmpty() && previousPositions.isEmpty()) return Set.of();
         Set<BlockPos> trackedPositions = new HashSet<>(currentPositions);
         for (BlockPos pos : previousPositions) {
             if (currentPositions.contains(pos)) {
@@ -172,7 +174,8 @@ public final class PlasticFallingBlockSupport {
     }
 
     private static Set<BlockPos> fallingBlockPositions(ServerLevel level, AbstractPlasticEntity support) {
-        Set<BlockPos> positions = new HashSet<>();
+        // 命中下落方块是少数情况，集合延迟到真正需要时才创建。
+        Set<BlockPos> positions = null;
         for (AABB component : support.plasticraft$getCollisionBox().components()) {
             int fallingY = Mth.floor(component.maxY - ALIGNMENT_EPSILON) + 1;
             int minX = Mth.floor(component.minX + ALIGNMENT_EPSILON);
@@ -180,10 +183,12 @@ public final class PlasticFallingBlockSupport {
             int minZ = Mth.floor(component.minZ + ALIGNMENT_EPSILON);
             int maxZ = Mth.floor(component.maxZ - ALIGNMENT_EPSILON);
             for (BlockPos pos : BlockPos.betweenClosed(minX, fallingY, minZ, maxX, fallingY, maxZ)) {
-                if (level.getBlockState(pos).getBlock() instanceof FallingBlock) positions.add(pos.immutable());
+                if (!(level.getBlockState(pos).getBlock() instanceof FallingBlock)) continue;
+                if (positions == null) positions = new HashSet<>();
+                positions.add(pos.immutable());
             }
         }
-        return positions;
+        return positions == null ? Set.of() : positions;
     }
 
     private static boolean hasAlignedCollisionTop(

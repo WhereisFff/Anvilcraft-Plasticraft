@@ -7,7 +7,7 @@ import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
 import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticOilCatalysisRenderer;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.dubhe.anvilcraft.api.itemhandler.ItemHandlerUtil;
 import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
 import net.minecraft.client.Minecraft;
@@ -130,7 +130,7 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
             flush(buffers);
         }
         if (entity.anvilcraft$isIgnited()) {
-            if (fluid.is(ModFluids.HIGH_HEAT_FUEL.get())) {
+            if (fluid.is(PlasticraftFluids.HIGH_HEAT_FUEL.get())) {
                 IgnitedFluidFlameRenderer.renderBlue(
                     pose,
                     buffers,

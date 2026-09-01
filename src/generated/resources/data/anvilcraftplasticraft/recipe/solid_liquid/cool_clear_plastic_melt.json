@@ -1,0 +1,16 @@
+{
+  "type": "anvilcraft:solid_liquid",
+  "consume": 1000,
+  "fluid": "anvilcraftplasticraft:clear_plastic_melt",
+  "ingredients": [
+    {
+      "items": "#anvilcraftplasticraft:cold_items"
+    }
+  ],
+  "results": [
+    {
+      "count": 16,
+      "id": "anvilcraftplasticraft:clear_plastic_granule"
+    }
+  ]
+}

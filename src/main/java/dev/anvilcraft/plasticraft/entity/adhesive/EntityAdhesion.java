@@ -17,7 +17,8 @@ public record EntityAdhesion(
     Direction attachmentFace,
     ResourceLocation supportBlockId,
     Vec3 fixedPosition,
-    boolean originalNoGravity
+    boolean originalNoGravity,
+    boolean invisible
 ) {
     private static final ResourceLocation DEFAULT_SUPPORT_BLOCK = ResourceLocation.fromNamespaceAndPath(
         "minecraft",
@@ -30,7 +31,8 @@ public record EntityAdhesion(
         ResourceLocation.CODEC.optionalFieldOf("support_block", DEFAULT_SUPPORT_BLOCK)
             .forGetter(EntityAdhesion::supportBlockId),
         Vec3.CODEC.fieldOf("fixed_position").forGetter(EntityAdhesion::fixedPosition),
-        Codec.BOOL.optionalFieldOf("original_no_gravity", false).forGetter(EntityAdhesion::originalNoGravity)
+        Codec.BOOL.optionalFieldOf("original_no_gravity", false).forGetter(EntityAdhesion::originalNoGravity),
+        Codec.BOOL.optionalFieldOf("invisible", false).forGetter(EntityAdhesion::invisible)
     ).apply(instance, EntityAdhesion::new));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, EntityAdhesion> STREAM_CODEC = StreamCodec.of(
@@ -42,12 +44,14 @@ public record EntityAdhesion(
             buffer.writeDouble(adhesion.fixedPosition.y);
             buffer.writeDouble(adhesion.fixedPosition.z);
             buffer.writeBoolean(adhesion.originalNoGravity);
+            buffer.writeBoolean(adhesion.invisible);
         },
         buffer -> new EntityAdhesion(
             BlockPos.STREAM_CODEC.decode(buffer),
             Direction.from3DDataValue(buffer.readUnsignedByte()),
             ResourceLocation.STREAM_CODEC.decode(buffer),
             new Vec3(buffer.readDouble(), buffer.readDouble(), buffer.readDouble()),
+            buffer.readBoolean(),
             buffer.readBoolean()
         )
     );
@@ -64,13 +68,36 @@ public record EntityAdhesion(
         }
     }
 
+    public EntityAdhesion(
+        BlockPos supportPos,
+        Direction attachmentFace,
+        ResourceLocation supportBlockId,
+        Vec3 fixedPosition,
+        boolean originalNoGravity
+    ) {
+        this(supportPos, attachmentFace, supportBlockId, fixedPosition, originalNoGravity, false);
+    }
+
     public EntityAdhesion moved(Direction direction) {
         return new EntityAdhesion(
             this.supportPos.relative(direction),
             this.attachmentFace,
             this.supportBlockId,
             this.fixedPosition.add(direction.getStepX(), direction.getStepY(), direction.getStepZ()),
-            this.originalNoGravity
+            this.originalNoGravity,
+            this.invisible
+        );
+    }
+
+    public EntityAdhesion withInvisible() {
+        if (this.invisible) return this;
+        return new EntityAdhesion(
+            this.supportPos,
+            this.attachmentFace,
+            this.supportBlockId,
+            this.fixedPosition,
+            this.originalNoGravity,
+            true
         );
     }
 }

@@ -1,0 +1,19 @@
+{
+  "type": "anvilcraft:fluid_mixing",
+  "ingredients": [
+    {
+      "amount": 1000,
+      "fluid": "anvilcraftplasticraft:clear_plastic_melt"
+    },
+    {
+      "amount": 1000,
+      "fluid": "minecraft:powder_snow"
+    }
+  ],
+  "results": [
+    {
+      "count": 16,
+      "id": "anvilcraftplasticraft:clear_plastic_granule"
+    }
+  ]
+}

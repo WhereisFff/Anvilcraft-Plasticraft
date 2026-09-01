@@ -1,0 +1,16 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "dev.anvilcraft.plasticraft.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "plugin": "dev.anvilcraft.plasticraft.mixin.JeiMixinPlugin",
+  "client": [
+    "AbstractLiquidCategoryMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
+}

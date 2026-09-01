@@ -1,8 +1,9 @@
 repositories {
+    def localRepository = mavenLocal()
     def centralRepository = mavenCentral()
     def anvilRepository = maven {
         name = 'Cjsah Maven'
-        url = 'https://server.cjsah.net:1002/maven/'
+        url = 'https://server.cjsah.net:1002/maven/releases/'
         content {
             includeGroup 'dev.anvilcraft.lib'
             includeGroup 'dev.dubhe'
@@ -12,6 +13,7 @@ repositories {
 
     exclusiveContent {
         forRepositories(
+            // localRepository,
             centralRepository,
             anvilRepository
         )
@@ -30,6 +32,11 @@ repositories {
         name = "Jared's Maven"
         url = 'https://maven.blamejared.com/'
         content { includeGroup 'mezz.jei' }
+    }
+    maven {
+        name = 'FTB Maven'
+        url = 'https://maven.ftb.dev/releases'
+        content { includeGroup 'dev.ftb.mods' }
     }
 
 }

@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.BlockAdhesionState;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlockInfo;
+import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.block.BondedFallingChunkData;
 import dev.anvilcraft.plasticraft.block.CatalyticPressLidBlock;
 import dev.anvilcraft.plasticraft.block.HardenedResinCauldronBlock;
@@ -12,7 +13,7 @@ import dev.anvilcraft.plasticraft.block.piston.PistonAdhesionController;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
-import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityAdhesion;
@@ -20,7 +21,7 @@ import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondLink;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
 import dev.anvilcraft.plasticraft.entity.adhesive.SlidingAdhesionData;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.dubhe.anvilcraft.block.FishTankBlock;
 import dev.dubhe.anvilcraft.entity.SlidingBlockEntity;
@@ -116,7 +117,7 @@ public final class AdhesivePatchRenderer {
             if (entity instanceof SlidingBlockEntity slidingBlock) {
                 renderSlidingPatches(level, pose, buffers, slidingBlock, partialTick, slidingPatchKeys);
             }
-            EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+            EntityAdhesion adhesion = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
             if (adhesion != null) {
                 renderEntityAdhesive(
                     level,
@@ -159,7 +160,7 @@ public final class AdhesivePatchRenderer {
         float partialTick,
         Set<PatchKey> renderedPatches
     ) {
-        SlidingAdhesionData data = entity.getExistingDataOrNull(ModAttachments.SLIDING_BLOCK_ADHESION.get());
+        SlidingAdhesionData data = entity.getExistingDataOrNull(PlasticraftAttachments.SLIDING_BLOCK_ADHESION.get());
         if (data == null || data.parts().isEmpty()) return;
 
         BlockPos origin = entity.getStartPos();
@@ -173,6 +174,7 @@ public final class AdhesivePatchRenderer {
             BlockPos ownerPos = origin.offset(part.relativePos());
             BlockAdhesionState state = part.state();
             for (Direction face : Direction.values()) {
+                if (state.isInvisible(face)) continue;
                 boolean shouldRender = state.hasPatch(face);
                 if (state.hasBlockBond(face)) {
                     shouldRender = ownerPos.asLong() <= ownerPos.relative(face).asLong();
@@ -204,19 +206,21 @@ public final class AdhesivePatchRenderer {
                 LevelChunk chunk = level.getChunkSource().getChunk(chunkX, chunkZ, false);
                 if (chunk == null) continue;
                 BondedFallingChunkData data = chunk.getExistingDataOrNull(
-                    ModAttachments.BONDED_FALLING_BLOCKS.get()
+                    PlasticraftAttachments.BONDED_FALLING_BLOCKS.get()
                 );
                 if (data == null) continue;
                 for (Map.Entry<BlockPos, BlockAdhesionState> entry : data.adhesions().entrySet()) {
                     BlockPos ownerPos = entry.getKey();
                     BlockAdhesionState state = entry.getValue();
                     for (Direction face : Direction.values()) {
-                        boolean hiddenSeal = state.hasBlockBond(face)
-                            && shouldHideBlockSeal(level, ownerPos, face);
                         if (state.hasBlockBond(face) || state.hasEntityBond(face)) {
                             bondedFaces.add(new BondedFace(ownerPos, face));
                         }
-                        if (state.hasPatch(face) && !hiddenSeal) {
+                        if (state.isInvisible(face)) continue;
+                        boolean suppressStaticSeal = state.hasBlockBond(face)
+                            && (shouldHideBlockSeal(level, ownerPos, face)
+                                || isDeflectedBlockSeal(level, ownerPos, face));
+                        if (state.hasPatch(face) && !suppressStaticSeal) {
                             patches.add(new Patch(
                                 ownerPos,
                                 face,
@@ -227,7 +231,7 @@ public final class AdhesivePatchRenderer {
                         if (!state.hasBlockBond(face)) continue;
                         BlockPos otherPos = ownerPos.relative(face);
                         if (ownerPos.asLong() > otherPos.asLong()) continue;
-                        if (!hiddenSeal) {
+                        if (!suppressStaticSeal) {
                             patches.add(new Patch(
                                 ownerPos,
                                 face,
@@ -308,7 +312,7 @@ public final class AdhesivePatchRenderer {
         float partialTick,
         Vec3 movementOffset
     ) {
-        if (shouldHideEntityBlockSeal(level, entity, adhesion)) return;
+        if (isEntityAdhesiveInvisible(level, adhesion) || shouldHideEntityBlockSeal(level, entity, adhesion)) return;
         Vec3 anchor = adhesionAnchor(entity, adhesion).add(movementOffset);
         Vec3 currentPosition = entity.getPosition(partialTick);
         Vec3 attachedPoint = anchor.add(currentPosition.subtract(adhesion.fixedPosition()));
@@ -352,7 +356,7 @@ public final class AdhesivePatchRenderer {
         Entity other,
         float partialTick
     ) {
-        if (shouldHideEntitySeal(entity, link.face(), other, link.otherFace())) return;
+        if (link.invisible() || shouldHideEntitySeal(entity, link.face(), other, link.otherFace())) return;
         Vec3 firstPoint = entityBondSurfacePoint(entity, link.face(), partialTick);
         Vec3 secondPoint = entityBondSurfacePoint(other, link.otherFace(), partialTick);
         if (firstPoint.distanceToSqr(secondPoint) <= STRETCH_EPSILON * STRETCH_EPSILON) {
@@ -497,6 +501,8 @@ public final class AdhesivePatchRenderer {
         float partialTick
     ) {
         BlockPos blockPos = blockEntity.getBlockPos();
+        BlockAdhesionState adhesion = BondedFallingBlocks.getAdhesion(level, blockEntity.getSupportPos());
+        if (adhesion != null && adhesion.isInvisible(blockEntity.getAttachmentFace())) return;
         if (shouldHideBlockSeal(level, blockPos, blockEntity.getAttachmentFace().getOpposite())) return;
         if (!(blockEntity.getOrCreateRenderEntity() instanceof AbstractPlasticEntity entity)
             || !blockEntity.isHammerDeflected()) {
@@ -521,12 +527,13 @@ public final class AdhesivePatchRenderer {
             ? from
             : animation.to();
         float progress = animation == null ? 0.0F : animation.progress();
-        Vec3 fromPosition = entity.plasticraft$placementPosition(blockPos, from);
-        Vec3 toPosition = entity.plasticraft$placementPosition(blockPos, to);
+        Direction localFace = blockEntity.getAdhesiveLocalFace();
+        Vec3 fromPosition = entity.plasticraft$placementPosition(blockPos, from, localFace);
+        Vec3 toPosition = entity.plasticraft$placementPosition(blockPos, to, localFace);
         Vec3 entityPosition = fromPosition.lerp(toPosition, progress);
         Vec3 attachedPoint = entityPosition.add(PlasticEntityRenderTransforms.faceAlignmentOffset(
             entity,
-            blockEntity.getAdhesiveLocalFace(),
+            localFace,
             from,
             to,
             progress
@@ -558,6 +565,12 @@ public final class AdhesivePatchRenderer {
             && isCatalyticLidFace(level, adhesion.supportPos(), adhesion.attachmentFace()));
     }
 
+    private static boolean isEntityAdhesiveInvisible(ClientLevel level, EntityAdhesion adhesion) {
+        if (adhesion.invisible()) return true;
+        BlockAdhesionState state = BondedFallingBlocks.getAdhesion(level, adhesion.supportPos());
+        return state != null && state.isInvisible(adhesion.attachmentFace());
+    }
+
     private static boolean shouldHideEntitySeal(
         Entity first,
         Direction firstFace,
@@ -575,6 +588,20 @@ public final class AdhesivePatchRenderer {
             && isContainerOpening(level, secondPos, secondFace))
             || (isCatalyticLidFace(level, secondPos, secondFace)
             && isContainerOpening(level, firstPos, firstFace));
+    }
+
+    private static boolean isDeflectedBlockSeal(ClientLevel level, BlockPos firstPos, Direction firstFace) {
+        BlockPos secondPos = firstPos.relative(firstFace);
+        return isDeflectedBlockEntity(level, firstPos, secondPos)
+            || isDeflectedBlockEntity(level, secondPos, firstPos);
+    }
+
+    private static boolean isDeflectedBlockEntity(ClientLevel level, BlockPos entityPos, BlockPos supportPos) {
+        return level.getBlockEntity(entityPos) instanceof BondedEntityBlockEntity bonded
+            && bonded.isInitialized()
+            && bonded.isPlastic()
+            && bonded.isHammerDeflected()
+            && bonded.getSupportPos().equals(supportPos);
     }
 
     private static boolean isCatalyticLidFace(Entity entity, Direction localFace) {
@@ -605,7 +632,7 @@ public final class AdhesivePatchRenderer {
     }
 
     private static boolean isHardenedCauldronOpening(Entity entity, Direction localFace) {
-        return entity instanceof HardenedResinCauldronEntity && localFace == Direction.UP;
+        return PlasticCauldrons.isCauldron(entity) && localFace == Direction.UP;
     }
 
     private static void renderWrappedAdhesive(
@@ -660,8 +687,10 @@ public final class AdhesivePatchRenderer {
         for (Entity entity : level.entitiesForRendering()) {
             if (!entity.isAlive()) continue;
             Set<Direction> faces = new HashSet<>();
-            EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
-            if (adhesion != null) faces.add(adhesion.attachmentFace().getOpposite());
+            EntityAdhesion adhesion = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
+            if (adhesion != null) {
+                faces.add(adhesion.attachmentFace().getOpposite());
+            }
             EntityBondState bonds = EntityBondManager.get(entity);
             if (bonds != null) {
                 for (EntityBondLink link : bonds.links()) {

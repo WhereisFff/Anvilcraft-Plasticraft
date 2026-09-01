@@ -132,7 +132,35 @@ public final class AdhesivePathPlanner {
         Direction attachmentFace,
         Direction selectedFace
     ) {
-        return PreviewTask.forBlock(level, entity, player, supportPos, attachmentFace, selectedFace);
+        return beginPreview(
+            level,
+            entity,
+            player,
+            supportPos,
+            attachmentFace,
+            selectedFace,
+            entity.position()
+        );
+    }
+
+    public static PreviewTask beginPreview(
+        Level level,
+        Entity entity,
+        Player player,
+        BlockPos supportPos,
+        Direction attachmentFace,
+        Direction selectedFace,
+        Vec3 startPosition
+    ) {
+        return PreviewTask.forBlock(
+            level,
+            entity,
+            player,
+            supportPos,
+            attachmentFace,
+            selectedFace,
+            startPosition
+        );
     }
 
     public static PreviewTask beginPreviewToEntity(
@@ -143,13 +171,37 @@ public final class AdhesivePathPlanner {
         Direction supportWorldFace,
         Direction selectedFace
     ) {
+        return beginPreviewToEntity(
+            level,
+            entity,
+            player,
+            supportEntity,
+            supportWorldFace,
+            selectedFace,
+            entity.position(),
+            supportEntity.position()
+        );
+    }
+
+    public static PreviewTask beginPreviewToEntity(
+        Level level,
+        Entity entity,
+        Player player,
+        Entity supportEntity,
+        Direction supportWorldFace,
+        Direction selectedFace,
+        Vec3 startPosition,
+        Vec3 supportStartPosition
+    ) {
         return PreviewTask.forEntity(
             level,
             entity,
             player,
             supportEntity,
             supportWorldFace,
-            selectedFace
+            selectedFace,
+            startPosition,
+            supportStartPosition
         );
     }
 
@@ -197,16 +249,26 @@ public final class AdhesivePathPlanner {
             Player player,
             BlockPos supportPos,
             Direction attachmentFace,
-            Direction selectedFace
+            Direction selectedFace,
+            Vec3 requestedStart
         ) {
             BlockPos occupiedPos = supportPos.relative(attachmentFace);
             Direction sourceFace = entity instanceof AbstractPlasticEntity ? selectedFace : attachmentFace.getOpposite();
             PlasticEntityOrientation targetOrientation = entity instanceof AbstractPlasticEntity plastic
                 ? AdhesiveFaces.targetOrientation(plastic, sourceFace, attachmentFace.getOpposite(), player)
                 : null;
-            Vec3 targetPosition = targetPosition(entity, supportPos, attachmentFace, targetOrientation);
-            double directDistance = entity.position().distanceTo(targetPosition);
-            Vec3 start = entity.position();
+            Vec3 start = requestedStart;
+            AABB originalBox = shiftedBoundingBox(entity, start);
+            Vec3 targetPosition = targetPosition(
+                entity,
+                supportPos,
+                attachmentFace,
+                targetOrientation,
+                sourceFace,
+                start,
+                originalBox
+            );
+            double directDistance = start.distanceTo(targetPosition);
             Plan directPreview = new Plan(
                 Status.VALID,
                 List.of(start, targetPosition),
@@ -231,7 +293,7 @@ public final class AdhesivePathPlanner {
                     && !level.getBlockState(occupiedPos).canBeReplaced()) {
                 return new PreviewTask(withStatus(directPreview, Status.TARGET_BLOCKED));
             }
-            return new PreviewTask(level, entity, entity.getBoundingBox(), start, directPreview);
+            return new PreviewTask(level, entity, originalBox, start, directPreview);
         }
 
         private static PreviewTask forEntity(
@@ -240,7 +302,9 @@ public final class AdhesivePathPlanner {
             Player player,
             Entity supportEntity,
             Direction supportWorldFace,
-            Direction selectedFace
+            Direction selectedFace,
+            Vec3 requestedStart,
+            Vec3 requestedSupportStart
         ) {
             Direction sourceFace = entity instanceof AbstractPlasticEntity ? selectedFace : supportWorldFace.getOpposite();
             Direction supportStoredFace = AdhesiveFaces.storedFace(supportEntity, supportWorldFace);
@@ -252,10 +316,12 @@ public final class AdhesivePathPlanner {
                 sourceFace,
                 targetOrientation,
                 supportEntity,
-                supportWorldFace
+                supportWorldFace,
+                requestedStart,
+                requestedSupportStart
             );
-            double directDistance = entity.position().distanceTo(targetPosition);
-            Vec3 start = entity.position();
+            Vec3 start = requestedStart;
+            double directDistance = start.distanceTo(targetPosition);
             Plan directPreview = new Plan(
                 Status.VALID,
                 List.of(start, targetPosition),
@@ -283,10 +349,11 @@ public final class AdhesivePathPlanner {
                 return new PreviewTask(withStatus(directPreview, Status.OUT_OF_RANGE));
             }
 
+            AABB originalBox = shiftedBoundingBox(entity, start);
             AABB movedBox = movedCollisionBounds(
                 entity,
-                entity.getBoundingBox(),
-                entity.position(),
+                originalBox,
+                start,
                 targetPosition
             );
             if (!supportEntity.isAlive()
@@ -299,7 +366,7 @@ public final class AdhesivePathPlanner {
                 && !plasticEntity.plasticraft$canOccupyBlocks(targetOrientation, targetPosition)) {
                 return new PreviewTask(withStatus(directPreview, Status.TARGET_BLOCKED));
             }
-            return new PreviewTask(level, entity, entity.getBoundingBox(), start, directPreview);
+            return new PreviewTask(level, entity, originalBox, start, directPreview);
         }
 
         private static Plan withStatus(Plan preview, Status status) {
@@ -326,13 +393,14 @@ public final class AdhesivePathPlanner {
             if (this.complete) return;
             if (!this.searchStarted) {
                 this.searchStarted = true;
-                if (isSegmentClear(
+                if (isDirectSegmentClear(
                     this.level,
                     this.entity,
                     this.originalBox,
                     this.start,
                     this.start,
                     this.directPreview.targetPosition(),
+                    this.directPreview.targetOrientation(),
                     true,
                     SEGMENT_SAMPLE_STEP,
                     new PathCheckCache()
@@ -434,7 +502,13 @@ public final class AdhesivePathPlanner {
         PlasticEntityOrientation targetOrientation = entity instanceof AbstractPlasticEntity plastic
             ? AdhesiveFaces.targetOrientation(plastic, sourceFace, attachmentFace.getOpposite(), player)
             : null;
-        Vec3 targetPosition = targetPosition(entity, supportPos, attachmentFace, targetOrientation);
+        Vec3 targetPosition = targetPosition(
+            entity,
+            supportPos,
+            attachmentFace,
+            targetOrientation,
+            sourceFace
+        );
         double directDistance = entity.position().distanceTo(targetPosition);
         List<Vec3> directPreview = List.of(entity.position(), targetPosition);
 
@@ -480,13 +554,14 @@ public final class AdhesivePathPlanner {
         AABB originalBox = entity.getBoundingBox();
         Vec3 start = entity.position();
         PathCheckCache checks = new PathCheckCache();
-        if (isSegmentClear(
+        if (isDirectSegmentClear(
             level,
             entity,
             originalBox,
             start,
             start,
             targetPosition,
+            targetOrientation,
             true,
             SEGMENT_SAMPLE_STEP,
             checks
@@ -660,13 +735,14 @@ public final class AdhesivePathPlanner {
         AABB originalBox = entity.getBoundingBox();
         Vec3 start = entity.position();
         PathCheckCache checks = new PathCheckCache();
-        if (isSegmentClear(
+        if (isDirectSegmentClear(
             level,
             entity,
             originalBox,
             start,
             start,
             targetPosition,
+            targetOrientation,
             true,
             SEGMENT_SAMPLE_STEP,
             checks
@@ -742,11 +818,32 @@ public final class AdhesivePathPlanner {
         Entity entity,
         BlockPos supportPos,
         Direction attachmentFace,
-        @Nullable PlasticEntityOrientation orientation
+        @Nullable PlasticEntityOrientation orientation,
+        Direction sourceFace
+    ) {
+        return targetPosition(
+            entity,
+            supportPos,
+            attachmentFace,
+            orientation,
+            sourceFace,
+            entity.position(),
+            entity.getBoundingBox()
+        );
+    }
+
+    private static Vec3 targetPosition(
+        Entity entity,
+        BlockPos supportPos,
+        Direction attachmentFace,
+        @Nullable PlasticEntityOrientation orientation,
+        Direction sourceFace,
+        Vec3 start,
+        AABB box
     ) {
         BlockPos occupiedPos = supportPos.relative(attachmentFace);
         if (entity instanceof AbstractPlasticEntity plasticEntity && orientation != null) {
-            return plasticEntity.plasticraft$placementPosition(occupiedPos, orientation);
+            return plasticEntity.plasticraft$placementPosition(occupiedPos, orientation, sourceFace);
         }
         if (AdhesiveFallingBlockBehavior.canBlockifyComponent(entity.level(), entity)) {
             return Vec3.atBottomCenterOf(occupiedPos);
@@ -757,7 +854,6 @@ public final class AdhesivePathPlanner {
             attachmentFace.getStepY() * 0.5D,
             attachmentFace.getStepZ() * 0.5D
         );
-        AABB box = entity.getBoundingBox();
         double halfExtent = switch (attachmentFace.getAxis()) {
             case X -> box.getXsize() * 0.5D;
             case Y -> box.getYsize() * 0.5D;
@@ -768,7 +864,7 @@ public final class AdhesivePathPlanner {
             attachmentFace.getStepY() * (halfExtent + 0.001D),
             attachmentFace.getStepZ() * (halfExtent + 0.001D)
         );
-        return entity.position().add(desiredCenter.subtract(box.getCenter()));
+        return start.add(desiredCenter.subtract(box.getCenter()));
     }
 
     private static Vec3 targetPosition(
@@ -778,11 +874,33 @@ public final class AdhesivePathPlanner {
         Entity supportEntity,
         Direction supportFace
     ) {
-        Vec3 supportPoint = AdhesiveFaces.worldFaceAlignmentPoint(supportEntity, supportFace);
+        return targetPosition(
+            entity,
+            sourceFace,
+            targetOrientation,
+            supportEntity,
+            supportFace,
+            entity.position(),
+            supportEntity.position()
+        );
+    }
+
+    private static Vec3 targetPosition(
+        Entity entity,
+        Direction sourceFace,
+        @Nullable PlasticEntityOrientation targetOrientation,
+        Entity supportEntity,
+        Direction supportFace,
+        Vec3 start,
+        Vec3 supportStart
+    ) {
+        Vec3 supportPoint = AdhesiveFaces.worldFaceAlignmentPoint(supportEntity, supportFace)
+            .add(supportStart.subtract(supportEntity.position()));
         Vec3 sourcePoint = entity instanceof AbstractPlasticEntity plastic && targetOrientation != null
             ? AdhesiveFaces.storedFaceAlignmentPoint(plastic, targetOrientation, sourceFace)
             : AdhesiveFaces.storedFaceAlignmentPoint(entity, sourceFace);
-        return entity.position().add(supportPoint.subtract(sourcePoint));
+        sourcePoint = sourcePoint.add(start.subtract(entity.position()));
+        return start.add(supportPoint.subtract(sourcePoint));
     }
 
     private static List<Vec3> findGridPath(
@@ -1094,6 +1212,167 @@ public final class AdhesivePathPlanner {
         return true;
     }
 
+    private static boolean isDirectSegmentClear(
+        Level level,
+        Entity entity,
+        AABB originalBox,
+        Vec3 originalPosition,
+        Vec3 from,
+        Vec3 to,
+        @Nullable PlasticEntityOrientation targetOrientation,
+        boolean allowFinalContact,
+        double sampleStep,
+        PathCheckCache checks
+    ) {
+        if (isSegmentClear(
+            level,
+            entity,
+            originalBox,
+            originalPosition,
+            from,
+            to,
+            allowFinalContact,
+            sampleStep,
+            checks
+        )) {
+            return true;
+        }
+        if (!(entity instanceof AbstractPlasticEntity plastic)
+            || targetOrientation == null
+            || targetOrientation.equals(plastic.getOrientation())) {
+            return false;
+        }
+        return isOrientationSwitchSegmentClear(
+            level,
+            plastic,
+            originalBox,
+            originalPosition,
+            from,
+            to,
+            targetOrientation,
+            allowFinalContact,
+            sampleStep,
+            checks
+        );
+    }
+
+    /** 路线中只允许从起始姿态切换到目标姿态一次，与服务端牵引的物理状态保持一致。 */
+    private static boolean isOrientationSwitchSegmentClear(
+        Level level,
+        AbstractPlasticEntity entity,
+        AABB originalBox,
+        Vec3 originalPosition,
+        Vec3 from,
+        Vec3 to,
+        PlasticEntityOrientation targetOrientation,
+        boolean allowFinalContact,
+        double sampleStep,
+        PathCheckCache checks
+    ) {
+        double distance = from.distanceTo(to);
+        int steps = Math.max(1, (int) Math.ceil(distance / sampleStep));
+        Vec3 previous = from;
+        boolean startReachable = true;
+        boolean targetReachable = isPlasticOrientationPositionClear(
+            level,
+            entity,
+            targetOrientation,
+            from,
+            false,
+            checks
+        );
+        for (int step = 1; step <= steps; step++) {
+            Vec3 position = from.lerp(to, step / (double) steps);
+            boolean finalStep = step == steps;
+            boolean nextStartReachable = startReachable && isSegmentClear(
+                level,
+                entity,
+                originalBox,
+                originalPosition,
+                previous,
+                position,
+                false,
+                sampleStep,
+                checks
+            );
+            boolean nextTargetReachable = targetReachable && isPlasticOrientationSegmentClear(
+                level,
+                entity,
+                targetOrientation,
+                previous,
+                position,
+                allowFinalContact && finalStep,
+                sampleStep,
+                checks
+            );
+            if (nextStartReachable && isPlasticOrientationPositionClear(
+                level,
+                entity,
+                targetOrientation,
+                position,
+                allowFinalContact && finalStep,
+                checks
+            )) {
+                nextTargetReachable = true;
+            }
+            if (!nextStartReachable && !nextTargetReachable) return false;
+            startReachable = nextStartReachable;
+            targetReachable = nextTargetReachable;
+            previous = position;
+        }
+        return targetReachable;
+    }
+
+    private static boolean isPlasticOrientationSegmentClear(
+        Level level,
+        AbstractPlasticEntity entity,
+        PlasticEntityOrientation orientation,
+        Vec3 from,
+        Vec3 to,
+        boolean allowFinalContact,
+        double sampleStep,
+        PathCheckCache checks
+    ) {
+        if (!isPlasticOrientationPositionClear(level, entity, orientation, from, false, checks)) return false;
+        PlasticEntityCollisionBox collisionBox = entity.plasticraft$getGeometry().collisionBoxAt(from, orientation);
+        Vec3 movement = to.subtract(from);
+        AABB sweptBounds = collisionBox.bounds().expandTowards(movement);
+        if (!level.getWorldBorder().isWithinBounds(sweptBounds)) return false;
+        Vec3 allowed = collisionBox.collide(entity, movement, level, List.of(), ignored -> false);
+        if (!sameMovement(allowed, movement)) return false;
+
+        double distance = from.distanceTo(to);
+        int steps = Math.max(1, (int) Math.ceil(distance / sampleStep));
+        for (int step = 1; step <= steps; step++) {
+            if (!isPlasticOrientationPositionClear(
+                level,
+                entity,
+                orientation,
+                from.lerp(to, step / (double) steps),
+                allowFinalContact && step == steps,
+                checks
+            )) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isPlasticOrientationPositionClear(
+        Level level,
+        AbstractPlasticEntity entity,
+        PlasticEntityOrientation orientation,
+        Vec3 position,
+        boolean allowFinalContact,
+        PathCheckCache checks
+    ) {
+        PlasticEntityCollisionBox collisionBox = entity.plasticraft$getGeometry().collisionBoxAt(position, orientation);
+        AABB bounds = collisionBox.bounds();
+        if (!level.getWorldBorder().isWithinBounds(bounds)) return false;
+        return noBlockCollision(level, entity, collisionBox, Vec3.ZERO, bounds, allowFinalContact)
+            && !isDangerousPosition(level, bounds, checks);
+    }
+
     private static boolean isSegmentClear(
         Level level,
         Entity entity,
@@ -1161,7 +1440,7 @@ public final class AdhesivePathPlanner {
         }
         Vec3 allowed = fromCollisionBox == null
             ? Entity.collideBoundingBox(entity, movement, fromBox, level, List.of())
-            : fromCollisionBox.collide(entity, movement, level, List.of());
+            : fromCollisionBox.collide(entity, movement, level, List.of(), ignored -> false);
         boolean result = sameMovement(allowed, movement);
         checks.sweptResults.put(key, result);
         return result;
@@ -1180,23 +1459,29 @@ public final class AdhesivePathPlanner {
         Boolean cached = checks.positionResults.get(key);
         if (cached != null) return cached;
         AABB moved = movedBox(originalBox, originalPosition, position);
-        PlasticEntityCollisionBox movedCollisionBox = movedPlasticCollisionBox(
-            entity,
-            originalPosition,
-            position
-        );
-        AABB collisionBounds = movedCollisionBox == null ? moved : movedCollisionBox.bounds();
+        PlasticEntityCollisionBox collisionBox = entity instanceof ShapedCollisionEntity shaped
+            ? shaped.plasticraft$getCollisionBox().move(originalPosition.subtract(entity.position()))
+            : null;
+        Vec3 collisionMovement = position.subtract(originalPosition);
+        AABB collisionBounds = collisionBox == null
+            ? moved
+            : collisionBox.bounds().move(collisionMovement);
         if (!level.getWorldBorder().isWithinBounds(collisionBounds)) {
             checks.positionResults.put(key, false);
             return false;
         }
-        boolean collisionFree = movedCollisionBox == null
+        boolean collisionFree = collisionBox == null
             ? level.noBlockCollision(entity, moved)
                 || allowFinalContact
                 && level.noBlockCollision(entity, moved.deflate(0.002D))
-            : noBlockCollision(level, entity, movedCollisionBox, 0.0D)
-                || allowFinalContact
-                && noBlockCollision(level, entity, movedCollisionBox, 0.002D);
+            : noBlockCollision(
+                level,
+                entity,
+                collisionBox,
+                collisionMovement,
+                collisionBounds,
+                allowFinalContact
+            );
         boolean result = collisionFree && !isDangerousPosition(level, collisionBounds, checks);
         checks.positionResults.put(key, result);
         return result;
@@ -1207,14 +1492,22 @@ public final class AdhesivePathPlanner {
             .deflate(COLLISION_EPSILON);
     }
 
+    private static AABB shiftedBoundingBox(Entity entity, Vec3 position) {
+        return entity.getBoundingBox().move(position.subtract(entity.position()));
+    }
+
     private static AABB movedCollisionBounds(
         Entity entity,
         AABB originalBox,
         Vec3 originalPosition,
         Vec3 position
     ) {
-        PlasticEntityCollisionBox collisionBox = movedPlasticCollisionBox(entity, originalPosition, position);
-        return collisionBox == null ? movedBox(originalBox, originalPosition, position) : collisionBox.bounds();
+        return entity instanceof ShapedCollisionEntity shaped
+            ? shaped.plasticraft$getCollisionBox()
+                .move(originalPosition.subtract(entity.position()))
+                .bounds()
+                .move(position.subtract(originalPosition))
+            : movedBox(originalBox, originalPosition, position);
     }
 
     @Nullable
@@ -1224,7 +1517,9 @@ public final class AdhesivePathPlanner {
         Vec3 position
     ) {
         return entity instanceof ShapedCollisionEntity shaped
-            ? shaped.plasticraft$getCollisionBox().move(position.subtract(originalPosition))
+            ? shaped.plasticraft$getCollisionBox()
+                .move(originalPosition.subtract(entity.position()))
+                .move(position.subtract(originalPosition))
             : null;
     }
 
@@ -1232,11 +1527,32 @@ public final class AdhesivePathPlanner {
         Level level,
         Entity entity,
         PlasticEntityCollisionBox collisionBox,
-        double deflation
+        Vec3 movement,
+        AABB movedBounds,
+        boolean allowFinalContact
     ) {
-        for (AABB component : collisionBox.components()) {
-            AABB query = deflation == 0.0D ? component : component.deflate(deflation);
-            if (!level.noBlockCollision(entity, query)) return false;
+        List<AABB> blockCollisions = new ArrayList<>();
+        for (VoxelShape blockCollision : level.getBlockCollisions(entity, movedBounds)) {
+            blockCollisions.addAll(blockCollision.toAabbs());
+        }
+        if (noBlockCollision(collisionBox.components(), movement, 0.0D, blockCollisions)) return true;
+        return allowFinalContact
+            && noBlockCollision(collisionBox.components(), movement, 0.002D, blockCollisions);
+    }
+
+    private static boolean noBlockCollision(
+        List<AABB> components,
+        Vec3 movement,
+        double deflation,
+        List<AABB> blockCollisions
+    ) {
+        if (blockCollisions.isEmpty()) return true;
+        for (AABB component : components) {
+            AABB query = component.move(movement);
+            if (deflation != 0.0D) query = query.deflate(deflation);
+            for (AABB blockCollision : blockCollisions) {
+                if (query.intersects(blockCollision)) return false;
+            }
         }
         return true;
     }
@@ -1460,7 +1776,8 @@ public final class AdhesivePathPlanner {
             List<AABB> relativeComponents = new ArrayList<>();
             AABB entityBounds;
             if (entity instanceof ShapedCollisionEntity shaped) {
-                PlasticEntityCollisionBox collisionBox = shaped.plasticraft$getCollisionBox();
+                PlasticEntityCollisionBox collisionBox = shaped.plasticraft$getCollisionBox()
+                    .move(start.subtract(entity.position()));
                 entityBounds = collisionBox.bounds();
                 for (AABB component : collisionBox.components()) {
                     relativeComponents.add(component.move(-start.x, -start.y, -start.z));

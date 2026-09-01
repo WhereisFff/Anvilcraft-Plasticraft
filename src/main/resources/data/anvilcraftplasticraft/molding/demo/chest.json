@@ -1,0 +1,301 @@
+{
+  "blueprint_format": 1,
+  "file_revision": 2,
+  "name": "chest",
+  "owner": {
+    "uuid": "380df991-f603-344c-a090-369bad2a924a",
+    "name": "Dev"
+  },
+  "workspace": {
+    "coordinate_system": "world_xyz_px",
+    "units_per_block": 16,
+    "size": [
+      48,
+      48,
+      48
+    ]
+  },
+  "type_suggestion": "anvilcraftplasticraft:chest",
+  "created_at": 1786860680223,
+  "updated_at": 1786860685680,
+  "bake_version": 1,
+  "model_hash": "a8aacbbd2f4b7e71d956566b39ab601dd701e268571f2f608e6875ca04db611d",
+  "model": {
+    "requested_type": "anvilcraftplasticraft:chest",
+    "elements": [
+      {
+        "to": {
+          "x": 31.0,
+          "y": 17.0,
+          "z": 31.0
+        },
+        "transform": {
+          "pivot": {
+            "x": 24.0,
+            "y": 23.0,
+            "z": 23.5
+          }
+        },
+        "id": "7384551b-f999-4600-b1f9-bc1df58aab34",
+        "name": "Cube 1",
+        "from": {
+          "x": 17.0,
+          "y": 16.0,
+          "z": 17.0
+        }
+      },
+      {
+        "to": {
+          "x": 31.0,
+          "y": 26.0,
+          "z": 18.0
+        },
+        "transform": {
+          "pivot": {
+            "x": 24.0,
+            "y": 23.0,
+            "z": 23.5
+          }
+        },
+        "id": "dfa3cdaa-c157-492f-813d-c0966be5c905",
+        "name": "Cube 2",
+        "from": {
+          "x": 17.0,
+          "y": 17.0,
+          "z": 17.0
+        }
+      },
+      {
+        "to": {
+          "x": 31.0,
+          "y": 26.0,
+          "z": 18.0
+        },
+        "transform": {
+          "translation": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 13.0
+          },
+          "pivot": {
+            "x": 24.0,
+            "y": 23.0,
+            "z": 10.5
+          }
+        },
+        "id": "9765fe96-330d-45d3-bb53-be17f2af81eb",
+        "name": "Cube 2",
+        "from": {
+          "x": 17.0,
+          "y": 17.0,
+          "z": 17.0
+        }
+      },
+      {
+        "to": {
+          "x": 18.0,
+          "y": 26.0,
+          "z": 30.0
+        },
+        "transform": {
+          "pivot": {
+            "x": 24.0,
+            "y": 23.0,
+            "z": 23.5
+          }
+        },
+        "id": "786b52fd-d9d7-40f7-adae-854cc000f7ba",
+        "name": "Cube 3",
+        "from": {
+          "x": 17.0,
+          "y": 17.0,
+          "z": 18.0
+        }
+      },
+      {
+        "to": {
+          "x": 18.0,
+          "y": 26.0,
+          "z": 30.0
+        },
+        "transform": {
+          "translation": {
+            "x": 13.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "pivot": {
+            "x": 11.0,
+            "y": 23.0,
+            "z": 23.5
+          }
+        },
+        "id": "8151c472-7007-44a9-a8f0-8841bb1d0996",
+        "name": "Cube 3",
+        "from": {
+          "x": 17.0,
+          "y": 17.0,
+          "z": 18.0
+        }
+      },
+      {
+        "to": {
+          "x": 18.0,
+          "y": 19.0,
+          "z": 18.0
+        },
+        "transform": {
+          "translation": {
+            "x": 13.0,
+            "y": 10.0,
+            "z": 0.0
+          },
+          "pivot": {
+            "x": 11.0,
+            "y": 13.0,
+            "z": 23.5
+          }
+        },
+        "id": "c756f812-a05e-40df-9044-ee10a22e0f94",
+        "name": "Cube 4",
+        "from": {
+          "x": 4.0,
+          "y": 16.0,
+          "z": 17.0
+        }
+      },
+      {
+        "to": {
+          "x": 18.0,
+          "y": 19.0,
+          "z": 18.0
+        },
+        "transform": {
+          "translation": {
+            "x": 13.0,
+            "y": 10.0,
+            "z": 13.0
+          },
+          "pivot": {
+            "x": 11.0,
+            "y": 13.0,
+            "z": 10.5
+          }
+        },
+        "id": "2a3fef76-fcb0-4561-a5b5-df603ec478ac",
+        "name": "Cube 4",
+        "from": {
+          "x": 4.0,
+          "y": 16.0,
+          "z": 17.0
+        }
+      },
+      {
+        "to": {
+          "x": 18.0,
+          "y": 19.0,
+          "z": 28.0
+        },
+        "transform": {
+          "translation": {
+            "x": 0.0,
+            "y": 10.0,
+            "z": 2.0
+          },
+          "pivot": {
+            "x": 24.0,
+            "y": 13.0,
+            "z": 21.5
+          }
+        },
+        "id": "b60706a1-441d-491d-8dd8-9b79ddfbc21d",
+        "name": "Cube 5",
+        "from": {
+          "x": 17.0,
+          "y": 16.0,
+          "z": 16.0
+        }
+      },
+      {
+        "to": {
+          "x": 18.0,
+          "y": 19.0,
+          "z": 28.0
+        },
+        "transform": {
+          "translation": {
+            "x": 13.0,
+            "y": 10.0,
+            "z": 2.0
+          },
+          "pivot": {
+            "x": 11.0,
+            "y": 13.0,
+            "z": 21.5
+          }
+        },
+        "id": "3f271c7c-0b25-43c9-b29b-2beb03c906be",
+        "name": "Cube 5",
+        "from": {
+          "x": 17.0,
+          "y": 16.0,
+          "z": 16.0
+        }
+      },
+      {
+        "to": {
+          "x": 30.0,
+          "y": 17.0,
+          "z": 30.0
+        },
+        "transform": {
+          "translation": {
+            "x": 1.0,
+            "y": 13.0,
+            "z": 1.0
+          },
+          "pivot": {
+            "x": 23.0,
+            "y": 10.0,
+            "z": 22.5
+          }
+        },
+        "id": "7a73089c-f648-49f0-a715-a6ecd4542fd8",
+        "name": "Cube 6",
+        "from": {
+          "x": 16.0,
+          "y": 16.0,
+          "z": 16.0
+        }
+      },
+      {
+        "to": {
+          "x": 18.0,
+          "y": 20.0,
+          "z": 17.0
+        },
+        "transform": {
+          "translation": {
+            "x": 7.0,
+            "y": 7.0,
+            "z": 0.0
+          },
+          "pivot": {
+            "x": 17.0,
+            "y": 16.0,
+            "z": 23.5
+          }
+        },
+        "id": "fa63973e-1ac8-496f-93e5-cd5fe16ff767",
+        "name": "Cube 7",
+        "from": {
+          "x": 16.0,
+          "y": 16.0,
+          "z": 16.0
+        }
+      }
+    ],
+    "format_version": 3,
+    "name": "chest"
+  }
+}

@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.entity.physics;
 
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
-import dev.anvilcraft.plasticraft.init.item.ModItemTags;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
@@ -66,7 +66,7 @@ public final class PlasticFluidPhysics {
     }
 
     public static void floatPlasticItem(ItemEntity item) {
-        if (!item.getItem().is(ModItemTags.BUOYANT_PLASTIC_ITEMS)) return;
+        if (!item.getItem().is(PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS)) return;
         FluidContact contact = sample(item);
         if (!contact.isPresent()) return;
         AABB box = item.getBoundingBox();

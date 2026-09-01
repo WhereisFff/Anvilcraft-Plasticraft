@@ -1,0 +1,176 @@
+{
+  "blueprint_format": 1,
+  "file_revision": 2,
+  "name": "bracket",
+  "owner": {
+    "uuid": "380df991-f603-344c-a090-369bad2a924a",
+    "name": "Dev"
+  },
+  "workspace": {
+    "coordinate_system": "world_xyz_px",
+    "units_per_block": 16,
+    "size": [
+      48,
+      48,
+      48
+    ]
+  },
+  "type_suggestion": "anvilcraftplasticraft:tray",
+  "created_at": 1786860213249,
+  "updated_at": 1786860231995,
+  "bake_version": 1,
+  "model_hash": "9ebc3414015ff5df3df352eda350584469d025ea4da3f578d286881e6f86871b",
+  "model": {
+    "requested_type": "anvilcraftplasticraft:tray",
+    "elements": [
+      {
+        "to": {
+          "x": 18.0,
+          "y": 17.0,
+          "z": 30.0
+        },
+        "transform": {
+          "pivot": {
+            "x": 24.0,
+            "y": 16.5,
+            "z": 24.0
+          }
+        },
+        "id": "c873f775-ac05-45ce-92a7-07b8063918c6",
+        "name": "Cube 1",
+        "from": {
+          "x": 16.0,
+          "y": 16.0,
+          "z": 16.0
+        }
+      },
+      {
+        "to": {
+          "x": 30.0,
+          "y": 17.0,
+          "z": 32.0
+        },
+        "transform": {
+          "pivot": {
+            "x": 24.0,
+            "y": 16.5,
+            "z": 24.0
+          }
+        },
+        "id": "ebb5420f-0f40-4008-8879-b6dcdf343aac",
+        "name": "Cube 1",
+        "from": {
+          "x": 16.0,
+          "y": 16.0,
+          "z": 30.0
+        }
+      },
+      {
+        "to": {
+          "x": 32.0,
+          "y": 17.0,
+          "z": 32.0
+        },
+        "transform": {
+          "pivot": {
+            "x": 24.0,
+            "y": 16.5,
+            "z": 24.0
+          }
+        },
+        "id": "04e43a33-6242-4d9e-a92d-3a7708290b8c",
+        "name": "Cube 1",
+        "from": {
+          "x": 30.0,
+          "y": 16.0,
+          "z": 18.0
+        }
+      },
+      {
+        "to": {
+          "x": 32.0,
+          "y": 17.0,
+          "z": 18.0
+        },
+        "transform": {
+          "pivot": {
+            "x": 24.0,
+            "y": 16.5,
+            "z": 24.0
+          }
+        },
+        "id": "3ed7e5fe-d954-4bdb-8041-a26094623ef2",
+        "name": "Cube 1",
+        "from": {
+          "x": 18.0,
+          "y": 16.0,
+          "z": 16.0
+        }
+      },
+      {
+        "to": {
+          "x": 18.0,
+          "y": 17.0,
+          "z": 29.0
+        },
+        "transform": {
+          "translation": {
+            "x": 7.0000000000000036,
+            "y": 0.0,
+            "z": 5.0
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": 44.99999999999999,
+            "z": 0.0
+          },
+          "pivot": {
+            "x": 16.999999999999996,
+            "y": 16.5,
+            "z": 19.0
+          }
+        },
+        "id": "d3cac1c9-d1cc-4409-bd94-d38e1ef05923",
+        "name": "Cube 2",
+        "from": {
+          "x": 16.0,
+          "y": 16.0,
+          "z": 9.0
+        }
+      },
+      {
+        "to": {
+          "x": 18.0,
+          "y": 17.0,
+          "z": 29.0
+        },
+        "transform": {
+          "translation": {
+            "x": 7.0000000000000036,
+            "y": 0.0,
+            "z": 5.0
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": -44.99999999999999,
+            "z": 0.0
+          },
+          "pivot": {
+            "x": 16.999999999999996,
+            "y": 16.5,
+            "z": 19.0
+          }
+        },
+        "id": "5d62d725-5c3b-410e-90ab-fcd218f64ba2",
+        "name": "Cube 2",
+        "from": {
+          "x": 16.0,
+          "y": 16.0,
+          "z": 9.0
+        }
+      }
+    ],
+    "format_version": 3,
+    "name": "bracket"
+  }
+}

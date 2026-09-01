@@ -1,0 +1,43 @@
+{
+	"format_version": "1.9.0",
+	"credit": "Made with Blockbench",
+	"parent": "minecraft:block/block",
+	"ambientocclusion": false,
+	"render_type": "minecraft:cutout",
+	"textures": {
+		"1": "anvilcraftplasticraft:block/print_component",
+		"particle": "anvilcraftplasticraft:block/print_component"
+	},
+	"elements": [
+		{
+			"name": "eye",
+			"from": [6.5, 5, 4.5],
+			"to": [9.5, 8, 7.5],
+			"shade": false,
+			"rotation": {"angle": -45, "axis": "y", "origin": [8, 6.5, 6]},
+			"faces": {
+				"north": {"uv": [14, 0.5, 15.5, 2], "texture": "#1"},
+				"east": {"uv": [14, 0.5, 15.5, 2], "texture": "#1"},
+				"south": {"uv": [14, 0.5, 15.5, 2], "texture": "#1"},
+				"west": {"uv": [14, 0.5, 15.5, 2], "texture": "#1"},
+				"up": {"uv": [14, 0.5, 15.5, 2], "texture": "#1"},
+				"down": {"uv": [14, 0.5, 15.5, 2], "texture": "#1"}
+			}
+		},
+		{
+			"name": "eye_outline",
+			"from": [9.8, 8.3, 7.8],
+			"to": [6.2, 4.7, 4.2],
+			"shade": false,
+			"rotation": {"angle": -45, "axis": "y", "origin": [8, 6.5, 6]},
+			"faces": {
+				"north": {"uv": [13.5, 0, 14, 0.5], "rotation": 180, "texture": "#1"},
+				"east": {"uv": [13.5, 0, 14, 0.5], "rotation": 180, "texture": "#1"},
+				"south": {"uv": [13.5, 0, 14, 0.5], "rotation": 180, "texture": "#1"},
+				"west": {"uv": [13.5, 0, 14, 0.5], "rotation": 180, "texture": "#1"},
+				"up": {"uv": [13.5, 0, 14, 0.5], "rotation": 180, "texture": "#1"},
+				"down": {"uv": [13.5, 0, 14, 0.5], "rotation": 180, "texture": "#1"}
+			}
+		}
+	]
+}

@@ -1,30 +1,25 @@
 package dev.anvilcraft.plasticraft.recipe;
 
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporAction;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporStack;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationContext;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationManager;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationOffer;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationSource;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
+import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
+import dev.anvilcraft.plasticraft.vapor.LargeCauldronVaporHost;
+import dev.anvilcraft.plasticraft.vapor.VaporAction;
+import dev.anvilcraft.plasticraft.vapor.VaporStack;
+import dev.anvilcraft.plasticraft.vapor.VaporizationContext;
+import dev.anvilcraft.plasticraft.vapor.VaporizationManager;
+import dev.anvilcraft.plasticraft.vapor.VaporizationOffer;
+import dev.anvilcraft.plasticraft.vapor.VaporizationSource;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
-import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
 import dev.dubhe.anvilcraft.recipe.component.HasCauldronSimple;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.crafting.RecipeHolder;
-import net.minecraft.world.level.material.Fluid;
-import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidStack;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/** Adapts Plasticraft's plasma-jet recipes to Yukkuri's generic source protocol. */
+/** 把塑料工艺喷流配方接到气化源协议。 */
 public final class PlasmaJetVaporizationSource implements VaporizationSource {
     public static final PlasmaJetVaporizationSource INSTANCE = new PlasmaJetVaporizationSource();
     public static final ResourceLocation ID = AnvilcraftPlasticraft.of("plasma_jets");
@@ -61,7 +56,7 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
 
         List<RecipeHolder<PlasmaJetBlastingRecipe>> recipes = new ArrayList<>(
             context.level().getRecipeManager().getAllRecipesFor(
-                ModRecipeTypes.PLASMA_JET_BLASTING_TYPE.get()
+                PlasticraftRecipeTypes.PLASMA_JET_BLASTING_TYPE.get()
             )
         );
         recipes.sort(Comparator.comparingInt(
@@ -71,12 +66,12 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
             PlasmaJetBlastingRecipe recipe = holder.value();
             if (!CondenserTowerProcess.isDirectVaporizationRecipe(recipe)) continue;
             HasCauldronSimple definition = recipe.getHasCauldron();
-            if (!matchesInput(availableInput, definition) || definition.consume() <= 0 || definition.produce() <= 0) {
-                continue;
-            }
-            int divisor = greatestCommonDivisor(definition.consume(), definition.produce());
+            PlasmaJetBlastingRecipe.GasOutput gas = recipe.gasOutput().orElse(null);
+            if (gas == null || gas.amount() <= 0 || definition.consume() <= 0) continue;
+            if (!definition.hasFluid() || !definition.fluid().test(availableInput)) continue;
+            int divisor = greatestCommonDivisor(definition.consume(), gas.amount());
             int inputUnit = definition.consume() / divisor;
-            int outputUnit = definition.produce() / divisor;
+            int outputUnit = gas.amount() / divisor;
             int units = Math.min(
                 Math.min(availableInput.getAmount(), inputRate) / inputUnit,
                 maxVapor / outputUnit
@@ -84,7 +79,7 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
             if (units <= 0) continue;
             int inputAmount = units * inputUnit;
             int outputAmount = units * outputUnit;
-            ResourceLocation outputId = CondenserGas.canonicalize(definition.transform());
+            ResourceLocation outputId = CondenserGas.canonicalize(gas.id());
             if (outputId == null || !CondenserGas.isGas(outputId)) continue;
             return new VaporizationOffer(
                 availableInput.copyWithAmount(inputAmount),
@@ -105,7 +100,8 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
 
     @Override
     public void commit(VaporizationContext context, VaporizationOffer offer) {
-        if (!(context.cauldron() instanceof LargeCauldronBlockEntity cauldron)) return;
+        LargeCauldronBlockEntity cauldron = LargeCauldronVaporHost.unwrap(context.cauldron());
+        if (cauldron == null) return;
         ResourceLocation vaporType = CondenserGas.canonicalize(offer.output().type());
         if (CondenserGas.GASEOUS_EXPERIENCE.equals(vaporType)) {
             CondenserTowerProcess.emitLargeCauldronExperienceVaporParticles(
@@ -133,14 +129,4 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
         }
     }
 
-    private static boolean matchesInput(FluidStack available, HasCauldronSimple definition) {
-        if (available.isEmpty()) return false;
-        if (definition.fluidTag() != null) {
-            TagKey<Fluid> tag = TagKey.create(Registries.FLUID, definition.fluidTag());
-            return available.is(tag);
-        }
-        if (!HasCauldron.isNotEmpty(definition.fluid())) return false;
-        Fluid expected = BuiltInRegistries.FLUID.get(definition.fluid());
-        return expected != null && expected != Fluids.EMPTY && available.is(expected);
-    }
 }

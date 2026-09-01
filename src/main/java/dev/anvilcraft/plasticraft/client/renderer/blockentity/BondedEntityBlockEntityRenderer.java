@@ -3,11 +3,12 @@ package dev.anvilcraft.plasticraft.client.renderer.blockentity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.client.renderer.AdhesivePatchRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.ClearPlasticEntityRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -33,6 +34,12 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
         int packedLight,
         int packedOverlay
     ) {
+        if (ClearPlasticEntityRenderer.enqueue(blockEntity)) {
+            if (blockEntity.isHammerDeflected()) {
+                renderAdhesivePatch(blockEntity, pose, buffers, packedLight, partialTick);
+            }
+            return;
+        }
         if (!blockEntity.isInitialized()) return;
         if (!blockEntity.isPlastic()) {
             Minecraft.getInstance().getBlockRenderer().renderSingleBlock(
@@ -42,7 +49,6 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
                 packedLight,
                 OverlayTexture.NO_OVERLAY
             );
-            renderAdhesivePatch(blockEntity, pose, buffers, packedLight);
             return;
         }
 
@@ -51,7 +57,8 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
             PlasticEntityOrientation orientation = blockEntity.getPlasticOrientation();
             Vec3 entityPosition = plasticEntity.plasticraft$placementPosition(
                 blockEntity.getBlockPos(),
-                orientation
+                orientation,
+                blockEntity.getAdhesiveLocalFace()
             );
             Vec3 relative = entityPosition.subtract(Vec3.atLowerCornerOf(blockEntity.getBlockPos()));
             EntityRenderer<? super AbstractPlasticEntity> renderer = Minecraft.getInstance()
@@ -79,25 +86,21 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
                 pose.popPose();
             }
         }
-        renderAdhesivePatch(blockEntity, pose, buffers, packedLight, partialTick);
+        if (blockEntity.isHammerDeflected()) {
+            renderAdhesivePatch(blockEntity, pose, buffers, packedLight, partialTick);
+        }
     }
 
     @Override
     public AABB getRenderBoundingBox(BondedEntityBlockEntity blockEntity) {
         AABB bounds = new AABB(blockEntity.getBlockPos());
-        if (blockEntity.getDisplayState().is(ModBlocks.CATALYTIC_PRESS_LID.get())) {
+        if (blockEntity.getOrCreateRenderEntity() instanceof AbstractPlasticEntity plasticEntity) {
+            return bounds.minmax(plasticEntity.getBoundingBox());
+        }
+        if (blockEntity.getDisplayState().is(PlasticraftBlocks.CATALYTIC_PRESS_LID.get())) {
             return bounds.inflate(CatalyticPressLidEntity.RENDER_BOUNDS_EXPANSION);
         }
         return bounds;
-    }
-
-    private static void renderAdhesivePatch(
-        BondedEntityBlockEntity blockEntity,
-        PoseStack pose,
-        MultiBufferSource buffers,
-        int packedLight
-    ) {
-        renderAdhesivePatch(blockEntity, pose, buffers, packedLight, 1.0F);
     }
 
     private static void renderAdhesivePatch(

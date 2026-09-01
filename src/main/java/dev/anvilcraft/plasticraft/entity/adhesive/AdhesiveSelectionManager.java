@@ -6,6 +6,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.Map;
 import java.util.UUID;
@@ -39,7 +40,7 @@ public final class AdhesiveSelectionManager {
         AdhesivePreviewService.clear(player);
         selections(player).put(
             player.getUUID(),
-            new Selection(target.getUUID(), target.getId(), selectedFace)
+            new Selection(target.getUUID(), target.getId(), selectedFace, target.position())
         );
     }
 
@@ -60,6 +61,11 @@ public final class AdhesiveSelectionManager {
     public static Direction getSelectedFace(Player player) {
         Selection selection = selections(player).get(player.getUUID());
         return selection == null ? Direction.DOWN : selection.selectedFace();
+    }
+
+    public static @Nullable Vec3 getSelectedPosition(Player player) {
+        Selection selection = selections(player).get(player.getUUID());
+        return selection == null ? null : selection.position();
     }
 
     public static @Nullable Entity resolveServerSelection(Player player) {
@@ -83,6 +89,6 @@ public final class AdhesiveSelectionManager {
         return player.level().isClientSide ? CLIENT_SELECTIONS : SERVER_SELECTIONS;
     }
 
-    private record Selection(UUID targetUuid, int entityId, Direction selectedFace) {
+    private record Selection(UUID targetUuid, int entityId, Direction selectedFace, Vec3 position) {
     }
 }

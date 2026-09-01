@@ -22,6 +22,7 @@ public record SlidingAdhesionData(List<Part> parts) {
                 buffer.writeByte(part.state.patchMask());
                 buffer.writeByte(part.state.blockBondMask());
                 buffer.writeByte(part.state.entityBondMask());
+                buffer.writeByte(part.state.invisibleMask());
             }
         },
         buffer -> {
@@ -31,6 +32,7 @@ public record SlidingAdhesionData(List<Part> parts) {
                 BlockPos relativePos = BlockPos.STREAM_CODEC.decode(buffer);
                 BlockAdhesionState state = new BlockAdhesionState(
                     ResourceLocation.STREAM_CODEC.decode(buffer),
+                    buffer.readUnsignedByte(),
                     buffer.readUnsignedByte(),
                     buffer.readUnsignedByte(),
                     buffer.readUnsignedByte()

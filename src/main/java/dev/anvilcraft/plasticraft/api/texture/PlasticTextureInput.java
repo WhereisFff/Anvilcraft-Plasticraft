@@ -67,6 +67,19 @@ public record PlasticTextureInput(
         return HexFormat.of().formatHex(sha256Digest().digest(bytes));
     }
 
+    /** 对一组有序资源及各自长度计算稳定 SHA-256，任一基础贴图变化都会使缓存失效。 */
+    public static String computeResourceSetHash(byte[]... resources) {
+        Objects.requireNonNull(resources, "resources");
+        MessageDigest digest = sha256Digest();
+        updateInt(digest, resources.length);
+        for (byte[] resource : resources) {
+            Objects.requireNonNull(resource, "resource");
+            updateInt(digest, resource.length);
+            digest.update(resource);
+        }
+        return HexFormat.of().formatHex(digest.digest());
+    }
+
     private static void updateSurfaceHash(MessageDigest digest, PlasticSurface surface) {
         updateText(digest, surface.id());
         for (PlasticSurface.Point point : surface.vertices()) {

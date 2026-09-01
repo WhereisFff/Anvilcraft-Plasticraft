@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.block;
 
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -35,7 +35,7 @@ public final class IgnitedFluidEffects {
     }
 
     public static boolean isHighHeatFuel(FluidStack fluid) {
-        return fluid.is(ModFluids.HIGH_HEAT_FUEL.get())
-            || fluid.is(ModFluids.FLOWING_HIGH_HEAT_FUEL.get());
+        return fluid.is(PlasticraftFluids.HIGH_HEAT_FUEL.get())
+            || fluid.is(PlasticraftFluids.FLOWING_HIGH_HEAT_FUEL.get());
     }
 }

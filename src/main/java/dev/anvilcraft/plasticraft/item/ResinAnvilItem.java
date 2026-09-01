@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.item;
 
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
+import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.dubhe.anvilcraft.block.item.HasMobBlockItem;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
@@ -135,7 +136,7 @@ public class ResinAnvilItem extends AbstractPlasticEntityItem<ResinAnvilEntity> 
             level,
             Mob.class,
             new AABB(targetPos),
-            HasMobBlockItem::canMobBeSaved
+            candidate -> !(candidate instanceof WorkingAllayEntity) && HasMobBlockItem.canMobBeSaved(candidate)
         );
         if (mob == null) return DEFAULT_DISPENSE.dispense(source, stack);
 
@@ -182,7 +183,9 @@ public class ResinAnvilItem extends AbstractPlasticEntityItem<ResinAnvilEntity> 
         LivingEntity target,
         InteractionHand hand
     ) {
-        if (!(target instanceof Mob mob) || !HasMobBlockItem.canMobBeSaved(mob, player, stack)) {
+        if (!(target instanceof Mob mob)
+            || target instanceof WorkingAllayEntity
+            || !HasMobBlockItem.canMobBeSaved(mob, player, stack)) {
             return InteractionResult.PASS;
         }
         HasMobBlockItem.saveMobInItem(player.level(), mob, player, stack);

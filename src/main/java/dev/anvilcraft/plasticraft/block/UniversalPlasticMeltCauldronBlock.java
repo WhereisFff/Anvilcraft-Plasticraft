@@ -1,8 +1,8 @@
 package dev.anvilcraft.plasticraft.block;
 
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.cauldron.CauldronInteraction;
@@ -18,6 +18,9 @@ import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.EnumProperty;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.EnumMap;
+import java.util.Map;
+
 public class UniversalPlasticMeltCauldronBlock extends Layered4LevelCauldronBlock {
     private static final Vec3 STICK_SPEED = new Vec3(
         0.25D,
@@ -25,18 +28,25 @@ public class UniversalPlasticMeltCauldronBlock extends Layered4LevelCauldronBloc
         0.25D
     );
     public static final EnumProperty<DyeColor> COLOR = EnumProperty.create("color", DyeColor.class);
-    private static final CauldronInteraction.InteractionMap INTERACTIONS = CauldronInteraction.newInteractionMap(
-        "anvilcraftplasticraft_universal_plastic_melt"
-    );
+    private static final Map<PlasticMaterial, CauldronInteraction.InteractionMap> INTERACTIONS = createInteractions();
+    private final PlasticMaterial material;
 
-    public UniversalPlasticMeltCauldronBlock(Properties properties) {
-        super(properties, INTERACTIONS);
-        this.registerDefaultState(this.stateDefinition.any().setValue(LEVEL, 1).setValue(COLOR, DyeColor.WHITE));
+    public UniversalPlasticMeltCauldronBlock(Properties properties, PlasticMaterial material) {
+        super(properties, INTERACTIONS.get(material));
+        this.material = material;
+        BlockState state = this.stateDefinition.any().setValue(LEVEL, 1);
+        if (this.hasColorState()) state = state.setValue(COLOR, DyeColor.WHITE);
+        this.registerDefaultState(state);
     }
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
-        builder.add(LEVEL, COLOR);
+        builder.add(LEVEL);
+        if (this.hasColorState()) builder.add(COLOR);
+    }
+
+    protected boolean hasColorState() {
+        return this.material == null || this.material.hasColorState();
     }
 
     public boolean containsEntity(BlockState state, BlockPos pos, Entity entity) {
@@ -49,36 +59,63 @@ public class UniversalPlasticMeltCauldronBlock extends Layered4LevelCauldronBloc
     }
 
     public static void registerInteractions() {
-        INTERACTIONS.map().put(Items.BUCKET, (state, level, pos, player, hand, stack) ->
-            CauldronInteraction.fillBucket(
-                state,
-                level,
-                pos,
-                player,
-                hand,
-                stack,
-                coloredBucket(state.getValue(COLOR)),
-                candidate -> candidate.is(ModBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())
-                    && candidate.getValue(LEVEL) == MAX_LEVEL,
-                SoundEvents.BUCKET_FILL
-            )
-        );
-        CauldronInteraction.EMPTY.map().put(ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET.get(),
-            (state, level, pos, player, hand, stack) -> CauldronInteraction.emptyBucket(
-                level,
-                pos,
-                player,
-                hand,
-                stack,
-                ModBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get().fullFilled()
-                    .setValue(COLOR, PlasticMeltColor.get(stack)),
-                SoundEvents.BUCKET_EMPTY
-            ));
+        for (PlasticMaterial material : PlasticMaterial.values()) {
+            CauldronInteraction.InteractionMap interactions = INTERACTIONS.get(material);
+            interactions.map().put(Items.BUCKET, (state, level, pos, player, hand, stack) ->
+                CauldronInteraction.fillBucket(
+                    state,
+                    level,
+                    pos,
+                    player,
+                    hand,
+                    stack,
+                    coloredBucket(material, state),
+                    candidate -> candidate.is(material.meltCauldron())
+                        && candidate.getValue(LEVEL) == MAX_LEVEL,
+                    SoundEvents.BUCKET_FILL
+                )
+            );
+            CauldronInteraction.EMPTY.map().put(
+                material.bucket(),
+                (state, level, pos, player, hand, stack) -> CauldronInteraction.emptyBucket(
+                    level,
+                    pos,
+                    player,
+                    hand,
+                    stack,
+                    filledState(material, stack),
+                    SoundEvents.BUCKET_EMPTY
+                ));
+        }
     }
 
-    private static ItemStack coloredBucket(DyeColor color) {
-        ItemStack bucket = ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET.asStack();
-        PlasticMeltColor.set(bucket, color);
+    public PlasticMaterial material() {
+        return this.material;
+    }
+
+    private static ItemStack coloredBucket(PlasticMaterial material, BlockState state) {
+        ItemStack bucket = new ItemStack(material.bucket());
+        if (material.supportsDyeing() && state.hasProperty(COLOR)) {
+            PlasticMeltColor.set(bucket, state.getValue(COLOR));
+        }
         return bucket;
+    }
+
+    private static BlockState filledState(PlasticMaterial material, ItemStack stack) {
+        BlockState state = material.meltCauldron().defaultBlockState().setValue(LEVEL, MAX_LEVEL);
+        return material.supportsDyeing() && state.hasProperty(COLOR)
+            ? state.setValue(COLOR, PlasticMeltColor.get(stack))
+            : state;
+    }
+
+    private static Map<PlasticMaterial, CauldronInteraction.InteractionMap> createInteractions() {
+        Map<PlasticMaterial, CauldronInteraction.InteractionMap> result = new EnumMap<>(PlasticMaterial.class);
+        for (PlasticMaterial material : PlasticMaterial.values()) {
+            result.put(
+                material,
+                CauldronInteraction.newInteractionMap("anvilcraftplasticraft_" + material.key() + "_melt")
+            );
+        }
+        return result;
     }
 }

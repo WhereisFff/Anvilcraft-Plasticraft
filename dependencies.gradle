@@ -1,6 +1,9 @@
 dependencies {
     gameTestImplementation("net.neoforged:testframework:${neo_version}") { transitive = false }
 
+    // 用户扩展的红石实体包使用 NullMarked，仅在编译期提供 JSpecify 注解。
+    compileOnly("org.jspecify:jspecify:1.0.0")
+
     // AnvilLib 直接用于 Registrum 及其数据提供器。
     api(libs.anvillib)
     interfaceInjectionData(libs.anvillib.recipe)
@@ -29,4 +32,7 @@ dependencies {
     runtimeOnly(libs.jei.forge)
     compileOnly(libs.jade)
     runtimeOnly(libs.jade)
+
+    // FTB Teams 只用于独立权限适配，不进入 Plasticraft 发布物。
+    compileOnly(libs.ftb.teams) { transitive = false }
 }

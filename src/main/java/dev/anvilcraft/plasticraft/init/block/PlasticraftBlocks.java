@@ -1,0 +1,949 @@
+package dev.anvilcraft.plasticraft.init.block;
+
+import dev.anvilcraft.lib.v2.registrum.providers.RegistrumBlockstateProvider;
+import dev.anvilcraft.lib.v2.registrum.util.entry.BlockEntry;
+import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.block.CatalyticPressLidBlock;
+import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
+import dev.anvilcraft.plasticraft.block.EngineeringPlasticBlock;
+import dev.anvilcraft.plasticraft.block.ClearPlasticBlock;
+import dev.anvilcraft.plasticraft.block.ClearPlasticMeltCauldronBlock;
+import dev.anvilcraft.plasticraft.block.HeatResistantPlasticBlock;
+import dev.anvilcraft.plasticraft.block.AllayLoungeBlock;
+import dev.anvilcraft.plasticraft.block.HardenedResinAnvilBlock;
+import dev.anvilcraft.plasticraft.block.HardenedResinCauldronBlock;
+import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
+import dev.anvilcraft.plasticraft.block.HighViscosityResinBlock;
+import dev.anvilcraft.plasticraft.block.HighViscosityResinCauldronBlock;
+import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
+import dev.anvilcraft.plasticraft.block.Plastic3DPrintingComponentBlock;
+import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberBlock;
+import dev.anvilcraft.plasticraft.block.PlasticMoldingRegionBlock;
+import dev.anvilcraft.plasticraft.block.PlasticOilCauldronBlock;
+import dev.anvilcraft.plasticraft.block.ResinAnvilBlock;
+import dev.anvilcraft.plasticraft.block.UniversalPlasticBlock;
+import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
+import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltFluidBlock;
+import dev.anvilcraft.plasticraft.block.UniversalPlasticShape;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
+import dev.anvilcraft.plasticraft.item.CatalyticPressLidItem;
+import dev.anvilcraft.plasticraft.item.DyeableMaterial;
+import dev.anvilcraft.plasticraft.item.EngineeringPlasticBlockItem;
+import dev.anvilcraft.plasticraft.item.ClearPlasticBlockItem;
+import dev.anvilcraft.plasticraft.item.HeatResistantPlasticBlockItem;
+import dev.anvilcraft.plasticraft.item.HardenedResinAnvilItem;
+import dev.anvilcraft.plasticraft.item.HardenedResinCauldronItem;
+import dev.anvilcraft.plasticraft.item.HighViscosityResinBlockItem;
+import dev.anvilcraft.plasticraft.item.PlasticMoldingChamberItem;
+import dev.anvilcraft.plasticraft.item.ResinAnvilItem;
+import dev.anvilcraft.plasticraft.item.UniversalPlasticBlockItem;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
+import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
+import dev.dubhe.anvilcraft.block.item.SimpleMultiPartBlockItem;
+import dev.dubhe.anvilcraft.block.multipart.SimpleMultiPartBlock;
+import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
+import dev.dubhe.anvilcraft.init.block.ModBlockTags;
+import dev.dubhe.anvilcraft.init.block.ModBlocks;
+import dev.dubhe.anvilcraft.util.DataGenUtil;
+import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.CustomModelData;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.DispenserBlock;
+import net.minecraft.world.level.block.LiquidBlock;
+import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.material.FlowingFluid;
+import net.minecraft.world.level.material.MapColor;
+import net.minecraft.world.level.material.PushReaction;
+import net.minecraft.world.level.storage.loot.LootPool;
+import net.minecraft.world.level.storage.loot.LootTable;
+import net.minecraft.world.level.storage.loot.entries.LootItem;
+import net.minecraft.world.level.storage.loot.functions.CopyComponentsFunction;
+import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
+import net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent;
+import net.neoforged.neoforge.client.model.generators.ConfiguredModel;
+import net.neoforged.neoforge.client.model.generators.ModelBuilder;
+import net.neoforged.neoforge.client.model.generators.ModelFile;
+import net.neoforged.neoforge.client.model.generators.ModelProvider;
+
+import java.util.function.Supplier;
+
+/** Plasticraft 可移动制品的方块和物品注册。 */
+public final class PlasticraftBlocks {
+    public static final BlockEntry<PlasticMoldingChamberBlock> PLASTIC_MOLDING_CHAMBER = AnvilcraftPlasticraft.REGISTRUM
+        .block("plastic_molding_chamber", PlasticMoldingChamberBlock::new)
+        .initialProperties(() -> Blocks.IRON_BLOCK)
+        .properties(properties -> properties
+            .noOcclusion()
+            .strength(5.0F, 1200.0F)
+            .sound(SoundType.METAL)
+            .pushReaction(PushReaction.BLOCK))
+        .lang("Plastic Molding Chamber")
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE)
+        .loot((tables, block) -> tables.dropSelf(block))
+        .blockstate((context, provider) -> {
+            // 成型舱专用模型由供电状态切换，断电时使用 _off；LOCKED 仅保留机器流程状态。
+            ModelFile powered = provider.models().getExistingFile(
+                provider.modLoc("block/plastic_molding_chamber")
+            );
+            ModelFile unpowered = provider.models().getExistingFile(
+                provider.modLoc("block/plastic_molding_chamber_off")
+            );
+            provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
+                .modelFile(state.getValue(PlasticMoldingChamberBlock.POWERED) ? powered : unpowered)
+                .rotationY(((int) state.getValue(PlasticMoldingChamberBlock.FACING).toYRot() + 180) % 360)
+                .build());
+        })
+        .item(PlasticMoldingChamberItem::new)
+        .model((context, provider) -> provider.withExistingParent(
+            context.getName(),
+            provider.modLoc("block/" + context.getName())
+        ))
+        .build()
+        .register();
+
+    public static final BlockEntry<AllayLoungeBlock> ALLAY_LOUNGE = AnvilcraftPlasticraft.REGISTRUM
+        .block("allay_lounge", AllayLoungeBlock::new)
+        .initialProperties(() -> Blocks.IRON_BLOCK)
+        .properties(properties -> properties
+            .strength(5.0F, 1200.0F)
+            .sound(SoundType.METAL)
+            .pushReaction(PushReaction.BLOCK))
+        .lang("Allay Lounge")
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE)
+        .loot((tables, block) -> tables.add(block, LootTable.lootTable()
+            .withPool(tables.applyExplosionCondition(block, LootPool.lootPool()
+                .setRolls(ConstantValue.exactly(1.0F))
+                .add(LootItem.lootTableItem(block)
+                    .apply(CopyComponentsFunction.copyComponents(CopyComponentsFunction.Source.BLOCK_ENTITY)
+                        .include(DataComponents.BLOCK_ENTITY_DATA)))))))
+        .blockstate((context, provider) -> {
+            // 休息室不耗电,始终使用同一套烘焙模型。
+            ModelFile model = provider.models().getExistingFile(provider.modLoc("block/allay_lounge"));
+            provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
+                .modelFile(model)
+                .rotationY(((int) state.getValue(AllayLoungeBlock.FACING).toYRot() + 180) % 360)
+                .build());
+        })
+        .item()
+        .model((context, provider) -> provider.withExistingParent(
+            context.getName(),
+            provider.modLoc("block/allay_lounge")
+        ))
+        .build()
+        .register();
+
+    public static final BlockEntry<Plastic3DPrintingComponentBlock> PLASTIC_3D_PRINTING_COMPONENT =
+        AnvilcraftPlasticraft.REGISTRUM
+            .block("plastic_3d_printing_component", Plastic3DPrintingComponentBlock::new)
+            .initialProperties(() -> Blocks.IRON_BLOCK)
+            .properties(properties -> properties
+                .noOcclusion()
+                .strength(5.0F, 1200.0F)
+                .sound(SoundType.METAL)
+                .pushReaction(PushReaction.BLOCK))
+            .lang("Plastic 3D Printing Component")
+            .tag(BlockTags.MINEABLE_WITH_PICKAXE)
+            .loot((tables, block) -> tables.dropSelf(block))
+            .blockstate((context, provider) -> {
+                // 世界中有电外观只用机身；screen1 由方块实体按全亮半透明绘制，避免超出方块的平滑光照把顶部插值变黑。
+                ModelFile powered = provider.models().getExistingFile(
+                    provider.modLoc("block/print_component_body")
+                );
+                ModelFile unpowered = provider.models().getExistingFile(
+                    provider.modLoc("block/print_component_off")
+                );
+                provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
+                    .modelFile(state.getValue(Plastic3DPrintingComponentBlock.POWERED) ? powered : unpowered)
+                    .rotationY(
+                        ((int) state.getValue(Plastic3DPrintingComponentBlock.FACING).toYRot() + 180) % 360
+                    )
+                    .build());
+            })
+            .item(BlockItem::new)
+            .model((context, provider) -> provider.withExistingParent(
+                context.getName(),
+                provider.modLoc("block/print_component")
+            ))
+            .build()
+            .register();
+
+    public static final BlockEntry<PlasticMoldingRegionBlock> PLASTIC_MOLDING_REGION = AnvilcraftPlasticraft.REGISTRUM
+        .block("plastic_molding_region", PlasticMoldingRegionBlock::new)
+        .initialProperties(() -> Blocks.BARRIER)
+        .properties(properties -> properties
+            .mapColor(MapColor.NONE)
+            .noOcclusion()
+            .strength(-1.0F, 3600000.0F)
+            .pushReaction(PushReaction.BLOCK)
+            .noLootTable())
+        .lang("Plastic Molding Region")
+        .blockstate((context, provider) -> provider.simpleBlock(
+            context.get(),
+            provider.models().getBuilder(context.getName())
+        ))
+        .register();
+
+    public static final BlockEntry<CondenserTowerBlock> CONDENSER_TOWER = AnvilcraftPlasticraft.REGISTRUM
+        .block("condenser_tower", CondenserTowerBlock::new)
+        .initialProperties(() -> Blocks.IRON_BLOCK)
+        .properties(properties -> properties
+            .noOcclusion()
+            .strength(5.0F, 1200.0F)
+            .sound(SoundType.METAL))
+        .lang("Condenser Tower")
+        .loot(SimpleMultiPartBlock::loot)
+        .blockstate(DataGenUtil::noExtraModelOrState)
+        .item(SimpleMultiPartBlockItem<Cube3x3PartHalf>::new)
+        .properties(properties -> properties.stacksTo(16))
+        .model(DataGenUtil::noExtraModelOrState)
+        .build()
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE)
+        .register();
+
+    public static final BlockEntry<HighViscosityResinBlock> HIGH_VISCOSITY_RESIN_BLOCK = AnvilcraftPlasticraft.REGISTRUM
+        .block("high_viscosity_resin_block", HighViscosityResinBlock::new)
+        .initialProperties(ModBlocks.RESIN_BLOCK::get)
+        .properties(properties -> properties
+            .mapColor(MapColor.COLOR_ORANGE)
+            .noOcclusion()
+            .sound(SoundType.HONEY_BLOCK))
+        .lang("High-Viscosity Resin Block")
+        .blockstate((context, provider) -> provider.simpleBlock(
+            context.get(),
+            provider.models().getExistingFile(provider.modLoc("block/high_viscosity_resin"))
+        ))
+        .item(HighViscosityResinBlockItem::new)
+        .model((context, provider) -> provider.withExistingParent(
+            context.getName(),
+            provider.modLoc("block/high_viscosity_resin")
+        ))
+        .build()
+        .tag(PlasticraftBlockTags.RESIN_SHOCK_COMPATIBLE)
+        .register();
+
+    public static final BlockEntry<HighViscosityResinCauldronBlock> LIQUID_HIGH_VISCOSITY_RESIN_CAULDRON = AnvilcraftPlasticraft.REGISTRUM
+        .block("liquid_high_viscosity_resin_cauldron", HighViscosityResinCauldronBlock::new)
+        .initialProperties(() -> Blocks.CAULDRON)
+        .lang("Liquid High-Viscosity Resin Cauldron")
+        .blockstate((context, provider) -> {
+        })
+        .loot((tables, block) -> tables.dropOther(block, Items.CAULDRON))
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE, BlockTags.CAULDRONS)
+        .onRegister(block -> Item.BY_BLOCK.put(block, Items.CAULDRON))
+        .register();
+
+    public static final BlockEntry<HighViscosityResinFluidBlock> LIQUID_HIGH_VISCOSITY_RESIN = AnvilcraftPlasticraft.REGISTRUM
+        .block(
+            "liquid_high_viscosity_resin",
+            properties -> new HighViscosityResinFluidBlock(PlasticraftFluids.LIQUID_HIGH_VISCOSITY_RESIN.get(), properties)
+        )
+        .properties(properties -> properties
+            .mapColor(MapColor.COLOR_ORANGE)
+            .replaceable()
+            .noCollission()
+            .pushReaction(PushReaction.DESTROY)
+            .noLootTable()
+            .liquid()
+            .sound(SoundType.EMPTY)
+            .strength(100.0F))
+        .lang("Liquid High-Viscosity Resin")
+        .blockstate((context, provider) -> provider.simpleBlock(
+            context.get(),
+            provider.models()
+                .getBuilder(context.getName())
+                .texture("particle", provider.modLoc("fluid/liquid_high_viscosity_resin"))
+        ))
+        .register();
+
+    public static final BlockEntry<LiquidBlock> HIGH_HEAT_FUEL = fluidBlock(
+        "high_heat_fuel",
+        PlasticraftFluids.HIGH_HEAT_FUEL,
+        "high_heat_fuel",
+        MapColor.COLOR_YELLOW,
+        "High-Heat Fuel"
+    );
+    public static final BlockEntry<HighHeatFuelCauldronBlock> HIGH_HEAT_FUEL_CAULDRON = AnvilcraftPlasticraft.REGISTRUM
+        .block("high_heat_fuel_cauldron", HighHeatFuelCauldronBlock::new)
+        .initialProperties(() -> Blocks.CAULDRON)
+        .lang("High-Heat Fuel Cauldron")
+        .blockstate((context, provider) -> {
+        })
+        .loot((tables, block) -> tables.dropOther(block, Items.CAULDRON))
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE, BlockTags.CAULDRONS)
+        .onRegister(block -> Item.BY_BLOCK.put(block, Items.CAULDRON))
+        .register();
+    public static final BlockEntry<LiquidBlock> PLASTIC_OIL = fluidBlock(
+        "plastic_oil",
+        PlasticraftFluids.PLASTIC_OIL,
+        "plastic_oil",
+        MapColor.COLOR_LIGHT_BLUE,
+        "Plastic Oil"
+    );
+    public static final BlockEntry<PlasticOilCauldronBlock> PLASTIC_OIL_CAULDRON = AnvilcraftPlasticraft.REGISTRUM
+        .block("plastic_oil_cauldron", PlasticOilCauldronBlock::new)
+        .initialProperties(() -> Blocks.CAULDRON)
+        .lang("Plastic Oil Cauldron")
+        .blockstate((context, provider) -> {
+            ModelFile[] models = layeredCauldronModels(provider, context.getName(), "fluid/plastic_oil");
+            provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
+                .modelFile(models[state.getValue(Layered4LevelCauldronBlock.LEVEL) - 1])
+                .build());
+        })
+        .loot((tables, block) -> tables.dropOther(block, Items.CAULDRON))
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE, BlockTags.CAULDRONS)
+        .onRegister(block -> Item.BY_BLOCK.put(block, Items.CAULDRON))
+        .register();
+    public static final BlockEntry<UniversalPlasticMeltFluidBlock> UNIVERSAL_PLASTIC_MELT = AnvilcraftPlasticraft.REGISTRUM
+        .block(
+            "universal_plastic_melt",
+            properties -> new UniversalPlasticMeltFluidBlock(
+                PlasticraftFluids.UNIVERSAL_PLASTIC_MELT,
+                properties,
+                PlasticMaterial.UNIVERSAL
+            )
+        )
+        .properties(properties -> properties
+            .mapColor(MapColor.SNOW)
+            .replaceable()
+            .noCollission()
+            .pushReaction(PushReaction.DESTROY)
+            .noLootTable()
+            .liquid()
+            .sound(SoundType.EMPTY)
+            .strength(100.0F))
+        .lang("Universal Plastic Melt")
+        .blockstate((context, provider) -> {
+            provider.models().existingFileHelper.trackGenerated(
+                provider.modLoc("fluid/universal_plastic_melt"),
+                ModelProvider.TEXTURE
+            );
+            provider.simpleBlock(
+                context.get(),
+                provider.models()
+                    .getBuilder(context.getName())
+                    .texture("particle", provider.modLoc("fluid/universal_plastic_melt"))
+            );
+        })
+        .register();
+    public static final BlockEntry<UniversalPlasticMeltCauldronBlock> UNIVERSAL_PLASTIC_MELT_CAULDRON = AnvilcraftPlasticraft.REGISTRUM
+        .block(
+            "universal_plastic_melt_cauldron",
+            properties -> new UniversalPlasticMeltCauldronBlock(properties, PlasticMaterial.UNIVERSAL)
+        )
+        .initialProperties(() -> Blocks.CAULDRON)
+        .lang("Universal Plastic Melt Cauldron")
+        .blockstate((context, provider) -> {
+            ModelFile[] models = layeredCauldronModels(
+                provider,
+                context.getName(),
+                "fluid/universal_plastic_melt"
+            );
+            provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
+                .modelFile(models[state.getValue(Layered4LevelCauldronBlock.LEVEL) - 1])
+                .build());
+        })
+        .loot((tables, block) -> tables.dropOther(block, Items.CAULDRON))
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE, BlockTags.CAULDRONS)
+        .onRegister(block -> Item.BY_BLOCK.put(block, Items.CAULDRON))
+        .register();
+    public static final BlockEntry<UniversalPlasticBlock> UNIVERSAL_PLASTIC = AnvilcraftPlasticraft.REGISTRUM
+        .block("universal_plastic", UniversalPlasticBlock::new)
+        .initialProperties(() -> Blocks.WHITE_CONCRETE)
+        .properties(properties -> properties
+            .mapColor(MapColor.SNOW)
+            .noOcclusion()
+            .strength(1.5F, 3.0F)
+            .sound(SoundType.BONE_BLOCK)
+            .pushReaction(PushReaction.NORMAL))
+        .lang("Universal Plastic Block")
+        .tag(
+            BlockTags.MINEABLE_WITH_PICKAXE,
+            PlasticraftBlockTags.PLASTIC_PRODUCTS,
+            ModBlockTags.END_PORTAL_UNABLE_CHANGE
+        )
+        .loot((tables, block) -> tables.dropSelf(block))
+        .blockstate((context, provider) -> plasticBlockState(
+            provider,
+            context.get(),
+            context.getName(),
+            PlasticMaterial.UNIVERSAL
+        ))
+        .item((block, properties) -> new UniversalPlasticBlockItem(
+            block,
+            properties,
+            PlasticraftEntities.UNIVERSAL_PLASTIC,
+            block::defaultBlockState
+        ))
+        .tag(PlasticraftItemTags.PLASTIC_PRODUCTS, PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS)
+        .model((context, provider) -> {
+            // 物品交给同一运行时网格渲染器；显示变换继续沿用既定的掉落、手持和 GUI 规格。
+            var base = provider.getBuilder(context.getName()).parent(new ModelFile.UncheckedModelFile(
+                ResourceLocation.withDefaultNamespace("builtin/entity")
+            ));
+            addUniversalPlasticItemTransforms(base);
+        })
+        .build()
+        .register();
+    public static final BlockEntry<UniversalPlasticMeltFluidBlock> ENGINEERING_PLASTIC_MELT =
+        AnvilcraftPlasticraft.REGISTRUM
+            .block(
+                "engineering_plastic_melt",
+                properties -> new UniversalPlasticMeltFluidBlock(
+                    PlasticraftFluids.ENGINEERING_PLASTIC_MELT,
+                    properties,
+                    PlasticMaterial.ENGINEERING
+                )
+            )
+            .properties(properties -> properties
+                .mapColor(MapColor.COLOR_LIGHT_BLUE)
+                .replaceable()
+                .noCollission()
+                .pushReaction(PushReaction.DESTROY)
+                .noLootTable()
+                .liquid()
+                .sound(SoundType.EMPTY)
+                .strength(100.0F))
+            .lang("Engineering Plastic Melt")
+            .blockstate((context, provider) -> {
+                provider.models().existingFileHelper.trackGenerated(
+                    provider.modLoc("fluid/engineering_plastic_melt"),
+                    ModelProvider.TEXTURE
+                );
+                provider.simpleBlock(
+                    context.get(),
+                    provider.models()
+                        .getBuilder(context.getName())
+                        .texture("particle", provider.modLoc("fluid/engineering_plastic_melt"))
+                );
+            })
+            .register();
+    public static final BlockEntry<UniversalPlasticMeltCauldronBlock> ENGINEERING_PLASTIC_MELT_CAULDRON =
+        AnvilcraftPlasticraft.REGISTRUM
+            .block(
+                "engineering_plastic_melt_cauldron",
+                properties -> new UniversalPlasticMeltCauldronBlock(properties, PlasticMaterial.ENGINEERING)
+            )
+            .initialProperties(() -> Blocks.CAULDRON)
+            .lang("Engineering Plastic Melt Cauldron")
+            .blockstate((context, provider) -> {
+                ModelFile[] models = layeredCauldronModels(
+                    provider,
+                    context.getName(),
+                    "fluid/engineering_plastic_melt"
+                );
+                provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
+                    .modelFile(models[state.getValue(Layered4LevelCauldronBlock.LEVEL) - 1])
+                    .build());
+            })
+            .loot((tables, block) -> tables.dropOther(block, Items.CAULDRON))
+            .tag(BlockTags.MINEABLE_WITH_PICKAXE, BlockTags.CAULDRONS)
+            .onRegister(block -> Item.BY_BLOCK.put(block, Items.CAULDRON))
+            .register();
+    public static final BlockEntry<EngineeringPlasticBlock> ENGINEERING_PLASTIC = AnvilcraftPlasticraft.REGISTRUM
+        .block("engineering_plastic", EngineeringPlasticBlock::new)
+        .initialProperties(() -> Blocks.LIGHT_BLUE_CONCRETE)
+        .properties(properties -> properties
+            .mapColor(MapColor.COLOR_LIGHT_BLUE)
+            .noOcclusion()
+            .strength(2.5F, 6.0F)
+            .sound(SoundType.BONE_BLOCK)
+            .pushReaction(PushReaction.NORMAL))
+        .lang("Engineering Plastic Block")
+        .tag(
+            BlockTags.MINEABLE_WITH_PICKAXE,
+            PlasticraftBlockTags.PLASTIC_PRODUCTS,
+            ModBlockTags.END_PORTAL_UNABLE_CHANGE
+        )
+        .loot((tables, block) -> tables.dropSelf(block))
+        .blockstate((context, provider) -> plasticBlockState(
+            provider,
+            context.get(),
+            context.getName(),
+            PlasticMaterial.ENGINEERING
+        ))
+        .item((block, properties) -> new EngineeringPlasticBlockItem(
+            block,
+            properties,
+            PlasticraftEntities.ENGINEERING_PLASTIC,
+            block::defaultBlockState
+        ))
+        .tag(PlasticraftItemTags.PLASTIC_PRODUCTS, PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS)
+        .model((context, provider) -> {
+            var base = provider.getBuilder(context.getName()).parent(new ModelFile.UncheckedModelFile(
+                ResourceLocation.withDefaultNamespace("builtin/entity")
+            ));
+            addUniversalPlasticItemTransforms(base);
+        })
+        .build()
+        .register();
+    public static final BlockEntry<UniversalPlasticMeltFluidBlock> HEAT_RESISTANT_PLASTIC_MELT =
+        AnvilcraftPlasticraft.REGISTRUM
+            .block(
+                "heat_resistant_plastic_melt",
+                properties -> new UniversalPlasticMeltFluidBlock(
+                    PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT,
+                    properties,
+                    PlasticMaterial.HEAT_RESISTANT
+                )
+            )
+            .properties(properties -> properties
+                .mapColor(MapColor.COLOR_YELLOW)
+                .replaceable()
+                .noCollission()
+                .pushReaction(PushReaction.DESTROY)
+                .noLootTable()
+                .liquid()
+                .sound(SoundType.EMPTY)
+                .strength(100.0F))
+            .lang("Heat-Resistant Plastic Melt")
+            .blockstate((context, provider) -> {
+                provider.models().existingFileHelper.trackGenerated(
+                    provider.modLoc("fluid/heat_resistant_plastic_melt"),
+                    ModelProvider.TEXTURE
+                );
+                provider.simpleBlock(
+                    context.get(),
+                    provider.models()
+                        .getBuilder(context.getName())
+                        .texture("particle", provider.modLoc("fluid/heat_resistant_plastic_melt"))
+                );
+            })
+            .register();
+    public static final BlockEntry<UniversalPlasticMeltCauldronBlock> HEAT_RESISTANT_PLASTIC_MELT_CAULDRON =
+        AnvilcraftPlasticraft.REGISTRUM
+            .block(
+                "heat_resistant_plastic_melt_cauldron",
+                properties -> new UniversalPlasticMeltCauldronBlock(properties, PlasticMaterial.HEAT_RESISTANT)
+            )
+            .initialProperties(() -> Blocks.CAULDRON)
+            .lang("Heat-Resistant Plastic Melt Cauldron")
+            .blockstate((context, provider) -> {
+                ModelFile[] models = layeredCauldronModels(
+                    provider,
+                    context.getName(),
+                    "fluid/heat_resistant_plastic_melt"
+                );
+                provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
+                    .modelFile(models[state.getValue(Layered4LevelCauldronBlock.LEVEL) - 1])
+                    .build());
+            })
+            .loot((tables, block) -> tables.dropOther(block, Items.CAULDRON))
+            .tag(BlockTags.MINEABLE_WITH_PICKAXE, BlockTags.CAULDRONS)
+            .onRegister(block -> Item.BY_BLOCK.put(block, Items.CAULDRON))
+            .register();
+    public static final BlockEntry<HeatResistantPlasticBlock> HEAT_RESISTANT_PLASTIC =
+        AnvilcraftPlasticraft.REGISTRUM
+            .block("heat_resistant_plastic", HeatResistantPlasticBlock::new)
+            .initialProperties(() -> Blocks.YELLOW_CONCRETE)
+            .properties(properties -> properties
+                .mapColor(MapColor.COLOR_YELLOW)
+                .noOcclusion()
+                .strength(3.5F, 10.0F)
+                .sound(SoundType.BONE_BLOCK)
+                .pushReaction(PushReaction.NORMAL))
+            .lang("Heat-Resistant Plastic Block")
+            .tag(
+                BlockTags.MINEABLE_WITH_PICKAXE,
+                PlasticraftBlockTags.PLASTIC_PRODUCTS,
+                ModBlockTags.END_PORTAL_UNABLE_CHANGE
+            )
+            .loot((tables, block) -> tables.dropSelf(block))
+            .blockstate((context, provider) -> plasticBlockState(
+                provider,
+                context.get(),
+                context.getName(),
+                PlasticMaterial.HEAT_RESISTANT
+            ))
+            .item((block, properties) -> new HeatResistantPlasticBlockItem(
+                block,
+                properties,
+                PlasticraftEntities.HEAT_RESISTANT_PLASTIC,
+                block::defaultBlockState
+            ))
+            .properties(Item.Properties::fireResistant)
+            .tag(PlasticraftItemTags.PLASTIC_PRODUCTS, PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS)
+            .model((context, provider) -> {
+                var base = provider.getBuilder(context.getName()).parent(new ModelFile.UncheckedModelFile(
+                    ResourceLocation.withDefaultNamespace("builtin/entity")
+                ));
+                addUniversalPlasticItemTransforms(base);
+            })
+            .build()
+            .register();
+    public static final BlockEntry<UniversalPlasticMeltFluidBlock> CLEAR_PLASTIC_MELT =
+        AnvilcraftPlasticraft.REGISTRUM
+            .block(
+                "clear_plastic_melt",
+                properties -> new UniversalPlasticMeltFluidBlock(
+                    PlasticraftFluids.CLEAR_PLASTIC_MELT,
+                    properties,
+                    PlasticMaterial.CLEAR
+                )
+            )
+            .properties(properties -> properties
+                .mapColor(MapColor.NONE)
+                .replaceable()
+                .noCollission()
+                .pushReaction(PushReaction.DESTROY)
+                .noLootTable()
+                .liquid()
+                .sound(SoundType.EMPTY)
+                .strength(100.0F))
+            .lang("Clear Plastic Melt")
+            .blockstate((context, provider) -> {
+                provider.models().existingFileHelper.trackGenerated(
+                    provider.modLoc("fluid/clear_plastic_melt"),
+                    ModelProvider.TEXTURE
+                );
+                provider.simpleBlock(
+                    context.get(),
+                    provider.models()
+                        .getBuilder(context.getName())
+                        .texture("particle", provider.modLoc("fluid/clear_plastic_melt"))
+                );
+            })
+            .register();
+    public static final BlockEntry<ClearPlasticMeltCauldronBlock> CLEAR_PLASTIC_MELT_CAULDRON =
+        AnvilcraftPlasticraft.REGISTRUM
+            .block("clear_plastic_melt_cauldron", ClearPlasticMeltCauldronBlock::new)
+            .initialProperties(() -> Blocks.CAULDRON)
+            .lang("Clear Plastic Melt Cauldron")
+            .blockstate((context, provider) -> {
+                ModelFile[] models = layeredCauldronModels(
+                    provider,
+                    context.getName(),
+                    "fluid/clear_plastic_melt"
+                );
+                provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
+                    .modelFile(models[state.getValue(Layered4LevelCauldronBlock.LEVEL) - 1])
+                    .build());
+            })
+            .loot((tables, block) -> tables.dropOther(block, Items.CAULDRON))
+            .tag(BlockTags.MINEABLE_WITH_PICKAXE, BlockTags.CAULDRONS)
+            .onRegister(block -> Item.BY_BLOCK.put(block, Items.CAULDRON))
+            .register();
+    public static final BlockEntry<ClearPlasticBlock> CLEAR_PLASTIC = AnvilcraftPlasticraft.REGISTRUM
+        .block("clear_plastic", ClearPlasticBlock::new)
+        .initialProperties(() -> Blocks.GLASS)
+        .properties(properties -> properties
+            .mapColor(MapColor.NONE)
+            .noOcclusion()
+            .strength(1.5F, 3.0F)
+            .sound(SoundType.BONE_BLOCK)
+            .pushReaction(PushReaction.NORMAL))
+        .lang("Clear Plastic Block")
+        .tag(
+            BlockTags.MINEABLE_WITH_PICKAXE,
+            PlasticraftBlockTags.PLASTIC_PRODUCTS,
+            ModBlockTags.END_PORTAL_UNABLE_CHANGE,
+            ModBlockTags.SPECTRAL_CAN_THROUGH,
+            ModBlockTags.LASER_CAN_PASS_THROUGH
+        )
+        .loot((tables, block) -> tables.dropSelf(block))
+        .blockstate((context, provider) -> plasticBlockState(
+            provider,
+            context.get(),
+            context.getName(),
+            PlasticMaterial.CLEAR
+        ))
+        .item((block, properties) -> new ClearPlasticBlockItem(
+            block,
+            properties,
+            PlasticraftEntities.CLEAR_PLASTIC,
+            block::defaultBlockState
+        ))
+        .tag(PlasticraftItemTags.PLASTIC_PRODUCTS, PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS)
+        .model((context, provider) -> {
+            var base = provider.getBuilder(context.getName()).parent(new ModelFile.UncheckedModelFile(
+                ResourceLocation.withDefaultNamespace("builtin/entity")
+            ));
+            addUniversalPlasticItemTransforms(base);
+        })
+        .build()
+        .register();
+    public static final BlockEntry<LiquidBlock> CRUDE_OIL_ACID = fluidBlock(
+        "crude_oil_acid",
+        PlasticraftFluids.CRUDE_OIL_ACID,
+        "oil_essence",
+        MapColor.COLOR_BLACK,
+        "Crude Oil Essence"
+    );
+
+    public static final BlockEntry<HardenedResinAnvilBlock> HARDEND_RESIN_ANVIL = AnvilcraftPlasticraft.REGISTRUM
+        .block("hardend_resin_anvil", HardenedResinAnvilBlock::new)
+        .initialProperties(() -> Blocks.ANVIL)
+        .properties(properties -> properties
+            .noOcclusion()
+            .strength(5.0F, 1200.0F)
+            .pushReaction(PushReaction.NORMAL))
+        .lang("Hardened Resin Anvil")
+        .tag(
+            BlockTags.MINEABLE_WITH_PICKAXE,
+            BlockTags.ANVIL,
+            ModBlockTags.NON_MAGNETIC,
+            ModBlockTags.END_PORTAL_UNABLE_CHANGE
+        )
+        .blockstate((context, provider) -> {
+        })
+        .item((block, properties) -> new HardenedResinAnvilItem(
+            block,
+            properties,
+            PlasticraftEntities.HARDEND_RESIN_ANVIL,
+            block::defaultBlockState
+        ))
+        .tag(PlasticraftItemTags.PLASTIC_ANVILS, PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS, ItemTags.ANVIL)
+        .model((context, provider) -> {
+        })
+        .build()
+        .register();
+
+    public static final BlockEntry<HardenedResinCauldronBlock> HARDEND_RESIN_CAULDRON = AnvilcraftPlasticraft.REGISTRUM
+        .block("hardend_resin_cauldron", HardenedResinCauldronBlock::new)
+        .initialProperties(() -> Blocks.CAULDRON)
+        .properties(properties -> properties
+            .noOcclusion()
+            .strength(2.0F, 20.0F)
+            .pushReaction(PushReaction.NORMAL))
+        .lang("Hardened Resin Cauldron")
+        .tag(
+            BlockTags.MINEABLE_WITH_PICKAXE,
+            BlockTags.CAULDRONS,
+            ModBlockTags.END_PORTAL_UNABLE_CHANGE
+        )
+        .blockstate((context, provider) -> {
+        })
+        .item((block, properties) -> new HardenedResinCauldronItem(
+            block,
+            properties,
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON,
+            block::defaultBlockState
+        ))
+        .tag(PlasticraftItemTags.PLASTIC_CAULDRONS, PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS)
+        .model((context, provider) -> {
+        })
+        .build()
+        .register();
+
+    public static final BlockEntry<CatalyticPressLidBlock> CATALYTIC_PRESS_LID = AnvilcraftPlasticraft.REGISTRUM
+        .block("catalytic_press_lid", CatalyticPressLidBlock::new)
+        .initialProperties(() -> Blocks.ANVIL)
+        .properties(properties -> properties
+            .noOcclusion()
+            .strength(2.0F, 20.0F)
+            .pushReaction(PushReaction.NORMAL))
+        .lang("Catalytic Press Lid")
+        .tag(BlockTags.MINEABLE_WITH_PICKAXE, ModBlockTags.END_PORTAL_UNABLE_CHANGE)
+        .blockstate((context, provider) -> provider.simpleBlock(
+            context.get(),
+            provider.models().getExistingFile(provider.modLoc("block/catalytic_press_lid"))
+        ))
+        .item((block, properties) -> new CatalyticPressLidItem(
+            block,
+            properties,
+            PlasticraftEntities.CATALYTIC_PRESS_LID,
+            block::defaultBlockState
+        ))
+        .tag(PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS)
+        .model((context, provider) -> provider.withExistingParent(
+            context.getName(),
+            provider.modLoc("block/catalytic_press_lid")
+        ))
+        .build()
+        .register();
+
+    public static final BlockEntry<ResinAnvilBlock> RESIN_ANVIL = AnvilcraftPlasticraft.REGISTRUM
+        .block("resin_anvil", ResinAnvilBlock::new)
+        .initialProperties(() -> Blocks.ANVIL)
+        .properties(properties -> properties
+            .noOcclusion()
+            .strength(4.0F, 80.0F)
+            .pushReaction(PushReaction.NORMAL))
+        .lang("Resin Anvil")
+        .tag(
+            BlockTags.MINEABLE_WITH_PICKAXE,
+            BlockTags.ANVIL,
+            ModBlockTags.NON_MAGNETIC,
+            PlasticraftBlockTags.RESIN_SHOCK_COMPATIBLE,
+            ModBlockTags.END_PORTAL_UNABLE_CHANGE
+        )
+        .blockstate((context, provider) -> {
+        })
+        .item((block, properties) -> new ResinAnvilItem(
+            block,
+            properties.component(
+                DataComponents.CUSTOM_MODEL_DATA,
+                new CustomModelData(0)
+            ),
+            PlasticraftEntities.RESIN_ANVIL,
+            block::defaultBlockState
+        ))
+        .tag(PlasticraftItemTags.PLASTIC_ANVILS, PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS)
+        .model((context, provider) -> {
+        })
+        .build()
+        .register();
+
+    private PlasticraftBlocks() {
+    }
+
+    /** 为通用塑料物品固定标准显示变换，避免掉落物按一格实体原尺寸渲染。 */
+    private static void addUniversalPlasticItemTransforms(ModelBuilder<?> model) {
+        model.transforms()
+            .transform(ItemDisplayContext.THIRD_PERSON_RIGHT_HAND)
+                .rotation(75.0F, 45.0F, 0.0F)
+                .translation(0.0F, 2.5F, 0.0F)
+                .scale(0.375F)
+                .end()
+            .transform(ItemDisplayContext.THIRD_PERSON_LEFT_HAND)
+                .rotation(75.0F, 45.0F, 0.0F)
+                .translation(0.0F, 2.5F, 0.0F)
+                .scale(0.375F)
+                .end()
+            .transform(ItemDisplayContext.FIRST_PERSON_RIGHT_HAND)
+                .rotation(0.0F, 45.0F, 0.0F)
+                .scale(0.4F)
+                .end()
+            .transform(ItemDisplayContext.FIRST_PERSON_LEFT_HAND)
+                .rotation(0.0F, -135.0F, 0.0F)
+                .scale(0.4F)
+                .end()
+            .transform(ItemDisplayContext.GROUND)
+                .translation(0.0F, 3.0F, 0.0F)
+                .scale(0.25F)
+                .end()
+            .transform(ItemDisplayContext.GUI)
+                .rotation(30.0F, -135.0F, 0.0F)
+                .scale(0.625F)
+                .end()
+            .transform(ItemDisplayContext.FIXED)
+                .scale(0.5F)
+                .end()
+            .end();
+    }
+
+    private static BlockEntry<LiquidBlock> fluidBlock(
+        String id,
+        Supplier<? extends FlowingFluid> source,
+        String textureName,
+        MapColor mapColor,
+        String name
+    ) {
+        return AnvilcraftPlasticraft.REGISTRUM.block(id, properties -> new LiquidBlock(source.get(), properties))
+            .initialProperties(() -> Blocks.WATER)
+            .properties(properties -> properties
+                .mapColor(mapColor)
+                .replaceable()
+                .noCollission()
+                .pushReaction(PushReaction.DESTROY)
+                .noLootTable()
+                .liquid()
+                .sound(SoundType.EMPTY))
+            .lang(name)
+            .blockstate((context, provider) -> provider.simpleBlock(
+                context.get(),
+                provider.models()
+                    .getBuilder(context.getName())
+                    .texture("particle", provider.modLoc("fluid/" + textureName))
+            ))
+            .register();
+    }
+
+    private static ModelFile[] layeredCauldronModels(
+        RegistrumBlockstateProvider provider,
+        String name,
+        String contentTexture
+    ) {
+        if (contentTexture.endsWith("_plastic_melt")) {
+            provider.models().existingFileHelper.trackGenerated(
+                provider.modLoc(contentTexture),
+                ModelProvider.TEXTURE
+            );
+        }
+        String renderType = contentTexture.equals("fluid/clear_plastic_melt")
+            ? "minecraft:translucent"
+            : contentTexture.endsWith("_plastic_melt")
+                ? "minecraft:cutout"
+                : "minecraft:translucent";
+        ModelFile[] models = new ModelFile[4];
+        for (int level = 1; level <= 4; level++) {
+            String parent = level == 4
+                ? "minecraft:block/template_cauldron_full"
+                : "anvilcraft:block/template_cauldron_level" + level + "of4";
+            models[level - 1] = provider.models()
+                .getBuilder(name + "_level" + level)
+                .parent(new ModelFile.UncheckedModelFile(parent))
+                .texture("bottom", "minecraft:block/cauldron_bottom")
+                .texture("content", "anvilcraftplasticraft:" + contentTexture)
+                .texture("inside", "minecraft:block/cauldron_inner")
+                .texture("particle", "minecraft:block/cauldron_side")
+                .texture("side", "minecraft:block/cauldron_side")
+                .texture("top", "minecraft:block/cauldron_top")
+                .renderType(renderType);
+        }
+        return models;
+    }
+
+    private static void plasticBlockState(
+        RegistrumBlockstateProvider provider,
+        Block block,
+        String name,
+        PlasticMaterial material
+    ) {
+        // 每种塑料都按十六种熔体颜色烘焙模型，几何与确定性 UV 由公共形状定义提供。
+        int modelCount = material.hasColorState() ? DyeColor.values().length : 1;
+        ModelFile[] models = new ModelFile[modelCount];
+        for (DyeColor color : material.hasColorState() ? DyeColor.values() : new DyeColor[]{DyeColor.WHITE}) {
+            ResourceLocation sprite = material.sprite(color);
+            provider.models().existingFileHelper.trackGenerated(sprite, ModelProvider.TEXTURE);
+            var model = provider.models()
+                .getBuilder(name + "_" + color.getName())
+                .texture("particle", sprite)
+                .texture("plastic", sprite);
+            if (material.isTransparent()) model.renderType("minecraft:translucent");
+            var element = model.element().from(0.0F, 0.0F, 0.0F).to(16.0F, 16.0F, 16.0F);
+            for (Direction direction : Direction.values()) {
+                var region = UniversalPlasticShape.uv(direction);
+                element.face(direction)
+                    .uvs(
+                        region.modelU0(UniversalPlasticShape.TEXTURE_LAYOUT.atlasWidth()),
+                        region.modelV0(UniversalPlasticShape.TEXTURE_LAYOUT.atlasHeight()),
+                        region.modelU1(UniversalPlasticShape.TEXTURE_LAYOUT.atlasWidth()),
+                        region.modelV1(UniversalPlasticShape.TEXTURE_LAYOUT.atlasHeight())
+                    )
+                    .texture("#plastic")
+                    .end();
+            }
+            element.end();
+            models[material.hasColorState() ? color.getId() : 0] = model;
+        }
+        provider.getVariantBuilder(block).forAllStates(state -> ConfiguredModel.builder()
+            .modelFile(material.hasColorState() ? models[state.getValue(DyeableMaterial.COLOR).getId()] : models[0])
+            .build());
+    }
+
+    public static void register() {
+        // 类加载时，静态条目会挂接到 Registrum 事件总线。
+    }
+
+    public static void registerDispenserBehavior(FMLLoadCompleteEvent event) {
+        event.enqueueWork(() -> {
+            DispenserBlock.registerBehavior(RESIN_ANVIL.asItem(), ResinAnvilItem::dispense);
+            DispenserBlock.registerBehavior(HIGH_VISCOSITY_RESIN_BLOCK.asItem(), HighViscosityResinBlockItem::dispense);
+            HighViscosityResinCauldronBlock.registerInteractions();
+            HighHeatFuelCauldronBlock.registerInteractions();
+            PlasticOilCauldronBlock.registerInteractions();
+            UniversalPlasticMeltCauldronBlock.registerInteractions();
+        });
+    }
+}

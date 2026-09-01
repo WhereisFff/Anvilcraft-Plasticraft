@@ -44,6 +44,10 @@ sourceSets.main.resources {
     exclude '.cache/**'
 }
 
+def moldingRendererSources = fileTree('src/main/java/dev/anvilcraft/plasticraft/client/renderer/molding') {
+    include '**/*.java'
+}
+
 idea {
     module {
         downloadSources = true

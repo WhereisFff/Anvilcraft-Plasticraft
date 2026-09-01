@@ -1,9 +1,9 @@
 package dev.anvilcraft.plasticraft.entity;
 
-import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
+import dev.anvilcraft.plasticraft.entity.collision.BuiltInPlasticEntityModels;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
@@ -34,9 +34,7 @@ import java.util.function.Supplier;
 
 /** 具体的硬化树脂砧，共用移动逻辑位于抽象基类中。 */
 public class HardenedResinAnvilEntity extends AbstractPlasticEntity implements IShockEntity {
-    private static final PlasticEntityGeometry GEOMETRY = PlasticEntityGeometry.of(
-        AbstractPlasticEntityBlock.ROYAL_ANVIL_COLLISION_SHAPE
-    );
+    private static final PlasticEntityGeometry GEOMETRY = BuiltInPlasticEntityModels.HARDENED_RESIN_ANVIL.geometry();
     private static final double MIN_DAMAGE_SPEED = 0.58D;
     private static final float MIN_IMPACT_DAMAGE = 1.0F;
     private static final float HAMMER_IMPACT_DAMAGE = 10.0F;
@@ -52,7 +50,7 @@ public class HardenedResinAnvilEntity extends AbstractPlasticEntity implements I
 
     public HardenedResinAnvilEntity(EntityType<? extends HardenedResinAnvilEntity> entityType, Level level) {
         super(entityType, level);
-        this.setDisplayState(ModBlocks.HARDEND_RESIN_ANVIL.get().defaultBlockState());
+        this.setDisplayState(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get().defaultBlockState());
     }
 
     public HardenedResinAnvilEntity(

@@ -3,10 +3,14 @@ package dev.anvilcraft.plasticraft.block;
 import dev.anvilcraft.lib.v2.piston.IMoveableEntityBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.collision.BuiltInPlasticEntityModels;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
-import dev.anvilcraft.plasticraft.init.block.ModBlockEntities;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
+import dev.dubhe.anvilcraft.api.giantanvil.IShockFixedBlock;
 import dev.dubhe.anvilcraft.block.RoyalAnvilBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -14,6 +18,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -28,7 +33,6 @@ import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
-import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.Nullable;
 
@@ -43,16 +47,13 @@ import java.util.concurrent.ConcurrentHashMap;
  * 而不是让 {@code FallingBlockMixin} 创建原版落方块实体。</p>
  */
 public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity> extends RoyalAnvilBlock
-    implements IMoveableEntityBlock {
+    implements IMoveableEntityBlock, IShockFixedBlock {
     /** 磁化状态与材料相互独立，并在实体转换后保留。 */
     public static final BooleanProperty MAGNETIZED = BooleanProperty.create("magnetized");
     public static final BooleanProperty BONDED = BooleanProperty.create("bonded");
     /** 皇家铁砧在方块局部坐标中的组合碰撞形状，供方块态与实体态共同使用。 */
-    public static final VoxelShape ROYAL_ANVIL_COLLISION_SHAPE = Shapes.or(
-        Block.box(2.0D, 0.0D, 2.0D, 14.0D, 4.0D, 14.0D),
-        Block.box(5.0D, 4.0D, 4.0D, 11.0D, 10.0D, 12.0D),
-        Block.box(3.0D, 10.0D, 0.0D, 13.0D, 16.0D, 16.0D)
-    );
+    public static final VoxelShape ROYAL_ANVIL_COLLISION_SHAPE = BuiltInPlasticEntityModels
+        .ROYAL_ANVIL_COMPATIBILITY;
     private static final Map<PlasticEntityOrientation, VoxelShape> BONDED_ANVIL_SHAPES =
         new ConcurrentHashMap<>();
 
@@ -148,6 +149,15 @@ public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity
         return state.getValue(BONDED) ? RenderShape.INVISIBLE : super.getRenderShape(state);
     }
 
+    /** 方块化的锅同样要让锅内熔体减速穿过它的实体；非锅制品由 {@link PlasticCauldrons#of} 挡掉。 */
+    @Override
+    public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
+        if (!state.getValue(BONDED)
+            || !(level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded)) return;
+        PlasticCauldron cauldron = PlasticCauldrons.of(bonded.getOrCreateRenderEntity());
+        if (cauldron != null) cauldron.plasticraft$stickEntityInPlasticMelt(entity);
+    }
+
     @Override
     public InteractionResult use(
         BlockState state,
@@ -184,8 +194,13 @@ public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity
     }
 
     @Override
+    public boolean anvilcraft$isFixedDuringShockBounce(BlockState state) {
+        return state.hasProperty(BONDED) && state.getValue(BONDED);
+    }
+
+    @Override
     public @Nullable BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
-        return ModBlockEntities.BONDED_ENTITY.create(pos, state);
+        return PlasticraftBlockEntities.BONDED_ENTITY.create(pos, state);
     }
 
     @Override

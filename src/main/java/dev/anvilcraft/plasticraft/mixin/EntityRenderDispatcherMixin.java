@@ -3,11 +3,12 @@ package dev.anvilcraft.plasticraft.mixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticCollisionOutlineRenderer;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexCollisionOutline;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
-import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.phys.shapes.VoxelShape;
 import org.joml.Vector3f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -30,55 +31,40 @@ abstract class EntityRenderDispatcherMixin {
     ) {
         if (!(entity instanceof ShapedCollisionEntity shaped)) return;
 
-        renderCollisionShape(
+        if (entity instanceof AbstractPlasticEntity plastic) {
+            PlasticConvexCollisionOutline.PackedOutline outline = plastic.plasticraft$getCollisionOutline();
+            if (!outline.isEmpty()) {
+                Vec3 origin = plastic.plasticraft$getGeometry().entityOrigin();
+                PlasticCollisionOutlineRenderer.renderPackedOutline(
+                    poseStack,
+                    buffer,
+                    outline,
+                    -origin.x,
+                    -origin.y,
+                    -origin.z,
+                    red,
+                    green,
+                    blue,
+                    1.0F
+                );
+                renderDirectionVector(poseStack, buffer, entity, partialTick);
+                ci.cancel();
+                return;
+            }
+        }
+
+        PlasticCollisionOutlineRenderer.renderOutline(
             poseStack,
             buffer,
-            shaped.plasticraft$getCollisionShape(),
-            entity,
+            shaped.plasticraft$getCollisionBox(),
+            entity.position().scale(-1.0D),
             red,
             green,
-            blue
+            blue,
+            1.0F
         );
         renderDirectionVector(poseStack, buffer, entity, partialTick);
         ci.cancel();
-    }
-
-    private static void renderCollisionShape(
-        PoseStack poseStack,
-        VertexConsumer buffer,
-        VoxelShape shape,
-        Entity entity,
-        float red,
-        float green,
-        float blue
-    ) {
-        PoseStack.Pose pose = poseStack.last();
-        shape.forAllEdges((minX, minY, minZ, maxX, maxY, maxZ) -> {
-            float normalX = (float) (maxX - minX);
-            float normalY = (float) (maxY - minY);
-            float normalZ = (float) (maxZ - minZ);
-            float length = Mth.sqrt(normalX * normalX + normalY * normalY + normalZ * normalZ);
-            if (length <= 0.0F) return;
-            normalX /= length;
-            normalY /= length;
-            normalZ /= length;
-            buffer.addVertex(
-                    pose,
-                    (float) (minX - entity.getX()),
-                    (float) (minY - entity.getY()),
-                    (float) (minZ - entity.getZ())
-                )
-                .setColor(red, green, blue, 1.0F)
-                .setNormal(pose, normalX, normalY, normalZ);
-            buffer.addVertex(
-                    pose,
-                    (float) (maxX - entity.getX()),
-                    (float) (maxY - entity.getY()),
-                    (float) (maxZ - entity.getZ())
-                )
-                .setColor(red, green, blue, 1.0F)
-                .setNormal(pose, normalX, normalY, normalZ);
-        });
     }
 
     private static void renderDirectionVector(

@@ -7,14 +7,14 @@ import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContext;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContextHolder;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexCollisionResolver;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexShape;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.phys.shapes.BooleanOp;
-import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
@@ -22,6 +22,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.gen.Invoker;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
@@ -39,6 +40,22 @@ abstract class EntityCarrierCollisionMixin implements CarrierMoveContextHolder {
 
     @Invoker("collide")
     protected abstract Vec3 plasticraft$invokeCollide(Vec3 movement);
+
+    @ModifyArg(
+        method = "collide",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/world/level/Level;getEntityCollisions("
+                + "Lnet/minecraft/world/entity/Entity;"
+                + "Lnet/minecraft/world/phys/AABB;)Ljava/util/List;"
+        ),
+        index = 1
+    )
+    private AABB plasticraft$includeAdjacentCarrierContacts(AABB queryBounds) {
+        return queryBounds.inflate(
+            PlasticEntityPhysics.SUPPORT_PROBE_DEPTH + PlasticEntityPhysics.FACE_EPSILON
+        );
+    }
 
     @Inject(method = "move", at = @At("HEAD"))
     private void plasticraft$beginCarrierMove(MoverType type, Vec3 movement, CallbackInfo ci) {
@@ -85,9 +102,37 @@ abstract class EntityCarrierCollisionMixin implements CarrierMoveContextHolder {
         );
     }
 
+    /** 原版步进的候选位移也必须经过与首次移动相同的连续凸碰撞。 */
+    @Redirect(
+        method = "collide",
+        at = @At(
+            value = "INVOKE",
+            target = """
+                Lnet/minecraft/world/entity/Entity;collideWithShapes(\
+                Lnet/minecraft/world/phys/Vec3;\
+                Lnet/minecraft/world/phys/AABB;\
+                Ljava/util/List;)Lnet/minecraft/world/phys/Vec3;"""
+        )
+    )
+    private Vec3 plasticraft$collideStepWithPlasticShape(
+        Vec3 movement,
+        AABB collisionBox,
+        List<VoxelShape> colliders
+    ) {
+        Entity self = (Entity) (Object) this;
+        return ShapedCollisionEntity.collideBoundingBox(
+            self,
+            movement,
+            collisionBox,
+            self.level(),
+            colliders
+        );
+    }
+
     @ModifyReturnValue(method = "collide", at = @At("RETURN"))
     private Vec3 plasticraft$limitCarrierMovement(Vec3 actualMovement, Vec3 requestedMovement) {
         Entity self = (Entity) (Object) this;
+        actualMovement = plasticraft$resolveExactStep(self, actualMovement, requestedMovement);
         CarrierMoveContext context = this.plasticraft$carrierMoveContext;
         if (context == null || context.isRetryingCollision()) return actualMovement;
         Vec3 componentLimitedMovement = EntityBondManager.clampLeaderMovement(self, actualMovement);
@@ -155,19 +200,57 @@ abstract class EntityCarrierCollisionMixin implements CarrierMoveContextHolder {
         return limitedMovement;
     }
 
+    private static Vec3 plasticraft$resolveExactStep(
+        Entity entity,
+        Vec3 fallbackMovement,
+        Vec3 requestedMovement
+    ) {
+        AABB collisionBox = entity.getBoundingBox();
+        AABB sweptBounds = collisionBox.expandTowards(requestedMovement).inflate(entity.maxUpStep());
+        if (!PlasticConvexCollisionResolver.hasNonAxisAlignedExactObstacle(
+            entity,
+            requestedMovement,
+            sweptBounds,
+            entity.level()
+        )) {
+            return fallbackMovement;
+        }
+        Vec3 exactMovement = ShapedCollisionEntity.collideBoundingBox(
+            entity,
+            requestedMovement,
+            collisionBox,
+            entity.level(),
+            List.of()
+        );
+        return PlasticConvexCollisionResolver.resolveStepMovement(
+            entity,
+            requestedMovement,
+            collisionBox,
+            exactMovement
+        );
+    }
+
     private static boolean isSafeSteppedCollision(
         Entity carrier,
         Vec3 movement,
         List<CarrierMovableEntity> targets
     ) {
         if (movement.y <= PlasticEntityPhysics.FACE_EPSILON) return false;
-        VoxelShape movedCarrier = Shapes.create(carrier.getBoundingBox().move(movement));
+        List<PlasticConvexShape> movedCarrier = PlasticConvexCollisionResolver.collisionShapes(
+            carrier,
+            carrier.getBoundingBox().move(movement)
+        );
         for (CarrierMovableEntity target : targets) {
             if (!(target instanceof Entity targetEntity) || targetEntity.isRemoved()) continue;
-            if (Shapes.joinIsNotEmpty(
+            List<PlasticConvexShape> targetShapes = PlasticConvexCollisionResolver.collisionShapes(
+                targetEntity,
+                targetEntity.getBoundingBox(),
+                carrier,
+                movement
+            );
+            if (PlasticConvexCollisionResolver.intersects(
                 movedCarrier,
-                ShapedCollisionEntity.collisionShape(targetEntity),
-                BooleanOp.AND
+                targetShapes
             )) {
                 return false;
             }

@@ -1,0 +1,27 @@
+{
+  "format_version": 3,
+  "name": "Allay Hard Hat",
+  "requested_type": "anvilcraftplasticraft:allay_hard_hat",
+  "elements": [
+    {
+      "id": "a11a7a11-0001-4b00-8000-000000000001",
+      "name": "Brim",
+      "from": {"x": 18.5, "y": 22.0, "z": 18.5},
+      "to": {"x": 29.5, "y": 23.0, "z": 29.5},
+      "transform": {
+        "translation": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "pivot": {"x": 24.0, "y": 22.0, "z": 24.0}
+      }
+    },
+    {
+      "id": "a11a7a11-0002-4b00-8000-000000000002",
+      "name": "Crown",
+      "from": {"x": 20.0, "y": 23.0, "z": 20.0},
+      "to": {"x": 28.0, "y": 28.0, "z": 28.0},
+      "transform": {
+        "translation": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "pivot": {"x": 24.0, "y": 22.0, "z": 24.0}
+      }
+    }
+  ]
+}

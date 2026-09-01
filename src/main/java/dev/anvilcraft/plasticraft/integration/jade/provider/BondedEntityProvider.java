@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.integration.jade.provider;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -21,8 +21,8 @@ public enum BondedEntityProvider implements IEntityComponentProvider, IServerDat
     public void appendServerData(CompoundTag tag, EntityAccessor accessor) {
         tag.putBoolean(
             BONDED,
-            accessor.getEntity().hasData(ModAttachments.ENTITY_ADHESION)
-                || accessor.getEntity().hasData(ModAttachments.ENTITY_BONDS)
+            accessor.getEntity().hasData(PlasticraftAttachments.ENTITY_ADHESION)
+                || accessor.getEntity().hasData(PlasticraftAttachments.ENTITY_BONDS)
         );
     }
 

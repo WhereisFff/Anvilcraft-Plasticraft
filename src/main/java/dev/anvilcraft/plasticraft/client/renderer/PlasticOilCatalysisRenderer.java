@@ -3,8 +3,12 @@ package dev.anvilcraft.plasticraft.client.renderer;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.PlasticOilCauldronBlock;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
+import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
+import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.network.PlasticOilCatalysisSyncPacket;
 import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
 import net.minecraft.client.Minecraft;
@@ -98,12 +102,11 @@ public final class PlasticOilCatalysisRenderer {
         int packedLight,
         boolean renderBottom
     ) {
-        if (!fluid.is(ModFluids.PLASTIC_OIL.get())) return;
-        float progress = progress(level, pos, partialTick);
-        if (progress <= 0.0F) return;
-        renderMeltBox(
-            progress,
-            fluid.getAmount(),
+        renderContainerOverlay(
+            level,
+            pos,
+            partialTick,
+            fluid,
             minX,
             minY,
             minZ,
@@ -113,7 +116,48 @@ public final class PlasticOilCatalysisRenderer {
             buffers,
             pose,
             packedLight,
-            renderBottom
+            renderBottom,
+            false
+        );
+    }
+
+    /**
+     * 在透明塑料实体的延迟半透明阶段使用不写深度的流体批次，避免催化覆层遮住锅壳后侧。
+     */
+    public static void renderContainerOverlay(
+        Level level,
+        BlockPos pos,
+        float partialTick,
+        FluidStack fluid,
+        float minX,
+        float minY,
+        float minZ,
+        float maxX,
+        float maxY,
+        float maxZ,
+        MultiBufferSource buffers,
+        PoseStack pose,
+        int packedLight,
+        boolean renderBottom,
+        boolean deferredTransparent
+    ) {
+        if (!isReactiveSource(fluid)) return;
+        float progress = progress(level, pos, partialTick);
+        if (progress <= 0.0F) return;
+        renderMeltBox(
+            progress,
+            fluid,
+            minX,
+            minY,
+            minZ,
+            maxX,
+            maxY,
+            maxZ,
+            buffers,
+            pose,
+            packedLight,
+            renderBottom,
+            deferredTransparent
         );
     }
 
@@ -138,9 +182,26 @@ public final class PlasticOilCatalysisRenderer {
             if (progress <= 0.0F) continue;
 
             BlockState state = level.getBlockState(pos);
-            boolean cauldron = state.is(ModBlocks.PLASTIC_OIL_CAULDRON.get());
-            boolean source = level.getFluidState(pos).isSourceOfType(ModFluids.PLASTIC_OIL.get());
+            boolean plasticOilCauldron = state.is(PlasticraftBlocks.PLASTIC_OIL_CAULDRON.get());
+            boolean universalMeltCauldron = state.is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get());
+            boolean cauldron = plasticOilCauldron || universalMeltCauldron;
+            boolean plasticOilSource = level.getFluidState(pos).isSourceOfType(PlasticraftFluids.PLASTIC_OIL.get());
+            boolean universalMeltSource = level.getFluidState(pos)
+                .isSourceOfType(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get());
+            boolean source = plasticOilSource || universalMeltSource;
             if (!cauldron && !source) continue;
+            FluidStack sourceFluid = new FluidStack(
+                plasticOilCauldron || plasticOilSource
+                    ? PlasticraftFluids.PLASTIC_OIL.get()
+                    : PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(),
+                1_000
+            );
+            if (universalMeltCauldron) {
+                PlasticMeltColor.set(sourceFluid, state.getValue(UniversalPlasticMeltCauldronBlock.COLOR));
+            } else if (universalMeltSource
+                && level.getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity melt) {
+                PlasticMeltColor.set(sourceFluid, melt.getColor());
+            }
 
             pose.pushPose();
             pose.translate(pos.getX(), pos.getY(), pos.getZ());
@@ -149,7 +210,7 @@ public final class PlasticOilCatalysisRenderer {
                 float surface = cauldronSurface(state.getValue(PlasticOilCauldronBlock.LEVEL));
                 renderMeltBox(
                     progress,
-                    1_000,
+                    sourceFluid,
                     CAULDRON_MIN_XZ,
                     surface - 0.001F,
                     CAULDRON_MIN_XZ,
@@ -159,13 +220,14 @@ public final class PlasticOilCatalysisRenderer {
                     buffers,
                     pose,
                     packedLight,
+                    false,
                     false
                 );
             } else {
                 float surface = Math.min(0.999F, level.getFluidState(pos).getHeight(level, pos));
                 renderMeltBox(
                     progress,
-                    1_000,
+                    sourceFluid,
                     0.001F,
                     0.001F,
                     0.001F,
@@ -175,7 +237,8 @@ public final class PlasticOilCatalysisRenderer {
                     buffers,
                     pose,
                     packedLight,
-                    true
+                    true,
+                    false
                 );
             }
             pose.popPose();
@@ -202,7 +265,7 @@ public final class PlasticOilCatalysisRenderer {
 
     private static void renderMeltBox(
         float progress,
-        int amount,
+        FluidStack source,
         float minX,
         float minY,
         float minZ,
@@ -212,10 +275,18 @@ public final class PlasticOilCatalysisRenderer {
         MultiBufferSource buffers,
         PoseStack pose,
         int packedLight,
-        boolean renderBottom
+        boolean renderBottom,
+        boolean deferredTransparent
     ) {
         float opacity = smoothStep(Mth.clamp(progress, 0.0F, 1.0F));
-        FluidStack overlay = new FluidStack(ModFluids.UNIVERSAL_PLASTIC_MELT.get(), Math.max(1, amount));
+        PlasticMaterial sourceMaterial = PlasticMaterial.fromMelt(source).orElse(PlasticMaterial.UNIVERSAL);
+        PlasticMaterial outputMaterial = source.is(PlasticraftFluids.PLASTIC_OIL.get())
+            ? PlasticMaterial.UNIVERSAL
+            : sourceMaterial == PlasticMaterial.UNIVERSAL
+                ? PlasticMaterial.ENGINEERING
+                : sourceMaterial;
+        FluidStack overlay = new FluidStack(outputMaterial.melt(), Math.max(1, source.getAmount()));
+        PlasticMeltColor.set(overlay, PlasticMeltColor.get(source));
         UniversalPlasticMeltFluidExtension.setCatalysisOpacity(overlay, opacity);
         FluidRenderHelper.INSTANCE.renderFluidBox(
             overlay,
@@ -225,7 +296,7 @@ public final class PlasticOilCatalysisRenderer {
             maxX + BOX_OFFSET,
             maxY + BOX_OFFSET,
             maxZ + BOX_OFFSET,
-            buffers.getBuffer(RenderType.translucent()),
+            buffers.getBuffer(deferredTransparent ? ClearPlasticRenderTypes.fluid() : RenderType.translucent()),
             pose,
             packedLight,
             renderBottom,
@@ -235,6 +306,11 @@ public final class PlasticOilCatalysisRenderer {
 
     private static float smoothStep(float value) {
         return value * value * (3.0F - 2.0F * value);
+    }
+
+    private static boolean isReactiveSource(FluidStack fluid) {
+        return fluid.is(PlasticraftFluids.PLASTIC_OIL.get())
+            || fluid.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get());
     }
 
     private static float cauldronSurface(int level) {

@@ -3,7 +3,7 @@ package dev.anvilcraft.plasticraft.entity.adhesive;
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import dev.anvilcraft.plasticraft.block.BlockAdhesionState;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -28,8 +28,8 @@ public final class SurfaceAdhesiveService {
         if (!(entity.level() instanceof ServerLevel level)
             || !entity.isAlive()
             || entity instanceof Player
-            || entity.hasData(ModAttachments.ENTITY_ADHESION)
-            || entity.hasData(ModAttachments.ADHESIVE_TRANSIT)
+            || entity.hasData(PlasticraftAttachments.ENTITY_ADHESION)
+            || entity.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
             || EntityBondManager.hasBonds(entity)) {
             return;
         }
@@ -75,7 +75,7 @@ public final class SurfaceAdhesiveService {
     }
 
     private static boolean isAttachedTo(Entity entity, BlockPos supportPos, Direction face) {
-        EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+        EntityAdhesion adhesion = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
         return adhesion != null
             && adhesion.supportPos().equals(supportPos)
             && adhesion.attachmentFace() == face;

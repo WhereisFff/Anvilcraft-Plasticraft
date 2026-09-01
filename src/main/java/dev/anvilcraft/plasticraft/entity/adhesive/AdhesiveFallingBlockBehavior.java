@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.entity.adhesive;
 
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import dev.dubhe.anvilcraft.entity.FallingGiantAnvilEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -39,10 +39,11 @@ public final class AdhesiveFallingBlockBehavior {
     /** 返回是否应跳过本刻；作为粘合组基准的下落方块仍保留自身运动。 */
     public static boolean beforeTick(FallingBlockEntity entity) {
         if (entity instanceof AbstractPlasticEntity) return false;
+        if (entity.isRemoved()) return true;
 
         boolean hasBonds = EntityBondManager.hasBonds(entity);
-        boolean controlled = entity.hasData(ModAttachments.ADHESIVE_TRANSIT)
-            || entity.hasData(ModAttachments.ENTITY_ADHESION);
+        boolean controlled = entity.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
+            || entity.hasData(PlasticraftAttachments.ENTITY_ADHESION);
         if (hasBonds || controlled) entity.time = 0;
         if (hasBonds && entity instanceof FallingGiantAnvilEntity) return true;
         return controlled;
@@ -55,8 +56,8 @@ public final class AdhesiveFallingBlockBehavior {
     public static void afterTick(FallingBlockEntity entity) {
         if (entity instanceof AbstractPlasticEntity) return;
         if (EntityBondManager.hasBonds(entity)
-            || entity.hasData(ModAttachments.ADHESIVE_TRANSIT)
-            || entity.hasData(ModAttachments.ENTITY_ADHESION)) {
+            || entity.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
+            || entity.hasData(PlasticraftAttachments.ENTITY_ADHESION)) {
             entity.time = 0;
         }
     }
@@ -76,24 +77,34 @@ public final class AdhesiveFallingBlockBehavior {
     }
 
     public static void afterLanding(ServerLevel level, FallingBlockEntity fallingBlock, BlockPos placedPos) {
+        AdhesiveBondingService.onBlockified(fallingBlock);
         if (fallingBlock instanceof AbstractPlasticEntity || fallingBlock instanceof FallingGiantAnvilEntity) return;
         EntityBondState state = EntityBondManager.get(fallingBlock);
         if (state == null) return;
 
-        Map<UUID, Entity> neighbors = new LinkedHashMap<>();
+        Map<UUID, Neighbor> neighbors = new LinkedHashMap<>();
         for (EntityBondLink link : state.links()) {
             Entity neighbor = EntityBondManager.resolve(level, link);
-            if (neighbor != null && neighbor.isAlive()) neighbors.put(neighbor.getUUID(), neighbor);
+            if (neighbor != null && neighbor.isAlive()) {
+                neighbors.put(neighbor.getUUID(), new Neighbor(neighbor, link.invisible()));
+            }
         }
         EntityBondManager.disconnectEntity(level, fallingBlock);
 
-        Map<UUID, Entity> anchors = new LinkedHashMap<>();
-        for (Entity neighbor : neighbors.values()) {
+        Map<UUID, Neighbor> anchors = new LinkedHashMap<>();
+        for (Neighbor entry : neighbors.values()) {
+            Entity neighbor = entry.entity();
             Entity leader = EntityBondManager.resolveLeader(level, neighbor);
             if (leader == null || !leader.isAlive()) leader = neighbor;
-            anchors.put(leader.getUUID(), leader);
+            Neighbor candidate = new Neighbor(leader, entry.invisible());
+            anchors.merge(
+                leader.getUUID(),
+                candidate,
+                (first, second) -> new Neighbor(first.entity(), first.invisible() || second.invisible())
+            );
         }
-        for (Entity anchor : anchors.values()) {
+        for (Neighbor entry : anchors.values()) {
+            Entity anchor = entry.entity();
             Direction face = Direction.getNearest(
                 anchor.getBoundingBox().getCenter().subtract(placedPos.getCenter())
             );
@@ -105,13 +116,18 @@ public final class AdhesiveFallingBlockBehavior {
                     level.getBlockState(placedPos).getBlock()
                 ),
                 anchor.position(),
-                anchor.isNoGravity()
+                anchor.isNoGravity(),
+                entry.invisible()
             );
-            anchor.setData(ModAttachments.ENTITY_ADHESION, adhesion);
+            anchor.setData(PlasticraftAttachments.ENTITY_ADHESION, adhesion);
+            if (entry.invisible()) BondedFallingBlocks.setInvisible(level, placedPos, face);
             anchor.setDeltaMovement(Vec3.ZERO);
             anchor.fallDistance = 0.0F;
             anchor.hasImpulse = true;
             anchor.hurtMarked = true;
         }
+    }
+
+    private record Neighbor(Entity entity, boolean invisible) {
     }
 }

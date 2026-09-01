@@ -1,0 +1,134 @@
+{
+  "blueprint_format": 1,
+  "file_revision": 2,
+  "name": "anvil",
+  "owner": {
+    "uuid": "380df991-f603-344c-a090-369bad2a924a",
+    "name": "Dev"
+  },
+  "workspace": {
+    "coordinate_system": "world_xyz_px",
+    "units_per_block": 16,
+    "size": [
+      48,
+      48,
+      48
+    ]
+  },
+  "type_suggestion": "anvilcraftplasticraft:anvil",
+  "created_at": 1786862586195,
+  "updated_at": 1786862597961,
+  "bake_version": 1,
+  "model_hash": "8830bb0cd8664d7a21b89309d6a27d77855e8c449e4201d13e3fe2b752a7d707",
+  "model": {
+    "requested_type": "anvilcraftplasticraft:anvil",
+    "elements": [
+      {
+        "to": {
+          "x": 29.0,
+          "y": 20.0,
+          "z": 30.0
+        },
+        "transform": {
+          "translation": {
+            "x": 1.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "pivot": {
+            "x": 23.0,
+            "y": 24.0,
+            "z": 24.0
+          }
+        },
+        "id": "7d024044-60d4-47f1-a6aa-32eb7624f240",
+        "name": "Cube 1",
+        "from": {
+          "x": 17.0,
+          "y": 16.0,
+          "z": 18.0
+        }
+      },
+      {
+        "to": {
+          "x": 21.0,
+          "y": 22.0,
+          "z": 19.0
+        },
+        "transform": {
+          "translation": {
+            "x": 7.0,
+            "y": 4.0,
+            "z": 7.0
+          },
+          "pivot": {
+            "x": 17.0,
+            "y": 20.0,
+            "z": 17.0
+          }
+        },
+        "id": "68e0d801-3dad-45c0-8f1c-1ce1b09dced8",
+        "name": "Cube 2",
+        "from": {
+          "x": 13.0,
+          "y": 16.0,
+          "z": 15.0
+        }
+      },
+      {
+        "to": {
+          "x": 25.0,
+          "y": 27.0,
+          "z": 26.0
+        },
+        "transform": {
+          "translation": {
+            "x": 7.0,
+            "y": 5.0,
+            "z": 3.0
+          },
+          "pivot": {
+            "x": 17.0,
+            "y": 19.0,
+            "z": 21.0
+          }
+        },
+        "id": "804e3076-9b60-4220-8307-c3ffb987817d",
+        "name": "Cube 3",
+        "from": {
+          "x": 9.0,
+          "y": 21.0,
+          "z": 16.0
+        }
+      },
+      {
+        "to": {
+          "x": 26.0,
+          "y": 18.0,
+          "z": 25.0
+        },
+        "transform": {
+          "translation": {
+            "x": 3.0,
+            "y": 3.0,
+            "z": 3.0
+          },
+          "pivot": {
+            "x": 21.0,
+            "y": 21.0,
+            "z": 21.0
+          }
+        },
+        "id": "9070527b-aec3-4f37-9554-aa9d021cc059",
+        "name": "Cube 4",
+        "from": {
+          "x": 16.0,
+          "y": 17.0,
+          "z": 17.0
+        }
+      }
+    ],
+    "format_version": 3,
+    "name": "anvil"
+  }
+}

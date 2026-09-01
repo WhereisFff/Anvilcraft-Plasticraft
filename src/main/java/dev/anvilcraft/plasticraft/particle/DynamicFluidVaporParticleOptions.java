@@ -3,7 +3,7 @@ package dev.anvilcraft.plasticraft.particle;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import dev.anvilcraft.plasticraft.init.ModParticles;
+import dev.anvilcraft.plasticraft.init.PlasticraftParticles;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleType;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -68,6 +68,6 @@ public record DynamicFluidVaporParticleOptions(
 
     @Override
     public ParticleType<?> getType() {
-        return ModParticles.DYNAMIC_FLUID_VAPOR.get();
+        return PlasticraftParticles.DYNAMIC_FLUID_VAPOR.get();
     }
 }

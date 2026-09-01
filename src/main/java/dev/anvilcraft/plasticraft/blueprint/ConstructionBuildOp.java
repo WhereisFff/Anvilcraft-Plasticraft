@@ -1,0 +1,462 @@
+package dev.anvilcraft.plasticraft.blueprint;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtUtils;
+import net.minecraft.nbt.Tag;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.neoforge.fluids.FluidStack;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+
+/** 一份规范快照方块对应的施工操作。 */
+public final class ConstructionBuildOp {
+    public enum Kind {
+        PLACE,
+        ATTACHED,
+        UNSUPPORTED,
+        SEAL,
+        DEMOLISH,
+        CONTENT,
+        FLUID,
+        ENTITY,
+        /** 已交付方块上的二次加工,例如告示牌书写、染色、发光、打蜡。 */
+        DECORATE
+    }
+
+    public enum Status {
+        PENDING,
+        WAITING_WORLD,
+        WAITING_OCCUPIED,
+        LEASED,
+        DELIVERED,
+        SKIPPED
+    }
+
+    private final int id;
+    private final BlockPos pos;
+    private final BlockState target;
+    private ItemStack material;
+    private final Kind kind;
+    private Status status;
+    private int order;
+    @Nullable
+    private UUID leaseAllay;
+    @Nullable
+    private BlockPos approach;
+    private boolean shell;
+    private int parentId = -1;
+    private int slot = -1;
+    @Nullable
+    private CompoundTag blockEntity;
+    private FluidStack fluid = FluidStack.EMPTY;
+    @Nullable
+    private CompoundTag entityNbt;
+    private ItemStack returnStack = ItemStack.EMPTY;
+    private boolean longReach;
+    /** 该方块由世界中已有的精确状态满足,不再写入虚拟投影。 */
+    private boolean worldSatisfied;
+    /** 施工阶段由外部方块变更反应式追加的拆除操作。 */
+    private boolean reactive;
+    /** 上一次登记进任务索引时的贡献位,见 ConstructionJobProgress 的增量索引;只由进度对象读写。 */
+    private int indexBits;
+    /** 连续确认"飞不到"的次数;累计到阈值才压一段重试冷却,避免悦灵原地重领同一操作空转。 */
+    private int unreachableStrikes;
+    /** 不可达退避到期的游戏刻;冷却期内派发轮空,该位置仍然是待办,不作废也不计入残缺。 */
+    private long retryAfter;
+    private Runnable enclosureInvalidator = () -> {
+    };
+    private Runnable orderInvalidator = () -> {
+    };
+    private Runnable layoutInvalidator = () -> {
+    };
+    private Runnable statusInvalidator = () -> {
+    };
+    private Runnable topologyInvalidator = () -> {
+    };
+
+    public ConstructionBuildOp(
+        int id,
+        BlockPos pos,
+        BlockState target,
+        ItemStack material,
+        Kind kind,
+        Status status,
+        int order
+    ) {
+        this.id = id;
+        this.pos = pos.immutable();
+        this.target = target;
+        this.material = material.copy();
+        this.kind = kind;
+        this.status = status;
+        this.order = order;
+    }
+
+    public int id() {
+        return this.id;
+    }
+
+    public BlockPos pos() {
+        return this.pos;
+    }
+
+    public BlockState target() {
+        return this.target;
+    }
+
+    public ItemStack material() {
+        return this.material;
+    }
+
+    public void setMaterial(ItemStack material) {
+        this.material = material.isEmpty() ? ItemStack.EMPTY : material.copy();
+        this.orderInvalidator.run();
+    }
+
+    public Kind kind() {
+        return this.kind;
+    }
+
+    public Status status() {
+        return this.status;
+    }
+
+    public void setStatus(Status status) {
+        if (this.status == status) return;
+        Status previous = this.status;
+        this.status = status;
+        if (enclosureRelevant(previous) || enclosureRelevant(status)) {
+            this.enclosureInvalidator.run();
+        }
+        if (previous == Status.SKIPPED || status == Status.SKIPPED) {
+            this.layoutInvalidator.run();
+        }
+        this.statusInvalidator.run();
+    }
+
+    public int order() {
+        return this.order;
+    }
+
+    public void setOrder(int order) {
+        if (this.order == order) return;
+        this.order = order;
+        this.orderInvalidator.run();
+    }
+
+    public Optional<UUID> leaseAllay() {
+        return Optional.ofNullable(this.leaseAllay);
+    }
+
+    public void setLeaseAllay(@Nullable UUID allayId) {
+        if (Objects.equals(this.leaseAllay, allayId)) return;
+        this.leaseAllay = allayId;
+        // 租约归属决定"未认领数"和串行封口集合,必须和状态一起进增量索引
+        this.statusInvalidator.run();
+    }
+
+    int indexBits() {
+        return this.indexBits;
+    }
+
+    void setIndexBits(int indexBits) {
+        this.indexBits = indexBits;
+    }
+
+    public Optional<BlockPos> approach() {
+        return Optional.ofNullable(this.approach);
+    }
+
+    public void setApproach(@Nullable BlockPos approach) {
+        this.approach = approach == null ? null : approach.immutable();
+    }
+
+    /** 记一次"飞不到"并返回累计次数。 */
+    public int noteUnreachable() {
+        return ++this.unreachableStrikes;
+    }
+
+    /** 悦灵已经能够到该目标,之前的不可达记录与退避一并作废。 */
+    public void clearUnreachable() {
+        this.unreachableStrikes = 0;
+        this.retryAfter = 0L;
+    }
+
+    /** 压一段不可达退避:清零计数重新开始累计,冷却期内不再派发这个位置。 */
+    public void deferUntil(long gameTime) {
+        this.unreachableStrikes = 0;
+        this.retryAfter = gameTime;
+    }
+
+    public boolean isDeferred(long gameTime) {
+        return this.retryAfter > gameTime;
+    }
+
+    public long retryAfter() {
+        return this.retryAfter;
+    }
+
+    public boolean shell() {
+        return this.shell;
+    }
+
+    public void setShell(boolean shell) {
+        if (this.shell == shell) return;
+        this.shell = shell;
+        this.enclosureInvalidator.run();
+        this.orderInvalidator.run();
+        this.statusInvalidator.run();
+    }
+
+    public int parentId() {
+        return this.parentId;
+    }
+
+    public void setParentId(int parentId) {
+        if (this.parentId == parentId) return;
+        this.parentId = parentId;
+        this.enclosureInvalidator.run();
+        this.topologyInvalidator.run();
+    }
+
+    public int slot() {
+        return this.slot;
+    }
+
+    public void setSlot(int slot) {
+        this.slot = slot;
+    }
+
+    @Nullable
+    public CompoundTag blockEntity() {
+        return this.blockEntity;
+    }
+
+    public void setBlockEntity(@Nullable CompoundTag blockEntity) {
+        this.blockEntity = blockEntity == null || blockEntity.isEmpty() ? null : blockEntity.copy();
+    }
+
+    public FluidStack fluid() {
+        return this.fluid.copy();
+    }
+
+    public void setFluid(FluidStack fluid) {
+        this.fluid = fluid == null || fluid.isEmpty() ? FluidStack.EMPTY : fluid.copy();
+    }
+
+    @Nullable
+    public CompoundTag entityNbt() {
+        return this.entityNbt;
+    }
+
+    public void setEntityNbt(@Nullable CompoundTag entityNbt) {
+        this.entityNbt = entityNbt == null || entityNbt.isEmpty() ? null : entityNbt.copy();
+    }
+
+    public ItemStack returnStack() {
+        return this.returnStack;
+    }
+
+    public void setReturnStack(ItemStack returnStack) {
+        this.returnStack = returnStack == null || returnStack.isEmpty() ? ItemStack.EMPTY : returnStack.copy();
+    }
+
+    public boolean longReach() {
+        return this.longReach;
+    }
+
+    public void setLongReach(boolean longReach) {
+        this.longReach = longReach;
+    }
+
+    public boolean worldSatisfied() {
+        return this.worldSatisfied;
+    }
+
+    public void setWorldSatisfied(boolean worldSatisfied) {
+        if (this.worldSatisfied == worldSatisfied) return;
+        this.worldSatisfied = worldSatisfied;
+        this.layoutInvalidator.run();
+        this.statusInvalidator.run();
+    }
+
+    public boolean reactive() {
+        return this.reactive;
+    }
+
+    public void setReactive(boolean reactive) {
+        if (this.reactive == reactive) return;
+        this.reactive = reactive;
+        this.orderInvalidator.run();
+        this.statusInvalidator.run();
+    }
+
+    void bindInvalidators(
+        Runnable enclosureInvalidator,
+        Runnable orderInvalidator,
+        Runnable layoutInvalidator,
+        Runnable statusInvalidator,
+        Runnable topologyInvalidator
+    ) {
+        this.enclosureInvalidator = enclosureInvalidator;
+        this.orderInvalidator = orderInvalidator;
+        this.layoutInvalidator = layoutInvalidator;
+        this.statusInvalidator = statusInvalidator;
+        this.topologyInvalidator = topologyInvalidator;
+    }
+
+    private static boolean enclosureRelevant(Status status) {
+        return status == Status.LEASED || status == Status.DELIVERED || status == Status.SKIPPED;
+    }
+
+    public boolean needsMaterial() {
+        if (this.kind == Kind.FLUID && !this.fluid.isEmpty()) {
+            return true;
+        }
+        return (this.kind == Kind.PLACE
+            || this.kind == Kind.SEAL
+            || this.kind == Kind.CONTENT
+            || this.kind == Kind.ENTITY
+            || this.kind == Kind.DECORATE)
+            && !this.material.isEmpty();
+    }
+
+    public boolean isBuildMaterial() {
+        return this.kind == Kind.PLACE
+            || this.kind == Kind.ATTACHED
+            || this.kind == Kind.CONTENT
+            || this.kind == Kind.FLUID
+            || this.kind == Kind.ENTITY
+            || this.kind == Kind.DECORATE;
+    }
+
+    /**
+     * PLACE/ATTACHED 才写入施工投影;SEAL/DEMOLISH 的 DELIVERED 只表示该阶段完成。
+     * DECORATE 只更新父方块已有投影的加工掩码,不自己占格。
+     */
+    public boolean writesProjection() {
+        return (this.kind == Kind.PLACE || this.kind == Kind.ATTACHED) && !this.worldSatisfied;
+    }
+
+    public boolean isOpen() {
+        return this.status == Status.PENDING
+            || this.status == Status.WAITING_WORLD
+            || this.status == Status.WAITING_OCCUPIED
+            || this.status == Status.LEASED;
+    }
+
+    public CompoundTag save(HolderLookup.Provider registries) {
+        CompoundTag tag = new CompoundTag();
+        tag.putInt("Id", this.id);
+        tag.putLong("Pos", this.pos.asLong());
+        tag.put("Target", NbtUtils.writeBlockState(this.target));
+        if (!this.material.isEmpty()) {
+            tag.put("Material", this.material.save(registries));
+        }
+        tag.putString("Kind", this.kind.name());
+        tag.putString("Status", this.status.name());
+        tag.putInt("Order", this.order);
+        if (this.leaseAllay != null) {
+            tag.putUUID("LeaseAllay", this.leaseAllay);
+        }
+        if (this.approach != null) {
+            tag.putLong("Approach", this.approach.asLong());
+        }
+        if (this.shell) {
+            tag.putBoolean("Shell", true);
+        }
+        if (this.parentId >= 0) {
+            tag.putInt("ParentId", this.parentId);
+        }
+        if (this.blockEntity != null) {
+            tag.put("BlockEntity", this.blockEntity.copy());
+        }
+        if (this.slot >= 0) {
+            tag.putInt("Slot", this.slot);
+        }
+        if (!this.fluid.isEmpty()) {
+            tag.put("Fluid", this.fluid.save(registries));
+        }
+        if (this.entityNbt != null) {
+            tag.put("EntityNbt", this.entityNbt.copy());
+        }
+        if (!this.returnStack.isEmpty()) {
+            tag.put("Return", this.returnStack.save(registries));
+        }
+        if (this.longReach) {
+            tag.putBoolean("LongReach", true);
+        }
+        if (this.worldSatisfied) {
+            tag.putBoolean("WorldSatisfied", true);
+        }
+        if (this.reactive) {
+            tag.putBoolean("Reactive", true);
+        }
+        if (this.unreachableStrikes > 0) {
+            tag.putInt("Unreachable", this.unreachableStrikes);
+        }
+        if (this.retryAfter > 0L) {
+            tag.putLong("RetryAfter", this.retryAfter);
+        }
+        return tag;
+    }
+
+    public static ConstructionBuildOp load(CompoundTag tag, HolderLookup.Provider registries) {
+        BlockState target = NbtUtils.readBlockState(
+            registries.lookupOrThrow(Registries.BLOCK),
+            tag.getCompound("Target")
+        );
+        ItemStack material = tag.contains("Material")
+            ? ItemStack.parse(registries, tag.getCompound("Material")).orElse(ItemStack.EMPTY)
+            : ItemStack.EMPTY;
+        Kind kind = Kind.valueOf(tag.getString("Kind"));
+        Status status = Status.valueOf(tag.getString("Status"));
+        ConstructionBuildOp op = new ConstructionBuildOp(
+            tag.getInt("Id"),
+            BlockPos.of(tag.getLong("Pos")),
+            target,
+            material,
+            kind,
+            status,
+            tag.getInt("Order")
+        );
+        if (tag.hasUUID("LeaseAllay")) {
+            op.leaseAllay = tag.getUUID("LeaseAllay");
+        }
+        if (tag.contains("Approach")) {
+            op.approach = BlockPos.of(tag.getLong("Approach"));
+        }
+        op.shell = tag.getBoolean("Shell");
+        if (tag.contains("ParentId")) {
+            op.parentId = tag.getInt("ParentId");
+        }
+        if (tag.contains("BlockEntity", Tag.TAG_COMPOUND)) {
+            op.blockEntity = tag.getCompound("BlockEntity").copy();
+        }
+        if (tag.contains("Slot")) {
+            op.slot = tag.getInt("Slot");
+        }
+        if (tag.contains("Fluid")) {
+            op.fluid = FluidStack.parse(registries, tag.get("Fluid")).orElse(FluidStack.EMPTY);
+        }
+        if (tag.contains("EntityNbt", Tag.TAG_COMPOUND)) {
+            op.entityNbt = tag.getCompound("EntityNbt").copy();
+        }
+        if (tag.contains("Return")) {
+            op.returnStack = ItemStack.parse(registries, tag.getCompound("Return")).orElse(ItemStack.EMPTY);
+        }
+        op.longReach = tag.getBoolean("LongReach");
+        op.worldSatisfied = tag.getBoolean("WorldSatisfied");
+        op.reactive = tag.getBoolean("Reactive");
+        op.unreachableStrikes = tag.getInt("Unreachable");
+        op.retryAfter = tag.getLong("RetryAfter");
+        return op;
+    }
+}

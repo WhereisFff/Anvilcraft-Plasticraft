@@ -1,0 +1,19 @@
+{
+  "variants": {
+    "facing=east": {
+      "model": "anvilcraftplasticraft:block/allay_lounge",
+      "y": 90
+    },
+    "facing=north": {
+      "model": "anvilcraftplasticraft:block/allay_lounge"
+    },
+    "facing=south": {
+      "model": "anvilcraftplasticraft:block/allay_lounge",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "anvilcraftplasticraft:block/allay_lounge",
+      "y": 270
+    }
+  }
+}

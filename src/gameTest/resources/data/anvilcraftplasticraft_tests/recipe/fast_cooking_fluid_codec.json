@@ -7,6 +7,8 @@
       "items": "minecraft:stick"
     }
   ],
-  "produce": 1000,
-  "transform": "minecraft:lava"
+  "transform": {
+    "id": "minecraft:lava",
+    "amount": 1000
+  }
 }

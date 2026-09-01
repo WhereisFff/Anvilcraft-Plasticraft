@@ -2,17 +2,20 @@ package dev.anvilcraft.plasticraft.item;
 
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticNames;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
-
 import java.util.function.Supplier;
 
 /** 把熔体颜色写入显示方块状态，并直接放置对应的可移动塑料实体。 */
-public class UniversalPlasticBlockItem extends AbstractPlasticEntityItem<UniversalPlasticEntity> {
+public class UniversalPlasticBlockItem extends AbstractPlasticEntityItem<UniversalPlasticEntity>
+    implements CreativeColorVariantItem {
     public UniversalPlasticBlockItem(
         Block block,
         Properties properties,
@@ -24,7 +27,29 @@ public class UniversalPlasticBlockItem extends AbstractPlasticEntityItem<Univers
 
     @Override
     protected BlockState prepareDisplayState(ItemStack stack, BlockState state) {
-        return state.setValue(DyeableMaterial.COLOR, PlasticMeltColor.get(stack));
+        if (!state.hasProperty(DyeableMaterial.COLOR) || !this.supportsDyeing()) return state;
+        return state.setValue(
+            DyeableMaterial.COLOR,
+            MoldedPlasticData.get(stack)
+                .map(data -> PlasticMeltColor.get(data.material()))
+                .orElseGet(() -> PlasticMeltColor.get(stack))
+        );
+    }
+
+    @Override
+    public Component getName(ItemStack stack) {
+        return MoldedPlasticData.get(stack)
+            .map(data -> MoldedPlasticNames.create(stack, data))
+            .orElseGet(() -> super.getName(stack));
+    }
+
+    @Override
+    public int getMaxStackSize(ItemStack stack) {
+        return MoldedPlasticData.get(stack)
+            .filter(data -> data.hasStoredContents() || !data.contents().isEmpty())
+            .isPresent()
+            ? 1
+            : super.getMaxStackSize(stack);
     }
 
     @Override

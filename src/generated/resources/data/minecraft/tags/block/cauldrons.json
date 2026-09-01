@@ -4,6 +4,9 @@
     "anvilcraftplasticraft:high_heat_fuel_cauldron",
     "anvilcraftplasticraft:plastic_oil_cauldron",
     "anvilcraftplasticraft:universal_plastic_melt_cauldron",
+    "anvilcraftplasticraft:engineering_plastic_melt_cauldron",
+    "anvilcraftplasticraft:heat_resistant_plastic_melt_cauldron",
+    "anvilcraftplasticraft:clear_plastic_melt_cauldron",
     "anvilcraftplasticraft:hardend_resin_cauldron"
   ]
 }

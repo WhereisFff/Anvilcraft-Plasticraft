@@ -1,0 +1,32 @@
+{
+  "type": "anvilcraftplasticraft:plastic_molding_chamber",
+  "category": "misc",
+  "key": {
+    "C": [
+      {
+        "item": "anvilcraft:supercapacitor"
+      },
+      {
+        "item": "anvilcraft:supercapacitor_empty"
+      }
+    ],
+    "P": {
+      "item": "anvilcraft:pipe"
+    },
+    "S": {
+      "item": "anvilcraft:structure_scanner"
+    },
+    "T": {
+      "item": "anvilcraft:fluid_tank"
+    }
+  },
+  "pattern": [
+    " P ",
+    "TSC",
+    " P "
+  ],
+  "result": {
+    "count": 1,
+    "id": "anvilcraftplasticraft:plastic_molding_chamber"
+  }
+}

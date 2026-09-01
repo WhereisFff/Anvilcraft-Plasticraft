@@ -2,8 +2,8 @@ package dev.anvilcraft.plasticraft.recipe;
 
 import dev.anvilcraft.lib.v2.recipe.cache.BlockCache;
 import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.dubhe.anvilcraft.api.block.IIgnitableCauldron;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
 import net.minecraft.core.BlockPos;
@@ -33,11 +33,11 @@ public final class EnhancedPlasmaJetFuel {
         if (entityResult != null) return entityResult;
         BlockCache cache = new BlockCache(level);
         if (!(cache.getBlockState(pos).getBlock() instanceof IIgnitableCauldron cauldron)) return false;
-        return cauldron.isIgnited(cache, pos) && cauldron.getFluid(cache, pos) == ModFluids.HIGH_HEAT_FUEL.get();
+        return cauldron.isIgnited(cache, pos) && cauldron.getFluid(cache, pos) == PlasticraftFluids.HIGH_HEAT_FUEL.get();
     }
 
     public static boolean isValidBase(Level level, BlockPos pos) {
-        if (level.getBlockState(pos).is(ModBlocks.HIGH_HEAT_FUEL_CAULDRON.get())) {
+        if (level.getBlockState(pos).is(PlasticraftBlocks.HIGH_HEAT_FUEL_CAULDRON.get())) {
             return true;
         }
         Boolean entityResult = HardenedResinCauldronSupport.hasHighHeatFuel(level, pos);
@@ -45,7 +45,7 @@ public final class EnhancedPlasmaJetFuel {
         FluidContainerLookup.Result endpoint = FluidContainerLookup.find(level, pos, null);
         if (endpoint == null) return false;
         for (int tank = 0; tank < endpoint.handler().getTanks(); tank++) {
-            if (endpoint.handler().getFluidInTank(tank).is(ModFluids.HIGH_HEAT_FUEL.get())) return true;
+            if (endpoint.handler().getFluidInTank(tank).is(PlasticraftFluids.HIGH_HEAT_FUEL.get())) return true;
         }
         return false;
     }
@@ -59,7 +59,7 @@ public final class EnhancedPlasmaJetFuel {
         if (entityResult != null) return entityResult;
         FluidContainerLookup.Result endpoint = FluidContainerLookup.find(level, pos, null);
         if (endpoint == null) return false;
-        FluidStack request = new FluidStack(ModFluids.HIGH_HEAT_FUEL.get(), CONSUMPTION_PER_TICK);
+        FluidStack request = new FluidStack(PlasticraftFluids.HIGH_HEAT_FUEL.get(), CONSUMPTION_PER_TICK);
         FluidStack simulated = endpoint.handler().drain(request, IFluidHandler.FluidAction.SIMULATE);
         if (!FluidStack.matches(simulated, request)) return false;
         FluidStack drained = endpoint.handler().drain(request, IFluidHandler.FluidAction.EXECUTE);

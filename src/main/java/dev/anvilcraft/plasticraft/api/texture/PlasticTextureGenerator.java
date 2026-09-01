@@ -12,14 +12,14 @@ import java.util.Set;
 /**
  * 与方块、实体和成型舱解耦的任意表面塑料贴图生成器。
  *
- * <p>图集布局只依赖规范化后的表面列表；基础贴图级别、边缘距离、凹槽和邻近遮蔽
+ * <p>图集布局只依赖规范化后的表面列表；基础贴图级别、凹槽和邻近遮蔽
  * 全部量化到统一的 0 至 15 灰度空间，再由指定色板行着色。</p>
  */
 public final class PlasticTextureGenerator {
-    public static final int VERSION = 3;
+    public static final int VERSION = 8;
 
     private static final int PADDING = 1;
-    private static final int MAX_ATLAS_SIZE = 4096;
+    public static final int MAX_ATLAS_SIZE = 4096;
 
     private PlasticTextureGenerator() {
     }
@@ -27,7 +27,7 @@ public final class PlasticTextureGenerator {
     /** 生成带颜色的图集与表面到 UV 的稳定映射。 */
     public static GeneratedPlasticTexture generate(
         PlasticTextureInput input,
-        PlasticGrayscaleImage base,
+        PlasticBaseTextureSet bases,
         PlasticColorPalette palette
     ) {
         if (input.generatorVersion() != VERSION) {
@@ -48,7 +48,48 @@ public final class PlasticTextureGenerator {
         for (Map.Entry<String, PlasticTextureLayout.UvRegion> entry : layout.regions().entrySet()) {
             PlasticSurface surface = surfacesById.get(entry.getKey());
             PlasticTextureLayout.UvRegion region = entry.getValue();
-            renderSurface(base, palette, input.paletteRow(), surface, region, layout, colors, grayscale);
+            renderSurface(bases, palette, input.paletteRow(), surface, region, layout, colors, grayscale);
+        }
+        return new GeneratedPlasticTexture(layout, colors, grayscale);
+    }
+
+    /**
+     * 生成带有色板色相的半透明玻璃纹理。
+     *
+     * <p>色板只决定染色玻璃的色相和明暗，基础贴图仍决定边缘高光、凹槽和遮蔽；
+     * 生成结果保留透明通道，避免把透明塑料退化成不透明的彩色塑料。</p>
+     */
+    public static GeneratedPlasticTexture generateTransparent(
+        PlasticTextureInput input,
+        PlasticBaseTextureSet bases,
+        PlasticColorPalette palette
+    ) {
+        if (input.generatorVersion() != VERSION) {
+            throw new IllegalArgumentException("Unsupported plastic texture generator version: " + input.generatorVersion());
+        }
+        if (input.paletteRow() >= palette.rows()) {
+            throw new IllegalArgumentException("Plastic palette row is unavailable: " + input.paletteRow());
+        }
+        PlasticTextureLayout layout = layout(input.surfaces());
+        int pixelCount = layout.atlasWidth() * layout.atlasHeight();
+        int[] colors = new int[pixelCount];
+        byte[] grayscale = new byte[pixelCount];
+        Arrays.fill(grayscale, (byte) -1);
+        Map<String, PlasticSurface> surfacesById = new LinkedHashMap<>();
+        canonicalSurfaces(input.surfaces()).forEach(surface -> surfacesById.put(surface.id(), surface));
+        for (Map.Entry<String, PlasticTextureLayout.UvRegion> entry : layout.regions().entrySet()) {
+            PlasticSurface surface = surfacesById.get(entry.getKey());
+            PlasticTextureLayout.UvRegion region = entry.getValue();
+            renderTransparentSurface(
+                bases,
+                palette,
+                input.paletteRow(),
+                surface,
+                region,
+                layout,
+                colors,
+                grayscale
+            );
         }
         return new GeneratedPlasticTexture(layout, colors, grayscale);
     }
@@ -124,7 +165,7 @@ public final class PlasticTextureGenerator {
     }
 
     private static void renderSurface(
-        PlasticGrayscaleImage base,
+        PlasticBaseTextureSet bases,
         PlasticColorPalette palette,
         int paletteRow,
         PlasticSurface surface,
@@ -133,6 +174,7 @@ public final class PlasticTextureGenerator {
         int[] colors,
         byte[] grayscale
     ) {
+        PlasticGrayscaleImage base = bases.select(surface.pixelWidth(), surface.pixelHeight());
         // 连同一纹素边距一起生成并复制边缘颜色，降低图集 mipmap 采样串色。
         for (int paddedY = -PADDING; paddedY < region.height() + PADDING; paddedY++) {
             for (int paddedX = -PADDING; paddedX < region.width() + PADDING; paddedX++) {
@@ -148,28 +190,66 @@ public final class PlasticTextureGenerator {
         }
     }
 
+    private static void renderTransparentSurface(
+        PlasticBaseTextureSet bases,
+        PlasticColorPalette palette,
+        int paletteRow,
+        PlasticSurface surface,
+        PlasticTextureLayout.UvRegion region,
+        PlasticTextureLayout layout,
+        int[] colors,
+        byte[] grayscale
+    ) {
+        PlasticGrayscaleImage base = bases.select(surface.pixelWidth(), surface.pixelHeight());
+        for (int paddedY = -PADDING; paddedY < region.height() + PADDING; paddedY++) {
+            for (int paddedX = -PADDING; paddedX < region.width() + PADDING; paddedX++) {
+                int localX = Math.clamp(paddedX, 0, region.width() - 1);
+                int localY = Math.clamp(paddedY, 0, region.height() - 1);
+                int level = quantizedLevel(base, surface, localX, localY);
+                int atlasX = region.x() + paddedX;
+                int atlasY = region.y() + paddedY;
+                int index = atlasY * layout.atlasWidth() + atlasX;
+                colors[index] = transparentColor(palette.colorAt(paletteRow, level), level);
+                grayscale[index] = (byte) level;
+            }
+        }
+    }
+
+    private static int transparentColor(int paletteColor, int level) {
+        int dyeWeight = 96 + level * 8;
+        int red = blend(255, paletteColor >> 16 & 0xFF, dyeWeight);
+        int green = blend(255, paletteColor >> 8 & 0xFF, dyeWeight);
+        int blue = blend(255, paletteColor & 0xFF, dyeWeight);
+        // 低灰度像素承担玻璃反光，高灰度像素承担染色色阶；两者叠加后仍保留轮廓高光。
+        int reflection = Math.max(0, 12 - level) * 2;
+        red = Math.min(255, red + reflection);
+        green = Math.min(255, green + reflection);
+        blue = Math.min(255, blue + reflection);
+        // 原版白色染色玻璃主体 alpha 为 102、边框最高为 163；最高灰阶正是本纹理的边框与高光。
+        int alpha = Math.clamp(102 + (level - 12) * 20, 62, 163);
+        return alpha << 24 | red << 16 | green << 8 | blue;
+    }
+
+    private static int blend(int first, int second, int secondWeight) {
+        return (first * (255 - secondWeight) + second * secondWeight + 127) / 255;
+    }
+
     private static int quantizedLevel(
         PlasticGrayscaleImage base,
         PlasticSurface surface,
         int localX,
         int localY
     ) {
-        // 每张表面独立映射完整基础图，不能把 16x16 图案直接裁成侧面的 16x14。
+        // 每张表面独立映射完整的对应规格基础图，不能直接裁掉矩形短边所需的边框。
         int baseLevel = base.normalizedLevelAtResampled(
             localX,
             localY,
             surface.pixelWidth(),
             surface.pixelHeight()
         );
-        int edgeDistance = Math.min(
-            Math.min(localX, surface.pixelWidth() - 1 - localX),
-            Math.min(localY, surface.pixelHeight() - 1 - localY)
-        );
-        // 三纹素内形成离散边缘高光；凹槽和邻近遮蔽再逐级压暗。
-        // 当前六级基础图的高亮位于外缘，这个组合也能实际寻址色板的全部十六级。
-        int edgeShade = Math.max(0, 3 - edgeDistance);
+        // 四边和四角的定向明暗完全由基础图控制，避免再次统一增亮后丢失转角层次。
         return Math.clamp(
-            baseLevel + edgeShade - surface.grooveShade() - surface.ambientOcclusionShade(),
+            baseLevel - surface.grooveShade() - surface.ambientOcclusionShade(),
             0,
             PlasticGrayscaleImage.MAX_LEVELS - 1
         );

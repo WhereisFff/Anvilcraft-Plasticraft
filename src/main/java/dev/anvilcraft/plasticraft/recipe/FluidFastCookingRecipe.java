@@ -4,17 +4,18 @@ import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import dev.anvilcraft.lib.v2.util.predicate.ChanceItemStack;
 import dev.anvilcraft.lib.v2.util.predicate.ItemIngredientPredicate;
-import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
-import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
+import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
 import dev.dubhe.anvilcraft.recipe.anvil.util.WrapUtils;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.FastCookingRecipe;
 import dev.dubhe.anvilcraft.recipe.component.HasCauldronSimple;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.material.Fluid;
 
 import java.util.List;
 
@@ -30,7 +31,7 @@ public final class FluidFastCookingRecipe extends FastCookingRecipe {
 
     @Override
     public RecipeSerializer<FastCookingRecipe> getSerializer() {
-        return ModRecipeTypes.FLUID_FAST_COOKING.get();
+        return PlasticraftRecipeTypes.FLUID_FAST_COOKING.get();
     }
 
     public static Builder fluidBuilder() {
@@ -72,27 +73,22 @@ public final class FluidFastCookingRecipe extends FastCookingRecipe {
     public static final class Builder extends SimpleAbstractBuilder<FastCookingRecipe, Builder> {
         private final HasCauldronSimple.Builder hasCauldron = HasCauldronSimple.empty();
 
-        public Builder cauldron(ResourceLocation fluid) {
+        public Builder cauldron(Fluid fluid) {
             this.hasCauldron.fluid(fluid);
             return this;
         }
 
         public Builder cauldron(Block cauldron) {
-            return this.cauldron(WrapUtils.cauldron2Fluid(cauldron));
+            return this.cauldron(BuiltInRegistries.FLUID.get(WrapUtils.cauldron2Fluid(cauldron)));
         }
 
-        public Builder transform(ResourceLocation fluid) {
-            this.hasCauldron.transform(fluid);
+        public Builder transform(Fluid fluid, int amount) {
+            this.hasCauldron.transform(fluid, amount);
             return this;
         }
 
         public Builder consume(int amount) {
             this.hasCauldron.consume(amount);
-            return this;
-        }
-
-        public Builder produce(int amount) {
-            this.hasCauldron.produce(amount);
             return this;
         }
 
@@ -110,7 +106,7 @@ public final class FluidFastCookingRecipe extends FastCookingRecipe {
             if (this.itemIngredients.isEmpty()) {
                 throw new IllegalArgumentException("Recipe ingredients must not be empty, RecipeId: " + id);
             }
-            if (this.results.isEmpty() && !HasCauldron.isNotEmpty(cauldron.transform())) {
+            if (this.results.isEmpty() && cauldron.transforms().isEmpty()) {
                 throw new IllegalArgumentException("Recipe must have an item or fluid result, RecipeId: " + id);
             }
         }

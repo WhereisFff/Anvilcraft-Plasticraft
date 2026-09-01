@@ -7,10 +7,15 @@ import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
-import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
+import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.collision.BondedPlasticShapeIndex;
+import dev.anvilcraft.plasticraft.entity.redstone.MoldedTrayLightSource;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
+import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.dubhe.anvilcraft.api.fluid.IFluidHandlerHolder;
 import dev.dubhe.anvilcraft.api.injection.tooltip.ITooltipProviderExtension;
 import dev.dubhe.anvilcraft.item.AnvilHammerItem;
@@ -48,6 +53,7 @@ import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.level.material.PushReaction;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.attachment.AttachmentHolder;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
@@ -95,6 +101,8 @@ public class BondedEntityBlockEntity extends BlockEntity
     private byte hammerReturnFrom = PlasticEntityOrientation.DEFAULT.pack();
     private long hammerReturnStarted = -1L;
     private @Nullable Entity renderEntity;
+    private @Nullable VoxelShape bondedInteractionShape;
+    private @Nullable VoxelShape bondedCollisionShape;
     private static final IItemHandler EMPTY_ITEM_HANDLER = new ItemStackHandler(0);
     private static final IFluidHandler EMPTY_FLUID_HANDLER =
         new FluidTank(0);
@@ -105,6 +113,21 @@ public class BondedEntityBlockEntity extends BlockEntity
         BlockState state
     ) {
         super(type, pos, state);
+    }
+
+    @Override
+    public void onLoad() {
+        super.onLoad();
+        BondedPlasticShapeIndex.refresh(this);
+    }
+
+    @Override
+    public void setRemoved() {
+        if (this.renderEntity instanceof UniversalPlasticEntity universal) {
+            universal.plasticraft$removeVirtualRedstone();
+        }
+        if (this.level != null) BondedPlasticShapeIndex.remove(this.level, this.worldPosition);
+        super.setRemoved();
     }
 
     public boolean initialize(
@@ -139,6 +162,7 @@ public class BondedEntityBlockEntity extends BlockEntity
         this.originalNoGravity = originalNoGravity;
         this.initialized = true;
         this.renderEntity = null;
+        this.clearBondedShapeCache();
         this.setChangedAndSync();
         return true;
     }
@@ -165,7 +189,16 @@ public class BondedEntityBlockEntity extends BlockEntity
     }
 
     public boolean isHardenedResinAnvil() {
-        return this.displayState.is(ModBlocks.HARDEND_RESIN_ANVIL.get());
+        return this.displayState.is(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get());
+    }
+
+    public boolean isMoldedAnvil() {
+        return this.getOrCreateRenderEntity() instanceof UniversalPlasticEntity universal
+            && universal.isMoldedAnvil();
+    }
+
+    public boolean isAnvil() {
+        return this.isHardenedResinAnvil() || this.isMoldedAnvil();
     }
 
     public boolean isPistonMovable() {
@@ -208,7 +241,11 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     public boolean canHammerRotateTo(PlasticEntityOrientation targetOrientation) {
         if (!(this.getOrCreateRenderEntity() instanceof AbstractPlasticEntity plasticEntity)) return false;
-        Vec3 targetPosition = plasticEntity.plasticraft$placementPosition(this.worldPosition, targetOrientation);
+        Vec3 targetPosition = plasticEntity.plasticraft$placementPosition(
+            this.worldPosition,
+            targetOrientation,
+            this.adhesiveLocalFace
+        );
         return plasticEntity.canHammerRotateTo(targetOrientation, targetPosition, this.worldPosition);
     }
 
@@ -230,6 +267,7 @@ public class BondedEntityBlockEntity extends BlockEntity
         this.hammerReturnAt = this.level.getGameTime() + HAMMER_DEFLECTION_HOLD_TICKS;
         this.hammerReturnStarted = -1L;
         this.renderEntity = null;
+        this.clearBondedShapeCache();
         this.setChangedAndSync();
         return true;
     }
@@ -253,8 +291,36 @@ public class BondedEntityBlockEntity extends BlockEntity
         if (this.renderEntity == null) {
             this.renderEntity = EntityType.loadEntityRecursive(this.entityTag.copy(), this.level, entity -> entity);
         }
+        if (this.renderEntity instanceof UniversalPlasticEntity universal) {
+            universal.setMoldedContentsChangedListener(() -> this.captureCachedEntity(true));
+        }
         this.positionCachedEntity(this.renderEntity);
+        if (this.renderEntity instanceof UniversalPlasticEntity universal) {
+            MoldedTrayLightSource.update(universal);
+        }
         return this.renderEntity;
+    }
+
+    public @Nullable VoxelShape getBondedInteractionShape() {
+        if (this.bondedInteractionShape != null) return this.bondedInteractionShape;
+        if (!(this.getOrCreateRenderEntity() instanceof UniversalPlasticEntity universal)) return null;
+        this.bondedInteractionShape = universal.plasticraft$getGeometry()
+            .placedInteractionShape(this.getPlasticOrientation(), this.adhesiveLocalFace);
+        return this.bondedInteractionShape;
+    }
+
+    public @Nullable VoxelShape getBondedCollisionShape() {
+        if (this.bondedCollisionShape != null) return this.bondedCollisionShape;
+        if (!(this.getOrCreateRenderEntity() instanceof UniversalPlasticEntity universal)) return null;
+        this.bondedCollisionShape = universal.plasticraft$getGeometry()
+            .placedCollisionShape(this.getPlasticOrientation(), this.adhesiveLocalFace);
+        return this.bondedCollisionShape;
+    }
+
+    public ItemStack getStoredDropStack() {
+        return this.getOrCreateRenderEntity() instanceof AbstractPlasticEntity plasticEntity
+            ? plasticEntity.getDropStack()
+            : ItemStack.EMPTY;
     }
 
     public InteractionResult interact(Player player, InteractionHand hand, BlockHitResult hit) {
@@ -269,11 +335,9 @@ public class BondedEntityBlockEntity extends BlockEntity
         Vec3 relativeHit = hit.getLocation().subtract(plasticEntity.position());
         InteractionResult result = plasticEntity.interactAt(player, relativeHit, hand);
         if (result == InteractionResult.PASS) {
-            // Keep shift-click semantics identical to the live entity.  The bonded menu
-            // provider is only needed for the normal (non-shift) anvil interaction;
-            // otherwise a shift-click with an empty hand would unexpectedly open a GUI.
+            // 粘合态只在非潜行的普通铁砧交互中补充菜单，否则潜行空手会意外打开界面。
             if (!player.isShiftKeyDown()
-                && plasticEntity instanceof HardenedResinAnvilEntity
+                && hasAnvilMenu(plasticEntity)
                 && player instanceof ServerPlayer serverPlayer) {
                 HardenedResinAnvilMenu.open(serverPlayer, this);
                 player.awardStat(Stats.INTERACT_WITH_ANVIL);
@@ -294,7 +358,7 @@ public class BondedEntityBlockEntity extends BlockEntity
             return InteractionResult.PASS;
         }
         InteractionResult result;
-        if (plasticEntity instanceof HardenedResinAnvilEntity && player instanceof ServerPlayer serverPlayer) {
+        if (hasAnvilMenu(plasticEntity) && player instanceof ServerPlayer serverPlayer) {
             HardenedResinAnvilMenu.open(serverPlayer, this);
             player.awardStat(Stats.INTERACT_WITH_ANVIL);
             player.gameEvent(GameEvent.ENTITY_INTERACT);
@@ -306,6 +370,11 @@ public class BondedEntityBlockEntity extends BlockEntity
         return result;
     }
 
+    private static boolean hasAnvilMenu(AbstractPlasticEntity entity) {
+        return entity instanceof HardenedResinAnvilEntity
+            || entity instanceof UniversalPlasticEntity universal && universal.isMoldedAnvil();
+    }
+
     public void tickFunctionalEntity() {
         if (!(this.level instanceof ServerLevel serverLevel)) return;
         this.tickHammerDeflection(serverLevel);
@@ -315,12 +384,18 @@ public class BondedEntityBlockEntity extends BlockEntity
             if (lid.plasticraft$consumeBondedDataDirty()) this.captureCachedEntity(true);
             return;
         }
-        if (!(functionalEntity instanceof HardenedResinCauldronEntity cauldron)) return;
+        if (functionalEntity instanceof UniversalPlasticEntity universal) {
+            universal.plasticraft$tickRedstoneConductor();
+            if (universal.isMoldedTray()) {
+                universal.plasticraft$tickBondedTray();
+                return;
+            }
+        }
+        PlasticCauldron cauldron = PlasticCauldrons.of(functionalEntity);
+        if (cauldron == null) return;
         cauldron.plasticraft$tickBonded();
         if (cauldron.plasticraft$wasBurnedByLava()) {
-            if (!cauldron.plasticraft$leftLavaSource()) {
-                serverLevel.removeBlock(this.worldPosition, false);
-            }
+            serverLevel.removeBlock(this.worldPosition, false);
             return;
         }
         if (cauldron.plasticraft$consumeBondedDataDirty()) this.captureCachedEntity(true);
@@ -328,7 +403,8 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     public void processAnvilImpact(AbstractPlasticEntity anvil, Direction impactDirection) {
         if (!(this.level instanceof ServerLevel)
-            || !(this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron)) {
+            || !(this.getOrCreateRenderEntity() instanceof PlasticCauldron cauldron)
+            || !canAccessRecipeInventory(cauldron)) {
             return;
         }
         cauldron.processAnvilImpact(anvil, impactDirection);
@@ -337,26 +413,36 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     @Override
     public IFluidHandler getFluidHandler() {
-        return this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron
-            ? cauldron.getFluidHandler()
-            : EMPTY_FLUID_HANDLER;
+        Entity entity = this.getOrCreateRenderEntity();
+        if (entity instanceof PlasticCauldron cauldron) {
+            return canAccessRecipeInventory(cauldron) ? cauldron.getFluidHandler() : EMPTY_FLUID_HANDLER;
+        }
+        return EMPTY_FLUID_HANDLER;
     }
 
     public @Nullable IFluidHandler getCapabilityFluidHandler() {
-        return this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron
-            ? cauldron.getFluidHandler()
-            : null;
+        Entity entity = this.getOrCreateRenderEntity();
+        if (entity instanceof PlasticCauldron cauldron) {
+            return canAccessRecipeInventory(cauldron) ? cauldron.getFluidHandler() : null;
+        }
+        if (entity instanceof UniversalPlasticEntity universal
+            && universal.getMoldedFluidHandler().getTanks() > 0) return universal.getMoldedFluidHandler();
+        return null;
     }
 
     public @Nullable IItemHandler getItemHandler() {
-        return this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron
-            ? cauldron.getItemHandler()
-            : null;
+        Entity entity = this.getOrCreateRenderEntity();
+        if (entity instanceof PlasticCauldron cauldron) {
+            return canAccessRecipeInventory(cauldron) ? cauldron.getItemHandler() : null;
+        }
+        if (entity instanceof UniversalPlasticEntity universal
+            && universal.getMoldedItemHandler().getSlots() > 0) return universal.getMoldedItemHandler();
+        return null;
     }
 
     public boolean clearCauldronOutletFacing(Direction direction) {
         if (!(this.level instanceof ServerLevel)
-            || !(this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron)
+            || !(this.getOrCreateRenderEntity() instanceof PlasticCauldron cauldron)
             || !cauldron.clearOutletFacing(direction)) {
             return false;
         }
@@ -366,26 +452,36 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     @Override
     public IItemHandler getInput() {
-        return this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron
-            ? cauldron.getInput()
-            : EMPTY_ITEM_HANDLER;
+        Entity entity = this.getOrCreateRenderEntity();
+        if (entity instanceof PlasticCauldron cauldron) {
+            return canAccessRecipeInventory(cauldron) ? cauldron.getInput() : EMPTY_ITEM_HANDLER;
+        }
+        return EMPTY_ITEM_HANDLER;
     }
 
     @Override
     public IItemHandler getOutput() {
-        return this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron
-            ? cauldron.getOutput()
-            : EMPTY_ITEM_HANDLER;
+        Entity entity = this.getOrCreateRenderEntity();
+        if (entity instanceof PlasticCauldron cauldron) {
+            return canAccessRecipeInventory(cauldron) ? cauldron.getOutput() : EMPTY_ITEM_HANDLER;
+        }
+        return EMPTY_ITEM_HANDLER;
     }
 
     public @Nullable ItemStack insertRecipeOutput(ItemStack stack) {
         if (!(this.level instanceof ServerLevel)
-            || !(this.getOrCreateRenderEntity() instanceof HardenedResinCauldronEntity cauldron)) {
+            || !(this.getOrCreateRenderEntity() instanceof PlasticCauldron cauldron)
+            || !canAccessRecipeInventory(cauldron)) {
             return stack;
         }
         ItemStack remaining = cauldron.insertRecipeOutput(stack);
         this.captureCachedEntity(true);
         return remaining;
+    }
+
+    private static boolean canAccessRecipeInventory(PlasticCauldron cauldron) {
+        return !cauldron.plasticraft$isCauldron()
+            || CauldronImpactRecipeProcessor.canAccessRecipeInventory(cauldron);
     }
 
     public boolean release() {
@@ -408,7 +504,11 @@ public class BondedEntityBlockEntity extends BlockEntity
             }
             plasticEntity.setOrientation(plasticOrientation);
             plasticEntity.setDisplayState(this.displayState);
-            restored.setPos(plasticEntity.plasticraft$placementPosition(this.worldPosition, plasticOrientation));
+            restored.setPos(plasticEntity.plasticraft$placementPosition(
+                this.worldPosition,
+                plasticOrientation,
+                this.adhesiveLocalFace
+            ));
         } else {
             restored.setPos(
                 this.worldPosition.getX() + 0.5D,
@@ -437,7 +537,11 @@ public class BondedEntityBlockEntity extends BlockEntity
     }
 
     public void moved() {
+        if (this.renderEntity instanceof UniversalPlasticEntity universal) {
+            universal.plasticraft$removeVirtualRedstone();
+        }
         this.renderEntity = null;
+        this.clearBondedShapeCache();
         this.setChangedAndSync();
         if (this.level != null) {
             this.level.scheduleTick(this.worldPosition, this.getBlockState().getBlock(), 2);
@@ -453,6 +557,9 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     @Override
     public void loadAdditional(CompoundTag tag, HolderLookup.Provider provider) {
+        if (this.renderEntity instanceof UniversalPlasticEntity universal) {
+            universal.plasticraft$removeVirtualRedstone();
+        }
         super.loadAdditional(tag, provider);
         this.initialized = tag.getBoolean(TAG_INITIALIZED);
         this.entityTag = tag.contains(TAG_ENTITY, Tag.TAG_COMPOUND)
@@ -489,6 +596,8 @@ public class BondedEntityBlockEntity extends BlockEntity
             ? tag.getLong(TAG_HAMMER_RETURN_STARTED)
             : -1L;
         this.renderEntity = null;
+        this.clearBondedShapeCache();
+        BondedPlasticShapeIndex.refresh(this);
     }
 
     @Override
@@ -542,6 +651,7 @@ public class BondedEntityBlockEntity extends BlockEntity
             this.hammerReturnAt = -1L;
             this.hammerReturnStarted = gameTime;
             this.renderEntity = null;
+            this.clearBondedShapeCache();
             this.setChangedAndSync();
             return;
         }
@@ -554,6 +664,7 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     private void setChangedAndSync() {
         this.setChanged();
+        BondedPlasticShapeIndex.refresh(this);
         Level currentLevel = this.level;
         if (currentLevel == null) return;
         currentLevel.invalidateCapabilities(this.worldPosition);
@@ -566,9 +677,18 @@ public class BondedEntityBlockEntity extends BlockEntity
         PlasticEntityOrientation plasticOrientation = this.getPlasticOrientation();
         plasticEntity.setOrientation(plasticOrientation);
         plasticEntity.setDisplayState(this.displayState);
-        plasticEntity.setPos(plasticEntity.plasticraft$placementPosition(this.worldPosition, plasticOrientation));
+        plasticEntity.setPos(plasticEntity.plasticraft$placementPosition(
+            this.worldPosition,
+            plasticOrientation,
+            this.adhesiveLocalFace
+        ));
         plasticEntity.setNoGravity(true);
         plasticEntity.setDeltaMovement(Vec3.ZERO);
+    }
+
+    private void clearBondedShapeCache() {
+        this.bondedInteractionShape = null;
+        this.bondedCollisionShape = null;
     }
 
     private void captureCachedEntity(boolean sync) {
@@ -576,6 +696,7 @@ public class BondedEntityBlockEntity extends BlockEntity
         CompoundTag savedEntity = new CompoundTag();
         if (!this.renderEntity.save(savedEntity)) return;
         this.entityTag = savedEntity;
+        this.clearBondedShapeCache();
         if (this.renderEntity instanceof AbstractPlasticEntity plasticEntity) {
             this.displayState = plasticEntity.getDisplayState();
             BlockState fixedState = this.getBlockState();

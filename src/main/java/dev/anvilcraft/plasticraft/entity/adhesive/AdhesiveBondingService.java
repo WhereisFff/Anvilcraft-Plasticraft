@@ -8,8 +8,8 @@ import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.piston.PistonAdhesionController;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.entity.FallingGiantAnvilEntity;
@@ -22,6 +22,7 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -62,9 +63,12 @@ public final class AdhesiveBondingService {
     private static final int TRANSIT_COLLISION_REFINEMENT_STEPS = 8;
     private static final double TRANSIT_PATH_ALIGNMENT_DISTANCE_SQR = 0.25D;
     private static final double TRANSIT_PATH_PROGRESS_EPSILON = 1.0E-6D;
+    private static final double MAX_PLAN_START_DISPLACEMENT_SQR = 4.0D;
+    private static final double PLAN_START_EPSILON_SQR = 1.0E-8D;
     private static final double ELASTIC_SPRING = 0.42D;
     private static final double ELASTIC_DAMPING = 0.76D;
     private static final double ELASTIC_MAX_SPEED = 2.5D;
+    private static final double PLACEMENT_COLLISION_EPSILON = 1.0E-5D;
     public static final double MIN_ELASTIC_KNOCKBACK = 0.5D;
     private static final Map<Entity, TransitValidation> TRANSIT_VALIDATIONS = new WeakHashMap<>();
 
@@ -90,10 +94,10 @@ public final class AdhesiveBondingService {
 
     private static boolean canSelect(Player player, InteractionHand hand, Entity target) {
         if (player.isShiftKeyDown()
-            || !player.getItemInHand(hand).is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
+            || !player.getItemInHand(hand).is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
         if (!target.isAlive()
             || target == player
-            || target.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
+            || target.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)) {
             return false;
         }
         return player.canInteractWithEntity(target, 0.0D);
@@ -106,7 +110,7 @@ public final class AdhesiveBondingService {
         Direction attachmentFace
     ) {
         ItemStack bucket = player.getItemInHand(hand);
-        if (player.isShiftKeyDown() || !bucket.is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
+        if (player.isShiftKeyDown() || !bucket.is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
         if (!(player.level() instanceof ServerLevel level)) {
             return false;
         }
@@ -118,8 +122,8 @@ public final class AdhesiveBondingService {
 
         Entity target = AdhesiveSelectionManager.resolveServerSelection(player);
         if (target == null) return false;
-        if (target.hasData(ModAttachments.ENTITY_ADHESION)
-            || target.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
+        if (target.hasData(PlasticraftAttachments.ENTITY_ADHESION)
+            || target.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)) {
             return false;
         }
         Direction selectedFace = AdhesiveSelectionManager.getSelectedFace(player);
@@ -147,8 +151,19 @@ public final class AdhesiveBondingService {
         Direction attachmentFace,
         AdhesivePathPlanner.Plan plan
     ) {
+        return bondSelectedWithPlan(player, hand, supportPos, attachmentFace, plan, null);
+    }
+
+    static boolean bondSelectedWithPlan(
+        Player player,
+        InteractionHand hand,
+        BlockPos supportPos,
+        Direction attachmentFace,
+        AdhesivePathPlanner.Plan plan,
+        @Nullable Vec3 expectedStart
+    ) {
         ItemStack bucket = player.getItemInHand(hand);
-        if (player.isShiftKeyDown() || !bucket.is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
+        if (player.isShiftKeyDown() || !bucket.is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
         if (!(player.level() instanceof ServerLevel level)) return false;
         if (reclaimClickedPatch(player, level, supportPos, attachmentFace)) {
             AdhesiveSelectionManager.clear(player);
@@ -157,17 +172,18 @@ public final class AdhesiveBondingService {
         if (!canUseSupport(player, level, supportPos, attachmentFace)) return false;
         Entity target = AdhesiveSelectionManager.resolveServerSelection(player);
         if (target == null
-            || target.hasData(ModAttachments.ENTITY_ADHESION)
-            || target.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
+            || target.hasData(PlasticraftAttachments.ENTITY_ADHESION)
+            || target.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)) {
             return false;
         }
         Direction selectedFace = AdhesiveSelectionManager.getSelectedFace(player);
-        if (!matchesPlanStart(plan, target)
-            || !plan.valid()
+        if (!plan.valid()
             || plan.sourceFace() != (target instanceof AbstractPlasticEntity ? selectedFace : attachmentFace.getOpposite())
             || !plan.occupiedPos().equals(supportPos.relative(attachmentFace))) {
             return false;
         }
+        if (!AdhesiveGroupTransform.isPlanClear(level, target, plan, player)) return false;
+        if (!snapToPlanStart(level, target, plan, expectedStart)) return false;
         return applyBlockPlan(player, hand, level, target, supportPos, attachmentFace, plan);
     }
 
@@ -205,7 +221,7 @@ public final class AdhesiveBondingService {
             startOrientation,
             targetOrientation
         );
-        target.setData(ModAttachments.ADHESIVE_TRANSIT, transit);
+        target.setData(PlasticraftAttachments.ADHESIVE_TRANSIT, transit);
         target.setNoGravity(true);
         target.setDeltaMovement(Vec3.ZERO);
         target.fallDistance = 0.0F;
@@ -223,7 +239,7 @@ public final class AdhesiveBondingService {
         Direction face
     ) {
         ItemStack bucket = player.getItemInHand(hand);
-        if (player.isShiftKeyDown() || !bucket.is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
+        if (player.isShiftKeyDown() || !bucket.is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
         if (!(player.level() instanceof ServerLevel level)
             || AdhesiveSelectionManager.hasSelection(player)) {
             return false;
@@ -248,7 +264,7 @@ public final class AdhesiveBondingService {
     }
 
     public static boolean hasAdhesiveOnFace(Entity target, Direction clickedWorldFace) {
-        EntityAdhesion adhesion = target.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+        EntityAdhesion adhesion = target.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
         if (adhesion != null && adhesion.attachmentFace().getOpposite() == clickedWorldFace) return true;
         return EntityBondManager.isFaceOccupied(target, AdhesiveFaces.storedFace(target, clickedWorldFace));
     }
@@ -260,7 +276,7 @@ public final class AdhesiveBondingService {
         Direction clickedWorldFace
     ) {
         if (player.isShiftKeyDown()
-            || !player.getItemInHand(hand).is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())
+            || !player.getItemInHand(hand).is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())
             || !target.isAlive()
             || target == player
             || !player.canInteractWithEntity(target, 0.0D)
@@ -269,7 +285,7 @@ public final class AdhesiveBondingService {
         }
         if (!(player.level() instanceof ServerLevel level)) return true;
 
-        EntityAdhesion adhesion = target.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+        EntityAdhesion adhesion = target.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
         if (adhesion != null && adhesion.attachmentFace().getOpposite() == clickedWorldFace) {
             release(target);
             Entity leader = EntityBondManager.resolveLeader(level, target);
@@ -280,7 +296,7 @@ public final class AdhesiveBondingService {
                 target,
                 AdhesiveFaces.storedFace(target, clickedWorldFace)
             );
-            if (target.hasData(ModAttachments.ENTITY_ADHESION)) target.setNoGravity(true);
+            if (target.hasData(PlasticraftAttachments.ENTITY_ADHESION)) target.setNoGravity(true);
         }
         AdhesiveSelectionManager.clear(player);
         level.playSound(
@@ -326,7 +342,7 @@ public final class AdhesiveBondingService {
         if (state.hasEntityBond(face)) {
             List<Entity> attached = new ArrayList<>();
             for (Entity entity : level.getAllEntities()) {
-                EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+                EntityAdhesion adhesion = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
                 if (adhesion != null
                     && adhesion.supportPos().equals(supportPos)
                     && adhesion.attachmentFace() == face) {
@@ -360,15 +376,15 @@ public final class AdhesiveBondingService {
         Direction supportWorldFace
     ) {
         ItemStack bucket = player.getItemInHand(hand);
-        if (player.isShiftKeyDown() || !bucket.is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
+        if (player.isShiftKeyDown() || !bucket.is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
         if (!(player.level() instanceof ServerLevel level)
             || !supportEntity.isAlive()
-            || supportEntity.hasData(ModAttachments.ADHESIVE_TRANSIT)
+            || supportEntity.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
             || !player.canInteractWithEntity(supportEntity, 0.0D)) {
             return false;
         }
         Entity selected = AdhesiveSelectionManager.resolveServerSelection(player);
-        if (selected == null || selected == supportEntity || selected.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
+        if (selected == null || selected == supportEntity || selected.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)) {
             return false;
         }
         Direction selectedFace = AdhesiveSelectionManager.getSelectedFace(player);
@@ -376,8 +392,8 @@ public final class AdhesiveBondingService {
         Entity anchorEntity = supportEntity;
         Direction anchorWorldFace = supportWorldFace;
         Direction movingStoredFace = selectedFace;
-        if (selected.hasData(ModAttachments.ENTITY_ADHESION)) {
-            if (supportEntity.hasData(ModAttachments.ENTITY_ADHESION)) return false;
+        if (selected.hasData(PlasticraftAttachments.ENTITY_ADHESION)) {
+            if (supportEntity.hasData(PlasticraftAttachments.ENTITY_ADHESION)) return false;
             movingEntity = supportEntity;
             anchorEntity = selected;
             anchorWorldFace = AdhesiveFaces.worldFace(selected, selectedFace);
@@ -405,7 +421,8 @@ public final class AdhesiveBondingService {
             movingEntity,
             anchorEntity,
             anchorWorldFace,
-            plan
+            plan,
+            null
         );
     }
 
@@ -416,16 +433,36 @@ public final class AdhesiveBondingService {
         Direction supportWorldFace,
         AdhesivePathPlanner.Plan plan
     ) {
+        return bondSelectedToEntityWithPlan(
+            player,
+            hand,
+            supportEntity,
+            supportWorldFace,
+            plan,
+            null,
+            null
+        );
+    }
+
+    static boolean bondSelectedToEntityWithPlan(
+        Player player,
+        InteractionHand hand,
+        Entity supportEntity,
+        Direction supportWorldFace,
+        AdhesivePathPlanner.Plan plan,
+        @Nullable Vec3 expectedMovingStart,
+        @Nullable Vec3 expectedSupportStart
+    ) {
         ItemStack bucket = player.getItemInHand(hand);
-        if (player.isShiftKeyDown() || !bucket.is(ModItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
+        if (player.isShiftKeyDown() || !bucket.is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) return false;
         if (!(player.level() instanceof ServerLevel level)
             || !supportEntity.isAlive()
-            || supportEntity.hasData(ModAttachments.ADHESIVE_TRANSIT)
+            || supportEntity.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
             || !player.canInteractWithEntity(supportEntity, 0.0D)) {
             return false;
         }
         Entity selected = AdhesiveSelectionManager.resolveServerSelection(player);
-        if (selected == null || selected == supportEntity || selected.hasData(ModAttachments.ADHESIVE_TRANSIT)) {
+        if (selected == null || selected == supportEntity || selected.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)) {
             return false;
         }
         Direction selectedFace = AdhesiveSelectionManager.getSelectedFace(player);
@@ -433,21 +470,22 @@ public final class AdhesiveBondingService {
         Entity anchorEntity = supportEntity;
         Direction anchorWorldFace = supportWorldFace;
         Direction movingStoredFace = selectedFace;
-        if (selected.hasData(ModAttachments.ENTITY_ADHESION)) {
-            if (supportEntity.hasData(ModAttachments.ENTITY_ADHESION)) return false;
+        if (selected.hasData(PlasticraftAttachments.ENTITY_ADHESION)) {
+            if (supportEntity.hasData(PlasticraftAttachments.ENTITY_ADHESION)) return false;
             movingEntity = supportEntity;
             anchorEntity = selected;
             anchorWorldFace = AdhesiveFaces.worldFace(selected, selectedFace);
             movingStoredFace = AdhesiveFaces.storedFace(supportEntity, supportWorldFace);
             if (hasAdhesiveOnFace(selected, anchorWorldFace)) return false;
         }
-        if (!matchesPlanStart(plan, movingEntity)
-            || !plan.valid()
+        if (!plan.valid()
             || plan.sourceFace() != (movingEntity instanceof AbstractPlasticEntity
                 ? movingStoredFace
                 : anchorWorldFace.getOpposite())) {
             return false;
         }
+        if (!AdhesiveGroupTransform.isPlanClear(level, movingEntity, plan, player)) return false;
+        if (!snapToPlanStart(level, movingEntity, plan, expectedMovingStart)) return false;
         return applyEntityPlan(
             player,
             hand,
@@ -455,7 +493,8 @@ public final class AdhesiveBondingService {
             movingEntity,
             anchorEntity,
             anchorWorldFace,
-            plan
+            plan,
+            expectedSupportStart
         );
     }
 
@@ -466,9 +505,12 @@ public final class AdhesiveBondingService {
         Entity movingEntity,
         Entity anchorEntity,
         Direction anchorWorldFace,
-        AdhesivePathPlanner.Plan plan
+        AdhesivePathPlanner.Plan plan,
+        @Nullable Vec3 supportStartPosition
     ) {
-        if (!plan.valid() || !AdhesiveGroupTransform.isPlanClear(level, movingEntity, plan, player)) return false;
+        if (!plan.valid() || !AdhesiveGroupTransform.isPlanClear(level, movingEntity, plan, player)) {
+            return false;
+        }
         EntityBondManager.prepareAlignedLeader(level, movingEntity);
         boolean plastic = movingEntity instanceof AbstractPlasticEntity;
         byte startOrientation = plastic
@@ -484,7 +526,7 @@ public final class AdhesiveBondingService {
             plan.sourceFace(),
             Optional.of(anchorEntity.getUUID()),
             anchorEntity.getId(),
-            anchorEntity.position(),
+            supportStartPosition == null ? anchorEntity.position() : supportStartPosition,
             plan.points(),
             level.getGameTime(),
             transitDuration(plan),
@@ -493,7 +535,7 @@ public final class AdhesiveBondingService {
             startOrientation,
             targetOrientation
         );
-        movingEntity.setData(ModAttachments.ADHESIVE_TRANSIT, transit);
+        movingEntity.setData(PlasticraftAttachments.ADHESIVE_TRANSIT, transit);
         movingEntity.setNoGravity(true);
         movingEntity.setDeltaMovement(Vec3.ZERO);
         movingEntity.fallDistance = 0.0F;
@@ -504,13 +546,37 @@ public final class AdhesiveBondingService {
         return true;
     }
 
-    private static boolean matchesPlanStart(AdhesivePathPlanner.Plan plan, Entity entity) {
-        return !plan.points().isEmpty()
-            && plan.points().getFirst().distanceToSqr(entity.position()) <= 0.01D;
+    private static boolean snapToPlanStart(
+        ServerLevel level,
+        Entity entity,
+        AdhesivePathPlanner.Plan plan,
+        @Nullable Vec3 expectedStart
+    ) {
+        if (plan.points().isEmpty()) return false;
+        Vec3 planStart = plan.points().getFirst();
+        if (expectedStart != null && expectedStart.distanceToSqr(planStart) > PLAN_START_EPSILON_SQR) {
+            return false;
+        }
+        Vec3 displacement = planStart.subtract(entity.position());
+        if (displacement.lengthSqr() > MAX_PLAN_START_DISPLACEMENT_SQR) return false;
+        AdhesiveGroupTransform.Projection startProjection = AdhesiveGroupTransform.project(entity, planStart, null);
+        if (!AdhesiveGroupTransform.isProjectionClearOfBlocks(level, startProjection)) return false;
+        if (displacement.lengthSqr() <= PLAN_START_EPSILON_SQR) return true;
+
+        EntityBondManager.prepareAlignedLeader(level, entity);
+        for (Entity member : EntityBondManager.component(level, entity)) {
+            member.setPos(member.position().add(displacement));
+            member.setDeltaMovement(Vec3.ZERO);
+            member.fallDistance = 0.0F;
+            member.hasImpulse = true;
+            member.hurtMarked = true;
+        }
+        EntityBondManager.updateLeaderOffsets(level, entity);
+        return true;
     }
 
     public static void tickAdhesiveTransit(Entity entity, boolean validateAndComplete) {
-        AdhesiveTransit transit = entity.getExistingDataOrNull(ModAttachments.ADHESIVE_TRANSIT.get());
+        AdhesiveTransit transit = entity.getExistingDataOrNull(PlasticraftAttachments.ADHESIVE_TRANSIT.get());
         if (tickBlockificationHandoff(entity, transit, validateAndComplete)) return;
         if (transit == null) return;
 
@@ -537,23 +603,52 @@ public final class AdhesiveBondingService {
         double rawProgress = transit.rawProgress(entity.level().getGameTime(), 0.0F);
         double movementProgress = transit.easedProgress(entity.level().getGameTime(), 0.0F);
         Vec3 position = transit.positionAt(movementProgress, supportEntity);
-        byte orientation = transit.plastic() && rawProgress >= 0.72D
+        boolean reachesEndpoint = validateAndComplete
+            && !entity.level().isClientSide
+            && rawProgress >= 1.0D;
+        if (reachesEndpoint && transit.plastic()) {
+            TRANSIT_VALIDATIONS.remove(entity);
+            PlasticEntityOrientation targetOrientation = PlasticEntityOrientation.unpack(
+                transit.targetOrientation()
+            );
+            AdhesiveGroupTransform.Projection targetProjection = AdhesiveGroupTransform.project(
+                entity,
+                position,
+                targetOrientation
+            );
+            if (!AdhesiveGroupTransform.isProjectionClearOfBlocksAtFinalContact(
+                entity.level(),
+                targetProjection
+            )) {
+                cancelTransit(entity, transit);
+                return;
+            }
+            applyTransitProjection(entity, position, transit.targetOrientation());
+            completeTransit(entity, transit, supportEntity);
+            return;
+        }
+        byte orientation = transit.plastic()
+            && entity instanceof AbstractPlasticEntity plasticEntity
+            && plasticEntity.getOrientation().pack() == transit.targetOrientation()
             ? transit.targetOrientation()
             : transit.startOrientation();
         if (!applyTransitProjectionSafely(entity, transit, position, movementProgress, supportEntity, orientation)) return;
         if (validateAndComplete && !entity.level().isClientSide && rawProgress < 1.0D) {
+            byte appliedOrientation = entity instanceof AbstractPlasticEntity plasticEntity
+                ? plasticEntity.getOrientation().pack()
+                : orientation;
             TRANSIT_VALIDATIONS.put(
                 entity,
                 new TransitValidation(
                     transit,
                     entity.level().getGameTime(),
                     supportEntity == null ? Vec3.ZERO : supportEntity.position(),
-                    position,
-                    orientation
+                    entity.position(),
+                    appliedOrientation
                 )
             );
         }
-        if (validateAndComplete && !entity.level().isClientSide && rawProgress >= 1.0D) {
+        if (reachesEndpoint) {
             TRANSIT_VALIDATIONS.remove(entity);
             completeTransit(entity, transit, supportEntity);
         }
@@ -599,6 +694,20 @@ public final class AdhesiveBondingService {
         if (!advance.blocked()) {
             applyTransitProjection(entity, desiredPosition, orientation);
             return true;
+        }
+        if (transit.plastic() && orientation != transit.targetOrientation()) {
+            TransitAdvance rotatedAdvance = findTransitAdvance(
+                entity,
+                transit,
+                desiredPosition,
+                desiredProgress,
+                supportEntity,
+                transit.targetOrientation()
+            );
+            if (!rotatedAdvance.blocked()) {
+                applyTransitProjection(entity, desiredPosition, transit.targetOrientation());
+                return true;
+            }
         }
         byte stopOrientation = isTransitProjectionClear(entity, advance.position(), transit.startOrientation())
             ? transit.startOrientation()
@@ -838,7 +947,7 @@ public final class AdhesiveBondingService {
             }
             Entity leader = EntityBondManager.resolveLeader(level, supportEntity);
             if (leader != null) EntityBondManager.prepareAlignedLeader(level, leader);
-            entity.removeData(ModAttachments.ADHESIVE_TRANSIT);
+            entity.removeData(PlasticraftAttachments.ADHESIVE_TRANSIT);
             level.playSound(
                 null,
                 supportEntity.blockPosition(),
@@ -875,8 +984,7 @@ public final class AdhesiveBondingService {
                 cancelTransit(entity, transit);
                 return;
             }
-            entity.getPersistentData().putLong(TAG_BLOCKIFICATION_HANDOFF, level.getGameTime());
-            holdAtTransitTarget(entity, transit);
+            markBlockificationHandoff(entity);
             level.playSound(
                 null,
                 transit.supportPos(),
@@ -888,7 +996,7 @@ public final class AdhesiveBondingService {
             return;
         }
         boolean blockifies = AdhesiveFallingBlockBehavior.canBlockifyComponent(level, entity);
-        if (!blockifies) entity.removeData(ModAttachments.ADHESIVE_TRANSIT);
+        if (!blockifies) entity.removeData(PlasticraftAttachments.ADHESIVE_TRANSIT);
         boolean bonded = blockifies && entity instanceof AbstractPlasticEntity plasticEntity
             ? bondPlasticEntity(
                 level,
@@ -896,6 +1004,7 @@ public final class AdhesiveBondingService {
                 transit.supportPos(),
                 transit.attachmentFace(),
                 PlasticEntityOrientation.unpack(transit.targetOrientation()),
+                transit.sourceFace(),
                 transit.originalNoGravity()
             )
             : blockifies
@@ -913,8 +1022,7 @@ public final class AdhesiveBondingService {
 
         if (blockifies) {
             // 先让目标方块同步一整刻，再移除实体，避免客户端在两种渲染之间出现空帧。
-            entity.getPersistentData().putLong(TAG_BLOCKIFICATION_HANDOFF, level.getGameTime());
-            holdAtTransitTarget(entity, transit);
+            markBlockificationHandoff(entity);
         }
 
         level.playSound(
@@ -959,7 +1067,7 @@ public final class AdhesiveBondingService {
         long blockPlacedGameTime = persistentData.getLong(TAG_BLOCKIFICATION_HANDOFF);
         if (validateAndComplete && entity.level().getGameTime() > blockPlacedGameTime) {
             persistentData.remove(TAG_BLOCKIFICATION_HANDOFF);
-            entity.removeData(ModAttachments.ADHESIVE_TRANSIT);
+            entity.removeData(PlasticraftAttachments.ADHESIVE_TRANSIT);
             entity.discard();
         }
         return true;
@@ -967,9 +1075,24 @@ public final class AdhesiveBondingService {
 
     static void markBlockificationHandoff(Entity entity) {
         if (!(entity.level() instanceof ServerLevel level)) return;
-        entity.removeData(ModAttachments.ADHESIVE_TRANSIT);
+        onBlockified(entity);
         entity.getPersistentData().putLong(TAG_BLOCKIFICATION_HANDOFF, level.getGameTime());
         holdAtCurrentPosition(entity);
+    }
+
+    static void onBlockified(Entity entity) {
+        if (!entity.level().isClientSide) TRANSIT_VALIDATIONS.remove(entity);
+        if (entity.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)) {
+            entity.removeData(PlasticraftAttachments.ADHESIVE_TRANSIT);
+        }
+    }
+
+    public static void onEntityRemoved(Entity entity) {
+        onBlockified(entity);
+        entity.getPersistentData().remove(TAG_BLOCKIFICATION_HANDOFF);
+        if (entity.level() instanceof ServerLevel level && EntityBondManager.hasBonds(entity)) {
+            EntityBondManager.disconnectEntity(level, entity);
+        }
     }
 
     private static void holdAtCurrentPosition(Entity entity) {
@@ -1004,7 +1127,7 @@ public final class AdhesiveBondingService {
     public static void tickBondedEntity(Entity entity, boolean validateSupport) {
         Entity elasticRoot = elasticRoot(entity);
         AdhesiveElasticMotion elastic = elasticRoot.getExistingDataOrNull(
-            ModAttachments.ADHESIVE_ELASTIC_MOTION.get()
+            PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION.get()
         );
         if (elastic != null) {
             if (elasticRoot == entity && validateSupport && !entity.level().isClientSide) {
@@ -1013,7 +1136,7 @@ public final class AdhesiveBondingService {
             return;
         }
 
-        EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+        EntityAdhesion adhesion = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
         if (adhesion == null) return;
 
         PistonAdhesionController.MotionTarget pistonTarget = PistonAdhesionController.entityTarget(entity, adhesion);
@@ -1044,15 +1167,15 @@ public final class AdhesiveBondingService {
 
     public static boolean beginElasticMotion(Entity entity, double knockbackStrength) {
         Entity reboundRoot = prepareKnockback(entity, knockbackStrength);
-        return reboundRoot.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION);
+        return reboundRoot.hasData(PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION);
     }
 
     public static boolean isElasticMotion(Entity entity) {
-        return entity.hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION);
+        return entity.hasData(PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION);
     }
 
     public static boolean isGroupElasticMotion(Entity entity) {
-        return elasticRoot(entity).hasData(ModAttachments.ADHESIVE_ELASTIC_MOTION);
+        return elasticRoot(entity).hasData(PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION);
     }
 
     public static Entity prepareKnockback(Entity entity, double knockbackStrength) {
@@ -1067,10 +1190,10 @@ public final class AdhesiveBondingService {
         if (EntityBondManager.hasBonds(blockAnchor)) EntityBondManager.prepareLeader(level, blockAnchor);
         if (knockbackStrength < MIN_ELASTIC_KNOCKBACK) return blockAnchor;
 
-        EntityAdhesion adhesion = blockAnchor.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+        EntityAdhesion adhesion = blockAnchor.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
         if (adhesion == null) return blockAnchor;
         AdhesiveElasticMotion current = blockAnchor.getExistingDataOrNull(
-            ModAttachments.ADHESIVE_ELASTIC_MOTION.get()
+            PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION.get()
         );
         long gameTime = blockAnchor.level().getGameTime();
         int duration = elasticDuration(knockbackStrength);
@@ -1082,7 +1205,7 @@ public final class AdhesiveBondingService {
                 blockAnchor.isNoGravity()
             )
             : current.restarted(gameTime, duration);
-        blockAnchor.setData(ModAttachments.ADHESIVE_ELASTIC_MOTION, motion);
+        blockAnchor.setData(PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION, motion);
         blockAnchor.setNoGravity(true);
         blockAnchor.hasImpulse = true;
         blockAnchor.hurtMarked = true;
@@ -1131,7 +1254,7 @@ public final class AdhesiveBondingService {
     private static void finishElasticMotion(Entity entity, AdhesiveElasticMotion motion, Vec3 anchor) {
         entity.setPos(anchor);
         entity.setDeltaMovement(Vec3.ZERO);
-        entity.removeData(ModAttachments.ADHESIVE_ELASTIC_MOTION);
+        entity.removeData(PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION);
         entity.setNoGravity(motion.originalNoGravity());
         entity.fallDistance = 0.0F;
         EntityBondManager.synchronizeComponent(entity);
@@ -1145,15 +1268,15 @@ public final class AdhesiveBondingService {
     }
 
     private static @Nullable Entity findBlockAnchor(Entity entity) {
-        if (entity.hasData(ModAttachments.ENTITY_ADHESION)) return entity;
+        if (entity.hasData(PlasticraftAttachments.ENTITY_ADHESION)) return entity;
         for (Entity member : EntityBondManager.component(entity.level(), entity)) {
-            if (member.hasData(ModAttachments.ENTITY_ADHESION)) return member;
+            if (member.hasData(PlasticraftAttachments.ENTITY_ADHESION)) return member;
         }
         return null;
     }
 
     private static Vec3 elasticAnchor(Entity entity, AdhesiveElasticMotion motion) {
-        EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+        EntityAdhesion adhesion = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
         if (adhesion != null) return adhesion.fixedPosition();
         EntityBondState bonds = EntityBondManager.get(entity);
         if (bonds != null && !bonds.leaderUuid().equals(entity.getUUID())) {
@@ -1164,7 +1287,7 @@ public final class AdhesiveBondingService {
     }
 
     public static void release(Entity entity) {
-        EntityAdhesion adhesion = entity.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+        EntityAdhesion adhesion = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
         if (adhesion != null) release(entity, adhesion);
     }
 
@@ -1174,6 +1297,7 @@ public final class AdhesiveBondingService {
         BlockPos supportPos,
         Direction attachmentFace,
         PlasticEntityOrientation orientation,
+        Direction localFace,
         boolean originalNoGravity
     ) {
         BlockPos occupiedPos = supportPos.relative(attachmentFace);
@@ -1188,7 +1312,11 @@ public final class AdhesiveBondingService {
         for (Entity member : EntityBondManager.component(level, entity)) {
             ignoredEntities.add(member.getUUID());
         }
-        if (!isPlacementUnobstructed(level, occupiedPos, fixedState, ignoredEntities)) return false;
+        Vec3 targetPosition = entity.plasticraft$placementPosition(occupiedPos, orientation, localFace);
+        VoxelShape targetCollision = entity.plasticraft$getGeometry()
+            .collisionBoxAt(targetPosition, orientation)
+            .shape();
+        if (!isPlasticPlacementUnobstructed(level, targetCollision, ignoredEntities)) return false;
         if (!level.setBlock(occupiedPos, fixedState, Block.UPDATE_ALL)) return false;
         if (!(level.getBlockEntity(occupiedPos) instanceof BondedEntityBlockEntity bonded)
             || !bonded.initialize(entity, displayState, attachmentFace, orientation, originalNoGravity)) {
@@ -1259,9 +1387,9 @@ public final class AdhesiveBondingService {
             fixedPosition,
             transit.originalNoGravity()
         );
-        target.setData(ModAttachments.ENTITY_ADHESION, adhesion);
+        target.setData(PlasticraftAttachments.ENTITY_ADHESION, adhesion);
         if (!BondedFallingBlocks.setEntityBond(level, transit.supportPos(), transit.attachmentFace(), true)) {
-            target.removeData(ModAttachments.ENTITY_ADHESION);
+            target.removeData(PlasticraftAttachments.ENTITY_ADHESION);
             return false;
         }
         enforce(target, adhesion);
@@ -1276,13 +1404,15 @@ public final class AdhesiveBondingService {
     ) {
         if (!target.isAlive()
             || target instanceof Player
-            || target.hasData(ModAttachments.ENTITY_ADHESION)
-            || target.hasData(ModAttachments.ADHESIVE_TRANSIT)
+            || target.hasData(PlasticraftAttachments.ENTITY_ADHESION)
+            || target.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
             || EntityBondManager.hasBonds(target)
             || !BondedFallingBlocks.hasPatch(level, supportPos, attachmentFace)
             || !SurfaceAdhesiveService.hasUncoveredContact(level, target, supportPos, attachmentFace)) {
             return false;
         }
+        BlockAdhesionState patchState = BondedFallingBlocks.getAdhesion(level, supportPos);
+        boolean invisible = patchState != null && patchState.isInvisible(attachmentFace);
 
         boolean bonded;
         switch (target) {
@@ -1293,6 +1423,7 @@ public final class AdhesiveBondingService {
                 supportPos,
                 attachmentFace,
                 plasticEntity.getOrientation(),
+                plasticEntity.getOrientation().localDirection(attachmentFace.getOpposite()),
                 plasticEntity.isNoGravity()
             );
             case FallingBlockEntity fallingBlock -> bonded = bondFallingBlock(level, fallingBlock, supportPos, attachmentFace);
@@ -1303,14 +1434,15 @@ public final class AdhesiveBondingService {
                     attachmentFace,
                     BuiltInRegistries.BLOCK.getKey(level.getBlockState(supportPos).getBlock()),
                     fixedPosition,
-                    target.isNoGravity()
+                    target.isNoGravity(),
+                    invisible
                 );
-                target.setData(ModAttachments.ENTITY_ADHESION, adhesion);
+                target.setData(PlasticraftAttachments.ENTITY_ADHESION, adhesion);
                 bonded = BondedFallingBlocks.setEntityBond(level, supportPos, attachmentFace, true);
                 if (bonded) {
                     enforce(target, adhesion);
                 } else {
-                    target.removeData(ModAttachments.ENTITY_ADHESION);
+                    target.removeData(PlasticraftAttachments.ENTITY_ADHESION);
                 }
             }
         }
@@ -1383,18 +1515,31 @@ public final class AdhesiveBondingService {
         if (!placedStates.containsKey(adhesivePart)) return false;
 
         List<BlockPos> placed = new ArrayList<>();
-        for (Map.Entry<BlockPos, BlockState> entry : placedStates.entrySet()) {
-            if (!level.setBlock(entry.getKey(), entry.getValue(), Block.UPDATE_ALL)) {
+        boolean previousSuppressDrops = GiantAnvilBlock.SUPPRESS_DROPS.get();
+        GiantAnvilBlock.SUPPRESS_DROPS.set(true);
+        try {
+            for (Map.Entry<BlockPos, BlockState> entry : placedStates.entrySet()) {
+                if (!level.setBlock(entry.getKey(), entry.getValue(), Block.UPDATE_CLIENTS, 0)) {
+                    rollbackGiantAnvil(level, placed, replacedStates);
+                    return false;
+                }
+                placed.add(entry.getKey());
+            }
+            if (!BondedFallingBlocks.connect(level, supportPos, adhesivePart)) {
                 rollbackGiantAnvil(level, placed, replacedStates);
                 return false;
             }
-            placed.add(entry.getKey());
+            for (BlockPos pos : placed) {
+                BlockState state = level.getBlockState(pos);
+                BlockState replaced = replacedStates.getOrDefault(pos, Blocks.AIR.defaultBlockState());
+                level.sendBlockUpdated(pos, replaced, state, Block.UPDATE_ALL);
+                state.updateNeighbourShapes(level, pos, Block.UPDATE_ALL);
+                level.updateNeighborsAt(pos, state.getBlock());
+            }
+            return true;
+        } finally {
+            GiantAnvilBlock.SUPPRESS_DROPS.set(previousSuppressDrops);
         }
-        if (!BondedFallingBlocks.connect(level, supportPos, adhesivePart)) {
-            rollbackGiantAnvil(level, placed, replacedStates);
-            return false;
-        }
-        return true;
     }
 
     private static void rollbackGiantAnvil(
@@ -1402,9 +1547,25 @@ public final class AdhesiveBondingService {
         List<BlockPos> placed,
         Map<BlockPos, BlockState> replacedStates
     ) {
-        for (BlockPos pos : placed) {
-            BondedFallingBlocks.removeAll(level, pos);
-            level.setBlock(pos, replacedStates.getOrDefault(pos, Blocks.AIR.defaultBlockState()), Block.UPDATE_ALL);
+        boolean previousSuppressDrops = GiantAnvilBlock.SUPPRESS_DROPS.get();
+        GiantAnvilBlock.SUPPRESS_DROPS.set(true);
+        try {
+            for (BlockPos pos : placed) {
+                BondedFallingBlocks.removeAll(level, pos);
+                level.setBlock(
+                    pos,
+                    replacedStates.getOrDefault(pos, Blocks.AIR.defaultBlockState()),
+                    Block.UPDATE_CLIENTS,
+                    0
+                );
+            }
+            for (BlockPos pos : placed) {
+                BlockState state = level.getBlockState(pos);
+                state.updateNeighbourShapes(level, pos, Block.UPDATE_ALL);
+                level.updateNeighborsAt(pos, state.getBlock());
+            }
+        } finally {
+            GiantAnvilBlock.SUPPRESS_DROPS.set(previousSuppressDrops);
         }
     }
 
@@ -1460,6 +1621,46 @@ public final class AdhesiveBondingService {
         return true;
     }
 
+    private static boolean isPlasticPlacementUnobstructed(
+        ServerLevel level,
+        VoxelShape collision,
+        Set<UUID> ignoredEntities
+    ) {
+        if (collision.isEmpty()) return true;
+        if (!level.getWorldBorder().isWithinBounds(collision.bounds())) return false;
+        for (AABB component : collision.toAabbs()) {
+            AABB probe = component.deflate(Math.min(
+                PLACEMENT_COLLISION_EPSILON,
+                Math.min(component.getXsize(), Math.min(component.getYsize(), component.getZsize())) * 0.25D
+            ));
+            if (!hasLoadedPlacementBlocks(level, probe) || !level.noBlockCollision(null, probe)) return false;
+            if (!level.getEntities(
+                (Entity) null,
+                probe,
+                candidate -> candidate.isAlive()
+                    && candidate.blocksBuilding
+                    && !ignoredEntities.contains(candidate.getUUID())
+            ).isEmpty()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean hasLoadedPlacementBlocks(ServerLevel level, AABB bounds) {
+        int minX = Mth.floor(bounds.minX);
+        int maxX = Mth.floor(bounds.maxX - PLACEMENT_COLLISION_EPSILON);
+        int minZ = Mth.floor(bounds.minZ);
+        int maxZ = Mth.floor(bounds.maxZ - PLACEMENT_COLLISION_EPSILON);
+        int y = Mth.floor(bounds.minY);
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                if (!level.hasChunkAt(new BlockPos(x, y, z))) return false;
+            }
+        }
+        return true;
+    }
+
     private static void enforce(Entity entity, EntityAdhesion adhesion) {
         enforce(entity, adhesion.fixedPosition());
     }
@@ -1476,8 +1677,8 @@ public final class AdhesiveBondingService {
     }
 
     private static void release(Entity entity, EntityAdhesion adhesion) {
-        entity.removeData(ModAttachments.ADHESIVE_ELASTIC_MOTION);
-        entity.removeData(ModAttachments.ENTITY_ADHESION);
+        entity.removeData(PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION);
+        entity.removeData(PlasticraftAttachments.ENTITY_ADHESION);
         if (entity.level() instanceof ServerLevel level) {
             if (!hasAttachedEntity(level, adhesion.supportPos(), adhesion.attachmentFace())) {
                 BondedFallingBlocks.setEntityBond(level, adhesion.supportPos(), adhesion.attachmentFace(), false);
@@ -1496,7 +1697,7 @@ public final class AdhesiveBondingService {
 
     private static boolean hasAttachedEntity(ServerLevel level, BlockPos supportPos, Direction attachmentFace) {
         for (Entity candidate : level.getAllEntities()) {
-            EntityAdhesion adhesion = candidate.getExistingDataOrNull(ModAttachments.ENTITY_ADHESION.get());
+            EntityAdhesion adhesion = candidate.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
             if (adhesion != null
                 && adhesion.supportPos().equals(supportPos)
                 && adhesion.attachmentFace() == attachmentFace) {
@@ -1516,7 +1717,7 @@ public final class AdhesiveBondingService {
 
     private static void cancelTransit(Entity entity, AdhesiveTransit transit, Vec3 stopPosition, byte orientation) {
         TRANSIT_VALIDATIONS.remove(entity);
-        entity.removeData(ModAttachments.ADHESIVE_TRANSIT);
+        entity.removeData(PlasticraftAttachments.ADHESIVE_TRANSIT);
         applyTransitProjection(entity, stopPosition, orientation);
         entity.setNoGravity(transit.originalNoGravity());
         entity.setDeltaMovement(Vec3.ZERO);

@@ -3,7 +3,8 @@ package dev.anvilcraft.plasticraft.block;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
-import dev.anvilcraft.plasticraft.init.entity.ModEntities;
+import dev.anvilcraft.plasticraft.entity.collision.BuiltInPlasticEntityModels;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -13,7 +14,6 @@ import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
-import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.Map;
@@ -21,11 +21,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /** 可被高粘性树脂固定并方块化的催化压盖。 */
 public final class CatalyticPressLidBlock extends AbstractPlasticEntityBlock<CatalyticPressLidEntity> {
-    private static final VoxelShape LID_SHAPE = Shapes.or(
-        box(0.0D, 0.0D, 0.0D, 16.0D, 8.0D, 16.0D),
-        box(1.0D, 8.0D, 1.0D, 15.0D, 13.0D, 15.0D),
-        box(2.0D, 13.0D, 2.0D, 14.0D, 16.0D, 14.0D)
-    );
+    private static final VoxelShape LID_SHAPE = BuiltInPlasticEntityModels
+        .CATALYTIC_PRESS_LID_COMPATIBILITY;
     private static final Map<PlasticEntityOrientation, VoxelShape> SHAPES = new ConcurrentHashMap<>();
 
     public CatalyticPressLidBlock(Properties properties) {
@@ -38,7 +35,7 @@ public final class CatalyticPressLidBlock extends AbstractPlasticEntityBlock<Cat
 
     @Override
     protected EntityType<? extends CatalyticPressLidEntity> getPlasticEntityType() {
-        return ModEntities.CATALYTIC_PRESS_LID.get();
+        return PlasticraftEntities.CATALYTIC_PRESS_LID.get();
     }
 
     @Override

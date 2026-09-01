@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.entity.collision;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import net.minecraft.core.Direction;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.shapes.BooleanOp;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
@@ -66,7 +67,8 @@ public final class PlasticEntityCollisionShapes {
                     }
                 }
             }
-            transformed = Shapes.or(
+            // 旋转复杂模型时不要让每个子盒都触发一次完整网格优化，最后统一优化即可
+            transformed = Shapes.joinUnoptimized(
                 transformed,
                 Shapes.box(
                     minX,
@@ -75,7 +77,8 @@ public final class PlasticEntityCollisionShapes {
                     maxX,
                     maxY,
                     maxZ
-                )
+                ),
+                BooleanOp.OR
             );
         }
         return transformed.optimize();

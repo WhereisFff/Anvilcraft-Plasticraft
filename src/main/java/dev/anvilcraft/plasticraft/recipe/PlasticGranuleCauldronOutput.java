@@ -1,9 +1,8 @@
 package dev.anvilcraft.plasticraft.recipe;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
@@ -41,8 +40,9 @@ public final class PlasticGranuleCauldronOutput {
         FluidStack availableMelt
     ) {
         BlockState waterState = level.getBlockState(targetPos);
+        PlasticMaterial material = PlasticMaterial.fromMelt(availableMelt).orElse(null);
         if (!isFullWaterCauldron(waterState)
-            || !availableMelt.is(ModFluids.UNIVERSAL_PLASTIC_MELT.get())
+            || material == null
             || availableMelt.getAmount() < MELT_AMOUNT) {
             return false;
         }
@@ -51,8 +51,8 @@ public final class PlasticGranuleCauldronOutput {
         FluidStack simulated = source.drain(requested, IFluidHandler.FluidAction.SIMULATE);
         if (!isExactMelt(simulated, requested)) return false;
 
-        ItemStack granules = new ItemStack(ModItems.UNIVERSAL_PLASTIC_GRANULE.get(), GRANULE_COUNT);
-        PlasticMeltColor.set(granules, PlasticMeltColor.get(requested));
+        ItemStack granules = new ItemStack(material.granule(), GRANULE_COUNT);
+        if (material.supportsDyeing()) PlasticMeltColor.set(granules, PlasticMeltColor.get(requested));
         ItemEntity output = new ItemEntity(
             level,
             targetPos.getX() + 0.5D,

@@ -1,0 +1,19 @@
+{
+  "type": "anvilcraft:fluid_mixing",
+  "ingredients": [
+    {
+      "amount": 1000,
+      "fluid": "anvilcraftplasticraft:heat_resistant_plastic_melt"
+    },
+    {
+      "amount": 1000,
+      "fluid": "minecraft:water"
+    }
+  ],
+  "results": [
+    {
+      "count": 16,
+      "id": "anvilcraftplasticraft:heat_resistant_plastic_granule"
+    }
+  ]
+}

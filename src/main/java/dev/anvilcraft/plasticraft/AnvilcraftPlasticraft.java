@@ -2,31 +2,47 @@ package dev.anvilcraft.plasticraft;
 
 import com.mojang.logging.LogUtils;
 import dev.anvilcraft.lib.v2.network.register.NetworkRegistrar;
+import dev.anvilcraft.lib.v2.config.ConfigManager;
 import dev.anvilcraft.lib.v2.registrum.Registrum;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.VaporizationSources;
-import dev.anvilcraft.lib.v2.yukkuri.api.vapor.YukkuriCapabilities;
 import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
+import dev.anvilcraft.plasticraft.allay.AllayHardHatTraits;
+import dev.anvilcraft.plasticraft.allay.AllayHardHatTraits.AllayMaterialTrait;
+import dev.anvilcraft.plasticraft.allay.observation.ObservationChunkLoader;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
 import dev.anvilcraft.plasticraft.data.PlasticraftDatagen;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveInvisibilityService;
+import dev.anvilcraft.plasticraft.config.PlasticraftClientConfig;
+import dev.anvilcraft.plasticraft.event.AllayHardHatEvents;
+import dev.anvilcraft.plasticraft.event.AnvilCraftApiBootstrap;
 import dev.anvilcraft.plasticraft.event.HighViscosityResinEvents;
 import dev.anvilcraft.plasticraft.event.PlasticVillagerTrades;
 import dev.anvilcraft.plasticraft.fluid.UniversalPlasticMeltBucketWrapper;
-import dev.anvilcraft.plasticraft.init.ModAttachments;
-import dev.anvilcraft.plasticraft.init.ModMenuTypes;
-import dev.anvilcraft.plasticraft.init.ModParticles;
-import dev.anvilcraft.plasticraft.init.ModRecipeTypes;
-import dev.anvilcraft.plasticraft.init.block.ModBlockEntities;
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.block.ModFluids;
-import dev.anvilcraft.plasticraft.init.entity.ModEntities;
-import dev.anvilcraft.plasticraft.init.item.ModItemGroups;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticFluidHandler;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticItemHandler;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
+import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
+import dev.anvilcraft.plasticraft.init.PlasticraftDataComponents;
+import dev.anvilcraft.plasticraft.init.PlasticraftMenuTypes;
+import dev.anvilcraft.plasticraft.init.PlasticraftParticles;
+import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.init.PlasticraftEntityBuildAdapters;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItemGroups;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
 import dev.anvilcraft.plasticraft.recipe.EscapingVaporEffects;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetVaporizationSource;
 import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
+import dev.anvilcraft.plasticraft.vapor.VaporCapabilities;
+import dev.anvilcraft.plasticraft.vapor.VaporizationSources;
+import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.animal.allay.Allay;
 import net.minecraft.world.item.CreativeModeTab;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -34,9 +50,12 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import org.slf4j.Logger;
+
+import java.util.Set;
 
 @Mod(AnvilcraftPlasticraft.MOD_ID)
 public final class AnvilcraftPlasticraft {
@@ -45,31 +64,50 @@ public final class AnvilcraftPlasticraft {
     public static final Logger LOGGER = LogUtils.getLogger();
     public static final Registrum REGISTRUM = Registrum.create(MOD_ID)
         .defaultCreativeTab((ResourceKey<CreativeModeTab>) null);
+    public static final PlasticraftClientConfig CLIENT_CONFIG = ConfigManager.register(
+        MOD_ID,
+        PlasticraftClientConfig::new
+    );
 
     public AnvilcraftPlasticraft(IEventBus modEventBus, ModContainer ignored) {
-        ModAttachments.register(modEventBus);
-        ModItemGroups.register(modEventBus);
-        ModFluids.register(modEventBus);
-        ModBlocks.register();
-        ModBlockEntities.register();
-        ModItems.register();
+        PlasticraftAttachments.register(modEventBus);
+        PlasticraftDataComponents.register(modEventBus);
+        PlasticraftItemGroups.register(modEventBus);
+        PlasticraftFluids.register(modEventBus);
+        PlasticraftBlocks.register();
+        PlasticraftBlockEntities.register();
+        PlasticraftItems.register();
         PlasticItemTooltipManager.init();
-        ModEntities.register();
-        ModMenuTypes.register();
-        ModParticles.register(modEventBus);
-        ModRecipeTypes.register(modEventBus);
+        PlasticraftEntities.register();
+        AllayHardHatTraits.registerMaterial(
+            PlasticraftFluids.ENGINEERING_PLASTIC_MELT.getId(),
+            Set.of(AllayMaterialTrait.SILK_TOUCH)
+        );
+        AllayHardHatTraits.registerMaterial(
+            PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT.getId(),
+            Set.of(AllayMaterialTrait.FIRE_RESISTANT)
+        );
+        PlasticraftEntityBuildAdapters.register();
+        PlasticraftMenuTypes.register();
+        PlasticraftParticles.register(modEventBus);
+        PlasticraftRecipeTypes.register(modEventBus);
         PlasticraftDatagen.init();
         VaporizationSources.register(PlasmaJetVaporizationSource.INSTANCE);
+        AnvilCraftApiBootstrap.register();
         NeoForge.EVENT_BUS.addListener(AnvilcraftPlasticraft::addItemTooltips);
+        NeoForge.EVENT_BUS.addListener(AllayHardHatEvents::entityInteract);
         NeoForge.EVENT_BUS.addListener(HighViscosityResinEvents::useEntity);
+        NeoForge.EVENT_BUS.addListener(AdhesiveInvisibilityService::projectileImpact);
         NeoForge.EVENT_BUS.addListener(CondenserTowerProcess::onLargeCauldronProcess);
         NeoForge.EVENT_BUS.addListener(EscapingVaporEffects::rightClickBlock);
         NeoForge.EVENT_BUS.addListener(PlasticOilCatalysis::onChunkSent);
         NeoForge.EVENT_BUS.addListener(PlasticVillagerTrades::addTrades);
         modEventBus.addListener(HighViscosityResinEvents::registerCauldronFluidContent);
-        modEventBus.addListener(ModBlocks::registerDispenserBehavior);
+        modEventBus.addListener(PlasticraftBlocks::registerDispenserBehavior);
         modEventBus.addListener(AnvilcraftPlasticraft::registerCapabilities);
         modEventBus.addListener(AnvilcraftPlasticraft::registerPayloads);
+        modEventBus.addListener(AnvilcraftPlasticraft::registerEntityAttributes);
+        modEventBus.addListener(ObservationChunkLoader::registerTicketController);
         LOGGER.info("Loading {}", MOD_NAME);
     }
 
@@ -81,46 +119,201 @@ public final class AnvilcraftPlasticraft {
         PlasticItemTooltipManager.addTooltip(event.getItemStack(), event.getContext(), event.getToolTip());
     }
 
+    private static void registerEntityAttributes(EntityAttributeCreationEvent event) {
+        event.put(PlasticraftEntities.WORKING_ALLAY.get(), Allay.createAttributes().build());
+    }
+
     private static void registerCapabilities(RegisterCapabilitiesEvent event) {
         event.registerEntity(
             Capabilities.ItemHandler.ENTITY,
-            ModEntities.HARDEND_RESIN_CAULDRON.get(),
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
             (cauldron, side) -> cauldron.getItemHandler()
         );
         event.registerEntity(
             Capabilities.ItemHandler.ENTITY_AUTOMATION,
-            ModEntities.HARDEND_RESIN_CAULDRON.get(),
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
             (cauldron, side) -> cauldron.getItemHandler()
         );
         event.registerEntity(
             Capabilities.FluidHandler.ENTITY,
-            ModEntities.HARDEND_RESIN_CAULDRON.get(),
+            PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
             (cauldron, side) -> cauldron.getFluidHandler()
+        );
+        event.registerEntity(
+            Capabilities.ItemHandler.ENTITY,
+            PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
+            (plastic, side) -> plastic.getMoldedItemHandler().getSlots() > 0
+                ? plastic.getMoldedItemHandler() : null
+        );
+        event.registerEntity(
+            Capabilities.ItemHandler.ENTITY_AUTOMATION,
+            PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
+            (plastic, side) -> plastic.getMoldedItemHandler().getSlots() > 0
+                ? plastic.getMoldedItemHandler() : null
+        );
+        event.registerEntity(
+            Capabilities.FluidHandler.ENTITY,
+            PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
+            (plastic, side) -> plastic.getMoldedFluidHandler().getTanks() > 0
+                ? plastic.getMoldedFluidHandler() : null
+        );
+        event.registerEntity(
+            Capabilities.ItemHandler.ENTITY,
+            PlasticraftEntities.ENGINEERING_PLASTIC.get(),
+            (plastic, side) -> plastic.getMoldedItemHandler().getSlots() > 0
+                ? plastic.getMoldedItemHandler() : null
+        );
+        event.registerEntity(
+            Capabilities.ItemHandler.ENTITY_AUTOMATION,
+            PlasticraftEntities.ENGINEERING_PLASTIC.get(),
+            (plastic, side) -> plastic.getMoldedItemHandler().getSlots() > 0
+                ? plastic.getMoldedItemHandler() : null
+        );
+        event.registerEntity(
+            Capabilities.FluidHandler.ENTITY,
+            PlasticraftEntities.ENGINEERING_PLASTIC.get(),
+            (plastic, side) -> plastic.getMoldedFluidHandler().getTanks() > 0
+                ? plastic.getMoldedFluidHandler() : null
+        );
+        event.registerEntity(
+            Capabilities.ItemHandler.ENTITY,
+            PlasticraftEntities.HEAT_RESISTANT_PLASTIC.get(),
+            (plastic, side) -> plastic.getMoldedItemHandler().getSlots() > 0
+                ? plastic.getMoldedItemHandler() : null
+        );
+        event.registerEntity(
+            Capabilities.ItemHandler.ENTITY_AUTOMATION,
+            PlasticraftEntities.HEAT_RESISTANT_PLASTIC.get(),
+            (plastic, side) -> plastic.getMoldedItemHandler().getSlots() > 0
+                ? plastic.getMoldedItemHandler() : null
+        );
+        event.registerEntity(
+            Capabilities.FluidHandler.ENTITY,
+            PlasticraftEntities.HEAT_RESISTANT_PLASTIC.get(),
+            (plastic, side) -> plastic.getMoldedFluidHandler().getTanks() > 0
+                ? plastic.getMoldedFluidHandler() : null
+        );
+        event.registerEntity(
+            Capabilities.ItemHandler.ENTITY,
+            PlasticraftEntities.CLEAR_PLASTIC.get(),
+            (plastic, side) -> plastic.getMoldedItemHandler().getSlots() > 0
+                ? plastic.getMoldedItemHandler() : null
+        );
+        event.registerEntity(
+            Capabilities.ItemHandler.ENTITY_AUTOMATION,
+            PlasticraftEntities.CLEAR_PLASTIC.get(),
+            (plastic, side) -> plastic.getMoldedItemHandler().getSlots() > 0
+                ? plastic.getMoldedItemHandler() : null
+        );
+        event.registerEntity(
+            Capabilities.FluidHandler.ENTITY,
+            PlasticraftEntities.CLEAR_PLASTIC.get(),
+            (plastic, side) -> plastic.getMoldedFluidHandler().getTanks() > 0
+                ? plastic.getMoldedFluidHandler() : null
         );
         event.registerBlockEntity(
             Capabilities.FluidHandler.BLOCK,
-            ModBlockEntities.BONDED_ENTITY.get(),
+            PlasticraftBlockEntities.BONDED_ENTITY.get(),
             (bonded, side) -> bonded.getCapabilityFluidHandler()
         );
         event.registerBlockEntity(
             Capabilities.ItemHandler.BLOCK,
-            ModBlockEntities.BONDED_ENTITY.get(),
+            PlasticraftBlockEntities.BONDED_ENTITY.get(),
             (bonded, side) -> bonded.getItemHandler()
         );
         event.registerBlock(
             Capabilities.FluidHandler.BLOCK,
             CondenserTowerBlockEntity::capability,
-            ModBlocks.CONDENSER_TOWER.get()
+            PlasticraftBlocks.CONDENSER_TOWER.get()
         );
         event.registerBlock(
-            YukkuriCapabilities.VAPOR_CONSUMER,
+            VaporCapabilities.VAPOR_CONSUMER,
             CondenserTowerBlockEntity::vaporCapability,
-            ModBlocks.CONDENSER_TOWER.get()
+            PlasticraftBlocks.CONDENSER_TOWER.get()
+        );
+        event.registerBlockEntity(
+            Capabilities.ItemHandler.BLOCK,
+            PlasticraftBlockEntities.PLASTIC_MOLDING_CHAMBER.get(),
+            (chamber, side) -> side == Direction.UP || side == Direction.DOWN ? null : chamber.clayItemHandler()
+        );
+        event.registerBlockEntity(
+            Capabilities.FluidHandler.BLOCK,
+            PlasticraftBlockEntities.PLASTIC_MOLDING_CHAMBER.get(),
+            (chamber, side) -> side == null || side == Direction.UP || side == Direction.DOWN
+                ? chamber.fluidHandler()
+                : null
+        );
+        event.registerBlockEntity(
+            Capabilities.EnergyStorage.BLOCK,
+            PlasticraftBlockEntities.PLASTIC_MOLDING_CHAMBER.get(),
+            (chamber, side) -> chamber.energyStorage()
         );
         event.registerItem(
             Capabilities.FluidHandler.ITEM,
-            (stack, ignored) -> new UniversalPlasticMeltBucketWrapper(stack),
-            ModItems.UNIVERSAL_PLASTIC_MELT_BUCKET.get()
+            (stack, ignored) -> new UniversalPlasticMeltBucketWrapper(
+                stack,
+                PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET,
+                PlasticraftFluids.UNIVERSAL_PLASTIC_MELT
+            ),
+            PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.get()
+        );
+        event.registerItem(
+            Capabilities.FluidHandler.ITEM,
+            (stack, ignored) -> new UniversalPlasticMeltBucketWrapper(
+                stack,
+                PlasticraftItems.ENGINEERING_PLASTIC_MELT_BUCKET,
+                PlasticraftFluids.ENGINEERING_PLASTIC_MELT
+            ),
+            PlasticraftItems.ENGINEERING_PLASTIC_MELT_BUCKET.get()
+        );
+        event.registerItem(
+            Capabilities.FluidHandler.ITEM,
+            (stack, ignored) -> new UniversalPlasticMeltBucketWrapper(
+                stack,
+                PlasticraftItems.CLEAR_PLASTIC_MELT_BUCKET,
+                PlasticraftFluids.CLEAR_PLASTIC_MELT
+            ),
+            PlasticraftItems.CLEAR_PLASTIC_MELT_BUCKET.get()
+        );
+        event.registerItem(
+            Capabilities.FluidHandler.ITEM,
+            (stack, ignored) -> new UniversalPlasticMeltBucketWrapper(
+                stack,
+                PlasticraftItems.HEAT_RESISTANT_PLASTIC_MELT_BUCKET,
+                PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT
+            ),
+            PlasticraftItems.HEAT_RESISTANT_PLASTIC_MELT_BUCKET.get()
+        );
+        event.registerItem(
+            Capabilities.ItemHandler.ITEM,
+            (stack, ignored) -> MoldedPlasticData.get(stack)
+                .filter(data -> stack.getCount() == 1
+                    && (MoldingProductTypes.isChest(data.finalType())
+                        || MoldingProductTypes.isCauldron(data.finalType())))
+                .map(data -> new MoldedPlasticItemHandler(
+                    () -> MoldedPlasticData.get(stack),
+                    replacement -> MoldedPlasticData.set(stack, replacement)
+                ))
+                .orElse(null),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.asItem(),
+            PlasticraftBlocks.ENGINEERING_PLASTIC.asItem(),
+            PlasticraftBlocks.CLEAR_PLASTIC.asItem(),
+            PlasticraftBlocks.HEAT_RESISTANT_PLASTIC.asItem()
+        );
+        event.registerItem(
+            Capabilities.FluidHandler.ITEM,
+            (stack, ignored) -> MoldedPlasticData.get(stack)
+                .filter(data -> stack.getCount() == 1 && MoldingProductTypes.holdsFluids(data.finalType()))
+                .map(data -> new MoldedPlasticFluidHandler(
+                    () -> MoldedPlasticData.get(stack),
+                    replacement -> MoldedPlasticData.set(stack, replacement),
+                    () -> stack
+                ))
+                .orElse(null),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.asItem(),
+            PlasticraftBlocks.ENGINEERING_PLASTIC.asItem(),
+            PlasticraftBlocks.CLEAR_PLASTIC.asItem(),
+            PlasticraftBlocks.HEAT_RESISTANT_PLASTIC.asItem()
         );
     }
 

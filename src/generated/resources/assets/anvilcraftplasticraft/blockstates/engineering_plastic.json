@@ -1,0 +1,772 @@
+{
+  "variants": {
+    "bonded=false,color=black,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_black"
+    },
+    "bonded=false,color=black,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_black"
+    },
+    "bonded=false,color=black,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_black"
+    },
+    "bonded=false,color=black,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_black"
+    },
+    "bonded=false,color=black,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_black"
+    },
+    "bonded=false,color=black,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_black"
+    },
+    "bonded=false,color=black,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_black"
+    },
+    "bonded=false,color=black,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_black"
+    },
+    "bonded=false,color=blue,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_blue"
+    },
+    "bonded=false,color=blue,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_blue"
+    },
+    "bonded=false,color=blue,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_blue"
+    },
+    "bonded=false,color=blue,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_blue"
+    },
+    "bonded=false,color=blue,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_blue"
+    },
+    "bonded=false,color=blue,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_blue"
+    },
+    "bonded=false,color=blue,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_blue"
+    },
+    "bonded=false,color=blue,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_blue"
+    },
+    "bonded=false,color=brown,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_brown"
+    },
+    "bonded=false,color=brown,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_brown"
+    },
+    "bonded=false,color=brown,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_brown"
+    },
+    "bonded=false,color=brown,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_brown"
+    },
+    "bonded=false,color=brown,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_brown"
+    },
+    "bonded=false,color=brown,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_brown"
+    },
+    "bonded=false,color=brown,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_brown"
+    },
+    "bonded=false,color=brown,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_brown"
+    },
+    "bonded=false,color=cyan,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_cyan"
+    },
+    "bonded=false,color=cyan,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_cyan"
+    },
+    "bonded=false,color=cyan,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_cyan"
+    },
+    "bonded=false,color=cyan,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_cyan"
+    },
+    "bonded=false,color=cyan,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_cyan"
+    },
+    "bonded=false,color=cyan,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_cyan"
+    },
+    "bonded=false,color=cyan,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_cyan"
+    },
+    "bonded=false,color=cyan,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_cyan"
+    },
+    "bonded=false,color=gray,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_gray"
+    },
+    "bonded=false,color=gray,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_gray"
+    },
+    "bonded=false,color=gray,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_gray"
+    },
+    "bonded=false,color=gray,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_gray"
+    },
+    "bonded=false,color=gray,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_gray"
+    },
+    "bonded=false,color=gray,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_gray"
+    },
+    "bonded=false,color=gray,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_gray"
+    },
+    "bonded=false,color=gray,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_gray"
+    },
+    "bonded=false,color=green,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_green"
+    },
+    "bonded=false,color=green,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_green"
+    },
+    "bonded=false,color=green,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_green"
+    },
+    "bonded=false,color=green,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_green"
+    },
+    "bonded=false,color=green,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_green"
+    },
+    "bonded=false,color=green,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_green"
+    },
+    "bonded=false,color=green,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_green"
+    },
+    "bonded=false,color=green,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_green"
+    },
+    "bonded=false,color=light_blue,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_blue"
+    },
+    "bonded=false,color=light_blue,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_blue"
+    },
+    "bonded=false,color=light_blue,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_blue"
+    },
+    "bonded=false,color=light_blue,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_blue"
+    },
+    "bonded=false,color=light_blue,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_blue"
+    },
+    "bonded=false,color=light_blue,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_blue"
+    },
+    "bonded=false,color=light_blue,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_blue"
+    },
+    "bonded=false,color=light_blue,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_blue"
+    },
+    "bonded=false,color=light_gray,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_gray"
+    },
+    "bonded=false,color=light_gray,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_gray"
+    },
+    "bonded=false,color=light_gray,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_gray"
+    },
+    "bonded=false,color=light_gray,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_gray"
+    },
+    "bonded=false,color=light_gray,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_gray"
+    },
+    "bonded=false,color=light_gray,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_gray"
+    },
+    "bonded=false,color=light_gray,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_gray"
+    },
+    "bonded=false,color=light_gray,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_gray"
+    },
+    "bonded=false,color=lime,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_lime"
+    },
+    "bonded=false,color=lime,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_lime"
+    },
+    "bonded=false,color=lime,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_lime"
+    },
+    "bonded=false,color=lime,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_lime"
+    },
+    "bonded=false,color=lime,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_lime"
+    },
+    "bonded=false,color=lime,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_lime"
+    },
+    "bonded=false,color=lime,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_lime"
+    },
+    "bonded=false,color=lime,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_lime"
+    },
+    "bonded=false,color=magenta,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_magenta"
+    },
+    "bonded=false,color=magenta,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_magenta"
+    },
+    "bonded=false,color=magenta,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_magenta"
+    },
+    "bonded=false,color=magenta,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_magenta"
+    },
+    "bonded=false,color=magenta,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_magenta"
+    },
+    "bonded=false,color=magenta,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_magenta"
+    },
+    "bonded=false,color=magenta,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_magenta"
+    },
+    "bonded=false,color=magenta,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_magenta"
+    },
+    "bonded=false,color=orange,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_orange"
+    },
+    "bonded=false,color=orange,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_orange"
+    },
+    "bonded=false,color=orange,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_orange"
+    },
+    "bonded=false,color=orange,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_orange"
+    },
+    "bonded=false,color=orange,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_orange"
+    },
+    "bonded=false,color=orange,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_orange"
+    },
+    "bonded=false,color=orange,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_orange"
+    },
+    "bonded=false,color=orange,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_orange"
+    },
+    "bonded=false,color=pink,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_pink"
+    },
+    "bonded=false,color=pink,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_pink"
+    },
+    "bonded=false,color=pink,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_pink"
+    },
+    "bonded=false,color=pink,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_pink"
+    },
+    "bonded=false,color=pink,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_pink"
+    },
+    "bonded=false,color=pink,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_pink"
+    },
+    "bonded=false,color=pink,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_pink"
+    },
+    "bonded=false,color=pink,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_pink"
+    },
+    "bonded=false,color=purple,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_purple"
+    },
+    "bonded=false,color=purple,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_purple"
+    },
+    "bonded=false,color=purple,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_purple"
+    },
+    "bonded=false,color=purple,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_purple"
+    },
+    "bonded=false,color=purple,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_purple"
+    },
+    "bonded=false,color=purple,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_purple"
+    },
+    "bonded=false,color=purple,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_purple"
+    },
+    "bonded=false,color=purple,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_purple"
+    },
+    "bonded=false,color=red,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_red"
+    },
+    "bonded=false,color=red,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_red"
+    },
+    "bonded=false,color=red,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_red"
+    },
+    "bonded=false,color=red,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_red"
+    },
+    "bonded=false,color=red,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_red"
+    },
+    "bonded=false,color=red,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_red"
+    },
+    "bonded=false,color=red,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_red"
+    },
+    "bonded=false,color=red,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_red"
+    },
+    "bonded=false,color=white,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_white"
+    },
+    "bonded=false,color=white,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_white"
+    },
+    "bonded=false,color=white,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_white"
+    },
+    "bonded=false,color=white,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_white"
+    },
+    "bonded=false,color=white,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_white"
+    },
+    "bonded=false,color=white,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_white"
+    },
+    "bonded=false,color=white,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_white"
+    },
+    "bonded=false,color=white,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_white"
+    },
+    "bonded=false,color=yellow,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_yellow"
+    },
+    "bonded=false,color=yellow,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_yellow"
+    },
+    "bonded=false,color=yellow,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_yellow"
+    },
+    "bonded=false,color=yellow,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_yellow"
+    },
+    "bonded=false,color=yellow,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_yellow"
+    },
+    "bonded=false,color=yellow,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_yellow"
+    },
+    "bonded=false,color=yellow,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_yellow"
+    },
+    "bonded=false,color=yellow,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_yellow"
+    },
+    "bonded=true,color=black,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_black"
+    },
+    "bonded=true,color=black,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_black"
+    },
+    "bonded=true,color=black,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_black"
+    },
+    "bonded=true,color=black,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_black"
+    },
+    "bonded=true,color=black,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_black"
+    },
+    "bonded=true,color=black,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_black"
+    },
+    "bonded=true,color=black,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_black"
+    },
+    "bonded=true,color=black,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_black"
+    },
+    "bonded=true,color=blue,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_blue"
+    },
+    "bonded=true,color=blue,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_blue"
+    },
+    "bonded=true,color=blue,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_blue"
+    },
+    "bonded=true,color=blue,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_blue"
+    },
+    "bonded=true,color=blue,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_blue"
+    },
+    "bonded=true,color=blue,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_blue"
+    },
+    "bonded=true,color=blue,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_blue"
+    },
+    "bonded=true,color=blue,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_blue"
+    },
+    "bonded=true,color=brown,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_brown"
+    },
+    "bonded=true,color=brown,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_brown"
+    },
+    "bonded=true,color=brown,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_brown"
+    },
+    "bonded=true,color=brown,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_brown"
+    },
+    "bonded=true,color=brown,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_brown"
+    },
+    "bonded=true,color=brown,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_brown"
+    },
+    "bonded=true,color=brown,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_brown"
+    },
+    "bonded=true,color=brown,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_brown"
+    },
+    "bonded=true,color=cyan,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_cyan"
+    },
+    "bonded=true,color=cyan,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_cyan"
+    },
+    "bonded=true,color=cyan,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_cyan"
+    },
+    "bonded=true,color=cyan,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_cyan"
+    },
+    "bonded=true,color=cyan,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_cyan"
+    },
+    "bonded=true,color=cyan,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_cyan"
+    },
+    "bonded=true,color=cyan,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_cyan"
+    },
+    "bonded=true,color=cyan,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_cyan"
+    },
+    "bonded=true,color=gray,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_gray"
+    },
+    "bonded=true,color=gray,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_gray"
+    },
+    "bonded=true,color=gray,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_gray"
+    },
+    "bonded=true,color=gray,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_gray"
+    },
+    "bonded=true,color=gray,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_gray"
+    },
+    "bonded=true,color=gray,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_gray"
+    },
+    "bonded=true,color=gray,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_gray"
+    },
+    "bonded=true,color=gray,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_gray"
+    },
+    "bonded=true,color=green,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_green"
+    },
+    "bonded=true,color=green,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_green"
+    },
+    "bonded=true,color=green,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_green"
+    },
+    "bonded=true,color=green,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_green"
+    },
+    "bonded=true,color=green,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_green"
+    },
+    "bonded=true,color=green,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_green"
+    },
+    "bonded=true,color=green,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_green"
+    },
+    "bonded=true,color=green,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_green"
+    },
+    "bonded=true,color=light_blue,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_blue"
+    },
+    "bonded=true,color=light_blue,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_blue"
+    },
+    "bonded=true,color=light_blue,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_blue"
+    },
+    "bonded=true,color=light_blue,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_blue"
+    },
+    "bonded=true,color=light_blue,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_blue"
+    },
+    "bonded=true,color=light_blue,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_blue"
+    },
+    "bonded=true,color=light_blue,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_blue"
+    },
+    "bonded=true,color=light_blue,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_blue"
+    },
+    "bonded=true,color=light_gray,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_gray"
+    },
+    "bonded=true,color=light_gray,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_gray"
+    },
+    "bonded=true,color=light_gray,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_gray"
+    },
+    "bonded=true,color=light_gray,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_gray"
+    },
+    "bonded=true,color=light_gray,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_gray"
+    },
+    "bonded=true,color=light_gray,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_gray"
+    },
+    "bonded=true,color=light_gray,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_gray"
+    },
+    "bonded=true,color=light_gray,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_light_gray"
+    },
+    "bonded=true,color=lime,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_lime"
+    },
+    "bonded=true,color=lime,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_lime"
+    },
+    "bonded=true,color=lime,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_lime"
+    },
+    "bonded=true,color=lime,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_lime"
+    },
+    "bonded=true,color=lime,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_lime"
+    },
+    "bonded=true,color=lime,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_lime"
+    },
+    "bonded=true,color=lime,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_lime"
+    },
+    "bonded=true,color=lime,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_lime"
+    },
+    "bonded=true,color=magenta,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_magenta"
+    },
+    "bonded=true,color=magenta,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_magenta"
+    },
+    "bonded=true,color=magenta,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_magenta"
+    },
+    "bonded=true,color=magenta,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_magenta"
+    },
+    "bonded=true,color=magenta,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_magenta"
+    },
+    "bonded=true,color=magenta,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_magenta"
+    },
+    "bonded=true,color=magenta,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_magenta"
+    },
+    "bonded=true,color=magenta,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_magenta"
+    },
+    "bonded=true,color=orange,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_orange"
+    },
+    "bonded=true,color=orange,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_orange"
+    },
+    "bonded=true,color=orange,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_orange"
+    },
+    "bonded=true,color=orange,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_orange"
+    },
+    "bonded=true,color=orange,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_orange"
+    },
+    "bonded=true,color=orange,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_orange"
+    },
+    "bonded=true,color=orange,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_orange"
+    },
+    "bonded=true,color=orange,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_orange"
+    },
+    "bonded=true,color=pink,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_pink"
+    },
+    "bonded=true,color=pink,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_pink"
+    },
+    "bonded=true,color=pink,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_pink"
+    },
+    "bonded=true,color=pink,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_pink"
+    },
+    "bonded=true,color=pink,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_pink"
+    },
+    "bonded=true,color=pink,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_pink"
+    },
+    "bonded=true,color=pink,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_pink"
+    },
+    "bonded=true,color=pink,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_pink"
+    },
+    "bonded=true,color=purple,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_purple"
+    },
+    "bonded=true,color=purple,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_purple"
+    },
+    "bonded=true,color=purple,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_purple"
+    },
+    "bonded=true,color=purple,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_purple"
+    },
+    "bonded=true,color=purple,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_purple"
+    },
+    "bonded=true,color=purple,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_purple"
+    },
+    "bonded=true,color=purple,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_purple"
+    },
+    "bonded=true,color=purple,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_purple"
+    },
+    "bonded=true,color=red,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_red"
+    },
+    "bonded=true,color=red,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_red"
+    },
+    "bonded=true,color=red,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_red"
+    },
+    "bonded=true,color=red,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_red"
+    },
+    "bonded=true,color=red,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_red"
+    },
+    "bonded=true,color=red,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_red"
+    },
+    "bonded=true,color=red,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_red"
+    },
+    "bonded=true,color=red,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_red"
+    },
+    "bonded=true,color=white,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_white"
+    },
+    "bonded=true,color=white,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_white"
+    },
+    "bonded=true,color=white,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_white"
+    },
+    "bonded=true,color=white,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_white"
+    },
+    "bonded=true,color=white,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_white"
+    },
+    "bonded=true,color=white,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_white"
+    },
+    "bonded=true,color=white,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_white"
+    },
+    "bonded=true,color=white,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_white"
+    },
+    "bonded=true,color=yellow,facing=east,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_yellow"
+    },
+    "bonded=true,color=yellow,facing=east,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_yellow"
+    },
+    "bonded=true,color=yellow,facing=north,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_yellow"
+    },
+    "bonded=true,color=yellow,facing=north,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_yellow"
+    },
+    "bonded=true,color=yellow,facing=south,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_yellow"
+    },
+    "bonded=true,color=yellow,facing=south,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_yellow"
+    },
+    "bonded=true,color=yellow,facing=west,magnetized=false": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_yellow"
+    },
+    "bonded=true,color=yellow,facing=west,magnetized=true": {
+      "model": "anvilcraftplasticraft:block/engineering_plastic_yellow"
+    }
+  }
+}

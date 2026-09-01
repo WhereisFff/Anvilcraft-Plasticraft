@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.block;
 
-import dev.anvilcraft.plasticraft.init.block.ModBlocks;
-import dev.anvilcraft.plasticraft.init.item.ModItems;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.cauldron.CauldronInteraction;
@@ -40,13 +40,14 @@ public class PlasticOilCauldronBlock extends Layered4LevelCauldronBlock {
     public static void registerInteractions() {
         INTERACTIONS.map().put(Items.BUCKET, (state, level, pos, player, hand, stack) ->
             CauldronInteraction.fillBucket(
-                state, level, pos, player, hand, stack, ModItems.PLASTIC_OIL_BUCKET.asStack(),
-                ModBlocks.PLASTIC_OIL_CAULDRON.get()::isFull, SoundEvents.BUCKET_FILL
+                state, level, pos, player, hand, stack, PlasticraftItems.PLASTIC_OIL_BUCKET.asStack(),
+                PlasticraftBlocks.PLASTIC_OIL_CAULDRON.get()::isFull, SoundEvents.BUCKET_FILL
             ));
-        CauldronInteraction.EMPTY.map().put(ModItems.PLASTIC_OIL_BUCKET.get(),
+        CauldronInteraction.EMPTY.map().put(
+            PlasticraftItems.PLASTIC_OIL_BUCKET.get(),
             (state, level, pos, player, hand, stack) -> CauldronInteraction.emptyBucket(
                 level, pos, player, hand, stack,
-                ModBlocks.PLASTIC_OIL_CAULDRON.get().fullFilled(), SoundEvents.BUCKET_EMPTY
+                PlasticraftBlocks.PLASTIC_OIL_CAULDRON.get().fullFilled(), SoundEvents.BUCKET_EMPTY
             ));
     }
 }

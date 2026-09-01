@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.client.gui.screen;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
+import dev.anvilcraft.lib.v2.wheel.api.WheelSelectionEffect;
 import dev.anvilcraft.lib.v2.wheel.client.gui.component.WheelWidget;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderHelper;
@@ -42,7 +43,9 @@ public final class PlasticHammerScreen extends Screen {
         Direction.WEST
     };
     private static final int DEAD_ZONE = 15;
-    private static final float ICON_SCALE = 18.0F;
+    private static final float RING_INNER_RADIUS_RATIO = 0.12F;
+    private static final float RING_OUTER_RADIUS_RATIO = 0.33F;
+    private static final float ICON_FILL_RATIO = 0.65F;
 
     private final AbstractPlasticEntity target;
     @Nullable
@@ -70,8 +73,9 @@ public final class PlasticHammerScreen extends Screen {
 
     @Override
     protected void init() {
-        float innerRadius = Math.min(this.width, this.height) * 0.12F;
-        float outerRadius = Math.min(this.width, this.height) * 0.22F;
+        float screenSize = Math.min(this.width, this.height);
+        float innerRadius = screenSize * RING_INNER_RADIUS_RATIO;
+        float outerRadius = screenSize * RING_OUTER_RADIUS_RATIO;
         WheelWidget.RawSection[] sections = new WheelWidget.RawSection[DIRECTIONS.length];
         for (int i = 0; i < DIRECTIONS.length; i++) {
             Direction direction = DIRECTIONS[i];
@@ -94,7 +98,6 @@ public final class PlasticHammerScreen extends Screen {
             150,
             0x88000000,
             0xDDFFFF00,
-            20,
             5.0F,
             0xFDFDFD,
             1.0F,
@@ -102,6 +105,7 @@ public final class PlasticHammerScreen extends Screen {
             List.of(sections),
             DEAD_ZONE
         );
+        this.wheel.setSelectionEffect(WheelSelectionEffect.ANNULAR_SECTOR);
         this.wheel.setCurrentIndex(indexOf(this.selectedDirection));
     }
 
@@ -131,12 +135,14 @@ public final class PlasticHammerScreen extends Screen {
         AABB bounds = this.target.plasticraft$getGeometry().oriented(preview).bounds();
         Vec3 center = bounds.getCenter();
         Vec3 origin = this.target.plasticraft$getGeometry().entityOrigin();
-        double largestSize = Math.max(bounds.getXsize(), Math.max(bounds.getYsize(), bounds.getZsize()));
-        float iconScale = (float) (ICON_SCALE / Math.max(1.0D, largestSize));
+        double diagonal = Math.sqrt(
+            bounds.getXsize() * bounds.getXsize()
+                + bounds.getYsize() * bounds.getYsize()
+                + bounds.getZsize() * bounds.getZsize()
+        );
+        float availableSize = Math.min(width, height) * ICON_FILL_RATIO;
+        float iconScale = (float) (availableSize / Math.max(1.0D, diagonal));
         pose.pushPose();
-        pose.translate(width * 0.5F, height * 0.5F + 2.0F, 0.0F);
-        // 保留轮盘组件的屏幕位置补偿，模型本身按实际几何居中。
-        pose.translate(-7.0F, 7.0F, 0.0F);
         pose.scale(iconScale, iconScale, iconScale);
         pose.mulPose(new Matrix4f().scaling(1.0F, -1.0F, 1.0F));
         if (camera.getEntity() != null) {
@@ -149,7 +155,7 @@ public final class PlasticHammerScreen extends Screen {
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         BlockRenderDispatcher dispatcher = minecraft.getBlockRenderer();
         MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
-        PlasticEntityRenderHelper.renderBlock(
+        PlasticEntityRenderHelper.renderModel(
             this.target,
             dispatcher,
             pose,
@@ -304,7 +310,6 @@ public final class PlasticHammerScreen extends Screen {
             int closingAnimationMs,
             int ringColor,
             int selectionEffectColor,
-            int selectionEffectRadius,
             float selectionAnimationSpeedFactor,
             int textColor,
             float textScale,
@@ -325,7 +330,6 @@ public final class PlasticHammerScreen extends Screen {
                 closingAnimationMs,
                 ringColor,
                 selectionEffectColor,
-                selectionEffectRadius,
                 selectionAnimationSpeedFactor,
                 textColor,
                 textScale,

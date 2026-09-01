@@ -1,280 +1,344 @@
 {
   "type": "anvilcraft:multiblock_conversion",
   "inputPattern": {
-    "layers": [
+    "grid": [
       [
-        "DCD",
-        "CFC",
-        "DCD"
+        "0A0",
+        "ABA",
+        "0A0"
+      ],
+      [
+        " A ",
+        "A A",
+        " A "
       ],
       [
         " C ",
-        "C C",
+        "DED",
         " C "
-      ],
-      [
-        " E ",
-        "ABA",
-        " E "
       ]
     ],
-    "symbols": {
+    "mapping": {
+      "0": {
+        "blocks": "anvilcraftplasticraft:high_viscosity_resin_block"
+      },
       "A": {
-        "block": "anvilcraft:pipe_straight",
-        "properties": {
-          "axis": "x",
-          "has_check_valve": "true",
-          "has_end_end": "true",
-          "has_end_start": "true",
-          "waterlogged": "false"
-        }
+        "blocks": "anvilcraft:cut_brass_pillar",
+        "properties": [
+          {
+            "axis": "y"
+          }
+        ]
       },
       "B": {
-        "block": "minecraft:copper_trapdoor",
-        "properties": {
-          "facing": "north",
-          "half": "top",
-          "open": "false",
-          "waterlogged": "false"
-        }
+        "blocks": "minecraft:copper_trapdoor",
+        "properties": [
+          {
+            "facing": "north",
+            "half": "bottom",
+            "open": "false",
+            "waterlogged": "false"
+          }
+        ]
       },
       "C": {
-        "block": "anvilcraft:cut_brass_pillar",
-        "properties": {
-          "axis": "y"
-        }
+        "blocks": "anvilcraft:pipe_straight",
+        "properties": [
+          {
+            "axis": "z",
+            "has_check_valve": "true",
+            "has_end_end": "true",
+            "has_end_start": "true",
+            "waterlogged": "false"
+          }
+        ]
       },
       "D": {
-        "block": "anvilcraftplasticraft:high_viscosity_resin_block"
+        "blocks": "anvilcraft:pipe_straight",
+        "properties": [
+          {
+            "axis": "x",
+            "has_check_valve": "true",
+            "has_end_end": "true",
+            "has_end_start": "true",
+            "waterlogged": "false"
+          }
+        ]
       },
       "E": {
-        "block": "anvilcraft:pipe_straight",
-        "properties": {
-          "axis": "z",
-          "has_check_valve": "true",
-          "has_end_end": "true",
-          "has_end_start": "true",
-          "waterlogged": "false"
-        }
-      },
-      "F": {
-        "block": "minecraft:copper_trapdoor",
-        "properties": {
-          "facing": "north",
-          "half": "bottom",
-          "open": "false",
-          "waterlogged": "false"
-        }
+        "blocks": "minecraft:copper_trapdoor",
+        "properties": [
+          {
+            "facing": "north",
+            "half": "top",
+            "open": "false",
+            "waterlogged": "false"
+          }
+        ]
       }
     }
   },
   "outputPattern": {
-    "layers": [
+    "grid": [
       [
-        "ABC",
-        "DEF",
-        "GHI"
+        "0AB",
+        "CDE",
+        "FGH"
       ],
       [
-        "JKL",
-        "MNO",
-        "PQR"
+        "IJK",
+        "LMN",
+        "OPQ"
       ],
       [
-        "STU",
-        "VWX",
-        "YZ["
+        "RST",
+        "UVW",
+        "XYZ"
       ]
     ],
-    "symbols": {
+    "mapping": {
+      "0": {
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "bottom_wn",
+            "sealed": "false"
+          }
+        ]
+      },
       "A": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "bottom_wn",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "bottom_n",
+            "sealed": "false"
+          }
+        ]
       },
       "B": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "bottom_n",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "bottom_en",
+            "sealed": "false"
+          }
+        ]
       },
       "C": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "bottom_en",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "bottom_w",
+            "sealed": "false"
+          }
+        ]
       },
       "D": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "bottom_w",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "bottom_center",
+            "sealed": "false"
+          }
+        ]
       },
       "E": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "bottom_center",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "bottom_e",
+            "sealed": "false"
+          }
+        ]
       },
       "F": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "bottom_e",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "bottom_ws",
+            "sealed": "false"
+          }
+        ]
       },
       "G": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "bottom_ws",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "bottom_s",
+            "sealed": "false"
+          }
+        ]
       },
       "H": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "bottom_s",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "bottom_es",
+            "sealed": "false"
+          }
+        ]
       },
       "I": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "bottom_es",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "mid_wn",
+            "sealed": "false"
+          }
+        ]
       },
       "J": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "mid_wn",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "mid_n",
+            "sealed": "false"
+          }
+        ]
       },
       "K": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "mid_n",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "mid_en",
+            "sealed": "false"
+          }
+        ]
       },
       "L": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "mid_en",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "mid_w",
+            "sealed": "false"
+          }
+        ]
       },
       "M": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "mid_w",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "mid_center",
+            "sealed": "false"
+          }
+        ]
       },
       "N": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "mid_center",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "mid_e",
+            "sealed": "false"
+          }
+        ]
       },
       "O": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "mid_e",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "mid_ws",
+            "sealed": "false"
+          }
+        ]
       },
       "P": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "mid_ws",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "mid_s",
+            "sealed": "false"
+          }
+        ]
       },
       "Q": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "mid_s",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "mid_es",
+            "sealed": "false"
+          }
+        ]
       },
       "R": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "mid_es",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "top_wn",
+            "sealed": "false"
+          }
+        ]
       },
       "S": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "top_wn",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "top_n",
+            "sealed": "false"
+          }
+        ]
       },
       "T": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "top_n",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "top_en",
+            "sealed": "false"
+          }
+        ]
       },
       "U": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "top_en",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "top_w",
+            "sealed": "false"
+          }
+        ]
       },
       "V": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "top_w",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "top_center",
+            "sealed": "false"
+          }
+        ]
       },
       "W": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "top_center",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "top_e",
+            "sealed": "false"
+          }
+        ]
       },
       "X": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "top_e",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "top_ws",
+            "sealed": "false"
+          }
+        ]
       },
       "Y": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "top_ws",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "top_s",
+            "sealed": "false"
+          }
+        ]
       },
       "Z": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "top_s",
-          "sealed": "false"
-        }
-      },
-      "[": {
-        "block": "anvilcraftplasticraft:condenser_tower",
-        "properties": {
-          "half": "top_es",
-          "sealed": "false"
-        }
+        "blocks": "anvilcraftplasticraft:condenser_tower",
+        "properties": [
+          {
+            "half": "top_es",
+            "sealed": "false"
+          }
+        ]
       }
     }
   }

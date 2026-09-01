@@ -6,9 +6,12 @@ import com.llamalad7.mixinextras.sugar.Local;
 import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
 import dev.anvilcraft.plasticraft.api.entity.ElasticCollisionEntity;
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
+import dev.anvilcraft.plasticraft.entity.ClearPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContext;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContextHolder;
+import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
+import dev.dubhe.anvilcraft.api.injection.entity.IFallingBlockEntityExtension;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.EntityGetter;
 import net.minecraft.world.phys.AABB;
@@ -19,6 +22,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 
@@ -52,13 +56,16 @@ interface EntityGetterMixin {
             // 原版步进会复用首次水平查询的形状，承载重试必须保留当前仅接触的目标。
             if (context != null) {
                 requestedMovement = context.requestedMovement();
-                if (context.collidesDuringRetry(movable)) return shaped.plasticraft$getCollisionShape();
+                if (context.collidesDuringRetry(movable)) {
+                    return shaped.plasticraft$getCollisionShape(mover, requestedMovement);
+                }
             }
         } else if (mover instanceof CarrierMoveContextHolder holder) {
             CarrierMoveContext context = holder.plasticraft$getCarrierMoveContext();
             if (context != null) requestedMovement = context.requestedMovement();
         }
         VoxelShape collisionShape = shaped.plasticraft$getCollisionShape(mover, requestedMovement);
+        if (collisionShape.isEmpty() || !collisionBox.intersects(collisionShape.bounds())) return Shapes.empty();
         return Shapes.joinIsNotEmpty(Shapes.create(collisionBox), collisionShape, BooleanOp.AND)
             ? collisionShape
             : Shapes.empty();
@@ -89,7 +96,22 @@ interface EntityGetterMixin {
         AABB ignoredCollisionBox
     ) {
         if (original.isEmpty()) return original;
-        return original.stream().filter(shape -> !shape.isEmpty()).toList();
+        // 绝大多数查询没有空形状可剔除，此时原样返回，避免每次碰撞查询都新建列表。
+        int emptyIndex = -1;
+        for (int index = 0; index < original.size(); index++) {
+            if (original.get(index).isEmpty()) {
+                emptyIndex = index;
+                break;
+            }
+        }
+        if (emptyIndex < 0) return original;
+        List<VoxelShape> filtered = new ArrayList<>(original.size() - 1);
+        for (int index = 0; index < original.size(); index++) {
+            if (index == emptyIndex) continue;
+            VoxelShape shape = original.get(index);
+            if (!shape.isEmpty()) filtered.add(shape);
+        }
+        return filtered;
     }
 
     @ModifyExpressionValue(
@@ -104,15 +126,28 @@ interface EntityGetterMixin {
         Entity mover
     ) {
         Predicate<Entity> withoutBondedMembers = target ->
-            !EntityBondManager.areInSameComponent(mover, target)
+            !plasticraft$ignoresClearPlasticCollision(mover, target)
+                && !EntityBondManager.areInSameComponent(mover, target)
                 && !EntityBondManager.ignoresPreclippedCollision(mover, target)
                 && original.test(target);
-        if (!(mover instanceof CarrierMoveContextHolder holder)) return withoutBondedMembers;
+        if (!(mover instanceof CarrierMoveContextHolder holder)) {
+            return target -> withoutBondedMembers.test(target)
+                && !PlasticEntityPhysics.isSupportedBy(target, mover);
+        }
         CarrierMoveContext context = holder.plasticraft$getCarrierMoveContext();
-        if (context == null) return withoutBondedMembers;
+        if (context == null) {
+            return target -> withoutBondedMembers.test(target)
+                && !PlasticEntityPhysics.isSupportedBy(target, mover);
+        }
         return target -> {
             boolean collides = withoutBondedMembers.test(target);
             if (!collides) return false;
+            if (PlasticEntityPhysics.isSupportedBy(target, mover)) {
+                if (target instanceof CarrierMovableEntity movable) {
+                    context.addTarget(movable);
+                }
+                return false;
+            }
             if (!(target instanceof CarrierMovableEntity movable)) {
                 if (target instanceof ElasticCollisionEntity elastic) {
                     context.addElasticCollisionTarget(elastic);
@@ -129,5 +164,11 @@ interface EntityGetterMixin {
             context.addTarget(movable);
             return false;
         };
+    }
+
+    private static boolean plasticraft$ignoresClearPlasticCollision(Entity mover, Entity target) {
+        return mover instanceof IFallingBlockEntityExtension extension
+            && extension.anvilcraft$isSpectral()
+            && target instanceof ClearPlasticEntity;
     }
 }
