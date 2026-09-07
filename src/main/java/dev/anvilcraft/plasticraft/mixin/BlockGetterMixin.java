@@ -3,6 +3,8 @@ package dev.anvilcraft.plasticraft.mixin;
 import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionProjectionIndex;
 import dev.anvilcraft.plasticraft.entity.collision.BondedPlasticShapeIndex;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticProjectileClipContext;
+import dev.anvilcraft.plasticraft.entity.collision.PlasticProjectileCollision;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.BlockGetter;
@@ -29,6 +31,17 @@ interface BlockGetterMixin {
         AABB rayBounds = new AABB(from, to).inflate(1.0E-7D);
         BlockHitResult nearest = original;
         double nearestDistance = from.distanceToSqr(original.getLocation());
+        if (context instanceof PlasticProjectileClipContext exact && exact.plasticraft$usesExactPlasticCollision()) {
+            for (BondedPlasticShapeIndex.Entry entry : BondedPlasticShapeIndex.collisionEntries(getter, rayBounds)) {
+                if (!BondedPlasticShapeIndex.isCurrent(getter, entry.anchor())) continue;
+                BlockHitResult candidate = PlasticProjectileCollision.clip(entry, from, to);
+                if (candidate == null) continue;
+                double distance = from.distanceToSqr(candidate.getLocation());
+                if (distance > nearestDistance) continue;
+                nearest = candidate;
+                nearestDistance = distance;
+            }
+        }
         for (BondedPlasticShapeIndex.Entry entry : BondedPlasticShapeIndex.extendedInteractionEntries(
             getter,
             rayBounds

@@ -576,6 +576,11 @@ public final class AdhesiveBondingService {
     }
 
     public static void tickAdhesiveTransit(Entity entity, boolean validateAndComplete) {
+        // 跨维度传送移除旧实体后仍会触发刻后事件，此时不能再为它投影牵引碰撞形状。
+        if (entity.isRemoved()) {
+            if (!entity.level().isClientSide) TRANSIT_VALIDATIONS.remove(entity);
+            return;
+        }
         AdhesiveTransit transit = entity.getExistingDataOrNull(PlasticraftAttachments.ADHESIVE_TRANSIT.get());
         if (tickBlockificationHandoff(entity, transit, validateAndComplete)) return;
         if (transit == null) return;
@@ -1287,6 +1292,8 @@ public final class AdhesiveBondingService {
     }
 
     public static void release(Entity entity) {
+        AdhesiveTransit transit = entity.getExistingDataOrNull(PlasticraftAttachments.ADHESIVE_TRANSIT.get());
+        if (transit != null) cancelTransit(entity, transit);
         EntityAdhesion adhesion = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_ADHESION.get());
         if (adhesion != null) release(entity, adhesion);
     }

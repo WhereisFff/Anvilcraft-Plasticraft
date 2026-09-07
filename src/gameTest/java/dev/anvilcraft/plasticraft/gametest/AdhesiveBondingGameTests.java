@@ -63,6 +63,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.alchemy.PotionContents;
 import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.level.block.piston.PistonMovingBlockEntity;
@@ -78,9 +79,12 @@ import net.minecraft.world.phys.shapes.BooleanOp;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.common.CommonHooks;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.util.BlockSnapshot;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
+import net.neoforged.neoforge.event.entity.EntityTravelToDimensionEvent;
+import net.neoforged.neoforge.event.tick.EntityTickEvent;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
@@ -2379,6 +2383,73 @@ public final class AdhesiveBondingGameTests {
                 helper.succeed();
             });
         });
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "Dimension travel cancels plastic transit before copying entity data and restores gravity")
+    static void dimensionTravelCancelsPlasticTransit(ExtendedGameTestHelper helper) {
+        for (var dimension : List.of(Level.NETHER, Level.END)) {
+            for (boolean noGravity : List.of(false, true)) {
+                HardenedResinAnvilEntity moving = createTransitingAnvil(helper, noGravity);
+                String phase = dimension.location() + ", originalNoGravity=" + noGravity;
+                Vec3 departure = moving.position();
+                NeoForge.EVENT_BUS.post(new EntityTravelToDimensionEvent(moving, dimension));
+                check(!moving.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT), phase + ": transit survived travel");
+                check(moving.isNoGravity() == noGravity, phase + ": travel did not restore gravity");
+                check(close(moving.position(), departure), phase + ": canceling transit moved the departing entity");
+
+                HardenedResinAnvilEntity restored = new HardenedResinAnvilEntity(
+                    PlasticraftEntities.HARDEND_RESIN_ANVIL.get(), helper.getLevel()
+                );
+                restored.restoreFrom(moving);
+                moving.remove(Entity.RemovalReason.CHANGED_DIMENSION);
+                Vec3 arrival = helper.absoluteVec(new Vec3(5.5D, 2.0D, 5.5D));
+                restored.setPos(arrival);
+                check(helper.getLevel().addFreshEntity(restored), phase + ": copied entity could not be added");
+                AdhesiveBondingService.tickAdhesiveTransit(restored, true);
+                AdhesiveBondingService.tickAdhesiveTransit(restored, false);
+                check(!restored.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT), phase + ": copied entity kept transit");
+                check(restored.isNoGravity() == noGravity, phase + ": copied entity lost its gravity state");
+                check(close(restored.position(), arrival), phase + ": copied entity followed the old route");
+                restored.discard();
+            }
+        }
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "7x6x7", floor = true)
+    @TestHolder(description = "A removed plastic entity is not projected along its stale transit by the post-tick event")
+    static void removedPlasticSkipsTransitAfterTick(ExtendedGameTestHelper helper) {
+        HardenedResinAnvilEntity moving = createTransitingAnvil(helper, false);
+        Vec3 departure = moving.position();
+        moving.remove(Entity.RemovalReason.CHANGED_DIMENSION);
+        NeoForge.EVENT_BUS.post(new EntityTickEvent.Post(moving));
+        check(close(moving.position(), departure), "post-tick transit moved the removed plastic entity");
+        helper.succeed();
+    }
+
+    private static HardenedResinAnvilEntity createTransitingAnvil(
+        ExtendedGameTestHelper helper,
+        boolean noGravity
+    ) {
+        BlockPos support = new BlockPos(3, 2, 3);
+        helper.setBlock(support, Blocks.STONE);
+        HardenedResinAnvilEntity moving = createAnvil(helper, new Vec3(2.5D, 2.0D, 2.5D));
+        moving.setNoGravity(noGravity);
+        GameTestPlayer player = bucketPlayer(helper, new Vec3(3.5D, 2.0D, 1.5D));
+        check(AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, moving), "transit selection failed");
+        check(AdhesiveBondingService.bondSelected(
+            player,
+            InteractionHand.MAIN_HAND,
+            helper.absolutePos(support),
+            Direction.EAST
+        ), "plastic transit setup failed");
+        check(moving.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT), "plastic did not start transit");
+        AdhesiveBondingService.tickAdhesiveTransit(moving, true);
+        check(moving.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT), "plastic transit ended before travel");
+        return moving;
     }
 
     @GameTest(timeoutTicks = 30)

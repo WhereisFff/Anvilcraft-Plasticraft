@@ -131,11 +131,10 @@ public class AllayLoungeBlock extends BaseEntityBlock {
         BlockState state,
         BlockEntityType<T> blockEntityType
     ) {
-        if (level.isClientSide) return null;
         return createTickerHelper(
             blockEntityType,
             PlasticraftBlockEntities.ALLAY_LOUNGE.get(),
-            AllayLoungeBlockEntity::serverTick
+            level.isClientSide ? AllayLoungeBlockEntity::clientTick : AllayLoungeBlockEntity::serverTick
         );
     }
 }

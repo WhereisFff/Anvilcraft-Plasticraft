@@ -8,6 +8,8 @@ items:
 
 # Allay Lounge
 
+Selection includes the body, status indicator and both hatches. Their outlines and selectable positions follow the opening animation, and the crosshair can pass through gaps between model cubes
+
 The lounge is the site's logistics hub: it hosts up to 16 hatted allays and has one structure-disk slot. It belongs to the player who placed it and can be operated by that owner or a current FTB Teams teammate; without FTB Teams, only the owner is authorized. It needs no power. Once a job is claimed, workers take materials from the container below the lounge and unload collected items back into it
 
 <row halign="center">
@@ -16,9 +18,18 @@ The lounge is the site's logistics hub: it hosts up to 16 hatted allays and has 
 
 ## Recall and capacity
 
-- The recall button looks within 16 blocks and only counts working allays owned by the lounge owner or a current teammate
+- The recall button on the stone just outside the window's upper-right corner activates as soon as the left mouse button is pressed, looks within 16 blocks and only counts working allays owned by the lounge owner or a current teammate
 - The top bay serves both docking and launch, one allay at a time; each trip occupies it for 20gt, which works out to about one allay per second
+- The two hatch panels open over 9gt when an allay approaches the top bay or a trip starts; they stay open during continuous traffic, then wait 40gt after the last activity before closing over 12gt
 - Breaking the lounge packs hosted and docking allay data into the lounge item, including the structure disk
+
+The 4×4 display on the right has 16 hosting spaces; empty spaces stay empty. Hosted allays keep flapping their wings and hovering, with their actual hat shapes, held tools and carried items visible. Hold the left mouse button inside a space and drag horizontally to rotate that allay independently in the drag direction, at 3° per GUI pixel. After release, rotation continues and gradually slows to a stop within about one second. Dragging never launches an allay; a stationary left-click requests its release
+
+The structure-disk slot sits on the left side of the chalkboard. The four sticky notes on its right form two groups: Pause above Skip in the inner column, and the two blank-cell clearance strategies in the rightmost column. The two buttons in each group touch vertically and exactly one is selected; a gap separates the groups. Strategy buttons activate only when the left mouse button is released over the original button; releasing outside cancels the action. Selected buttons show the hovered appearance under the pointer and return to their latched appearance when the pointer leaves. Both recall and strategy buttons have normal, hovered and held appearances, with no timed frame cycling while held. The player inventory uses the slots already drawn into the lower part of the background
+
+The side trays display reserved building materials in north, east, south, west order. When all four are occupied, further displays wait for a free tray and refill it as soon as its item is collected. Items slide outward over 4gt; one allay's material batch shares one tray. Both block and ordinary item displays are twice their previous size. These animations add no delay to the 20gt bay cycle and consume no extra materials
+
+The four indicator lights show the disk job's state: green while running; blue with no job, before starting, or after completion; red while paused, failed, or waiting for materials, an observer, a demolition allay, permission, or the material source. They turn green again when work resumes
 
 ## Chunk loading
 
@@ -50,7 +61,7 @@ When materials or a suitable demolition allay are missing, the screen lets you c
 
 ## Blank-cell clearance strategy
 
-A pair of buttons on the right of the screen decides what happens to blank cells inside the blueprint's range; exactly one is active:
+The rightmost pair of vertically stacked sticky-note buttons on the left chalkboard decides what happens to blank cells inside the blueprint's range; exactly one is active:
 
 - **Demolish the whole blueprint area** (default): every world block inside the blueprint's declared range is demolished, including cells where the blueprint places nothing, so only the blueprint's own contents remain when the job finishes
 - **Keep blocks on cells the blueprint leaves blank**: only cells that overlap a block the blueprint actually places are demolished; blocks on blank cells are left exactly as they are

@@ -1,0 +1,291 @@
+{
+  "parent": "minecraft:block/block",
+  "ambientocclusion": false,
+  "render_type": "minecraft:cutout",
+  "textures": {
+    "light": "anvilcraftplasticraft:block/allay_lounge_indicator_blue",
+    "particle": "#light"
+  },
+  "elements": [
+    {
+      "name": "indicator_north",
+      "from": [
+        7,
+        13,
+        -0.75
+      ],
+      "to": [
+        9,
+        14,
+        -0.5
+      ],
+      "shade": false,
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            2,
+            1
+          ],
+          "texture": "#light"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            2,
+            1
+          ],
+          "texture": "#light"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            0.25,
+            1
+          ],
+          "texture": "#light"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            0.25,
+            1
+          ],
+          "texture": "#light"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            2,
+            0.25
+          ],
+          "texture": "#light"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            2,
+            0.25
+          ],
+          "texture": "#light"
+        }
+      }
+    },
+    {
+      "name": "indicator_east",
+      "from": [
+        16.5,
+        13,
+        7
+      ],
+      "to": [
+        16.75,
+        14,
+        9
+      ],
+      "shade": false,
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            0.25,
+            1
+          ],
+          "texture": "#light"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            0.25,
+            1
+          ],
+          "texture": "#light"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            2,
+            1
+          ],
+          "texture": "#light"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            2,
+            1
+          ],
+          "texture": "#light"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            0.25,
+            2
+          ],
+          "texture": "#light"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            0.25,
+            2
+          ],
+          "texture": "#light"
+        }
+      }
+    },
+    {
+      "name": "indicator_south",
+      "from": [
+        7,
+        13,
+        16.5
+      ],
+      "to": [
+        9,
+        14,
+        16.75
+      ],
+      "shade": false,
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            2,
+            1
+          ],
+          "texture": "#light"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            2,
+            1
+          ],
+          "texture": "#light"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            0.25,
+            1
+          ],
+          "texture": "#light"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            0.25,
+            1
+          ],
+          "texture": "#light"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            2,
+            0.25
+          ],
+          "texture": "#light"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            2,
+            0.25
+          ],
+          "texture": "#light"
+        }
+      }
+    },
+    {
+      "name": "indicator_west",
+      "from": [
+        -0.75,
+        13,
+        7
+      ],
+      "to": [
+        -0.5,
+        14,
+        9
+      ],
+      "shade": false,
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            0.25,
+            1
+          ],
+          "texture": "#light"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            0.25,
+            1
+          ],
+          "texture": "#light"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            2,
+            1
+          ],
+          "texture": "#light"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            2,
+            1
+          ],
+          "texture": "#light"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            0.25,
+            2
+          ],
+          "texture": "#light"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            0.25,
+            2
+          ],
+          "texture": "#light"
+        }
+      }
+    }
+  ]
+}

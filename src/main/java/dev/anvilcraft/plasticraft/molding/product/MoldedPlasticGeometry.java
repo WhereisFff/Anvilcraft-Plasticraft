@@ -58,10 +58,11 @@ public final class MoldedPlasticGeometry {
                 box.maximum().z() / PIXELS_PER_BLOCK
             ), BooleanOp.OR);
         }
-        VoxelShape interaction = collision;
+        VoxelShape additionalSelection = Shapes.empty();
         for (MoldingQuad quad : data.zeroThicknessQuads()) {
-            interaction = Shapes.joinUnoptimized(interaction, interactionShape(quad), BooleanOp.OR);
+            additionalSelection = Shapes.joinUnoptimized(additionalSelection, interactionShape(quad), BooleanOp.OR);
         }
+        VoxelShape interaction = Shapes.joinUnoptimized(collision, additionalSelection, BooleanOp.OR);
         List<PlasticConvexShape> convexShapes = data.collisionHulls().stream()
             .map(hull -> PlasticConvexShape.fromMolding(hull, 1.0D / PIXELS_PER_BLOCK))
             .toList();
@@ -70,7 +71,8 @@ public final class MoldedPlasticGeometry {
             interaction.optimize(),
             convexShapes,
             toBlocks(data.rotationPivot()),
-            toBlocks(data.entityOrigin())
+            toBlocks(data.entityOrigin()),
+            additionalSelection
         );
     }
 

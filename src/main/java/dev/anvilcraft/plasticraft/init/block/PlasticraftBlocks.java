@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.init.block;
 
 import dev.anvilcraft.lib.v2.registrum.providers.RegistrumBlockstateProvider;
+import dev.anvilcraft.lib.v2.registrum.providers.loot.RegistrumBlockLootTables;
 import dev.anvilcraft.lib.v2.registrum.util.entry.BlockEntry;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.CatalyticPressLidBlock;
@@ -36,6 +37,7 @@ import dev.anvilcraft.plasticraft.item.HardenedResinAnvilItem;
 import dev.anvilcraft.plasticraft.item.HardenedResinCauldronItem;
 import dev.anvilcraft.plasticraft.item.HighViscosityResinBlockItem;
 import dev.anvilcraft.plasticraft.item.PlasticMoldingChamberItem;
+import dev.anvilcraft.plasticraft.item.Plastic3DPrintingComponentItem;
 import dev.anvilcraft.plasticraft.item.ResinAnvilItem;
 import dev.anvilcraft.plasticraft.item.UniversalPlasticBlockItem;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
@@ -51,7 +53,6 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
-import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemDisplayContext;
@@ -90,7 +91,7 @@ public final class PlasticraftBlocks {
             .pushReaction(PushReaction.BLOCK))
         .lang("Plastic Molding Chamber")
         .tag(BlockTags.MINEABLE_WITH_PICKAXE)
-        .loot((tables, block) -> tables.dropSelf(block))
+        .loot(RegistrumBlockLootTables::dropSelf)
         .blockstate((context, provider) -> {
             // 成型舱专用模型由供电状态切换，断电时使用 _off；LOCKED 仅保留机器流程状态。
             ModelFile powered = provider.models().getExistingFile(
@@ -116,6 +117,7 @@ public final class PlasticraftBlocks {
         .block("allay_lounge", AllayLoungeBlock::new)
         .initialProperties(() -> Blocks.IRON_BLOCK)
         .properties(properties -> properties
+            .noOcclusion()
             .strength(5.0F, 1200.0F)
             .sound(SoundType.METAL)
             .pushReaction(PushReaction.BLOCK))
@@ -128,7 +130,7 @@ public final class PlasticraftBlocks {
                     .apply(CopyComponentsFunction.copyComponents(CopyComponentsFunction.Source.BLOCK_ENTITY)
                         .include(DataComponents.BLOCK_ENTITY_DATA)))))))
         .blockstate((context, provider) -> {
-            // 休息室不耗电,始终使用同一套烘焙模型。
+            // 世界模型只烘焙固定部分，两片顶门由方块实体渲染器绘制。
             ModelFile model = provider.models().getExistingFile(provider.modLoc("block/allay_lounge"));
             provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
                 .modelFile(model)
@@ -138,7 +140,7 @@ public final class PlasticraftBlocks {
         .item()
         .model((context, provider) -> provider.withExistingParent(
             context.getName(),
-            provider.modLoc("block/allay_lounge")
+            provider.modLoc("block/allay_lounge_complete")
         ))
         .build()
         .register();
@@ -154,7 +156,7 @@ public final class PlasticraftBlocks {
                 .pushReaction(PushReaction.BLOCK))
             .lang("Plastic 3D Printing Component")
             .tag(BlockTags.MINEABLE_WITH_PICKAXE)
-            .loot((tables, block) -> tables.dropSelf(block))
+            .loot(RegistrumBlockLootTables::dropSelf)
             .blockstate((context, provider) -> {
                 // 世界中有电外观只用机身；screen1 由方块实体按全亮半透明绘制，避免超出方块的平滑光照把顶部插值变黑。
                 ModelFile powered = provider.models().getExistingFile(
@@ -170,7 +172,7 @@ public final class PlasticraftBlocks {
                     )
                     .build());
             })
-            .item(BlockItem::new)
+            .item(Plastic3DPrintingComponentItem::new)
             .model((context, provider) -> provider.withExistingParent(
                 context.getName(),
                 provider.modLoc("block/print_component")
@@ -372,7 +374,7 @@ public final class PlasticraftBlocks {
             PlasticraftBlockTags.PLASTIC_PRODUCTS,
             ModBlockTags.END_PORTAL_UNABLE_CHANGE
         )
-        .loot((tables, block) -> tables.dropSelf(block))
+        .loot(RegistrumBlockLootTables::dropSelf)
         .blockstate((context, provider) -> plasticBlockState(
             provider,
             context.get(),
@@ -465,7 +467,7 @@ public final class PlasticraftBlocks {
             PlasticraftBlockTags.PLASTIC_PRODUCTS,
             ModBlockTags.END_PORTAL_UNABLE_CHANGE
         )
-        .loot((tables, block) -> tables.dropSelf(block))
+        .loot(RegistrumBlockLootTables::dropSelf)
         .blockstate((context, provider) -> plasticBlockState(
             provider,
             context.get(),
@@ -558,7 +560,7 @@ public final class PlasticraftBlocks {
                 PlasticraftBlockTags.PLASTIC_PRODUCTS,
                 ModBlockTags.END_PORTAL_UNABLE_CHANGE
             )
-            .loot((tables, block) -> tables.dropSelf(block))
+            .loot(RegistrumBlockLootTables::dropSelf)
             .blockstate((context, provider) -> plasticBlockState(
                 provider,
                 context.get(),
@@ -650,7 +652,7 @@ public final class PlasticraftBlocks {
             ModBlockTags.SPECTRAL_CAN_THROUGH,
             ModBlockTags.LASER_CAN_PASS_THROUGH
         )
-        .loot((tables, block) -> tables.dropSelf(block))
+        .loot(RegistrumBlockLootTables::dropSelf)
         .blockstate((context, provider) -> plasticBlockState(
             provider,
             context.get(),

@@ -22,13 +22,12 @@ public final class PlasticEntityGeometry {
 
     private final VoxelShape collisionShape;
     private final VoxelShape interactionShape;
+    private final VoxelShape additionalSelectionShape;
     private final AABB localBounds;
     private final List<PlasticConvexShape> convexShapes;
     private final Vec3 rotationPivot;
     private final Vec3 entityOrigin;
     private final Map<PlasticEntityOrientation, Oriented> orientations = new ConcurrentHashMap<>();
-    private final Map<PlasticEntityOrientation, PlasticConvexCollisionOutline.PackedOutline> packedOutlines =
-        new ConcurrentHashMap<>();
     private final Map<Direction, Vec3> surfaceCenters = new ConcurrentHashMap<>();
 
     private PlasticEntityGeometry(
@@ -38,8 +37,20 @@ public final class PlasticEntityGeometry {
         Vec3 rotationPivot,
         Vec3 entityOrigin
     ) {
+        this(collisionShape, interactionShape, convexShapes, rotationPivot, entityOrigin, Shapes.empty());
+    }
+
+    private PlasticEntityGeometry(
+        VoxelShape collisionShape,
+        VoxelShape interactionShape,
+        List<PlasticConvexShape> convexShapes,
+        Vec3 rotationPivot,
+        Vec3 entityOrigin,
+        VoxelShape additionalSelectionShape
+    ) {
         this.collisionShape = Objects.requireNonNull(collisionShape, "collisionShape").optimize();
         this.interactionShape = Objects.requireNonNull(interactionShape, "interactionShape").optimize();
+        this.additionalSelectionShape = Objects.requireNonNull(additionalSelectionShape, "additionalSelectionShape").optimize();
         List<PlasticConvexShape> physicalShapes = convexShapes.isEmpty() && !this.collisionShape.isEmpty()
             ? this.collisionShape.toAabbs().stream().map(PlasticConvexShape::box).toList()
             : convexShapes;
@@ -95,6 +106,19 @@ public final class PlasticEntityGeometry {
         );
     }
 
+    public static PlasticEntityGeometry of(
+        VoxelShape collisionShape,
+        VoxelShape interactionShape,
+        List<PlasticConvexShape> convexShapes,
+        Vec3 rotationPivot,
+        Vec3 entityOrigin,
+        VoxelShape additionalSelectionShape
+    ) {
+        return new PlasticEntityGeometry(
+            collisionShape, interactionShape, convexShapes, rotationPivot, entityOrigin, additionalSelectionShape
+        );
+    }
+
     public VoxelShape collisionShape() {
         return this.collisionShape;
     }
@@ -105,6 +129,11 @@ public final class PlasticEntityGeometry {
 
     public List<PlasticConvexShape> convexShapes() {
         return this.convexShapes;
+    }
+
+    /** 独立保存附加交互部件，避免精确选取把旋转凸体的粗略外接盒也当成实体表面。 */
+    public VoxelShape additionalSelectionShape() {
+        return this.additionalSelectionShape;
     }
 
     public PlasticEntityGeometry include(
@@ -118,12 +147,13 @@ public final class PlasticEntityGeometry {
         additionalCollision.toAabbs().stream()
             .map(PlasticConvexShape::box)
             .forEach(combinedConvexShapes::add);
-        return of(
+        return new PlasticEntityGeometry(
             Shapes.or(this.collisionShape, additionalCollision).optimize(),
             Shapes.or(this.interactionShape, additionalInteraction).optimize(),
             combinedConvexShapes,
             this.rotationPivot,
-            this.entityOrigin
+            this.entityOrigin,
+            Shapes.or(this.additionalSelectionShape, additionalInteraction)
         );
     }
 
@@ -221,19 +251,6 @@ public final class PlasticEntityGeometry {
     public Oriented oriented(PlasticEntityOrientation orientation) {
         Objects.requireNonNull(orientation, "orientation");
         return this.orientations.computeIfAbsent(orientation, this::createOriented);
-    }
-
-    /** 轮廓只取决于朝向后的局部凸体，按实体平移复用，避免推动时每 tick 重建。 */
-    public PlasticConvexCollisionOutline.PackedOutline packedOutline(PlasticEntityOrientation orientation) {
-        Objects.requireNonNull(orientation, "orientation");
-        PlasticConvexCollisionOutline.PackedOutline cached = this.packedOutlines.get(orientation);
-        if (cached != null) return cached;
-        List<PlasticConvexShape> shapes = this.oriented(orientation).convexShapes();
-        PlasticConvexCollisionOutline.PackedOutline built = shapes.isEmpty()
-            ? PlasticConvexCollisionOutline.PackedOutline.EMPTY
-            : PlasticConvexCollisionOutline.PackedOutline.of(PlasticConvexCollisionOutline.build(shapes));
-        PlasticConvexCollisionOutline.PackedOutline existing = this.packedOutlines.putIfAbsent(orientation, built);
-        return existing == null ? built : existing;
     }
 
     public PlasticEntityCollisionBox collisionBoxAt(

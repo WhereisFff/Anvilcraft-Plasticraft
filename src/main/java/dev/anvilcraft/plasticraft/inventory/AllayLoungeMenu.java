@@ -29,12 +29,15 @@ public class AllayLoungeMenu extends AbstractContainerMenu {
     public static final int DATA_STRATEGY = 1;
     public static final int DATA_CLEARANCE = 2;
     public static final int DATA_COUNT = 3;
-    public static final int DISK_SLOT_X = 134;
-    public static final int DISK_SLOT_Y = 27;
-    public static final int PLAYER_INVENTORY_Y = 104;
-    public static final int PLAYER_HOTBAR_Y = 162;
-    public static final int CARD_GRID_X = 44;
-    public static final int CARD_GRID_Y = 18;
+    public static final int DISK_SLOT_X = 18;
+    public static final int DISK_SLOT_Y = 90;
+    public static final int PLAYER_INVENTORY_X = 28;
+    public static final int PLAYER_INVENTORY_Y = 158;
+    public static final int PLAYER_HOTBAR_Y = 216;
+    public static final int CARD_GRID_X = 108;
+    public static final int CARD_GRID_Y = 35;
+    public static final int CARD_SIZE = 20;
+    public static final int CARD_SPACING = 24;
 
     private final Player player;
     @Nullable
@@ -122,13 +125,13 @@ public class AllayLoungeMenu extends AbstractContainerMenu {
                 this.addSlot(new Slot(
                     playerInventory,
                     9 + row * 9 + column,
-                    8 + column * 18,
+                    PLAYER_INVENTORY_X + column * 18,
                     PLAYER_INVENTORY_Y + row * 18
                 ));
             }
         }
         for (int column = 0; column < 9; column++) {
-            this.addSlot(new Slot(playerInventory, column, 8 + column * 18, PLAYER_HOTBAR_Y));
+            this.addSlot(new Slot(playerInventory, column, PLAYER_INVENTORY_X + column * 18, PLAYER_HOTBAR_Y));
         }
         this.addDataSlots(data);
     }

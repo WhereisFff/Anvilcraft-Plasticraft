@@ -3,6 +3,9 @@ package dev.anvilcraft.plasticraft.block.entity;
 import com.mojang.serialization.Codec;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.allay.AllayClearanceStrategy;
+import dev.anvilcraft.plasticraft.allay.AllayLoungeAnimation;
+import dev.anvilcraft.plasticraft.allay.AllayLoungePickupQueue;
+import dev.anvilcraft.plasticraft.allay.AllayLoungeStatus;
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
 import dev.anvilcraft.plasticraft.allay.observation.ObservationChunkLoader;
@@ -10,6 +13,10 @@ import dev.anvilcraft.plasticraft.allay.transfer.AllayLoungeNetwork;
 import dev.anvilcraft.plasticraft.allay.transfer.ConstructionTransferService;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionJobIndex;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionJobProgress;
+import dev.anvilcraft.plasticraft.blueprint.ConstructionJobStore;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionPermission;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionTraffic;
 import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
@@ -49,7 +56,6 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -93,7 +99,14 @@ public class AllayLoungeBlockEntity extends BlockEntity {
     private final List<UUID> dockingQueue = new ArrayList<>();
     private final Map<UUID, Integer> dockingSlots = new HashMap<>();
     private final Map<UUID, Double> dockingDistances = new HashMap<>();
-    private final EnumMap<Direction, ItemStack> pickupDisplays = new EnumMap<>(Direction.class);
+    private final AllayLoungePickupQueue pickups = new AllayLoungePickupQueue();
+    private AllayLoungeStatus indicatorStatus = AllayLoungeStatus.IDLE;
+    @Nullable
+    private UUID indicatorJobId;
+    private boolean indicatorJobStarted;
+    private final AllayLoungeAnimation hatchAnimation = new AllayLoungeAnimation();
+    private boolean hatchOpen;
+    private long hatchOpenUntil;
     @Nullable
     private AllayWorkRecord dockingRecord;
     private int dockingProgress;
@@ -125,14 +138,45 @@ public class AllayLoungeBlockEntity extends BlockEntity {
     }
 
     public static void serverTick(Level level, BlockPos pos, BlockState state, AllayLoungeBlockEntity lounge) {
+        lounge.tickHatch();
         lounge.tickDocking();
         lounge.retryDiskClaim();
         if (level instanceof ServerLevel serverLevel) {
+            lounge.updateIndicatorStatus(serverLevel);
+            if (lounge.pickups.promote(serverLevel.getGameTime())) lounge.sendDockingUpdate();
             // 运行时转运图不落盘;每次实体刻重新登记,覆盖热加载、区块重载及早于 onLoad 建立的节点
             AllayLoungeNetwork.register(lounge);
             ConstructionTransferService.tickLoungeTransit(serverLevel, lounge);
             ObservationChunkLoader.syncLoungeThrottled(lounge);
         }
+    }
+
+    public static void clientTick(Level level, BlockPos pos, BlockState state, AllayLoungeBlockEntity lounge) {
+        lounge.hatchAnimation.tick(lounge.hatchOpen);
+    }
+
+    public float hatchOpenness(float partialTick) {
+        return this.hatchAnimation.openness(partialTick);
+    }
+
+    private void tickHatch() {
+        if (this.isBayBusy()) this.markHatchActivity();
+        if (this.hatchOpen && this.level != null && this.level.getGameTime() >= this.hatchOpenUntil) {
+            this.hatchOpen = false;
+            this.level.playSound(null, this.worldPosition, SoundEvents.IRON_TRAPDOOR_CLOSE,
+                SoundSource.BLOCKS, 0.6F, 1.2F);
+            this.sendDockingUpdate();
+        }
+    }
+
+    private void markHatchActivity() {
+        if (!(this.level instanceof ServerLevel serverLevel)) return;
+        this.hatchOpenUntil = serverLevel.getGameTime() + AllayLoungeAnimation.IDLE_TICKS;
+        if (this.hatchOpen) return;
+        this.hatchOpen = true;
+        serverLevel.playSound(null, this.worldPosition, SoundEvents.IRON_TRAPDOOR_OPEN,
+            SoundSource.BLOCKS, 0.6F, 1.0F);
+        this.sendDockingUpdate();
     }
 
     private void tickDocking() {
@@ -165,16 +209,6 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         this.dockingRecord = null;
         this.dockingProgress = 0;
         this.dockingRunning = false;
-        if (this.level != null) {
-            this.level.playSound(
-                null,
-                this.worldPosition,
-                SoundEvents.IRON_TRAPDOOR_CLOSE,
-                SoundSource.BLOCKS,
-                0.6F,
-                1.2F
-            );
-        }
         this.sendDockingUpdate();
         this.setChanged();
         ObservationChunkLoader.syncLounge(this);
@@ -190,6 +224,10 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         this.registerDocking(worker);
         UUID id = worker.getUUID();
         boolean head = !this.dockingQueue.isEmpty() && this.dockingQueue.getFirst().equals(id);
+        if (head && this.canAcceptDocking()
+            && worker.position().distanceToSqr(this.dockApproachPoint()) <= 2.25D) {
+            this.markHatchActivity();
+        }
         return head
             ? new DockAssignment(true, this.dockApproachPoint())
             : new DockAssignment(false, this.formationSlotPosition(this.dockingSlots.get(id)));
@@ -299,14 +337,7 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         this.dockingRecord = worker.toWorkRecord();
         this.dockingProgress = 0;
         this.dockingRunning = true;
-        this.level.playSound(
-            null,
-            this.worldPosition,
-            SoundEvents.IRON_TRAPDOOR_OPEN,
-            SoundSource.BLOCKS,
-            0.6F,
-            1.0F
-        );
+        this.markHatchActivity();
         this.sendDockingUpdate();
         this.setChanged();
         // 调用方随后就会销毁实体,休息室必须在此刻先接过观察覆盖,否则入库瞬间会断刻
@@ -440,6 +471,7 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         this.dockingRecord = null;
         this.dockingProgress = 0;
         this.dockingRunning = true;
+        this.markHatchActivity();
         this.setChanged();
         this.sendDockingUpdate();
     }
@@ -576,25 +608,65 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         return true;
     }
 
-    public void setPickupDisplay(Direction side, ItemStack stack) {
-        if (!side.getAxis().isHorizontal()) return;
-        this.pickupDisplays.put(side, stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
-        this.sendDockingUpdate();
+    public void setPickupDisplay(ItemStack stack, UUID allayId) {
+        long gameTime = this.level == null ? 0L : this.level.getGameTime();
+        if (this.pickups.offer(allayId, stack, gameTime)) this.sendDockingUpdate();
+        this.setChanged();
+    }
+
+    public void clearPickupDisplay(UUID allayId) {
+        long gameTime = this.level == null ? 0L : this.level.getGameTime();
+        if (this.pickups.remove(allayId, gameTime)) this.sendDockingUpdate();
         this.setChanged();
     }
 
     public void clearPickupDisplays() {
-        this.pickupDisplays.clear();
-        this.sendDockingUpdate();
+        if (this.pickups.clear()) this.sendDockingUpdate();
         this.setChanged();
     }
 
     public ItemStack pickupDisplay(Direction side) {
-        return this.pickupDisplays.getOrDefault(side, ItemStack.EMPTY);
+        return this.pickups.display(side);
+    }
+
+    public float pickupSlideProgress(Direction side, float partialTick) {
+        long now = this.level == null ? 0L : this.level.getGameTime();
+        long started = this.pickups.startedAt(side, now);
+        return AllayLoungeAnimation.smoothStep(
+            ((float) (now - started) + partialTick) / AllayLoungeAnimation.ITEM_SLIDE_TICKS
+        );
     }
 
     public Map<Direction, ItemStack> pickupDisplays() {
-        return Map.copyOf(this.pickupDisplays);
+        return this.pickups.displays();
+    }
+
+    public AllayLoungeStatus indicatorStatus() {
+        return this.indicatorStatus;
+    }
+
+    private void updateIndicatorStatus(ServerLevel level) {
+        UUID jobId = this.diskJobId();
+        if (!Objects.equals(jobId, this.indicatorJobId)) {
+            this.indicatorJobId = jobId;
+            this.indicatorJobStarted = false;
+            this.setChanged();
+        }
+        ConstructionJob job = jobId == null ? null : ConstructionJobIndex.get(level).job(jobId);
+        if (job != null && !job.dimension().equals(level.dimension())) job = null;
+        ConstructionJobProgress progress = job == null ? null : ConstructionJobStore.get(level).get(jobId);
+        // INACTIVE 同时表示未启动和手动暂停，保留启动历史才能区分蓝灯与红灯。
+        if (!this.indicatorJobStarted
+            && (job != null && job.isActive() || progress != null && progress.planned())) {
+            this.indicatorJobStarted = true;
+            this.setChanged();
+        }
+        AllayLoungeStatus status = AllayLoungeStatus.forJob(job, this.indicatorJobStarted);
+        if (status != this.indicatorStatus) {
+            this.indicatorStatus = status;
+            this.setChanged();
+            this.sendDockingUpdate();
+        }
     }
 
     @Nullable
@@ -772,7 +844,10 @@ public class AllayLoungeBlockEntity extends BlockEntity {
             .resultOrPartial(error -> AnvilcraftPlasticraft.LOGGER.error("Failed to save lounge hosts: {}", error))
             .ifPresent(encoded -> tag.put("Hosted", encoded));
         this.saveDockingState(tag, registries);
-        this.savePickupDisplays(tag, registries);
+        this.pickups.save(tag, registries, true);
+        tag.putByte("LoungeStatus", this.indicatorStatus.id());
+        tag.putBoolean("IndicatorJobStarted", this.indicatorJobStarted);
+        if (this.indicatorJobId != null) tag.putUUID("IndicatorJobId", this.indicatorJobId);
         if (this.owner != null) {
             tag.putUUID("Owner", this.owner);
         }
@@ -792,6 +867,13 @@ public class AllayLoungeBlockEntity extends BlockEntity {
     private CompoundTag savePortableData(HolderLookup.Provider registries) {
         CompoundTag tag = this.saveCustomOnly(registries);
         tag.remove("PickupDisplays");
+        tag.remove("PickupDisplayStarts");
+        tag.remove("PickupDisplayOwners");
+        tag.remove("PickupDisplayQueue");
+        tag.remove("PickupNextSide");
+        tag.remove("LoungeStatus");
+        tag.remove("IndicatorJobStarted");
+        tag.remove("IndicatorJobId");
         if (!tag.contains("DockingAllay", Tag.TAG_COMPOUND)) {
             tag.remove("DockingProgress");
             tag.remove("DockingRunning");
@@ -818,7 +900,12 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         this.loading = true;
         if (tag.contains("Items")) this.items.deserializeNBT(registries, tag.getCompound("Items"));
         this.lastDiskJobId = null;
-        this.loadPickupDisplays(tag, registries);
+        this.pickups.load(tag, registries);
+        this.indicatorStatus = AllayLoungeStatus.fromId(tag.getByte("LoungeStatus"));
+        this.indicatorJobStarted = tag.getBoolean("IndicatorJobStarted");
+        this.indicatorJobId = tag.hasUUID("IndicatorJobId") ? tag.getUUID("IndicatorJobId") : null;
+        this.hatchOpen = tag.getBoolean("HatchOpen");
+        this.hatchOpenUntil = 0L;
         this.loading = false;
         this.shortageStrategy = AllayShortageStrategy.SKIP.getSerializedName().equals(tag.getString("ShortageStrategy"))
             ? AllayShortageStrategy.SKIP
@@ -863,37 +950,17 @@ public class AllayLoungeBlockEntity extends BlockEntity {
     @Override
     public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
         CompoundTag tag = super.getUpdateTag(registries);
+        tag.putBoolean("HatchOpen", this.hatchOpen);
+        tag.putByte("LoungeStatus", this.indicatorStatus.id());
         this.saveDockingState(tag, registries);
         HOSTS_CODEC.encodeStart(registries.createSerializationContext(NbtOps.INSTANCE), this.hosted)
             .resultOrPartial(error -> AnvilcraftPlasticraft.LOGGER.error("Failed to sync lounge hosts: {}", error))
             .ifPresent(encoded -> tag.put("Hosted", encoded));
-        this.savePickupDisplays(tag, registries);
+        this.pickups.save(tag, registries, false);
         if (this.owner != null) {
             tag.putUUID("Owner", this.owner);
         }
         return tag;
-    }
-
-    private void savePickupDisplays(CompoundTag tag, HolderLookup.Provider registries) {
-        CompoundTag displays = new CompoundTag();
-        for (Map.Entry<Direction, ItemStack> entry : this.pickupDisplays.entrySet()) {
-            if (entry.getValue().isEmpty()) continue;
-            displays.put(entry.getKey().getSerializedName(), entry.getValue().save(registries));
-        }
-        if (!displays.isEmpty()) {
-            tag.put("PickupDisplays", displays);
-        }
-    }
-
-    private void loadPickupDisplays(CompoundTag tag, HolderLookup.Provider registries) {
-        this.pickupDisplays.clear();
-        if (!tag.contains("PickupDisplays", Tag.TAG_COMPOUND)) return;
-        CompoundTag displays = tag.getCompound("PickupDisplays");
-        for (Direction side : Direction.Plane.HORIZONTAL) {
-            if (!displays.contains(side.getSerializedName())) continue;
-            ItemStack.parse(registries, displays.getCompound(side.getSerializedName()))
-                .ifPresent(stack -> this.pickupDisplays.put(side, stack));
-        }
     }
 
     @Override

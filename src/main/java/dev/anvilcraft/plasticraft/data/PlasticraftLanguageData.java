@@ -85,6 +85,9 @@ public final class PlasticraftLanguageData {
         // 悦灵休息室界面。
         provider.add("container.anvilcraftplasticraft.allay_lounge", "Allay Lounge");
         provider.add("screen.anvilcraftplasticraft.allay_lounge.recall", "Recall nearby working allays");
+        provider.add("screen.anvilcraftplasticraft.allay_lounge.rotate", "Drag with the left mouse button to rotate");
+        provider.add("screen.anvilcraftplasticraft.allay_lounge.release", "Left-click to release");
+        provider.add("screen.anvilcraftplasticraft.allay_lounge.disk", "Insert a deployed structure disk to claim its job");
         provider.add("screen.anvilcraftplasticraft.allay_lounge.strategy", "Shortage strategy for hosted allays");
         provider.add(
             "screen.anvilcraftplasticraft.allay_lounge.clearance",

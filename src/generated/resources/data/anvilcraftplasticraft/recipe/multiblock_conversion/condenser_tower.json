@@ -4,18 +4,18 @@
     "grid": [
       [
         "0A0",
-        "ABA",
+        "BCB",
         "0A0"
       ],
       [
-        " A ",
-        "A A",
-        " A "
+        "DED",
+        "E E",
+        "DED"
       ],
       [
-        " C ",
         "DED",
-        " C "
+        "EFE",
+        "DED"
       ]
     ],
     "mapping": {
@@ -23,14 +23,24 @@
         "blocks": "anvilcraftplasticraft:high_viscosity_resin_block"
       },
       "A": {
-        "blocks": "anvilcraft:cut_brass_pillar",
+        "blocks": "anvilcraft:pipe_straight",
         "properties": [
           {
-            "axis": "y"
+            "axis": "z",
+            "waterlogged": "false"
           }
         ]
       },
       "B": {
+        "blocks": "anvilcraft:pipe_straight",
+        "properties": [
+          {
+            "axis": "x",
+            "waterlogged": "false"
+          }
+        ]
+      },
+      "C": {
         "blocks": "minecraft:copper_trapdoor",
         "properties": [
           {
@@ -41,31 +51,18 @@
           }
         ]
       },
-      "C": {
-        "blocks": "anvilcraft:pipe_straight",
-        "properties": [
-          {
-            "axis": "z",
-            "has_check_valve": "true",
-            "has_end_end": "true",
-            "has_end_start": "true",
-            "waterlogged": "false"
-          }
-        ]
-      },
       "D": {
-        "blocks": "anvilcraft:pipe_straight",
+        "blocks": "anvilcraft:cut_brass_pillar",
         "properties": [
           {
-            "axis": "x",
-            "has_check_valve": "true",
-            "has_end_end": "true",
-            "has_end_start": "true",
-            "waterlogged": "false"
+            "axis": "y"
           }
         ]
       },
       "E": {
+        "blocks": "minecraft:glass"
+      },
+      "F": {
         "blocks": "minecraft:copper_trapdoor",
         "properties": [
           {

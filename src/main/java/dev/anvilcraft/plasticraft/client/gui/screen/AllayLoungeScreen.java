@@ -5,240 +5,240 @@ import dev.anvilcraft.plasticraft.allay.AllayClearanceStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayShortageStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
+import dev.anvilcraft.plasticraft.client.gui.AllayLoungeButton;
+import dev.anvilcraft.plasticraft.client.gui.AllayLoungePreview;
 import dev.anvilcraft.plasticraft.inventory.AllayLoungeMenu;
 import dev.anvilcraft.plasticraft.network.AllayLoungeClearancePacket;
 import dev.anvilcraft.plasticraft.network.AllayLoungeRecallPacket;
 import dev.anvilcraft.plasticraft.network.AllayLoungeReleasePacket;
 import dev.anvilcraft.plasticraft.network.AllayLoungeSettingsPacket;
+import net.minecraft.ChatFormatting;
+import net.minecraft.Util;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
+import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.function.BooleanSupplier;
 
-/** 悦灵休息室界面:4x4 托管卡片、磁盘槽、召回、暂停/跳过与整片清场/保留空白。 */
 public class AllayLoungeScreen extends AbstractContainerScreen<AllayLoungeMenu> {
     private static final ResourceLocation TEXTURE =
         AnvilcraftPlasticraft.of("textures/gui/background/allay_lounge.png");
-    private static final ResourceLocation RETURN_HOME_BUTTON =
-        AnvilcraftPlasticraft.of("textures/gui/button/allay/return_home.png");
-    private static final ResourceLocation PAUSE_BUTTON =
-        AnvilcraftPlasticraft.of("textures/gui/button/allay/pause.png");
-    private static final ResourceLocation SKIP_BUTTON =
-        AnvilcraftPlasticraft.of("textures/gui/button/allay/skip.png");
-    private static final ResourceLocation CLEAR_AREA_BUTTON =
-        AnvilcraftPlasticraft.of("textures/gui/button/allay/clear_area.png");
-    private static final ResourceLocation KEEP_BLANK_BUTTON =
-        AnvilcraftPlasticraft.of("textures/gui/button/allay/keep_blank.png");
     private static final int BUTTON_SIZE = 16;
-    private static final int RECALL_BUTTON_X = 9;
-    private static final int RECALL_BUTTON_Y = 66;
-    private static final int PAUSE_BUTTON_X = 9;
-    private static final int SKIP_BUTTON_X = 27;
-    private static final int CLEAR_AREA_BUTTON_X = 134;
-    private static final int KEEP_BLANK_BUTTON_X = 152;
-    private static final int STRATEGY_BUTTON_Y = 84;
-    private static final int CARD_SIZE = 18;
+    private static final int RECALL_BUTTON_SIZE = 12;
+    private static final int GRID_COLUMNS = 4;
+    private static final double DRAG_THRESHOLD_SQUARED = 9.0D;
+
+    private final Map<UUID, AllayLoungePreview> previews = new HashMap<>();
+    @Nullable
+    private UUID pressedAllay;
+    private double pressX;
+    private double pressY;
+    private double lastDragX;
+    private boolean dragged;
 
     public AllayLoungeScreen(AllayLoungeMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
-        this.imageWidth = 176;
-        this.imageHeight = 186;
-        this.inventoryLabelY = AllayLoungeMenu.PLAYER_INVENTORY_Y - 11;
+        this.imageWidth = 216;
+        this.imageHeight = 240;
+        this.titleLabelY = 2;
+    }
+
+    @Override
+    protected void init() {
+        super.init();
+        this.cancelDrag();
+        this.addLoungeButton(71, 23, RECALL_BUTTON_SIZE, "return_home", "allay_lounge.recall", null,
+            () -> PacketDistributor.sendToServer(new AllayLoungeRecallPacket(this.menu.loungePos())));
+        this.addLoungeButton(39, 83, BUTTON_SIZE, "pause", "allay.strategy.pause",
+            () -> this.menu.shortageStrategy() == AllayShortageStrategy.PAUSE,
+            () -> PacketDistributor.sendToServer(
+                new AllayLoungeSettingsPacket(this.menu.loungePos(), AllayShortageStrategy.PAUSE)));
+        this.addLoungeButton(39, 99, BUTTON_SIZE, "skip", "allay.strategy.skip",
+            () -> this.menu.shortageStrategy() == AllayShortageStrategy.SKIP,
+            () -> PacketDistributor.sendToServer(
+                new AllayLoungeSettingsPacket(this.menu.loungePos(), AllayShortageStrategy.SKIP)));
+        this.addLoungeButton(59, 83, BUTTON_SIZE, "clear_area", "allay.clearance.clear_area",
+            () -> this.menu.clearanceStrategy() == AllayClearanceStrategy.CLEAR_AREA,
+            () -> PacketDistributor.sendToServer(
+                new AllayLoungeClearancePacket(this.menu.loungePos(), AllayClearanceStrategy.CLEAR_AREA)));
+        this.addLoungeButton(59, 99, BUTTON_SIZE, "keep_blank", "allay.clearance.keep_blank",
+            () -> this.menu.clearanceStrategy() == AllayClearanceStrategy.KEEP_BLANK,
+            () -> PacketDistributor.sendToServer(
+                new AllayLoungeClearancePacket(this.menu.loungePos(), AllayClearanceStrategy.KEEP_BLANK)));
+    }
+
+    private void addLoungeButton(
+        int x, int y, int size, String texture, String translation, @Nullable BooleanSupplier selected, Runnable action
+    ) {
+        this.addRenderableWidget(new AllayLoungeButton(
+            this.leftPos + x, this.topPos + y, size,
+            AnvilcraftPlasticraft.of("textures/gui/button/allay/" + texture + ".png"),
+            Component.translatable("screen.anvilcraftplasticraft." + translation), selected, action
+        ));
+    }
+
+    @Override
+    public void setFocused(@Nullable GuiEventListener listener) {
+        if (this.getFocused() != listener && this.getFocused() instanceof AllayLoungeButton loungeButton) {
+            loungeButton.cancelPress();
+        }
+        super.setFocused(listener);
     }
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
         this.renderTooltip(graphics, mouseX, mouseY);
-        if (this.isRecallHovered(mouseX, mouseY)) {
-            graphics.renderTooltip(
-                this.font,
-                Component.translatable("screen.anvilcraftplasticraft.allay_lounge.recall"),
-                mouseX,
-                mouseY
-            );
-        }
-        if (this.isHovering(PAUSE_BUTTON_X, STRATEGY_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, mouseX, mouseY)) {
-            graphics.renderTooltip(
-                this.font,
-                Component.translatable("screen.anvilcraftplasticraft.allay.strategy.pause"),
-                mouseX,
-                mouseY
-            );
-        } else if (this.isHovering(SKIP_BUTTON_X, STRATEGY_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, mouseX, mouseY)) {
-            graphics.renderTooltip(
-                this.font,
-                Component.translatable("screen.anvilcraftplasticraft.allay.strategy.skip"),
-                mouseX,
-                mouseY
-            );
-        } else if (this.isHovering(CLEAR_AREA_BUTTON_X, STRATEGY_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, mouseX, mouseY)) {
-            graphics.renderTooltip(
-                this.font,
-                Component.translatable("screen.anvilcraftplasticraft.allay.clearance.clear_area"),
-                mouseX,
-                mouseY
-            );
-        } else if (this.isHovering(KEEP_BLANK_BUTTON_X, STRATEGY_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, mouseX, mouseY)) {
-            graphics.renderTooltip(
-                this.font,
-                Component.translatable("screen.anvilcraftplasticraft.allay.clearance.keep_blank"),
-                mouseX,
-                mouseY
-            );
-        }
+        if (this.pressedAllay != null || !this.menu.getCarried().isEmpty()) return;
         int hovered = this.hoveredCard(mouseX, mouseY);
         List<AllayWorkRecord> hosted = this.hosted();
         if (hovered >= 0 && hovered < hosted.size()) {
             AllayWorkRecord record = hosted.get(hovered);
+            List<Component> tooltip = new ArrayList<>();
+            record.customName().ifPresent(tooltip::add);
+            tooltip.add(record.hardHat().getHoverName());
             ItemStack tool = record.heldTool();
-            graphics.renderTooltip(
-                this.font,
-                tool.isEmpty()
-                    ? Component.translatable("screen.anvilcraftplasticraft.allay.tool.none")
-                    : tool.getHoverName(),
-                mouseX,
-                mouseY
-            );
+            tooltip.add(tool.isEmpty()
+                ? Component.translatable("screen.anvilcraftplasticraft.allay.tool.none") : tool.getHoverName());
+            tooltip.add(Component.translatable("screen.anvilcraftplasticraft.allay_lounge.rotate")
+                .withStyle(ChatFormatting.GRAY));
+            tooltip.add(Component.translatable("screen.anvilcraftplasticraft.allay_lounge.release")
+                .withStyle(ChatFormatting.GRAY));
+            graphics.renderComponentTooltip(this.font, tooltip, mouseX, mouseY);
+        } else if (this.menu.getSlot(0).getItem().isEmpty() && this.isHovering(
+            AllayLoungeMenu.DISK_SLOT_X, AllayLoungeMenu.DISK_SLOT_Y, 16, 16, mouseX, mouseY
+        )) {
+            graphics.renderTooltip(this.font,
+                Component.translatable("screen.anvilcraftplasticraft.allay_lounge.disk"), mouseX, mouseY);
         }
     }
 
     @Override
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
-        graphics.blit(
-            TEXTURE,
-            this.leftPos,
-            this.topPos,
-            0,
-            0,
-            this.imageWidth,
-            this.imageHeight,
-            this.imageWidth,
-            this.imageHeight
-        );
-        int frame = this.isRecallHovered(mouseX, mouseY) ? 1 : 0;
-        graphics.blit(
-            RETURN_HOME_BUTTON,
-            this.leftPos + RECALL_BUTTON_X,
-            this.topPos + RECALL_BUTTON_Y,
-            0,
-            frame * BUTTON_SIZE,
-            BUTTON_SIZE,
-            BUTTON_SIZE,
-            BUTTON_SIZE,
-            BUTTON_SIZE * 4
-        );
-        this.renderHostedCards(graphics);
-        AllayShortageStrategy strategy = this.menu.shortageStrategy();
-        this.renderStrategyButton(graphics, PAUSE_BUTTON, PAUSE_BUTTON_X, strategy == AllayShortageStrategy.PAUSE, mouseX, mouseY);
-        this.renderStrategyButton(graphics, SKIP_BUTTON, SKIP_BUTTON_X, strategy == AllayShortageStrategy.SKIP, mouseX, mouseY);
-        AllayClearanceStrategy clearance = this.menu.clearanceStrategy();
-        this.renderStrategyButton(
-            graphics,
-            CLEAR_AREA_BUTTON,
-            CLEAR_AREA_BUTTON_X,
-            clearance == AllayClearanceStrategy.CLEAR_AREA,
-            mouseX,
-            mouseY
-        );
-        this.renderStrategyButton(
-            graphics,
-            KEEP_BLANK_BUTTON,
-            KEEP_BLANK_BUTTON_X,
-            clearance == AllayClearanceStrategy.KEEP_BLANK,
-            mouseX,
-            mouseY
-        );
+        graphics.blit(TEXTURE, this.leftPos, this.topPos, 0, 0, this.imageWidth, this.imageHeight, 256, 256);
+        graphics.blit(TEXTURE,
+            this.leftPos + AllayLoungeMenu.DISK_SLOT_X - 1, this.topPos + AllayLoungeMenu.DISK_SLOT_Y - 1,
+            AllayLoungeMenu.PLAYER_INVENTORY_X - 1, AllayLoungeMenu.PLAYER_INVENTORY_Y - 1,
+            18, 18, 256, 256);
+        this.renderHostedAllays(graphics, mouseX, mouseY);
     }
 
-    private void renderStrategyButton(
-        GuiGraphics graphics,
-        ResourceLocation texture,
-        int buttonX,
-        boolean selected,
-        int mouseX,
-        int mouseY
-    ) {
-        int frame = selected ? 2 : this.isHovering(buttonX, STRATEGY_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, mouseX, mouseY) ? 1 : 0;
-        graphics.blit(
-            texture,
-            this.leftPos + buttonX,
-            this.topPos + STRATEGY_BUTTON_Y,
-            0,
-            frame * BUTTON_SIZE,
-            BUTTON_SIZE,
-            BUTTON_SIZE,
-            BUTTON_SIZE,
-            BUTTON_SIZE * 4
-        );
+    @Override
+    protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY) {
+        graphics.drawString(this.font, this.title,
+            (this.imageWidth - this.font.width(this.title)) / 2, this.titleLabelY, 0x404040, false);
     }
 
-    private void renderHostedCards(GuiGraphics graphics) {
+    private void renderHostedAllays(GuiGraphics graphics, int mouseX, int mouseY) {
+        if (this.minecraft == null || this.minecraft.level == null) return;
         List<AllayWorkRecord> hosted = this.hosted();
-        for (int index = 0; index < AllayLoungeBlockEntity.HOST_CAPACITY; index++) {
-            int column = index % 4;
-            int row = index / 4;
-            int x = this.leftPos + AllayLoungeMenu.CARD_GRID_X + column * CARD_SIZE;
-            int y = this.topPos + AllayLoungeMenu.CARD_GRID_Y + row * CARD_SIZE;
-            if (index >= hosted.size()) continue;
+        Set<UUID> present = new HashSet<>();
+        long now = Util.getNanos();
+        int hovered = this.hoveredCard(mouseX, mouseY);
+        for (int index = 0; index < Math.min(hosted.size(), AllayLoungeBlockEntity.HOST_CAPACITY); index++) {
             AllayWorkRecord record = hosted.get(index);
-            graphics.renderItem(record.hardHat(), x + 1, y + 1);
-            if (!record.heldTool().isEmpty()) {
-                graphics.pose().pushPose();
-                graphics.pose().translate(x + 9.0F, y + 9.0F, 100.0F);
-                graphics.pose().scale(0.5F, 0.5F, 0.5F);
-                graphics.renderItem(record.heldTool(), 0, 0);
-                graphics.pose().popPose();
+            present.add(record.entityId());
+            AllayLoungePreview preview = this.previews.computeIfAbsent(record.entityId(),
+                id -> new AllayLoungePreview(this.minecraft.level, record, now));
+            preview.updateRecord(record);
+            int x = this.leftPos + AllayLoungeMenu.CARD_GRID_X + index % GRID_COLUMNS * AllayLoungeMenu.CARD_SPACING;
+            int y = this.topPos + AllayLoungeMenu.CARD_GRID_Y + index / GRID_COLUMNS * AllayLoungeMenu.CARD_SPACING;
+            if (index == hovered || record.entityId().equals(this.pressedAllay)) {
+                graphics.fill(x, y, x + AllayLoungeMenu.CARD_SIZE, y + AllayLoungeMenu.CARD_SIZE, 0x28FFF2B0);
             }
+            preview.render(graphics, x, y, AllayLoungeMenu.CARD_SIZE, now);
         }
+        this.previews.keySet().retainAll(present);
+        if (this.pressedAllay != null && !present.contains(this.pressedAllay)) this.cancelDrag();
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == 0 && this.isRecallHovered((int) mouseX, (int) mouseY)) {
-            PacketDistributor.sendToServer(new AllayLoungeRecallPacket(this.menu.loungePos()));
-            this.playClick();
-            return true;
-        }
-        if (button == 0 && this.isHovering(PAUSE_BUTTON_X, STRATEGY_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, (int) mouseX, (int) mouseY)) {
-            PacketDistributor.sendToServer(new AllayLoungeSettingsPacket(this.menu.loungePos(), AllayShortageStrategy.PAUSE));
-            this.playClick();
-            return true;
-        }
-        if (button == 0 && this.isHovering(SKIP_BUTTON_X, STRATEGY_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, (int) mouseX, (int) mouseY)) {
-            PacketDistributor.sendToServer(new AllayLoungeSettingsPacket(this.menu.loungePos(), AllayShortageStrategy.SKIP));
-            this.playClick();
-            return true;
-        }
-        if (button == 0
-            && this.isHovering(CLEAR_AREA_BUTTON_X, STRATEGY_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, (int) mouseX, (int) mouseY)) {
-            PacketDistributor.sendToServer(
-                new AllayLoungeClearancePacket(this.menu.loungePos(), AllayClearanceStrategy.CLEAR_AREA)
-            );
-            this.playClick();
-            return true;
-        }
-        if (button == 0
-            && this.isHovering(KEEP_BLANK_BUTTON_X, STRATEGY_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, (int) mouseX, (int) mouseY)) {
-            PacketDistributor.sendToServer(
-                new AllayLoungeClearancePacket(this.menu.loungePos(), AllayClearanceStrategy.KEEP_BLANK)
-            );
-            this.playClick();
-            return true;
-        }
-        int card = this.hoveredCard((int) mouseX, (int) mouseY);
-        if (button == 0 && card >= 0 && card < this.hosted().size()) {
-            PacketDistributor.sendToServer(new AllayLoungeReleasePacket(this.menu.loungePos(), card));
-            this.playClick();
+        int card = this.hoveredCard(mouseX, mouseY);
+        List<AllayWorkRecord> hosted = this.hosted();
+        if (button == 0 && this.menu.getCarried().isEmpty() && card >= 0 && card < hosted.size()) {
+            this.pressedAllay = hosted.get(card).entityId();
+            this.pressX = mouseX;
+            this.pressY = mouseY;
+            this.lastDragX = mouseX;
+            this.dragged = false;
+            AllayLoungePreview preview = this.previews.get(this.pressedAllay);
+            if (preview != null) preview.rotation().beginDrag(Util.getNanos());
             return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (button == 0 && this.getFocused() instanceof AllayLoungeButton loungeButton && loungeButton.isPressed()) {
+            return true;
+        }
+        if (button != 0 || this.pressedAllay == null) return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+        double offsetX = mouseX - this.pressX;
+        double offsetY = mouseY - this.pressY;
+        this.dragged |= offsetX * offsetX + offsetY * offsetY > DRAG_THRESHOLD_SQUARED;
+        AllayLoungePreview preview = this.previews.get(this.pressedAllay);
+        if (this.dragged && preview != null) {
+            preview.rotation().drag(mouseX - this.lastDragX, Util.getNanos());
+            this.lastDragX = mouseX;
+        }
+        return true;
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 0 && this.getFocused() instanceof AllayLoungeButton loungeButton && loungeButton.isPressed()) {
+            // 消费按钮的松开事件，防止容器继续处理拖拽落点，误操作物品槽或丢出手中物品。
+            this.setDragging(false);
+            return loungeButton.mouseReleased(mouseX, mouseY, button);
+        }
+        if (button != 0 || this.pressedAllay == null) return super.mouseReleased(mouseX, mouseY, button);
+        double offsetX = mouseX - this.pressX;
+        double offsetY = mouseY - this.pressY;
+        this.dragged |= offsetX * offsetX + offsetY * offsetY > DRAG_THRESHOLD_SQUARED;
+        int card = this.hoveredCard(mouseX, mouseY);
+        List<AllayWorkRecord> hosted = this.hosted();
+        // 松开时重新核对 UUID，异步出入库导致卡片移位时不能放错悦灵。
+        if (!this.dragged && card >= 0 && card < hosted.size()
+            && hosted.get(card).entityId().equals(this.pressedAllay)) {
+            PacketDistributor.sendToServer(new AllayLoungeReleasePacket(this.menu.loungePos(), card));
+            if (this.minecraft != null) {
+                this.minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+            }
+        }
+        this.cancelDrag();
+        return true;
+    }
+
+    private void cancelDrag() {
+        AllayLoungePreview preview = this.previews.get(this.pressedAllay);
+        if (preview != null) preview.rotation().endDrag(Util.getNanos());
+        this.pressedAllay = null;
+        this.dragged = false;
+    }
+
+    @Override
+    public void removed() {
+        if (this.getFocused() instanceof AllayLoungeButton loungeButton) loungeButton.cancelPress();
+        this.cancelDrag();
+        this.previews.clear();
+        super.removed();
     }
 
     private List<AllayWorkRecord> hosted() {
@@ -246,24 +246,15 @@ public class AllayLoungeScreen extends AbstractContainerScreen<AllayLoungeMenu> 
         return lounge == null ? List.of() : lounge.hosted();
     }
 
-    private int hoveredCard(int mouseX, int mouseY) {
-        int localX = mouseX - this.leftPos - AllayLoungeMenu.CARD_GRID_X;
-        int localY = mouseY - this.topPos - AllayLoungeMenu.CARD_GRID_Y;
-        if (localX < 0 || localY < 0) return -1;
-        int column = localX / CARD_SIZE;
-        int row = localY / CARD_SIZE;
-        if (column < 0 || column >= 4 || row < 0 || row >= 4) return -1;
-        if (localX % CARD_SIZE >= CARD_SIZE || localY % CARD_SIZE >= CARD_SIZE) return -1;
-        return row * 4 + column;
-    }
-
-    private boolean isRecallHovered(int mouseX, int mouseY) {
-        return this.isHovering(RECALL_BUTTON_X, RECALL_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, mouseX, mouseY);
-    }
-
-    private void playClick() {
-        if (this.minecraft != null && this.minecraft.player != null) {
-            this.minecraft.player.playSound(SoundEvents.UI_BUTTON_CLICK.value(), 0.6F, 1.0F);
-        }
+    private int hoveredCard(double mouseX, double mouseY) {
+        double localX = mouseX - this.leftPos - AllayLoungeMenu.CARD_GRID_X;
+        double localY = mouseY - this.topPos - AllayLoungeMenu.CARD_GRID_Y;
+        if (localX < 0.0D || localY < 0.0D) return -1;
+        int column = (int) (localX / AllayLoungeMenu.CARD_SPACING);
+        int row = (int) (localY / AllayLoungeMenu.CARD_SPACING);
+        if (column >= GRID_COLUMNS || row >= GRID_COLUMNS) return -1;
+        if (localX % AllayLoungeMenu.CARD_SPACING >= AllayLoungeMenu.CARD_SIZE
+            || localY % AllayLoungeMenu.CARD_SPACING >= AllayLoungeMenu.CARD_SIZE) return -1;
+        return row * GRID_COLUMNS + column;
     }
 }

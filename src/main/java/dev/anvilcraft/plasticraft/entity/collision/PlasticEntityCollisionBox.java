@@ -21,8 +21,6 @@ public final class PlasticEntityCollisionBox {
     private final List<AABB> components;
     private final List<PlasticConvexShape> convexComponents;
     private final AABB bounds;
-    private volatile List<PlasticConvexCollisionOutline.Segment> convexOutline;
-    private volatile PlasticConvexCollisionOutline.PackedOutline packedOutline;
 
     private PlasticEntityCollisionBox(
         VoxelShape shape,
@@ -127,26 +125,6 @@ public final class PlasticEntityCollisionBox {
 
     public boolean hasConvexComponents() {
         return !this.convexComponents.isEmpty();
-    }
-
-    /** 返回当前凸碰撞并集的调试轮廓；结果随不可变碰撞箱实例缓存。 */
-    public List<PlasticConvexCollisionOutline.Segment> convexOutline() {
-        if (this.convexComponents.isEmpty()) return List.of();
-        List<PlasticConvexCollisionOutline.Segment> cached = this.convexOutline;
-        if (cached != null) return cached;
-        cached = PlasticConvexCollisionOutline.build(this.convexComponents);
-        this.convexOutline = cached;
-        return cached;
-    }
-
-    public PlasticConvexCollisionOutline.PackedOutline packedOutline() {
-        PlasticConvexCollisionOutline.PackedOutline cached = this.packedOutline;
-        if (cached != null) return cached;
-        cached = this.convexComponents.isEmpty()
-            ? PlasticConvexCollisionOutline.PackedOutline.EMPTY
-            : PlasticConvexCollisionOutline.PackedOutline.of(this.convexOutline());
-        this.packedOutline = cached;
-        return cached;
     }
 
     /** 返回仅用于宽阶段检索的最小外包围盒。 */

@@ -59,6 +59,7 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.BlockItem;
@@ -758,6 +759,65 @@ public final class PlasticMoldingChamberGameTests {
             player.containerMenu instanceof PlasticMoldingChamberMenu,
             "printing component did not open the chamber GUI"
         );
+        player.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x7x9", floor = true)
+    @TestHolder(description = "Printing components install above the chamber from every face without opening its GUI")
+    static void printingComponentInstallsFromAnyChamberFace(ExtendedGameTestHelper helper) {
+        PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
+        BlockPos pos = chamber.getBlockPos();
+        BlockPos componentPos = pos.above();
+        ServerPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        player.setPos(pos.getCenter().add(0, 0, -2));
+        for (GameType mode : List.of(GameType.SURVIVAL, GameType.CREATIVE)) {
+            player.setGameMode(mode);
+            for (Direction face : Direction.values()) {
+                for (InteractionHand hand : InteractionHand.values()) {
+                    for (boolean sneaking : List.of(false, true)) {
+                        player.setShiftKeyDown(sneaking);
+                        player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+                        player.setItemInHand(InteractionHand.OFF_HAND, ItemStack.EMPTY);
+                        ItemStack stack = new ItemStack(PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.asItem(), 2);
+                        player.setItemInHand(hand, stack);
+                        BlockHitResult hit = new BlockHitResult(pos.getCenter().relative(face, 0.5), face, pos, false);
+                        if (hand == InteractionHand.OFF_HAND) {
+                            check(!player.gameMode.useItemOn(player, helper.getLevel(), player.getMainHandItem(),
+                                InteractionHand.MAIN_HAND, hit).consumesAction(), "main hand swallowed offhand installation");
+                        }
+                        check(player.gameMode.useItemOn(player, helper.getLevel(), stack, hand, hit).consumesAction(),
+                            "component installation failed from " + face + " using " + hand + " sneaking=" + sneaking);
+                        BlockState installed = helper.getLevel().getBlockState(componentPos);
+                        check(installed.is(PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get())
+                            && installed.getValue(Plastic3DPrintingComponentBlock.FACING)
+                                == chamber.getBlockState().getValue(PlasticMoldingChamberBlock.FACING),
+                            "component was not installed above and aligned with the chamber");
+                        check(stack.getCount() == (mode == GameType.CREATIVE ? 2 : 1), "installation consumed the wrong count");
+                        check(player.containerMenu == player.inventoryMenu, "installation opened the chamber GUI");
+                        helper.getLevel().removeBlock(componentPos, false);
+                    }
+                }
+            }
+        }
+        player.setGameMode(GameType.SURVIVAL);
+        player.setShiftKeyDown(false);
+        player.setItemInHand(InteractionHand.OFF_HAND, ItemStack.EMPTY);
+        ItemStack stack = new ItemStack(PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.asItem(), 2);
+        player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+        BlockHitResult hit = new BlockHitResult(pos.getCenter(), Direction.NORTH, pos, false);
+        helper.getLevel().setBlockAndUpdate(componentPos, Blocks.STONE.defaultBlockState());
+        check(player.gameMode.useItemOn(player, helper.getLevel(), stack, InteractionHand.MAIN_HAND, hit)
+            == InteractionResult.FAIL, "blocked installation did not fail");
+        check(helper.getLevel().getBlockState(componentPos).is(Blocks.STONE)
+            && stack.getCount() == 2 && player.containerMenu == player.inventoryMenu,
+            "blocked installation replaced the obstruction, consumed an item, or opened the GUI");
+        helper.getLevel().setBlockAndUpdate(componentPos, PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get().defaultBlockState());
+        player.gameMode.useItemOn(player, helper.getLevel(), stack, InteractionHand.MAIN_HAND, hit);
+        check(stack.getCount() == 2 && player.containerMenu instanceof PlasticMoldingChamberMenu,
+            "an installed component did not preserve the normal chamber GUI interaction");
+        player.closeContainer();
         player.discard();
         helper.succeed();
     }

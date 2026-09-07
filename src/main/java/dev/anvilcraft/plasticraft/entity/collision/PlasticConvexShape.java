@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /** 动态塑料实体使用的不可变凸碰撞体，保留源 Cube 的连续斜面和棱边。 */
@@ -156,6 +157,29 @@ public final class PlasticConvexShape {
             if (face.signedDistance(point) > epsilon) return false;
         }
         return true;
+    }
+
+    /** 按各面的半空间裁剪线段，起点已在实体内部时立即命中。 */
+    public Optional<Vec3> clip(Vec3 start, Vec3 end) {
+        Vec3 movement = end.subtract(start);
+        double enter = 0.0D;
+        double exit = 1.0D;
+        for (Face face : this.faces()) {
+            double distance = face.signedDistance(start);
+            double speed = face.normal().dot(movement);
+            if (Math.abs(speed) <= AXIS_EPSILON) {
+                if (distance > AXIS_EPSILON) return Optional.empty();
+                continue;
+            }
+            double fraction = -distance / speed;
+            if (speed < 0.0D) {
+                enter = Math.max(enter, fraction);
+            } else {
+                exit = Math.min(exit, fraction);
+            }
+            if (enter > exit) return Optional.empty();
+        }
+        return Optional.of(start.add(movement.scale(enter)));
     }
 
     List<Vec3> separatingAxes(PlasticConvexShape other) {

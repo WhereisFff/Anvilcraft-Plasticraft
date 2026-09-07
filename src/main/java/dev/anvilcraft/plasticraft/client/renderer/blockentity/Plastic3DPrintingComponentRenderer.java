@@ -1,7 +1,6 @@
 package dev.anvilcraft.plasticraft.client.renderer.blockentity;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.math.Axis;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.Plastic3DPrintingComponentBlock;
 import dev.anvilcraft.plasticraft.block.entity.Plastic3DPrintingComponentBlockEntity;
@@ -78,7 +77,7 @@ public final class Plastic3DPrintingComponentRenderer
         boolean powered = state.hasProperty(Plastic3DPrintingComponentBlock.POWERED)
             && state.getValue(Plastic3DPrintingComponentBlock.POWERED);
         poseStack.pushPose();
-        alignToFacing(poseStack, facing);
+        poseStack.mulPose(MachineModelTransforms.facing(facing));
         renderMelt(fluid, poseStack, bufferSource, packedLight);
         if (powered) {
             renderStandaloneModel(
@@ -97,13 +96,6 @@ public final class Plastic3DPrintingComponentRenderer
     @Override
     public AABB getRenderBoundingBox(Plastic3DPrintingComponentBlockEntity component) {
         return new AABB(component.getBlockPos()).inflate(0.25D).expandTowards(0.0D, 0.25D, 0.0D);
-    }
-
-    private static void alignToFacing(PoseStack poseStack, Direction facing) {
-        float blockRotation = (facing.toYRot() + 180.0F) % 360.0F;
-        poseStack.translate(0.5F, 0.0F, 0.5F);
-        poseStack.mulPose(Axis.YP.rotationDegrees(-blockRotation));
-        poseStack.translate(-0.5F, 0.0F, -0.5F);
     }
 
     private static void renderMelt(

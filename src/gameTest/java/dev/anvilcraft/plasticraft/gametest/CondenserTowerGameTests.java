@@ -1,7 +1,5 @@
 package dev.anvilcraft.plasticraft.gametest;
 
-import dev.anvilcraft.lib.v2.multiblock.dynamic.definition.MultiblockDefinition;
-import dev.anvilcraft.lib.v2.util.predicate.BlockStatePredicate;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
@@ -21,19 +19,19 @@ import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.recipe.CondenserGas;
 import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
 import dev.anvilcraft.plasticraft.recipe.EscapingVaporEffects;
+import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
 import dev.dubhe.anvilcraft.block.fluid.PipeBlock;
+import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
+import dev.dubhe.anvilcraft.event.giantanvil.GiantAnvilLandingEventListener;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.block.ModFluids;
 import dev.dubhe.anvilcraft.init.item.ModItemTags;
 import dev.dubhe.anvilcraft.recipe.anvil.outcome.RoyalPreferenceOutcome;
-import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockConversionRecipe;
-import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockRecipe;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.core.Vec3i;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
@@ -55,6 +53,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CampfireBlock;
+import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -342,21 +341,6 @@ public final class CondenserTowerGameTests {
                 && restored.getStoredFluid().getAmount() == 750,
             "tower client update tag did not preserve the displayed storage amount");
 
-        var multiblockHolder = helper.getLevel().getRecipeManager()
-            .byKey(AnvilcraftPlasticraft.of("multiblock/condenser_tower"));
-        check(multiblockHolder.isPresent()
-                && multiblockHolder.get().value() instanceof MultiblockRecipe,
-            "condenser tower multiblock recipe was not loaded");
-        checkCondenserInputPattern(((MultiblockRecipe) multiblockHolder.orElseThrow().value()).getPattern());
-
-        var conversionHolder = helper.getLevel().getRecipeManager()
-            .byKey(AnvilcraftPlasticraft.of("multiblock_conversion/condenser_tower"));
-        check(conversionHolder.isPresent()
-                && conversionHolder.get().value() instanceof MultiblockConversionRecipe,
-            "condenser tower conversion recipe was not loaded");
-        checkCondenserInputPattern(
-            ((MultiblockConversionRecipe) conversionHolder.orElseThrow().value()).getInputPattern()
-        );
         check(helper.getLevel().getRecipeManager()
                 .byKey(AnvilcraftPlasticraft.of("condenser/gaseous_water_to_water")).isPresent(),
             "condenser collection recipe was not loaded");
@@ -766,92 +750,144 @@ public final class CondenserTowerGameTests {
         throw new GameTestAssertException("royal preference selected no gem block");
     }
 
-    private static void checkCondenserInputPattern(MultiblockDefinition definition) {
-        check(definition.definition().size() == 18,
-            "condenser recipe did not retain its 3x3x3 non-air layout");
-
-        checkPipePredicate(predicateAt(definition, 0, 2, 1), Direction.Axis.X, "west");
-        checkPipePredicate(predicateAt(definition, 2, 2, 1), Direction.Axis.X, "east");
-        checkPipePredicate(predicateAt(definition, 1, 2, 0), Direction.Axis.Z, "north");
-        checkPipePredicate(predicateAt(definition, 1, 2, 2), Direction.Axis.Z, "south");
-        BlockState pillar = ModBlocks.CUT_BRASS_PILLAR.get().defaultBlockState()
-            .setValue(BlockStateProperties.AXIS, Direction.Axis.Y);
-        check(matchesOnlyBlock(predicateAt(definition, 1, 0, 0), ModBlocks.CUT_BRASS_PILLAR.get())
-                && matchesPredicate(predicateAt(definition, 1, 0, 0), pillar),
-            "condenser recipe did not use cut brass pillars");
-        check(matchesOnlyBlock(predicateAt(definition, 0, 0, 0), PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get()),
-            "condenser recipe did not use high-viscosity resin blocks");
-        checkTrapdoorPredicate(predicateAt(definition, 1, 2, 1), Half.TOP, "top");
-        checkTrapdoorPredicate(predicateAt(definition, 1, 0, 1), Half.BOTTOM, "bottom");
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("7x7x7")
+    @TestHolder(description = "巨型铁砧将四向冷凝塔结构压缩为物品，直管不要求端盖或止回阀")
+    public static void condenserStructureCraftsItem(ExtendedGameTestHelper helper) {
+        checkCondenserAssembly(helper, false);
+        helper.succeed();
     }
 
-    private static void checkPipePredicate(
-        BlockStatePredicate predicate,
-        Direction.Axis axis,
-        String position
-    ) {
-        check(matchesOnlyBlock(predicate, ModBlocks.PIPE_STRAIGHT.get()),
-            position + " condenser interface was not a straight pipe");
-        BlockState expected = pipeState(axis);
-        check(matchesPredicate(predicate, expected),
-            position + " condenser pipe did not accept its configured state");
-        check(!matchesPredicate(predicate, expected.setValue(
-                PipeBlock.AXIS,
-                axis == Direction.Axis.X ? Direction.Axis.Z : Direction.Axis.X
-            )),
-            position + " condenser pipe used the wrong axis");
-        check(!matchesPredicate(predicate, expected.setValue(PipeBlock.HAS_END_START, false))
-                && !matchesPredicate(predicate, expected.setValue(PipeBlock.HAS_END_END, false)),
-            position + " condenser pipe did not render both ends");
-        check(!matchesPredicate(predicate, expected.setValue(PipeBlock.HAS_CHECK_VALVE, false)),
-            position + " condenser pipe did not include a check valve");
-        check(!matchesPredicate(predicate, expected.setValue(PipeBlock.WATERLOGGED, true)),
-            position + " condenser pipe was waterlogged");
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("7x7x7")
+    @TestHolder(description = "巨型铁砧将四向冷凝塔结构原位转化为完整且共用主方块实体的塔层")
+    public static void condenserStructureConvertsInPlace(ExtendedGameTestHelper helper) {
+        checkCondenserAssembly(helper, true);
+        helper.succeed();
     }
 
-    private static void checkTrapdoorPredicate(
-        BlockStatePredicate predicate,
-        Half half,
-        String position
-    ) {
-        check(matchesOnlyBlock(predicate, Blocks.COPPER_TRAPDOOR),
-            position + " condenser trapdoor was not copper");
-        BlockState expected = trapdoorState(half);
-        check(matchesPredicate(predicate, expected),
-            position + " condenser trapdoor did not accept its configured state");
-        check(!matchesPredicate(predicate, expected.setValue(
-                TrapDoorBlock.HALF,
-                half == Half.TOP ? Half.BOTTOM : Half.TOP
-            )),
-            position + " condenser trapdoor used the wrong half");
-        check(!matchesPredicate(predicate, expected.setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.SOUTH)),
-            position + " condenser trapdoor used the wrong facing");
-        check(!matchesPredicate(predicate, expected.setValue(BlockStateProperties.OPEN, true)),
-            position + " condenser trapdoor was open");
-        check(!matchesPredicate(predicate, expected.setValue(BlockStateProperties.WATERLOGGED, true)),
-            position + " condenser trapdoor was waterlogged");
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("7x7x7")
+    @TestHolder(description = "冷凝塔结构的管道或活板门状态错误时，两种合成都拒绝执行且保留全部材料")
+    public static void invalidCondenserStructureKeepsIngredients(ExtendedGameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos base = helper.absolutePos(new BlockPos(3, 2, 3));
+        List<BlockState> invalidStates = List.of(
+            pipeState(Direction.Axis.Z, 0),
+            pipeState(Direction.Axis.X, 0).setValue(PipeBlock.WATERLOGGED, true),
+            trapdoorState(Half.TOP),
+            trapdoorState(Half.BOTTOM).setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.SOUTH),
+            trapdoorState(Half.BOTTOM).setValue(BlockStateProperties.OPEN, true),
+            trapdoorState(Half.BOTTOM).setValue(BlockStateProperties.WATERLOGGED, true)
+        );
+        for (boolean conversion : List.of(false, true)) {
+            for (BlockState invalidState : invalidStates) {
+                placeCondenserIngredients(level, base, Rotation.NONE, 0);
+                placeCondenserCraftingTables(level, base.above(3), conversion);
+                level.setBlock(invalidState.is(ModBlocks.PIPE_STRAIGHT) ? base.west() : base, invalidState, 18);
+                List<BlockPos> positions = BlockPos.betweenClosedStream(base.offset(-1, 0, -1), base.offset(1, 3, 1))
+                    .map(BlockPos::immutable).toList();
+                List<BlockState> before = positions.stream().map(level::getBlockState).toList();
+                GiantAnvilLandingEventListener.handleMultiblock(
+                    new AnvilEvent.GiantOnLand(level, base.above(5), null, 2.0F)
+                );
+                String context = (conversion ? "conversion" : "crafting") + " invalid state " + invalidState;
+                check(before.equals(positions.stream().map(level::getBlockState).toList()),
+                    context + " consumed or converted an invalid structure");
+                check(level.getEntitiesOfClass(ItemEntity.class, new AABB(base).inflate(2),
+                        entity -> entity.getItem().is(PlasticraftBlocks.CONDENSER_TOWER.asItem())).isEmpty(),
+                    context + " produced a tower without valid ingredients");
+            }
+        }
+        helper.succeed();
     }
 
-    private static BlockStatePredicate predicateAt(MultiblockDefinition definition, int x, int y, int z) {
-        return definition.definition().get(new Vec3i(x, y, z));
+    private static void checkCondenserAssembly(ExtendedGameTestHelper helper, boolean conversion) {
+        ServerLevel level = helper.getLevel();
+        BlockPos base = helper.absolutePos(new BlockPos(3, 2, 3));
+        BlockPos topCenter = base.above(3);
+        AABB bounds = new AABB(Vec3.atLowerCornerOf(base.offset(-1, 0, -1)),
+            Vec3.atLowerCornerOf(base.offset(2, 3, 2)));
+        for (Rotation rotation : Rotation.values()) {
+            for (int fittings = 0; fittings < 8; fittings++) {
+                String context = (conversion ? "conversion" : "crafting") + " " + rotation + " fittings=" + fittings;
+                placeCondenserIngredients(level, base, rotation, fittings);
+                placeCondenserCraftingTables(level, topCenter, conversion);
+                GiantAnvilLandingEventListener.handleMultiblock(
+                    new AnvilEvent.GiantOnLand(level, topCenter.above(2), null, 2.0F)
+                );
+                List<ItemEntity> drops = level.getEntitiesOfClass(ItemEntity.class, bounds,
+                    entity -> entity.getItem().is(PlasticraftBlocks.CONDENSER_TOWER.asItem()));
+                if (conversion) {
+                    check(drops.isEmpty(), context + " dropped an item instead of converting the structure");
+                    CondenserTowerBlockEntity main = null;
+                    for (Cube3x3PartHalf part : Cube3x3PartHalf.values()) {
+                        BlockPos pos = base.offset(part.getOffset());
+                        BlockState state = level.getBlockState(pos);
+                        check(state.is(PlasticraftBlocks.CONDENSER_TOWER)
+                                && state.getValue(CondenserTowerBlock.HALF) == part,
+                            context + " did not form the correct tower part at " + part);
+                        CondenserTowerBlockEntity tower = CondenserTowerBlockEntity.getMain(level, pos, state);
+                        check(tower != null && (main == null || tower == main),
+                            context + " tower parts did not resolve to the same controller at " + part);
+                        main = tower;
+                    }
+                } else {
+                    check(drops.stream().mapToInt(entity -> entity.getItem().getCount()).sum() == 1,
+                        context + " did not produce exactly one condenser tower item");
+                    for (BlockPos pos : BlockPos.betweenClosed(base.offset(-1, 0, -1), base.offset(1, 2, 1))) {
+                        check(level.getBlockState(pos).isAir(), context + " left ingredients at " + pos);
+                    }
+                    drops.forEach(ItemEntity::discard);
+                }
+            }
+        }
     }
 
-    private static boolean matchesOnlyBlock(BlockStatePredicate predicate, Block block) {
-        return predicate != null
-            && predicate.getBlocks().size() == 1
-            && predicate.getBlocks().stream().allMatch(holder -> holder.value() == block);
+    private static void placeCondenserCraftingTables(ServerLevel level, BlockPos topCenter, boolean conversion) {
+        for (int x = -1; x <= 1; x++) {
+            for (int z = -1; z <= 1; z++) {
+                level.setBlockAndUpdate(topCenter.offset(x, 0, z),
+                    x == 0 && z == 0 && !conversion
+                        ? ModBlocks.SPACE_OVERCOMPRESSOR.getDefaultState()
+                        : Blocks.CRAFTING_TABLE.defaultBlockState());
+            }
+        }
     }
 
-    private static boolean matchesPredicate(BlockStatePredicate predicate, BlockState state) {
-        return predicate != null && predicate.testWithoutEntity(state);
+    private static void placeCondenserIngredients(ServerLevel level, BlockPos base, Rotation rotation, int fittings) {
+        // 独立按玩家提供的结构摆放，避免从待测配方反向生成输入而掩盖配方错误。
+        String[][] layers = {{"0A0", "BCB", "0A0"}, {"DED", "E E", "DED"}, {"DED", "EFE", "DED"}};
+        for (BlockPos pos : BlockPos.betweenClosed(base.offset(-1, 0, -1), base.offset(1, 2, 1))) {
+            level.setBlock(pos, Blocks.AIR.defaultBlockState(), 18);
+        }
+        for (int y = 0; y < 3; y++) {
+            for (int z = 0; z < 3; z++) {
+                for (int x = 0; x < 3; x++) {
+                    BlockState state = switch (layers[y][z].charAt(x)) {
+                        case '0' -> PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.getDefaultState();
+                        case 'A' -> pipeState(Direction.Axis.Z, fittings);
+                        case 'B' -> pipeState(Direction.Axis.X, fittings);
+                        case 'C' -> trapdoorState(Half.BOTTOM);
+                        case 'D' -> ModBlocks.CUT_BRASS_PILLAR.getDefaultState()
+                            .setValue(BlockStateProperties.AXIS, Direction.Axis.Y);
+                        case 'E' -> Blocks.GLASS.defaultBlockState();
+                        case 'F' -> trapdoorState(Half.TOP);
+                        default -> Blocks.AIR.defaultBlockState();
+                    };
+                    BlockPos pos = base.offset(new BlockPos(x - 1, y, z - 1).rotate(rotation));
+                    level.setBlock(pos, state.rotate(rotation), 18);
+                }
+            }
+        }
     }
 
-    private static BlockState pipeState(Direction.Axis axis) {
-        return ModBlocks.PIPE_STRAIGHT.get().defaultBlockState()
+    private static BlockState pipeState(Direction.Axis axis, int fittings) {
+        return ModBlocks.PIPE_STRAIGHT.getDefaultState()
             .setValue(PipeBlock.AXIS, axis)
-            .setValue(PipeBlock.HAS_END_START, true)
-            .setValue(PipeBlock.HAS_END_END, true)
-            .setValue(PipeBlock.HAS_CHECK_VALVE, true)
+            .setValue(PipeBlock.HAS_END_START, (fittings & 1) != 0)
+            .setValue(PipeBlock.HAS_END_END, (fittings & 2) != 0)
+            .setValue(PipeBlock.HAS_CHECK_VALVE, (fittings & 4) != 0)
             .setValue(PipeBlock.WATERLOGGED, false);
     }
 

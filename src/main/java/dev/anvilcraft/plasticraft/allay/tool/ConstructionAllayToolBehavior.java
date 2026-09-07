@@ -404,6 +404,9 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
                 return;
             }
             worker.setHostedCarry(loadBatch(worker, level, progress, op, reserved, null));
+            if (level.getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge) {
+                lounge.clearPickupDisplay(worker.getUUID());
+            }
             worker.setActionState((byte) 4);
             worker.setWaitReason(ConstructionWaitReason.NONE);
             return;

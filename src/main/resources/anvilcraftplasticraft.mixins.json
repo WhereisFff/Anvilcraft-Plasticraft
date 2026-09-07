@@ -4,12 +4,14 @@
   "package": "dev.anvilcraft.plasticraft.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "AbstractArrowCollisionMixin",
     "AdhesiveEntityLifecycleMixin",
     "BaseLaserBlockEntityMixin",
     "BeaconBlockEntityMixin",
     "BlockCollisionsMixin",
     "BlockGetterMixin",
     "BlockStateLightEmissionMixin",
+    "ClipContextMixin",
     "ConstructionWorldChangeMixin",
     "DiskSlotClickMixin",
     "EntityCarrierCollisionMixin",
@@ -21,6 +23,7 @@
     "HasItemIngredientMixin",
     "InWorldRecipeContextMixin",
     "ItemCacheMixin",
+    "ItemEntityCollisionMixin",
     "LevelBondedPistonDropMixin",
     "LargeCauldronBlockMixin",
     "LivingEntityResinHeadMixin",
@@ -29,6 +32,7 @@
     "PistonStructureResolverMixin",
     "PlasticWorldChangeMixin",
     "PlayerEdgeCollisionMixin",
+    "ProjectileUtilMixin",
     "ServerGamePacketListenerMixin",
     "ServerLevelTrayRedstoneMixin",
     "SignalGetterMixin",
@@ -43,6 +47,7 @@
     "DiskSlotTintMixin",
     "EntityRenderDispatcherMixin",
     "PlasticEntityPickBlockMixin",
+    "PlasticEntitySelectionMixin",
     "PistonHeadRendererMixin"
   ],
   "injectors": {

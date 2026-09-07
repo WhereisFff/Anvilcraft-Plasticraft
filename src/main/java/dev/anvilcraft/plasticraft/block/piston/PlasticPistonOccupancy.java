@@ -121,6 +121,7 @@ public final class PlasticPistonOccupancy {
                         sourcePosition,
                         targetPosition,
                         reverseTarget,
+                        occupiedPositions(occupant),
                         new PistonMovement(
                             pistonPos,
                             driverPos,
@@ -168,7 +169,7 @@ public final class PlasticPistonOccupancy {
         }
     }
 
-    public static @Nullable Vec3 movementTarget(AbstractPlasticEntity entity) {
+    public static @Nullable MotionTarget movementTarget(AbstractPlasticEntity entity) {
         EntityMovement entityMovement;
         synchronized (MOVEMENTS) {
             MovementIndex index = MOVEMENTS.get(entity.level());
@@ -180,20 +181,38 @@ public final class PlasticPistonOccupancy {
 
         PistonMovement movement = entityMovement.movement();
         if (!entity.level().hasChunkAt(movement.driverPos())) {
-            return entityMovement.sourcePosition();
+            return new MotionTarget(entityMovement.sourcePosition(), Vec3.ZERO);
         }
         BlockEntity blockEntity = entity.level().getBlockEntity(movement.driverPos());
         if (blockEntity instanceof PistonMovingBlockEntity piston
             && piston.isSourcePiston()
             && piston.getMovementDirection() == movement.direction()) {
-            return entityMovement.sourcePosition().lerp(
+            return new MotionTarget(entityMovement.sourcePosition().lerp(
                 entityMovement.targetPosition(),
                 followProgress(entity.level(), piston)
-            );
+            ), Vec3.ZERO);
         }
 
         removeMovement(entity.level(), entity.getUUID());
-        return entityMovement.targetPosition();
+        Vec3 velocity = Vec3.ZERO;
+        for (BlockPos pos : entityMovement.sourcePositions()) {
+            if (!entity.level().hasChunkAt(pos)) continue;
+            BlockState state = entity.level().getBlockState(pos);
+            // 活塞头可能先于被推方块落定，同刻尚未移除的移动活塞也应按最终方块判断。
+            if (entity.level().getBlockEntity(pos) instanceof PistonMovingBlockEntity piston
+                && piston.getMovementDirection() == movement.direction()
+                && piston.getProgress(1.0F) >= 1.0F) {
+                state = piston.getMovedState();
+            }
+            if (state.isSlimeBlock()) {
+                velocity = Vec3.atLowerCornerOf(movement.direction().getNormal());
+                break;
+            }
+        }
+        return new MotionTarget(entityMovement.targetPosition(), velocity);
+    }
+
+    public record MotionTarget(Vec3 position, Vec3 velocity) {
     }
 
     /** 实体 tick 早于活塞方块实体；不预读下一拍进度时，碰撞会在粘液顶面前方留下半格可站缝。 */
@@ -262,6 +281,7 @@ public final class PlasticPistonOccupancy {
         Vec3 sourcePosition,
         Vec3 targetPosition,
         Vec3 reverseTarget,
+        List<BlockPos> sourcePositions,
         PistonMovement movement
     ) {
     }

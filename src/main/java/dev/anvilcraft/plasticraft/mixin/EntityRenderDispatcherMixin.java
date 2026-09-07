@@ -2,10 +2,11 @@ package dev.anvilcraft.plasticraft.mixin;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
-import dev.anvilcraft.plasticraft.client.renderer.PlasticCollisionOutlineRenderer;
+import dev.anvilcraft.lib.v2.cube.client.CubeSelection;
+import dev.anvilcraft.lib.v2.cube.client.OutlineRenderer;
+import dev.anvilcraft.lib.v2.cube.client.SelectionPart;
+import dev.anvilcraft.plasticraft.client.selection.PlasticSelectionGeometry;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
-import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexCollisionOutline;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
@@ -29,40 +30,14 @@ abstract class EntityRenderDispatcherMixin {
         float blue,
         CallbackInfo ci
     ) {
-        if (!(entity instanceof ShapedCollisionEntity shaped)) return;
-
-        if (entity instanceof AbstractPlasticEntity plastic) {
-            PlasticConvexCollisionOutline.PackedOutline outline = plastic.plasticraft$getCollisionOutline();
-            if (!outline.isEmpty()) {
-                Vec3 origin = plastic.plasticraft$getGeometry().entityOrigin();
-                PlasticCollisionOutlineRenderer.renderPackedOutline(
-                    poseStack,
-                    buffer,
-                    outline,
-                    -origin.x,
-                    -origin.y,
-                    -origin.z,
-                    red,
-                    green,
-                    blue,
-                    1.0F
-                );
-                renderDirectionVector(poseStack, buffer, entity, partialTick);
-                ci.cancel();
-                return;
-            }
+        if (!(entity instanceof AbstractPlasticEntity plastic)) return;
+        SelectionPart part = PlasticSelectionGeometry.get(plastic.plasticraft$getGeometry()).collision(plastic.getOrientation());
+        if (part != null) {
+            poseStack.pushPose();
+            part.apply(poseStack);
+            OutlineRenderer.render(poseStack, buffer, CubeSelection.outlines().get(part.geometry()), red, green, blue, 1.0F);
+            poseStack.popPose();
         }
-
-        PlasticCollisionOutlineRenderer.renderOutline(
-            poseStack,
-            buffer,
-            shaped.plasticraft$getCollisionBox(),
-            entity.position().scale(-1.0D),
-            red,
-            green,
-            blue,
-            1.0F
-        );
         renderDirectionVector(poseStack, buffer, entity, partialTick);
         ci.cancel();
     }

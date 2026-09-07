@@ -44,13 +44,20 @@ import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.Arrow;
+import net.minecraft.world.entity.projectile.ProjectileUtil;
+import net.minecraft.world.entity.projectile.Snowball;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -368,6 +375,199 @@ public final class PlasticConvexCollisionGameTests {
             mover.discard();
         }
         slope.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 60)
+    @EmptyTemplate(value = "21x10x11", floor = true)
+    @TestHolder(description = "Dropped items tick through empty bounds and remain on dynamic and bonded slopes")
+    static void droppedItemsTickOnRealSlopes(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity dynamic = createDynamicPlastic(helper, new Vec3(5.5D, 2.0D, 5.5D), slopedModel());
+        BondedPlasticShapeIndex.Entry bonded = createBondedSlope(helper, new BlockPos(14, 2, 5));
+        List<AABB> bounds = List.of(dynamic.getBoundingBox(), bonded.collisionShape().bounds());
+        List<ItemEntity> items = new ArrayList<>();
+        for (AABB box : bounds) {
+            ItemEntity item = new ItemEntity(
+                helper.getLevel(), box.getCenter().x + box.getXsize() * 0.28D,
+                box.maxY + 0.2D, box.getCenter().z, new ItemStack(Items.STICK), 0.0D, 0.0D, 0.0D
+            );
+            item.setNeverPickUp();
+            check(helper.getLevel().addFreshEntity(item), "failed to spawn falling slope item");
+            items.add(item);
+        }
+        List<Vec3> settled = new ArrayList<>();
+        helper.runAfterDelay(25, () -> {
+            for (int index = 0; index < items.size(); index++) {
+                ItemEntity item = items.get(index);
+                check(item.getY() < bounds.get(index).maxY - 0.1D,
+                    "slope " + index + " item stopped on the outer AABB");
+                check(item.getY() > bounds.get(index).minY + 0.2D,
+                    "slope " + index + " item fell through the real surface");
+                settled.add(item.position());
+            }
+        });
+        helper.onEachTick(() -> {
+            for (int index = 0; index < items.size(); index++) {
+                ItemEntity item = items.get(index);
+                check(!item.noPhysics, "slope " + index + " item falsely entered escape mode");
+                if (settled.isEmpty()) continue;
+                check(item.position().distanceToSqr(settled.get(index)) <= EPSILON * EPSILON,
+                    "slope " + index + " item jittered during normal ticks after settling");
+                check(!intersectsAny(item.getBoundingBox(), index == 0
+                        ? dynamic.plasticraft$getCollisionBox().convexComponents() : bonded.convexShapes()),
+                    "slope " + index + " item entered the real surface");
+            }
+        });
+        helper.runAfterDelay(45, helper::succeed);
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "11x10x11", floor = true)
+    @TestHolder(description = "Projectiles cross empty slope corners and hit the nearest real surface")
+    static void projectilesHitRealDynamicSlope(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity slope = createDynamicPlastic(helper, new Vec3(5.5D, 2.0D, 5.5D), slopedModel());
+        AABB bounds = slope.getBoundingBox();
+        double x = bounds.getCenter().x + bounds.getXsize() * 0.28D;
+        double z = bounds.getCenter().z;
+        Vec3 above = new Vec3(x, bounds.maxY + 0.6D, z);
+        Vec3 corner = new Vec3(x, bounds.maxY - 0.2D, z);
+        Vec3 below = new Vec3(x, bounds.minY, z);
+        Snowball snowball = new Snowball(EntityType.SNOWBALL, helper.getLevel());
+        snowball.setNoGravity(true);
+        snowball.setPos(above);
+        check(helper.getLevel().addFreshEntity(snowball), "failed to spawn slope snowball");
+        snowball.setDeltaMovement(corner.subtract(above));
+        snowball.tick();
+        check(!snowball.isRemoved(), "snowball hit the slope's empty AABB corner");
+        check(!slope.isRemoved(), "snowball damaged the slope from its empty AABB corner");
+        check(snowball.position().distanceToSqr(corner) <= EPSILON * EPSILON,
+            "snowball did not fly into the empty AABB corner");
+
+        Arrow arrow = new Arrow(EntityType.ARROW, helper.getLevel());
+        arrow.setNoGravity(true);
+        arrow.setPos(above);
+        check(helper.getLevel().addFreshEntity(arrow), "failed to spawn slope arrow");
+        arrow.setDeltaMovement(corner.subtract(above));
+        arrow.tick();
+        check(arrow.position().distanceToSqr(corner) <= EPSILON * EPSILON,
+            "arrow hit the slope's empty AABB corner");
+        check(!slope.isRemoved(), "arrow damaged the slope from its empty AABB corner");
+
+        check(helper.getLevel().getEntities(snowball, bounds.inflate(1.0D), target -> target == slope).contains(slope),
+            "slope was absent from the projectile candidate query");
+
+        EntityHitResult surface = ProjectileUtil.getEntityHitResult(
+            helper.getLevel(), snowball, corner, below, bounds.inflate(1.0D), target -> target == slope
+        );
+        check(surface != null && surface.getEntity() == slope, "projectile missed the real slope");
+        check(surface.getLocation().y < corner.y - 0.1D, "projectile hit the AABB instead of the real slope");
+        check(Math.abs(surface.getLocation().x - x) <= EPSILON
+                && Math.abs(surface.getLocation().z - z) <= EPSILON,
+            "projectile hit location was the target center instead of the flight path");
+        boolean onSurface = slope.plasticraft$getCollisionBox().convexComponents().stream().anyMatch(shape ->
+            shape.contains(surface.getLocation(), EPSILON)
+                && shape.faces().stream().anyMatch(face -> Math.abs(face.signedDistance(surface.getLocation())) <= EPSILON)
+        );
+        check(onSurface, "projectile hit location was not on a real convex face");
+        EntityHitResult precise = ProjectileUtil.getEntityHitResult(
+            arrow, corner, below, bounds.inflate(1.0D), target -> target == slope, 100.0D
+        );
+        check(precise != null && precise.getLocation().distanceToSqr(surface.getLocation()) <= EPSILON * EPSILON,
+            "precise projectile query treated an empty AABB corner as starting inside the slope");
+        Vec3 outward = corner.add(0.0D, 0.4D, 0.0D);
+        check(ProjectileUtil.getEntityHitResult(
+            arrow, corner, outward, bounds.inflate(1.0D), target -> target == slope, 100.0D
+        ) == null, "projectile leaving an empty corner falsely hit the containing AABB");
+
+        snowball.setDeltaMovement(below.subtract(corner));
+        snowball.tick();
+        check(snowball.isRemoved(), "snowball failed to collide when crossing the real slope");
+        arrow.discard();
+        slope.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "21x10x11", floor = true)
+    @TestHolder(description = "Projectiles cross bonded empty corners, hit real slopes and retain block occlusion")
+    static void projectilesHitRealBondedSlopes(ExtendedGameTestHelper helper) {
+        for (int index = 0; index < 2; index++) {
+            BondedPlasticShapeIndex.Entry slope = createBondedSlope(
+                helper, new BlockPos(5 + index * 9, 4, 5), slopedModel(index == 0 ? 8.0D : 32.0D)
+            );
+            AABB bounds = slope.collisionShape().bounds();
+            double x = bounds.getCenter().x + bounds.getXsize() * 0.28D;
+            double z = bounds.getCenter().z;
+            Vec3 above = new Vec3(x, bounds.maxY + 0.6D, z);
+            Vec3 corner = new Vec3(x, bounds.maxY - bounds.getYsize() * 0.05D, z);
+            Vec3 below = new Vec3(x, bounds.minY - 0.1D, z);
+            String label = index == 0 ? "in-cell slope" : "extended slope";
+            check(BlockPos.containing(corner).equals(slope.anchor()) == (index == 0),
+                label + " did not exercise the intended anchor-cell boundary");
+            Snowball snowball = new Snowball(EntityType.SNOWBALL, helper.getLevel());
+            snowball.setNoGravity(true);
+            snowball.setPos(above);
+            check(helper.getLevel().addFreshEntity(snowball), "failed to spawn " + label + " snowball");
+            snowball.setDeltaMovement(corner.subtract(above));
+            snowball.tick();
+            check(!snowball.isRemoved() && snowball.position().distanceToSqr(corner) <= EPSILON * EPSILON,
+                label + " blocked a snowball in its empty corner");
+
+            Arrow arrow = new Arrow(EntityType.ARROW, helper.getLevel());
+            arrow.setNoGravity(true);
+            arrow.setPos(above);
+            check(helper.getLevel().addFreshEntity(arrow), "failed to spawn " + label + " arrow");
+            arrow.setDeltaMovement(corner.subtract(above));
+            arrow.tick();
+            check(arrow.position().distanceToSqr(corner) <= EPSILON * EPSILON,
+                label + " blocked an arrow before reaching the real surface");
+            Vec3 outward = corner.add(0.0D, 0.1D, 0.0D);
+            arrow.setDeltaMovement(outward.subtract(corner));
+            arrow.tick();
+            check(arrow.position().distanceToSqr(outward) <= EPSILON * EPSILON,
+                label + " falsely embedded an arrow on the next tick inside its empty corner");
+
+            BlockHitResult hit = helper.getLevel().clip(new ClipContext(
+                corner, below, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, snowball
+            ));
+            check(hit.getType() == HitResult.Type.BLOCK && hit.getBlockPos().equals(slope.anchor()),
+                label + " did not report its anchor when hit on the real surface");
+            check(hit.getLocation().y < corner.y - bounds.getYsize() * 0.15D,
+                label + " returned the compatibility box as its hit position");
+            check(slope.convexShapes().stream().anyMatch(shape -> shape.contains(hit.getLocation(), EPSILON)
+                    && shape.faces().stream().anyMatch(face -> Math.abs(face.signedDistance(hit.getLocation())) <= EPSILON)),
+                label + " hit position was not on a real face");
+            snowball.setDeltaMovement(below.subtract(corner));
+            snowball.tick();
+            check(snowball.isRemoved(), label + " failed to stop a snowball at the real surface");
+            arrow.setPos(corner);
+            arrow.setDeltaMovement(below.subtract(corner));
+            arrow.tick();
+            check(Math.abs(arrow.getY() - hit.getLocation().y - 0.05D) < 0.01D,
+                label + " arrow did not lodge at the real hit position");
+            Vec3 lodged = arrow.position();
+            arrow.tick();
+            check(arrow.position().distanceToSqr(lodged) <= EPSILON * EPSILON,
+                label + " arrow lost support after lodging on the real slope");
+
+            Vec3 start = new Vec3(x, corner.y, bounds.minZ - 1.0D);
+            Vec3 end = new Vec3(x, corner.y, bounds.maxZ + 2.0D);
+            BlockPos wall = BlockPos.containing(x, corner.y, bounds.maxZ + 1.0D);
+            helper.getLevel().setBlockAndUpdate(wall, Blocks.STONE.defaultBlockState());
+            BlockHitResult wallHit = helper.getLevel().clip(new ClipContext(
+                start, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, arrow
+            ));
+            check(wallHit.getType() == HitResult.Type.BLOCK && wallHit.getBlockPos().equals(wall),
+                label + " empty corner hid the ordinary block behind it");
+            BlockPos front = BlockPos.containing(above.add(0.0D, 1.0D, 0.0D));
+            helper.getLevel().setBlockAndUpdate(front, Blocks.STONE.defaultBlockState());
+            BlockHitResult frontHit = helper.getLevel().clip(new ClipContext(
+                above.add(0.0D, 2.0D, 0.0D), below, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, arrow
+            ));
+            check(frontHit.getType() == HitResult.Type.BLOCK && frontHit.getBlockPos().equals(front),
+                label + " real surface overrode a nearer ordinary block");
+            arrow.discard();
+        }
         helper.succeed();
     }
 
@@ -1048,10 +1248,14 @@ public final class PlasticConvexCollisionGameTests {
     }
 
     private static EditableMoldingModel slopedModel() {
+        return slopedModel(32.0D);
+    }
+
+    private static EditableMoldingModel slopedModel(double size) {
         MoldingElement source = MoldingElement.cube(
             "Slope",
             new MoldingVec3(8.0D, 8.0D, 8.0D),
-            new MoldingVec3(40.0D, 40.0D, 40.0D)
+            new MoldingVec3(8.0D + size, 8.0D + size, 8.0D + size)
         );
         MoldingElement rotated = new MoldingElement(
             source.id(),
@@ -1175,10 +1379,18 @@ public final class PlasticConvexCollisionGameTests {
         ExtendedGameTestHelper helper,
         BlockPos relativeAnchor
     ) {
+        return createBondedSlope(helper, relativeAnchor, slopedModel());
+    }
+
+    private static BondedPlasticShapeIndex.Entry createBondedSlope(
+        ExtendedGameTestHelper helper,
+        BlockPos relativeAnchor,
+        EditableMoldingModel model
+    ) {
         UniversalPlasticEntity product = createDynamicPlastic(
             helper,
             Vec3.atBottomCenterOf(relativeAnchor),
-            slopedModel()
+            model
         );
         BlockState displayState = product.getDisplayState();
 

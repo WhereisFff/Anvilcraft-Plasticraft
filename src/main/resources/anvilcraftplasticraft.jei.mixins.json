@@ -5,7 +5,8 @@
   "compatibilityLevel": "JAVA_21",
   "plugin": "dev.anvilcraft.plasticraft.mixin.JeiMixinPlugin",
   "client": [
-    "AbstractLiquidCategoryMixin"
+    "AbstractLiquidCategoryMixin",
+    "JeiPlacementIngredientsMixin"
   ],
   "injectors": {
     "defaultRequire": 0

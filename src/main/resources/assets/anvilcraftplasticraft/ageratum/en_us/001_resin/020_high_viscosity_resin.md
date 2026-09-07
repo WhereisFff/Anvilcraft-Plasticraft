@@ -34,6 +34,7 @@ Move more than 20 blocks from the selected entity and the selection clears itsel
 With no entity selected, releasing use within 0.5 seconds still operates an interactive block normally, while holding use leaves a patch of exposed adhesive; non-interactive blocks receive adhesive immediately. An entity touching that face becomes stuck, and placing a block against it bonds the adjacent blocks together
 
 - Pistons and Sliding Rails move a bonded block group as one
+- Teleporting or changing dimensions cancels an entity's unfinished adhesive transit and releases its bonds, restoring its previous gravity state without continuing along the old route
 - An unanchored bonded entity group flies off together under knockback; once anchored to a block, the whole group rebounds around the bond
 - Splash or lingering Invisibility potions permanently hide adhesive within 4 horizontal blocks and 2 vertical blocks of the impact — invisible, but still sticky
 

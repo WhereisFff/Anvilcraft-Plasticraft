@@ -185,7 +185,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
     /** 树脂砧进入锅口时使用的锅底碰撞几何。 */
     protected abstract PlasticEntityGeometry cauldronResinEntryGeometry();
 
-    /** 树脂砧进入锅口时允许通过的局部开口轮廓。 */
+    /** 树脂砧进入锅口时允许通过的局部开口轮廓；无可用开口时返回空形状。 */
     protected abstract VoxelShape cauldronResinEntryOpening();
 
     /** 返回当前朝上的开口处液面高度，供喷流粒子定位使用。 */
@@ -843,6 +843,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
 
     /** 仅在树脂砧底座从开口外跨入时移除锅壁；锅底始终保留。 */
     private boolean allowsResinAnvilToCrossOpening(ResinAnvilEntity anvil, Vec3 requestedMovement) {
+        if (!this.plasticraft$isCauldron()) return false;
         Direction anvilBottom = anvil.getOrientation().attachmentFace().getOpposite();
         Direction openingDirection = this.getOrientation().attachmentFace();
         if (anvilBottom != openingDirection.getOpposite()) return false;
@@ -856,9 +857,11 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
         ) * anvilBottom.getAxisDirection().getStep();
         if (openingGap < -PlasticEntityPhysics.FACE_EPSILON) return false;
 
+        VoxelShape localOpening = this.cauldronResinEntryOpening();
+        if (localOpening.isEmpty()) return false;
         PlasticEntityGeometry entryGeometry = this.cauldronResinEntryGeometry();
         VoxelShape relativeOpening = PlasticEntityCollisionShapes.rotate(
-            this.cauldronResinEntryOpening(),
+            localOpening,
             this.getOrientation(),
             entryGeometry.rotationPivot()
         );

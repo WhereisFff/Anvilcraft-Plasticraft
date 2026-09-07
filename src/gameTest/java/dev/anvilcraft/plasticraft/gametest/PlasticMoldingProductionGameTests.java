@@ -384,6 +384,59 @@ public final class PlasticMoldingProductionGameTests {
         });
     }
 
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "48x20x36", floor = true)
+    @TestHolder(description = "Slime and resin launch plastic after a completed push, while honey and stone only move it")
+    static void elasticBlocksLaunchPlasticAfterPistonMovement(ExtendedGameTestHelper helper) {
+        Direction[] directions = Direction.values();
+        BlockState[] carriers = {
+            Blocks.SLIME_BLOCK.defaultBlockState(),
+            ModBlocks.RESIN_BLOCK.getDefaultState(),
+            PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.getDefaultState(),
+            Blocks.HONEY_BLOCK.defaultBlockState(),
+            Blocks.STONE.defaultBlockState()
+        };
+        int cases = directions.length + carriers.length - 1;
+        UniversalPlasticEntity[] plastics = new UniversalPlasticEntity[cases];
+        Vec3[] starts = new Vec3[cases];
+        MoldedPlasticData data = fullData(model(
+            "Piston Launch Cube",
+            cube("Body", 16.0D, 0.0D, 16.0D, 32.0D, 16.0D, 32.0D)
+        ), DyeColor.WHITE);
+        for (int index = 0; index < cases; index++) {
+            Direction direction = index < directions.length ? directions[index] : Direction.EAST;
+            BlockState carrier = carriers[Math.max(0, index - directions.length + 1)];
+            BlockPos piston = new BlockPos(6 + index % 4 * 12, 10, 6 + index / 4 * 12);
+            BlockPos occupied = piston.relative(direction, 2);
+            helper.setBlock(piston, Blocks.PISTON.defaultBlockState()
+                .setValue(BlockStateProperties.FACING, direction));
+            helper.setBlock(piston.relative(direction), carrier);
+            plastics[index] = createMoldedProduct(helper, occupied, data);
+            starts[index] = plastics[index].position();
+            helper.setBlock(piston.relative(direction.getOpposite()), Blocks.REDSTONE_BLOCK);
+        }
+        helper.runAfterDelay(8, () -> {
+            for (int index = 0; index < cases; index++) {
+                Direction direction = index < directions.length ? directions[index] : Direction.EAST;
+                BlockState carrier = carriers[Math.max(0, index - directions.length + 1)];
+                Vec3 offset = plastics[index].position().subtract(starts[index]);
+                double travel = offset.dot(Vec3.atLowerCornerOf(direction.getNormal()));
+                String label = carrier + " toward " + direction;
+                check(!PlasticPistonOccupancy.isMoving(plastics[index]),
+                    label + " did not finish moving the plastic entity");
+                if (carrier.isSlimeBlock()) {
+                    check(travel > 1.5D, label + " did not launch plastic after pushing: travel=" + travel);
+                } else {
+                    check(Math.abs(travel - 1.0D) < 0.08D,
+                        label + " unexpectedly launched plastic: travel=" + travel);
+                }
+                check(offset.subtract(Vec3.atLowerCornerOf(direction.getNormal()).scale(travel)).length() < 0.08D,
+                    label + " deflected plastic away from the push axis");
+            }
+            helper.succeed();
+        });
+    }
+
     @GameTest(timeoutTicks = 55)
     @EmptyTemplate(value = "10x6x15", floor = true)
     @TestHolder(description = "Slime, honey, and high-viscosity resin move adjacent plastic entities both ways")

@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.block;
 import com.mojang.serialization.MapCodec;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.dubhe.anvilcraft.item.DiskItem;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -98,6 +99,13 @@ public class PlasticMoldingChamberBlock extends BaseEntityBlock {
         InteractionHand hand,
         BlockHitResult hitResult
     ) {
+        if (!level.getBlockState(pos.above()).is(PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get())) {
+            if (stack.is(PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.asItem())
+                || hand == InteractionHand.MAIN_HAND
+                    && player.getOffhandItem().is(PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.asItem())) {
+                return ItemInteractionResult.SKIP_DEFAULT_BLOCK_INTERACTION;
+            }
+        }
         if (!(stack.getItem() instanceof DiskItem)) {
             return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
         }

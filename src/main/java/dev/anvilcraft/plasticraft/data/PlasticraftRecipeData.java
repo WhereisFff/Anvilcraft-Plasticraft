@@ -221,39 +221,40 @@ public final class PlasticraftRecipeData {
             .unlockedBy("has_magnet_ingot", RegistrumRecipeProvider.has(ModItems.MAGNET_INGOT))
             .save(provider, AnvilcraftPlasticraft.of("magnetic_hardend_resin_cauldron"));
 
-        // 多方块展示配方：声明冷凝塔搭建前的 3x3x3 树脂、止回管道、黄铜柱和活板门结构。
-        // 该配方供配方查看器展示结构，不负责把结构替换成冷凝塔方块。
+        // 多方块合成：按从下到上的顺序搭建树脂底座、直管接口、黄铜玻璃塔壁和铜活板门，压缩为冷凝塔物品。
         MultiblockRecipe.builder("anvilcraftplasticraft:condenser_tower", 1)
-            .layer("DCD", "CFC", "DCD")
-            .layer(" C ", "C C", " C ")
-            .layer(" E ", "ABA", " E ")
-            .symbol('A', condenserPipe(Direction.Axis.X))
-            .symbol('B', condenserTrapdoor(Half.TOP))
-            .symbol('C', BlockStatePredicate.builder()
+            .layer("0A0", "BCB", "0A0")
+            .layer("DED", "E E", "DED")
+            .layer("DED", "EFE", "DED")
+            .symbol('0', PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get())
+            .symbol('A', condenserPipe(Direction.Axis.Z))
+            .symbol('B', condenserPipe(Direction.Axis.X))
+            .symbol('C', condenserTrapdoor(Half.BOTTOM))
+            .symbol('D', BlockStatePredicate.builder()
                 .of(ModBlocks.CUT_BRASS_PILLAR.get())
                 .with(BlockStateProperties.AXIS, Direction.Axis.Y)
             )
-            .symbol('D', PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get())
-            .symbol('E', condenserPipe(Direction.Axis.Z))
-            .symbol('F', condenserTrapdoor(Half.BOTTOM))
+            .symbol('E', Blocks.GLASS)
+            .symbol('F', condenserTrapdoor(Half.TOP))
             // 显式指定附属模组命名空间，避免 AnvilCraft 构建器按结果物品回退到本体命名空间。
             .save(provider, AnvilcraftPlasticraft.of("multiblock/condenser_tower"));
 
-        // 多方块转换配方：识别与上方展示配方相同的 3x3x3 结构，并逐格转换为冷凝塔的 27 个部件。
+        // 多方块转换配方：识别与上方合成配方相同的 3x3x3 结构，并逐格转换为冷凝塔的 27 个部件。
         // 每个输出部件都固定 half 方位且保持 sealed=false，确保生成后可立即组成未封顶塔层。
         MultiblockConversionRecipe.builder()
-            .inputLayer("DCD", "CFC", "DCD")
-            .inputLayer(" C ", "C C", " C ")
-            .inputLayer(" E ", "ABA", " E ")
-            .inputSymbol('A', condenserPipe(Direction.Axis.X))
-            .inputSymbol('B', condenserTrapdoor(Half.TOP))
-            .inputSymbol('C', BlockStatePredicate.builder()
+            .inputLayer("0A0", "BCB", "0A0")
+            .inputLayer("DED", "E E", "DED")
+            .inputLayer("DED", "EFE", "DED")
+            .inputSymbol('0', PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get())
+            .inputSymbol('A', condenserPipe(Direction.Axis.Z))
+            .inputSymbol('B', condenserPipe(Direction.Axis.X))
+            .inputSymbol('C', condenserTrapdoor(Half.BOTTOM))
+            .inputSymbol('D', BlockStatePredicate.builder()
                 .of(ModBlocks.CUT_BRASS_PILLAR.get())
                 .with(BlockStateProperties.AXIS, Direction.Axis.Y)
             )
-            .inputSymbol('D', PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get())
-            .inputSymbol('E', condenserPipe(Direction.Axis.Z))
-            .inputSymbol('F', condenserTrapdoor(Half.BOTTOM))
+            .inputSymbol('E', Blocks.GLASS)
+            .inputSymbol('F', condenserTrapdoor(Half.TOP))
             .outputLayer("ABC", "DEF", "GHI")
             .outputLayer("JKL", "MNO", "PQR")
             .outputLayer("STU", "VWX", "YZ[")
@@ -299,9 +300,6 @@ public final class PlasticraftRecipeData {
         return BlockStatePredicate.builder()
             .of(ModBlocks.PIPE_STRAIGHT.get())
             .with(PipeBlock.AXIS, axis)
-            .with(PipeBlock.HAS_END_START, true)
-            .with(PipeBlock.HAS_END_END, true)
-            .with(PipeBlock.HAS_CHECK_VALVE, true)
             .with(PipeBlock.WATERLOGGED, false);
     }
 

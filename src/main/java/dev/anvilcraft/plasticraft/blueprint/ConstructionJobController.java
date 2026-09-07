@@ -1697,7 +1697,7 @@ public final class ConstructionJobController {
             op.setReturnStack(PlasticraftEntityBuildAdapters.resinReturn(level));
         }
         if (level.getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge) {
-            lounge.setPickupDisplay(pickupSide(level, loungePos, allayId), taken);
+            lounge.setPickupDisplay(taken, allayId);
         }
         ConstructionJobStore.get(level).markDirty();
         return true;
@@ -3062,7 +3062,7 @@ public final class ConstructionJobController {
         ConstructionMaterialAccess access = ConstructionMaterialAccess.below(level, loungePos);
         access.insertOrDrop(carry.copy());
         markCarryReturned(drone, level.getServer(), carry.copy());
-        lounge.clearPickupDisplays();
+        lounge.clearPickupDisplay(drone.getUUID());
         drone.setHostedCarry(ItemStack.EMPTY);
         drone.clearAssignment(false);
         drone.setActionState((byte) 0);
@@ -5145,14 +5145,6 @@ public final class ConstructionJobController {
             }
         }
         ConstructionJobStore.get(level).markDirty();
-    }
-
-    private static Direction pickupSide(ServerLevel level, BlockPos loungePos, UUID allayId) {
-        Entity entity = level.getEntity(allayId);
-        if (entity == null) return Direction.NORTH;
-        Vec3 delta = entity.position().subtract(Vec3.atCenterOf(loungePos));
-        Direction side = Direction.getNearest(delta.x, 0.0D, delta.z);
-        return side.getAxis().isVertical() ? Direction.NORTH : side;
     }
 
     private static final class WorkerSnapshot {

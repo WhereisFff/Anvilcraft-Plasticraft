@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.client;
 
+import dev.anvilcraft.lib.v2.cube.client.CubeSelection;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionProjectionIndex;
 import dev.anvilcraft.plasticraft.client.blueprint.ClientConstructionOverlayLookup;
@@ -21,10 +22,13 @@ import dev.anvilcraft.plasticraft.client.renderer.PlasticTextureSpriteSource;
 import dev.anvilcraft.plasticraft.client.renderer.UniversalPlasticItemRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blueprint.BlueprintProjectionRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.Plastic3DPrintingComponentRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.blockentity.AllayLoungeRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.PlasticMoldingChamberRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingViewportResources;
 import dev.anvilcraft.plasticraft.client.renderer.entity.CatalyticPressLidRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinCauldronRenderer;
+import dev.anvilcraft.plasticraft.client.selection.PlasticSelectionGeometry;
+import dev.anvilcraft.plasticraft.client.selection.PlasticSelectionIntegration;
 import dev.anvilcraft.plasticraft.init.PlasticraftParticles;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
@@ -59,9 +63,11 @@ import net.neoforged.neoforge.common.NeoForge;
 @Mod(value = AnvilcraftPlasticraft.MOD_ID, dist = Dist.CLIENT)
 public final class AnvilcraftPlasticraftClient {
     public AnvilcraftPlasticraftClient(IEventBus modEventBus, ModContainer ignoredContainer) {
+        CubeSelection.enableNamespace(AnvilcraftPlasticraft.MOD_ID);
         modEventBus.addListener(PlasticraftFluids::registerClientExtensions);
         modEventBus.addListener(AnvilcraftPlasticraftClient::clientSetup);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerAdditionalModels);
+        modEventBus.addListener(PlasticSelectionIntegration::reload);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerParticleProviders);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerGuiLayers);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerReloadListeners);
@@ -81,10 +87,12 @@ public final class AnvilcraftPlasticraftClient {
         DynamicPlasticTextureManager.INSTANCE.clear();
         MoldingViewportResources.INSTANCE.closeAll();
         PlasticraftCreativeTabState.reset();
+        PlasticSelectionGeometry.clear();
     }
 
     private static void clientSetup(FMLClientSetupEvent event) {
         event.enqueueWork(() -> {
+            PlasticSelectionIntegration.register();
             HudTooltipManager.INSTANCE.registerBlockTooltip(new BondedBlockTooltipProvider());
             ItemBlockRenderTypes.setRenderLayer(
                 PlasticraftFluids.LIQUID_HIGH_VISCOSITY_RESIN.get(),
@@ -247,6 +255,11 @@ public final class AnvilcraftPlasticraftClient {
     }
 
     private static void registerAdditionalModels(ModelEvent.RegisterAdditional event) {
+        event.register(AllayLoungeRenderer.HATCH_LEFT_MODEL);
+        event.register(AllayLoungeRenderer.HATCH_RIGHT_MODEL);
+        event.register(AllayLoungeRenderer.INDICATOR_BLUE_MODEL);
+        event.register(AllayLoungeRenderer.INDICATOR_GREEN_MODEL);
+        event.register(AllayLoungeRenderer.INDICATOR_RED_MODEL);
         event.register(PlasticMoldingChamberRenderer.PRINTER_FRAME_MODEL);
         event.register(PlasticMoldingChamberRenderer.PRINTER_GLASS_MODEL);
         event.register(PlasticMoldingChamberRenderer.PRINTER_GUI_MODEL);

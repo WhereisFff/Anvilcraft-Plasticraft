@@ -22,8 +22,15 @@ Each plastic material gets its own labeled section in the Plasticraft creative t
 - In Creative Mode, middle-click returns an empty initial product that preserves material, color, magnetization and molded shape; Ctrl + middle-click also copies container contents and persistent functional state
 - High-Viscosity Resin can bond products to blocks or to other products; pistons and sliding rails move a bonded group as one
 - Products follow the movement rules of Resin Blocks, Slime Blocks and Honey Blocks; one bonded group counts as one position against the piston push limit
+- When piston movement finishes, a Resin Block, High-Viscosity Resin Block or Slime Block occupying a product's former space launches it in the movement direction at an initial speed of 1 block per game tick; Honey Blocks, ordinary blocks and side adhesion do not add this launch
 
 The real shape is what you stand on, push, select and collide with — what you see is what you touch. Zero-thickness planes are the exception: they can be selected and retrieved, but they neither support nor block entities
+
+The crosshair can pass through gaps between solid parts of the model, and the selection outline preserves slanted edges. Products bonded into blocks use the same selection behavior, while attached interactive tray components remain selectable. Complex models may initially show a simplified outline before their merged edges are ready; exceptionally complex outlines remain simplified without changing physical collisions
+
+If a bonded product extends more than 2 blocks beyond any face of its anchor block, it retains the compatibility selection bounds while its outline still follows the product geometry
+
+Dropped items settle on the real slope just like mobs; entering empty space inside its bounding box does not trigger escape jitter. Arrows, snowballs and other projectiles hit the real surface of products, passing through empty corners and holes inside their bounding boxes. This also applies after products become blocks, including portions extending outside their anchor cells; ordinary blocks behind empty corners still stop projectiles
 
 ## Redstone
 

@@ -18,9 +18,11 @@
 | --- | --- | --- |
 | 默认安全帽展示数据 | `assets/anvilcraftplasticraft/allay/default_hard_hat.json` | 创造展示与戴帽测试用的默认白色安全帽；与世界蓝图库无关 |
 | 安全帽类型图标 | `assets/anvilcraftplasticraft/allay/hard_hat_type_icon.json` | 成型舱类型选择图标 |
-| 休息室方块与物品模型 | `blockstates/allay_lounge.json`、`models/block/allay_lounge.json`、`models/item/allay_lounge.json` | 不因供电切换模型；物品与方块共用同一外观 |
-| 休息室贴图 | `textures/block/allay_lounge.png` | 休息室不耗电，只用这一套贴图 |
-| 休息室 GUI | `textures/gui/background/allay_lounge.png` | `4×4` 托管卡片、结构磁盘槽、召回、暂停/跳过与清场二选一 |
+| 休息室方块与物品模型 | `blockstates/allay_lounge.json`、`models/block/allay_lounge.json`、`models/item/allay_lounge.json` | 世界静态模型为固定机身；物品引用 `models/block/allay_lounge_complete.json` 展示完整闭合外观 |
+| 休息室顶门 | `models/block/allay_lounge_hatch_left.json`、`models/block/allay_lounge_hatch_right.json` | BER 围绕各自轴心反向上翻 100°，9gt 开启、空闲 40gt 后用 12gt 关闭；锚点记录在 `docs/assets/allay-lounge/motion.json` |
+| 休息室指示灯 | `models/block/allay_lounge_indicator_blue.json`、`allay_lounge_indicator_green.json`、`allay_lounge_indicator_red.json` | 四个灯位从固定机身中分离，由 BER 满亮度绘制；闲置蓝色、执行绿色、中断或等待红色 |
+| 休息室贴图 | `textures/block/allay_lounge.png` 与 `anvilcraft:block/workshop_base` | 使用完成版原始材质与 UV，不因供电切换；底座复用 AnvilCraft 工坊贴图 |
+| 休息室 GUI | `textures/gui/background/allay_lounge.png` | `4×4` 动态悦灵预览与惯性拖转、黑板左侧磁盘槽及右侧两列互斥策略按钮、窗外石块召回按钮、背景内置玩家物品栏、居中标题 |
 | 休息室按钮 | `textures/gui/button/allay/pause.png`、`skip.png`、`return_home.png`、`clear_area.png`、`keep_blank.png` | Plasticraft 自有图标；四帧竖排：正常 / 悬停 / 按下(选中) / 禁用 |
 | 蓝图操作按钮 | `textures/gui/button/blueprint/confirm.png`、`cancel.png`、`layer_up.png`、`layer_down.png`、`move.png`、`rotate.png`、`flip.png` | 部署确认、取消、分层、移动、旋转和镜像；启动只由右击结构磁盘完成 |
 | 施工投影遮罩 | `textures/misc/construction_projection.png` 及可选 `.mcmeta` | 资源仍保留。已交付格必须看起来像世界方块，不再叠绿色遮罩；未交付走全息层 |
@@ -406,7 +408,7 @@ AnvilCraft 大型方块在解析阶段识别核心控制器和全部 `part`：
 - 蓝图声明区域内原本与目标相同的方块也先拆后建；拆除瞬间完成，其经验、战利品、多方块回调和不可破坏判定与 AnvilCraft 普通铁砧砸切石机上方方块一致，拆除悦灵始终不吸取物品
 - 缺少拆除悦灵时“暂停”会等待并报告，“跳过”会保留障碍后继续；没有绑定休息室的世界悦灵固定暂停；基岩等永久障碍无论配置如何都不会阻塞整个任务，其目标位置直接跳过
 - 协调室的清场二选一决定蓝图空白格上的世界方块是否拆除：默认拆除整片声明区域，另一侧只拆与蓝图实际放置方块重合的格；组合件按核心整体判断，封堵填充块两种模式都照常清走。未认领或未规划任务在下一次规划时读取当前设置；已认领且已规划任务切换按钮会立即同步未完成拆除台账，`CLEAR_AREA` 补入/恢复仍存在的显式空白格拆除，`KEEP_BLANK` 跳过这些未完成项，已完成拆除不恢复
-- 玩家点击托管卡片手动放出的悦灵会清空 `homeLounge`、`origin_lounge` 和 `transit_job`，成为固定 `PAUSE` 的无休息室悦灵；死亡或死亡动画期间停止工种/回库调度，安全帽掉落受一次性保护，不能在同一死亡流程重复掉落或重新入库
+- 玩家在预览框内原地左键单击、松开后才会请求手动放出；按住左右拖动仅旋转预览，松手后惯性减速，不会放出悦灵。手动放出的悦灵会清空 `homeLounge`、`origin_lounge` 和 `transit_job`，成为固定 `PAUSE` 的无休息室悦灵；死亡或死亡动画期间停止工种/回库调度，安全帽掉落受一次性保护，不能在同一死亡流程重复掉落或重新入库
 - 建造期间在蓝图显式声明格新放置与目标不符的真实方块会立即暂停建设并追加拆除操作；`CLEAR_AREA` 清理显式空白格，`KEEP_BLANK` 保留显式空白格但仍清理实体目标格。拆除掉落带任务标记并进入正常收集/台账结算，匹配目标状态的外部方块直接满足对应放置操作
 - 领地或权限拒绝无论配置如何都进入 `WAITING_PERMISSION`，恢复授权后续做；任务不能通过跳过或最终强制覆盖绕过保护
 - 多个相邻水源和蓝图边界外持续流入的水先由真实临时填充块严格自下而上排掉并一次封住，再由拆除悦灵进入已清空格拆掉全部区内填充块；区外壳留到提交后再砸；任务不会逐格清水后被无限水源永远补回，也不会无边界追踪整片海洋，全部拆除完成前不会开始建造

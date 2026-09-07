@@ -10,6 +10,8 @@ items:
 
 <recipe id="anvilcraftplasticraft:plastic_molding_chamber"/>
 
+成型舱按模型 Cube 显示选择框，斜面会保留斜线，准星可以穿过 Cube 之间的空隙。有电和无电外观都适用；后方成型区域仍按当前生产阶段提供交互范围
+
 ## 成型区域
 
 把 <ref item="anvilcraftplasticraft:plastic_molding_chamber"/> 放下之后，方块背面会留出一个 3x3x3 成型区域，成品就在那里出现。模型坐标以像素为单位：普通工作空间是 48x48x48px，一个世界方块折 16px。模型里既能放实体积 Cube，也能放零厚度平面
@@ -20,7 +22,7 @@ items:
 
 编辑状态下至少加入一个 Cube，然后锁定模型。锁定的那一刻，本周期内的模型和成型方式就定死了，系统会照模型形状和成型舱上方的结构确定成型方法。要是模型、材料或结构有一样不满足条件，这个周期不会白吃粘土、熔体和电力
 
-普通模型在没有 3D 打印组件时使用铸造成型；一旦你在成型舱正上方一格装上 <ref item="anvilcraftplasticraft:plastic_3d_printing_component"/>，所有模型都改用 3D 打印。成型方式在锁定时确定，一个周期内不会切换
+普通模型在没有 3D 打印组件时使用铸造成型；手持 <ref item="anvilcraftplasticraft:plastic_3d_printing_component"/> 右击成型舱任意面即可安装到正上方一格，无需 Shift，安装时不打开界面。安装后所有模型都改用 3D 打印。成型方式在锁定时确定，一个周期内不会切换
 
 模型不满足所选制品类型时，还有一条后路：往资源槽里放 <ref item="anvilcraft:multiphase_transcendium"/>，本周期就按所选类型强制加工，而不是直接拒绝。它突破不了铸造或打印的尺寸限制，而且只在模型确实不符合该类型时才每周期消耗 1 个
 

@@ -40,7 +40,9 @@ Running low on melt still ships something, just half of it. Casting can start wi
 
 ## Printing component and high precision
 
-Install a <ref item="anvilcraftplasticraft:plastic_3d_printing_component"/> exactly one block above the chamber to select 3D Printing; right-clicking the component also opens the chamber. Without it, high-precision types cannot be locked at all
+The printing component uses its model cubes for outlines and precise selection, including the screen and eyes shown while powered. The crosshair can pass through gaps between its cubes
+
+Hold a <ref item="anvilcraftplasticraft:plastic_3d_printing_component"/> and right-click any face of a chamber without one to install it exactly one block above. No Shift is needed, and this click does not open the GUI. If the space above is obstructed, installation fails without consuming the item. Installing it selects 3D Printing; right-clicking the component also opens the chamber. Without it, high-precision types cannot be locked at all
 
 Allay Hard Hats are a high-precision type and must be printed; their shape limits are listed in [Trays and Allay Hard Hats](../003_plastic/040_plastic_components.md)
 

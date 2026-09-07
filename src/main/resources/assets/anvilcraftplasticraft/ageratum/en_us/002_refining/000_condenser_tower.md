@@ -11,10 +11,22 @@ items:
 
 # Condenser Tower
 
+Targeting any tower part highlights the precise model outline of the entire 3x3x3 module, while the crosshair can still pass through model gaps. Hits belong to the actual targeted cell, keeping the four lower fluid ports distinct
+
 <row halign="center">
 <recipe id="anvilcraftplasticraft:multiblock/condenser_tower"/>
 <recipe id="anvilcraftplasticraft:multiblock_conversion/condenser_tower"/>
 </row>
+
+One module requires 4 High-Viscosity Resin Blocks, 4 Straight Pipes, 8 Cut Brass Pillars, 8 Glass blocks, and 2 Copper Trapdoors, arranged from bottom to top
+
+- Bottom: resin blocks in the corners, outward-facing horizontal pipes at the four edge centers, and a bottom-half copper trapdoor in the center
+- Middle: vertical brass pillars in the corners, glass at the four edge centers, and air in the center
+- Top: vertical brass pillars in the corners, glass at the four edge centers, and a top-half copper trapdoor in the center
+
+Both trapdoors must be closed and face north, and neither the pipes nor the trapdoors may be waterlogged. The whole structure can be rotated horizontally. Pipe end caps and check valves are optional
+
+Place a 3x3 layer of crafting tables directly above the structure and drop a Giant Anvil onto it to convert the structure into a tower in place. Replace the center crafting table with a Space Overcompressor to consume the structure and produce one Condenser Tower item instead
 
 One Condenser Tower module takes up 3x3x3 blocks and stacks straight onto a Large Cauldron. Every layer comes with its own 64B condensate tank, 64B gas buffer, and four output-only ports
 

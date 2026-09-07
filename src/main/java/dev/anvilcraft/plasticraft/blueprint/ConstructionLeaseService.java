@@ -110,7 +110,7 @@ public final class ConstructionLeaseService {
         op.setApproach(null);
         if (changed && loungePos != null
             && level.getBlockEntity(loungePos) instanceof AllayLoungeBlockEntity lounge) {
-            lounge.clearPickupDisplays();
+            lounge.clearPickupDisplay(worker.getUUID());
         }
     }
 }

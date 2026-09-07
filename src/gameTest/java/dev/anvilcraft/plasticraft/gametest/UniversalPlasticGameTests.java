@@ -8,6 +8,7 @@ import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
 import dev.anvilcraft.plasticraft.entity.ClearPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.ClearPlasticBeaconInteraction;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
+import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionBox;
@@ -616,8 +617,8 @@ public final class UniversalPlasticGameTests {
     }
 
     @GameTest(timeoutTicks = 35)
-    @EmptyTemplate(value = "7x7x7", floor = true)
-    @TestHolder(description = "A directly placed falling block waits until the plastic cell becomes empty")
+    @EmptyTemplate(value = "11x7x7", floor = true)
+    @TestHolder(description = "普通铁砧和树脂砧放在标准塑料上保持承托，移走塑料后开始下落")
     static void placedAnvilWaitsForFourteenPixelPlasticToLeave(ExtendedGameTestHelper helper) {
         UniversalPlasticEntity support = createUniversal(
             helper,
@@ -629,9 +630,36 @@ public final class UniversalPlasticGameTests {
         BlockPos placedPos = new BlockPos(3, 3, 3);
         helper.setBlock(placedPos, Blocks.ANVIL);
 
+        UniversalPlasticEntity resinSupport = createUniversal(
+            helper,
+            helper.absoluteVec(new Vec3(7.5D, 2.0D, 3.5D)),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.getDefaultState(),
+            PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack()
+        );
+        resinSupport.setNoGravity(true);
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        player.setShiftKeyDown(true);
+        ItemStack resinStack = PlasticraftBlocks.RESIN_ANVIL.asStack();
+        player.setItemInHand(InteractionHand.MAIN_HAND, resinStack);
+        AABB supportBounds = resinSupport.plasticraft$getCollisionBox().bounds();
+        Vec3 topFace = new Vec3(supportBounds.getCenter().x, supportBounds.maxY, supportBounds.getCenter().z);
+        InteractionResult placement = resinSupport.interactAt(
+            player, topFace.subtract(resinSupport.position()), InteractionHand.MAIN_HAND
+        );
+        check(placement.consumesAction() && resinStack.isEmpty(),
+            "placing a resin anvil on the solid plastic top face failed or did not consume one item");
+        ResinAnvilEntity resinAnvil = helper.getLevel().getEntitiesOfClass(
+            ResinAnvilEntity.class, new AABB(resinSupport.blockPosition().above()).inflate(0.1D)
+        ).stream().findFirst().orElseThrow(() ->
+            new GameTestAssertException("top-face placement did not create a resin anvil entity")
+        );
+
         helper.startSequence()
             .thenIdle(8)
             .thenExecute(() -> {
+                check(resinAnvil.isAlive()
+                        && Math.abs(resinAnvil.plasticraft$getCollisionBox().bounds().minY - supportBounds.maxY) < 0.01D,
+                    "placed resin anvil did not remain supported by the solid plastic top face");
                 check(helper.getBlockState(placedPos).is(Blocks.ANVIL), "placed anvil fell through the occupied cell");
                 check(
                     helper.getLevel().getEntitiesOfClass(
@@ -642,9 +670,15 @@ public final class UniversalPlasticGameTests {
                     "placed anvil became a falling entity while plastic still occupied the cell below"
                 );
             })
-            .thenExecute(support::discard)
+            .thenExecute(() -> {
+                support.discard();
+                resinSupport.discard();
+            })
             .thenIdle(4)
             .thenExecute(() -> {
+                check(resinAnvil.isAlive()
+                        && resinAnvil.plasticraft$getCollisionBox().bounds().minY < supportBounds.maxY - 0.1D,
+                    "placed resin anvil did not start falling after its plastic support was removed");
                 check(helper.getBlockState(placedPos).isAir(), "placed anvil remained fixed after the cell became empty");
                 check(
                     !helper.getLevel().getEntitiesOfClass(

@@ -10,7 +10,6 @@ import dev.anvilcraft.plasticraft.block.piston.PlasticPistonOccupancy;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFaces;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
-import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexCollisionOutline;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionBox;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityContactResolver;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
@@ -698,7 +697,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
 
     @Override
     public void tick() {
-        Vec3 pistonTarget = PlasticPistonOccupancy.movementTarget(this);
+        PlasticPistonOccupancy.MotionTarget pistonTarget = PlasticPistonOccupancy.movementTarget(this);
         if (pistonTarget != null) {
             // 活塞分支在休眠检查之前返回，若不在此唤醒，被推动的休眠实体会留下过期的索引登记。
             this.plasticraft$wakeFromRest();
@@ -1086,7 +1085,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             || this.isHammerDeflected()
             || this.hammerReturnAt >= 0L
             || EntityBondManager.hasBonds(this)
-            || PlasticPistonOccupancy.movementTarget(this) != null) {
+            || PlasticPistonOccupancy.isMoving(this)) {
             return;
         }
         Vec3 velocity = this.getDeltaMovement();
@@ -1292,7 +1291,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         }
     }
 
-    private void tickPistonMovement(Vec3 targetPosition) {
+    private void tickPistonMovement(PlasticPistonOccupancy.MotionTarget target) {
+        Vec3 targetPosition = target.position();
         Vec3 start = this.position();
         AABB startBox = this.getBoundingBox();
         Vec3 movement = targetPosition.subtract(start);
@@ -1304,7 +1304,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         if (movement.lengthSqr() > PlasticEntityPhysics.FACE_EPSILON * PlasticEntityPhysics.FACE_EPSILON) {
             this.displaceEntitiesFromPistonOccupancy(startBox, movement);
         }
-        this.setDeltaMovement(Vec3.ZERO);
+        this.setDeltaMovement(target.velocity());
         this.supportObservation = null;
         this.supportDirection = null;
         this.blockContactMask = 0;
@@ -1991,14 +1991,6 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             this.cachedInteractionShape = geometry.interactionShapeAt(position, orientation);
         }
         return this.cachedInteractionShape;
-    }
-
-    /** 返回当前朝向下与平移无关的局部碰撞轮廓，供高亮和 F3+B 复用。 */
-    public final PlasticConvexCollisionOutline.PackedOutline plasticraft$getCollisionOutline() {
-        PlasticEntityGeometry geometry = this.currentGeometry();
-        PlasticEntityOrientation orientation = this.getOrientation();
-        this.currentOrientedGeometry(geometry, orientation);
-        return geometry.packedOutline(orientation);
     }
 
     /** 返回该朝向贴住指定首格时的实体位置。 */

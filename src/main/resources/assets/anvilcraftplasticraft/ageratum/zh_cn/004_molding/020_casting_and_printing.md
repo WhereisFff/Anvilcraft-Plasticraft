@@ -40,7 +40,9 @@ items:
 
 ## 3D 打印组件与高精度
 
-把 <ref item="anvilcraftplasticraft:plastic_3d_printing_component"/> 装在成型舱正上方一格就切换到 3D 打印，右击这个组件也能打开成型舱。组件缺失时，高精度类型根本锁不上
+打印组件按模型 Cube 提供选择框和精确选取，有电时显示的屏幕与眼睛也在选择范围内，准星可以穿过各 Cube 之间的空隙
+
+手持 <ref item="anvilcraftplasticraft:plastic_3d_printing_component"/> 右击尚未安装组件的成型舱任意面，即可将组件装在正上方一格，无需按住 Shift，本次右击不会打开界面。上方空间受阻时无法安装，也不会消耗物品。安装后切换到 3D 打印，右击这个组件也能打开成型舱。组件缺失时，高精度类型根本锁不上
 
 悦灵安全帽就是高精度类型，必须使用 3D 打印，具体形状限制见[支架与悦灵安全帽](../003_plastic/040_plastic_components.md)
 
