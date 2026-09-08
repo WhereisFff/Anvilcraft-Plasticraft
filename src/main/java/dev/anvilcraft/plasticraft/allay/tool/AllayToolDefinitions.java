@@ -94,6 +94,16 @@ public final class AllayToolDefinitions {
         GeneralAllayToolBehavior.INSTANCE
     ));
 
+    public static final AllayToolDefinition FIRE_CHARGE_IGNITION = register(new AllayToolDefinition(
+        AnvilcraftPlasticraft.of("fire_charge_ignition"),
+        () -> Items.FIRE_CHARGE,
+        IGNITION.capabilities(),
+        IGNITION.reachDistance(),
+        0,
+        IGNITION.displayStates(),
+        GeneralAllayToolBehavior.INSTANCE
+    ));
+
     private AllayToolDefinitions() {
     }
 

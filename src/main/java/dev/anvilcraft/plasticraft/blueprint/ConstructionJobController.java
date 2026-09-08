@@ -650,6 +650,7 @@ public final class ConstructionJobController {
         }
         tryLaunchForJob(level, job, progress);
         refreshWorldWaits(level, progress);
+        IgnitionBuildAdapter.skipInvalid(level, progress);
         if (progress.allPlaceResolved()) {
             setState(server, job, ConstructionJob.STATE_COMMITTING);
             if (ConstructionCommitService.tick(level, progress)) {
@@ -1378,6 +1379,7 @@ public final class ConstructionJobController {
         }
         if (!isAssignable(level, progress, op.pos())) return AssignVerdict.REJECT;
         if (!enterIfDenied(level, progress, op)) return AssignVerdict.DENIED;
+        if (!IgnitionBuildAdapter.isReady(level, progress, op)) return AssignVerdict.REJECT;
         if (op.kind() == ConstructionBuildOp.Kind.CONTENT
             || op.kind() == ConstructionBuildOp.Kind.FLUID
             || op.kind() == ConstructionBuildOp.Kind.DECORATE) {
@@ -1446,6 +1448,7 @@ public final class ConstructionJobController {
             return tryDeliverEntity(level, progress, op, ignore);
         }
         if (!op.writesProjection()) return false;
+        if (!IgnitionBuildAdapter.isReady(level, progress, op)) return false;
         if (!level.getBlockState(op.pos()).isAir()) {
             op.setStatus(ConstructionBuildOp.Status.WAITING_WORLD);
             return false;

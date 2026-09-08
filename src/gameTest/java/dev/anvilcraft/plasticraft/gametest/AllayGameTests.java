@@ -23,6 +23,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.animal.allay.Allay;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
@@ -128,17 +129,22 @@ public final class AllayGameTests {
         worker.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         worker.setOwner(player.getUUID());
-        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.FLINT_AND_STEEL));
-        worker.setHostedCarry(new ItemStack(Items.STONE));
-        worker.mobInteract(player, InteractionHand.MAIN_HAND);
-        check(worker.getMainHandItem().isEmpty(), "a worker carrying blocks must refuse flint and steel until unloaded");
-        worker.setHostedCarry(ItemStack.EMPTY);
-        worker.mobInteract(player, InteractionHand.MAIN_HAND);
-        check(worker.toolDefinition() == AllayToolDefinitions.IGNITION, "player-given flint and steel must enable ignition");
-        check(worker.toolDefinition().hasCapability(AllayCapability.IGNITE), "flint and steel must ignite");
-        check(!worker.toolDefinition().hasCapability(AllayCapability.PICK_UP_MATERIAL), "ignition worker must not fetch building materials");
-        check(!worker.toolDefinition().hasCapability(AllayCapability.SEAL_FLUID), "ignition worker must not seal fluids");
-        check(!worker.canBorrowTool(), "player-given flint and steel must remain a fixed tool");
+        for (Item tool : List.of(Items.FLINT_AND_STEEL, Items.FIRE_CHARGE)) {
+            worker.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+            player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(tool));
+            worker.setHostedCarry(new ItemStack(Items.STONE));
+            worker.mobInteract(player, InteractionHand.MAIN_HAND);
+            check(worker.getMainHandItem().isEmpty(), "a worker carrying blocks must refuse ignition tool " + tool);
+            check(player.getMainHandItem().getCount() == 1, "refused ignition equipment must remain with the player: " + tool);
+            worker.setHostedCarry(ItemStack.EMPTY);
+            worker.mobInteract(player, InteractionHand.MAIN_HAND);
+            check(worker.toolDefinition().hasCapability(AllayCapability.IGNITE), "player-given tool must ignite: " + tool);
+            check(!worker.toolDefinition().hasCapability(AllayCapability.PICK_UP_MATERIAL),
+                "ignition worker must not fetch building materials: " + tool);
+            check(!worker.toolDefinition().hasCapability(AllayCapability.SEAL_FLUID),
+                "ignition worker must not seal fluids: " + tool);
+            check(!worker.canBorrowTool(), "player-given ignition equipment must remain fixed: " + tool);
+        }
         helper.succeed();
     }
 

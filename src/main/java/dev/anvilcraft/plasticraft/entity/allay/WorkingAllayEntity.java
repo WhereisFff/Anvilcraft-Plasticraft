@@ -12,6 +12,7 @@ import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
 import dev.anvilcraft.plasticraft.allay.observation.ObservationChunkLoader;
 import dev.anvilcraft.plasticraft.allay.transfer.ConstructionTransferService;
 import dev.anvilcraft.plasticraft.allay.path.AllayPathPriority;
+import dev.anvilcraft.plasticraft.allay.tool.AllayCapability;
 import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinition;
 import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinitions;
 import dev.anvilcraft.plasticraft.allay.tool.AllayToolSupply;
@@ -413,7 +414,8 @@ public class WorkingAllayEntity extends Allay {
             return InteractionResult.FAIL;
         }
         ItemStack stack = player.getItemInHand(hand);
-        if (stack.is(Items.FLINT_AND_STEEL) && (!this.hostedCarry().isEmpty() || this.hasCollectionItems())) {
+        if (AllayToolDefinitions.fromHeldItem(stack).hasCapability(AllayCapability.IGNITE)
+            && (!this.hostedCarry().isEmpty() || this.hasCollectionItems())) {
             return InteractionResult.FAIL;
         }
         if (stack.is(Items.LEAD) && this.canBeLeashed()) {

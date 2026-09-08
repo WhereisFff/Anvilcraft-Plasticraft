@@ -64,6 +64,7 @@ public final class AllayLoungeRenderer implements BlockEntityRenderer<AllayLoung
             case IDLE -> INDICATOR_BLUE_MODEL;
         };
         this.renderPart(lounge, indicator, poseStack, bufferSource, LightTexture.FULL_BRIGHT, packedOverlay);
+        AllayLoungeIndicatorGlow.render(lounge.indicatorStatus(), poseStack, bufferSource);
         poseStack.popPose();
 
         // 预约面是世界方向；四面斜槽对称，不能再叠加一次方块朝向。

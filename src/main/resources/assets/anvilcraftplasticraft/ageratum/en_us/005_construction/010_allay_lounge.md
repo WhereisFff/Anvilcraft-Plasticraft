@@ -29,7 +29,7 @@ The structure-disk slot sits on the left side of the chalkboard. The four sticky
 
 The side trays display reserved building materials in north, east, south, west order. When all four are occupied, further displays wait for a free tray and refill it as soon as its item is collected. Items slide outward over 4gt; one allay's material batch shares one tray. Both block and ordinary item displays are twice their previous size. These animations add no delay to the 20gt bay cycle and consume no extra materials
 
-The four indicator lights show the disk job's state: green while running; blue with no job, before starting, or after completion; red while paused, failed, or waiting for materials, an observer, a demolition allay, permission, or the material source. They turn green again when work resumes
+The four indicator lights show the disk job's state: green while running; blue with no job, before starting, or after completion; red while paused, failed, or waiting for materials, an observer, a demolition allay, permission, or the material source. They turn green again when work resumes. Each light has a bright center and a faint halo matching its status color; this is a visual cue and does not illuminate the surroundings
 
 ## Chunk loading
 
@@ -59,7 +59,7 @@ The supply area is the single 1×1×1 block immediately below the lounge, using 
 
 ## Shortage and demolition strategy
 
-The warehouse below also supplies automatic equipment. Empty-handed workers borrow crab claws, stonecutters, magnets, spyglasses or flint and steel according to current demand, and return them after work. Player-given tools stay fixed. Creative Crates satisfy every supply request indefinitely, including construction items, fluids, sealing blocks and all tools, without matching samples or filters. See [main-hand tools and blueprint ignition](000_working_allay.md)
+The warehouse below also supplies automatic equipment. Empty-handed workers borrow crab claws, stonecutters, magnets, spyglasses, flint and steel or fire charges according to current demand, and return unused items after work. Player-given tools stay fixed. Creative Crates satisfy every supply request indefinitely, including construction items, fluids, sealing blocks and all tools, without matching samples or filters. See [main-hand tools and blueprint ignition](000_working_allay.md)
 
 When materials or a suitable demolition allay are missing, the screen lets you choose between Pause and Skip. Skipping lets the job continue, but may leave the final structure a few blocks short
 

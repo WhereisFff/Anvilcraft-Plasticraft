@@ -87,8 +87,18 @@ public final class AllayToolSupply {
             assign(level, lounge, members, used, stock, AllayToolDefinitions.DEMOLITION, pendingDemolition - 1);
         }
         if (phase == ConstructionJob.STATE_BUILDING || phase == ConstructionJob.STATE_SEALING_FLUID) {
-            boolean ignition = phase == ConstructionJob.STATE_BUILDING && IgnitionBuildAdapter.hasWork(progress);
-            if (ignition) assign(level, lounge, members, used, stock, AllayToolDefinitions.IGNITION, 1);
+            // 支撑尚未交付时先让自动工人继续建设，避免唯一建设工提前换成点火工具后互相等待。
+            boolean ignition = phase == ConstructionJob.STATE_BUILDING && IgnitionBuildAdapter.hasReadyWork(level, progress);
+            if (ignition) {
+                AllayToolDefinition tool = members.stream()
+                    .filter(member -> !used.contains(member.id())
+                        && member.definition().hasCapability(AllayCapability.IGNITE))
+                    .sorted(Comparator.comparing(Member::flexible).thenComparing(Member::id))
+                    .map(Member::definition).findFirst()
+                    .orElse(stock.getOrDefault(AllayToolDefinitions.IGNITION.toolItem().get(), 0) > 0
+                        ? AllayToolDefinitions.IGNITION : AllayToolDefinitions.FIRE_CHARGE_IGNITION);
+                assign(level, lounge, members, used, stock, tool, 1);
+            }
             assign(level, lounge, members, used, stock, AllayToolDefinitions.CONSTRUCTION, members.size());
         }
         for (Member member : members) {

@@ -107,6 +107,8 @@ import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.ComparatorBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.HopperBlock;
+import net.minecraft.world.level.block.FireBlock;
+import net.minecraft.world.level.block.NetherPortalBlock;
 import net.minecraft.world.level.block.LayeredCauldronBlock;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.SlabBlock;
@@ -196,6 +198,19 @@ public final class ConstructionJobGameTests {
                 drop.discard();
                 started.progress().addOperation(helper.absolutePos(new BlockPos(6, 2, 5)), Blocks.FIRE.defaultBlockState(),
                     ItemStack.EMPTY, ConstructionBuildOp.Kind.PLACE, ConstructionBuildOp.Status.PENDING);
+                chest.setItem(2, new ItemStack(Items.FIRE_CHARGE, 3));
+                AllayToolSupply.plan(level, started.job().withState(ConstructionJob.STATE_BUILDING), started.progress(), lounge);
+                check(lounge.hosted().stream().filter(record -> record.heldTool().is(Items.FIRE_CHARGE)).count() == 1
+                    && countInChest(helper, lounge.getBlockPos().below(), Items.FIRE_CHARGE) == 2,
+                    "a warehouse without flint and steel must lend exactly one real fire charge");
+                chest.setItem(5, lighter);
+                AllayToolSupply.plan(level, started.job().withState(ConstructionJob.STATE_BUILDING), started.progress(), lounge);
+                check(lounge.hosted().stream().noneMatch(record -> record.heldTool().is(Items.FLINT_AND_STEEL))
+                    && countInChest(helper, lounge.getBlockPos().below(), Items.FIRE_CHARGE) == 2,
+                    "restocked flint and steel must retain the existing fire-charge specialist without equipping another");
+                AllayToolSupply.returnHostedTools(lounge);
+                check(countInChest(helper, lounge.getBlockPos().below(), Items.FIRE_CHARGE) == 3,
+                    "unused borrowed fire charges must return without duplication");
                 AllayToolSupply.plan(level, started.job().withState(ConstructionJob.STATE_BUILDING), started.progress(), lounge);
                 WorkingAllayEntity worker = lounge.tryLaunchFor(record -> record.heldTool().is(Items.FLINT_AND_STEEL));
                 check(worker != null && worker.getMainHandItem().getDamageValue() == 17,
@@ -300,11 +315,15 @@ public final class ConstructionJobGameTests {
                 AllayLoungeBlockEntity lounge = placeLoungeWithChest(helper, new BlockPos(2, 2, 2),
                     new ItemStack(Items.FLINT_AND_STEEL));
                 StartedJob started = claimCobbleAtLounge(helper, player, 3, lounge);
-                started.progress().addOperation(helper.absolutePos(new BlockPos(6, 2, 5)), Blocks.FIRE.defaultBlockState(),
+                started.progress().addOperation(helper.absolutePos(new BlockPos(6, 3, 5)), Blocks.FIRE.defaultBlockState(),
                     ItemStack.EMPTY, ConstructionBuildOp.Kind.PLACE, ConstructionBuildOp.Status.PENDING);
                 WorkingAllayEntity worker = spawnConstructionAllay(helper, new Vec3(7.5D, 3.5D, 7.5D), player, 0);
                 worker.setHomeLounge(lounge.getBlockPos());
                 worker.equipBorrowedTool(new ItemStack(ModItems.CRAB_CLAW.get()), lounge.getBlockPos());
+                AllayToolSupply.plan(helper.getLevel(), started.job(), started.progress(), lounge);
+                check(worker.requestedTool() == AllayToolDefinitions.CONSTRUCTION,
+                    "the only automatic builder must keep building while ignition support is missing");
+                helper.setBlock(new BlockPos(6, 2, 5), Blocks.NETHERRACK);
                 AllayToolSupply.plan(helper.getLevel(), started.job(), started.progress(), lounge);
                 check(worker.requestedTool() == AllayToolDefinitions.IGNITION, "ignition demand must select the flexible builder");
                 workerSlot[0] = worker;
@@ -387,6 +406,7 @@ public final class ConstructionJobGameTests {
                 check(access.extract(op).isEmpty(), "a stale supply snapshot must not extract removed drops twice");
                 started.progress().addOperation(helper.absolutePos(new BlockPos(5, 3, 5)), Blocks.FIRE.defaultBlockState(),
                     ItemStack.EMPTY, ConstructionBuildOp.Kind.PLACE, ConstructionBuildOp.Status.PENDING);
+                helper.setBlock(new BlockPos(5, 2, 5), Blocks.NETHERRACK);
                 lounge.addHosted(constructionRecord(player.getUUID()).withBorrowedTool(ItemStack.EMPTY, Optional.empty()));
                 AllayToolSupply.plan(level, started.job(), started.progress(), lounge);
                 WorkingAllayEntity ignition = lounge.tryLaunchFor(record -> record.heldTool().is(Items.FLINT_AND_STEEL));
@@ -445,73 +465,141 @@ public final class ConstructionJobGameTests {
 
     @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
     @EmptyTemplate(value = "8x7x8", floor = true)
-    @TestHolder(description = "Only flint-and-steel workers deliver fire and one use activates a complete blueprint portal after the frame is committed")
+    @TestHolder(description = "Both ignition tools wait for delivered fire supports and complete portal frames, spending once per fire or portal")
     static void ignitionDeliversFireAndCompletePortal(ExtendedGameTestHelper helper) {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         helper.startSequence().thenExecuteAfter(5, () -> {
             try {
-                ServerLevel level = helper.getLevel();
-                List<BlockPos> positions = new ArrayList<>();
-                List<BlockState> states = new ArrayList<>();
-                for (int x = 0; x < 4; x++) {
-                    for (int y = 0; y < 5; y++) {
-                        positions.add(new BlockPos(x, y, 0));
-                        states.add(x == 0 || x == 3 || y == 0 || y == 4 ? Blocks.OBSIDIAN.defaultBlockState()
-                            : Blocks.NETHER_PORTAL.defaultBlockState());
+                for (Item tool : List.of(Items.FLINT_AND_STEEL, Items.FIRE_CHARGE)) {
+                    for (Direction.Axis axis : List.of(Direction.Axis.X, Direction.Axis.Z)) {
+                        assertIgnitionDelivery(helper, player, tool, axis);
                     }
                 }
-                positions.add(new BlockPos(0, 0, 3));
-                states.add(Blocks.NETHERRACK.defaultBlockState());
-                positions.add(new BlockPos(0, 1, 3));
-                states.add(Blocks.FIRE.defaultBlockState());
-                StartedJob started = startStructureJob(helper, player, multiBlockStructure(positions, states),
-                    "ignition-portal", new BlockPos(2, 2, 2));
-                WorkingAllayEntity worker = spawnConstructionAllay(helper, new Vec3(0.5D, 3.0D, 0.5D), player, 0);
-                List<ConstructionBuildOp> ignition = started.progress().operations().stream()
-                    .filter(op -> op.kind() == ConstructionBuildOp.Kind.PLACE && IgnitionBuildAdapter.supports(op.target())).toList();
-                check(ignition.size() == 2, "fire plus a whole portal must plan exactly two ignition operations");
-                for (ConstructionBuildOp op : ignition) {
-                    check(!ConstructionJobController.tryDeliver(level, started.progress(), op, worker),
-                        "claw worker must not deliver ignition target " + op.target());
-                }
-                worker.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.FLINT_AND_STEEL));
-                ConstructionBuildOp assigned = ConstructionJobController.nextAssignable(level, started.progress(), worker);
-                check(assigned != null && IgnitionBuildAdapter.supports(assigned.target()),
-                    "ignition worker must only be assigned fire or portal operations");
-                for (ConstructionBuildOp op : started.progress().operations()) {
-                    if (op.kind() != ConstructionBuildOp.Kind.PLACE || IgnitionBuildAdapter.supports(op.target())) continue;
-                    check(!ConstructionJobController.tryDeliver(level, started.progress(), op, worker),
-                        "ignition worker must not deliver ordinary block " + op.target());
-                }
-                for (ConstructionBuildOp op : ignition) {
-                    check(ConstructionJobController.tryDeliver(level, started.progress(), op, worker),
-                        "flint-and-steel worker failed to deliver " + op.target());
-                    check(!ConstructionJobController.tryDeliver(level, started.progress(), op, worker),
-                        "repeated ignition delivery must not spend another use");
-                }
-                check(worker.getMainHandItem().getDamageValue() == 2, "one fire and one entire portal must cost two uses");
-                check(level.getBlockState(ignition.getFirst().pos()).isAir(), "ignition must wait for the real frame commit");
-                for (ConstructionBuildOp op : started.progress().operations()) {
-                    if (op.kind() == ConstructionBuildOp.Kind.PLACE && !IgnitionBuildAdapter.supports(op.target())) {
-                        op.setStatus(ConstructionBuildOp.Status.DELIVERED);
-                    }
-                }
-                ConstructionCommitService.commitDelivered(level, started.progress());
-                for (ConstructionBuildOp op : started.progress().operations()) {
-                    if (IgnitionBuildAdapter.supports(op.target())) check(level.getBlockState(op.pos()).is(op.target().getBlock()),
-                        "committed ignition target missing at " + op.pos());
-                }
-                check(!started.progress().incomplete(), "valid ignition structure must complete without missing cells");
-                ConstructionBlueprintService.cancel(player, started.job().jobId());
             } catch (ConstructionBlueprintException exception) {
                 throw new GameTestAssertException("ignition setup failed: " + exception.reason());
             }
         }).thenSucceed();
     }
 
+    private static void assertIgnitionDelivery(ExtendedGameTestHelper helper, GameTestPlayer player,
+                                               Item tool, Direction.Axis axis) throws ConstructionBlueprintException {
+        ServerLevel level = helper.getLevel();
+        List<BlockPos> positions = new ArrayList<>();
+        List<BlockState> states = new ArrayList<>();
+        for (int x = 0; x < 4; x++) {
+            for (int y = 0; y < 5; y++) {
+                positions.add(new BlockPos(x, y, 0));
+                states.add(x == 0 || x == 3 || y == 0 || y == 4 ? Blocks.OBSIDIAN.defaultBlockState()
+                    : Blocks.NETHER_PORTAL.defaultBlockState().setValue(NetherPortalBlock.AXIS, axis));
+            }
+        }
+        positions.addAll(List.of(new BlockPos(0, 0, 3), new BlockPos(0, 1, 3),
+            new BlockPos(2, 0, 3), new BlockPos(2, 1, 3), new BlockPos(1, 2, 4), new BlockPos(1, 2, 3)));
+        states.addAll(List.of(Blocks.NETHERRACK.defaultBlockState(), Blocks.FIRE.defaultBlockState(),
+            Blocks.SOUL_SAND.defaultBlockState(), Blocks.SOUL_FIRE.defaultBlockState(),
+            Blocks.OAK_PLANKS.defaultBlockState(), Blocks.FIRE.defaultBlockState()
+                .setValue(axis == Direction.Axis.X ? FireBlock.SOUTH : FireBlock.EAST, true)));
+        if (axis == Direction.Axis.Z) positions.replaceAll(pos -> new BlockPos(pos.getZ(), pos.getY(), pos.getX()));
+        StartedJob started = startStructureJob(helper, player, multiBlockStructure(positions, states),
+            "ignition-portal", new BlockPos(2, 2, 2));
+        WorkingAllayEntity worker = spawnConstructionAllay(helper, new Vec3(0.5D, 3.0D, 0.5D), player, 0);
+        List<ConstructionBuildOp> ignition = started.progress().operations().stream()
+            .filter(op -> op.kind() == ConstructionBuildOp.Kind.PLACE && IgnitionBuildAdapter.supports(op.target())).toList();
+        check(ignition.size() == 4, "three fires plus a whole portal must plan four ignition operations: " + tool + axis);
+        for (ConstructionBuildOp op : ignition) {
+            check(!ConstructionJobController.tryDeliver(level, started.progress(), op, worker),
+                "claw worker must not deliver ignition target " + op.target());
+        }
+        ItemStack held = new ItemStack(tool, tool == Items.FIRE_CHARGE ? 4 : 1);
+        worker.setItemSlot(EquipmentSlot.MAINHAND, held);
+        check(ConstructionJobController.nextAssignable(level, started.progress(), worker) == null,
+            "ignition must not be assigned before supports and frame are delivered: " + tool + axis);
+        for (ConstructionBuildOp op : ignition) {
+            check(!ConstructionJobController.tryDeliver(level, started.progress(), op, worker),
+                "undelivered support must block ignition: " + tool + op.target());
+        }
+        BlockPos lastFramePos = helper.absolutePos(axis == Direction.Axis.X ? new BlockPos(3, 6, 2) : new BlockPos(2, 6, 3));
+        ConstructionBuildOp lastFrame = started.progress().operations().stream()
+            .filter(op -> op.pos().equals(lastFramePos)).findFirst().orElseThrow();
+        for (ConstructionBuildOp op : started.progress().operations()) {
+            if (op.kind() != ConstructionBuildOp.Kind.PLACE || IgnitionBuildAdapter.supports(op.target())) continue;
+            check(!ConstructionJobController.tryDeliver(level, started.progress(), op, worker),
+                "ignition worker must not deliver ordinary block " + op.target());
+            if (op != lastFrame) check(ConstructionJobController.tryDeliver(level, started.progress(), op),
+                "support or frame projection failed to deliver at " + op.pos());
+        }
+        ConstructionBuildOp portal = ignition.stream().filter(op -> op.target().is(Blocks.NETHER_PORTAL)).findFirst().orElseThrow();
+        check(!ConstructionJobController.tryDeliver(level, started.progress(), portal, worker),
+            "a portal missing its final top frame block must not consume ignition: " + tool + axis);
+        check(held.getDamageValue() == 0 && held.getCount() == (tool == Items.FIRE_CHARGE ? 4 : 1),
+            "blocked fire and portal attempts must not consume the held igniter: " + tool + axis);
+        check(ConstructionJobController.tryDeliver(level, started.progress(), lastFrame), "final frame block must deliver");
+        ConstructionBuildOp assigned = ConstructionJobController.nextAssignable(level, started.progress(), worker);
+        check(assigned != null && IgnitionBuildAdapter.supports(assigned.target()),
+            "completed supports must make ignition assignable: " + tool + axis);
+        for (ConstructionBuildOp op : ignition) {
+            check(ConstructionJobController.tryDeliver(level, started.progress(), op, worker),
+                "ignition failed with delivered supports: " + tool + op.target());
+            check(!ConstructionJobController.tryDeliver(level, started.progress(), op, worker),
+                "repeated ignition delivery must not spend another use: " + tool);
+        }
+        check(tool == Items.FIRE_CHARGE ? worker.getMainHandItem().isEmpty() : held.getDamageValue() == 4,
+            "three fires and one portal must cost exactly four uses or fire charges: " + tool + axis);
+        check(level.getBlockState(portal.pos()).isAir(), "portal activation must wait for the real frame commit");
+        ConstructionCommitService.commitDelivered(level, started.progress());
+        for (ConstructionBuildOp op : started.progress().operations()) {
+            if (IgnitionBuildAdapter.supports(op.target())) check(level.getBlockState(op.pos()).is(op.target().getBlock()),
+                "committed ignition target missing with " + tool + axis + " at " + op.pos());
+        }
+        check(!started.progress().incomplete(), "valid ignition structure must complete without missing cells: " + tool + axis);
+        ConstructionBlueprintService.cancel(player, started.job().jobId());
+        worker.discard();
+        for (BlockPos pos : positions) level.setBlock(helper.absolutePos(pos.offset(2, 2, 2)), Blocks.AIR.defaultBlockState(), 3);
+    }
+
     @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
     @EmptyTemplate(value = "6x7x6", floor = true)
-    @TestHolder(description = "An incomplete portal frame cannot be activated by an ignition delivery")
+    @TestHolder(description = "Ignition rechecks real support after assignment and spends nothing if that support was removed")
+    static void ignitionRechecksRemovedFireSupport(ExtendedGameTestHelper helper) {
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        helper.startSequence().thenExecuteAfter(5, () -> {
+            try {
+                ServerLevel level = helper.getLevel();
+                for (Item tool : List.of(Items.FLINT_AND_STEEL, Items.FIRE_CHARGE)) {
+                    StartedJob started = startStructureJob(helper, player, multiBlockStructure(
+                        List.of(BlockPos.ZERO), List.of(Blocks.FIRE.defaultBlockState())),
+                        "fire-support", new BlockPos(3, 4, 3));
+                    WorkingAllayEntity worker = spawnConstructionAllay(helper, new Vec3(0.5D, 3.0D, 0.5D), player, 0);
+                    ItemStack held = new ItemStack(tool);
+                    worker.setItemSlot(EquipmentSlot.MAINHAND, held);
+                    ConstructionBuildOp fire = firstPlace(started.progress());
+                    level.setBlock(fire.pos().below(), Blocks.NETHERRACK.defaultBlockState(), 3);
+                    check(ConstructionJobController.nextAssignable(level, started.progress(), worker) == fire,
+                        "a real support outside the blueprint must allow ignition: " + tool);
+                    level.setBlock(fire.pos().below(), Blocks.AIR.defaultBlockState(), 3);
+                    check(!ConstructionJobController.tryDeliver(level, started.progress(), fire, worker),
+                        "removing support after assignment must prevent ignition: " + tool);
+                    check(held.getCount() == 1 && held.getDamageValue() == 0,
+                        "support lost after assignment must not consume ignition: " + tool);
+                    level.setBlock(fire.pos().below(), Blocks.NETHERRACK.defaultBlockState(), 3);
+                    check(ConstructionJobController.tryDeliver(level, started.progress(), fire, worker),
+                        "restoring real support must allow ignition to resume: " + tool);
+                    ConstructionCommitService.commitDelivered(level, started.progress());
+                    check(level.getBlockState(fire.pos()).is(Blocks.FIRE), "restored support must produce real fire: " + tool);
+                    ConstructionBlueprintService.cancel(player, started.job().jobId());
+                    worker.discard();
+                    level.setBlock(fire.pos(), Blocks.AIR.defaultBlockState(), 3);
+                    level.setBlock(fire.pos().below(), Blocks.AIR.defaultBlockState(), 3);
+                }
+            } catch (ConstructionBlueprintException exception) {
+                throw new GameTestAssertException("fire support setup failed: " + exception.reason());
+            }
+        }).thenSucceed();
+    }
+
+    @GameTest(timeoutTicks = 40, batch = "zzz_construction_adapt")
+    @EmptyTemplate(value = "6x7x6", floor = true)
+    @TestHolder(description = "Missing portal frames and unsupported fires cannot consume ignition or block incomplete construction from finishing")
     static void ignitionRejectsMissingPortalFrame(ExtendedGameTestHelper helper) {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         helper.startSequence().thenExecuteAfter(5, () -> {
@@ -522,19 +610,33 @@ public final class ConstructionJobGameTests {
                     positions.add(new BlockPos(x, y, 0));
                     states.add(Blocks.NETHER_PORTAL.defaultBlockState());
                 }
+                positions.addAll(List.of(new BlockPos(0, 2, 2), new BlockPos(1, 2, 2)));
+                states.addAll(List.of(Blocks.FIRE.defaultBlockState(), Blocks.SOUL_FIRE.defaultBlockState()));
                 StartedJob started = startStructureJob(helper, player, multiBlockStructure(positions, states),
                     "missing-portal-frame", new BlockPos(2, 2, 2));
                 WorkingAllayEntity worker = spawnConstructionAllay(helper, new Vec3(0.5D, 3.0D, 0.5D), player, 0);
-                worker.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.FLINT_AND_STEEL));
-                check(ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), firstPlace(started.progress()), worker),
-                    "ignition intent must be deliverable before the final frame check");
-                ConstructionCommitService.commitDelivered(helper.getLevel(), started.progress());
-                check(started.progress().incomplete(), "missing frame must produce an incomplete result");
-                for (ConstructionBuildOp op : started.progress().operations()) {
-                    check(!helper.getLevel().getBlockState(op.pos()).is(Blocks.NETHER_PORTAL),
-                        "incomplete frame must never produce portal blocks");
+                for (Item tool : List.of(Items.FLINT_AND_STEEL, Items.FIRE_CHARGE)) {
+                    ItemStack held = new ItemStack(tool);
+                    worker.setItemSlot(EquipmentSlot.MAINHAND, held);
+                    check(ConstructionJobController.nextAssignable(helper.getLevel(), started.progress(), worker) == null,
+                        "a missing portal frame must prevent assignment: " + tool);
+                    for (ConstructionBuildOp op : started.progress().operations()) {
+                        if (op.kind() != ConstructionBuildOp.Kind.PLACE) continue;
+                        check(!ConstructionJobController.tryDeliver(helper.getLevel(), started.progress(), op, worker),
+                            "missing supports and frame must prevent delivery: " + tool + op.target());
+                    }
+                    check(held.getCount() == 1 && held.getDamageValue() == 0, "missing frame must not consume ignition: " + tool);
                 }
-                ConstructionBlueprintService.cancel(player, started.job().jobId());
+                ConstructionJobController.tickJob(helper.getLevel().getServer(), helper.getLevel(),
+                    started.job().withState(ConstructionJob.STATE_BUILDING));
+                check(started.progress().incomplete(), "missing frame must produce an incomplete result");
+                check(started.progress().allPlaceResolved(), "invalid ignition must not block the final commit forever");
+                for (ConstructionBuildOp op : started.progress().operations()) {
+                    check(!IgnitionBuildAdapter.supports(helper.getLevel().getBlockState(op.pos())),
+                        "unsupported ignition must never produce fire or portal blocks");
+                }
+                check(ConstructionJobIndex.get(helper.getLevel()).job(started.job().jobId()) == null,
+                    "an invalid ignition job must finish and leave the active index");
             } catch (ConstructionBlueprintException exception) {
                 throw new GameTestAssertException("invalid portal setup failed: " + exception.reason());
             }
@@ -5219,6 +5321,7 @@ public final class ConstructionJobGameTests {
                 check(countCobble(player) == 0, "infinite crate extract must not take from the player");
                 started.progress().addOperation(helper.absolutePos(new BlockPos(5, 3, 4)), Blocks.FIRE.defaultBlockState(),
                     ItemStack.EMPTY, ConstructionBuildOp.Kind.PLACE, ConstructionBuildOp.Status.PENDING);
+                helper.setBlock(new BlockPos(5, 2, 4), Blocks.NETHERRACK);
                 for (int i = 0; i < 2; i++) lounge.addHosted(constructionRecord(player.getUUID())
                     .withBorrowedTool(ItemStack.EMPTY, Optional.empty()));
                 AllayToolSupply.plan(helper.getLevel(), started.job(), started.progress(), lounge);
