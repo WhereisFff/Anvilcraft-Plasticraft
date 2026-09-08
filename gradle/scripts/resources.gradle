@@ -1,8 +1,7 @@
 tasks.withType(ProcessResources).configureEach {
     def replaceProperties = [
         minecraft_version      : minecraft_version,
-        minecraft_version_range: minecraft_version_range,
-        neo_version            : neo_version,
+        minecraft_version_range: "[${minecraft_version}]",
         neo_version_range      : neo_version_range,
         loader_version_range   : loader_version_range,
         anvilcraft_version_range: anvilcraft_version_range,

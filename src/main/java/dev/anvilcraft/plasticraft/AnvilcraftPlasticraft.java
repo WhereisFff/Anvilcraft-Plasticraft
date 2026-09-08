@@ -97,6 +97,7 @@ public final class AnvilcraftPlasticraft {
         NeoForge.EVENT_BUS.addListener(AnvilcraftPlasticraft::addItemTooltips);
         NeoForge.EVENT_BUS.addListener(AllayHardHatEvents::entityInteract);
         NeoForge.EVENT_BUS.addListener(HighViscosityResinEvents::useEntity);
+        NeoForge.EVENT_BUS.addListener(HighViscosityResinEvents::projectileImpact);
         NeoForge.EVENT_BUS.addListener(AdhesiveInvisibilityService::projectileImpact);
         NeoForge.EVENT_BUS.addListener(CondenserTowerProcess::onLargeCauldronProcess);
         NeoForge.EVENT_BUS.addListener(EscapingVaporEffects::rightClickBlock);
@@ -148,14 +149,12 @@ public final class AnvilcraftPlasticraft {
         event.registerEntity(
             Capabilities.ItemHandler.ENTITY_AUTOMATION,
             PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
-            (plastic, side) -> plastic.getMoldedItemHandler().getSlots() > 0
-                ? plastic.getMoldedItemHandler() : null
+            (plastic, side) -> plastic.getAutomationItemHandler(side)
         );
         event.registerEntity(
             Capabilities.FluidHandler.ENTITY,
             PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
-            (plastic, side) -> plastic.getMoldedFluidHandler().getTanks() > 0
-                ? plastic.getMoldedFluidHandler() : null
+            (plastic, side) -> plastic.getAutomationFluidHandler(side)
         );
         event.registerEntity(
             Capabilities.ItemHandler.ENTITY,
@@ -166,14 +165,12 @@ public final class AnvilcraftPlasticraft {
         event.registerEntity(
             Capabilities.ItemHandler.ENTITY_AUTOMATION,
             PlasticraftEntities.ENGINEERING_PLASTIC.get(),
-            (plastic, side) -> plastic.getMoldedItemHandler().getSlots() > 0
-                ? plastic.getMoldedItemHandler() : null
+            (plastic, side) -> plastic.getAutomationItemHandler(side)
         );
         event.registerEntity(
             Capabilities.FluidHandler.ENTITY,
             PlasticraftEntities.ENGINEERING_PLASTIC.get(),
-            (plastic, side) -> plastic.getMoldedFluidHandler().getTanks() > 0
-                ? plastic.getMoldedFluidHandler() : null
+            (plastic, side) -> plastic.getAutomationFluidHandler(side)
         );
         event.registerEntity(
             Capabilities.ItemHandler.ENTITY,
@@ -184,14 +181,12 @@ public final class AnvilcraftPlasticraft {
         event.registerEntity(
             Capabilities.ItemHandler.ENTITY_AUTOMATION,
             PlasticraftEntities.HEAT_RESISTANT_PLASTIC.get(),
-            (plastic, side) -> plastic.getMoldedItemHandler().getSlots() > 0
-                ? plastic.getMoldedItemHandler() : null
+            (plastic, side) -> plastic.getAutomationItemHandler(side)
         );
         event.registerEntity(
             Capabilities.FluidHandler.ENTITY,
             PlasticraftEntities.HEAT_RESISTANT_PLASTIC.get(),
-            (plastic, side) -> plastic.getMoldedFluidHandler().getTanks() > 0
-                ? plastic.getMoldedFluidHandler() : null
+            (plastic, side) -> plastic.getAutomationFluidHandler(side)
         );
         event.registerEntity(
             Capabilities.ItemHandler.ENTITY,
@@ -202,24 +197,22 @@ public final class AnvilcraftPlasticraft {
         event.registerEntity(
             Capabilities.ItemHandler.ENTITY_AUTOMATION,
             PlasticraftEntities.CLEAR_PLASTIC.get(),
-            (plastic, side) -> plastic.getMoldedItemHandler().getSlots() > 0
-                ? plastic.getMoldedItemHandler() : null
+            (plastic, side) -> plastic.getAutomationItemHandler(side)
         );
         event.registerEntity(
             Capabilities.FluidHandler.ENTITY,
             PlasticraftEntities.CLEAR_PLASTIC.get(),
-            (plastic, side) -> plastic.getMoldedFluidHandler().getTanks() > 0
-                ? plastic.getMoldedFluidHandler() : null
+            (plastic, side) -> plastic.getAutomationFluidHandler(side)
         );
         event.registerBlockEntity(
             Capabilities.FluidHandler.BLOCK,
             PlasticraftBlockEntities.BONDED_ENTITY.get(),
-            (bonded, side) -> bonded.getCapabilityFluidHandler()
+            (bonded, side) -> bonded.getCapabilityFluidHandler(side)
         );
         event.registerBlockEntity(
             Capabilities.ItemHandler.BLOCK,
             PlasticraftBlockEntities.BONDED_ENTITY.get(),
-            (bonded, side) -> bonded.getItemHandler()
+            (bonded, side) -> bonded.getAutomationItemHandler(side)
         );
         event.registerBlock(
             Capabilities.FluidHandler.BLOCK,

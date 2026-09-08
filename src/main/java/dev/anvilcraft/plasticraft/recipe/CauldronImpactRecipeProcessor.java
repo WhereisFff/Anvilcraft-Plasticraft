@@ -10,6 +10,8 @@ import dev.anvilcraft.lib.v2.recipe.util.InWorldRecipeManager;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldronWorkBlockFinder;
+import dev.anvilcraft.plasticraft.entity.MoldedLargeCauldronInteraction;
+import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.init.recipe.ModRecipeTriggers;
@@ -163,6 +165,9 @@ public final class CauldronImpactRecipeProcessor {
         int passes = pot.plasticraft$cauldronLayout().recipePasses();
         beginTargetedRecipe(pot, null);
         try {
+            if (pot instanceof UniversalPlasticEntity molded && MoldedLargeCauldronInteraction.applies(molded)) {
+                return MoldedLargeCauldronRecipes.process(level, anvil, molded, potPosition);
+            }
             for (BlockPos workBlock : PlasticCauldronWorkBlockFinder.findWorkBlockPositions(pot, potPosition)) {
                 if (level.getBlockState(workBlock).isAir()) continue;
                 RecipePass result = runRecipeAtPotCell(
@@ -342,7 +347,7 @@ public final class CauldronImpactRecipeProcessor {
         beginTargetedRecipe(target, target == null ? null : recipePotCell(target));
     }
 
-    private static void beginTargetedRecipe(@Nullable PlasticCauldron target, @Nullable BlockPos potCell) {
+    static void beginTargetedRecipe(@Nullable PlasticCauldron target, @Nullable BlockPos potCell) {
         Deque<RecipeTarget> targets = ACTIVE_RECIPE_TARGETS.get();
         if (targets == null) {
             targets = new ArrayDeque<>();
@@ -425,7 +430,7 @@ public final class CauldronImpactRecipeProcessor {
         return defaultRecipePotCell(pot, potPosition);
     }
 
-    private static BlockPos defaultRecipePotCell(PlasticCauldron pot, Vec3 potPosition) {
+    static BlockPos defaultRecipePotCell(PlasticCauldron pot, Vec3 potPosition) {
         Vec3 offset = potPosition.subtract(pot.position());
         var potBox = pot.getBoundingBox().move(offset);
         Vec3 potCenter = potBox.getCenter();

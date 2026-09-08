@@ -8,9 +8,7 @@ items:
 
 # 铸造与 3D 打印
 
-<row halign="center">
-<item id="anvilcraftplasticraft:plastic_3d_printing_component"/>
-</row>
+<recipe id="anvilcraftplasticraft:plastic_3d_printing_component"/>
 
 ## 供电
 

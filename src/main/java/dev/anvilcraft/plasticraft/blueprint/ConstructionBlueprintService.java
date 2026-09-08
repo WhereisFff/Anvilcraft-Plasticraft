@@ -155,7 +155,8 @@ public final class ConstructionBlueprintService {
 
     /**
      * 施工蓝图与本体结构是同一份原版 NBT:覆盖写入 {@code anvilcraft/structures} 和
-     * {@code StructureDiskData},Tooltip「结构：」、尺寸、5×5×5 判定和旋转预览都走 AnvilCraft 原逻辑。
+     * {@code StructureDiskData},Tooltip「结构：」、尺寸和 5×5×5 判定沿用 AnvilCraft 逻辑。
+     * 悬停预览通过客户端扩展点复用按内容哈希缓存的快照。
      */
     private static void bindVanillaStructureDisk(
         MinecraftServer server,

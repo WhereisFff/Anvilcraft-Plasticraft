@@ -20,7 +20,9 @@ items:
 <item id="anvilcraftplasticraft:heat_resistant_plastic_melt_bucket"/>
 </row>
 
-Melts do not come from a recipe, they come from environmental catalysis: drop a catalyst into the fluid, give it the right surroundings, and it changes on its own. There are four routes:
+Melts come from environmental catalysis: drop a catalyst into the fluid, give it the right surroundings, and it changes on its own. JEI's Plastic Melt Catalysis category displays the four routes below. Look up recipes for the fluid or its bucket, or uses for a catalyst, to find the matching routes. Royal and frost materials have separate entries to show their different conditions and efficiencies. Catalysts are not consumed; the displayed 1000mB is an equal-volume conversion example. Hover over the bottom of the page for batch rules and branch priorities
+
+The JEI page renders the input and output as fluid blocks, with valid heat sources or cold blocks cycling directly against the underside of the input. The catalyst sits below the models, with its efficiency on the right. Heat sources use states that actually provide heat; hover over them to see the block name, required conditions and heat value. The frost-metal route to Engineering Plastic Melt needs no environment block below
 
 | Input | Catalyst | Environment | Output |
 | --- | --- | --- | --- |

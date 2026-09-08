@@ -33,11 +33,20 @@ public interface PlasticCauldron extends IItemHandlerCache, IItemHandlerHolder, 
     /** 槽位与流体分层布局，普通锅与大型锅在此分流。 */
     PlasticCauldronLayout plasticraft$cauldronLayout();
 
-    /** 最底层流体。多层大型锅一律用底层回答燃料、点燃与配方查询，与本体大型锅的底层语义一致。 */
+    /** 原始层序中的最底层流体，供普通锅及底部加工查询使用。 */
     FluidStack plasticraft$bottomFluid();
 
-    /** 只读写最底层流体的句柄，供燃料消耗按底层扣量。 */
+    /** 从底层优先读写的流体句柄。 */
     IFluidHandler plasticraft$bottomFluidAccess();
+
+    /** 当前可点燃的表层流体，大型锅覆盖为最顶层。 */
+    default FluidStack plasticraft$ignitionFluid() {
+        return this.plasticraft$bottomFluid();
+    }
+
+    default IFluidHandler plasticraft$ignitionFluidAccess() {
+        return this.plasticraft$bottomFluidAccess();
+    }
 
     double getFluidSurfaceY();
 

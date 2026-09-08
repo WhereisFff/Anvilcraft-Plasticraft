@@ -84,6 +84,16 @@ public final class AllayToolDefinitions {
         ObservationAllayToolBehavior.INSTANCE
     ));
 
+    public static final AllayToolDefinition IGNITION = register(new AllayToolDefinition(
+        AnvilcraftPlasticraft.of("ignition"),
+        () -> Items.FLINT_AND_STEEL,
+        Set.of(AllayCapability.DELIVER_PROJECTION, AllayCapability.IGNITE),
+        1.0D,
+        0,
+        List.of("idle", "open", "approach", "grab", "hold", "release"),
+        GeneralAllayToolBehavior.INSTANCE
+    ));
+
     private AllayToolDefinitions() {
     }
 

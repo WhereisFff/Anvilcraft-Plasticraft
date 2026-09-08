@@ -13,6 +13,7 @@ import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer.Prep
 import dev.anvilcraft.plasticraft.client.renderer.PlasticOilCatalysisRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.MoldedTrayComponentRenderer;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.MoldedLargeCauldronInteraction;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.product.PlasticCauldronLayout;
@@ -215,7 +216,7 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
     ) {
         List<ItemStack> items = entity.getSyncedItems();
         List<FluidStack> fluids = entity.getSyncedFluids();
-        FluidStack bottomFluid = fluids.isEmpty() ? FluidStack.EMPTY : fluids.getFirst();
+        FluidStack burningFluid = entity.plasticraft$ignitionFluid();
         CauldronFluidMetrics metrics = CauldronFluidMetrics.of(entity, data, fluids);
         boolean gravityAlignedItems = !items.isEmpty() && entity.shouldUseGravityAlignedItemLayout();
         boolean renderStoredItems = !items.isEmpty()
@@ -259,9 +260,9 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
             }
         }
 
-        if (!bottomFluid.isEmpty() && entity.anvilcraft$isIgnited()) {
+        if (!burningFluid.isEmpty() && entity.anvilcraft$isIgnited()) {
             float top = metrics.fluidTop();
-            if (bottomFluid.is(PlasticraftFluids.HIGH_HEAT_FUEL.get())) {
+            if (burningFluid.is(PlasticraftFluids.HIGH_HEAT_FUEL.get())) {
                 IgnitedFluidFlameRenderer.renderBlue(
                     pose, buffers, top, metrics.flameScale(), OverlayTexture.NO_OVERLAY
                 );
@@ -399,6 +400,10 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
         MultiBufferSource buffers,
         int packedLight
     ) {
+        if (!gravityAligned && MoldedLargeCauldronInteraction.applies(entity)) {
+            this.renderLargeCauldronItems(entity, metrics, pose, buffers, packedLight);
+            return;
+        }
         this.random.setSeed(itemHash(items));
         float minX = metrics.cavityMinX();
         float minY = metrics.cavityMinY();
@@ -464,6 +469,34 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
             }
             pose.popPose();
             remaining--;
+        }
+    }
+
+    private void renderLargeCauldronItems(
+        UniversalPlasticEntity entity, CauldronFluidMetrics metrics, PoseStack pose, MultiBufferSource buffers, int light
+    ) {
+        int outputs = entity.plasticraft$cauldronLayout().outputSlots();
+        for (int slot = 0; slot < entity.plasticraft$cauldronLayout().totalSlots(); slot++) {
+            ItemStack stack = entity.getSyncedItemInSlot(slot);
+            if (stack.isEmpty()) continue;
+            Vec3 local = MoldedLargeCauldronInteraction.localPoint(entity,
+                MoldedLargeCauldronInteraction.inputPosition(entity, slot < outputs ? -1 : slot - outputs));
+            pose.pushPose();
+            pose.translate(local.x, itemCenterY(metrics), local.z);
+            if (slot < outputs) {
+                float angle = slot * 2 * Mth.PI / outputs;
+                pose.translate(Mth.cos(angle) * 0.16F, 0, Mth.sin(angle) * 0.16F);
+            }
+            pose.mulPose(new Quaternionf().rotateY(slot * 0.7F).rotateX(65 * Mth.DEG_TO_RAD));
+            int copies = Math.min(5, 1 + stack.getCount() / 8);
+            for (int copy = 0; copy < copies; copy++) {
+                pose.pushPose();
+                pose.translate(copy * 0.015F, copy * 0.02F, 0);
+                Minecraft.getInstance().getItemRenderer().renderStatic(stack, ItemDisplayContext.GROUND,
+                    light, OverlayTexture.NO_OVERLAY, pose, buffers, entity.level(), slot);
+                pose.popPose();
+            }
+            pose.popPose();
         }
     }
 

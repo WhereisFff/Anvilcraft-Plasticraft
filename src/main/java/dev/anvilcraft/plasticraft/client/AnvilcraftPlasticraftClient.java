@@ -19,6 +19,7 @@ import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticPaletteTintManager;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticPreviewRenderTypes;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticTextureSpriteSource;
+import dev.anvilcraft.plasticraft.client.renderer.StructureDiskPreviewRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.UniversalPlasticItemRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blueprint.BlueprintProjectionRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.Plastic3DPrintingComponentRenderer;
@@ -294,8 +295,9 @@ public final class AnvilcraftPlasticraftClient {
         event.registerReloadListener(MoldingViewportResources.INSTANCE);
         event.registerReloadListener(PlasticPaletteTintManager.INSTANCE);
         event.registerReloadListener(DynamicPlasticTextureManager.INSTANCE);
-        event.registerReloadListener((ResourceManagerReloadListener) resourceManager ->
-            BlueprintProjectionRenderer.clearCache()
-        );
+        event.registerReloadListener((ResourceManagerReloadListener) resourceManager -> {
+            BlueprintProjectionRenderer.clearCache();
+            StructureDiskPreviewRenderer.clearCache();
+        });
     }
 }

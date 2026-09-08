@@ -949,7 +949,7 @@ public final class ConstructionJobProgress {
         return walls;
     }
 
-    /** 已交付投影加上由真实世界方块满足、仍需提交子内容的方块锚点。 */
+    /** 普通提交投影与内容锚点；点火在结构完成后单独验证，不进入粘贴缓存。 */
     List<ConstructionBuildOp> deliveredCommitOperations() {
         if (this.deliveredCommitCacheRevision == this.statusRevision) {
             return this.deliveredCommitCache;
@@ -957,6 +957,7 @@ public final class ConstructionJobProgress {
         List<ConstructionBuildOp> result = new ArrayList<>();
         for (ConstructionBuildOp op : this.operations) {
             if (op.status() != ConstructionBuildOp.Status.DELIVERED
+                || IgnitionBuildAdapter.supports(op.target())
                 || (!op.writesProjection()
                     && (!op.worldSatisfied()
                         || (op.kind() != ConstructionBuildOp.Kind.PLACE

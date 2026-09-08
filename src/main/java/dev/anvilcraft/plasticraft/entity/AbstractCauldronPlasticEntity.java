@@ -196,11 +196,15 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
     /** 让锅内的塑料熔体也对落入其中的实体施加减速；两侧都要跑，否则客户端预测会抖。 */
     protected void stickEntitiesInPlasticMelt() {
         if (!this.plasticraft$isCauldron()) return;
-        if (!PlasticMaterial.isMelt(this.plasticraft$bottomFluid())) return;
         if (this.getOrientation().attachmentFace() != Direction.UP) return;
+        boolean large = this instanceof UniversalPlasticEntity pot && MoldedLargeCauldronInteraction.applies(pot);
+        boolean hasMelt = large
+            ? ((UniversalPlasticEntity) this).getSyncedFluids().stream().anyMatch(PlasticMaterial::isMelt)
+            : PlasticMaterial.isMelt(this.plasticraft$bottomFluid());
+        if (!hasMelt) return;
         for (Entity entity : this.level().getEntitiesOfClass(
             Entity.class,
-            this.cauldronFluidArea(),
+            large ? this.getBoundingBox() : this.cauldronFluidArea(),
             candidate -> candidate != this && candidate.isAlive()
         )) {
             this.plasticraft$stickEntityInPlasticMelt(entity);
@@ -372,7 +376,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
         this.discard();
     }
 
-    private void hurtEntitiesInIgnitedFluid() {
+    protected void hurtEntitiesInIgnitedFluid() {
         if (!this.anvilcraft$isIgnited() || this.plasticraft$bottomFluid().isEmpty()) return;
         AABB fluidArea = this.cauldronFluidArea();
         for (Entity entity : this.level().getEntitiesOfClass(
@@ -412,7 +416,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
 
     protected boolean canIgniteFluid() {
         return this.getOrientation().attachmentFace() == Direction.UP
-            && this.plasticraft$bottomFluid().is(ModFluidTags.IGNITABLE);
+            && this.plasticraft$ignitionFluid().is(ModFluidTags.IGNITABLE);
     }
 
     private void refreshIgnited() {
@@ -425,6 +429,8 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
             }
             if (this.anvilcraft$isIgnited()) return;
             for (IItemHandler handler : new IItemHandler[]{this.cauldronInputHandler(), this.cauldronOutputHandler()}) {
+                if (handler == this.cauldronOutputHandler() && this instanceof UniversalPlasticEntity pot
+                    && MoldedLargeCauldronInteraction.applies(pot)) continue;
                 for (int slot = 0; slot < handler.getSlots(); slot++) {
                     ItemStack stack = handler.getStackInSlot(slot);
                     if (stack.is(ModItemTags.FIRE_STARTER)) {
@@ -446,7 +452,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
     private void trySpawnPlasmaJets() {
         if (!this.anvilcraft$isIgnited()
             || this.getOrientation().attachmentFace() != Direction.UP
-            || this.plasticraft$bottomFluid().getAmount() < 250
+            || this.plasticraft$ignitionFluid().getAmount() < 250
             || this.time % 10 != 0) {
             return;
         }
@@ -508,7 +514,11 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
     }
 
     private void absorbItem(ItemEntity item) {
-        ItemStack remaining = ItemHandlerUtil.insertItem(this.cauldronInputHandler(), item.getItem().copy(), false);
+        if (!item.anvilcraft$isAdsorbable() || item.isRemoved()) return;
+        IItemHandler input = this instanceof UniversalPlasticEntity pot && MoldedLargeCauldronInteraction.applies(pot)
+            ? MoldedLargeCauldronInteraction.preferredInput(pot, MoldedLargeCauldronInteraction.inputSlot(pot, item.position()), false)
+            : this.cauldronInputHandler();
+        ItemStack remaining = ItemHandlerUtil.insertItem(input, item.getItem().copy(), false);
         if (remaining.isEmpty()) {
             item.discard();
         } else {
@@ -931,9 +941,13 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
 
     @Override
     protected InteractionResult interactNormally(Player player, InteractionHand hand) {
+        return this.interactCauldron(player, hand, null);
+    }
+
+    protected InteractionResult interactCauldron(Player player, InteractionHand hand, @Nullable Vec3 relativeHit) {
         if (!this.plasticraft$isCauldron()) return super.interactNormally(player, hand);
         ItemStack inHand = player.getItemInHand(hand);
-        if (inHand.getItem() instanceof AnvilHammerItem) {
+        if (inHand.is(ModItemTags.ANVIL_HAMMER)) {
             return InteractionResult.sidedSuccess(this.level().isClientSide);
         }
         // 原版打火石必须优先于通用物品插入逻辑处理，否则会被塞进锅内输入栏。
@@ -956,6 +970,9 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
                 if (inHand.is(ModItemTags.FIRE_STARTER) && !player.getAbilities().instabuild) inHand.shrink(1);
             }
             return InteractionResult.sidedSuccess(this.level().isClientSide);
+        }
+        if (this instanceof UniversalPlasticEntity pot && MoldedLargeCauldronInteraction.applies(pot)) {
+            return MoldedLargeCauldronInteraction.interact(pot, player, hand, relativeHit);
         }
         if (this.tryFluidInteraction(player, hand)) {
             return InteractionResult.sidedSuccess(this.level().isClientSide);

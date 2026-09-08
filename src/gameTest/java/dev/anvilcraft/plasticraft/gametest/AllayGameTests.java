@@ -125,6 +125,20 @@ public final class AllayGameTests {
         worker.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.SPYGLASS));
         check(worker.toolDefinition() == AllayToolDefinitions.OBSERVATION, "spyglass must be observation");
         check(!worker.toolDefinition().hasCapability(AllayCapability.PICK_UP_MATERIAL), "spyglass must not construct");
+        worker.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        worker.setOwner(player.getUUID());
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.FLINT_AND_STEEL));
+        worker.setHostedCarry(new ItemStack(Items.STONE));
+        worker.mobInteract(player, InteractionHand.MAIN_HAND);
+        check(worker.getMainHandItem().isEmpty(), "a worker carrying blocks must refuse flint and steel until unloaded");
+        worker.setHostedCarry(ItemStack.EMPTY);
+        worker.mobInteract(player, InteractionHand.MAIN_HAND);
+        check(worker.toolDefinition() == AllayToolDefinitions.IGNITION, "player-given flint and steel must enable ignition");
+        check(worker.toolDefinition().hasCapability(AllayCapability.IGNITE), "flint and steel must ignite");
+        check(!worker.toolDefinition().hasCapability(AllayCapability.PICK_UP_MATERIAL), "ignition worker must not fetch building materials");
+        check(!worker.toolDefinition().hasCapability(AllayCapability.SEAL_FLUID), "ignition worker must not seal fluids");
+        check(!worker.canBorrowTool(), "player-given flint and steel must remain a fixed tool");
         helper.succeed();
     }
 

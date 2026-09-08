@@ -8,6 +8,7 @@ import dev.anvilcraft.plasticraft.allay.observation.ObservationCoverage;
 import dev.anvilcraft.plasticraft.allay.observation.ObservationCoverageService;
 import dev.anvilcraft.plasticraft.allay.tool.AllayCapability;
 import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinitions;
+import dev.anvilcraft.plasticraft.allay.tool.AllayToolSupply;
 import dev.anvilcraft.plasticraft.allay.transfer.ConstructionTransferService;
 import dev.anvilcraft.plasticraft.allay.tool.CollectionAllayToolBehavior;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
@@ -864,6 +865,10 @@ public final class ConstructionJobController {
                     }
                     continue;
                 }
+                if (IgnitionBuildAdapter.supports(target)) {
+                    IgnitionBuildAdapter.plan(progress, worldPos, target, worldTargets);
+                    continue;
+                }
                 OrdinaryBlockAdapter.Mapping mapping = OrdinaryBlockAdapter.mapping(target);
                 switch (mapping) {
                     case AIR -> {
@@ -1086,6 +1091,7 @@ public final class ConstructionJobController {
         ConstructionJobProgress progress,
         @Nullable WorkingAllayEntity worker
     ) {
+        if (worker != null && !worker.toolDefinition().hasCapability(AllayCapability.SEAL_FLUID)) return null;
         if (assignmentScanBlocked(level, progress, AssignmentScan.SEAL)) return null;
         ConstructionBuildOp result = findAssignableSeal(level, progress, worker);
         noteAssignmentResult(level, progress, AssignmentScan.SEAL, result);
@@ -1192,9 +1198,9 @@ public final class ConstructionJobController {
         ConstructionJobProgress progress,
         @Nullable WorkingAllayEntity worker
     ) {
-        AssignmentScan scan = worker != null && !canPlaceLongReach(worker)
-            ? AssignmentScan.BUILD_SHORT
-            : AssignmentScan.BUILD_LONG;
+        AssignmentScan scan = worker == null ? AssignmentScan.BUILD_ANY
+            : worker.toolDefinition().hasCapability(AllayCapability.IGNITE) ? AssignmentScan.BUILD_IGNITION
+            : !canPlaceLongReach(worker) ? AssignmentScan.BUILD_SHORT : AssignmentScan.BUILD_LONG;
         if (assignmentScanBlocked(level, progress, scan)) return null;
         ConstructionBuildOp result = findAssignable(
             level,
@@ -1345,6 +1351,7 @@ public final class ConstructionJobController {
         Map<Long, BlockState> overlay,
         ConstructionOverlayView view
     ) {
+        if (worker != null && !IgnitionBuildAdapter.canDeliver(worker, op)) return AssignVerdict.REJECT;
         if (op.kind() != ConstructionBuildOp.Kind.PLACE
             && op.kind() != ConstructionBuildOp.Kind.CONTENT
             && op.kind() != ConstructionBuildOp.Kind.FLUID
@@ -1424,6 +1431,12 @@ public final class ConstructionJobController {
         @Nullable Entity ignore
     ) {
         if (!enterIfDenied(level, progress, op)) return false;
+        if (ignore instanceof WorkingAllayEntity worker && !IgnitionBuildAdapter.canDeliver(worker, op)) return false;
+        if (IgnitionBuildAdapter.supports(op.target())
+            && (op.status() == ConstructionBuildOp.Status.DELIVERED
+                || !(ignore instanceof WorkingAllayEntity worker) || !IgnitionBuildAdapter.canDeliver(worker, op))) {
+            return false;
+        }
         if (op.kind() == ConstructionBuildOp.Kind.CONTENT
             || op.kind() == ConstructionBuildOp.Kind.FLUID
             || op.kind() == ConstructionBuildOp.Kind.DECORATE) {
@@ -1467,6 +1480,9 @@ public final class ConstructionJobController {
         refreshSignDecoration(level, progress, op);
         deliverAttached(level, progress, op, overlay);
         ConstructionProjectionIndex.refreshNeighbors(level, op.pos(), overlay);
+        if (IgnitionBuildAdapter.supports(op.target()) && ignore instanceof WorkingAllayEntity worker) {
+            IgnitionBuildAdapter.consumeUse(level, worker, op.pos());
+        }
         return true;
     }
 
@@ -1557,6 +1573,8 @@ public final class ConstructionJobController {
         ConstructionBuildOp op,
         @Nullable Entity ignore
     ) {
+        if (ignore instanceof WorkingAllayEntity worker
+            && !worker.toolDefinition().hasCapability(AllayCapability.SEAL_FLUID)) return false;
         if (op.kind() != ConstructionBuildOp.Kind.SEAL) return false;
         if (!enterIfDenied(level, progress, op)) return false;
         BlockState fill = FluidSealFill.stateOf(op.material());
@@ -1677,6 +1695,8 @@ public final class ConstructionJobController {
             || !job.dimension().equals(level.dimension())
             || progress.operation(op.id()) != op
             || workerOwner == null
+            || workerEntity instanceof WorkingAllayEntity worker
+                && op.needsMaterial() && !worker.toolDefinition().hasCapability(AllayCapability.PICK_UP_MATERIAL)
             || !ConstructionPermission.canManageWorker(level.getServer(), workerOwner, job.owner())) {
             return false;
         }
@@ -2293,8 +2313,11 @@ public final class ConstructionJobController {
             return true;
         }
         return switch (scan) {
-            case BUILD_SHORT -> !isBuildAssignment(op) || ConstructionPlacementLimits.requiresLongReach(op);
-            case BUILD_LONG -> !isBuildAssignment(op);
+            case BUILD_SHORT -> !isBuildAssignment(op) || ConstructionPlacementLimits.requiresLongReach(op)
+                || IgnitionBuildAdapter.supports(op.target());
+            case BUILD_LONG -> !isBuildAssignment(op) || IgnitionBuildAdapter.supports(op.target());
+            case BUILD_IGNITION -> op.kind() != ConstructionBuildOp.Kind.PLACE || !IgnitionBuildAdapter.supports(op.target());
+            case BUILD_ANY -> !isBuildAssignment(op);
             case SEAL -> op.kind() != ConstructionBuildOp.Kind.SEAL;
             case DEMOLISH -> op.kind() != ConstructionBuildOp.Kind.DEMOLISH || op.shell();
         };
@@ -2347,6 +2370,8 @@ public final class ConstructionJobController {
     private enum AssignmentScan {
         BUILD_SHORT,
         BUILD_LONG,
+        BUILD_IGNITION,
+        BUILD_ANY,
         SEAL,
         DEMOLISH
     }
@@ -4395,6 +4420,8 @@ public final class ConstructionJobController {
     }
 
     public static boolean canClaimJob(WorkingAllayEntity worker, ConstructionJobProgress progress) {
+        if (worker.requestedTool() != null && worker.requestedTool() != worker.toolDefinition()
+            && worker.hostedCarry().isEmpty() && !worker.hasCollectionItems()) return false;
         if (!(worker.level() instanceof ServerLevel level)) return false;
         ConstructionJob job = ConstructionJobIndex.get(level).job(progress.jobId());
         UUID workerOwner = worker.getOwner().orElse(null);
@@ -4514,9 +4541,13 @@ public final class ConstructionJobController {
         ConstructionJobProgress progress
     ) {
         return switch (job.state()) {
-            case ConstructionJob.STATE_SEALING_FLUID, ConstructionJob.STATE_BUILDING ->
-                worker.toolDefinition().hasCapability(AllayCapability.PICK_UP_MATERIAL)
+            case ConstructionJob.STATE_SEALING_FLUID ->
+                worker.toolDefinition().hasCapability(AllayCapability.SEAL_FLUID)
                     && progress.unleasedMaterialCount() > 0;
+            case ConstructionJob.STATE_BUILDING ->
+                worker.toolDefinition().hasCapability(AllayCapability.DELIVER_PROJECTION)
+                    && (worker.toolDefinition().hasCapability(AllayCapability.IGNITE)
+                        ? IgnitionBuildAdapter.hasWork(progress) : progress.unleasedMaterialCount() > 0);
             case ConstructionJob.STATE_DEMOLISHING ->
                 worker.toolDefinition().hasCapability(AllayCapability.DEMOLISH)
                     && progress.unleasedDemolishCount() > 0
@@ -4732,10 +4763,17 @@ public final class ConstructionJobController {
     private static void tryLaunchForJob(ServerLevel level, ConstructionJob job, ConstructionJobProgress progress) {
         if (!progress.hasCoordinator()) return;
         if (!(level.getBlockEntity(progress.coordinatorLounge()) instanceof AllayLoungeBlockEntity lounge)) return;
+        AllayToolSupply.plan(level, job, progress, lounge);
         if (!canAcceptMoreParticipants(level, job, progress)) return;
         launchObserverIfNeeded(level, job, progress, lounge);
         byte state = job.state();
         if (state == ConstructionJob.STATE_SEALING_FLUID || state == ConstructionJob.STATE_BUILDING) {
+            if (state == ConstructionJob.STATE_BUILDING
+                && IgnitionBuildAdapter.hasWork(progress)
+                && !hasLoadedBoundCapability(level, job, progress, AllayCapability.IGNITE)) {
+                lounge.tryLaunch(record -> hostedRecordAvailableForJob(level, record, job)
+                    && AllayToolDefinitions.fromHeldItem(record.heldTool()).hasCapability(AllayCapability.IGNITE));
+            }
             launchIfNeeded(level, job, progress, lounge, AllayCapability.PICK_UP_MATERIAL);
             return;
         }
@@ -4771,6 +4809,11 @@ public final class ConstructionJobController {
         AllayLoungeBlockEntity lounge
     ) {
         int wanted = ObservationCoverageService.wantedObservers(level.getServer(), job);
+        for (WorkingAllayEntity worker : loadedWorkers(level, job.owner())) {
+            if (!isWorkerAvailableForJob(level, worker, job, progress)) continue;
+            if (worker.requestedTool() == AllayToolDefinitions.OBSERVATION
+                && worker.toolDefinition() != AllayToolDefinitions.OBSERVATION) wanted--;
+        }
         if (wanted <= 0) return;
         if (!ObservationCoverageService.isCoordinatorTicking(level, progress)) return;
         int inTransit = ConstructionTransferService.inTransitCount(
@@ -4875,6 +4918,7 @@ public final class ConstructionJobController {
         }
         for (ConstructionBuildOp.Kind kind : ConstructionJobProgress.LAUNCH_MATERIAL_KINDS) {
             for (ConstructionBuildOp op : progress.openOperations(kind)) {
+                if (IgnitionBuildAdapter.supports(op.target())) continue;
                 if (op.status() == ConstructionBuildOp.Status.LEASED) continue;
                 if (!isAssignable(level, progress, op.pos())) continue;
                 if (kind == ConstructionBuildOp.Kind.CONTENT
@@ -4937,6 +4981,7 @@ public final class ConstructionJobController {
         int count = 0;
         for (ConstructionBuildOp.Kind kind : ConstructionJobProgress.PLACE_MATERIAL_KINDS) {
             for (ConstructionBuildOp op : progress.openOperations(kind)) {
+                if (IgnitionBuildAdapter.supports(op.target())) continue;
                 if (ConstructionPlacementLimits.requiresLongReach(op) != requiresLongReach) continue;
                 if (op.status() == ConstructionBuildOp.Status.LEASED) continue;
                 if (!isAssignable(level, progress, op.pos())) continue;
@@ -5115,7 +5160,7 @@ public final class ConstructionJobController {
         for (WorkingAllayEntity worker : loadedWorkers(level, job.owner())) {
             if (worker.transitJobId().filter(job.jobId()::equals).isPresent()) continue;
             if (!isWorkerAvailableForJob(level, worker, job, progress)) continue;
-            if (worker.toolDefinition().hasCapability(capability)
+            if ((worker.requestedTool() == null ? worker.toolDefinition() : worker.requestedTool()).hasCapability(capability)
                 && (capability != AllayCapability.COLLECT_ITEMS
                     || (!worker.isCollectionFull()
                         && CollectionAllayToolBehavior.canAttemptTask(worker, level)))) {

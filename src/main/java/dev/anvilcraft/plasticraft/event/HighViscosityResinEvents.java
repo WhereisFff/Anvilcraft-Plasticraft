@@ -4,14 +4,37 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.item.HighViscosityResinBlockItem;
 import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.projectile.WitherSkull;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.phys.BlockHitResult;
+import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.fluids.RegisterCauldronFluidContentEvent;
 
 /** 高粘性树脂与玩家、发射器之外的全局交互入口。 */
 public final class HighViscosityResinEvents {
     private HighViscosityResinEvents() {
+    }
+
+    public static void projectileImpact(ProjectileImpactEvent event) {
+        if (!(event.getProjectile() instanceof WitherSkull skull)
+            || !(event.getRayTraceResult() instanceof BlockHitResult hit)) return;
+        Level level = skull.level();
+        BlockPos pos = hit.getBlockPos();
+        if (!level.getBlockState(pos).is(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get())) return;
+        // 必须在投射物命中逻辑前取消，否则凋零之首仍会爆炸并摧毁捕获产物。
+        event.setCanceled(true);
+        if (level.isClientSide()) return;
+        ItemStack captured = HighViscosityResinBlockItem.captureSkull(
+            skull, PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asStack()
+        );
+        if (captured.isEmpty()) return;
+        level.removeBlock(pos, false);
+        Block.popResource(level, pos, captured);
     }
 
     public static void useEntity(PlayerInteractEvent.EntityInteract event) {

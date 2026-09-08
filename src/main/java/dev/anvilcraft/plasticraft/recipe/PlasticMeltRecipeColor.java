@@ -6,6 +6,7 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import net.minecraft.core.BlockPos;
@@ -15,6 +16,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
@@ -30,9 +32,9 @@ public final class PlasticMeltRecipeColor {
 
     public static void captureCauldron(InWorldRecipeContext context, Vec3 offset) {
         BlockPos pos = BlockPos.containing(context.getPos().add(offset));
-        FluidContainerLookup.Result result = FluidContainerLookup.find(context.getLevel(), pos, null);
-        if (result == null) return;
-        FluidStack melt = findMelt(result.handler());
+        IFluidHandler handler = fluidHandler(context, pos);
+        if (handler == null) return;
+        FluidStack melt = findMelt(handler);
         if (melt.isEmpty()) return;
         PlasticMaterial material = PlasticMaterial.fromMelt(melt).orElse(null);
         if (material == null) return;
@@ -77,8 +79,16 @@ public final class PlasticMeltRecipeColor {
             if (changed) cauldron.getFluids().setFluids(fluids);
             return;
         }
+        IFluidHandler handler = fluidHandler(context, pos);
+        if (handler != null) recolorFirstMelt(handler, data.material, data.dyeColor);
+    }
+
+    private static @Nullable IFluidHandler fluidHandler(InWorldRecipeContext context, BlockPos pos) {
+        PlasticCauldron target = CauldronImpactRecipeProcessor.activeRecipeTarget();
+        if (target != null && target.level() == context.getLevel()
+            && pos.equals(CauldronImpactRecipeProcessor.activeRecipeTargetCell())) return target.getFluidHandler();
         FluidContainerLookup.Result result = FluidContainerLookup.find(context.getLevel(), pos, null);
-        if (result != null) recolorFirstMelt(result.handler(), data.material, data.dyeColor);
+        return result == null ? null : result.handler();
     }
 
     private static DyeColor colorAt(InWorldRecipeContext context, BlockPos pos, FluidStack melt) {

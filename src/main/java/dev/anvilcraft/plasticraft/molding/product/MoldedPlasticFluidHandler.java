@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.molding.product;
 
 import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticStorageHandle;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
+import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
@@ -59,7 +60,7 @@ public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
             .orElse(0);
     }
 
-    /** 最底层流体；点燃、燃料与配方查询按底层作答，对齐大型炼药锅的 index 0 语义。 */
+    /** 原始层序的最底层流体，对齐本体大型炼药锅的 index 0 语义。 */
     public FluidStack getBottomFluid() {
         List<FluidStack> fluids = this.handle.fluids();
         return fluids.isEmpty() ? FluidStack.EMPTY : fluids.getFirst();
@@ -68,6 +69,87 @@ public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
     /** 只作用于最底层的句柄，对齐大型炼药锅 {@code bottomAccess()} 的扣量方向。 */
     public IFluidHandler bottomAccess() {
         return this.bottomAccess;
+    }
+
+    public IFluidHandler topAccess() {
+        return new LayeredAccess(LargeCauldronFluidHandler.TOTAL_CAPACITY);
+    }
+
+    public IFluidHandler sideAccess(int accessibleAmount) {
+        return new LayeredAccess(accessibleAmount);
+    }
+
+    public List<FluidStack> copyFluids() {
+        return this.handle.fluids();
+    }
+
+    public void setFluids(List<FluidStack> fluids) {
+        this.handle.data().ifPresent(data -> {
+            List<FluidStack> compact = fluids.stream().filter(fluid -> !fluid.isEmpty()).toList();
+            // 提交前走制品本身的容量校验，不能让模拟器截断超量流体后静默丢弃。
+            data.withContents(new MoldedPlasticContents(List.of(), compact, data.contents().trayComponents()));
+            this.handle.setFluids(compact);
+        });
+    }
+
+    /** 视图每次读取最新仓储，复用本体按点击高度选层及向下查找的规则。 */
+    private final class LayeredAccess implements IFluidHandler {
+        private final int accessibleAmount;
+
+        private LayeredAccess(int accessibleAmount) {
+            this.accessibleAmount = accessibleAmount;
+        }
+
+        private LargeCauldronFluidHandler snapshot() {
+            LargeCauldronFluidHandler handler = new LargeCauldronFluidHandler(() -> {});
+            handler.setFluids(MoldedPlasticFluidHandler.this.handle.fluids());
+            return handler;
+        }
+
+        private IFluidHandler view(LargeCauldronFluidHandler handler) {
+            return handler.sideAccess(this.accessibleAmount);
+        }
+
+        @Override
+        public int getTanks() {
+            return MoldedPlasticFluidHandler.this.getTanks();
+        }
+
+        @Override
+        public FluidStack getFluidInTank(int tank) {
+            return this.view(this.snapshot()).getFluidInTank(tank);
+        }
+
+        @Override
+        public int getTankCapacity(int tank) {
+            return MoldedPlasticFluidHandler.this.getTankCapacity(tank);
+        }
+
+        @Override
+        public boolean isFluidValid(int tank, FluidStack stack) {
+            return MoldedPlasticFluidHandler.this.isFluidValid(tank, stack);
+        }
+
+        @Override
+        public int fill(FluidStack resource, FluidAction action) {
+            return MoldedPlasticFluidHandler.this.fill(resource, action);
+        }
+
+        @Override
+        public FluidStack drain(FluidStack resource, FluidAction action) {
+            LargeCauldronFluidHandler handler = this.snapshot();
+            FluidStack result = this.view(handler).drain(resource, action);
+            if (action.execute() && !result.isEmpty()) MoldedPlasticFluidHandler.this.setFluids(handler.copyFluids());
+            return result;
+        }
+
+        @Override
+        public FluidStack drain(int amount, FluidAction action) {
+            LargeCauldronFluidHandler handler = this.snapshot();
+            FluidStack result = this.view(handler).drain(amount, action);
+            if (action.execute() && !result.isEmpty()) MoldedPlasticFluidHandler.this.setFluids(handler.copyFluids());
+            return result;
+        }
     }
 
     @Override

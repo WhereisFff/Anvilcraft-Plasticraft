@@ -379,27 +379,47 @@ public final class AllayLoungeGameTests {
 
     @GameTest(timeoutTicks = 80)
     @EmptyTemplate(value = "5x4x5", floor = true)
-    @TestHolder(description = "GUI release fails while the top bay is busy")
-    static void releaseHostedFailsWhileBayBusy(ExtendedGameTestHelper helper) {
+    @TestHolder(description = "GUI releases the selected allays immediately without occupying or resetting the bay")
+    static void releaseHostedBypassesBusyBay(ExtendedGameTestHelper helper) {
         AllayLoungeBlockEntity lounge = placeLounge(helper);
+        GameTestPlayer owner = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+        lounge.setOwner(owner.getUUID());
+        AllayWorkRecord first = emptyHandRecord(owner.getUUID());
+        AllayWorkRecord second = emptyHandRecord(owner.getUUID());
+        AllayWorkRecord third = emptyHandRecord(owner.getUUID());
         helper.startSequence()
             .thenExecute(() -> {
-                check(lounge.addHosted(fillerRecord()), "failed to host the first record");
-                check(lounge.addHosted(fillerRecord()), "failed to host the second record");
+                check(lounge.addHosted(emptyHandRecord(owner.getUUID())), "failed to host the automatic launch record");
+                check(lounge.addHosted(first), "failed to host the first manual record");
+                check(lounge.addHosted(second), "failed to host the second manual record");
+                check(lounge.addHosted(third), "failed to host the third manual record");
                 WorkingAllayEntity launched = lounge.tryLaunchFor(record -> true);
                 if (launched == null) {
                     throw new GameTestAssertException("lounge must launch the first hosted allay");
                 }
                 check(lounge.isBayBusy(), "launch must occupy the bay");
-                check(!lounge.releaseHosted(0), "GUI release must fail while the bay is busy");
-                check(lounge.hosted().size() == 1, "the remaining hosted record must stay");
+                check(lounge.releaseHosted(owner, 1, second.entityId()), "GUI release must bypass the busy bay");
+                check(lounge.releaseHosted(owner, 2, third.entityId()), "a shifted card must release the clicked allay");
+                check(!lounge.releaseHosted(owner, 0, second.entityId()), "a repeated click must not release a neighbour");
+                check(lounge.hosted().size() == 1 && lounge.hosted().getFirst().entityId().equals(first.entityId()),
+                    "manual release must leave the unclicked allay hosted");
+                for (AllayWorkRecord record : List.of(second, third)) {
+                    check(helper.getLevel().getEntity(record.entityId()) instanceof WorkingAllayEntity worker
+                        && worker.homeLoungePos() == null, "the selected allay must immediately exist unbound in the world");
+                }
+                check(lounge.isBayBusy(), "manual release must preserve the automatic launch bay");
+                check(!lounge.tryLaunch(record -> true), "automatic launch must still respect the busy bay");
                 // 出库通道的吞吐契约与出库悦灵之后干什么无关:任何无活可做的悦灵都会自行返库
                 // 再占一次通道,留着它就测不到通道自己是否按 20 gt 释放
                 launched.discard();
             })
-            .thenExecuteAfter(AllayLoungeBlockEntity.DOCKING_DURATION_TICKS + 1, () -> {
+            .thenExecuteAfter(10, () -> check(lounge.releaseHosted(owner, 0, first.entityId()),
+                "a later manual click must still bypass the busy bay"))
+            .thenExecuteAfter(AllayLoungeBlockEntity.DOCKING_DURATION_TICKS - 9, () -> {
                 check(!lounge.isBayBusy(), "the bay must clear after 20 gt");
+                check(lounge.addHosted(emptyHandRecord(owner.getUUID())), "failed to host an idle-bay record");
                 check(lounge.releaseHosted(0), "GUI release must succeed after the bay is free");
+                check(!lounge.isBayBusy(), "manual release must not occupy a free bay");
             })
             .thenSucceed();
     }

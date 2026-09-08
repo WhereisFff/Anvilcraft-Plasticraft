@@ -122,6 +122,7 @@ public final class ConstructionCommitService {
                     ConstructionCommitLog.Phase.PUBLISH
                 );
                 case PUBLISH -> {
+                    IgnitionBuildAdapter.commit(level, progress);
                     ConstructionProjectionIndex.clearJob(level, progress.jobId());
                     ConstructionEntityProjectionIndex.clearJob(level, progress.jobId());
                     log.setPhase(ConstructionCommitLog.Phase.DONE);
@@ -207,7 +208,8 @@ public final class ConstructionCommitService {
                     ? op.blockEntity()
                     : SignDecorationAdapter.compose(op.blockEntity(), decorations, registries);
                 BlockEntity blockEntity = level.isInWorldBounds(op.pos()) ? level.getBlockEntity(op.pos()) : null;
-                boolean expected = op.target().hasBlockEntity()
+                // 多方块附属格可能支持方块实体却不创建实例；仅核心或有实际还原数据的格子要求实例存在。
+                boolean expected = (op.kind() == ConstructionBuildOp.Kind.PLACE && op.target().hasBlockEntity())
                     || config != null
                     || !contents.isEmpty()
                     || !fluids.isEmpty();

@@ -5,6 +5,7 @@ import dev.anvilcraft.lib.v2.recipe.init.LibItemSubPredicates;
 import dev.anvilcraft.lib.v2.registrum.providers.ProviderType;
 import dev.anvilcraft.lib.v2.registrum.providers.RegistrumRecipeProvider;
 import dev.anvilcraft.lib.v2.util.predicate.BlockStatePredicate;
+import dev.anvilcraft.lib.v2.util.predicate.ChanceItemStack;
 import dev.anvilcraft.lib.v2.util.predicate.ItemIngredientPredicate;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
@@ -28,15 +29,19 @@ import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItemSubPredicates;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.init.recipe.ModRecipeTriggers;
+import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
 import dev.dubhe.anvilcraft.item.property.predicate.ItemSavedEntityPredicate;
 import dev.dubhe.anvilcraft.recipe.FluidMixingRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.builder.ExtendInWorldRecipeBuilder;
 import dev.dubhe.anvilcraft.recipe.anvil.outcome.ResentmentAmberOutcome;
+import dev.dubhe.anvilcraft.recipe.anvil.outcome.ProduceHeat;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.FastCookingRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.SolidLiquidRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.TimeWarpRecipe;
+import dev.dubhe.anvilcraft.recipe.component.HasCauldronSimple;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockConversionRecipe;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockRecipe;
+import dev.dubhe.anvilcraft.util.FluidStackPredicate;
 import net.minecraft.advancements.Advancement;
 import net.minecraft.advancements.AdvancementHolder;
 import net.minecraft.advancements.AdvancementRequirements;
@@ -47,7 +52,10 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.data.recipes.RecipeCategory;
 import net.minecraft.data.recipes.RecipeOutput;
 import net.minecraft.data.recipes.ShapedRecipeBuilder;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.DyeItem;
 import net.minecraft.world.item.ItemStack;
@@ -58,6 +66,7 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.ShapedRecipe;
 import net.minecraft.world.item.crafting.ShapedRecipePattern;
+import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -81,6 +90,20 @@ public final class PlasticraftRecipeData {
     }
 
     private static void generateRecipes(RegistrumRecipeProvider provider) {
+        // 有序合成：电感灯、活版门与紫水晶碎片作顶，原木作柱，圆石台阶与磁性溜槽作底，产出悦灵休息室。
+        ShapedRecipeBuilder.shaped(RecipeCategory.DECORATIONS, PlasticraftBlocks.ALLAY_LOUNGE.asItem())
+            .pattern("ITA")
+            .pattern("L L")
+            .pattern("SMS")
+            .define('I', ModBlocks.INDUCTION_LIGHT.get())
+            .define('T', ItemTags.TRAPDOORS)
+            .define('A', Items.AMETHYST_SHARD)
+            .define('L', ItemTags.LOGS)
+            .define('S', Items.COBBLESTONE_SLAB)
+            .define('M', ModBlocks.MAGNETIC_CHUTE.get())
+            .unlockedBy("has_magnetic_chute", RegistrumRecipeProvider.has(ModBlocks.MAGNETIC_CHUTE))
+            .save(provider, AnvilcraftPlasticraft.of("allay_lounge"));
+
         // 有序合成：用树脂块构成砧面、树脂构成砧腰和底座，产出弹性树脂铁砧。
         ShapedRecipeBuilder.shaped(RecipeCategory.BUILDING_BLOCKS, PlasticraftBlocks.RESIN_ANVIL.asItem())
             .pattern("BBB")
@@ -206,6 +229,22 @@ public final class PlasticraftRecipeData {
             .unlockedBy("has_supercapacitor", RegistrumRecipeProvider.has(ModItems.SUPER_CAPACITOR))
             .unlockedBy("has_empty_supercapacitor", RegistrumRecipeProvider.has(ModItems.SUPER_CAPACITOR_EMPTY))
             .save(moldingChamberRecipeOutput(provider), AnvilcraftPlasticraft.of("plastic_molding_chamber"));
+
+        // 有序合成：用电感灯、末影之眼、储罐、处理器、磁电核心、管道和铁锭制作 3D 打印组件。
+        ShapedRecipeBuilder.shaped(RecipeCategory.MISC, PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.asItem())
+            .pattern("LEB")
+            .pattern("PT ")
+            .pattern("MFI")
+            .define('L', ModBlocks.INDUCTION_LIGHT.get())
+            .define('E', Items.ENDER_EYE)
+            .define('B', ModBlocks.LARGE_FLUID_TANK.get())
+            .define('P', ModItems.PROCESSOR.get())
+            .define('T', ModBlocks.FLUID_TANK.get())
+            .define('M', ModBlocks.MAGNETO_ELECTRIC_CORE_BLOCK.get())
+            .define('F', ModItems.PIPE.get())
+            .define('I', Items.IRON_INGOT)
+            .unlockedBy("has_processor", RegistrumRecipeProvider.has(ModItems.PROCESSOR))
+            .save(provider, AnvilcraftPlasticraft.of("plastic_3d_printing_component"));
 
         // 有序合成：在硬化树脂釜两侧加入磁铁锭，直接产出带磁化数据的硬化树脂釜。
         ItemStack magneticCauldron = PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack();
@@ -555,6 +594,37 @@ public final class PlasticraftRecipeData {
     }
 
     private static void generateResinTimeWarpRecipes(RegistrumRecipeProvider provider) {
+        // 时移配方：凋零之首借助不死图腾与 1 mB 经验修补液态魔咒转化为悦灵。
+        CompoundTag allayTag = new CompoundTag();
+        allayTag.putString("id", "minecraft:allay");
+        ItemStack capturedAllay = PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asStack();
+        capturedAllay.set(ModComponents.SAVED_ENTITY, new SavedEntity(allayTag, false));
+        // 本体时移构建器只接受流体类型，需要显式构造带魔咒组件条件的炼药锅参数。
+        TimeWarpRecipe.Builder allayBuilder = new TimeWarpRecipe.Builder() {
+            @Override
+            protected TimeWarpRecipe of(List<ItemIngredientPredicate> ingredients, List<ChanceItemStack> results) {
+                return new TimeWarpRecipe(ingredients, results,
+                    HasCauldronSimple.empty()
+                        .fluid(FluidStackPredicate.builder()
+                            .fluid(ModFluids.LIQUID_ENCHANTMENT)
+                            .component(builder -> builder.expect(ModComponents.LIQUID_ENCHANTMENT, Enchantments.MENDING))
+                            .build())
+                        .consume(1)
+                        .build(),
+                    ProduceHeat.builder().build());
+            }
+        };
+        allayBuilder
+            .requires(ItemIngredientPredicate.Builder.item()
+                .of(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
+                .withSubPredicate(
+                    ModItemSubPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.of(EntityType.WITHER_SKULL)
+                )
+                .build())
+            .requires(Items.TOTEM_OF_UNDYING)
+            .result(capturedAllay)
+            .save(provider, AnvilcraftPlasticraft.of("time_warp/wither_skull_to_allay"));
+
         // 时间扭曲配方：一桶液态高黏度树脂经过漫长时间固化，产出高黏度树脂块。
         TimeWarpRecipe.builder()
             .fluid(PlasticraftFluids.LIQUID_HIGH_VISCOSITY_RESIN.get())

@@ -5,8 +5,10 @@ import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticStorageHa
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.IItemHandlerModifiable;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -103,8 +105,19 @@ public final class MoldedPlasticItemHandler implements IItemHandler {
     @Override
     public int getSlotLimit(int slot) {
         return slot >= 0 && slot < this.getSlots()
-            ? this.handle.data().map(value -> slotLimit(value, slot, ItemStack.EMPTY)).orElse(0)
+            ? this.handle.data().map(value -> slotLimit(value, slot, this.handle.itemInSlot(slot))).orElse(0)
             : 0;
+    }
+
+    /** 配方缓存与熔岩修复需要原位更新，避免先清空再写入时触发出口或丢失超大堆叠。 */
+    public void setStackInSlot(int slot, ItemStack stack) {
+        Optional<MoldedPlasticData> current = this.handle.data();
+        if (current.isEmpty() || slot < 0 || slot >= this.getSlots()) throw new IndexOutOfBoundsException(slot);
+        if (!stack.isEmpty() && stack.getCount() > slotLimit(current.orElseThrow(), slot, stack)) {
+            throw new IllegalArgumentException("Molded cauldron item exceeds its slot limit");
+        }
+        this.handle.setItem(slot, stack.copy());
+        if (isOutputSlot(current.orElseThrow(), slot)) this.onOutputChanged.run();
     }
 
     @Override
@@ -165,6 +178,83 @@ public final class MoldedPlasticItemHandler implements IItemHandler {
     /** 输入槽区间视图。 */
     public IItemHandler inputView() {
         return new SlotRangeView(false);
+    }
+
+    public IItemHandlerModifiable recipeView(boolean outputs, int selected) {
+        return new RecipeView(outputs, selected, null);
+    }
+
+    public IItemHandlerModifiable outputRecipeView(int selected, List<ItemStack> originalOutputs) {
+        return new RecipeView(true, selected, originalOutputs);
+    }
+
+    /** 缓存回写必须直接替换超大堆叠；普通抽取接口每次只交出一组，会让批量消耗少扣原料。 */
+    private final class RecipeView implements IItemHandlerModifiable {
+        private final boolean outputs;
+        private final int selected;
+        private final @Nullable List<ItemStack> originalOutputs;
+
+        private RecipeView(boolean outputs, int selected, @Nullable List<ItemStack> originalOutputs) {
+            this.outputs = outputs;
+            this.selected = selected;
+            this.originalOutputs = originalOutputs;
+        }
+
+        private int slot(int index) {
+            int mapped = index == 0 ? this.selected : index <= this.selected ? index - 1 : index;
+            PlasticCauldronLayout layout = MoldedPlasticItemHandler.this.layout();
+            return mapped + (this.outputs || layout == null ? 0 : layout.outputSlots());
+        }
+
+        @Override
+        public int getSlots() {
+            PlasticCauldronLayout layout = MoldedPlasticItemHandler.this.layout();
+            return layout == null ? 0 : this.outputs ? layout.outputSlots() : layout.inputSlots();
+        }
+
+        @Override
+        public ItemStack getStackInSlot(int slot) {
+            int mapped = this.slot(slot);
+            ItemStack current = MoldedPlasticItemHandler.this.getStackInSlot(mapped);
+            if (this.originalOutputs == null) return current;
+            ItemStack original = this.originalOutputs.get(mapped);
+            return ItemStack.isSameItemSameComponents(original, current)
+                ? current.copyWithCount(Math.min(original.getCount(), current.getCount())) : ItemStack.EMPTY;
+        }
+
+        @Override
+        public void setStackInSlot(int slot, ItemStack stack) {
+            int mapped = this.slot(slot);
+            if (this.originalOutputs == null) {
+                MoldedPlasticItemHandler.this.setStackInSlot(mapped, stack);
+                return;
+            }
+            ItemStack current = MoldedPlasticItemHandler.this.getStackInSlot(mapped);
+            int consumed = this.getStackInSlot(slot).getCount() - stack.getCount();
+            // 同槽合并进来的新产物不在本次输入快照里，回写只扣除原有产物的消耗量。
+            this.originalOutputs.set(mapped, stack.copy());
+            MoldedPlasticItemHandler.this.setStackInSlot(mapped, current.copyWithCount(current.getCount() - consumed));
+        }
+
+        @Override
+        public int getSlotLimit(int slot) {
+            return MoldedPlasticItemHandler.this.getSlotLimit(this.slot(slot));
+        }
+
+        @Override
+        public boolean isItemValid(int slot, ItemStack stack) {
+            return MoldedPlasticItemHandler.this.accepts(this.slot(slot), stack, this.outputs);
+        }
+
+        @Override
+        public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
+            return MoldedPlasticItemHandler.this.insert(this.slot(slot), stack, simulate, this.outputs);
+        }
+
+        @Override
+        public ItemStack extractItem(int slot, int amount, boolean simulate) {
+            return MoldedPlasticItemHandler.this.extractItem(this.slot(slot), amount, simulate);
+        }
     }
 
     /**

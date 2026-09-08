@@ -21,6 +21,8 @@ Signs and hanging signs are never placed with their text already on them. An all
 
 Placed contents appear first as collidable projections, and only become actual blocks, fluids and entities when the job finishes or is cancelled. If another entity occupies the target position or the allay cannot approach safely, it waits
 
+A fully built structure reports "Construction finished", including complete multiblock machines. An incomplete result is reported only when construction contents were skipped or could not be restored
+
 <tip>
 When the same target is confirmed unreachable 4 times in a row — a full delivery round stuck while neither in tool reach nor in an occupancy or world wait, or no usable approach position at all — the carried material is returned to the lounge or the owner and that location backs off for 10 seconds. The rest of the site keeps building, and afterwards any allay may re-supply it and pick a new approach. An unreachable position is never counted as built and never ends the job: while every remaining position is backing off, the job reports "Allays cannot reach a construction position and will retry later" and stays in the build phase. The counter resets as soon as the target is within reach again
 </tip>

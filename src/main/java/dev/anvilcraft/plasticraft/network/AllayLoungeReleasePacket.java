@@ -10,8 +10,10 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 
+import java.util.UUID;
+
 /** 休息室卡片点选后把对应托管悦灵放到站顶。 */
-public record AllayLoungeReleasePacket(BlockPos loungePos, int index) implements IServerboundPacket {
+public record AllayLoungeReleasePacket(BlockPos loungePos, int index, UUID entityId) implements IServerboundPacket {
     public static final Type<AllayLoungeReleasePacket> TYPE = IPacket.type(
         AnvilcraftPlasticraft.of("allay_lounge_release")
     );
@@ -19,8 +21,9 @@ public record AllayLoungeReleasePacket(BlockPos loungePos, int index) implements
         (buffer, packet) -> {
             buffer.writeBlockPos(packet.loungePos);
             buffer.writeVarInt(packet.index);
+            buffer.writeUUID(packet.entityId);
         },
-        buffer -> new AllayLoungeReleasePacket(buffer.readBlockPos(), buffer.readVarInt())
+        buffer -> new AllayLoungeReleasePacket(buffer.readBlockPos(), buffer.readVarInt(), buffer.readUUID())
     );
 
     @Override
@@ -39,7 +42,7 @@ public record AllayLoungeReleasePacket(BlockPos loungePos, int index) implements
         }
         if (player.level().getBlockEntity(this.loungePos) instanceof AllayLoungeBlockEntity lounge) {
             if (player instanceof ServerPlayer serverPlayer) {
-                lounge.releaseHosted(serverPlayer, this.index);
+                lounge.releaseHosted(serverPlayer, this.index, this.entityId);
             }
         }
     }

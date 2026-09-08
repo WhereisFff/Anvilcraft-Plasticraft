@@ -22,12 +22,13 @@ import net.neoforged.neoforge.items.ItemHandlerHelper;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
- * 任务休息室下表面物流:只读下方一格朝上的物品/流体能力。
- * 能力存在但空是缺料;能力整体消失才是来源不可用。
- * 下方若是创造板条箱,则按创造模式无限给出蓝图所需物品,不消耗箱内过滤物。
+ * 休息室下方一格的容器与掉落物共用供料事务，先取容器再取地面物品。
+ * 创造板条箱无限供应建材、流体与工具，不受过滤物限制。
  */
 public final class ConstructionMaterialAccess {
     private static final int GIVE_UP_PICKUP_DELAY_TICKS = 100;
@@ -39,6 +40,8 @@ public final class ConstructionMaterialAccess {
     @Nullable
     private final IFluidHandler fluids;
     private final boolean infinite;
+    private final boolean hasContainer;
+    private final ConstructionGroundItems groundItems;
 
     private ConstructionMaterialAccess(
         ServerLevel level,
@@ -49,7 +52,9 @@ public final class ConstructionMaterialAccess {
     ) {
         this.level = level;
         this.loungePos = loungePos.immutable();
-        this.items = items;
+        this.hasContainer = items != null;
+        this.groundItems = new ConstructionGroundItems(level, loungePos.below(), items);
+        this.items = this.groundItems;
         this.fluids = fluids;
         this.infinite = infinite;
     }
@@ -66,7 +71,8 @@ public final class ConstructionMaterialAccess {
     }
 
     public boolean isAvailable() {
-        return this.infinite || this.items != null || this.fluids != null;
+        return this.infinite || this.hasContainer || this.fluids != null
+            || this.groundItems.hasItems() || this.groundItems.isOpen();
     }
 
     public boolean isInfinite() {
@@ -80,6 +86,17 @@ public final class ConstructionMaterialAccess {
 
     public Vec3 dropPosition() {
         return Vec3.atCenterOf(this.loungePos).add(0.0D, 0.25D, 0.75D);
+    }
+
+    public ItemStack extractTool(Item item) {
+        if (this.infinite) return new ItemStack(item);
+        if (this.items == null) return ItemStack.EMPTY;
+        for (int slot = 0; slot < this.items.getSlots(); slot++) {
+            if (!this.items.getStackInSlot(slot).is(item)) continue;
+            ItemStack extracted = this.items.extractItem(slot, 1, false);
+            if (!extracted.isEmpty()) return extracted;
+        }
+        return ItemStack.EMPTY;
     }
 
     public ItemStack extract(ConstructionBuildOp op) {
@@ -169,7 +186,7 @@ public final class ConstructionMaterialAccess {
     }
 
     public ItemStack insert(ItemStack stack) {
-        if (stack.isEmpty()) {
+        if (stack.isEmpty() || this.infinite) {
             return ItemStack.EMPTY;
         }
         if (this.items == null) {
@@ -208,13 +225,20 @@ public final class ConstructionMaterialAccess {
             return false;
         }
         int remaining = needed.getCount();
+        List<ItemStack> taken = new ArrayList<>();
         for (int slot = 0; slot < this.items.getSlots() && remaining > 0; slot++) {
             ItemStack stack = this.items.getStackInSlot(slot);
             if (!ConstructionJobController.matchesMaterial(stack, needed)) {
                 continue;
             }
             ItemStack extracted = this.items.extractItem(slot, remaining, false);
+            if (extracted.isEmpty()) continue;
+            taken.add(extracted);
+            if (!ConstructionJobController.matchesMaterial(extracted, needed)) break;
             remaining -= extracted.getCount();
+        }
+        if (remaining > 0) {
+            for (ItemStack stack : taken) this.insertOrDrop(stack);
         }
         return remaining <= 0;
     }
@@ -246,7 +270,7 @@ public final class ConstructionMaterialAccess {
                 }
                 this.items.extractItem(slot, this.items.getStackInSlot(slot).getCount(), false);
                 if (!stack.isEmpty()) {
-                    ItemStack leftover = this.items.insertItem(slot, stack, false);
+                    ItemStack leftover = this.insert(stack);
                     if (!leftover.isEmpty()) {
                         this.dropBeside(leftover);
                     }

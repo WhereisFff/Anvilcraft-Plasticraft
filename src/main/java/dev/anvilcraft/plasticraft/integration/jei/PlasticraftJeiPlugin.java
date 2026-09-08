@@ -21,9 +21,9 @@ import mezz.jei.api.registration.IRecipeRegistration;
 import mezz.jei.api.runtime.IJeiRuntime;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 
@@ -40,6 +40,9 @@ import java.util.stream.Collectors;
 public final class PlasticraftJeiPlugin implements IModPlugin {
     private static final ResourceLocation UID = AnvilcraftPlasticraft.of("jei_plugin");
     private static final String ENHANCED_RECIPE_PREFIX = "jei/enhanced/";
+    public static final RecipeType<PlasticMeltCatalysisRecipe> PLASTIC_MELT_CATALYSIS = new RecipeType<>(
+        AnvilcraftPlasticraft.of("plastic_melt_catalysis"), PlasticMeltCatalysisRecipe.class
+    );
     public static final RecipeType<RecipeHolder<PlasmaJetBlastingRecipe>> PLASMA_JET_BLASTING =
         RecipeType.createRecipeHolderType(
             AnvilcraftPlasticraft.of("plasma_jet_blasting")
@@ -84,6 +87,9 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
 
     @Override
     public void registerCategories(IRecipeCategoryRegistration registration) {
+        registration.addRecipeCategories(new PlasticMeltCatalysisCategory(
+            registration.getJeiHelpers().getGuiHelper()
+        ));
         registration.addRecipeCategories(new PlasmaJetBlastingCategory(
             registration.getJeiHelpers().getGuiHelper()
         ));
@@ -94,13 +100,7 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
 
     @Override
     public void registerRecipes(IRecipeRegistration registration) {
-        registration.addIngredientInfo(
-            PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.get(),
-            Component.translatable("jei.anvilcraftplasticraft.plastic_molding_chamber.structure"),
-            Component.translatable("jei.anvilcraftplasticraft.plastic_molding_chamber.forming"),
-            Component.translatable("jei.anvilcraftplasticraft.plastic_molding_chamber.outputs"),
-            Component.translatable("jei.anvilcraftplasticraft.plastic_molding_chamber.modes")
-        );
+        registration.addRecipes(PLASTIC_MELT_CATALYSIS, PlasticMeltCatalysisRecipe.all());
         List<RecipeHolder<PlasmaJetBlastingRecipe>> plasmaRecipes =
             JeiRecipeUtil.getRecipeHoldersFromType(PlasticraftRecipeTypes.PLASMA_JET_BLASTING_TYPE.get());
         List<RecipeHolder<PlasmaJetBlastingRecipe>> displayRecipes = new ArrayList<>(plasmaRecipes.size() * 2);
@@ -175,6 +175,10 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
 
     @Override
     public void registerRecipeCatalysts(IRecipeCatalystRegistration registration) {
+        registration.addRecipeCatalyst(new ItemStack(Items.CAULDRON), PLASTIC_MELT_CATALYSIS);
+        registration.addRecipeCatalyst(ModBlocks.FISH_TANK.asStack(), PLASTIC_MELT_CATALYSIS);
+        registration.addRecipeCatalyst(ModBlocks.LARGE_CAULDRON.asStack(), PLASTIC_MELT_CATALYSIS);
+        registration.addRecipeCatalyst(PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(), PLASTIC_MELT_CATALYSIS);
         registration.addRecipeCatalyst(
             ModBlocks.LARGE_CAULDRON.asStack(),
             PLASMA_JET_BLASTING

@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionBuildOp;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
+import dev.anvilcraft.plasticraft.blueprint.IgnitionBuildAdapter;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobIndex;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobProgress;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobStore;
@@ -74,6 +75,10 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
         ConstructionBuildOp assignedOperation = progress == null
             ? null
             : progress.operation(worker.taskOpId());
+        if (assignedOperation != null && !IgnitionBuildAdapter.canDeliver(worker, assignedOperation)) {
+            worker.clearAssignment(false);
+            assignedOperation = null;
+        }
         boolean validAssignment = progress != null
             && worker.assignedJobId().filter(job.jobId()::equals).isPresent()
             && assignedOperation != null
@@ -294,7 +299,7 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
         ConstructionJobProgress progress,
         @Nullable ConstructionBuildOp op
     ) {
-        if (op == null) return false;
+        if (op == null || !IgnitionBuildAdapter.canDeliver(worker, op)) return false;
         if (!ConstructionJobController.canClaimJob(worker, progress)) return false;
         if ((op.kind() == ConstructionBuildOp.Kind.PLACE || op.kind() == ConstructionBuildOp.Kind.ENTITY)
             && !ConstructionPlacementLimits.canDeliver(worker, op)) {
@@ -367,7 +372,7 @@ public final class ConstructionAllayToolBehavior implements AllayToolBehavior {
     }
 
     public static boolean isActiveBuildCarry(WorkingAllayEntity worker, @Nullable ConstructionJob job) {
-        return job != null
+        return !worker.toolDefinition().hasCapability(AllayCapability.IGNITE) && job != null
             && (job.state() == ConstructionJob.STATE_BUILDING || job.state() == ConstructionJob.STATE_SEALING_FLUID)
             && worker.assignedJobId().filter(job.jobId()::equals).isPresent();
     }

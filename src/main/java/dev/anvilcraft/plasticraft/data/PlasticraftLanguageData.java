@@ -85,7 +85,7 @@ public final class PlasticraftLanguageData {
         // 悦灵休息室界面。
         provider.add("container.anvilcraftplasticraft.allay_lounge", "Allay Lounge");
         provider.add("screen.anvilcraftplasticraft.allay_lounge.recall", "Recall nearby working allays");
-        provider.add("screen.anvilcraftplasticraft.allay_lounge.rotate", "Drag with the left mouse button to rotate");
+        provider.add("screen.anvilcraftplasticraft.allay_lounge.tool", "Tool: %s");
         provider.add("screen.anvilcraftplasticraft.allay_lounge.release", "Left-click to release");
         provider.add("screen.anvilcraftplasticraft.allay_lounge.disk", "Insert a deployed structure disk to claim its job");
         provider.add("screen.anvilcraftplasticraft.allay_lounge.strategy", "Shortage strategy for hosted allays");
@@ -212,32 +212,6 @@ public final class PlasticraftLanguageData {
             "screen.anvilcraftplasticraft.molding.high_precision_requires_component",
             "High-precision types require a 3D Printing Component"
         );
-        provider.add(
-            "jei.anvilcraftplasticraft.plastic_molding_chamber.structure",
-            "Casting uses a 3x3 platform directly above the forming region: nine Crafting Tables produce an "
-                + "entity, while a center Space Overcompressor produces an item. Printing only needs a 3D "
-                + "Printing Component directly above the chamber; it uses neither that platform nor a Giant Anvil."
-        );
-        provider.add(
-            "jei.anvilcraftplasticraft.plastic_molding_chamber.forming",
-            "Casting fills a clay mold and pumps at 250 mB/gt. For 3D printing, the chamber pumps the complete "
-                + "model batch into the component above it at 250 mB/gt. Once full, the component automatically "
-                + "consumes 1 mB/gt and reveals source-cube faces with construction caps in Y layers with eastward X rows and "
-                + "alternating north-south Z travel, including every positive-volume slope intersection."
-        );
-        provider.add(
-            "jei.anvilcraftplasticraft.plastic_molding_chamber.outputs",
-            "Only the forming batch is consumed. Casting returns every clay ball used by its mold. Printing "
-                + "reserves no clay and directly creates a plastic entity in the forming region when complete."
-        );
-        provider.add(
-            "jei.anvilcraftplasticraft.plastic_molding_chamber.modes",
-            "Continuous starts another cycle after the region clears; Redstone starts one cycle per rising edge; "
-                + "Single returns to editing after one cycle and ignores redstone. These production modes are "
-                + "independent of the forming method: casting still needs a Giant Anvil strike, while printing "
-                + "starts automatically when its batch is full. A changed mode immediately controls the current "
-                + "cycle's completion and any pending next cycle."
-        );
         provider.add("screen.anvilcraftplasticraft.molding.fluid_staging", "Staging: %1$s / %2$s mB");
         provider.add("screen.anvilcraftplasticraft.molding.fluid_batch", "Batch: %1$s / %2$s mB");
         provider.add(
@@ -310,7 +284,7 @@ public final class PlasticraftLanguageData {
         );
         provider.add(
             "tooltip.anvilcraftplasticraft.molded_large_cauldron",
-            "A large plastic cauldron, little different from an iron one"
+            "Stores layered fluids and processes ingredients in batches with anvil impacts"
         );
         provider.add("tooltip.anvilcraftplasticraft.molded_anvil", "Does not break when falling%1$s");
         provider.add(
@@ -523,6 +497,35 @@ public final class PlasticraftLanguageData {
         // JEI 配方分类、虚拟气体名称和蒸发速率说明。
         provider.add("gui.anvilcraftplasticraft.category.plasma_jet_blasting", "Plasma Jet Blasting");
         provider.add("gui.anvilcraftplasticraft.category.condenser", "Condensation");
+        // JEI 开放催化页面：四种塑料熔体的催化剂、环境要求与非消耗说明。
+        provider.add("gui.anvilcraftplasticraft.category.plastic_melt_catalysis", "Plastic Melt Catalysis");
+        provider.add("jei.anvilcraftplasticraft.plastic_melt_catalysis.catalyst", "Catalyst efficiency:\n%s%%");
+        provider.add("jei.anvilcraftplasticraft.plastic_melt_catalysis.not_consumed", "Catalysts are not consumed");
+        provider.add("jei.anvilcraftplasticraft.plastic_melt_catalysis.heat", "Requires heat directly below");
+        provider.add("jei.anvilcraftplasticraft.plastic_melt_catalysis.heat_power", "Heat: %s");
+        provider.add("jei.anvilcraftplasticraft.plastic_melt_catalysis.cold", "Requires cold directly below");
+        provider.add("jei.anvilcraftplasticraft.plastic_melt_catalysis.none", "No heat or cold required");
+        provider.add("jei.anvilcraftplasticraft.plastic_melt_catalysis.details", "Open catalysis (hover for details)");
+        provider.add(
+            "jei.anvilcraftplasticraft.plastic_melt_catalysis.containers",
+            "Drop catalysts into a fluid source, cauldron, fish tank, large cauldron or upward-facing plastic cauldron"
+        );
+        provider.add(
+            "jei.anvilcraftplasticraft.plastic_melt_catalysis.preserved",
+            "Converts the stored fluid or a whole large-cauldron layer, preserving amount and color; 1000 mB is an example"
+        );
+        provider.add(
+            "jei.anvilcraftplasticraft.plastic_melt_catalysis.variety",
+            "More distinct catalyst items increase speed with diminishing returns; larger stacks do not"
+        );
+        provider.add(
+            "jei.anvilcraftplasticraft.plastic_melt_catalysis.glass_priority",
+            "Royal or frost glass takes priority over metal catalysts, producing clear plastic melt"
+        );
+        provider.add(
+            "jei.anvilcraftplasticraft.plastic_melt_catalysis.ember_priority",
+            "Ember metal with heat takes priority over engineering plastic, producing heat-resistant plastic melt"
+        );
         provider.add("jei.anvilcraftplasticraft.gas.gaseous_oil", "Gaseous oil");
         provider.add("jei.anvilcraftplasticraft.gas.gaseous_water", "Gaseous water");
         provider.add("jei.anvilcraftplasticraft.gas.gaseous_experience", "Gaseous experience");

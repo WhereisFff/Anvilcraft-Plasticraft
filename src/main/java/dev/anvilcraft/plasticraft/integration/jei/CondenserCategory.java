@@ -87,6 +87,11 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
         if (fluid == null || fluid == Fluids.EMPTY) return;
         builder.addSlot(RecipeIngredientRole.OUTPUT, 120, 24)
             .addFluidStack(fluid, recipe.produce());
+        // JEI 分别索引流体与物品，补充桶的检索入口，同时保留实际流体产量的显示。
+        ItemStack bucket = new ItemStack(fluid.getBucket());
+        if (!bucket.isEmpty()) {
+            builder.addInvisibleIngredients(RecipeIngredientRole.OUTPUT).addItemStack(bucket);
+        }
     }
 
     @Override

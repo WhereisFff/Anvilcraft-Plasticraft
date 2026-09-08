@@ -4,6 +4,7 @@ import dev.anvilcraft.plasticraft.allay.AllayFlightState;
 import dev.anvilcraft.plasticraft.allay.AllayWorkRecord;
 import dev.anvilcraft.plasticraft.allay.tool.AllayCapability;
 import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinitions;
+import dev.anvilcraft.plasticraft.allay.tool.AllayToolSupply;
 import dev.anvilcraft.plasticraft.allay.transfer.AllayLoungeNetwork.LoungeRoute;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
@@ -370,6 +371,11 @@ public final class ConstructionTransferService {
      */
     public static boolean sendGuestHome(ServerLevel level, WorkingAllayEntity worker) {
         if (!isGuest(worker)) return false;
+        if (worker.borrowedToolLounge() != null && level.hasChunkAt(worker.borrowedToolLounge())
+            && level.getBlockEntity(worker.borrowedToolLounge()) instanceof AllayLoungeBlockEntity) {
+            worker.requestTool(AllayToolDefinitions.NONE);
+            if (AllayToolSupply.tickWorker(worker) || worker.borrowedToolLounge() != null) return true;
+        }
         MinecraftServer server = level.getServer();
         BlockPos origin = worker.originLoungePos();
         if (origin == null || originGone(level, origin)) {
@@ -500,7 +506,8 @@ public final class ConstructionTransferService {
             record.hostedCarry(),
             record.customName(),
             origin,
-            transit
+            transit,
+            record.borrowedToolLounge()
         );
     }
 

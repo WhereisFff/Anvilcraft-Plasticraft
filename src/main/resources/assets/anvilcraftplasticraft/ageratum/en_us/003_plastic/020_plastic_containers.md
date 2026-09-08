@@ -54,9 +54,18 @@ A cauldron whose top opening covers **more than** 1600 square pixels is automati
 
 - Capacity is fixed at 512B, split into 8 layers of 64B, so it holds up to 8 different fluids at once
 - It has 8 input slots and 32 output slots; input slots stack 9 times the vanilla limit, which is 576 per slot for ordinary items
-- A single anvil impact runs up to 9 recipe passes, each picking one recipe that still matches; it stops as soon as a pass makes no progress
-- Filling merges into a matching layer first and rejects new fluids once all 8 layers are used; draining works from the top down, while ignition and recipes only read the bottom layer
+- Each anvil impact processes at most 9 groups, with one normal stack of the selected ingredient as each group's consumption budget; ordinary stackable items allow up to 9×64 items, subject to each recipe's consumption amount
+- Inputs are processed first, with recipe priorities reconsidered after every group. Active processing blocks defer item compression until other recipes have been attempted. Outputs present before the impact may then be reprocessed; newly produced outputs are excluded from that impact
+- Supports AnvilCraft fluid mixing and liquid enchantment reactions. Remaining groups try fluid-only recipes when item processing has not changed the fluids. Mixing and liquid enchantment preserve their ingredients and fluids if outputs do not fit
+- The model's horizontal bounds form a 3×3 grid: the center selects outputs and the surrounding eight cells select inputs. This grid rotates with the model. Empty-hand clicks on the inner floor retrieve all items from the selected input cell, or all outputs from the center; the first stack goes into the main hand and the rest into the inventory
+- Main-hand items enter through the inner floor or the upper third of the walls and rim, preferring the closest input cell. Identical items with identical components share one input slot. The middle walls and outer bottom do not accept ordinary held items
+- Automation inserts through the opening without extracting inputs. Upper and middle side ports extract their corresponding input cell; the bottom and lowest side ports only extract outputs. Entity side ports select the center of that side, while bonded blocks use the connected part's position
+- Filling merges matching fluids and rejects new types after all eight layers are used. Bottom ports drain from the bottom and move inserted fluid to the bottom; other ports drain from the top. Buckets and bottles select a layer by click height and may search lower layers for matching fluid. Failed container interactions never insert the container as an ingredient
+- Ignition and plasma jets use the top layer; covering it with a nonflammable fluid extinguishes it. Recipes can use any matching layer and produce several fluids. A Menger Sponge used on a wall clears every layer
+- Upright pots absorb fluid sources across their opening. Lava damage, plastic melt slowing and extinguishing depend on the layer actually touched; extinguishing a noncreative entity consumes 250mB of the corresponding fluid
+- Lava repairs damaged input items carrying Fire Reforging by 10 durability per tick. A lit normal campfire below deals 1 damage per hit, or 2 for a soul campfire; sneaking avoids this campfire damage. Entities touching the wall of an upright large pot can climb it
 - Like ordinary plastic cauldrons, every material can store lava normally
+- For a forced type without a cavity, upward-facing model surfaces replace the inner floor for the same nine-cell interactions
 - There is no demonstration blueprint for it; you have to model one yourself
 
 ## Type override

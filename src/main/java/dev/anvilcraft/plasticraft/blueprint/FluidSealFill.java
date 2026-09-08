@@ -6,6 +6,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.block.Block;
@@ -61,6 +62,7 @@ public final class FluidSealFill {
     }
 
     public static ItemStack choose(ConstructionMaterialAccess access, ConstructionJobProgress progress) {
+        if (access.isInfinite()) return new ItemStack(Items.COBBLESTONE);
         return chooseFromCounts(access.countItems(), progress);
     }
 

@@ -7,6 +7,7 @@ import dev.anvilcraft.plasticraft.block.IgnitedFluidEffects;
 import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.MoldingBlueprintDiskPreviewRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticOilCatalysisRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.StructureDiskPreviewRenderer;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintDisk;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
@@ -47,8 +48,10 @@ public final class AnvilCraftClientApiBootstrap {
     public static void register() {
         RecipeUtil.registerLevelLikeCustomizer(AnvilCraftClientApiBootstrap::seedCondenserValves);
         StructureDiskPreviewSupport.registerPreviewHandler((graphics, stack, mouseX, mouseY) -> {
-            if (!MoldingBlueprintDisk.hasBlueprintData(stack)) return false;
-            return MoldingBlueprintDiskPreviewRenderer.renderPreviewAt(graphics, stack, mouseX, mouseY);
+            if (MoldingBlueprintDisk.hasBlueprintData(stack)) {
+                return MoldingBlueprintDiskPreviewRenderer.renderPreviewAt(graphics, stack, mouseX, mouseY);
+            }
+            return StructureDiskPreviewRenderer.renderPreviewAt(graphics, stack, mouseX, mouseY);
         });
         LargeCauldronRenderHooks.register(new LargeCauldronRenderHooks.Handler() {
             @Override

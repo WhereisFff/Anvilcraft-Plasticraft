@@ -355,7 +355,7 @@ public final class MoldingProductTypes {
         }
     }
 
-    /** 大型塑料炼药锅：固定 512 B 流体、8 槽输入 × 9 倍堆叠、落砧最多 9 次配方，由普通炼药锅自动升级得到。 */
+    /** 大型塑料炼药锅：固定 512 B 流体、8 槽输入 × 9 倍堆叠、落砧最多 9 组加工，由普通炼药锅自动升级得到。 */
     private record LargeCauldronType() implements MoldingProductType {
         /** 8 层 × 64 B；对齐 AnvilCraft LargeCauldronFluidHandler。 */
         private static final int FIXED_CAPACITY = 8 * 64;

@@ -11,6 +11,7 @@ import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.MoldedLargeCauldronInteraction;
 import dev.anvilcraft.plasticraft.entity.collision.BondedPlasticShapeIndex;
 import dev.anvilcraft.plasticraft.entity.redstone.MoldedTrayLightSource;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
@@ -428,6 +429,24 @@ public class BondedEntityBlockEntity extends BlockEntity
         if (entity instanceof UniversalPlasticEntity universal
             && universal.getMoldedFluidHandler().getTanks() > 0) return universal.getMoldedFluidHandler();
         return null;
+    }
+
+    public @Nullable IFluidHandler getCapabilityFluidHandler(@Nullable Direction side) {
+        if (this.getOrCreateRenderEntity() instanceof UniversalPlasticEntity pot
+            && MoldedLargeCauldronInteraction.applies(pot)) {
+            return MoldedLargeCauldronInteraction.fluidAccess(pot, side);
+        }
+        return this.getCapabilityFluidHandler();
+    }
+
+    public @Nullable IItemHandler getAutomationItemHandler(@Nullable Direction side) {
+        if (this.getOrCreateRenderEntity() instanceof UniversalPlasticEntity pot
+            && MoldedLargeCauldronInteraction.applies(pot)) {
+            Vec3 point = this.worldPosition.getCenter();
+            if (side != null) point = point.add(Vec3.atLowerCornerOf(side.getNormal()).scale(0.5));
+            return MoldedLargeCauldronInteraction.itemAccess(pot, side, point);
+        }
+        return this.getItemHandler();
     }
 
     public @Nullable IItemHandler getItemHandler() {

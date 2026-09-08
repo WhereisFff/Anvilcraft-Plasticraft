@@ -5,8 +5,8 @@ import dev.anvilcraft.lib.v2.util.predicate.BlockStatePredicate;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.EngineeringPlasticEntity;
-import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.MoldedPlasticAnvilAbilities;
+import dev.anvilcraft.plasticraft.entity.MoldedLargeCauldronInteraction;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldronWorkBlockFinder;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
@@ -22,10 +22,12 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
+import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
+import dev.dubhe.anvilcraft.init.block.ModFluids;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.item.AnvilHammerItem;
 import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasAnvil;
@@ -38,11 +40,11 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.Container;
-import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
@@ -55,7 +57,7 @@ import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.items.IItemHandler;
@@ -361,7 +363,7 @@ public final class MoldedPlasticAnvilGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "13x8x13", floor = true)
-    @TestHolder(description = "One impact runs a single cauldron recipe on a molded cauldron and nine on a large one")
+    @TestHolder(description = "One large cauldron impact processes at most nine normal stacks without duplicating inputs or reprocessing fresh outputs")
     static void moldedCauldronRecipePassesFollowTier(ExtendedGameTestHelper helper) {
         UniversalPlasticEntity anvil = createProduct(
             helper,
@@ -387,13 +389,236 @@ public final class MoldedPlasticAnvilGameTests {
             MoldingProductTypes.LARGE_CAULDRON_ID
         );
         loadCauldronInput(ordinary);
-        loadCauldronInput(large);
+        large.getItemHandler().insertItem(32, new ItemStack(Items.STICK, 576), false);
 
         CauldronImpactRecipeProcessor.process(helper.getLevel(), anvil, ordinary);
         CauldronImpactRecipeProcessor.process(helper.getLevel(), anvil, large);
 
         checkRecipePasses(ordinary, "ordinary");
-        checkRecipePasses(large, "large");
+        check(countItem(large.getItemHandler(), Items.STICK) == 0, "large cauldron failed to consume nine stacks of input");
+        check(countItem(large.getItemHandler(), Items.DIAMOND) == 576, "large cauldron lost or duplicated its nine batches");
+        check(countItem(large.getItemHandler(), Items.EMERALD) == 0, "large cauldron reprocessed fresh outputs during the same impact");
+        CauldronImpactRecipeProcessor.process(helper.getLevel(), anvil, large);
+        check(countItem(large.getItemHandler(), Items.DIAMOND) == 576, "duplicate landing cells processed the same pot twice");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x8x9", floor = true)
+    @TestHolder(description = "Large cauldron floor cells independently insert and extract their inputs in every orientation and persist oversized stacks")
+    static void largeCauldronInteractionCellsAndPersistence(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity pot = createCauldronProduct(helper, new BlockPos(4, 2, 4), 2, 41, 32, MoldingProductTypes.LARGE_CAULDRON_ID);
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        Item[] items = {Items.IRON_INGOT, Items.COPPER_INGOT, Items.COAL, Items.CHARCOAL,
+            Items.COBBLESTONE, Items.DIRT, Items.SAND, Items.GRAVEL};
+        for (Direction opening : Direction.values()) {
+            for (int turn = 0; turn < 4; turn++) {
+                pot.setOrientation(new PlasticEntityOrientation(opening, turn));
+                for (int slot = 0; slot < 8; slot++) {
+                    Vec3 point = MoldedLargeCauldronInteraction.localPoint(pot, MoldedLargeCauldronInteraction.inputPosition(pot, slot));
+                    player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(items[slot], 64));
+                    check(clickLarge(pot, player, point, point.add(0, 2, 0)).consumesAction(), "large pot rejected floor insertion at " + opening + "/" + turn + "/" + slot);
+                    check(pot.getItemHandler().getStackInSlot(32 + slot).getCount() == 64, "floor click selected the wrong input cell");
+                }
+                pot.insertRecipeOutput(new ItemStack(Items.DIAMOND, 3));
+                for (int slot = 0; slot < 8; slot++) {
+                    Vec3 point = MoldedLargeCauldronInteraction.localPoint(pot, MoldedLargeCauldronInteraction.inputPosition(pot, slot));
+                    player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+                    clickLarge(pot, player, point, point.add(0, 2, 0));
+                    check(player.getMainHandItem().is(items[slot]) && player.getMainHandItem().getCount() == 64, "floor cell did not return its own input to the hand");
+                    check(countItem(pot.getItemHandler(), Items.DIAMOND) == 3, "input extraction also removed output items");
+                }
+                player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+                Vec3 center = MoldedLargeCauldronInteraction.localPoint(pot, MoldedLargeCauldronInteraction.inputPosition(pot, -1));
+                clickLarge(pot, player, center, center.add(0, 2, 0));
+                check(player.getMainHandItem().is(Items.DIAMOND) && player.getMainHandItem().getCount() == 3, "center floor did not return outputs");
+            }
+        }
+        pot.setOrientation(PlasticEntityOrientation.DEFAULT);
+        pot.getItemHandler().insertItem(32, new ItemStack(Items.IRON_INGOT, 576), false);
+        CompoundTag saved = pot.saveWithoutId(new CompoundTag());
+        pot.discard();
+        UniversalPlasticEntity loaded = new UniversalPlasticEntity(PlasticraftEntities.UNIVERSAL_PLASTIC.get(), helper.getLevel());
+        loaded.load(saved);
+        check(loaded.getItemHandler().getStackInSlot(32).getCount() == 576, "saving oversized large-cauldron input lost its count");
+        player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+        Vec3 input = MoldedLargeCauldronInteraction.localPoint(loaded, MoldedLargeCauldronInteraction.inputPosition(loaded, 0));
+        clickLarge(loaded, player, input, input.add(0, 2, 0));
+        check(countInventoryItem(player, Items.IRON_INGOT) == 576, "oversized input extraction lost inventory stacks");
+        check(loaded.getItemHandler().getStackInSlot(32).isEmpty(), "oversized input extraction left items behind");
+        player.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x8x9", floor = true)
+    @TestHolder(description = "Large cauldron automation separates input sides from the output bottom and fluid containers select layers by height")
+    static void largeCauldronAutomationAndFluidInteractions(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity pot = createCauldronProduct(helper, new BlockPos(4, 2, 4), 2, 41, 32, MoldingProductTypes.LARGE_CAULDRON_ID);
+        IItemHandler top = pot.getCapability(Capabilities.ItemHandler.ENTITY_AUTOMATION, Direction.UP);
+        IItemHandler bottom = pot.getCapability(Capabilities.ItemHandler.ENTITY_AUTOMATION, Direction.DOWN);
+        check(top != null && bottom != null, "large pot did not expose sided automation");
+        check(top.insertItem(0, new ItemStack(Items.IRON_INGOT), false).isEmpty(), "top automation rejected input");
+        check(top.extractItem(0, 64, false).isEmpty(), "top automation extracted an input");
+        check(bottom.insertItem(0, new ItemStack(Items.DIRT), false).getCount() == 1, "bottom automation inserted into outputs");
+        pot.insertRecipeOutput(new ItemStack(Items.DIAMOND, 2));
+        check(bottom.extractItem(0, 64, false).getCount() == 2, "bottom automation could not extract outputs");
+        pot.getMoldedFluidHandler().fill(new FluidStack(Fluids.WATER, 32_000), IFluidHandler.FluidAction.EXECUTE);
+        pot.getMoldedFluidHandler().fill(new FluidStack(Fluids.LAVA, 16_000), IFluidHandler.FluidAction.EXECUTE);
+        check(pot.getCapability(Capabilities.FluidHandler.ENTITY, Direction.UP).drain(1000, IFluidHandler.FluidAction.SIMULATE).is(Fluids.LAVA), "top fluid capability did not expose top layer");
+        check(pot.getCapability(Capabilities.FluidHandler.ENTITY, Direction.DOWN).drain(1000, IFluidHandler.FluidAction.SIMULATE).is(Fluids.WATER), "bottom fluid capability did not expose bottom layer");
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        AABB bounds = pot.plasticraft$getGeometry().localBounds();
+        AABB cavity = MoldedLargeCauldronInteraction.cavity(pot);
+        Vec3 low = new Vec3(bounds.minX, cavity.minY + cavity.getYsize() * 16000 / 512000, bounds.getCenter().z);
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.BUCKET));
+        clickLarge(pot, player, low, low.add(-2, 0, 0));
+        check(player.getMainHandItem().is(Items.WATER_BUCKET), "low side bucket drained the wrong layer");
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.BUCKET));
+        Vec3 high = new Vec3(bounds.minX, cavity.maxY, bounds.getCenter().z);
+        clickLarge(pot, player, high, high.add(-2, 0, 0));
+        check(player.getMainHandItem().is(Items.LAVA_BUCKET), "high side bucket drained the wrong layer");
+        pot.getMoldedFluidHandler().discardFluids();
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.BUCKET));
+        clickLarge(pot, player, high, high.add(-2, 0, 0));
+        check(countItem(pot.getItemHandler(), Items.BUCKET) == 0, "failed fluid interaction inserted its bucket into input");
+        pot.getMoldedFluidHandler().fill(new FluidStack(Fluids.WATER, 1000), IFluidHandler.FluidAction.EXECUTE);
+        pot.getMoldedFluidHandler().fill(new FluidStack(PlasticraftFluids.HIGH_HEAT_FUEL.get(), 1000), IFluidHandler.FluidAction.EXECUTE);
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.FLINT_AND_STEEL));
+        clickLarge(pot, player, high, high.add(-2, 0, 0));
+        check(pot.anvilcraft$isIgnited(), "large pot could not ignite fuel above water");
+        pot.getMoldedFluidHandler().fill(new FluidStack(Fluids.LAVA, 1000), IFluidHandler.FluidAction.EXECUTE);
+        pot.plasticraft$tickBonded();
+        check(!pot.anvilcraft$isIgnited(), "covering fuel with a nonflammable layer did not extinguish the large pot");
+        player.setItemInHand(InteractionHand.MAIN_HAND, ModBlocks.MENGER_SPONGE.asStack());
+        clickLarge(pot, player, high, high.add(-2, 0, 0));
+        check(pot.getMoldedFluidHandler().copyFluids().isEmpty(), "Menger sponge did not empty all fluid layers");
+        BlockPos bondedPos = pot.blockPosition();
+        helper.getLevel().setBlock(bondedPos, pot.getDisplayState().setValue(AbstractPlasticEntityBlock.BONDED, true), Block.UPDATE_ALL);
+        BondedEntityBlockEntity bonded = (BondedEntityBlockEntity) helper.getLevel().getBlockEntity(bondedPos);
+        check(bonded != null && bonded.initialize(pot, pot.getDisplayState(), Direction.UP, PlasticEntityOrientation.DEFAULT, true), "large pot could not enter bonded form");
+        pot.discard();
+        UniversalPlasticEntity fixed = (UniversalPlasticEntity) bonded.getOrCreateRenderEntity();
+        fixed.insertRecipeOutput(new ItemStack(Items.DIAMOND, 3));
+        IItemHandler bondedBottom = helper.getLevel().getCapability(Capabilities.ItemHandler.BLOCK, bondedPos, Direction.DOWN);
+        check(bondedBottom != null && countItem(bondedBottom, Items.IRON_INGOT) == 0, "bonded bottom exposed input inventory");
+        check(countItem(bondedBottom, Items.DIAMOND) == 3, "bonded bottom did not expose output inventory");
+        player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+        Vec3 fixedCenter = MoldedLargeCauldronInteraction.inputPosition(fixed, -1);
+        player.moveTo(fixedCenter.add(0, 2, 0));
+        check(bonded.interact(player, InteractionHand.MAIN_HAND, new BlockHitResult(fixedCenter, Direction.UP, bondedPos, false)).consumesAction(), "bonded floor did not accept an output extraction click");
+        check(player.getMainHandItem().is(Items.DIAMOND) && player.getMainHandItem().getCount() == 3, "bonded floor click lost output items");
+        player.discard();
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x8x9", floor = true)
+    @TestHolder(description = "Large molded cauldron mixing preserves melt color and leaves fluids intact when outputs cannot fit")
+    static void largeCauldronMixingPreservesResources(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity pot = createCauldronProduct(helper, new BlockPos(4, 2, 4), 2, 41, 8, MoldingProductTypes.LARGE_CAULDRON_ID);
+        UniversalPlasticEntity anvil = createProduct(helper, new BlockPos(1, 6, 1), PlasticEntityOrientation.DEFAULT, MoldingProductTypes.ANVIL_ID);
+        FluidStack melt = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 1000);
+        PlasticMeltColor.set(melt, DyeColor.BLUE);
+        pot.getMoldedFluidHandler().fill(melt, IFluidHandler.FluidAction.EXECUTE);
+        pot.getMoldedFluidHandler().fill(new FluidStack(Fluids.WATER, 1000), IFluidHandler.FluidAction.EXECUTE);
+        for (int slot = 0; slot < 32; slot++) pot.getMoldedItemHandler().setStackInSlot(slot, new ItemStack(Items.BARRIER, 64));
+        CauldronImpactRecipeProcessor.process(helper.getLevel(), anvil, pot);
+        check(pot.getMoldedFluidHandler().copyFluids().stream().mapToInt(FluidStack::getAmount).sum() == 2000, "full output consumed mixing fluids");
+        pot.getMoldedItemHandler().setStackInSlot(0, ItemStack.EMPTY);
+        UniversalPlasticEntity nextAnvil = createProduct(helper, new BlockPos(2, 6, 1), PlasticEntityOrientation.DEFAULT, MoldingProductTypes.ANVIL_ID);
+        CauldronImpactRecipeProcessor.process(helper.getLevel(), nextAnvil, pot);
+        check(pot.getMoldedFluidHandler().copyFluids().isEmpty(), "large plastic pot did not consume the mixing inputs");
+        ItemStack result = pot.getItemHandler().getStackInSlot(0);
+        check(result.is(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get()) && result.getCount() == 16, "large plastic pot mixing produced the wrong output");
+        check(PlasticMeltColor.get(result) == DyeColor.BLUE, "large plastic pot mixing lost the melt color");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x8x9", floor = true)
+    @TestHolder(description = "Large molded cauldrons perform liquid enchantment without consuming unrelated layers")
+    static void largeCauldronLiquidEnchantment(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity pot = createCauldronProduct(helper, new BlockPos(4, 2, 4), 2, 41, 8, MoldingProductTypes.LARGE_CAULDRON_ID);
+        UniversalPlasticEntity anvil = createProduct(helper, new BlockPos(1, 6, 1), PlasticEntityOrientation.DEFAULT, MoldingProductTypes.ANVIL_ID);
+        pot.getMoldedFluidHandler().fill(new FluidStack(Fluids.WATER, 1000), IFluidHandler.FluidAction.EXECUTE);
+        pot.getMoldedFluidHandler().fill(new FluidStack(ModFluids.EXP_FLUID.get(), 2000), IFluidHandler.FluidAction.EXECUTE);
+        pot.getItemHandler().insertItem(32, new ItemStack(Items.LAPIS_LAZULI, 3), false);
+        CauldronImpactRecipeProcessor.process(helper.getLevel(), anvil, pot);
+        check(countItem(pot.getItemHandler(), Items.LAPIS_LAZULI) == 0, "liquid enchantment did not consume lapis");
+        check(pot.getMoldedFluidHandler().drain(new FluidStack(ModFluids.LIQUID_ENCHANTMENT.get(), 1), IFluidHandler.FluidAction.SIMULATE).getAmount() == 1, "large plastic pot did not create blank liquid enchantment");
+        check(pot.getMoldedFluidHandler().getBottomFluid().is(Fluids.WATER) && pot.getMoldedFluidHandler().getBottomFluid().getAmount() == 1000, "liquid enchantment consumed an unrelated layer");
+        helper.succeed();
+    }
+
+    private static InteractionResult clickLarge(UniversalPlasticEntity pot, Player player, Vec3 point, Vec3 eye) {
+        Vec3 world = pot.plasticraft$getGeometry().worldPointAt(pot.position(), pot.getOrientation(), point);
+        Vec3 worldEye = pot.plasticraft$getGeometry().worldPointAt(pot.position(), pot.getOrientation(), eye);
+        player.moveTo(worldEye.add(0, -player.getEyeHeight(), 0));
+        return pot.interactAt(player, world.subtract(pot.position()), InteractionHand.MAIN_HAND);
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "13x8x9", floor = true)
+    @TestHolder(description = "Large cauldron recipes roll back failed branches, consume nonbottom layers and commit multiple fluids atomically")
+    static void largeCauldronLayeredRecipeTransactions(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity anvil = createProduct(helper, new BlockPos(1, 6, 1), PlasticEntityOrientation.DEFAULT, MoldingProductTypes.ANVIL_ID);
+        for (boolean full : new boolean[]{false, true}) {
+            UniversalPlasticEntity pot = createCauldronProduct(helper, new BlockPos(full ? 9 : 4, 2, 4), 2, 41, 8, MoldingProductTypes.LARGE_CAULDRON_ID);
+            // 不足一桶的经验不会触发本体经验宝石配方，保留它作为事务无关层。
+            pot.getMoldedFluidHandler().fill(new FluidStack(ModFluids.EXP_FLUID.get(), 500), IFluidHandler.FluidAction.EXECUTE);
+            pot.getMoldedFluidHandler().fill(new FluidStack(ModFluids.OIL.get(), full ? 64_000 : 500), IFluidHandler.FluidAction.EXECUTE);
+            pot.getMoldedFluidHandler().fill(new FluidStack(Fluids.WATER, 1000), IFluidHandler.FluidAction.EXECUTE);
+            pot.getItemHandler().insertItem(32, new ItemStack(Items.PRISMARINE_SHARD), false);
+            CauldronImpactRecipeProcessor.process(helper.getLevel(), anvil, pot);
+            check(countItem(pot.getItemHandler(), Items.PRISMARINE_SHARD) == (full ? 1 : 0), "layered recipe consumed the wrong input count with full=" + full);
+            check(countItem(pot.getItemHandler(), Items.NETHER_STAR) == (full ? 0 : 1), "layered recipe did not commit its output with full=" + full);
+            check(pot.getMoldedFluidHandler().drain(new FluidStack(Fluids.WATER, 1000), IFluidHandler.FluidAction.SIMULATE).getAmount() == 1000, "failed branch or full-layer check lost water with full=" + full);
+            check(pot.getMoldedFluidHandler().drain(new FluidStack(ModFluids.OIL.get(), 64_000), IFluidHandler.FluidAction.SIMULATE).getAmount() == (full ? 64_000 : 1500), "layered recipe duplicated or lost a fluid output with full=" + full);
+            check(pot.getMoldedFluidHandler().getBottomFluid().is(ModFluids.EXP_FLUID.get())
+                && pot.getMoldedFluidHandler().getBottomFluid().getAmount() == 500, "layered recipe consumed unrelated experience fluid with full=" + full);
+        }
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x8x9", floor = true)
+    @TestHolder(description = "Large-cauldron output reprocessing preserves fresh items merged into a preexisting output slot")
+    static void largeCauldronReprocessingPreservesFreshOutputs(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity pot = createCauldronProduct(helper, new BlockPos(4, 2, 4), 2, 41, 8, MoldingProductTypes.LARGE_CAULDRON_ID);
+        UniversalPlasticEntity anvil = createProduct(helper, new BlockPos(1, 6, 1), PlasticEntityOrientation.DEFAULT, MoldingProductTypes.ANVIL_ID);
+        pot.insertRecipeOutput(new ItemStack(Items.DIAMOND));
+        pot.getItemHandler().insertItem(32, new ItemStack(Items.STICK), false);
+        CauldronImpactRecipeProcessor.process(helper.getLevel(), anvil, pot);
+        check(countItem(pot.getItemHandler(), Items.STICK) == 0, "large pot skipped inputs while reprocessing outputs");
+        check(countItem(pot.getItemHandler(), Items.DIAMOND) == 1, "large pot reprocessed or overwrote a fresh merged output");
+        check(countItem(pot.getItemHandler(), Items.EMERALD) == 1, "large pot did not reprocess exactly the preexisting output");
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x8x9", floor = true)
+    @TestHolder(description = "Large plastic cauldrons absorb opening sources, extinguish entities in water and provide climbable walls")
+    static void largeCauldronEnvironmentalBehavior(ExtendedGameTestHelper helper) {
+        UniversalPlasticEntity pot = createCauldronProduct(helper, new BlockPos(4, 2, 4), 2, 41, 32, MoldingProductTypes.LARGE_CAULDRON_ID);
+        AABB bounds = pot.getBoundingBox();
+        BlockPos source = BlockPos.containing(bounds.getCenter().x, bounds.maxY, bounds.getCenter().z);
+        helper.getLevel().setBlock(source, Blocks.WATER.defaultBlockState(), Block.UPDATE_ALL);
+        pot.plasticraft$tickBonded();
+        check(helper.getLevel().getFluidState(source).isEmpty() && pot.getMoldedFluidHandler().getBottomFluid().getAmount() == 1000, "large pot failed to absorb its opening water source");
+        pot.getMoldedFluidHandler().fill(new FluidStack(Fluids.WATER, 63_000), IFluidHandler.FluidAction.EXECUTE);
+        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        Vec3 floor = MoldedLargeCauldronInteraction.inputPosition(pot, -1);
+        player.moveTo(floor);
+        helper.getLevel().addFreshEntity(player);
+        player.igniteForSeconds(8);
+        pot.plasticraft$tickBonded();
+        check(!player.isOnFire() && pot.getMoldedFluidHandler().getBottomFluid().getAmount() == 63_750, "large-pot water did not extinguish the player for 250 mB");
+        player.moveTo(bounds.minX - player.getBbWidth() / 2.0, floor.y + 0.05, bounds.getCenter().z);
+        check(player.onClimbable(), "large plastic pot wall was not climbable");
+        player.moveTo(floor.add(0, 0.3, 0));
+        check(!player.onClimbable(), "large plastic pot allowed climbing in midair away from walls");
+        player.discard();
         helper.succeed();
     }
 

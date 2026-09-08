@@ -1,0 +1,33 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "A": {
+      "item": "minecraft:amethyst_shard"
+    },
+    "I": {
+      "item": "anvilcraft:induction_light"
+    },
+    "L": {
+      "tag": "minecraft:logs"
+    },
+    "M": {
+      "item": "anvilcraft:magnetic_chute"
+    },
+    "S": {
+      "item": "minecraft:cobblestone_slab"
+    },
+    "T": {
+      "tag": "minecraft:trapdoors"
+    }
+  },
+  "pattern": [
+    "ITA",
+    "L L",
+    "SMS"
+  ],
+  "result": {
+    "count": 1,
+    "id": "anvilcraftplasticraft:allay_lounge"
+  }
+}

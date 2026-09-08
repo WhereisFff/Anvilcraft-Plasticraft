@@ -167,6 +167,7 @@ public final class PlasticItemTooltipManager {
             """
                 Elastic and strongly sticks to adjacent blocks
                 Captures creatures of any size; hostile creatures must be weakened
+                Captures Wither Skulls, which can be transformed into Allays
                 Each resin-connected group counts as one block against a piston's push limit"""
         );
         register(
@@ -183,9 +184,11 @@ public final class PlasticItemTooltipManager {
                 Its elasticity means it cannot repair equipment or enchantments
                 Only impacts on its bottom face process anvil recipes; inserting a magnet lets magnets pull it"""
         );
-        registerNormal(
+        register(
             AnvilcraftPlasticraft.of("allay_lounge"),
-            "Hosts up to 16 hatted Allays and keeps them with the lounge item when broken"
+            "A cozy little home for Allays?",
+            "Hosts up to 16 hard-hatted Allays and directs their construction work; "
+                + "Allays take or deposit items and fetch the tools they need from the container below"
         );
     }
 
@@ -216,12 +219,6 @@ public final class PlasticItemTooltipManager {
             if (shiftDown) {
                 if (SHIFT.containsKey(itemId)) {
                     dynamicTooltipIndex += addTranslatedTooltip(tooltip, getTranslationKeyShift(itemId));
-                }
-                if (itemId.equals(AnvilcraftPlasticraft.of("allay_lounge"))) {
-                    dynamicTooltipIndex += addTranslatedTooltip(
-                        tooltip,
-                        "tooltip.anvilcraftplasticraft.item.allay_lounge.permissions"
-                    );
                 }
                 if (demonstrationModel) {
                     dynamicTooltipIndex += addTranslatedTooltip(tooltip, DEMONSTRATION_TOOLTIP_KEY);

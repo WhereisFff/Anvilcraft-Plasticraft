@@ -14,6 +14,7 @@ import dev.anvilcraft.plasticraft.allay.transfer.ConstructionTransferService;
 import dev.anvilcraft.plasticraft.allay.path.AllayPathPriority;
 import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinition;
 import dev.anvilcraft.plasticraft.allay.tool.AllayToolDefinitions;
+import dev.anvilcraft.plasticraft.allay.tool.AllayToolSupply;
 import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionDebris;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJobController;
@@ -124,6 +125,10 @@ public class WorkingAllayEntity extends Allay {
     @Nullable
     private Vec3 evacuationTarget;
     private boolean deathLootDropped;
+    @Nullable
+    private BlockPos borrowedToolLounge;
+    @Nullable
+    private AllayToolDefinition requestedTool;
 
     public WorkingAllayEntity(EntityType<? extends Allay> type, Level level) {
         super(type, level);
@@ -147,7 +152,9 @@ public class WorkingAllayEntity extends Allay {
         if (!this.level().isClientSide && this.isAlive() && !this.isDeadOrDying()) {
             // 自救必须先于工具行为:入库飞行等状态会直接 return,一旦被方块包住就没人来救
             this.serverEmbeddedTick();
-            this.toolDefinition().behavior().serverTick(this);
+            if (!AllayToolSupply.tickWorker(this)) {
+                this.toolDefinition().behavior().serverTick(this);
+            }
             this.serverFlightTick();
             // 接管飞行时作废原版航线:否则原版寻路会在整个任务期间空跑重算,
             // 交还控制权后还会先沿一条早已过期的旧路径飞一段
@@ -406,6 +413,9 @@ public class WorkingAllayEntity extends Allay {
             return InteractionResult.FAIL;
         }
         ItemStack stack = player.getItemInHand(hand);
+        if (stack.is(Items.FLINT_AND_STEEL) && (!this.hostedCarry().isEmpty() || this.hasCollectionItems())) {
+            return InteractionResult.FAIL;
+        }
         if (stack.is(Items.LEAD) && this.canBeLeashed()) {
             return super.mobInteract(player, hand);
         }
@@ -516,6 +526,39 @@ public class WorkingAllayEntity extends Allay {
 
     public AllayToolDefinition toolDefinition() {
         return AllayToolDefinitions.fromHeldItem(this.getMainHandItem());
+    }
+
+    @Override
+    public void setItemSlot(EquipmentSlot slot, ItemStack stack) {
+        super.setItemSlot(slot, stack);
+        if (slot == EquipmentSlot.MAINHAND) {
+            this.borrowedToolLounge = null;
+            this.requestedTool = null;
+            if (this.level() instanceof ServerLevel level && level.getEntity(this.getUUID()) == this) {
+                ObservationChunkLoader.syncObserver(this);
+            }
+        }
+    }
+
+    public @Nullable BlockPos borrowedToolLounge() {
+        return this.borrowedToolLounge;
+    }
+
+    public boolean canBorrowTool() {
+        return this.getMainHandItem().isEmpty() || this.borrowedToolLounge != null;
+    }
+
+    public void equipBorrowedTool(ItemStack tool, BlockPos source) {
+        this.setItemSlot(EquipmentSlot.MAINHAND, tool);
+        this.borrowedToolLounge = tool.isEmpty() ? null : source.immutable();
+    }
+
+    public @Nullable AllayToolDefinition requestedTool() {
+        return this.requestedTool;
+    }
+
+    public void requestTool(@Nullable AllayToolDefinition tool) {
+        this.requestedTool = tool;
     }
 
     public ItemStack getHardHat() {
@@ -939,7 +982,8 @@ public class WorkingAllayEntity extends Allay {
             this.hostedCarry().copy(),
             Optional.ofNullable(this.getCustomName()),
             this.originLoungePos == null ? Optional.empty() : Optional.of(this.originLoungePos.asLong()),
-            this.transitJobId
+            this.transitJobId,
+            this.borrowedToolLounge == null ? Optional.empty() : Optional.of(this.borrowedToolLounge.asLong())
         );
     }
 
@@ -955,6 +999,7 @@ public class WorkingAllayEntity extends Allay {
         this.setCustomName(record.customName().orElse(null));
         this.originLoungePos = record.originLounge().map(BlockPos::of).orElse(null);
         this.transitJobId = record.transitJob();
+        this.borrowedToolLounge = record.borrowedToolLounge().map(BlockPos::of).orElse(null);
         this.setPersistenceRequired();
         this.setFlightState(AllayFlightState.HOVERING);
     }

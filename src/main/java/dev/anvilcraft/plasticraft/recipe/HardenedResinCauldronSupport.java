@@ -26,25 +26,25 @@ public final class HardenedResinCauldronSupport {
         PlasticCauldron cauldron = find(level, pos);
         return cauldron != null
             && cauldron.anvilcraft$isIgnited()
-            && cauldron.plasticraft$bottomFluid().is(ModFluidTags.OIL);
+            && cauldron.plasticraft$ignitionFluid().is(ModFluidTags.OIL);
     }
 
     public static Boolean isIgnitedHighHeatFuel(Level level, BlockPos pos) {
         PlasticCauldron cauldron = find(level, pos);
         return cauldron == null ? null : cauldron.anvilcraft$isIgnited()
-            && cauldron.plasticraft$bottomFluid().is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
+            && cauldron.plasticraft$ignitionFluid().is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
     }
 
     public static Boolean hasHighHeatFuel(Level level, BlockPos pos) {
         PlasticCauldron cauldron = find(level, pos);
-        return cauldron == null ? null : cauldron.plasticraft$bottomFluid().is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
+        return cauldron == null ? null : cauldron.plasticraft$ignitionFluid().is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
     }
 
     public static Boolean validBase(Level level, BlockPos pos) {
         PlasticCauldron cauldron = find(level, pos);
         if (cauldron == null) return null;
         if (cauldron.getOrientation().attachmentFace() != Direction.UP) return false;
-        FluidStack fluid = cauldron.plasticraft$bottomFluid();
+        FluidStack fluid = cauldron.plasticraft$ignitionFluid();
         return fluid.isEmpty() || fluid.is(ModFluidTags.OIL) || fluid.is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
     }
 
@@ -63,8 +63,10 @@ public final class HardenedResinCauldronSupport {
     public static Boolean consumeHighHeatFuel(Level level, BlockPos pos, int amount) {
         PlasticCauldron cauldron = find(level, pos);
         if (cauldron == null) return null;
-        IFluidHandler handler = cauldron.plasticraft$bottomFluidAccess();
-        FluidStack request = new FluidStack(PlasticraftFluids.HIGH_HEAT_FUEL.get(), amount);
+        FluidStack available = cauldron.plasticraft$ignitionFluid();
+        if (amount <= 0 || !available.is(PlasticraftFluids.HIGH_HEAT_FUEL.get()) || available.getAmount() < amount) return false;
+        IFluidHandler handler = cauldron.plasticraft$ignitionFluidAccess();
+        FluidStack request = available.copyWithAmount(amount);
         FluidStack simulated = handler.drain(request, IFluidHandler.FluidAction.SIMULATE);
         if (!FluidStack.matches(simulated, request)) return false;
         FluidStack drained = handler.drain(request, IFluidHandler.FluidAction.EXECUTE);
@@ -75,7 +77,7 @@ public final class HardenedResinCauldronSupport {
         PlasticCauldron cauldron = find(level, pos);
         if (cauldron == null) return null;
         if (amount <= 0) return false;
-        IFluidHandler handler = cauldron.plasticraft$bottomFluidAccess();
+        IFluidHandler handler = cauldron.plasticraft$ignitionFluidAccess();
         FluidStack simulated = handler.drain(amount, IFluidHandler.FluidAction.SIMULATE);
         if (!simulated.is(ModFluidTags.OIL) || simulated.getAmount() != amount) return false;
         handler.drain(amount, IFluidHandler.FluidAction.EXECUTE);
@@ -84,7 +86,7 @@ public final class HardenedResinCauldronSupport {
 
     public static Integer fluidAmount(Level level, BlockPos pos) {
         PlasticCauldron cauldron = find(level, pos);
-        return cauldron == null ? null : cauldron.plasticraft$bottomFluid().getAmount();
+        return cauldron == null ? null : cauldron.plasticraft$ignitionFluid().getAmount();
     }
 
     /** 返回实际碰撞箱进入当前落砧格的锅，不把工作方块覆盖范围扩展为受击范围。 */

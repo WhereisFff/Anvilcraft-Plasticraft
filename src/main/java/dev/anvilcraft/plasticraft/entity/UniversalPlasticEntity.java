@@ -33,6 +33,7 @@ import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.api.giantanvil.IShockEntity;
 import dev.dubhe.anvilcraft.api.giantanvil.ShockAnvilBehavior;
+import dev.dubhe.anvilcraft.init.item.ModItemTags;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
@@ -69,10 +70,12 @@ import net.neoforged.neoforge.items.ItemStackHandler;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /** 保留通用塑料颜色并复用全部公共塑料物理的轻量制品实体。 */
@@ -125,6 +128,10 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
     private Runnable moldedContentsChanged = () -> {
     };
     private MoldedTrayRedstoneRuntimeManager trayRuntimes;
+    private IItemHandler largeRecipeInput;
+    private boolean largeRecipeProcessing;
+    private final Set<Integer> largeOutputInputs = new HashSet<>();
+    private final List<ItemStack> originalLargeOutputs = new ArrayList<>();
     public static void configureDefaultDrop(Supplier<ItemStack> supplier) {
         defaultDropSupplier = Objects.requireNonNull(supplier, "supplier");
     }
@@ -387,7 +394,7 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
     }
 
     private void onMoldedCauldronOutputChanged() {
-        if (!this.isMoldedCauldron() || this.autoOutputting || this.restoringData) return;
+        if (!this.isMoldedCauldron() || this.autoOutputting || this.restoringData || this.largeRecipeProcessing) return;
         this.tryAutoOutputResults();
     }
 
@@ -546,7 +553,9 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
             if (item.slot() < 0 || item.slot() >= DISPLAY_ITEM_SLOTS || item.stack().isEmpty()) continue;
             CompoundTag entry = new CompoundTag();
             entry.putInt("Slot", item.slot());
-            entry.put("Stack", item.stack().save(registries));
+            // ItemStack 的持久化 Codec 限制数量为 99；大锅输入可达 576，数量必须独立同步。
+            entry.putInt("Count", item.stack().getCount());
+            entry.put("Stack", item.stack().copyWithCount(1).save(registries));
             stacks.add(entry);
         }
         tag.put("Stacks", stacks);
@@ -563,7 +572,10 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
             int slot = entry.getInt("Slot");
             if (slot < 0 || slot >= this.syncedItems.getSlots()) continue;
             ItemStack parsed = ItemStack.parseOptional(this.registryAccess(), entry.getCompound("Stack"));
-            if (!parsed.isEmpty()) this.syncedItems.setStackInSlot(slot, parsed);
+            if (!parsed.isEmpty()) {
+                int count = Math.clamp(entry.getInt("Count"), 0, this.plasticraft$cauldronLayout().slotLimit(slot, parsed));
+                this.syncedItems.setStackInSlot(slot, parsed.copyWithCount(count));
+            }
         }
     }
 
@@ -647,7 +659,25 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
     }
 
     @Override
+    protected void tickFunctionalState() {
+        boolean large = MoldedLargeCauldronInteraction.applies(this);
+        if (large) MoldedLargeCauldronEnvironment.absorbSources(this);
+        super.tickFunctionalState();
+        if (large) MoldedLargeCauldronEnvironment.tick(this);
+    }
+
+    @Override
+    protected void hurtEntitiesInIgnitedFluid() {
+        if (!MoldedLargeCauldronInteraction.applies(this)) super.hurtEntitiesInIgnitedFluid();
+    }
+
+    @Override
     public InteractionResult interactAt(Player player, Vec3 location, InteractionHand hand) {
+        if (MoldedLargeCauldronInteraction.applies(this) && !player.isShiftKeyDown()
+            && !player.getItemInHand(hand).is(ModItemTags.ANVIL_HAMMER)) {
+            this.plasticraft$wakeFromRest();
+            return this.interactCauldron(player, hand, location);
+        }
         if (this.isMoldedTray()) {
             Optional<MoldedTrayCell> target = this.trayCellAt(location);
             if (target.isPresent()) {
@@ -846,9 +876,71 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
     }
 
     @Override
+    public FluidStack plasticraft$ignitionFluid() {
+        if (!MoldedLargeCauldronInteraction.applies(this)) return this.plasticraft$bottomFluid();
+        List<FluidStack> fluids = this.getSyncedFluids();
+        return fluids.isEmpty() ? FluidStack.EMPTY : fluids.getLast();
+    }
+
+    @Override
+    public IFluidHandler plasticraft$ignitionFluidAccess() {
+        return MoldedLargeCauldronInteraction.applies(this) ? this.moldedFluidHandler.topAccess() : this.plasticraft$bottomFluidAccess();
+    }
+
+    @Override
     public IItemHandler getInput() {
         if (!CauldronImpactRecipeProcessor.canAccessRecipeInventory(this)) return this.emptyRecipeHandler;
+        if (MoldedLargeCauldronInteraction.applies(this)) {
+            return this.largeRecipeInput == null ? this.emptyRecipeHandler : this.largeRecipeInput;
+        }
         return this.processingOutput ? this.moldedOutputView : this.moldedInputView;
+    }
+
+    @Override
+    public void beginRecipeProcessing() {
+        super.beginRecipeProcessing();
+        this.largeRecipeProcessing = MoldedLargeCauldronInteraction.applies(this);
+        if (this.largeRecipeProcessing) {
+            this.originalLargeOutputs.clear();
+            for (int slot = 0; slot < this.moldedOutputView.getSlots(); slot++) {
+                this.originalLargeOutputs.add(this.moldedOutputView.getStackInSlot(slot).copy());
+            }
+            this.selectLargeRecipeInput(-1, false);
+        }
+    }
+
+    public void selectLargeRecipeInput(int slot, boolean outputs) {
+        this.processingOutput = outputs;
+        this.largeRecipeInput = slot < 0 ? null : outputs
+            ? this.moldedItemHandler.outputRecipeView(slot, this.originalLargeOutputs)
+            : this.moldedItemHandler.recipeView(false, slot);
+        this.largeOutputInputs.clear();
+        if (outputs) {
+            for (int index = 0; index < this.moldedOutputView.getSlots(); index++) {
+                if (!this.moldedOutputView.getStackInSlot(index).isEmpty()) this.largeOutputInputs.add(index);
+            }
+        }
+    }
+
+    @Override
+    public void finishRecipeProcessing() {
+        super.finishRecipeProcessing();
+        boolean wasLarge = this.largeRecipeProcessing;
+        this.largeRecipeProcessing = false;
+        this.largeRecipeInput = null;
+        this.largeOutputInputs.clear();
+        this.originalLargeOutputs.clear();
+        if (wasLarge) this.tryAutoOutputResults();
+    }
+
+    @Override
+    public ItemStack insertRecipeOutput(ItemStack stack) {
+        if (!this.largeRecipeProcessing || !this.processingOutput) return super.insertRecipeOutput(stack);
+        ItemStack remainder = stack;
+        for (int slot = 0; slot < this.moldedOutputView.getSlots() && !remainder.isEmpty(); slot++) {
+            if (!this.largeOutputInputs.contains(slot)) remainder = this.moldedOutputView.insertItem(slot, remainder, false);
+        }
+        return remainder;
     }
 
     @Override
@@ -865,6 +957,24 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
     @Override
     public IFluidHandler getFluidHandler() {
         return this.moldedFluidHandler;
+    }
+
+    public @Nullable IItemHandler getAutomationItemHandler(@Nullable Direction side) {
+        if (this.moldedItemHandler.getSlots() == 0) return null;
+        Vec3 point = this.getBoundingBox().getCenter();
+        if (side != null) {
+            AABB bounds = this.getBoundingBox();
+            point = point.add(side.getStepX() * bounds.getXsize() / 2,
+                side.getStepY() * bounds.getYsize() / 2, side.getStepZ() * bounds.getZsize() / 2);
+        }
+        return MoldedLargeCauldronInteraction.applies(this)
+            ? MoldedLargeCauldronInteraction.itemAccess(this, side, point) : this.moldedItemHandler;
+    }
+
+    public @Nullable IFluidHandler getAutomationFluidHandler(@Nullable Direction side) {
+        if (this.moldedFluidHandler.getTanks() == 0) return null;
+        return MoldedLargeCauldronInteraction.applies(this)
+            ? MoldedLargeCauldronInteraction.fluidAccess(this, side) : this.moldedFluidHandler;
     }
 
     @Override
@@ -934,7 +1044,7 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
         return this.cauldronFluidArea(fill).maxY;
     }
 
-    private AABB cauldronFluidArea(double fill) {
+    AABB cauldronFluidArea(double fill) {
         AABB cavity = this.cauldronCavity();
         if (cavity == null) return this.getBoundingBox();
         // 先在模型局部空间裁出液体盒，再把八个角逐一变换到世界，不能只变换两个对角点。
@@ -1015,6 +1125,10 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
         return stacks;
     }
 
+    public ItemStack getSyncedItemInSlot(int slot) {
+        return this.level().isClientSide ? this.syncedItems.getStackInSlot(slot).copy() : this.moldedItemHandler.getStackInSlot(slot);
+    }
+
     public List<FluidStack> getSyncedFluids() {
         if (this.level().isClientSide) {
             return this.syncedFluids.stream().map(FluidStack::copy).toList();
@@ -1027,6 +1141,7 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
 
     @Override
     public boolean plasticraft$isEntityInsidePlasticMelt(Entity entity) {
+        if (MoldedLargeCauldronInteraction.applies(this)) return MoldedLargeCauldronEnvironment.insideMelt(this, entity);
         if (!this.isMoldedCauldron() || !PlasticMaterial.isMelt(this.plasticraft$bottomFluid())) return false;
         if (this.getOrientation().attachmentFace() != Direction.UP) return false;
         return this.cauldronFluidArea().intersects(entity.getBoundingBox());

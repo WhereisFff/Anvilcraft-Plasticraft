@@ -9,5 +9,6 @@ public enum AllayCapability {
     DEMOLISH,
     COLLECT_ITEMS,
     CHUNK_LOADING,
-    GUIDE_FLEET
+    GUIDE_FLEET,
+    IGNITE
 }

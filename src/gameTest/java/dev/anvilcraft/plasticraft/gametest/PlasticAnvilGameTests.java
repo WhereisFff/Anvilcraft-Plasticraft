@@ -63,6 +63,7 @@ import dev.dubhe.anvilcraft.util.GravityType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.dispenser.BlockSource;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
@@ -92,6 +93,7 @@ import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Ravager;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.WitherSkull;
 import net.minecraft.world.entity.vehicle.Boat;
 import net.minecraft.world.entity.vehicle.Minecart;
 import net.minecraft.world.item.Item;
@@ -104,6 +106,8 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CampfireBlock;
+import net.minecraft.world.level.block.DispenserBlock;
+import net.minecraft.world.level.block.entity.DispenserBlockEntity;
 import net.minecraft.world.level.block.piston.PistonStructureResolver;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluids;
@@ -607,6 +611,94 @@ public final class PlasticAnvilGameTests {
             captured.get(ModComponents.SAVED_ENTITY).isMonster(),
             "captured hostile mob lost its resentment-compatible marker"
         );
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("7x5x7")
+    @TestHolder(description = "Normal and blue Wither Skulls hitting resin are captured without exploding")
+    static void highViscosityResinInterceptsWitherSkulls(ExtendedGameTestHelper helper) {
+        for (boolean dangerous : new boolean[]{false, true}) {
+            BlockPos resinPos = new BlockPos(3, 2, dangerous ? 4 : 2);
+            helper.setBlock(resinPos, PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.get());
+            helper.setBlock(resinPos.above(), Blocks.GLASS);
+            WitherSkull skull = new WitherSkull(EntityType.WITHER_SKULL, helper.getLevel());
+            skull.setDangerous(dangerous);
+            skull.setPos(helper.absoluteVec(Vec3.atCenterOf(resinPos).add(-2.0D, 0.0D, 0.0D)));
+            skull.setDeltaMovement(2.0D, 0.0D, 0.0D);
+            check(helper.getLevel().addFreshEntity(skull), "failed to spawn Wither Skull");
+            skull.tick();
+            check(skull.isRemoved(), "impact did not remove Wither Skull, blue=" + dangerous);
+            check(helper.getBlockState(resinPos).isAir(), "capture did not consume resin, blue=" + dangerous);
+            check(helper.getBlockState(resinPos.above()).is(Blocks.GLASS), "skull exploded during capture");
+            List<ItemEntity> drops = helper.getLevel().getEntitiesOfClass(
+                ItemEntity.class, new AABB(helper.absolutePos(resinPos)).inflate(0.5D),
+                item -> item.getItem().is(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
+            );
+            check(drops.size() == 1 && drops.getFirst().getItem().getCount() == 1,
+                "capture did not drop exactly one filled resin block, blue=" + dangerous);
+            ItemStack captured = drops.getFirst().getItem();
+            ItemStack reloaded = ItemStack.parseOptional(helper.getLevel().registryAccess(),
+                (CompoundTag) captured.save(helper.getLevel().registryAccess()));
+            Entity restored = HasMobBlockItem.getMobFromItem(helper.getLevel(), reloaded);
+            check(restored instanceof WitherSkull saved && saved.isDangerous() == dangerous,
+                "saved skull lost its type or blue variant");
+            check(!restored.getUUID().equals(skull.getUUID()), "captured skull retained its old UUID");
+            drops.getFirst().discard();
+        }
+        helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate("7x5x7")
+    @TestHolder(description = "Resin captures and releases Wither Skulls through dispensers and unobstructed player use")
+    static void highViscosityResinDispensesWitherSkulls(ExtendedGameTestHelper helper) {
+        BlockPos pos = new BlockPos(2, 2, 2);
+        helper.setBlock(pos, Blocks.DISPENSER.defaultBlockState().setValue(DispenserBlock.FACING, Direction.EAST));
+        DispenserBlockEntity dispenser = (DispenserBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(pos));
+        ItemStack resin = new ItemStack(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem(), 2);
+        dispenser.setItem(0, resin);
+        WitherSkull skull = new WitherSkull(EntityType.WITHER_SKULL, helper.getLevel());
+        skull.setPos(helper.absoluteVec(Vec3.atCenterOf(pos.east())));
+        check(helper.getLevel().addFreshEntity(skull), "failed to spawn dispenser target");
+        ItemStack remaining = HighViscosityResinBlockItem.dispense(new BlockSource(
+            helper.getLevel(), helper.absolutePos(pos), helper.getBlockState(pos), dispenser
+        ), resin);
+        check(skull.isRemoved() && remaining.getCount() == 1, "dispenser did not consume exactly one resin");
+        ItemStack captured = dispenser.getItem(1);
+        check(HasMobBlockItem.getMobFromItem(helper.getLevel(), captured) instanceof WitherSkull,
+            "dispenser did not retain the captured skull");
+        WitherSkull other = new WitherSkull(EntityType.WITHER_SKULL, helper.getLevel());
+        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.CREATIVE);
+        check(HighViscosityResinBlockItem.useEntity(player, other, captured) == InteractionResult.PASS,
+            "filled resin overwrote its contents in creative mode");
+        check(!other.isRemoved(), "rejected capture removed the second skull");
+        ItemStack refund = HighViscosityResinBlockItem.spawnMobFromItem(
+            helper.getLevel(), helper.absolutePos(pos.east(2)), captured
+        );
+        check(captured.isEmpty() && !refund.isEmpty(), "release did not consume filled resin and return resin items");
+        check(helper.getLevel().getEntitiesOfClass(WitherSkull.class,
+            new AABB(helper.absolutePos(pos.east(2)))).size() == 1, "captured skull could not be released");
+
+        player.setPos(helper.absoluteVec(new Vec3(1.5D, 2.0D, 4.5D)));
+        player.setYRot(-90.0F);
+        player.setXRot(0.0F);
+        Vec3 eye = player.getEyePosition();
+        WitherSkull lookedAt = new WitherSkull(EntityType.WITHER_SKULL, helper.getLevel());
+        lookedAt.setPos(eye.add(2.0D, -0.1D, 0.0D));
+        check(helper.getLevel().addFreshEntity(lookedAt), "failed to spawn player target");
+        ItemStack held = PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asStack();
+        player.setItemInHand(InteractionHand.MAIN_HAND, held);
+        BlockPos wall = BlockPos.containing(eye.add(1.0D, 0.0D, 0.0D));
+        helper.getLevel().setBlockAndUpdate(wall, Blocks.STONE.defaultBlockState());
+        held.getItem().use(helper.getLevel(), player, InteractionHand.MAIN_HAND);
+        check(!lookedAt.isRemoved() && held.getCount() == 1, "player captured a skull through a wall");
+        helper.getLevel().removeBlock(wall, false);
+        check(player.gameMode.useItem(player, helper.getLevel(), held, InteractionHand.MAIN_HAND).consumesAction(),
+            "player use could not target an unobstructed Wither Skull");
+        check(lookedAt.isRemoved() && held.isEmpty(), "player capture did not exchange one resin for one skull");
+        check(HasMobBlockItem.getMobFromItem(helper.getLevel(), player.getMainHandItem()) instanceof WitherSkull,
+            "item use completion overwrote the captured skull in the player's hand");
         helper.succeed();
     }
 

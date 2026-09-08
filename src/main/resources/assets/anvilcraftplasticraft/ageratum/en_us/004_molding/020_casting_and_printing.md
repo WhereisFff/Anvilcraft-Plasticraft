@@ -8,9 +8,7 @@ items:
 
 # Casting and 3D Printing
 
-<row halign="center">
-<item id="anvilcraftplasticraft:plastic_3d_printing_component"/>
-</row>
+<recipe id="anvilcraftplasticraft:plastic_3d_printing_component"/>
 
 ## Power
 

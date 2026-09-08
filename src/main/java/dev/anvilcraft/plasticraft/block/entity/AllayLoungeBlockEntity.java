@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.block.entity;
 
 import com.mojang.serialization.Codec;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.allay.tool.AllayToolSupply;
 import dev.anvilcraft.plasticraft.allay.AllayClearanceStrategy;
 import dev.anvilcraft.plasticraft.allay.AllayLoungeAnimation;
 import dev.anvilcraft.plasticraft.allay.AllayLoungePickupQueue;
@@ -143,6 +144,9 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         lounge.retryDiskClaim();
         if (level instanceof ServerLevel serverLevel) {
             lounge.updateIndicatorStatus(serverLevel);
+            ConstructionJob toolJob = lounge.diskJobId() == null ? null
+                : ConstructionJobIndex.get(serverLevel).job(lounge.diskJobId());
+            if (toolJob == null || !toolJob.isActive()) AllayToolSupply.returnHostedTools(lounge);
             if (lounge.pickups.promote(serverLevel.getGameTime())) lounge.sendDockingUpdate();
             // 运行时转运图不落盘;每次实体刻重新登记,覆盖热加载、区块重载及早于 onLoad 建立的节点
             AllayLoungeNetwork.register(lounge);
@@ -334,6 +338,7 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         if (this.hosted.size() >= HOST_CAPACITY) return false;
         this.removeDockingWorker(worker.getUUID());
         worker.clearAssignment(false);
+        AllayToolSupply.returnOnDock(worker, this);
         this.dockingRecord = worker.toWorkRecord();
         this.dockingProgress = 0;
         this.dockingRunning = true;
@@ -406,19 +411,25 @@ public class AllayLoungeBlockEntity extends BlockEntity {
 
     public boolean releaseHosted(int index) {
         if (!(this.level instanceof ServerLevel serverLevel)) return false;
-        if (this.isBayBusy()) return false;
         if (index < 0 || index >= this.hosted.size()) return false;
         AllayWorkRecord record = this.hosted.remove(index);
         WorkingAllayEntity worker = this.spawnBound(serverLevel, this.releasePoint(), record);
         // GUI 放出是玩家明确解除托管，不能保留 home/origin/transit 触发自动回库或转运。
         worker.setHomeLounge(null);
         ConstructionTransferService.detachManualRelease(worker);
-        this.occupyOutboundBay();
+        // 手动解除托管不占通道，也不能覆盖正在入库的记录或重置自动出入库进度。
+        this.markHatchActivity();
+        this.setChanged();
+        this.sendDockingUpdate();
         return true;
     }
 
     /** 网络入口：托管卡片只能由休息室所有者或同队成员操作。 */
-    public boolean releaseHosted(ServerPlayer actor, int index) {
+    public boolean releaseHosted(ServerPlayer actor, int index, UUID entityId) {
+        // 连续点选期间列表可能已移位，按点击时的身份重新定位，防止放出相邻卡片。
+        if (index < 0 || index >= this.hosted.size() || !this.hosted.get(index).entityId().equals(entityId)) {
+            index = this.hostedIndex(entityId);
+        }
         if (!ConstructionPermission.canUseLounge(actor, this)
             || index < 0
             || index >= this.hosted.size()) {
@@ -464,6 +475,8 @@ public class AllayLoungeBlockEntity extends BlockEntity {
         if (index < 0) return false;
         this.hosted.set(index, update.apply(this.hosted.get(index)));
         this.setChanged();
+        ObservationChunkLoader.syncLounge(this);
+        this.sendDockingUpdate();
         return true;
     }
 

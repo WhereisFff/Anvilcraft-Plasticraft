@@ -14,6 +14,8 @@ items:
 
 One structure disk can hold a construction blueprint or a plastic molding model. A construction blueprint keeps blocks, block-entity data, fluids and entities along with it; [Model Editing and Import](../004_molding/010_model_editor_and_import.md) covers the molding side
 
+Hover over a construction blueprint or scanner structure disk to see a rotating thumbnail. For large structures, a progress bar shows the initial preview preparation and the model appears progressively; continued hovering reuses the prepared preview. The thumbnail shows block appearance and does not affect the complete storage of block-entity data or entities
+
 ## Import
 
 All three methods write to the Structure Disk in your hand:

@@ -67,7 +67,7 @@ public final class GeneralAllayToolBehavior implements AllayToolBehavior {
             ConstructionAllayToolBehavior.INSTANCE.serverTick(worker);
             return;
         }
-        if (definition.hasCapability(AllayCapability.PICK_UP_MATERIAL)
+        if (definition.hasCapability(AllayCapability.DELIVER_PROJECTION)
             && ConstructionAllayToolBehavior.shouldHandle(worker, job)) {
             ConstructionAllayToolBehavior.INSTANCE.serverTick(worker);
             return;
@@ -190,7 +190,7 @@ public final class GeneralAllayToolBehavior implements AllayToolBehavior {
             CollectionAllayToolBehavior.INSTANCE.serverTick(worker);
             return true;
         }
-        if (definition.hasCapability(AllayCapability.PICK_UP_MATERIAL)
+        if (definition.hasCapability(AllayCapability.DELIVER_PROJECTION)
             && (job.state() == ConstructionJob.STATE_BUILDING
             || job.state() == ConstructionJob.STATE_SEALING_FLUID)) {
             ConstructionAllayToolBehavior.INSTANCE.serverTick(worker);
@@ -226,7 +226,7 @@ public final class GeneralAllayToolBehavior implements AllayToolBehavior {
             ConstructionAllayToolBehavior.INSTANCE.serverTick(worker);
             return true;
         }
-        if (definition.hasCapability(AllayCapability.PICK_UP_MATERIAL)
+        if (definition.hasCapability(AllayCapability.DELIVER_PROJECTION)
             && job.state() == ConstructionJob.STATE_BUILDING
             && ConstructionAllayToolBehavior.tryClaim(worker, level, job, progress)) {
             ConstructionAllayToolBehavior.INSTANCE.serverTick(worker);

@@ -543,12 +543,13 @@ public final class ObservationAllayGameTests {
         UUID jobId = UUID.randomUUID();
         ObservationOwner owner = ObservationOwner.observer(level.dimension(), observerId);
         ChunkPos center = new ChunkPos(helper.absolutePos(new BlockPos(1, 2, 1)));
+        int previousReferences = index.refCount(level.dimension(), center);
         try {
             check(index.putCoverage(owner, center), "首次登记覆盖必须写入索引");
             check(!index.putCoverage(owner, center), "重启补票时同一持票人的同一份覆盖不得再写第二次");
             check(
-                index.refCount(level.dimension(), center) == 1,
-                "重复补票后引用计数必须仍是 1，否则重启一次就会多出一份无主加载区，实际为 "
+                index.refCount(level.dimension(), center) == previousReferences + 1,
+                "重复补票只能比已有覆盖增加 1 份引用，不能把邻近测试的覆盖当成重复补票，实际为 "
                     + index.refCount(level.dimension(), center)
             );
             index.addLease(jobId, new ObservationLease(level.dimension(), center, observerId));

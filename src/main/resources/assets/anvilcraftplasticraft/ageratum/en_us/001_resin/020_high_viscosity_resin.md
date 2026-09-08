@@ -46,4 +46,14 @@ Time-warp a full bucket of Liquid High-Viscosity Resin to obtain a High-Viscosit
 
 - It keeps all of the Resin Block behavior: bouncing, slowing, mob capture, spawner capture, and time-warp recipes
 - Captured mobs have no size limit, although hostile mobs must still have Weakness
+- Normal and blue Wither Skulls hitting this block consume it and drop one High-Viscosity Resin Block containing the skull, without an impact explosion; dispensers can also capture skulls in the block directly in front of them using empty High-Viscosity Resin Blocks
+- Holding an empty High-Viscosity Resin Block and using it on an unobstructed Wither Skull within interaction reach also captures it directly
 - It adheres to adjacent blocks like a Slime Block; a complete group connected by High-Viscosity Resin counts as only one block against the piston push limit
+
+## Transforming a Wither Skull into an Allay
+
+Place a cauldron on a lit Corrupted Beacon and fill it with Mending Liquid Enchantment. Drop in one High-Viscosity Resin Block containing a Wither Skull and one Totem of Undying, then trigger time-warp processing with a falling anvil. Each operation consumes 1 mB of fluid and produces one High-Viscosity Resin Block containing an Allay
+
+Both normal and blue skulls work. Empty resin blocks, blocks containing other creatures, and other Liquid Enchantment variants cannot substitute for these ingredients. Use the resulting block on a block to release the Allay through the usual resin release interaction
+
+<recipe id="anvilcraftplasticraft:time_warp/wither_skull_to_allay"/>

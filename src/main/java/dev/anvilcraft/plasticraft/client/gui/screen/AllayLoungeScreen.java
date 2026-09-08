@@ -110,13 +110,13 @@ public class AllayLoungeScreen extends AbstractContainerScreen<AllayLoungeMenu> 
         if (hovered >= 0 && hovered < hosted.size()) {
             AllayWorkRecord record = hosted.get(hovered);
             List<Component> tooltip = new ArrayList<>();
-            record.customName().ifPresent(tooltip::add);
-            tooltip.add(record.hardHat().getHoverName());
+            tooltip.add(record.customName().orElseGet(() -> record.hardHat().getHoverName())
+                .copy().withStyle(ChatFormatting.WHITE));
             ItemStack tool = record.heldTool();
-            tooltip.add(tool.isEmpty()
-                ? Component.translatable("screen.anvilcraftplasticraft.allay.tool.none") : tool.getHoverName());
-            tooltip.add(Component.translatable("screen.anvilcraftplasticraft.allay_lounge.rotate")
-                .withStyle(ChatFormatting.GRAY));
+            Component toolName = tool.isEmpty()
+                ? Component.translatable("screen.anvilcraftplasticraft.allay.tool.none") : tool.getHoverName();
+            tooltip.add(Component.translatable("screen.anvilcraftplasticraft.allay_lounge.tool",
+                toolName.copy().withStyle(ChatFormatting.WHITE)).withStyle(ChatFormatting.WHITE));
             tooltip.add(Component.translatable("screen.anvilcraftplasticraft.allay_lounge.release")
                 .withStyle(ChatFormatting.GRAY));
             graphics.renderComponentTooltip(this.font, tooltip, mouseX, mouseY);
@@ -217,7 +217,7 @@ public class AllayLoungeScreen extends AbstractContainerScreen<AllayLoungeMenu> 
         // 松开时重新核对 UUID，异步出入库导致卡片移位时不能放错悦灵。
         if (!this.dragged && card >= 0 && card < hosted.size()
             && hosted.get(card).entityId().equals(this.pressedAllay)) {
-            PacketDistributor.sendToServer(new AllayLoungeReleasePacket(this.menu.loungePos(), card));
+            PacketDistributor.sendToServer(new AllayLoungeReleasePacket(this.menu.loungePos(), card, this.pressedAllay));
             if (this.minecraft != null) {
                 this.minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
             }

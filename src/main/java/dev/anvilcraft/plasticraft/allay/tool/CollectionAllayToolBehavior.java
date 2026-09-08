@@ -173,6 +173,7 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
         AABB box = worker.getBoundingBox().inflate(range);
         for (ItemEntity entity : level.getEntitiesOfClass(ItemEntity.class, box)) {
             if (!entity.isAlive() || entity.hasPickUpDelay() || entity.getItem().isEmpty()) continue;
+            if (isWarehouseSupply(worker, entity)) continue;
             if (!ConstructionPermission.canModify(level, BlockPos.containing(entity.position()), ownerId)) continue;
             double distance = worker.distanceTo(entity);
             if (distance <= range && distance < bestDistance) {
@@ -185,6 +186,12 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
 
     private static double collectRange(WorkingAllayEntity worker) {
         return isVacuum(worker) ? FREE_RANGE : Math.max(FREE_RANGE, ConstructionJobController.reach(worker));
+    }
+
+    private static boolean isWarehouseSupply(WorkingAllayEntity worker, ItemEntity entity) {
+        BlockPos home = worker.homeLoungePos();
+        return home != null && new AABB(home.below()).contains(entity.position())
+            && !ConstructionDebris.isMarked(entity.getItem());
     }
 
     private static void tickTask(WorkingAllayEntity worker, ServerLevel level, ConstructionJob job, UUID ownerId) {
@@ -401,6 +408,7 @@ public final class CollectionAllayToolBehavior implements AllayToolBehavior {
         List<ItemEntity> items = level.getEntitiesOfClass(ItemEntity.class, box);
         for (ItemEntity entity : items) {
             if (!entity.isAlive() || entity.hasPickUpDelay() || entity.getItem().isEmpty()) continue;
+            if (progress == null && isWarehouseSupply(worker, entity)) continue;
             if (worker.distanceTo(entity) > FREE_RANGE) continue;
             if (progress != null) {
                 ConstructionDebris mark = ConstructionDebris.get(entity.getItem());

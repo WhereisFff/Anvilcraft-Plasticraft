@@ -15,7 +15,7 @@ import net.minecraft.world.item.ItemStack;
 public enum PlasticCauldronLayout {
     /** 硬化树脂炼药锅同规格：输出 8 槽、输入 8 槽、单次落砧一次配方。 */
     NORMAL(8, 8, 1, 1, 1),
-    /** 对齐本体大型炼药锅：输出 32 槽、输入 8 槽 × 9 倍堆叠、8 层 × 64 B、单次落砧最多 9 次配方。 */
+    /** 对齐本体大型炼药锅：输出 32 槽、输入 8 槽 × 9 倍堆叠、8 层 × 64 B、单次落砧最多 9 组加工。 */
     LARGE(32, 8, 9, 8, 9);
 
     /** 所有形态中最大的输入槽堆叠倍率，供不知道具体形态的通用校验取上界。 */
@@ -92,7 +92,7 @@ public enum PlasticCauldronLayout {
         return Math.multiplyExact(capacity, 1000) / this.fluidLayers;
     }
 
-    /** 单次落砧最多执行的配方次数。 */
+    /** 单次落砧最多执行的加工组数，大型锅每组以一个普通堆叠为预算。 */
     public int recipePasses() {
         return this.recipePasses;
     }

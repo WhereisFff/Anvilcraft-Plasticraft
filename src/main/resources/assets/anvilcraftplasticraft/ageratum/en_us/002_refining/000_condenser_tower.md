@@ -42,6 +42,8 @@ Worth mentioning: High-Heat Fuel is ignitable itself, and its fire deals twice t
 
 ## Crude-oil separation
 
+In JEI, hover over a High-Heat Fuel Bucket, Plastic Oil Bucket, or Crude Oil Essence Bucket and press the recipe key (R by default) to view its condensation recipe. The page shows the actual fluid amount processed per operation
+
 Gaseous crude oil rises through the tower on its own, and the first three layers separate each 50mB batch exactly:
 
 | Layer | Input | Output |

@@ -1,0 +1,38 @@
+{
+  "type": "anvilcraft:time_warp",
+  "consume": 1,
+  "fluid": {
+    "components": {
+      "patch": {
+        "anvilcraft:liquid_enchantment": "minecraft:mending"
+      }
+    },
+    "fluids": "anvilcraft:liquid_enchantment"
+  },
+  "ingredients": [
+    {
+      "items": "anvilcraftplasticraft:high_viscosity_resin_block",
+      "predicates": {
+        "anvilcraft:saved_entity": {
+          "entitys": "minecraft:wither_skull"
+        }
+      }
+    },
+    {
+      "items": "minecraft:totem_of_undying"
+    }
+  ],
+  "results": [
+    {
+      "components": {
+        "anvilcraft:saved_entity": {
+          "isMonster": false,
+          "tag": {
+            "id": "minecraft:allay"
+          }
+        }
+      },
+      "id": "anvilcraftplasticraft:high_viscosity_resin_block"
+    }
+  ]
+}

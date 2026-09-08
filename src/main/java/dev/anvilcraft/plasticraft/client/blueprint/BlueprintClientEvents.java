@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.blueprint.ConstructionBlueprintData;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionJob;
 import dev.anvilcraft.plasticraft.blueprint.ConstructionProjectionIndex;
 import dev.anvilcraft.plasticraft.client.renderer.blueprint.BlueprintProjectionRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.StructureDiskPreviewRenderer;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -61,6 +62,7 @@ public final class BlueprintClientEvents {
 
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
+        StructureDiskPreviewRenderer.tick();
         BlueprintDeploySession.clientTick(Minecraft.getInstance());
     }
 
@@ -88,6 +90,7 @@ public final class BlueprintClientEvents {
         ClientBlueprintJobCache.clear();
         ClientBlueprintSnapshotCache.clear();
         BlueprintProjectionRenderer.clearCache();
+        StructureDiskPreviewRenderer.clearCache();
         if (Minecraft.getInstance().level != null) {
             ConstructionProjectionIndex.clearLevel(Minecraft.getInstance().level);
         }

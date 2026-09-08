@@ -2,6 +2,8 @@ package dev.anvilcraft.plasticraft.mixin;
 
 import dev.anvilcraft.lib.v2.recipe.util.InWorldRecipeContext;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
+import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.recipe.MoldedLargeCauldronFluidRecipes;
 import dev.anvilcraft.plasticraft.recipe.PlasticMeltRecipeColor;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.dubhe.anvilcraft.api.entity.IEntityCauldron;
@@ -34,8 +36,44 @@ abstract class HasCauldronMixin {
         cir.setReturnValue(target);
     }
 
-    @Inject(method = "accept", at = @At("HEAD"))
+    @Inject(method = "test", at = @At("HEAD"), cancellable = true)
+    private void plasticraft$testLargeFluids(InWorldRecipeContext context, CallbackInfoReturnable<Boolean> cir) {
+        HasCauldron predicate = (HasCauldron) (Object) this;
+        UniversalPlasticEntity pot = MoldedLargeCauldronFluidRecipes.target(context, predicate);
+        if (pot != null) cir.setReturnValue(MoldedLargeCauldronFluidRecipes.test(context, pot, predicate));
+    }
+
+    @Inject(method = "snapshot", at = @At("HEAD"), cancellable = true)
+    private void plasticraft$snapshotLargeFluids(InWorldRecipeContext context, CallbackInfo ci) {
+        HasCauldron predicate = (HasCauldron) (Object) this;
+        UniversalPlasticEntity pot = MoldedLargeCauldronFluidRecipes.target(context, predicate);
+        if (pot == null) return;
+        MoldedLargeCauldronFluidRecipes.snapshot(context, pot, predicate);
+        ci.cancel();
+    }
+
+    @Inject(method = "rollback", at = @At("HEAD"), cancellable = true)
+    private void plasticraft$rollbackLargeFluids(InWorldRecipeContext context, CallbackInfo ci) {
+        UniversalPlasticEntity pot = MoldedLargeCauldronFluidRecipes.target(context, (HasCauldron) (Object) this);
+        if (pot == null) return;
+        MoldedLargeCauldronFluidRecipes.rollback(context, pot);
+        ci.cancel();
+    }
+
+    @Inject(method = "clearStack", at = @At("HEAD"), cancellable = true)
+    private void plasticraft$clearLargeFluids(InWorldRecipeContext context, CallbackInfo ci) {
+        UniversalPlasticEntity pot = MoldedLargeCauldronFluidRecipes.target(context, (HasCauldron) (Object) this);
+        if (pot == null) return;
+        MoldedLargeCauldronFluidRecipes.clear(context, pot);
+        ci.cancel();
+    }
+
+    @Inject(method = "accept", at = @At("HEAD"), cancellable = true)
     private void plasticraft$captureMeltColor(InWorldRecipeContext context, CallbackInfo ci) {
         PlasticMeltRecipeColor.captureCauldron(context, ((HasCauldron) (Object) this).offset());
+        if (MoldedLargeCauldronFluidRecipes.target(context, (HasCauldron) (Object) this) != null) {
+            MoldedLargeCauldronFluidRecipes.accept(context);
+            ci.cancel();
+        }
     }
 }
