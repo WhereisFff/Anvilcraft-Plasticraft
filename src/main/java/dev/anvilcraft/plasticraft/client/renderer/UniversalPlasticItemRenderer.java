@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.client.renderer;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.entity.MoldedPlasticCauldronState;
-import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderHelper;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
@@ -51,7 +51,7 @@ public final class UniversalPlasticItemRenderer extends BlockEntityWithoutLevelR
             if (state.hasProperty(DyeableMaterial.COLOR)) {
                 state = state.setValue(DyeableMaterial.COLOR, PlasticMeltColor.get(stack));
             }
-            if (state.is(PlasticraftBlocks.CLEAR_PLASTIC.get())) {
+            if (PlasticEntityRenderHelper.isTransparent(state)) {
                 renderClearPlasticBlock(state, pose, buffers, packedLight, packedOverlay);
             } else {
                 Minecraft.getInstance().getBlockRenderer().renderSingleBlock(

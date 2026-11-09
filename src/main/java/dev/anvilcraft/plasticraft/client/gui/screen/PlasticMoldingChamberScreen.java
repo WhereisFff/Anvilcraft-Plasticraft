@@ -8,8 +8,10 @@ import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberStructure;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingMachineState;
 import dev.anvilcraft.plasticraft.block.entity.Plastic3DPrintingComponentBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
-import dev.anvilcraft.plasticraft.client.gui.MoldingHardHatTypeIcon;
 import dev.anvilcraft.plasticraft.client.gui.MoldingTrayTypeIcon;
+import dev.anvilcraft.plasticraft.client.gui.PlasticraftGuiSounds;
+import dev.anvilcraft.plasticraft.client.gui.MoldingOutliner;
+import dev.anvilcraft.plasticraft.client.gui.MoldingWorkspaceLayout;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingAxis;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingCamera;
 import dev.anvilcraft.plasticraft.client.molding.editor.MoldingEditorController;
@@ -51,6 +53,7 @@ import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingCommand;
 import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
 import dev.anvilcraft.plasticraft.molding.model.MoldingGroup;
+import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductType;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductPreview;
@@ -96,6 +99,8 @@ import org.joml.Vector2d;
 import org.joml.Vector3d;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -158,7 +163,6 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private static final int CATEGORY_SCROLL_HANDLE_HEIGHT = 12;
     private static final double CAMERA_DRAG_THRESHOLD_SQUARED = 4.0D;
     private static final int VIEWPORT_SUPERSAMPLING = 2;
-    private static final int DIRECTION_COMPASS_X = VIEWPORT_WIDTH - 18;
     private static final int DIRECTION_COMPASS_Y = 18;
     private static final double DIRECTION_COMPASS_LINE_RADIUS = 6.5D;
     private static final double DIRECTION_COMPASS_LABEL_RADIUS = 12.5D;
@@ -229,6 +233,29 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private boolean leftOverlayOpen;
     private boolean rightOverlayOpen;
     private boolean rightOverlayOpenedLast;
+    private boolean expandedEditor;
+    private MoldingWorkspaceLayout workspaceLayout = MoldingWorkspaceLayout.fit(400, 240);
+    private final Set<UUID> collapsedGroups = new HashSet<>();
+    private int outlinerScroll;
+    private boolean outlinerScrollbarDragging;
+    private double outlinerScrollbarGrab;
+    @Nullable
+    private EditBox outlinerSearch;
+    private int contextMenuSelection;
+    private int contextPointerX;
+    private int contextPointerY;
+    private boolean boxSelecting;
+    private double boxStartX;
+    private double boxStartY;
+    private double boxEndX;
+    private double boxEndY;
+    private boolean boxAdditive;
+    private String editorFeedback = "";
+    private int editorFeedbackTicks;
+    @Nullable
+    private NumericField invalidNumeric;
+    @Nullable
+    private WorkspaceAction pressedWorkspaceAction;
     private boolean showGrid = true;
     private boolean showAxes = true;
     private MoldingGuiTransform layoutTransform = new MoldingGuiTransform(1.0D, 0.0D, 0.0D);
@@ -319,6 +346,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private Vector3d modelDragAxisDirection;
     private double modelDragDirection = 1.0D;
     private double modelDragWorldUnitsPerLocalUnit = 1.0D;
+    private double modelDragLastAngle;
+    private double modelDragAngle;
     private long seenTitleMessageGeneration;
     private int titleMessageTicks;
     private boolean removed;
@@ -346,6 +375,16 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
 
     @Override
     protected void init() {
+        String typeQuery = this.leftSearch == null ? "" : this.leftSearch.getValue();
+        String blueprintQuery = this.rightSearch == null ? "" : this.rightSearch.getValue();
+        String outlineQuery = this.outlinerSearch == null ? "" : this.outlinerSearch.getValue();
+        int previousTypeScroll = this.typeScrollRow;
+        int previousBlueprintScroll = this.blueprintScrollRow;
+        int previousOutlinerScroll = this.outlinerScroll;
+        NumericField previousNumeric = focusedNumeric();
+        int previousNumericIndex = this.numericFields.indexOf(previousNumeric);
+        String numericDraft = previousNumeric == null ? "" : previousNumeric.box.getValue();
+        cancelEditorGesture();
         super.init();
         this.titleLabelX = (this.imageWidth - this.font.width(this.title)) / 2;
         this.titleLabelY = 2;
@@ -355,6 +394,14 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         this.leftSearch.setResponder(ignored -> this.typeScrollRow = 0);
         this.rightSearch = createSearchBox("screen.anvilcraftplasticraft.molding.search_json");
         this.rightSearch.setResponder(ignored -> this.blueprintScrollRow = 0);
+        this.leftSearch.setValue(typeQuery);
+        this.rightSearch.setValue(blueprintQuery);
+        this.outlinerSearch = createSearchBox("screen.anvilcraftplasticraft.molding.workspace.search");
+        this.outlinerSearch.setResponder(ignored -> this.outlinerScroll = 0);
+        this.outlinerSearch.setValue(outlineQuery);
+        this.typeScrollRow = previousTypeScroll;
+        this.blueprintScrollRow = previousBlueprintScroll;
+        this.outlinerScroll = previousOutlinerScroll;
         this.renameField = new EditBox(
             this.font,
             CONTEXT_WIDTH,
@@ -376,8 +423,14 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         this.addRenderableWidget(this.rightSearch);
         this.addRenderableWidget(this.renameField);
         this.addRenderableWidget(this.blueprintRenameField);
+        this.addRenderableWidget(this.outlinerSearch);
         updateLayout();
         refreshNumericFields();
+        if (previousNumericIndex >= 0 && this.editor.writable()) {
+            NumericField restored = this.numericFields.get(previousNumericIndex);
+            focusNumeric(restored);
+            restored.box.setValue(numericDraft);
+        }
     }
 
     @Override
@@ -395,12 +448,27 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         );
         graphics.pose().scale((float) this.layoutTransform.scale(), (float) this.layoutTransform.scale(), 1.0F);
         try {
-            super.render(graphics, (int) logicalMouseX, (int) logicalMouseY, partialTick);
+            if (this.expandedEditor) {
+                this.hoveredSlot = null;
+                renderWorkspace(graphics, (int) logicalMouseX, (int) logicalMouseY, partialTick);
+                for (NumericField field : this.numericFields) field.box.render(graphics, (int) logicalMouseX, (int) logicalMouseY, partialTick);
+                this.outlinerSearch.render(graphics, (int) logicalMouseX, (int) logicalMouseY, partialTick);
+                if (this.renameField.isVisible()) this.renameField.render(graphics, (int) logicalMouseX, (int) logicalMouseY, partialTick);
+            } else {
+                super.render(graphics, (int) logicalMouseX, (int) logicalMouseY, partialTick);
+            }
+            renderViewportControls(graphics, (int) logicalMouseX, (int) logicalMouseY);
+            renderSelectionBox(graphics);
             updateNumericFieldTooltip(logicalMouseX, logicalMouseY);
+            if (this.contextMenuOpen) {
+                renderContextMenu(graphics, (int) logicalMouseX, (int) logicalMouseY);
+                this.hoveredControlTooltip = null;
+            }
+            if (this.renameField.isVisible()) this.renameField.render(graphics, (int) logicalMouseX, (int) logicalMouseY, partialTick);
         } finally {
             graphics.pose().popPose();
         }
-        super.renderTooltip(graphics, mouseX, mouseY);
+        if (!this.expandedEditor) super.renderTooltip(graphics, mouseX, mouseY);
         boolean emptyResourceSlotHovered = this.hoveredSlot
             == this.menu.getSlot(PlasticMoldingChamberBlockEntity.RESOURCE_SLOT)
             && !this.hoveredSlot.hasItem();
@@ -463,7 +531,6 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         renderElementList(graphics, mouseX, mouseY);
         renderMainControls(graphics, mouseX, mouseY, partialTick);
         renderOverlays(graphics, mouseX, mouseY);
-        if (this.contextMenuOpen) renderContextMenu(graphics, mouseX, mouseY);
     }
 
     @Override
@@ -492,6 +559,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
 
     @Override
     public void renderSlot(GuiGraphics graphics, Slot slot) {
+        if (this.expandedEditor) return;
         super.renderSlot(graphics, slot);
         if (slot != this.menu.getSlot(PlasticMoldingChamberBlockEntity.CLAY_SLOT)) return;
         if (!slot.hasItem()) {
@@ -550,6 +618,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         super.containerTick();
         synchronizeTitleMessage();
         if (this.titleMessageTicks > 0) this.titleMessageTicks--;
+        if (this.editorFeedbackTicks > 0) this.editorFeedbackTicks--;
         synchronizeMenuSnapshot();
         synchronizeBlueprintList();
         if (--this.heartbeatCountdown <= 0) {
@@ -568,6 +637,9 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         double logicalX = toLogicalX(mouseX);
         double logicalY = toLogicalY(mouseY);
+        if (this.renameField != null && this.renameField.isVisible()
+            && !this.renameField.isMouseOver(logicalX, logicalY) && !commitRename()) return true;
+        if (this.contextMenuOpen && handleContextClick(logicalX, logicalY, button)) return true;
         if (button == 0
             && !new GuiRect(47, 143, 34, 16).contains(this.leftPos, this.topPos, logicalX, logicalY)) {
             this.lockConfirmation = false;
@@ -582,16 +654,23 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         if (!isOverSearchField(logicalX, logicalY)) clearSearchFocus();
         NumericField focusedNumeric = focusedNumeric();
         if (button == 0 && focusedNumeric != null && !focusedNumeric.box.isMouseOver(logicalX, logicalY)) {
-            commitFocusedNumeric();
+            if (!commitFocusedNumeric()) return true;
         }
         if (isOverTextField(logicalX, logicalY)) {
             this.contextMenuOpen = false;
-            return super.mouseClicked(logicalX, logicalY, button);
+            return clickTextField(logicalX, logicalY, button);
         }
-        if (handleContextClick(logicalX, logicalY, button)) return true;
+        if (handleViewportControlClick(logicalX, logicalY, button)) return true;
+        if (this.expandedEditor) {
+            if (handleWorkspaceClick(logicalX, logicalY, button)) return true;
+            if (isInsideMain(viewportX(), viewportY(), viewportWidth(), viewportHeight(), logicalX, logicalY)) {
+                return handleViewportClick(logicalX, logicalY, button);
+            }
+            return true;
+        }
         if (handleElementScrollbarClick(logicalX, logicalY, button)) return true;
         if (handleFixedControlClick(logicalX, logicalY, button)) return true;
-        if (isInsideMain(VIEWPORT_X, VIEWPORT_Y, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, logicalX, logicalY)) {
+        if (isInsideMain(viewportX(), viewportY(), viewportWidth(), viewportHeight(), logicalX, logicalY)) {
             return handleViewportClick(logicalX, logicalY, button);
         }
         this.contextMenuOpen = false;
@@ -608,6 +687,15 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     ) {
         double logicalX = toLogicalX(mouseX);
         double logicalY = toLogicalY(mouseY);
+        if (this.outlinerScrollbarDragging && button == 0) {
+            updateOutlinerScroll(logicalY);
+            return true;
+        }
+        if (this.boxSelecting && button == 0) {
+            this.boxEndX = Math.clamp(logicalX, this.leftPos + viewportX(), this.leftPos + viewportX() + viewportWidth());
+            this.boxEndY = Math.clamp(logicalY, this.topPos + viewportY(), this.topPos + viewportY() + viewportHeight());
+            return true;
+        }
         if (this.elementScrollbarDragging && button == 0) {
             updateElementScrollFromPointer(logicalY, elementEntryCount());
             return true;
@@ -634,7 +722,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 double deltaX = startedThisFrame ? fromStartX : logicalX - this.lastDragX;
                 double deltaY = startedThisFrame ? fromStartY : logicalY - this.lastDragY;
                 if (button == 0) this.camera.orbit(-deltaX * 0.012D, deltaY * 0.012D);
-                else this.camera.pan(deltaX, deltaY, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+                else this.camera.pan(deltaX, deltaY, viewportWidth(), viewportHeight());
             }
             this.lastDragX = logicalX;
             this.lastDragY = logicalY;
@@ -651,8 +739,25 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        this.setDragging(false);
         double logicalX = toLogicalX(mouseX);
         double logicalY = toLogicalY(mouseY);
+        if (this.outlinerScrollbarDragging && button == 0) {
+            this.outlinerScrollbarDragging = false;
+            return true;
+        }
+        if (this.boxSelecting && button == 0) {
+            finishBoxSelection();
+            return true;
+        }
+        if (this.pressedWorkspaceAction != null && button == 0) {
+            WorkspaceAction action = this.pressedWorkspaceAction;
+            this.pressedWorkspaceAction = null;
+            if (workspaceButtonRect(action).contains(0, 0, logicalX, logicalY) && workspaceActionEnabled(action)) {
+                executeWorkspaceAction(action);
+            }
+            return true;
+        }
         if (this.elementScrollbarDragging && button == 0) {
             this.elementScrollbarDragging = false;
             return true;
@@ -690,7 +795,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             }
             return true;
         }
-        return super.mouseReleased(logicalX, logicalY, button);
+        return this.expandedEditor || super.mouseReleased(logicalX, logicalY, button);
     }
 
     @Override
@@ -702,8 +807,22 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     ) {
         double logicalX = toLogicalX(mouseX);
         double logicalY = toLogicalY(mouseY);
-        if (isInsideMain(VIEWPORT_X, VIEWPORT_Y, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, logicalX, logicalY)) {
+        if (this.contextMenuOpen || this.modelDragAxis != null || this.boxSelecting) return true;
+        for (NumericField field : this.numericFields) {
+            if (!field.box.isMouseOver(logicalX, logicalY) || !field.box.active || scrollY == 0.0D) continue;
+            double step = numericStep(field.property == MoldingNumericProperty.ROTATION);
+            stepNumericField(field, Math.signum(scrollY) * step, field.box.isFocused());
+            return true;
+        }
+        if (isInsideMain(viewportX(), viewportY(), viewportWidth(), viewportHeight(), logicalX, logicalY)) {
             this.camera.zoom(-scrollY);
+            return true;
+        }
+        if (this.expandedEditor) {
+            if (logicalX >= this.workspaceLayout.sidebarX() && logicalY >= this.workspaceLayout.outlinerY()) {
+                this.outlinerScroll = Math.clamp(this.outlinerScroll - (int) Math.signum(scrollY), 0,
+                    Math.max(0, outlinerRows().size() - this.workspaceLayout.outlinerRows()));
+            }
             return true;
         }
         if (isInsideMain(268, 82, 73, 48, logicalX, logicalY)) {
@@ -749,6 +868,11 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == InputConstants.KEY_ESCAPE && (this.modelDragAxis != null || this.boxSelecting || this.cameraDragButton != -1)) {
+            cancelEditorGesture();
+            refreshNumericFields();
+            return true;
+        }
         if (this.blueprintRenameField != null
             && this.blueprintRenameField.isVisible()
             && this.blueprintRenameField.isFocused()) {
@@ -760,7 +884,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 closeBlueprintRename();
                 return true;
             }
-            return this.blueprintRenameField.keyPressed(keyCode, scanCode, modifiers);
+            this.blueprintRenameField.keyPressed(keyCode, scanCode, modifiers);
+            return true;
         }
         if (this.renameField != null && this.renameField.isVisible() && this.renameField.isFocused()) {
             if (keyCode == InputConstants.KEY_RETURN || keyCode == InputConstants.KEY_NUMPADENTER) {
@@ -771,14 +896,17 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 closeRename();
                 return true;
             }
-            return this.renameField.keyPressed(keyCode, scanCode, modifiers);
+            this.renameField.keyPressed(keyCode, scanCode, modifiers);
+            return true;
         }
         if (focusedSearch() != null) {
             if (keyCode == InputConstants.KEY_ESCAPE) {
                 focusedSearch().setFocused(false);
+                this.setFocused(null);
                 return true;
             }
-            return super.keyPressed(keyCode, scanCode, modifiers);
+            focusedSearch().keyPressed(keyCode, scanCode, modifiers);
+            return true;
         }
         if (focusedNumeric() != null) {
             if (keyCode == InputConstants.KEY_RETURN || keyCode == InputConstants.KEY_NUMPADENTER) {
@@ -786,13 +914,69 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 return true;
             }
             if (keyCode == InputConstants.KEY_ESCAPE) {
-                refreshNumericFields();
                 focusedNumeric().box.setFocused(false);
+                this.setFocused(null);
+                this.invalidNumeric = null;
+                refreshNumericFields();
                 return true;
             }
-            return super.keyPressed(keyCode, scanCode, modifiers);
+            if (keyCode == InputConstants.KEY_TAB) {
+                int index = this.numericFields.indexOf(focusedNumeric());
+                if (commitFocusedNumeric()) focusNumeric(this.numericFields.get(
+                    Math.floorMod(index + (Screen.hasShiftDown() ? -1 : 1), this.numericFields.size())));
+                return true;
+            }
+            if (keyCode == InputConstants.KEY_UP || keyCode == InputConstants.KEY_DOWN) {
+                NumericField field = focusedNumeric();
+                double amount = numericStep(field.property == MoldingNumericProperty.ROTATION)
+                    * (keyCode == InputConstants.KEY_UP ? 1 : -1);
+                stepNumericField(field, amount, true);
+                return true;
+            }
+            focusedNumeric().box.keyPressed(keyCode, scanCode, modifiers);
+            return true;
+        }
+        if (this.contextMenuOpen) {
+            if (keyCode == InputConstants.KEY_ESCAPE) this.contextMenuOpen = false;
+            else if (keyCode == InputConstants.KEY_UP || keyCode == InputConstants.KEY_DOWN) {
+                this.contextMenuSelection = Math.floorMod(this.contextMenuSelection
+                    + (keyCode == InputConstants.KEY_UP ? -1 : 1), contextActions().size());
+            } else if (keyCode == InputConstants.KEY_RETURN || keyCode == InputConstants.KEY_NUMPADENTER) {
+                ContextAction action = contextActions().get(this.contextMenuSelection);
+                if (action.enabled.getAsBoolean()) {
+                    PlasticraftGuiSounds.click();
+                    executeContextAction(action.kind);
+                }
+                if (action.kind != ContextActionKind.RENAME) this.contextMenuOpen = false;
+            }
+            return true;
+        }
+        if (keyCode == InputConstants.KEY_ESCAPE && this.expandedEditor) {
+            toggleWorkspace();
+            return true;
+        }
+        if (keyCode == InputConstants.KEY_TAB && this.editor.hasTransformableSelection()) {
+            focusNumeric(this.numericFields.get(Screen.hasShiftDown() ? this.numericFields.size() - 1 : 0));
+            return true;
         }
         if (Screen.hasControlDown()) {
+            if (keyCode == InputConstants.KEY_SPACE) {
+                toggleWorkspace();
+                return true;
+            }
+            if (keyCode == InputConstants.KEY_A) {
+                if (Screen.hasShiftDown()) this.editor.invertSelection();
+                else this.editor.selectAll();
+                refreshNumericFields();
+                ensurePrimaryVisible();
+                return true;
+            }
+            if (keyCode == InputConstants.KEY_D) {
+                this.editor.duplicateSelection();
+                refreshNumericFields();
+                ensurePrimaryVisible();
+                return true;
+            }
             if (Screen.hasAltDown()) {
                 if (keyCode == InputConstants.KEY_X) {
                     this.editor.align(MoldingAxis.X);
@@ -835,6 +1019,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         }
         if (handleCameraKey(keyCode)) return true;
         switch (keyCode) {
+            case InputConstants.KEY_HOME -> {
+                focusModel();
+                return true;
+            }
             case InputConstants.KEY_N -> {
                 createCubeAtViewportOrigin();
                 return true;
@@ -890,7 +1078,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             default -> {
             }
         }
-        return super.keyPressed(keyCode, scanCode, modifiers);
+        return this.expandedEditor || super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
@@ -926,12 +1114,13 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
 
     private void renderViewport(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         double guiScale = this.minecraft.getWindow().getGuiScale();
-        int targetWidth = this.layoutTransform.framebufferPixels(VIEWPORT_WIDTH, guiScale);
-        int targetHeight = this.layoutTransform.framebufferPixels(VIEWPORT_HEIGHT, guiScale);
-        targetWidth *= VIEWPORT_SUPERSAMPLING;
-        targetHeight *= VIEWPORT_SUPERSAMPLING;
+        int targetWidth = this.layoutTransform.framebufferPixels(viewportWidth(), guiScale);
+        int targetHeight = this.layoutTransform.framebufferPixels(viewportHeight(), guiScale);
+        int supersampling = this.expandedEditor ? 1 : VIEWPORT_SUPERSAMPLING;
+        targetWidth *= supersampling;
+        targetHeight *= supersampling;
         Direction front = chamberFront();
-        ViewportTransform transform = this.camera.transform(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+        ViewportTransform transform = this.camera.transform(viewportWidth(), viewportHeight());
         updateScene(transform, mouseX, mouseY);
         Vec3 controllerOrigin = PlasticMoldingChamberStructure.worldAlignedControllerOrigin(front);
         this.viewportBackend.ensureTarget(targetWidth, targetHeight);
@@ -947,10 +1136,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         ));
         this.viewportBackend.compose(
             graphics,
-            this.leftPos + VIEWPORT_X,
-            this.topPos + VIEWPORT_Y,
-            VIEWPORT_WIDTH,
-            VIEWPORT_HEIGHT
+            this.leftPos + viewportX(),
+            this.topPos + viewportY(),
+            viewportWidth(),
+            viewportHeight()
         );
         renderDirectionLabels(graphics, transform);
     }
@@ -998,14 +1187,14 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     ) {
         drawDirectionLabel(
             graphics,
-            DIRECTION_COMPASS_X + offset.x * DIRECTION_COMPASS_LABEL_RADIUS,
+            (viewportWidth() - 18) + offset.x * DIRECTION_COMPASS_LABEL_RADIUS,
             DIRECTION_COMPASS_Y + offset.y * DIRECTION_COMPASS_LABEL_RADIUS,
             positiveLabel,
             color
         );
         drawDirectionLabel(
             graphics,
-            DIRECTION_COMPASS_X - offset.x * DIRECTION_COMPASS_LABEL_RADIUS,
+            (viewportWidth() - 18) - offset.x * DIRECTION_COMPASS_LABEL_RADIUS,
             DIRECTION_COMPASS_Y - offset.y * DIRECTION_COMPASS_LABEL_RADIUS,
             negativeLabel,
             color
@@ -1020,10 +1209,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         double toY,
         int color
     ) {
-        double startX = this.leftPos + VIEWPORT_X + DIRECTION_COMPASS_X + fromX;
-        double startY = this.topPos + VIEWPORT_Y + DIRECTION_COMPASS_Y + fromY;
-        double endX = this.leftPos + VIEWPORT_X + DIRECTION_COMPASS_X + toX;
-        double endY = this.topPos + VIEWPORT_Y + DIRECTION_COMPASS_Y + toY;
+        double startX = this.leftPos + viewportX() + (viewportWidth() - 18) + fromX;
+        double startY = this.topPos + viewportY() + DIRECTION_COMPASS_Y + fromY;
+        double endX = this.leftPos + viewportX() + (viewportWidth() - 18) + toX;
+        double endY = this.topPos + viewportY() + DIRECTION_COMPASS_Y + toY;
         drawAntialiasedGuiLine(graphics, startX, startY, endX, endY, color);
     }
 
@@ -1044,7 +1233,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private ViewportTransform viewportTransform() {
-        return this.camera.transform(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+        return this.camera.transform(viewportWidth(), viewportHeight());
     }
 
     private int controllerPreviewLight() {
@@ -1083,10 +1272,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private void drawDirectionLabel(GuiGraphics graphics, double localX, double localY, String label, int color) {
-        int x = this.leftPos + VIEWPORT_X
-            + Math.clamp((int) Math.round(localX - this.font.width(label) * 0.5D), 2, VIEWPORT_WIDTH - 8);
-        int y = this.topPos + VIEWPORT_Y
-            + Math.clamp((int) Math.round(localY - this.font.lineHeight * 0.5D), 2, VIEWPORT_HEIGHT - 10);
+        int x = this.leftPos + viewportX()
+            + Math.clamp((int) Math.round(localX - this.font.width(label) * 0.5D), 2, viewportWidth() - 8);
+        int y = this.topPos + viewportY()
+            + Math.clamp((int) Math.round(localY - this.font.lineHeight * 0.5D), 2, viewportHeight() - 10);
         graphics.drawString(this.font, label, x, y, color, true);
     }
 
@@ -1184,7 +1373,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private void renderToolButtons(GuiGraphics graphics, int mouseX, int mouseY) {
         for (int index = 0; index < TOOL_BUTTONS.length; index++) {
             MoldingTool tool = TOOL_BUTTONS[index];
-            GuiRect rect = new GuiRect(9, 19 + index * 18, 16, 16);
+            GuiRect rect = toolRect(index);
             boolean hovered = rect.contains(this.leftPos, this.topPos, mouseX, mouseY);
             drawAtlas(
                 graphics,
@@ -1984,7 +2173,6 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         // 锅类型图标用原版炼药锅物品，不用默认蓝图模型
         if (MoldingProductTypes.isCauldron(type)) return Items.CAULDRON.getDefaultInstance();
         if (MoldingProductTypes.TRAY_ID.equals(type)) return MoldingTrayTypeIcon.stack();
-        if (MoldingProductTypes.ALLAY_HARD_HAT_ID.equals(type)) return MoldingHardHatTypeIcon.stack();
         return PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
     }
 
@@ -2134,7 +2322,9 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 CONTEXT_WIDTH - 2,
                 CONTEXT_ROW_HEIGHT
             );
-            if (rect.contains(this.leftPos, this.topPos, mouseX, mouseY)) {
+            if ((mouseX != this.contextPointerX || mouseY != this.contextPointerY)
+                && rect.contains(this.leftPos, this.topPos, mouseX, mouseY)) this.contextMenuSelection = index;
+            if (index == this.contextMenuSelection) {
                 graphics.fill(
                     this.leftPos + rect.x,
                     this.topPos + rect.y,
@@ -2152,6 +2342,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 false
             );
         }
+        this.contextPointerX = mouseX;
+        this.contextPointerY = mouseY;
     }
 
     private void updateScene(
@@ -2255,12 +2447,12 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private ViewportHover viewportHover(ViewportTransform transform, double mouseX, double mouseY) {
-        if (!isInsideMain(VIEWPORT_X, VIEWPORT_Y, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, mouseX, mouseY)) {
+        if (!isInsideMain(viewportX(), viewportY(), viewportWidth(), viewportHeight(), mouseX, mouseY)) {
             return ViewportHover.NONE;
         }
         ViewportRay ray = transform.ray(
-            mouseX - this.leftPos - VIEWPORT_X,
-            mouseY - this.topPos - VIEWPORT_Y
+            mouseX - this.leftPos - viewportX(),
+            mouseY - this.topPos - viewportY()
         );
         if (!this.editor.selection().isEmpty()) {
             Vector3d gizmoOrigin = this.editor.gizmoOrigin();
@@ -2289,8 +2481,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         if (button != 0) return false;
         ViewportTransform transform = viewportTransform();
         ViewportRay ray = transform.ray(
-            mouseX - this.leftPos - VIEWPORT_X,
-            mouseY - this.topPos - VIEWPORT_Y
+            mouseX - this.leftPos - viewportX(),
+            mouseY - this.topPos - viewportY()
         );
         if (!this.editor.selection().isEmpty()) {
             Vector3d gizmoOrigin = this.editor.gizmoOrigin();
@@ -2306,19 +2498,31 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             if (gizmo.isPresent()) {
                 if (this.editor.tool() == MoldingTool.MIRROR) {
                     this.toolButtons.selectMirrorAxis(gizmo.get().axis());
-                    if (this.editor.mirror(gizmo.get().axis())) return true;
+                    if (!this.editor.mirror(gizmo.get().axis())) feedback("transform_rejected");
+                    return true;
                 } else if (this.editor.beginDrag(gizmo.get().axis(), gizmo.get().direction())) {
                     this.modelDragAxis = gizmo.get().axis();
                     this.modelDragDirection = gizmo.get().direction();
-                    this.modelDragStartX = mouseX - this.leftPos - VIEWPORT_X;
-                    this.modelDragStartY = mouseY - this.topPos - VIEWPORT_Y;
+                    this.modelDragStartX = mouseX - this.leftPos - viewportX();
+                    this.modelDragStartY = mouseY - this.topPos - viewportY();
                     this.modelDragTransform = transform;
                     this.modelDragOrigin = gizmoOrigin;
                     this.modelDragAxisDirection = gizmoBasis.direction(gizmo.get().axis());
                     this.modelDragWorldUnitsPerLocalUnit = gizmoBasis.worldUnitsPerLocalUnit(gizmo.get().axis());
+                    this.modelDragLastAngle = 0.0D;
+                    this.modelDragAngle = 0.0D;
                     return true;
                 }
+                feedback("transform_rejected");
+                return true;
             }
+        }
+        if (Screen.hasShiftDown()) {
+            this.boxSelecting = true;
+            this.boxStartX = this.boxEndX = mouseX;
+            this.boxStartY = this.boxEndY = mouseY;
+            this.boxAdditive = true;
+            return true;
         }
         startCameraDrag(mouseX, mouseY, button);
         return true;
@@ -2336,16 +2540,16 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private void selectViewportAt(double mouseX, double mouseY) {
         ViewportTransform transform = viewportTransform();
         ViewportRay ray = transform.ray(
-            mouseX - this.leftPos - VIEWPORT_X,
-            mouseY - this.topPos - VIEWPORT_Y
+            mouseX - this.leftPos - viewportX(),
+            mouseY - this.topPos - viewportY()
         );
         Optional<MoldingHitTester.ElementHit> hit = MoldingHitTester.hitElement(this.editor.model(), ray);
         if (hit.isPresent()) {
             UUID id = hit.get().id();
-            this.editor.select(id, Screen.hasShiftDown());
+            this.editor.selectViewport(id, Screen.hasControlDown(), Screen.hasShiftDown());
             this.elementSelectionAnchor = id;
             ensurePrimaryVisible();
-        } else if (!Screen.hasShiftDown()) {
+        } else if (!Screen.hasShiftDown() && !Screen.hasControlDown()) {
             this.editor.clearSelection();
             this.elementSelectionAnchor = null;
         }
@@ -2355,8 +2559,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private void selectViewportForContext(double mouseX, double mouseY) {
         ViewportTransform transform = viewportTransform();
         ViewportRay ray = transform.ray(
-            mouseX - this.leftPos - VIEWPORT_X,
-            mouseY - this.topPos - VIEWPORT_Y
+            mouseX - this.leftPos - viewportX(),
+            mouseY - this.topPos - viewportY()
         );
         MoldingHitTester.hitElement(this.editor.model(), ray).ifPresent(hit -> {
             this.elementSelectionAnchor = hit.id();
@@ -2374,13 +2578,17 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             || this.modelDragAxisDirection == null) {
             return;
         }
-        double currentX = mouseX - this.leftPos - VIEWPORT_X;
-        double currentY = mouseY - this.topPos - VIEWPORT_Y;
+        double currentX = mouseX - this.leftPos - viewportX();
+        double currentY = mouseY - this.topPos - viewportY();
         double deltaX = currentX - this.modelDragStartX;
         double deltaY = currentY - this.modelDragStartY;
         double amount;
         if (this.editor.tool() == MoldingTool.ROTATE) {
-            amount = (deltaX - deltaY) * 0.75D;
+            double angle = rotationDragAngle(currentX, currentY);
+            double difference = Math.IEEEremainder(angle - this.modelDragLastAngle, 360.0D);
+            this.modelDragAngle += difference;
+            this.modelDragLastAngle = angle;
+            amount = this.modelDragAngle;
         } else {
             Vector3d center = this.modelDragOrigin;
             double referenceLength = MoldingGizmoGeometry.axisLength(
@@ -2402,7 +2610,8 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                 / length
                 / this.modelDragWorldUnitsPerLocalUnit;
         }
-        this.editor.updateDrag(amount);
+        double step = Screen.hasAltDown() ? 0.0D : numericStep(this.editor.tool() == MoldingTool.ROTATE);
+        if (!this.editor.updateDrag(amount, step)) feedback("transform_rejected");
         refreshNumericFields();
     }
 
@@ -2423,14 +2632,21 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         for (MoldingProductionMode mode : MoldingProductionMode.values()) {
             GuiRect modeRect = new GuiRect(47 + mode.protocolId() * 12, 162, 10, 10);
             if (!modeRect.contains(this.leftPos, this.topPos, mouseX, mouseY)) continue;
-            if (this.menu.writable()) sendMachineAction(MoldingMachineAction.SET_MODE, mode.protocolId());
+            if (this.menu.writable()) {
+                PlasticraftGuiSounds.click();
+                sendMachineAction(MoldingMachineAction.SET_MODE, mode.protocolId());
+            }
             return true;
         }
         for (int index = 0; index < TOOL_BUTTONS.length; index++) {
-            GuiRect rect = new GuiRect(9, 19 + index * 18, 16, 16);
+            GuiRect rect = toolRect(index);
             if (!rect.contains(this.leftPos, this.topPos, mouseX, mouseY)) continue;
             if (!this.editor.writable()) return true;
-            return this.toolButtons.press(TOOL_BUTTONS[index]);
+            boolean pressed = this.toolButtons.press(TOOL_BUTTONS[index]);
+            if (pressed) {
+                PlasticraftGuiSounds.click();
+            }
+            return pressed;
         }
         return false;
     }
@@ -2443,6 +2659,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             if (!entry.contains(this.leftPos, this.topPos, mouseX, mouseY)) continue;
             int index = this.typeScrollRow + row;
             if (index >= types.size() || !this.editor.writable()) return true;
+            PlasticraftGuiSounds.click();
             this.editor.setRequestedType(types.get(index).id());
             return true;
         }
@@ -2644,7 +2861,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private void pressChamberControl(ChamberControl control, @Nullable MoldingBlueprintSummary summary) {
         this.pressedChamberControl = null;
         this.pressedBlueprint = null;
-        if (!chamberControlEnabled(control, summary)) return;
+        if (!chamberControlEnabled(control, summary)) {
+            return;
+        }
+        PlasticraftGuiSounds.click();
         this.pressedChamberControl = control;
         this.pressedBlueprint = summary;
     }
@@ -2757,7 +2977,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private boolean releaseToolButton(double mouseX, double mouseY) {
         for (int index = 0; index < TOOL_BUTTONS.length; index++) {
             MoldingTool tool = TOOL_BUTTONS[index];
-            GuiRect rect = new GuiRect(9, 19 + index * 18, 16, 16);
+            GuiRect rect = toolRect(index);
             MoldingToolButtonState.ReleaseAction action = this.toolButtons.release(
                 tool,
                 rect.contains(this.leftPos, this.topPos, mouseX, mouseY)
@@ -2816,8 +3036,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             }
             SceneObject object = objects.get(objectIndex);
             if (button == 1) {
-                if (!object.element()) return false;
-                this.editor.select(object.id(), false);
+                if (!this.editor.selection().contains(object.id())) this.editor.select(object.id(), false);
                 this.elementSelectionAnchor = object.id();
                 ensurePrimaryVisible();
                 refreshNumericFields();
@@ -2858,7 +3077,10 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private void pressReleaseControl(ReleaseControl control) {
-        if (releaseControlEnabled(control)) this.pressedReleaseControl = control;
+        if (releaseControlEnabled(control)) {
+            PlasticraftGuiSounds.click();
+            this.pressedReleaseControl = control;
+        }
     }
 
     private boolean releasePressedControl(double mouseX, double mouseY) {
@@ -3110,7 +3332,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private boolean handleContextClick(double mouseX, double mouseY, int button) {
-        if (!this.contextMenuOpen || button != 0) return false;
+        if (!this.contextMenuOpen) return false;
         List<ContextAction> actions = contextActions();
         int localX = (int) mouseX - this.leftPos;
         int localY = (int) mouseY - this.topPos;
@@ -3118,11 +3340,15 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             || localY < this.contextMenuY + 1
             || localY >= this.contextMenuY + 1 + actions.size() * CONTEXT_ROW_HEIGHT) {
             this.contextMenuOpen = false;
-            return false;
+            return true;
         }
+        if (button != 0) return true;
         int row = (localY - this.contextMenuY - 1) / CONTEXT_ROW_HEIGHT;
         ContextAction action = actions.get(row);
-        if (action.enabled.getAsBoolean()) executeContextAction(action.kind);
+        if (action.enabled.getAsBoolean()) {
+            PlasticraftGuiSounds.click();
+            executeContextAction(action.kind);
+        }
         if (action.kind != ContextActionKind.RENAME) this.contextMenuOpen = false;
         return true;
     }
@@ -3186,17 +3412,24 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         int localX = (int) Math.floor(mouseX - this.leftPos);
         int localY = (int) Math.floor(mouseY - this.topPos);
         int height = contextActions().size() * CONTEXT_ROW_HEIGHT + 2;
-        this.contextMenuX = Math.clamp(localX, VIEWPORT_X, VIEWPORT_X + VIEWPORT_WIDTH - CONTEXT_WIDTH);
-        this.contextMenuY = Math.clamp(localY, VIEWPORT_Y, VIEWPORT_Y + VIEWPORT_HEIGHT - height);
+        int availableWidth = this.expandedEditor ? this.workspaceLayout.width() : LOGICAL_WIDTH;
+        int availableHeight = this.expandedEditor ? this.workspaceLayout.height() : LOGICAL_HEIGHT;
+        this.contextMenuX = Math.clamp(localX, 2, Math.max(2, availableWidth - CONTEXT_WIDTH - 2));
+        this.contextMenuY = Math.clamp(localY, 2, Math.max(2, availableHeight - height - 2));
+        this.contextMenuSelection = 0;
+        this.contextPointerX = (int) mouseX;
+        this.contextPointerY = (int) mouseY;
         this.contextMenuOpen = true;
     }
 
     private boolean handleCameraKey(int keyCode) {
+        if (!this.expandedEditor && this.hoveredSlot != null
+            && keyCode >= InputConstants.KEY_0 && keyCode <= InputConstants.KEY_9) return false;
         MoldingViewPreset preset = switch (keyCode) {
-            case InputConstants.KEY_NUMPAD1 -> Screen.hasControlDown() ? MoldingViewPreset.BACK : MoldingViewPreset.FRONT;
-            case InputConstants.KEY_NUMPAD3 -> Screen.hasControlDown() ? MoldingViewPreset.LEFT : MoldingViewPreset.RIGHT;
-            case InputConstants.KEY_NUMPAD7 -> Screen.hasControlDown() ? MoldingViewPreset.BOTTOM : MoldingViewPreset.TOP;
-            case InputConstants.KEY_NUMPAD5 -> MoldingViewPreset.PERSPECTIVE;
+            case InputConstants.KEY_NUMPAD1, InputConstants.KEY_1 -> Screen.hasControlDown() ? MoldingViewPreset.BACK : MoldingViewPreset.FRONT;
+            case InputConstants.KEY_NUMPAD3, InputConstants.KEY_3 -> Screen.hasControlDown() ? MoldingViewPreset.LEFT : MoldingViewPreset.RIGHT;
+            case InputConstants.KEY_NUMPAD7, InputConstants.KEY_7 -> Screen.hasControlDown() ? MoldingViewPreset.BOTTOM : MoldingViewPreset.TOP;
+            case InputConstants.KEY_NUMPAD5, InputConstants.KEY_5 -> MoldingViewPreset.PERSPECTIVE;
             default -> null;
         };
         if (preset == null) return false;
@@ -3206,9 +3439,9 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
 
     private void focusSelection() {
         if (!this.editor.selection().isEmpty()) {
-            this.camera.focus(this.editor.selectionCenter(), this.editor.selectionExtent());
+            this.camera.focus(this.editor.selectionCenter(), this.editor.selectionExtent(), viewportWidth(), viewportHeight());
         } else {
-            this.camera.reset();
+            focusModel();
         }
     }
 
@@ -3236,7 +3469,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
                     13,
                     Component.translatable("screen.anvilcraftplasticraft.molding.numeric")
                 );
-                box.setMaxLength(12);
+                box.setMaxLength(64);
                 box.setBordered(false);
                 box.setFilter(PlasticMoldingChamberScreen::isNumericText);
                 NumericField field = new NumericField(properties[propertyIndex], axes[axisIndex], box);
@@ -3271,6 +3504,33 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private void updateLayout() {
+        if (this.expandedEditor) {
+            this.workspaceLayout = MoldingWorkspaceLayout.fit(this.width, this.height);
+            this.layoutTransform = MoldingGuiTransform.fit(this.width, this.height,
+                this.workspaceLayout.width(), this.workspaceLayout.height(), LAYOUT_PADDING,
+                this.minecraft.getWindow().getGuiScale());
+            this.leftPos = 0;
+            this.topPos = 0;
+            for (int index = 0; index < this.numericFields.size(); index++) {
+                NumericField field = this.numericFields.get(index);
+                field.box.setX(this.workspaceLayout.fieldX(index % 3) + 10);
+                field.box.setY(this.workspaceLayout.fieldY(index / 3));
+                field.box.setWidth(this.workspaceLayout.fieldWidth() - 10);
+            }
+            this.leftSearch.setVisible(false);
+            this.rightSearch.setVisible(false);
+            this.blueprintRenameField.setVisible(false);
+            this.outlinerSearch.setX(this.workspaceLayout.sidebarX() + 6);
+            this.outlinerSearch.setY(142);
+            this.outlinerSearch.setWidth(this.workspaceLayout.sidebarWidth() - 12);
+            this.outlinerSearch.setVisible(true);
+            if (this.renameField.isVisible()) positionRenameField();
+            return;
+        }
+        if (this.outlinerSearch != null) {
+            this.outlinerSearch.setVisible(false);
+            this.outlinerSearch.setFocused(false);
+        }
         if (this.leftOverlayOpen && this.rightOverlayOpen && !canDisplayBothOverlays()) {
             if (this.rightOverlayOpenedLast) this.leftOverlayOpen = false;
             else this.rightOverlayOpen = false;
@@ -3294,6 +3554,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             int axis = index % 3;
             field.box.setX(this.leftPos + 270 + axis * 24);
             field.box.setY(this.topPos + 23 + property * 14);
+            field.box.setWidth(24);
         }
         if (this.leftSearch != null) {
             this.leftSearch.setX(this.leftPos - 68);
@@ -3329,28 +3590,43 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
 
     private void refreshNumericFields() {
         for (NumericField field : this.numericFields) {
-            if (field.box.isFocused()) continue;
+            field.box.active = this.editor.writable() && this.editor.hasTransformableSelection();
+            if (field.box.isFocused() && field.box.active) continue;
+            if (!field.box.active) field.box.setFocused(false);
             Optional<Double> value = this.editor.numericValue(field.property, field.axis);
             field.box.setValue(value.map(PlasticMoldingChamberScreen::formatNumber).orElse(""));
-            field.box.active = this.editor.writable() && !this.editor.pending() && !this.editor.selection().isEmpty();
+            field.box.setHint(Component.literal(this.editor.selection().isEmpty() ? "" : "—"));
+            field.box.setTextColor(this.invalidNumeric == field ? 0xFFFF6969 : 0xFFE0E0E0);
         }
     }
 
-    private void commitFocusedNumeric() {
+    private boolean commitFocusedNumeric() {
         NumericField focused = focusedNumeric();
-        if (focused == null) return;
-        try {
-            double value = Double.parseDouble(focused.box.getValue());
-            this.editor.setNumeric(focused.property, focused.axis, value);
-        } catch (NumberFormatException ignored) {
+        if (focused == null) return true;
+        String text = focused.box.getValue().strip();
+        String current = this.editor.numericValue(focused.property, focused.axis)
+            .map(PlasticMoldingChamberScreen::formatNumber).orElse("");
+        if (!text.equals(current) && !this.editor.setNumeric(focused.property, focused.axis, text)) {
+            this.invalidNumeric = focused;
+            focused.box.setTextColor(0xFFFF6969);
+            feedback(this.editor.pending() ? "pending" : "numeric_invalid");
+            return false;
         }
         focused.box.setFocused(false);
+        this.setFocused(null);
+        this.invalidNumeric = null;
         refreshNumericFields();
+        return true;
     }
 
     private void openRename() {
+        if (!this.editor.writable() || this.editor.pending()) {
+            feedback(this.editor.pending() ? "pending" : "read_only");
+            return;
+        }
         Optional<String> primaryName = this.editor.primaryName();
         if (primaryName.isEmpty() || this.renameField == null) return;
+        this.contextMenuOpen = false;
         this.renameField.setValue(primaryName.get());
         this.renameField.setVisible(true);
         positionRenameField();
@@ -3360,13 +3636,21 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private void positionRenameField() {
-        this.renameField.setX(this.leftPos + Math.clamp(this.contextMenuX, VIEWPORT_X, VIEWPORT_X + VIEWPORT_WIDTH - CONTEXT_WIDTH));
-        this.renameField.setY(this.topPos + Math.clamp(this.contextMenuY, VIEWPORT_Y, VIEWPORT_Y + VIEWPORT_HEIGHT - 13));
+        int width = this.expandedEditor ? this.workspaceLayout.width() : LOGICAL_WIDTH;
+        int height = this.expandedEditor ? this.workspaceLayout.height() : LOGICAL_HEIGHT;
+        this.renameField.setX(this.leftPos + Math.clamp(this.contextMenuX, 2, width - CONTEXT_WIDTH - 2));
+        this.renameField.setY(this.topPos + Math.clamp(this.contextMenuY, 2, height - 15));
     }
 
-    private void commitRename() {
-        if (this.renameField != null) this.editor.renamePrimary(this.renameField.getValue());
+    private boolean commitRename() {
+        if (this.renameField == null) return true;
+        String name = this.renameField.getValue().strip();
+        if (!this.editor.primaryName().filter(name::equals).isPresent() && !this.editor.renamePrimary(name)) {
+            feedback(this.editor.pending() ? "pending" : "rename_invalid");
+            return false;
+        }
         closeRename();
+        return true;
     }
 
     private void closeRename() {
@@ -3444,11 +3728,18 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             && this.seenWriterName.equals(this.menu.writerName())) {
             return;
         }
+        if (!this.editor.pending() && this.seenMenuRevision == this.menu.revision()
+            && this.seenWritable == editable && this.seenWriterName.equals(this.menu.writerName())
+            && this.seenMenuModel.equals(this.menu.model())) {
+            this.seenMenuModel = this.menu.model();
+            return;
+        }
         this.seenMenuModel = this.menu.model();
         this.seenMenuRevision = this.menu.revision();
         this.seenWritable = editable;
         this.seenWriterName = this.menu.writerName();
         this.editor.syncAuthoritative(this.menu.model(), this.menu.revision(), editable);
+        cancelEditorGesture();
         if (!editable) {
             this.lockConfirmation = false;
             this.lockClayRequirement = 0;
@@ -3535,6 +3826,30 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private void ensurePrimaryVisible() {
         Optional<UUID> primary = this.editor.selection().primary();
         if (primary.isEmpty()) return;
+        if (this.expandedEditor) {
+            Map<UUID, MoldingGroup> groups = this.editor.model().groupMap();
+            Optional<UUID> parent = this.editor.model().elements().stream()
+                .filter(element -> element.id().equals(primary.get())).findFirst().flatMap(MoldingElement::groupId);
+            if (parent.isEmpty() && groups.containsKey(primary.get())) parent = groups.get(primary.get()).parentId();
+            while (parent.isPresent()) {
+                this.collapsedGroups.remove(parent.get());
+                MoldingGroup group = groups.get(parent.get());
+                parent = group == null ? Optional.empty() : group.parentId();
+            }
+            List<MoldingOutliner.Row> rows = outlinerRows();
+            if (rows.stream().noneMatch(row -> row.id().equals(primary.get())) && this.outlinerSearch != null) {
+                this.outlinerSearch.setValue("");
+                rows = outlinerRows();
+            }
+            int visible = this.workspaceLayout.outlinerRows();
+            for (int index = 0; index < rows.size(); index++) {
+                if (!rows.get(index).id().equals(primary.get())) continue;
+                if (index < this.outlinerScroll) this.outlinerScroll = index;
+                else if (index >= this.outlinerScroll + visible) this.outlinerScroll = index - visible + 1;
+                return;
+            }
+            return;
+        }
         List<SceneObject> objects = sceneObjects();
         for (int index = 0; index < objects.size(); index++) {
             if (!objects.get(index).id().equals(primary.get())) continue;
@@ -3897,17 +4212,20 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
             || this.renameField != null && this.renameField.isVisible() && this.renameField.isMouseOver(mouseX, mouseY)
             || this.blueprintRenameField != null
                 && this.blueprintRenameField.isVisible()
-                && this.blueprintRenameField.isMouseOver(mouseX, mouseY);
+                && this.blueprintRenameField.isMouseOver(mouseX, mouseY)
+            || this.outlinerSearch != null && this.outlinerSearch.isVisible() && this.outlinerSearch.isMouseOver(mouseX, mouseY);
     }
 
     private boolean isOverSearchField(double mouseX, double mouseY) {
         return this.leftSearch != null && this.leftSearch.isVisible() && this.leftSearch.isMouseOver(mouseX, mouseY)
-            || this.rightSearch != null && this.rightSearch.isVisible() && this.rightSearch.isMouseOver(mouseX, mouseY);
+            || this.rightSearch != null && this.rightSearch.isVisible() && this.rightSearch.isMouseOver(mouseX, mouseY)
+            || this.outlinerSearch != null && this.outlinerSearch.isVisible() && this.outlinerSearch.isMouseOver(mouseX, mouseY);
     }
 
     private void clearSearchFocus() {
         if (this.leftSearch != null) this.leftSearch.setFocused(false);
         if (this.rightSearch != null) this.rightSearch.setFocused(false);
+        if (this.outlinerSearch != null) this.outlinerSearch.setFocused(false);
     }
 
     private @Nullable NumericField focusedNumeric() {
@@ -3917,6 +4235,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     private @Nullable EditBox focusedSearch() {
         if (this.leftSearch != null && this.leftSearch.isFocused()) return this.leftSearch;
         if (this.rightSearch != null && this.rightSearch.isFocused()) return this.rightSearch;
+        if (this.outlinerSearch != null && this.outlinerSearch.isFocused()) return this.outlinerSearch;
         return null;
     }
 
@@ -3929,7 +4248,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private static boolean isNumericText(String text) {
-        return text.isEmpty() || text.equals("-") || text.matches("-?\\d*(\\.\\d*)?");
+        return text.length() <= 64 && text.matches("[0-9eE+*/=.()\\s-]*");
     }
 
     private static String formatNumber(double value) {
@@ -3943,6 +4262,510 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
 
     private static ResourceLocation widget(String name) {
         return texture("textures/gui/button/plastic_molding_chamber/" + name);
+    }
+
+    private int viewportX() {
+        return this.expandedEditor ? this.workspaceLayout.viewportX() : VIEWPORT_X;
+    }
+
+    private int viewportY() {
+        return this.expandedEditor ? this.workspaceLayout.viewportY() : VIEWPORT_Y;
+    }
+
+    private int viewportWidth() {
+        return this.expandedEditor ? this.workspaceLayout.viewportWidth() : VIEWPORT_WIDTH;
+    }
+
+    private int viewportHeight() {
+        return this.expandedEditor ? this.workspaceLayout.viewportHeight() : VIEWPORT_HEIGHT;
+    }
+
+    private GuiRect toolRect(int index) {
+        return this.expandedEditor ? new GuiRect(7, 30 + index * 22, 16, 16)
+            : new GuiRect(9, 19 + index * 18, 16, 16);
+    }
+
+    private void toggleWorkspace() {
+        if (!this.menu.getCarried().isEmpty()) {
+            feedback("put_down_item");
+            return;
+        }
+        if (!commitFocusedNumeric()) return;
+        cancelEditorGesture();
+        closeRename();
+        closeBlueprintRename();
+        clearSearchFocus();
+        this.expandedEditor = !this.expandedEditor;
+        this.contextMenuOpen = false;
+        this.pressedWorkspaceAction = null;
+        updateLayout();
+        refreshNumericFields();
+        ensurePrimaryVisible();
+    }
+
+    private void renderWorkspace(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        int width = this.workspaceLayout.width();
+        int height = this.workspaceLayout.height();
+        int sidebar = this.workspaceLayout.sidebarX();
+        graphics.fill(0, 0, width, height, 0xF51C1E22);
+        graphics.fill(0, 0, width, 23, 0xFF30343A);
+        graphics.fill(sidebar, 26, width - 4, height - 22, 0xFF292C31);
+        renderViewport(graphics, mouseX, mouseY, partialTick);
+        renderToolButtons(graphics, mouseX, mouseY);
+        for (WorkspaceAction action : WorkspaceAction.values()) {
+            GuiRect rect = workspaceButtonRect(action);
+            boolean enabled = workspaceActionEnabled(action);
+            boolean hovered = rect.contains(0, 0, mouseX, mouseY);
+            drawWorkspaceButton(graphics, rect, workspaceActionKey(action), enabled, hovered,
+                this.pressedWorkspaceAction == action);
+            if (hovered) this.hoveredControlTooltip = List.of(Component.translatable(
+                "screen.anvilcraftplasticraft.molding.workspace." + action.name().toLowerCase(Locale.ROOT) + ".tooltip"));
+        }
+        int[] colors = {0xFFF06B6B, 0xFF70E281, 0xFF6F9EFF};
+        MoldingNumericProperty[] properties = MoldingNumericProperty.values();
+        for (int property = 0; property < properties.length; property++) {
+            int fieldY = this.workspaceLayout.fieldY(property);
+            graphics.drawString(this.font, Component.translatable("screen.anvilcraftplasticraft.molding.numeric."
+                + properties[property].name().toLowerCase(Locale.ROOT))
+                .append(properties[property] == MoldingNumericProperty.ROTATION ? " (°)" : " (px)"),
+                sidebar + 6, fieldY - 10, 0xFFD9DEE5, false);
+            for (int axis = 0; axis < 3; axis++) {
+                NumericField field = this.numericFields.get(property * 3 + axis);
+                int x = this.workspaceLayout.fieldX(axis);
+                graphics.fill(x, fieldY - 1, x + this.workspaceLayout.fieldWidth(), fieldY + 14,
+                    field.box.isFocused() ? 0xFF414650 : 0xFF202328);
+                graphics.fill(x, fieldY + 13, x + this.workspaceLayout.fieldWidth(), fieldY + 14,
+                    this.invalidNumeric == field ? 0xFFFF6969 : colors[axis]);
+                graphics.drawString(this.font, MoldingAxis.values()[axis].name(), x + 2, fieldY + 3, colors[axis], false);
+            }
+        }
+        graphics.drawString(this.font, Component.translatable("screen.anvilcraftplasticraft.molding.workspace.outliner"),
+            sidebar + 6, 130, 0xFFD9DEE5, false);
+        renderOutliner(graphics, mouseX, mouseY);
+        String status = this.editorFeedbackTicks > 0
+            ? Component.translatable(this.editorFeedback).getString()
+            : this.editor.pending() ? Component.translatable("screen.anvilcraftplasticraft.molding.workspace.pending").getString()
+            : !this.editor.writable() ? Component.translatable("screen.anvilcraftplasticraft.molding.workspace.read_only").getString()
+            : Component.translatable("screen.anvilcraftplasticraft.molding.workspace.status",
+                this.editor.selection().ids().size()).getString();
+        graphics.drawString(this.font, this.font.plainSubstrByWidth(status, width - 12), 6, height - 15,
+            this.editorFeedbackTicks > 0 ? 0xFFFFA36B : 0xFFAEB7C3, false);
+        if (mouseY >= height - 20) this.hoveredControlTooltip = List.of(
+            Component.translatable("screen.anvilcraftplasticraft.molding.workspace.navigation"),
+            Component.translatable("screen.anvilcraftplasticraft.molding.workspace.precision"));
+    }
+
+    private void drawWorkspaceButton(GuiGraphics graphics, GuiRect rect, String key,
+                                     boolean enabled, boolean hovered, boolean pressed) {
+        graphics.fill(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height,
+            pressed && hovered ? 0xFF526984 : hovered && enabled ? 0xFF444D5A : 0xFF353B43);
+        String label = key.endsWith(".undo") ? "<" : key.endsWith(".redo") ? ">" : Component.translatable(key).getString();
+        graphics.drawCenteredString(this.font, this.font.plainSubstrByWidth(label, rect.width - 4),
+            rect.x + rect.width / 2, rect.y + (rect.height - 8) / 2, enabled ? 0xFFEAF0F7 : 0xFF79818C);
+    }
+
+    private GuiRect workspaceButtonRect(WorkspaceAction action) {
+        if (action == WorkspaceAction.DONE) return new GuiRect(this.workspaceLayout.width() - 68, 4, 64, 16);
+        int[] widths = {48, 56, 44, 20, 20, 48};
+        int x = 4;
+        for (int index = 0; index < action.ordinal(); index++) x += widths[index] + 3;
+        return new GuiRect(x, 4, widths[action.ordinal()], 16);
+    }
+
+    private static String workspaceActionKey(WorkspaceAction action) {
+        return "screen.anvilcraftplasticraft.molding.workspace." + action.name().toLowerCase(Locale.ROOT);
+    }
+
+    private boolean clickTextField(double mouseX, double mouseY, int button) {
+        for (NumericField field : this.numericFields) {
+            if (!field.box.visible || !field.box.isMouseOver(mouseX, mouseY)) continue;
+            if (field.box.active && button == 0) {
+                boolean wasFocused = field.box.isFocused();
+                focusNumeric(field);
+                if (wasFocused) field.box.mouseClicked(mouseX, mouseY, button);
+                this.setDragging(true);
+            }
+            return true;
+        }
+        EditBox[] boxes = {this.leftSearch, this.rightSearch, this.outlinerSearch, this.renameField, this.blueprintRenameField};
+        for (EditBox box : boxes) {
+            if (box == null || !box.isVisible() || !box.isMouseOver(mouseX, mouseY)) continue;
+            this.setFocused(box);
+            box.setFocused(true);
+            box.mouseClicked(mouseX, mouseY, button);
+            this.setDragging(button == 0);
+            return true;
+        }
+        return false;
+    }
+
+    private void focusNumeric(NumericField field) {
+        clearSearchFocus();
+        this.numericFields.forEach(candidate -> candidate.box.setFocused(false));
+        this.setFocused(field.box);
+        field.box.setFocused(true);
+        field.box.moveCursorToEnd(false);
+        field.box.setHighlightPos(0);
+    }
+
+    private void stepNumericField(NumericField field, double amount, boolean retainFocus) {
+        NumericField focused = focusedNumeric();
+        if (focused != null && focused != field && !commitFocusedNumeric()) return;
+        if (this.editor.pending()) {
+            feedback("pending");
+            return;
+        }
+        String draft = field.box.isFocused() ? field.box.getValue().strip() : "";
+        if (!this.editor.adjustNumeric(field.property, field.axis, draft, amount)) {
+            feedback(this.editor.pending() ? "pending" : "numeric_invalid");
+            if (!this.editor.pending()) {
+                this.invalidNumeric = field;
+                field.box.setTextColor(0xFFFF6969);
+            }
+            return;
+        }
+        field.box.setFocused(false);
+        this.invalidNumeric = null;
+        refreshNumericFields();
+        if (retainFocus) focusNumeric(field);
+    }
+
+    private static double numericStep(boolean rotation) {
+        if (Screen.hasShiftDown()) return rotation ? 1.0D : 0.1D;
+        if (Screen.hasControlDown()) return rotation ? 45.0D : 10.0D;
+        return rotation ? 15.0D : 1.0D;
+    }
+
+    private void cancelEditorGesture() {
+        this.editor.cancelDrag();
+        this.modelDragAxis = null;
+        this.modelDragTransform = null;
+        this.modelDragOrigin = null;
+        this.modelDragAxisDirection = null;
+        this.cameraDragButton = -1;
+        this.cameraDragged = false;
+        this.boxSelecting = false;
+        this.outlinerScrollbarDragging = false;
+        this.elementScrollbarDragging = false;
+        this.typeScrollbarDragging = false;
+        this.blueprintScrollbarDragging = false;
+        this.pressedWorkspaceAction = null;
+        this.pressedReleaseControl = null;
+        this.pressedChamberControl = null;
+        this.toolButtons.select(this.editor.tool());
+        this.setDragging(false);
+    }
+
+    private void focusModel() {
+        List<MoldingOutliner.Row> rows = MoldingOutliner.rows(this.editor.model(), Set.of(), "");
+        Set<UUID> visible = new HashSet<>();
+        rows.stream().filter(row -> !row.group() && row.visible()).forEach(row -> visible.add(row.id()));
+        List<MoldingVec3> vertices = this.editor.model().elements().stream()
+            .filter(element -> visible.contains(element.id()))
+            .flatMap(element -> MoldingModelBaker.transformedVertices(this.editor.model(), element).stream()).toList();
+        if (vertices.isEmpty()) {
+            this.camera.reset();
+            return;
+        }
+        Vector3d minimum = new Vector3d(Double.POSITIVE_INFINITY);
+        Vector3d maximum = new Vector3d(Double.NEGATIVE_INFINITY);
+        for (MoldingVec3 vertex : vertices) {
+            minimum.min(new Vector3d(vertex.x(), vertex.y(), vertex.z()));
+            maximum.max(new Vector3d(vertex.x(), vertex.y(), vertex.z()));
+        }
+        Vector3d center = new Vector3d(minimum).add(maximum).mul(0.5D);
+        this.camera.focus(center, minimum.distance(maximum) * 0.5D, viewportWidth(), viewportHeight());
+    }
+
+    private void renderSelectionBox(GuiGraphics graphics) {
+        if (!this.boxSelecting) return;
+        int x = (int) Math.min(this.boxStartX, this.boxEndX);
+        int y = (int) Math.min(this.boxStartY, this.boxEndY);
+        int width = (int) Math.abs(this.boxEndX - this.boxStartX);
+        int height = (int) Math.abs(this.boxEndY - this.boxStartY);
+        graphics.fill(x, y, x + width, y + height, 0x305A91DC);
+        graphics.renderOutline(x, y, Math.max(1, width), Math.max(1, height), 0xFF8CB7ED);
+    }
+
+    private void finishBoxSelection() {
+        this.boxSelecting = false;
+        double minX = Math.min(this.boxStartX, this.boxEndX) - this.leftPos - viewportX();
+        double maxX = Math.max(this.boxStartX, this.boxEndX) - this.leftPos - viewportX();
+        double minY = Math.min(this.boxStartY, this.boxEndY) - this.topPos - viewportY();
+        double maxY = Math.max(this.boxStartY, this.boxEndY) - this.topPos - viewportY();
+        if (Math.hypot(maxX - minX, maxY - minY) <= 2.0D) {
+            selectViewportAt(this.boxEndX, this.boxEndY);
+            return;
+        }
+        Set<UUID> selectable = new HashSet<>();
+        MoldingOutliner.rows(this.editor.model(), Set.of(), "").stream()
+            .filter(row -> !row.group() && row.visible() && !row.locked()).forEach(row -> selectable.add(row.id()));
+        ViewportTransform transform = viewportTransform();
+        List<UUID> selected = new ArrayList<>();
+        for (MoldingElement element : this.editor.model().elements()) {
+            if (!selectable.contains(element.id())) continue;
+            List<Vector2d> points = MoldingModelBaker.transformedVertices(this.editor.model(), element).stream()
+                .map(vertex -> transform.project(new Vector3d(vertex.x(), vertex.y(), vertex.z())))
+                .flatMap(Optional::stream).toList();
+            if (points.isEmpty()) continue;
+            double left = points.stream().mapToDouble(point -> point.x).min().orElseThrow();
+            double right = points.stream().mapToDouble(point -> point.x).max().orElseThrow();
+            double top = points.stream().mapToDouble(point -> point.y).min().orElseThrow();
+            double bottom = points.stream().mapToDouble(point -> point.y).max().orElseThrow();
+            if (right >= minX && left <= maxX && bottom >= minY && top <= maxY) selected.add(element.id());
+        }
+        this.editor.setSelection(selected, this.boxAdditive);
+        syncElementSelectionAnchor();
+        refreshNumericFields();
+        ensurePrimaryVisible();
+    }
+
+    private double rotationDragAngle(double x, double y) {
+        Vector3d normal = new Vector3d(this.modelDragAxisDirection).normalize();
+        Vector3d start = rotationPlaneVector(this.modelDragTransform.ray(this.modelDragStartX, this.modelDragStartY), normal);
+        Vector3d current = rotationPlaneVector(this.modelDragTransform.ray(x, y), normal);
+        if (start != null && current != null) {
+            return Math.toDegrees(Math.atan2(normal.dot(new Vector3d(start).cross(current)), start.dot(current)));
+        }
+        Optional<Vector2d> projected = this.modelDragTransform.project(this.modelDragOrigin);
+        if (projected.isEmpty()) return this.modelDragLastAngle;
+        Vector2d center = projected.get();
+        double from = Math.atan2(this.modelDragStartY - center.y, this.modelDragStartX - center.x);
+        double to = Math.atan2(y - center.y, x - center.x);
+        double facing = normal.dot(this.modelDragTransform.directionToCamera(this.modelDragOrigin));
+        return Math.toDegrees(to - from) * -Math.copySign(1.0D, facing);
+    }
+
+    private @Nullable Vector3d rotationPlaneVector(ViewportRay ray, Vector3d normal) {
+        double denominator = ray.direction().dot(normal);
+        if (Math.abs(denominator) < 1.0E-4D) return null;
+        double distance = new Vector3d(this.modelDragOrigin).sub(ray.origin()).dot(normal) / denominator;
+        if (distance < 0.0D) return null;
+        Vector3d radius = ray.pointAt(distance).sub(this.modelDragOrigin);
+        return radius.lengthSquared() < 1.0E-8D ? null : radius.normalize();
+    }
+
+    private boolean workspaceActionEnabled(WorkspaceAction action) {
+        boolean editable = this.editor.writable() && !this.editor.pending();
+        return switch (action) {
+            case NEW_CUBE -> editable;
+            case DUPLICATE, GROUP -> editable && this.editor.hasTransformableSelection();
+            case UNDO -> editable && this.menu.canUndo();
+            case REDO -> editable && this.menu.canRedo();
+            case FOCUS, DONE -> true;
+        };
+    }
+
+    private void executeWorkspaceAction(WorkspaceAction action) {
+        switch (action) {
+            case NEW_CUBE -> createCubeAtViewportOrigin();
+            case DUPLICATE -> this.editor.duplicateSelection();
+            case GROUP -> this.editor.groupSelection();
+            case UNDO -> this.editor.undo();
+            case REDO -> this.editor.redo();
+            case FOCUS -> focusSelection();
+            case DONE -> toggleWorkspace();
+        }
+        refreshNumericFields();
+        syncElementSelectionAnchor();
+        ensurePrimaryVisible();
+    }
+
+    private List<MoldingOutliner.Row> outlinerRows() {
+        return MoldingOutliner.rows(this.editor.model(), this.collapsedGroups,
+            this.outlinerSearch == null ? "" : this.outlinerSearch.getValue());
+    }
+
+    private void renderOutliner(GuiGraphics graphics, int mouseX, int mouseY) {
+        List<MoldingOutliner.Row> rows = outlinerRows();
+        int visible = this.workspaceLayout.outlinerRows();
+        this.outlinerScroll = Math.clamp(this.outlinerScroll, 0, Math.max(0, rows.size() - visible));
+        int x = this.workspaceLayout.sidebarX() + 4;
+        int width = this.workspaceLayout.sidebarWidth() - 8;
+        for (int index = 0; index < visible && index + this.outlinerScroll < rows.size(); index++) {
+            MoldingOutliner.Row row = rows.get(index + this.outlinerScroll);
+            int y = this.workspaceLayout.outlinerY() + index * 16;
+            boolean hovered = new GuiRect(x, y, width, 16).contains(0, 0, mouseX, mouseY);
+            if (hovered || this.editor.selection().contains(row.id())) {
+                graphics.fill(x, y, x + width, y + 15,
+                    this.editor.selection().contains(row.id()) ? 0xFF435A78 : 0xFF353E49);
+            }
+            int indent = Math.min(row.depth() * 8, Math.max(8, width / 3));
+            if (row.group()) graphics.drawString(this.font, this.collapsedGroups.contains(row.id()) ? ">" : "v",
+                x + indent + 2, y + 4, 0xFFABB8C9, false);
+            String name = this.font.plainSubstrByWidth(row.name(), Math.max(8, width - indent - 45));
+            graphics.drawString(this.font, name, x + indent + 12, y + 4,
+                row.locked() ? 0xFF9097A2 : row.visible() ? 0xFFE4E9F1 : 0xFF777F8B, false);
+            drawOutlinerEye(graphics, x + width - 29, y + 3, row.visible());
+            drawOutlinerLock(graphics, x + width - 14, y + 3, row.locked());
+            if (hovered) {
+                String action = mouseX >= x + width - 16 ? "lock" : mouseX >= x + width - 31 ? "visibility" : "selection";
+                this.hoveredControlTooltip = List.of(Component.literal(row.name()), Component.translatable(
+                    "screen.anvilcraftplasticraft.molding.workspace.outliner_" + action));
+            }
+        }
+        if (rows.isEmpty()) graphics.drawString(this.font,
+            this.font.plainSubstrByWidth(Component.translatable("screen.anvilcraftplasticraft.molding.workspace.empty").getString(), width),
+            x + 3, this.workspaceLayout.outlinerY() + 5, 0xFF8995A4, false);
+        if (rows.size() > visible) {
+            int track = visible * 16;
+            int thumb = Math.max(8, track * visible / rows.size());
+            int top = this.workspaceLayout.outlinerY() + (track - thumb) * this.outlinerScroll / (rows.size() - visible);
+            graphics.fill(x + width - 1, this.workspaceLayout.outlinerY(), x + width + 1,
+                this.workspaceLayout.outlinerY() + track, 0xFF181B20);
+            graphics.fill(x + width - 1, top, x + width + 1, top + thumb, 0xFF8193AB);
+        }
+    }
+
+    private static void drawOutlinerEye(GuiGraphics graphics, int x, int y, boolean visible) {
+        int color = visible ? 0xFFCAD5E3 : 0xFF687380;
+        graphics.renderOutline(x, y + 2, 10, 6, color);
+        graphics.fill(x + 4, y + 3, x + 6, y + 7, color);
+        if (!visible) for (int i = 0; i < 10; i++) graphics.fill(x + i, y + i, x + i + 1, y + i + 1, color);
+    }
+
+    private static void drawOutlinerLock(GuiGraphics graphics, int x, int y, boolean locked) {
+        int color = locked ? 0xFFE7B771 : 0xFF687380;
+        graphics.renderOutline(x + 2, y, 6, 6, color);
+        graphics.fill(x, y + 4, x + 10, y + 10, color);
+        if (!locked) graphics.fill(x + 6, y + 1, x + 8, y + 4, 0xFF292C31);
+    }
+
+    private boolean handleWorkspaceClick(double mouseX, double mouseY, int button) {
+        if (button == 0) {
+            for (WorkspaceAction action : WorkspaceAction.values()) {
+                if (workspaceButtonRect(action).contains(0, 0, mouseX, mouseY)) {
+                    if (workspaceActionEnabled(action)) {
+                        PlasticraftGuiSounds.click();
+                        this.pressedWorkspaceAction = action;
+                    }
+                    return true;
+                }
+            }
+            for (int i = 0; i < TOOL_BUTTONS.length; i++) {
+                if (toolRect(i).contains(0, 0, mouseX, mouseY)) {
+                    if (this.editor.writable() && this.toolButtons.press(TOOL_BUTTONS[i])) {
+                        PlasticraftGuiSounds.click();
+                    }
+                    return true;
+                }
+            }
+        }
+        int x = this.workspaceLayout.sidebarX() + 4;
+        int width = this.workspaceLayout.sidebarWidth() - 8;
+        if (!new GuiRect(x, this.workspaceLayout.outlinerY(), width,
+            this.workspaceLayout.outlinerRows() * 16).contains(0, 0, mouseX, mouseY)) return false;
+        List<MoldingOutliner.Row> rows = outlinerRows();
+        int visible = this.workspaceLayout.outlinerRows();
+        if (button == 0 && rows.size() > visible && mouseX >= x + width - 4) {
+            int track = visible * 16;
+            int thumb = Math.max(8, track * visible / rows.size());
+            double top = this.workspaceLayout.outlinerY() + (track - thumb) * this.outlinerScroll / (double) (rows.size() - visible);
+            this.outlinerScrollbarGrab = mouseY >= top && mouseY < top + thumb ? mouseY - top : thumb * 0.5D;
+            this.outlinerScrollbarDragging = true;
+            updateOutlinerScroll(mouseY);
+            return true;
+        }
+        int index = this.outlinerScroll + ((int) mouseY - this.workspaceLayout.outlinerY()) / 16;
+        if (index >= rows.size()) return true;
+        MoldingOutliner.Row row = rows.get(index);
+        int indent = Math.min(row.depth() * 8, Math.max(8, width / 3));
+        if (button == 0 && mouseX >= x + width - 16) {
+            if (this.editor.toggleLocked(row.id())) {
+                PlasticraftGuiSounds.click();
+            } else {
+                feedback("transform_rejected");
+            }
+        } else if (button == 0 && mouseX >= x + width - 31) {
+            if (this.editor.toggleHidden(row.id())) {
+                PlasticraftGuiSounds.click();
+            } else {
+                feedback("transform_rejected");
+            }
+        } else if (button == 0 && row.group() && mouseX < x + indent + 12) {
+            PlasticraftGuiSounds.click();
+            if (!this.collapsedGroups.remove(row.id())) this.collapsedGroups.add(row.id());
+        } else if (button == 0 || button == 1) {
+            if (button == 1) {
+                if (!this.editor.selection().contains(row.id())) this.editor.select(row.id(), false);
+                openContextMenu(mouseX, mouseY);
+            } else if (Screen.hasShiftDown()) {
+                this.editor.selectRange(rows.stream().map(MoldingOutliner.Row::id).toList(),
+                    this.elementSelectionAnchor == null ? row.id() : this.elementSelectionAnchor,
+                    row.id(), Screen.hasControlDown());
+            } else {
+                this.editor.select(row.id(), Screen.hasControlDown());
+                this.elementSelectionAnchor = row.id();
+            }
+        }
+        refreshNumericFields();
+        return true;
+    }
+
+    private void updateOutlinerScroll(double mouseY) {
+        int count = outlinerRows().size();
+        int visible = this.workspaceLayout.outlinerRows();
+        int maximum = Math.max(0, count - visible);
+        int track = visible * 16;
+        int thumb = Math.max(8, track * visible / Math.max(1, count));
+        double ratio = (mouseY - this.workspaceLayout.outlinerY() - this.outlinerScrollbarGrab) / Math.max(1, track - thumb);
+        this.outlinerScroll = (int) Math.round(Math.clamp(ratio, 0.0D, 1.0D) * maximum);
+    }
+
+    private void renderViewportControls(GuiGraphics graphics, int mouseX, int mouseY) {
+        String[] labels = {"3D", "F", "R", "T", "F", this.expandedEditor ? "-" : "+"};
+        String[] names = {"perspective", "front", "right", "top", "focus", "expand"};
+        for (int i = 0; i < labels.length; i++) {
+            GuiRect rect = viewportControlRect(i);
+            boolean hovered = rect.contains(this.leftPos, this.topPos, mouseX, mouseY);
+            graphics.fill(this.leftPos + rect.x, this.topPos + rect.y, this.leftPos + rect.x + rect.width,
+                this.topPos + rect.y + rect.height, hovered ? 0xE0566578 : 0xB02B323C);
+            graphics.drawCenteredString(this.font, labels[i], this.leftPos + rect.x + rect.width / 2,
+                this.topPos + rect.y + 2, 0xFFDEE7F3);
+            tooltip(rect, mouseX, mouseY, "screen.anvilcraftplasticraft.molding.workspace." + names[i] + ".tooltip");
+        }
+        if (!this.expandedEditor && this.editorFeedbackTicks > 0) {
+            List<FormattedCharSequence> lines = this.font.split(Component.translatable(this.editorFeedback), viewportWidth() - 12);
+            int count = Math.min(2, lines.size());
+            int x = this.leftPos + viewportX() + 3;
+            int y = this.topPos + viewportY() + 3;
+            graphics.fill(x, y, x + viewportWidth() - 6, y + count * 10 + 4, 0xE5252528);
+            for (int i = 0; i < count; i++) graphics.drawString(this.font, lines.get(i), x + 3, y + 2 + i * 10, 0xFFFFA36B, false);
+        }
+    }
+
+    private GuiRect viewportControlRect(int index) {
+        int x = index < 4 ? viewportX() + 3 + index * 20 : viewportX() + viewportWidth() - (6 - index) * 17;
+        return new GuiRect(x, viewportY() + viewportHeight() - 15, index < 4 ? 18 : 14, 12);
+    }
+
+    private boolean handleViewportControlClick(double mouseX, double mouseY, int button) {
+        if (button != 0 && button != 1) return false;
+        for (int i = 0; i < 6; i++) {
+            if (!viewportControlRect(i).contains(this.leftPos, this.topPos, mouseX, mouseY)) continue;
+            PlasticraftGuiSounds.click();
+            boolean reverse = button == 1 || Screen.hasControlDown();
+            switch (i) {
+                case 0 -> this.camera.setPreset(MoldingViewPreset.PERSPECTIVE);
+                case 1 -> this.camera.setPreset(reverse ? MoldingViewPreset.BACK : MoldingViewPreset.FRONT);
+                case 2 -> this.camera.setPreset(reverse ? MoldingViewPreset.LEFT : MoldingViewPreset.RIGHT);
+                case 3 -> this.camera.setPreset(reverse ? MoldingViewPreset.BOTTOM : MoldingViewPreset.TOP);
+                case 4 -> focusSelection();
+                case 5 -> toggleWorkspace();
+                default -> throw new IllegalStateException();
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private void feedback(String reason) {
+        this.editorFeedback = "screen.anvilcraftplasticraft.molding.workspace." + reason;
+        this.editorFeedbackTicks = 80;
+    }
+
+    private enum WorkspaceAction {
+        NEW_CUBE, DUPLICATE, GROUP, UNDO, REDO, FOCUS, DONE
     }
 
     private static final class CenteredEditBox extends EditBox {
@@ -3977,6 +4800,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         }
 
         private int textOffset() {
+            if (this.isFocused()) return 0;
             return Math.max(0, (getWidth() - this.font.width(getValue())) / 2 - 2);
         }
     }

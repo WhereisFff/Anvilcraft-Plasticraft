@@ -274,6 +274,10 @@ public class PlasticMoldingChamberMenu extends AbstractContainerMenu {
         return this.machineData.get(12) != 0;
     }
 
+    public boolean canRedo() {
+        return this.machineData.get(21) != 0;
+    }
+
     public boolean typeOverrideCommitted() {
         return this.machineData.get(13) != 0;
     }

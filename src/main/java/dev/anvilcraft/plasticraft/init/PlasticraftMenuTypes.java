@@ -2,10 +2,8 @@ package dev.anvilcraft.plasticraft.init;
 
 import dev.anvilcraft.lib.v2.registrum.util.entry.MenuEntry;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.client.gui.screen.AllayLoungeScreen;
 import dev.anvilcraft.plasticraft.client.gui.screen.HardenedResinAnvilScreen;
 import dev.anvilcraft.plasticraft.client.gui.screen.PlasticMoldingChamberScreen;
-import dev.anvilcraft.plasticraft.inventory.AllayLoungeMenu;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.anvilcraft.plasticraft.inventory.PlasticMoldingChamberMenu;
 
@@ -15,14 +13,6 @@ public final class PlasticraftMenuTypes {
             "plastic_molding_chamber",
             (type, id, inventory, buffer) -> new PlasticMoldingChamberMenu(type, id, inventory, buffer),
             () -> PlasticMoldingChamberScreen::new
-        )
-        .register();
-
-    public static final MenuEntry<AllayLoungeMenu> ALLAY_LOUNGE = AnvilcraftPlasticraft.REGISTRUM
-        .menu(
-            "allay_lounge",
-            (type, id, inventory, buffer) -> new AllayLoungeMenu(type, id, inventory, buffer),
-            () -> AllayLoungeScreen::new
         )
         .register();
 

@@ -7,6 +7,7 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
 import dev.anvilcraft.plasticraft.molding.model.MoldingGroup;
 import dev.anvilcraft.plasticraft.molding.model.MoldingTransform;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -22,6 +23,8 @@ public final class MoldingDragTransaction {
     private final MoldingTool tool;
     private final MoldingAxis axis;
     private final double axisDirection;
+    private final MoldingVec3 rotationCenter;
+    private final MoldingGizmoBasis scaleBasis;
     private EditableMoldingModel previewModel;
     private double value;
 
@@ -41,12 +44,25 @@ public final class MoldingDragTransaction {
         MoldingAxis axis,
         double axisDirection
     ) {
+        this(model, selection, tool, axis, axisDirection, null);
+    }
+
+    public MoldingDragTransaction(
+        EditableMoldingModel model,
+        MoldingSelection selection,
+        MoldingTool tool,
+        MoldingAxis axis,
+        double axisDirection,
+        @Nullable MoldingVec3 rotationCenter
+    ) {
         this.originalModel = model;
         this.previewModel = model;
         this.selectedIds = selectedElementIds(model, selection);
         this.tool = tool;
         this.axis = axis;
         this.axisDirection = Math.copySign(1.0D, axisDirection);
+        this.rotationCenter = rotationCenter == null ? center(model, this.selectedIds) : rotationCenter;
+        this.scaleBasis = MoldingGizmoBasis.forSelection(model, selection, MoldingTool.SCALE);
         if (tool == MoldingTool.NONE || tool == MoldingTool.MIRROR) {
             throw new IllegalArgumentException("Selected tool cannot start a drag transaction");
         }
@@ -57,12 +73,19 @@ public final class MoldingDragTransaction {
     }
 
     public EditableMoldingModel preview(double rawValue) {
-        this.value = Math.rint(rawValue);
+        return this.preview(rawValue, this.tool == MoldingTool.ROTATE ? 15.0D : 1.0D);
+    }
+
+    public EditableMoldingModel preview(double rawValue, double step) {
+        if (!Double.isFinite(rawValue) || !Double.isFinite(step) || step < 0.0D) {
+            throw new IllegalArgumentException("Invalid transform step");
+        }
+        this.value = step == 0.0D ? rawValue : Math.rint(rawValue / step) * step;
         List<MoldingElement> replacements = new ArrayList<>(this.originalModel.elements().size());
         for (MoldingElement element : this.originalModel.elements()) {
             replacements.add(this.selectedIds.contains(element.id())
                 && !isEffectivelyLocked(this.originalModel, element)
-                ? transform(this.originalModel, element, this.tool, this.axis, this.axisDirection, this.value)
+                ? transform(element, this.value)
                 : element);
         }
         this.previewModel = this.originalModel.withElements(replacements);
@@ -91,102 +114,48 @@ public final class MoldingDragTransaction {
         return commands.size() == 1 ? commands.getFirst() : new MoldingCommand.Batch(commands);
     }
 
-    private static MoldingElement transform(
-        EditableMoldingModel model,
-        MoldingElement element,
-        MoldingTool tool,
-        MoldingAxis axis,
-        double axisDirection,
-        double value
-    ) {
-        MoldingTransform transform = element.transform();
-        return switch (tool) {
-            case MOVE -> translate(model, element, axis, value);
-            case ROTATE -> rotate(element, axis, value);
-            case PIVOT -> withWorldPivot(model, element, add(worldPivot(model, element), axis, value));
-            case SCALE -> resize(element, axis, axisDirection, value);
+    private MoldingElement transform(MoldingElement element, double value) {
+        if (value == 0.0D) return element;
+        return switch (this.tool) {
+            case MOVE -> MoldingElementTransforms.move(this.originalModel, element, add(MoldingVec3.ZERO, this.axis, value));
+            case ROTATE -> MoldingElementTransforms.rotate(this.originalModel, element, this.rotationCenter, this.axis, value);
+            case PIVOT -> withWorldPivot(this.originalModel, element, add(worldPivot(this.originalModel, element), this.axis, value));
+            case SCALE -> {
+                MoldingGizmoBasis basis = MoldingGizmoBasis.forElement(this.originalModel, element);
+                double localValue = value * this.scaleBasis.worldUnitsPerLocalUnit(this.axis) / basis.worldUnitsPerLocalUnit(this.axis);
+                yield resize(element, this.axis, this.axisDirection, localValue);
+            }
             case NONE, MIRROR -> throw new IllegalStateException("Selected tool cannot be dragged");
         };
     }
 
     static MoldingVec3 worldPivot(EditableMoldingModel model, MoldingElement element) {
-        return MoldingModelBaker.transformedPoint(model, element, element.transform().pivot());
+        return MoldingElementTransforms.worldPivot(model, element);
     }
 
-    static MoldingElement withWorldPivot(
-        EditableMoldingModel model,
-        MoldingElement element,
-        MoldingVec3 worldPivot
-    ) {
-        MoldingTransform transform = element.transform();
-        MoldingVec3 sourcePoint = MoldingModelBaker.inverseTransformedPoint(model, element, worldPivot);
-        MoldingVec3 parentPoint = transform.apply(sourcePoint);
-        return replaceTransform(element, new MoldingTransform(
-            transform.translation(),
-            transform.rotation(),
-            transform.scale(),
-            parentPoint.subtract(transform.translation())
-        ));
+    static MoldingElement withWorldPivot(EditableMoldingModel model, MoldingElement element, MoldingVec3 worldPivot) {
+        return MoldingElementTransforms.pivot(model, element, worldPivot);
     }
 
-    private static MoldingElement translate(
-        EditableMoldingModel model,
-        MoldingElement element,
-        MoldingAxis axis,
-        double amount
-    ) {
-        MoldingTransform transform = element.transform();
-        MoldingVec3 target = add(worldPivot(model, element), axis, amount);
-        MoldingVec3 sourcePoint = MoldingModelBaker.inverseTransformedPoint(model, element, target);
-        MoldingVec3 parentPoint = transform.apply(sourcePoint);
-        return replaceTransform(element, new MoldingTransform(
-            parentPoint.subtract(transform.pivot()),
-            transform.rotation(),
-            transform.scale(),
-            transform.pivot()
-        ));
-    }
-
-    private static MoldingElement rotate(MoldingElement element, MoldingAxis axis, double degrees) {
-        MoldingTransform transform = element.transform();
-        MoldingVec3 rotation = RotationMatrix.fromDegrees(transform.rotation())
-            .prepend(axis, Math.toRadians(degrees))
-            .toDegrees();
-        return replaceTransform(element, new MoldingTransform(
-            transform.translation(),
-            rotation,
-            transform.scale(),
-            transform.pivot()
-        ));
-    }
-
-    private static MoldingElement resize(
-        MoldingElement element,
-        MoldingAxis axis,
-        double axisDirection,
-        double value
-    ) {
-        double current = component(element.to(), axis) - component(element.from(), axis);
-        double size = current + value;
-        if (size == 0.0D && hasZeroSizeOnOtherAxis(element, axis)) {
-            size = Math.copySign(1.0D, current);
-        }
-        double applied = size - current;
-        MoldingVec3 from = axisDirection < 0.0D
-            ? withComponent(element.from(), axis, component(element.from(), axis) - applied)
-            : element.from();
-        MoldingVec3 to = axisDirection < 0.0D
-            ? element.to()
-            : withComponent(element.to(), axis, component(element.to(), axis) + applied);
+    private static MoldingElement resize(MoldingElement element, MoldingAxis axis, double direction, double value) {
+        double size = component(element.to(), axis) - component(element.from(), axis);
+        boolean moveFrom = (direction < 0.0D) == (size >= 0.0D);
         return new MoldingElement(
-            element.id(),
-            element.name(),
-            element.groupId(),
-            from,
-            to,
-            element.transform(),
-            element.visible(),
-            element.locked()
+            element.id(), element.name(), element.groupId(),
+            moveFrom ? add(element.from(), axis, direction * value) : element.from(),
+            moveFrom ? element.to() : add(element.to(), axis, direction * value),
+            element.transform(), element.visible(), element.locked()
+        );
+    }
+
+    private static MoldingVec3 center(EditableMoldingModel model, Set<UUID> selected) {
+        List<MoldingVec3> vertices = model.elements().stream().filter(element -> selected.contains(element.id()))
+            .flatMap(element -> MoldingModelBaker.transformedVertices(model, element).stream()).toList();
+        if (vertices.isEmpty()) return MoldingVec3.ZERO;
+        return new MoldingVec3(
+            (vertices.stream().mapToDouble(MoldingVec3::x).min().orElse(0) + vertices.stream().mapToDouble(MoldingVec3::x).max().orElse(0)) / 2,
+            (vertices.stream().mapToDouble(MoldingVec3::y).min().orElse(0) + vertices.stream().mapToDouble(MoldingVec3::y).max().orElse(0)) / 2,
+            (vertices.stream().mapToDouble(MoldingVec3::z).min().orElse(0) + vertices.stream().mapToDouble(MoldingVec3::z).max().orElse(0)) / 2
         );
     }
 
@@ -201,13 +170,6 @@ public final class MoldingDragTransaction {
             element.visible(),
             element.locked()
         );
-    }
-
-    private static boolean hasZeroSizeOnOtherAxis(MoldingElement element, MoldingAxis resizedAxis) {
-        for (MoldingAxis axis : MoldingAxis.values()) {
-            if (axis != resizedAxis && component(element.from(), axis) == component(element.to(), axis)) return true;
-        }
-        return false;
     }
 
     static MoldingVec3 add(MoldingVec3 value, MoldingAxis axis, double amount) {
@@ -264,100 +226,4 @@ public final class MoldingDragTransaction {
         return false;
     }
 
-    /** 以固定世界轴左乘增量旋转，避免共同枢轴的多选因原有姿态不同而散开。 */
-    private record RotationMatrix(
-        double xx,
-        double xy,
-        double xz,
-        double yx,
-        double yy,
-        double yz,
-        double zx,
-        double zy,
-        double zz
-    ) {
-        private static final double GIMBAL_EPSILON = 1.0E-8D;
-
-        static RotationMatrix fromDegrees(MoldingVec3 rotation) {
-            double x = Math.toRadians(rotation.x());
-            double y = Math.toRadians(rotation.y());
-            double z = Math.toRadians(rotation.z());
-            double sinX = Math.sin(x);
-            double cosX = Math.cos(x);
-            double sinY = Math.sin(y);
-            double cosY = Math.cos(y);
-            double sinZ = Math.sin(z);
-            double cosZ = Math.cos(z);
-            return new RotationMatrix(
-                cosZ * cosY,
-                cosZ * sinY * sinX - sinZ * cosX,
-                cosZ * sinY * cosX + sinZ * sinX,
-                sinZ * cosY,
-                sinZ * sinY * sinX + cosZ * cosX,
-                sinZ * sinY * cosX - cosZ * sinX,
-                -sinY,
-                cosY * sinX,
-                cosY * cosX
-            );
-        }
-
-        RotationMatrix prepend(MoldingAxis axis, double angle) {
-            double sin = Math.sin(angle);
-            double cos = Math.cos(angle);
-            return switch (axis) {
-                case X -> new RotationMatrix(
-                    this.xx,
-                    this.xy,
-                    this.xz,
-                    cos * this.yx - sin * this.zx,
-                    cos * this.yy - sin * this.zy,
-                    cos * this.yz - sin * this.zz,
-                    sin * this.yx + cos * this.zx,
-                    sin * this.yy + cos * this.zy,
-                    sin * this.yz + cos * this.zz
-                );
-                case Y -> new RotationMatrix(
-                    cos * this.xx + sin * this.zx,
-                    cos * this.xy + sin * this.zy,
-                    cos * this.xz + sin * this.zz,
-                    this.yx,
-                    this.yy,
-                    this.yz,
-                    -sin * this.xx + cos * this.zx,
-                    -sin * this.xy + cos * this.zy,
-                    -sin * this.xz + cos * this.zz
-                );
-                case Z -> new RotationMatrix(
-                    cos * this.xx - sin * this.yx,
-                    cos * this.xy - sin * this.yy,
-                    cos * this.xz - sin * this.yz,
-                    sin * this.xx + cos * this.yx,
-                    sin * this.xy + cos * this.yy,
-                    sin * this.xz + cos * this.yz,
-                    this.zx,
-                    this.zy,
-                    this.zz
-                );
-            };
-        }
-
-        MoldingVec3 toDegrees() {
-            double y = Math.asin(Math.clamp(-this.zx, -1.0D, 1.0D));
-            double x;
-            double z;
-            if (Math.abs(Math.cos(y)) > GIMBAL_EPSILON) {
-                x = Math.atan2(this.zy, this.zz);
-                z = Math.atan2(this.yx, this.xx);
-            } else {
-                x = 0.0D;
-                z = Math.atan2(-this.xy, this.yy);
-            }
-            return new MoldingVec3(cleanDegrees(x), cleanDegrees(y), cleanDegrees(z));
-        }
-
-        private static double cleanDegrees(double radians) {
-            double degrees = Math.toDegrees(radians);
-            return Math.abs(degrees) < 1.0E-10D ? 0.0D : degrees;
-        }
-    }
 }

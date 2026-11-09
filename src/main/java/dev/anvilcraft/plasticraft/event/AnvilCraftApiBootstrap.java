@@ -3,7 +3,6 @@ package dev.anvilcraft.plasticraft.event;
 import dev.anvilcraft.plasticraft.block.piston.SlidingAdhesionStructureExtension;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
-import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.entity.redstone.MoldedTrayComponentLookup;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
@@ -38,8 +37,9 @@ public final class AnvilCraftApiBootstrap {
 
         HasCauldron.registerEntityCauldronSelector((context, pos, current) -> {
             // 通用塑料实体无条件实现锅接口，成型类型不是锅时必须拒答，否则储罐等制品会被当成实体锅
-            if (current instanceof PlasticCauldron cauldron && !cauldron.plasticraft$isCauldron()) return null;
-            if (!CauldronImpactRecipeProcessor.hasTargetedRecipe()) return current;
+            if (!CauldronImpactRecipeProcessor.hasTargetedRecipe()) {
+                return current instanceof PlasticCauldron cauldron && !cauldron.plasticraft$isCauldron() ? null : current;
+            }
             PlasticCauldron target = CauldronImpactRecipeProcessor.activeRecipeTarget();
             BlockPos targetCell = CauldronImpactRecipeProcessor.activeRecipeTargetCell();
             if (target != null
@@ -49,7 +49,7 @@ public final class AnvilCraftApiBootstrap {
                 && targetCell.equals(pos)) {
                 return target;
             }
-            if (PlasticCauldrons.isCauldron(current)) return null;
+            if (current instanceof PlasticCauldron) return null;
             return current;
         });
 

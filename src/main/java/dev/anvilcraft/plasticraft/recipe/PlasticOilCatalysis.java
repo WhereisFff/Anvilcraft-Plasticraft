@@ -47,12 +47,13 @@ import java.util.Set;
 import java.util.function.Predicate;
 import javax.annotation.Nullable;
 
-/** 皇家钢和浮霜金属在受热流体中催化塑料油的通用服务端过程。 */
+/** 树脂、金属和玻璃在对应温度条件下催化塑料油的通用服务端过程。 */
 public final class PlasticOilCatalysis {
     public static final int BASE_WORK = 800;
     public static final double MAX_OPEN_MULTIPLIER = 0.55D;
     public static final double FROST_METAL_EFFICIENCY = 0.5D;
     public static final double ENGINEERING_REACTION_POWER = 8.0D;
+    public static final double ELASTIC_REACTION_POWER = 8.0D;
 
     private PlasticOilCatalysis() {
     }
@@ -81,7 +82,7 @@ public final class PlasticOilCatalysis {
     public static void tickLooseCatalyst(ItemEntity catalyst) {
         if (!(catalyst.level() instanceof ServerLevel level)
             || catalyst.isRemoved()
-            || !isCatalyst(catalyst.getItem())) {
+            || !isCatalyst(level, catalyst.getItem())) {
             return;
         }
         BlockPos pos = catalyst.blockPosition();
@@ -94,10 +95,12 @@ public final class PlasticOilCatalysis {
                 pos,
                 item -> cauldron.containsEntity(state, pos, item)
             );
-            CatalystCounts counts = countCatalysts(catalysts);
-            PlasticMaterial productMaterial = oilProduct(counts);
+            CatalystCounts counts = countCatalysts(level, catalysts);
+            boolean cold = PlasticCatalysisCold.isCold(level.getBlockState(pos.below()));
+            PlasticMaterial productMaterial = oilProduct(counts, cold);
             advance(level, pos, oilWorkPerTick(
                 CatalyticPressHeat.power(level.getBlockState(pos.below())),
+                cold,
                 counts
             ), () -> {
                 int levelValue = state.getValue(PlasticOilCauldronBlock.LEVEL);
@@ -118,7 +121,7 @@ public final class PlasticOilCatalysis {
                 pos,
                 item -> cauldron.containsEntity(state, pos, item)
             );
-            CatalystCounts counts = countCatalysts(catalysts);
+            CatalystCounts counts = countCatalysts(level, catalysts);
             double heat = CatalyticPressHeat.power(level.getBlockState(pos.below()));
             boolean cold = PlasticCatalysisCold.isCold(level.getBlockState(pos.below()));
             PlasticMaterial productMaterial = universalProduct(counts, heat, cold);
@@ -138,7 +141,7 @@ public final class PlasticOilCatalysis {
                 return;
             }
             List<ItemEntity> catalysts = looseCatalysts(level, pos, item -> item.blockPosition().equals(pos));
-            CatalystCounts counts = countCatalysts(catalysts);
+            CatalystCounts counts = countCatalysts(level, catalysts);
             double heat = CatalyticPressHeat.power(level.getBlockState(pos.below()));
             boolean cold = PlasticCatalysisCold.isCold(level.getBlockState(pos.below()));
             PlasticMaterial productMaterial = universalProduct(counts, heat, cold);
@@ -154,12 +157,14 @@ public final class PlasticOilCatalysis {
             return;
         }
         List<ItemEntity> catalysts = looseCatalysts(level, pos, item -> item.blockPosition().equals(pos));
-        CatalystCounts counts = countCatalysts(catalysts);
+        CatalystCounts counts = countCatalysts(level, catalysts);
+        boolean cold = PlasticCatalysisCold.isCold(level.getBlockState(pos.below()));
         advance(level, pos, oilWorkPerTick(
             CatalyticPressHeat.power(level.getBlockState(pos.below())),
+            cold,
             counts
         ), () -> {
-            PlasticMaterial material = oilProduct(counts);
+            PlasticMaterial material = oilProduct(counts, cold);
             CatalyticPressProcess.placeMelt(level, pos, new FluidStack(material.melt(), 1_000));
             return true;
         });
@@ -171,7 +176,7 @@ public final class PlasticOilCatalysis {
             level,
             tank.getBlockPos(),
             tank.getFluidHandler(),
-            countCatalysts(tank.getItemHandler()),
+            countCatalysts(level, tank.getItemHandler(), ItemStack.EMPTY),
             CatalyticPressHeat.power(level.getBlockState(tank.getBlockPos().below())),
             PlasticCatalysisCold.isCold(level.getBlockState(tank.getBlockPos().below())),
             true
@@ -191,7 +196,11 @@ public final class PlasticOilCatalysis {
             level,
             pos,
             cauldron.getFluidHandler(),
-            countCatalysts(cauldron.getItemHandler()),
+            countCatalysts(
+                level,
+                cauldron.getItemHandler(),
+                new ItemStack(cauldron.plasticraft$cauldronEntity().getBlockState().getBlock())
+            ),
             work.heat(),
             work.cold(),
             true
@@ -206,21 +215,26 @@ public final class PlasticOilCatalysis {
         Set<Item> emberMetalCatalysts = new HashSet<>();
         Set<Item> royalGlassCatalysts = new HashSet<>();
         Set<Item> frostGlassCatalysts = new HashSet<>();
+        Set<Item> resinCatalysts = new HashSet<>();
         collectCatalysts(
+            level,
             cauldron.getInputHandler(),
             royalSteelCatalysts,
             frostMetalCatalysts,
             emberMetalCatalysts,
             royalGlassCatalysts,
-            frostGlassCatalysts
+            frostGlassCatalysts,
+            resinCatalysts
         );
         collectCatalysts(
+            level,
             cauldron.getOutputHandler(),
             royalSteelCatalysts,
             frostMetalCatalysts,
             emberMetalCatalysts,
             royalGlassCatalysts,
-            frostGlassCatalysts
+            frostGlassCatalysts,
+            resinCatalysts
         );
         tickFluidContainer(
             level,
@@ -231,7 +245,8 @@ public final class PlasticOilCatalysis {
                 frostMetalCatalysts.size(),
                 emberMetalCatalysts.size(),
                 royalGlassCatalysts.size(),
-                frostGlassCatalysts.size()
+                frostGlassCatalysts.size(),
+                resinCatalysts.size()
             ),
             largeCauldronHeat(level, cauldron.getBlockPos()),
             PlasticCatalysisCold.isCold(level.getBlockState(cauldron.getBlockPos().below(2))),
@@ -275,10 +290,10 @@ public final class PlasticOilCatalysis {
         boolean universal = input.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get());
         PlasticMaterial outputMaterial = universal
             ? universalProduct(catalysts, heat, cold)
-            : oilProduct(catalysts);
+            : oilProduct(catalysts, cold);
         double workPerTick = universal
             ? universalWorkPerTick(catalysts, heat, cold)
-            : oilWorkPerTick(heat, catalysts);
+            : oilWorkPerTick(heat, cold, catalysts);
         if (workPerTick <= 0.0D) {
             syncPausedProgress(level, pos, data);
             return;
@@ -341,17 +356,18 @@ public final class PlasticOilCatalysis {
             ItemEntity.class,
             new AABB(pos),
             item -> !item.isRemoved()
-                && isCatalyst(item.getItem())
+                && isCatalyst(level, item.getItem())
                 && inside.test(item)
         );
     }
 
-    private static boolean isCatalyst(ItemStack stack) {
+    private static boolean isCatalyst(ServerLevel level, ItemStack stack) {
         return stack.is(PlasticraftItemTags.ROYAL_STEEL_ITEMS)
             || stack.is(PlasticraftItemTags.FROST_METAL_ITEMS)
             || stack.is(PlasticraftItemTags.EMBER_METAL_ITEMS)
             || stack.is(PlasticraftItemTags.ROYAL_GLASS_ITEMS)
-            || stack.is(PlasticraftItemTags.FROST_GLASS_ITEMS);
+            || stack.is(PlasticraftItemTags.FROST_GLASS_ITEMS)
+            || ResinCatalysts.contains(level, stack);
     }
 
     public static boolean delaysSolidification(ServerLevel level, BlockPos pos) {
@@ -369,62 +385,72 @@ public final class PlasticOilCatalysis {
         ).isEmpty();
     }
 
-    private static CatalystCounts countCatalysts(IItemHandler handler) {
+    private static CatalystCounts countCatalysts(ServerLevel level, IItemHandler handler, ItemStack contactCatalyst) {
         Set<Item> royalSteel = new HashSet<>();
         Set<Item> frostMetal = new HashSet<>();
         Set<Item> emberMetal = new HashSet<>();
         Set<Item> royalGlass = new HashSet<>();
         Set<Item> frostGlass = new HashSet<>();
-        collectCatalysts(handler, royalSteel, frostMetal, emberMetal, royalGlass, frostGlass);
+        Set<Item> resin = new HashSet<>();
+        collectCatalysts(level, handler, royalSteel, frostMetal, emberMetal, royalGlass, frostGlass, resin);
+        if (ResinCatalysts.contains(level, contactCatalyst)) resin.add(contactCatalyst.getItem());
         return new CatalystCounts(
             royalSteel.size(),
             frostMetal.size(),
             emberMetal.size(),
             royalGlass.size(),
-            frostGlass.size()
+            frostGlass.size(),
+            resin.size()
         );
     }
 
-    private static CatalystCounts countCatalysts(List<ItemEntity> catalysts) {
+    private static CatalystCounts countCatalysts(ServerLevel level, List<ItemEntity> catalysts) {
         Set<Item> royalSteel = new HashSet<>();
         Set<Item> frostMetal = new HashSet<>();
         Set<Item> emberMetal = new HashSet<>();
         Set<Item> royalGlass = new HashSet<>();
         Set<Item> frostGlass = new HashSet<>();
+        Set<Item> resin = new HashSet<>();
         for (ItemEntity catalyst : catalysts) {
-            collectCatalyst(catalyst.getItem(), royalSteel, frostMetal, emberMetal, royalGlass, frostGlass);
+            collectCatalyst(level, catalyst.getItem(), royalSteel, frostMetal, emberMetal, royalGlass, frostGlass, resin);
         }
         return new CatalystCounts(
             royalSteel.size(),
             frostMetal.size(),
             emberMetal.size(),
             royalGlass.size(),
-            frostGlass.size()
+            frostGlass.size(),
+            resin.size()
         );
     }
 
     private static void collectCatalysts(
+        ServerLevel level,
         IItemHandler handler,
         Set<Item> royalSteel,
         Set<Item> frostMetal,
         Set<Item> emberMetal,
         Set<Item> royalGlass,
-        Set<Item> frostGlass
+        Set<Item> frostGlass,
+        Set<Item> resin
     ) {
         for (int slot = 0; slot < handler.getSlots(); slot++) {
             ItemStack stack = handler.getStackInSlot(slot);
-            collectCatalyst(stack, royalSteel, frostMetal, emberMetal, royalGlass, frostGlass);
+            collectCatalyst(level, stack, royalSteel, frostMetal, emberMetal, royalGlass, frostGlass, resin);
         }
     }
 
     private static void collectCatalyst(
+        ServerLevel level,
         ItemStack stack,
         Set<Item> royalSteel,
         Set<Item> frostMetal,
         Set<Item> emberMetal,
         Set<Item> royalGlass,
-        Set<Item> frostGlass
+        Set<Item> frostGlass,
+        Set<Item> resin
     ) {
+        if (ResinCatalysts.contains(level, stack)) resin.add(stack.getItem());
         if (stack.is(PlasticraftItemTags.ROYAL_GLASS_ITEMS)) {
             royalGlass.add(stack.getItem());
         } else if (stack.is(PlasticraftItemTags.FROST_GLASS_ITEMS)) {
@@ -469,7 +495,10 @@ public final class PlasticOilCatalysis {
         return false;
     }
 
-    private static double oilWorkPerTick(double heat, CatalystCounts catalysts) {
+    private static double oilWorkPerTick(double heat, boolean cold, CatalystCounts catalysts) {
+        if (cold && catalysts.resinItems() > 0) {
+            return ELASTIC_REACTION_POWER * catalystMultiplier(catalysts.resinItems());
+        }
         return heat * (catalysts.hasGlass()
             ? catalystMultiplier(catalysts.royalGlassItems(), catalysts.frostGlassItems())
             : catalystMultiplier(catalysts.royalSteelItems(), catalysts.frostMetalItems()));
@@ -496,7 +525,8 @@ public final class PlasticOilCatalysis {
             : PlasticMaterial.ENGINEERING;
     }
 
-    private static PlasticMaterial oilProduct(CatalystCounts catalysts) {
+    private static PlasticMaterial oilProduct(CatalystCounts catalysts, boolean cold) {
+        if (cold && catalysts.resinItems() > 0) return PlasticMaterial.ELASTIC;
         return catalysts.hasGlass() ? PlasticMaterial.CLEAR : PlasticMaterial.UNIVERSAL;
     }
 
@@ -536,7 +566,8 @@ public final class PlasticOilCatalysis {
         int frostMetalItems,
         int emberMetalItems,
         int royalGlassItems,
-        int frostGlassItems
+        int frostGlassItems,
+        int resinItems
     ) {
         private boolean hasGlass() {
             return this.royalGlassItems > 0 || this.frostGlassItems > 0;

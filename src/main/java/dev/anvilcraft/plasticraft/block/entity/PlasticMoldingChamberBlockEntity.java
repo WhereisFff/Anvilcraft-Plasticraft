@@ -119,7 +119,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     public static final int PRINTING_CONSUMPTION_RATE = 1;
     public static final int MINIMUM_PROCESS_MELT = 250;
     public static final int PRINTING_DOOR_ANIMATION_TICKS = 10;
-    public static final int MENU_DATA_COUNT = 21;
+    public static final int MENU_DATA_COUNT = 22;
     private static final int REPAIR_INTERVAL = 20;
     private static final int CLIENT_SYNC_INTERVAL = 4;
     private static final String TAG_MODEL = "EditableModel";
@@ -2605,6 +2605,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
                 case 18 -> PlasticMoldingChamberBlockEntity.this.printingProgress;
                 case 19 -> PlasticMoldingChamberBlockEntity.this.printingTotal;
                 case 20 -> PlasticMoldingChamberBlockEntity.this.printingDischargeOpen ? 1 : 0;
+                case 21 -> PlasticMoldingChamberBlockEntity.this.redoHistory.isEmpty() ? 0 : 1;
                 default -> 0;
             };
         }

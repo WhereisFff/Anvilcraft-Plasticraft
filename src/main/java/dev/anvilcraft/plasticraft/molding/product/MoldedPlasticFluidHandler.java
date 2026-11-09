@@ -72,7 +72,8 @@ public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
     }
 
     public IFluidHandler topAccess() {
-        return new LayeredAccess(LargeCauldronFluidHandler.TOTAL_CAPACITY);
+        // 顶部视图始终从当前最高层抽取，不缓存可配置的总容量。
+        return new LayeredAccess(Integer.MAX_VALUE);
     }
 
     public IFluidHandler sideAccess(int accessibleAmount) {

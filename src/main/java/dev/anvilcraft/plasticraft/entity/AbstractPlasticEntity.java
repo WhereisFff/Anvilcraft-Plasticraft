@@ -872,7 +872,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
                         accelerationPostSupport,
                         gravityDirection
                     ),
-                hadBlockSupportBeforeAcceleration
+                gravityDirection != null
+                    && PlasticEntityPhysics.hasImmediateBlockContact(this, boxBeforeAcceleration, gravityDirection)
             );
             if (this.isRemoved()) return;
         } else {
@@ -902,6 +903,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             : this.cachedFindSupport(gravityDirection);
         boolean hadBlockSupportBeforeMove = gravityDirection != null
             && this.cachedHasBlockSupport(gravityDirection);
+        boolean hadBlockContactBeforeMove = gravityDirection != null
+            && PlasticEntityPhysics.hasImmediateBlockContact(this, gravityDirection);
         boolean hadEntitySupportBeforeMove = support != null
             && PlasticEntityPhysics.hasImmediateEntityContact(this, support, gravityDirection);
 
@@ -973,7 +976,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             gravityDirection = postMoveGravityDirection;
             this.updateEffectiveGravityDirection(gravityDirection);
             // 移动期间被忽略的方向不可能存在已追踪的支撑边沿。
-            hadBlockSupportBeforeMove = false;
+            hadBlockContactBeforeMove = false;
         }
         Entity postMoveSupport = gravityDirection == null
             ? null
@@ -984,7 +987,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             actualMovement,
             postMoveSupport != null
                 && PlasticEntityPhysics.hasImmediateEntityContact(this, postMoveSupport, gravityDirection),
-            hadBlockSupportBeforeMove
+            hadBlockContactBeforeMove
         );
         if (this.isRemoved()) {
             return;
@@ -1210,7 +1213,7 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         Vec3 requestedMovement,
         Vec3 actualMovement,
         boolean hasEntitySupport,
-        boolean hadBlockSupportBeforeMove
+        boolean hadBlockContactBeforeMove
     ) {
         if (gravityDirection == null) {
             this.directionalFallDistance = 0.0F;
@@ -1222,22 +1225,20 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         double fallStep = actualMovement.dot(normal);
         if (fallStep > 0.0D) {
             this.directionalFallDistance += (float) fallStep;
-            if (!hadBlockSupportBeforeMove) {
+            if (!hadBlockContactBeforeMove) {
                 this.impactTrackingArmed = true;
             }
         }
 
         int directionMask = PlasticEntityPhysics.directionMask(gravityDirection);
-        boolean blockContact = this.cachedHasBlockSupport(gravityDirection);
-        // 支撑探针有厚度，落体可能先落进探针深度、下一刻才真正被裁剪。若只认裁剪，接触那一刻会抢先
-        // 占掉落地边沿，随后真正停下的一刻反被当成本来就站在地面上，整次落地一个事件都发不出来。
-        boolean gainedBlockContact = blockContact && !hadBlockSupportBeforeMove;
+        // 宽支撑探针只用于移动稳定性；落砧必须等到实际接触，不能吞掉短于探针深度的下落。
+        boolean blockContact = PlasticEntityPhysics.hasImmediateBlockContact(this, gravityDirection);
+        boolean gainedBlockContact = blockContact && !hadBlockContactBeforeMove;
         boolean newImpact = blockContact
             && (this.blockContactMask & directionMask) == 0
             && this.impactTrackingArmed
             && (gainedBlockContact
-                || PlasticEntityPhysics.collidedAlongGravity(requestedMovement, actualMovement, gravityDirection))
-            && this.directionalFallDistance > PlasticEntityPhysics.FACE_EPSILON;
+                || PlasticEntityPhysics.collidedAlongGravity(requestedMovement, actualMovement, gravityDirection));
         if (newImpact) {
             this.playImpactSound(gravityDirection, requestedMovement.length());
             this.postLandingEvent(gravityDirection);

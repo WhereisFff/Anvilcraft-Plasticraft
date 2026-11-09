@@ -15,6 +15,7 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
@@ -65,6 +66,7 @@ import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -122,8 +124,8 @@ public final class MoldedPlasticAnvilGameTests {
     }
 
     @GameTest(timeoutTicks = 50)
-    @EmptyTemplate(value = "19x9x7", floor = true)
-    @TestHolder(description = "Only bottom-down molded anvils publish landing events, one per cell their bottom covers")
+    @EmptyTemplate(value = "23x9x15", floor = true)
+    @TestHolder(description = "Every material processes after a short bottom-down landing, while inverted and side-facing shapes do not")
     static void landingRequiresAnvilTypeAndBottomDownOrientation(ExtendedGameTestHelper helper) {
         UniversalPlasticEntity bottomDown = createProduct(
             helper,
@@ -143,6 +145,30 @@ public final class MoldedPlasticAnvilGameTests {
             new PlasticEntityOrientation(Direction.NORTH, 0),
             MoldingProductTypes.ANVIL_ID
         );
+        UniversalPlasticEntity inverted = createProduct(
+            helper, new BlockPos(20, 6, 3), new PlasticEntityOrientation(Direction.DOWN, 0), MoldingProductTypes.ANVIL_ID
+        );
+        helper.setBlock(new BlockPos(3, 1, 3), Blocks.RED_CONCRETE);
+        List<UniversalPlasticEntity> shortFalls = new ArrayList<>();
+        List<BlockPos> shortTargets = new ArrayList<>();
+        int[] shortEvents = new int[PlasticMaterial.values().length];
+        for (PlasticMaterial material : PlasticMaterial.values()) {
+            BlockPos cell = new BlockPos(2 + material.ordinal() * 4, 2, 11);
+            helper.setBlock(cell.below(), Blocks.RED_CONCRETE);
+            ItemStack stack = material.productStack(DyeColor.WHITE);
+            MoldedPlasticData.set(stack, manufacture(MoldingProductTypes.ANVIL_ID, material.melt()));
+            UniversalPlasticEntity falling = material.entityType().create(helper.getLevel());
+            check(falling != null, "failed to create " + material + " short-fall anvil");
+            falling.setDropStack(stack);
+            falling.setPos(falling.plasticraft$placementPosition(helper.absolutePos(cell), PlasticEntityOrientation.DEFAULT));
+            double gap = material.ordinal() % 2 == 0 ? 0.001D : 0.025D;
+            double bottom = falling.plasticraft$getCollisionBox().bounds().minY;
+            falling.setPos(falling.position().add(0, helper.absolutePos(cell).getY() + gap - bottom, 0));
+            falling.setStartPos(falling.blockPosition());
+            check(helper.getLevel().addFreshEntity(falling), "failed to spawn " + material + " short-fall anvil");
+            shortFalls.add(falling);
+            shortTargets.add(cell.below());
+        }
         // 40 x 40 底面横跨三格，只砸中中心格的旧行为会让边缘格的加工方块永远不触发。
         BlockPos giantCell = new BlockPos(15, 6, 3);
         UniversalPlasticEntity giant = createGiantProduct(helper, giantCell);
@@ -151,6 +177,14 @@ public final class MoldedPlasticAnvilGameTests {
         AtomicInteger wallEvents = new AtomicInteger();
         Set<BlockPos> giantCells = new HashSet<>();
         helper.addTemporaryListener((AnvilEvent.OnLand event) -> {
+            check(event.getEntity() != inverted, "inverted molded anvil published a landing event");
+            int shortIndex = shortFalls.indexOf(event.getEntity());
+            if (shortIndex >= 0) {
+                shortEvents[shortIndex]++;
+                check(shortFalls.get(shortIndex).plasticraft$getCollisionBox().bounds().minY
+                        <= helper.absolutePos(shortTargets.get(shortIndex)).getY() + 1.0001D,
+                    "short-fall material " + shortIndex + " processed before actual contact");
+            }
             if (event.getEntity() == bottomDown) bottomDownEvents.incrementAndGet();
             if (event.getEntity() == ordinaryProduct) ordinaryEvents.incrementAndGet();
             if (event.getEntity() == wallOriented) wallEvents.incrementAndGet();
@@ -176,6 +210,14 @@ public final class MoldedPlasticAnvilGameTests {
                 "giant molded anvil struck " + giantCells + " instead of " + expectedGiantCells);
             check(bottomDown.isAlive() && ordinaryProduct.isAlive() && wallOriented.isAlive() && giant.isAlive(),
                 "landing unexpectedly removed a molded product");
+            check(helper.getBlockState(new BlockPos(3, 1, 3)).is(Blocks.LIME_CONCRETE),
+                "long-fall molded anvil did not process its struck block");
+            for (PlasticMaterial material : PlasticMaterial.values()) {
+                int index = material.ordinal();
+                check(shortEvents[index] == 1, material + " short fall published " + shortEvents[index] + " impacts");
+                check(helper.getBlockState(shortTargets.get(index)).is(Blocks.LIME_CONCRETE),
+                    material + " short fall did not process its struck block");
+            }
             helper.succeed();
         });
     }

@@ -4,6 +4,7 @@ import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import dev.anvilcraft.plasticraft.entity.LaserPlasticInteraction;
 import dev.dubhe.anvilcraft.AnvilCraft;
 import dev.dubhe.anvilcraft.block.entity.BaseLaserBlockEntity;
+import dev.dubhe.anvilcraft.init.entity.ModDamageTypes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -35,26 +36,28 @@ abstract class BaseLaserBlockEntityMixin {
             direction,
             origin,
             original,
-            AnvilCraft.CONFIG.isLaserDoImpactChecking
+            AnvilCraft.CONFIG.equipment.laserImpactChecking
         );
     }
 
     @Inject(
-        method = "emitLaser(Lnet/minecraft/core/Direction;)V",
+        method = "emitLaserComponents(Lnet/minecraft/core/Direction;Z)V",
         at = @At("TAIL")
     )
-    private void plasticraft$hurtPlasticTarget(Direction direction, CallbackInfo callback) {
+    private void plasticraft$hurtPlasticTarget(Direction direction, boolean ignoredGamma, CallbackInfo callback) {
         BaseLaserBlockEntity laser = (BaseLaserBlockEntity) (Object) this;
         if (!(laser.getLevel() instanceof ServerLevel level)) return;
         BlockPos target = laser.getIrradiateBlockPos();
         int damage = Math.min(16, laser.getLaserLevel() - 4);
         if (target == null || damage <= 0) return;
+        boolean gamma = laser.isEmittingGamma();
         LaserPlasticInteraction.hurtBlockingPlastic(
             level,
             direction,
             target,
-            AnvilCraft.CONFIG.isLaserDoImpactChecking,
-            damage
+            AnvilCraft.CONFIG.equipment.laserImpactChecking,
+            gamma ? damage * 16 : damage,
+            gamma ? ModDamageTypes.gammaLaser(level) : ModDamageTypes.laser(level)
         );
     }
 }

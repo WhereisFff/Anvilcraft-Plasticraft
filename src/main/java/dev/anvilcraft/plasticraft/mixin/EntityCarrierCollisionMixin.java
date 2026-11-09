@@ -4,6 +4,7 @@ import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import dev.anvilcraft.plasticraft.api.entity.CarrierMovableEntity;
 import dev.anvilcraft.plasticraft.api.entity.ElasticCollisionEntity;
 import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
+import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContext;
 import dev.anvilcraft.plasticraft.entity.collision.CarrierMoveContextHolder;
@@ -21,9 +22,12 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.gen.Invoker;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Constant;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
+import org.spongepowered.asm.mixin.injection.ModifyConstant;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.Slice;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.ArrayList;
@@ -57,13 +61,27 @@ abstract class EntityCarrierCollisionMixin implements CarrierMoveContextHolder {
         );
     }
 
+    // 原版会丢弃长度平方不超过 1e-7 的已裁剪位移，让小落差悬在碰撞面上方并提前休眠。
+    @ModifyConstant(
+        method = "move",
+        constant = @Constant(doubleValue = 1.0E-7D),
+        slice = @Slice(from = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/world/entity/Entity;collide(Lnet/minecraft/world/phys/Vec3;)Lnet/minecraft/world/phys/Vec3;"
+        ))
+    )
+    private double plasticraft$preserveResolvedPlasticMovement(double minimumSquaredMovement) {
+        return (Object) this instanceof AbstractPlasticEntity ? 0.0D : minimumSquaredMovement;
+    }
+
     @Inject(method = "move", at = @At("HEAD"))
     private void plasticraft$beginCarrierMove(MoverType type, Vec3 movement, CallbackInfo ci) {
         Entity self = (Entity) (Object) this;
         this.plasticraft$carrierMoveContext = new CarrierMoveContext(
             this.plasticraft$carrierMoveContext,
             self.position(),
-            movement
+            movement,
+            self.getDeltaMovement()
         );
     }
 
@@ -298,7 +316,8 @@ abstract class EntityCarrierCollisionMixin implements CarrierMoveContextHolder {
                 self,
                 startBox,
                 context.requestedMovement(),
-                actualMovement
+                actualMovement,
+                context.incomingVelocity()
             );
         }
         List<CarrierMovableEntity> targets = context.targets();

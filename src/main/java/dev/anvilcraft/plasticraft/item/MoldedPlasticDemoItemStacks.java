@@ -28,8 +28,7 @@ public final class MoldedPlasticDemoItemStacks {
         new DemoDefinition("fluid-tank.json", MoldingProductTypes.TANK_ID),
         new DemoDefinition("anvil.json", MoldingProductTypes.ANVIL_ID),
         new DemoDefinition("cauldron.json", MoldingProductTypes.CAULDRON_ID),
-        new DemoDefinition("bracket.json", MoldingProductTypes.TRAY_ID),
-        new DemoDefinition("alloy-hard-ham.json", MoldingProductTypes.ALLAY_HARD_HAT_ID)
+        new DemoDefinition("bracket.json", MoldingProductTypes.TRAY_ID)
     );
     // 大型塑料炼药锅只能由玩家自制大开口模型升级得到，故不列入创造栏演示制品
     public static final List<ResourceLocation> PRODUCT_TYPES = List.of(
@@ -38,8 +37,7 @@ public final class MoldedPlasticDemoItemStacks {
         MoldingProductTypes.TANK_ID,
         MoldingProductTypes.ANVIL_ID,
         MoldingProductTypes.CAULDRON_ID,
-        MoldingProductTypes.TRAY_ID,
-        MoldingProductTypes.ALLAY_HARD_HAT_ID
+        MoldingProductTypes.TRAY_ID
     );
 
     private MoldedPlasticDemoItemStacks() {

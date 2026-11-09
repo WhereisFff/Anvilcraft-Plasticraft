@@ -25,6 +25,8 @@ import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.dubhe.anvilcraft.block.sliding.SlidingRailBlock;
 import dev.dubhe.anvilcraft.block.HeaterBlock;
+import dev.dubhe.anvilcraft.block.CreativeLaserBlock;
+import dev.dubhe.anvilcraft.block.entity.CreativeLaserBlockEntity;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.util.AccelerateManager;
 import net.minecraft.core.BlockPos;
@@ -36,6 +38,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -76,6 +79,46 @@ public final class UniversalPlasticGameTests {
     private static final double EPSILON = 1.0E-6D;
 
     private UniversalPlasticGameTests() {
+    }
+
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "11x5x9", floor = true)
+    @TestHolder(description = "Ordinary and gamma lasers pass through clear plastic and stop at and destroy opaque plastic")
+    static void nativeLaserModesRespectPlasticTargets(ExtendedGameTestHelper helper) {
+        for (boolean gamma : new boolean[]{false, true}) {
+            String mode = gamma ? "gamma laser" : "ordinary laser";
+            int z = gamma ? 6 : 2;
+            BlockPos origin = helper.absolutePos(new BlockPos(1, 2, z));
+            BlockPos clearPos = helper.absolutePos(new BlockPos(3, 2, z));
+            BlockPos targetPos = helper.absolutePos(new BlockPos(5, 2, z));
+            helper.getLevel().setBlockAndUpdate(origin, ModBlocks.CREATIVE_LASER.getDefaultState()
+                .setValue(CreativeLaserBlock.FACING, Direction.EAST));
+            helper.setBlock(new BlockPos(9, 2, z), Blocks.BEDROCK);
+            check(helper.getLevel().getBlockEntity(origin) instanceof CreativeLaserBlockEntity,
+                mode + " emitter was not created");
+            CreativeLaserBlockEntity laser = (CreativeLaserBlockEntity) helper.getLevel().getBlockEntity(origin);
+            laser.setConfiguredLevel(5);
+            laser.setGamma(gamma);
+            UniversalPlasticEntity clear = PlasticMaterial.CLEAR.createEntity(
+                helper.getLevel(), clearPos.getBottomCenter(), PlasticMaterial.CLEAR.displayState(DyeColor.WHITE),
+                PlasticMaterial.CLEAR.productStack(DyeColor.WHITE), PlasticEntityOrientation.DEFAULT
+            );
+            clear.setNoGravity(true);
+            check(helper.getLevel().addFreshEntity(clear), mode + " clear target did not spawn");
+            UniversalPlasticEntity opaque = createUniversal(helper, targetPos.getBottomCenter(),
+                PlasticraftBlocks.UNIVERSAL_PLASTIC.getDefaultState(), PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack());
+            opaque.setNoGravity(true);
+            var protectedTarget = helper.spawnWithNoFreeWill(EntityType.CREEPER, new Vec3(7.5D, 2.0D, z + 0.5D));
+            protectedTarget.setNoGravity(true);
+            float health = protectedTarget.getHealth();
+            laser.tick(helper.getLevel());
+            check(clear.isAlive(), mode + " damaged transparent plastic");
+            check(opaque.isRemoved(), mode + " did not destroy its opaque plastic target");
+            check(targetPos.equals(laser.getIrradiateBlockPos()), mode + " did not stop at the opaque plastic surface");
+            check(protectedTarget.getHealth() == health, mode + " damaged a mob behind the opaque plastic blocker");
+            helper.getLevel().removeBlock(origin, false);
+        }
+        helper.succeed();
     }
 
     @GameTest(timeoutTicks = 20)
@@ -243,15 +286,19 @@ public final class UniversalPlasticGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "7x6x7", floor = true)
-    @TestHolder(description = "World melt solidification creates a colour-preserving 16x16x14 product once")
+    @TestHolder(description = "Every world melt solidifies into its own colour-preserving 16x16x14 product once")
     static void solidificationTransaction(ExtendedGameTestHelper helper) {
         BlockPos relativePos = new BlockPos(3, 2, 3);
         BlockPos pos = helper.absolutePos(relativePos);
-        placeMelt(helper, relativePos, DyeColor.PURPLE);
-
-        check(UniversalPlasticSolidification.solidify(helper.getLevel(), pos), "melt did not solidify");
-        check(!UniversalPlasticSolidification.solidify(helper.getLevel(), pos), "melt solidified twice");
-        assertCooledProduct(helper, pos, PlasticMaterial.UNIVERSAL, DyeColor.PURPLE);
+        for (PlasticMaterial material : PlasticMaterial.values()) {
+            helper.getLevel().setBlockAndUpdate(pos, material.meltBlock().defaultBlockState());
+            check(helper.getLevel().getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity,
+                material.key() + " melt block entity was not created");
+            ((UniversalPlasticMeltBlockEntity) helper.getLevel().getBlockEntity(pos)).setColor(DyeColor.PURPLE);
+            check(UniversalPlasticSolidification.solidify(helper.getLevel(), pos), material.key() + " melt did not solidify");
+            check(!UniversalPlasticSolidification.solidify(helper.getLevel(), pos), material.key() + " melt solidified twice");
+            assertCooledProduct(helper, pos, material, DyeColor.PURPLE).discard();
+        }
         assertNoGranules(helper);
         helper.succeed();
     }
@@ -360,12 +407,19 @@ public final class UniversalPlasticGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "9x6x9", floor = true)
-    @TestHolder(description = "Universal plastic item placement, persistence, magnetism, and hammer recovery preserve material data")
+    @TestHolder(description = "Every plastic preserves material data across placement, persistence, magnetism and hammer recovery")
     static void itemEntityAndHammerRoundTrip(ExtendedGameTestHelper helper) {
+        for (PlasticMaterial material : PlasticMaterial.values()) {
+            assertItemEntityAndHammerRoundTrip(helper, material);
+        }
+        helper.succeed();
+    }
+
+    private static void assertItemEntityAndHammerRoundTrip(ExtendedGameTestHelper helper, PlasticMaterial material) {
         BlockPos support = new BlockPos(4, 1, 4);
         helper.setBlock(support, Blocks.STONE);
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
-        ItemStack stack = PlasticMaterial.UNIVERSAL.productStack(DyeColor.MAGENTA);
+        ItemStack stack = material.productStack(DyeColor.MAGENTA);
         DyeColor expectedDisplayColor = DyeableMaterial.supportsDyeing(PlasticItemData.getMaterial(stack))
             ? DyeColor.MAGENTA
             : DyeColor.WHITE;
@@ -383,12 +437,13 @@ public final class UniversalPlasticGameTests {
             stack,
             hit
         ));
-        check(placement.consumesAction(), "universal plastic item did not place its entity");
+        check(placement.consumesAction(), material.key() + " item did not place its entity");
         UniversalPlasticEntity entity = helper.getLevel().getEntitiesOfClass(
             UniversalPlasticEntity.class,
-            new AABB(helper.absolutePos(support.above())).inflate(0.2D)
+            new AABB(helper.absolutePos(support.above())).inflate(0.2D),
+            candidate -> candidate.getType() == material.entityType()
         ).stream().findFirst().orElseThrow(() ->
-            new GameTestAssertException("placed universal plastic entity was not found")
+            new GameTestAssertException("placed " + material.key() + " entity was not found")
         );
         entity.setNoGravity(true);
 
@@ -410,13 +465,16 @@ public final class UniversalPlasticGameTests {
         check(PlasticMeltColor.get(entity.getDropStack()) == DyeColor.MAGENTA, "placed entity drop lost its colour");
 
         CompoundTag saved = entity.saveWithoutId(new CompoundTag());
-        UniversalPlasticEntity loaded = new UniversalPlasticEntity(PlasticraftEntities.UNIVERSAL_PLASTIC.get(), helper.getLevel());
+        UniversalPlasticEntity loaded = material.entityType().create(helper.getLevel());
+        check(loaded != null, material.key() + " entity could not be created for reload");
         loaded.load(saved);
         check(
             loaded.getDisplayState().getValue(DyeableMaterial.COLOR) == expectedDisplayColor,
             "saved entity display state did not preserve the material colour capability"
         );
         check(PlasticMeltColor.get(loaded.getDropStack()) == DyeColor.MAGENTA, "saved entity drop lost its colour");
+        check(PlasticItemData.getMaterial(loaded.getDropStack()).equals(material.key()),
+            material.key() + " reload lost the saved material identity");
 
         var menuBefore = player.containerMenu;
         player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
@@ -431,11 +489,10 @@ public final class UniversalPlasticGameTests {
         player.setShiftKeyDown(true);
         player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.RESIN_ANVIL_HAMMER.asStack());
         check(entity.interact(player, InteractionHand.MAIN_HAND).consumesAction(), "hammer did not recover the product");
-        ItemStack recovered = findInventoryStack(player, PlasticraftBlocks.UNIVERSAL_PLASTIC.asItem());
+        ItemStack recovered = findInventoryStack(player, material.productBlock().asItem());
         check(!recovered.isEmpty(), "hammer recovery did not return the product item");
         check(PlasticMeltColor.get(recovered) == DyeColor.MAGENTA, "hammer recovery lost the colour");
         check(PlasticItemData.isMagnetized(recovered), "hammer recovery lost magnetization");
-        helper.succeed();
     }
 
     @GameTest(timeoutTicks = 20)
@@ -1859,8 +1916,7 @@ public final class UniversalPlasticGameTests {
         int granules = helper.getLevel().getEntitiesOfClass(
             ItemEntity.class,
             bounds,
-            item -> item.getItem().is(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get())
-                || item.getItem().is(PlasticraftItems.ENGINEERING_PLASTIC_GRANULE.get())
+            item -> PlasticMaterial.fromGranule(item.getItem()).isPresent()
         ).stream().mapToInt(item -> item.getItem().getCount()).sum();
         check(granules == 0, "world solidification produced " + granules + " plastic granules");
     }

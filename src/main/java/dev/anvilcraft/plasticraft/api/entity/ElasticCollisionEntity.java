@@ -10,6 +10,7 @@ public interface ElasticCollisionEntity {
         Entity collider,
         AABB colliderStartBox,
         Vec3 requestedMovement,
-        Vec3 actualMovement
+        Vec3 actualMovement,
+        Vec3 incomingVelocity
     );
 }

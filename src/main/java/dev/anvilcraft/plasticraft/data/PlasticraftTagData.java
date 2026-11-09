@@ -6,6 +6,7 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockTags;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
+import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.block.ModFluidTags;
 import dev.dubhe.anvilcraft.init.item.ModItems;
@@ -53,6 +54,20 @@ public final class PlasticraftTagData {
 
     private static void registerItemTags() {
         AnvilcraftPlasticraft.REGISTRUM.addDataGenerator(ProviderType.ITEM_TAGS, provider -> {
+            // 树脂催化剂的材料种子；合成和锻造产生的后续制品由运行时配方闭包补齐。
+            provider.addTag(PlasticraftItemTags.RESIN_ITEMS).add(
+                itemKey(ModItems.RESIN),
+                itemKey(ModItems.HARDEND_RESIN),
+                itemKey(ModBlocks.RESIN_BLOCK),
+                itemKey(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET),
+                itemKey(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK),
+                itemKey(PlasticraftBlocks.RESIN_ANVIL),
+                itemKey(PlasticraftBlocks.HARDEND_RESIN_ANVIL),
+                itemKey(PlasticraftBlocks.HARDEND_RESIN_CAULDRON),
+                itemKey(PlasticraftBlocks.CATALYTIC_PRESS_LID),
+                itemKey(PlasticraftItems.RESIN_ANVIL_HAMMER)
+            );
+
             // 冷却物品标签供固液配方消耗；同时覆盖原版冰雪与 AnvilCraft 霜钢制品。
             provider.addTag(PlasticraftItemTags.COLD_ITEMS).add(
                 itemKey(Blocks.ICE),

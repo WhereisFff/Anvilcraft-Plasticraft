@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.entity;
 import dev.anvilcraft.plasticraft.block.IgnitedFluidEffects;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
+import dev.dubhe.anvilcraft.AnvilCraft;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import dev.dubhe.anvilcraft.util.FireReforgingUtil;
 import net.minecraft.core.BlockPos;
@@ -56,7 +57,7 @@ public final class MoldedLargeCauldronEnvironment {
         List<FluidStack> fluids = pot.getMoldedFluidHandler().copyFluids();
         int total = fluids.stream().mapToInt(FluidStack::getAmount).sum();
         if (total > 0) {
-            AABB area = pot.cauldronFluidArea(total / (double) LargeCauldronFluidHandler.TOTAL_CAPACITY);
+            AABB area = pot.cauldronFluidArea(total / (double) LargeCauldronFluidHandler.totalCapacity());
             for (Entity entity : level.getEntities(pot, area, Entity::isAlive)) {
                 if (pot.anvilcraft$isIgnited()) {
                     IgnitedFluidEffects.hurt(entity, level, pot.plasticraft$ignitionFluid());
@@ -85,7 +86,7 @@ public final class MoldedLargeCauldronEnvironment {
             int offset = pot.plasticraft$cauldronLayout().outputSlots();
             for (int slot = 0; slot < pot.plasticraft$cauldronLayout().inputSlots(); slot++) {
                 ItemStack stack = pot.getMoldedItemHandler().getStackInSlot(offset + slot);
-                if (FireReforgingUtil.repair(stack, FireReforgingUtil.LAVA_REPAIR_PER_TICK, level, pot.blockPosition())) {
+                if (FireReforgingUtil.repair(stack, AnvilCraft.CONFIG.equipment.fireReforgingRepairPerTick, level, pot.blockPosition())) {
                     pot.getMoldedItemHandler().setStackInSlot(offset + slot, stack);
                 }
             }
@@ -104,8 +105,8 @@ public final class MoldedLargeCauldronEnvironment {
     }
 
     private static AABB layerArea(UniversalPlasticEntity pot, int below, int amount) {
-        AABB top = pot.cauldronFluidArea((below + amount) / (double) LargeCauldronFluidHandler.TOTAL_CAPACITY);
-        double bottom = pot.cauldronFluidArea(below / (double) LargeCauldronFluidHandler.TOTAL_CAPACITY).maxY;
+        AABB top = pot.cauldronFluidArea((below + amount) / (double) LargeCauldronFluidHandler.totalCapacity());
+        double bottom = pot.cauldronFluidArea(below / (double) LargeCauldronFluidHandler.totalCapacity()).maxY;
         return new AABB(top.minX, bottom, top.minZ, top.maxX, top.maxY, top.maxZ);
     }
 

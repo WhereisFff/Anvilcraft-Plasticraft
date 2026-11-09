@@ -6,11 +6,11 @@ navigation:
 
 # Shared Movable-Product Rules
 
-The special 16x16x14px products that cool straight out of world melt and the ordinary products the molding chamber makes are all movable plastic products. Chests, tanks, anvils, trays and Allay Hard Hats have not changed material — they simply grew a function on top of the same material and shape rules
+The special 16x16x14px products that cool straight out of world melt and the ordinary products the molding chamber makes are all movable plastic products. Chests, tanks, anvils, and trays have not changed material — they simply grew a function on top of the same material and shape rules
 
 ## Creative inventory
 
-Each plastic material gets its own labeled section in the Plasticraft creative tab. Its banner starts on a new row and shows a material tooltip on hover, and the section holds that material's melt bucket, granules, standard 16x16x16px block, chest, tank, anvil, tray and Allay Hard Hat product slots
+Each plastic material gets its own labeled section in the Plasticraft creative tab. Its banner starts on a new row and shows a material tooltip on hover, and the section holds that material's melt bucket, granules, standard 16x16x16px block, chest, tank, anvil, and tray product slots
 
 16-color items are folded into one representative slot by default, so the tab stays readable. Right-click that slot to open the 16-color picker; click a material banner to expand every color-capable slot in the section, and click it again to fold it back. The client configuration controls the initial state, and disabling folding starts with all sixteen colors visible
 
@@ -34,8 +34,8 @@ Dropped items settle on the real slope just like mobs; entering empty space insi
 
 ## Redstone
 
-The redstone rule is blunt: only a non-transparent plastic block or product whose model fills exactly 16px along X, Y and Z receives and conducts redstone like a vanilla solid block. The ordinary 16x16x16px plastic block qualifies; transparent plastic stays non-conductive like glass even when it fills a full block, and neither the 16x16x14px world-cooled product nor any other model with a non-16px axis conducts
+The redstone rule is blunt: only a non-transparent plastic block or product whose model fills exactly 16px along X, Y and Z receives and conducts redstone like a vanilla solid block. The ordinary 16x16x16px plastic block qualifies; Clear and Elastic Plastic stay non-conductive like glass even when they fill a full block, and neither the 16x16x14px world-cooled product nor any other model with a non-16px axis conducts
 
-Redstone components mounted on a tray are exempt from all of this and keep their own vanilla behavior; see [Trays and Allay Hard Hats](040_plastic_components.md)
+Redstone components mounted on a tray are exempt from all of this and keep their own vanilla behavior; see [Redstone Trays](040_plastic_components.md)
 
 Material abilities are listed in [Material Comparison](000_material_comparison.md); how much melt a product costs and how casting differs from printing are covered by [Casting and 3D Printing](../004_molding/020_casting_and_printing.md)

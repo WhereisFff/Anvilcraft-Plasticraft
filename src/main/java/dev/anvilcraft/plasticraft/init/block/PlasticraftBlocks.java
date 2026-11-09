@@ -7,10 +7,10 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.CatalyticPressLidBlock;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.block.EngineeringPlasticBlock;
+import dev.anvilcraft.plasticraft.block.ElasticPlasticBlock;
 import dev.anvilcraft.plasticraft.block.ClearPlasticBlock;
 import dev.anvilcraft.plasticraft.block.ClearPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HeatResistantPlasticBlock;
-import dev.anvilcraft.plasticraft.block.AllayLoungeBlock;
 import dev.anvilcraft.plasticraft.block.HardenedResinAnvilBlock;
 import dev.anvilcraft.plasticraft.block.HardenedResinCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
@@ -31,6 +31,7 @@ import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
 import dev.anvilcraft.plasticraft.item.CatalyticPressLidItem;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.EngineeringPlasticBlockItem;
+import dev.anvilcraft.plasticraft.item.ElasticPlasticBlockItem;
 import dev.anvilcraft.plasticraft.item.ClearPlasticBlockItem;
 import dev.anvilcraft.plasticraft.item.HeatResistantPlasticBlockItem;
 import dev.anvilcraft.plasticraft.item.HardenedResinAnvilItem;
@@ -66,11 +67,6 @@ import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.material.PushReaction;
-import net.minecraft.world.level.storage.loot.LootPool;
-import net.minecraft.world.level.storage.loot.LootTable;
-import net.minecraft.world.level.storage.loot.entries.LootItem;
-import net.minecraft.world.level.storage.loot.functions.CopyComponentsFunction;
-import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
 import net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent;
 import net.neoforged.neoforge.client.model.generators.ConfiguredModel;
 import net.neoforged.neoforge.client.model.generators.ModelBuilder;
@@ -109,38 +105,6 @@ public final class PlasticraftBlocks {
         .model((context, provider) -> provider.withExistingParent(
             context.getName(),
             provider.modLoc("block/" + context.getName())
-        ))
-        .build()
-        .register();
-
-    public static final BlockEntry<AllayLoungeBlock> ALLAY_LOUNGE = AnvilcraftPlasticraft.REGISTRUM
-        .block("allay_lounge", AllayLoungeBlock::new)
-        .initialProperties(() -> Blocks.IRON_BLOCK)
-        .properties(properties -> properties
-            .noOcclusion()
-            .strength(5.0F, 1200.0F)
-            .sound(SoundType.METAL)
-            .pushReaction(PushReaction.BLOCK))
-        .lang("Allay Lounge")
-        .tag(BlockTags.MINEABLE_WITH_PICKAXE)
-        .loot((tables, block) -> tables.add(block, LootTable.lootTable()
-            .withPool(tables.applyExplosionCondition(block, LootPool.lootPool()
-                .setRolls(ConstantValue.exactly(1.0F))
-                .add(LootItem.lootTableItem(block)
-                    .apply(CopyComponentsFunction.copyComponents(CopyComponentsFunction.Source.BLOCK_ENTITY)
-                        .include(DataComponents.BLOCK_ENTITY_DATA)))))))
-        .blockstate((context, provider) -> {
-            // 世界模型只烘焙固定部分，两片顶门由方块实体渲染器绘制。
-            ModelFile model = provider.models().getExistingFile(provider.modLoc("block/allay_lounge"));
-            provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
-                .modelFile(model)
-                .rotationY(((int) state.getValue(AllayLoungeBlock.FACING).toYRot() + 180) % 360)
-                .build());
-        })
-        .item()
-        .model((context, provider) -> provider.withExistingParent(
-            context.getName(),
-            provider.modLoc("block/allay_lounge_complete")
         ))
         .build()
         .register();
@@ -674,6 +638,97 @@ public final class PlasticraftBlocks {
         })
         .build()
         .register();
+    public static final BlockEntry<UniversalPlasticMeltFluidBlock> ELASTIC_PLASTIC_MELT =
+        AnvilcraftPlasticraft.REGISTRUM
+            .block(
+                "elastic_plastic_melt",
+                properties -> new UniversalPlasticMeltFluidBlock(
+                    PlasticraftFluids.ELASTIC_PLASTIC_MELT,
+                    properties,
+                    PlasticMaterial.ELASTIC
+                )
+            )
+            .properties(properties -> properties
+                .mapColor(MapColor.NONE)
+                .replaceable()
+                .noCollission()
+                .pushReaction(PushReaction.DESTROY)
+                .noLootTable()
+                .liquid()
+                .sound(SoundType.EMPTY)
+                .strength(100.0F))
+            .lang("Elastic Plastic Melt")
+            .blockstate((context, provider) -> {
+                provider.models().existingFileHelper.trackGenerated(
+                    provider.modLoc("fluid/elastic_plastic_melt"),
+                    ModelProvider.TEXTURE
+                );
+                provider.simpleBlock(context.get(), provider.models()
+                    .getBuilder(context.getName())
+                    .texture("particle", provider.modLoc("fluid/elastic_plastic_melt"))
+                );
+            })
+            .register();
+    public static final BlockEntry<UniversalPlasticMeltCauldronBlock> ELASTIC_PLASTIC_MELT_CAULDRON =
+        AnvilcraftPlasticraft.REGISTRUM
+            .block(
+                "elastic_plastic_melt_cauldron",
+                properties -> new UniversalPlasticMeltCauldronBlock(properties, PlasticMaterial.ELASTIC)
+            )
+            .initialProperties(() -> Blocks.CAULDRON)
+            .lang("Elastic Plastic Melt Cauldron")
+            .blockstate((context, provider) -> {
+                ModelFile[] models = layeredCauldronModels(
+                    provider,
+                    context.getName(),
+                    "fluid/elastic_plastic_melt"
+                );
+                provider.getVariantBuilder(context.get()).forAllStates(state -> ConfiguredModel.builder()
+                    .modelFile(models[state.getValue(Layered4LevelCauldronBlock.LEVEL) - 1])
+                    .build());
+            })
+            .loot((tables, block) -> tables.dropOther(block, Items.CAULDRON))
+            .tag(BlockTags.MINEABLE_WITH_PICKAXE, BlockTags.CAULDRONS)
+            .onRegister(block -> Item.BY_BLOCK.put(block, Items.CAULDRON))
+            .register();
+    public static final BlockEntry<ElasticPlasticBlock> ELASTIC_PLASTIC = AnvilcraftPlasticraft.REGISTRUM
+        .block("elastic_plastic", ElasticPlasticBlock::new)
+        .initialProperties(() -> ModBlocks.RESIN_BLOCK.get())
+        .properties(properties -> properties
+            .mapColor(MapColor.NONE)
+            .noOcclusion()
+            .friction(0.6F)
+            .strength(1.5F, 3.0F)
+            .sound(SoundType.SLIME_BLOCK)
+            .pushReaction(PushReaction.NORMAL))
+        .lang("Elastic Plastic Block")
+        .tag(
+            BlockTags.MINEABLE_WITH_PICKAXE,
+            PlasticraftBlockTags.PLASTIC_PRODUCTS,
+            ModBlockTags.END_PORTAL_UNABLE_CHANGE
+        )
+        .loot(RegistrumBlockLootTables::dropSelf)
+        .blockstate((context, provider) -> plasticBlockState(
+            provider,
+            context.get(),
+            context.getName(),
+            PlasticMaterial.ELASTIC
+        ))
+        .item((block, properties) -> new ElasticPlasticBlockItem(
+            block,
+            properties,
+            PlasticraftEntities.ELASTIC_PLASTIC,
+            block::defaultBlockState
+        ))
+        .tag(PlasticraftItemTags.PLASTIC_PRODUCTS, PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS)
+        .model((context, provider) -> {
+            var base = provider.getBuilder(context.getName()).parent(new ModelFile.UncheckedModelFile(
+                ResourceLocation.withDefaultNamespace("builtin/entity")
+            ));
+            addUniversalPlasticItemTransforms(base);
+        })
+        .build()
+        .register();
     public static final BlockEntry<LiquidBlock> CRUDE_OIL_ACID = fluidBlock(
         "crude_oil_acid",
         PlasticraftFluids.CRUDE_OIL_ACID,
@@ -873,6 +928,7 @@ public final class PlasticraftBlocks {
             );
         }
         String renderType = contentTexture.equals("fluid/clear_plastic_melt")
+            || contentTexture.equals("fluid/elastic_plastic_melt")
             ? "minecraft:translucent"
             : contentTexture.endsWith("_plastic_melt")
                 ? "minecraft:cutout"
@@ -927,6 +983,23 @@ public final class PlasticraftBlocks {
                     .end();
             }
             element.end();
+            if (material == PlasticMaterial.ELASTIC) {
+                // 弹性塑料的内芯与半透明外壳间隔两个像素，保留树脂制品的双层轮廓。
+                var inner = model.element().from(2.0F, 2.0F, 2.0F).to(14.0F, 14.0F, 14.0F);
+                for (Direction direction : Direction.values()) {
+                    var region = UniversalPlasticShape.uv(direction);
+                    inner.face(direction)
+                        .uvs(
+                            region.modelU0(UniversalPlasticShape.TEXTURE_LAYOUT.atlasWidth()),
+                            region.modelV0(UniversalPlasticShape.TEXTURE_LAYOUT.atlasHeight()),
+                            region.modelU1(UniversalPlasticShape.TEXTURE_LAYOUT.atlasWidth()),
+                            region.modelV1(UniversalPlasticShape.TEXTURE_LAYOUT.atlasHeight())
+                        )
+                        .texture("#plastic")
+                        .end();
+                }
+                inner.end();
+            }
             models[material.hasColorState() ? color.getId() : 0] = model;
         }
         provider.getVariantBuilder(block).forAllStates(state -> ConfiguredModel.builder()

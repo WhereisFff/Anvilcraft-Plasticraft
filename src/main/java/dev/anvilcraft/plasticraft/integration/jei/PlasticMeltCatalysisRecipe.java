@@ -4,11 +4,15 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
 import dev.anvilcraft.plasticraft.recipe.CatalyticPressHeat;
 import dev.anvilcraft.plasticraft.recipe.PlasticCatalysisCold;
+import dev.anvilcraft.plasticraft.recipe.ResinCatalysts;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -34,9 +38,13 @@ public record PlasticMeltCatalysisRecipe(
         Fluid clear = PlasticraftFluids.CLEAR_PLASTIC_MELT.get();
         Fluid engineering = PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get();
         Fluid heatResistant = PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT.get();
+        Fluid elastic = PlasticMaterial.ELASTIC.melt();
         List<BlockState> heatSources = findEnvironmentBlocks(true);
         List<BlockState> coldSources = findEnvironmentBlocks(false);
         return List.of(
+            new PlasticMeltCatalysisRecipe(
+                oil, elastic, PlasticraftItemTags.RESIN_ITEMS, "cold", false, "resin_priority", coldSources
+            ),
             new PlasticMeltCatalysisRecipe(
                 oil, universal, PlasticraftItemTags.ROYAL_STEEL_ITEMS, "heat", false, "glass_priority", heatSources
             ),
@@ -59,6 +67,13 @@ public record PlasticMeltCatalysisRecipe(
                 universal, heatResistant, PlasticraftItemTags.EMBER_METAL_ITEMS, "heat", false, "ember_priority", heatSources
             )
         );
+    }
+
+    public Ingredient catalystIngredient() {
+        if (this.catalyst.equals(PlasticraftItemTags.RESIN_ITEMS) && Minecraft.getInstance().level != null) {
+            return Ingredient.of(ResinCatalysts.items(Minecraft.getInstance().level).stream().map(ItemStack::new));
+        }
+        return Ingredient.of(this.catalyst);
     }
 
     public List<ItemStack> environmentStacks() {

@@ -17,7 +17,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import java.util.HashSet;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -33,6 +34,16 @@ abstract class ItemCacheMixin {
     @Shadow
     @Final
     private Set<ICacheElement> outputs;
+
+    @Shadow
+    private ItemHandlerCacheElement handlerElement(IItemHandler handler, int slot, Vec3 pos, Vec3 range) {
+        throw new AssertionError();
+    }
+
+    @Shadow
+    private void associateOwner(Entity owner, Collection<ICacheElement> elements) {
+        throw new AssertionError();
+    }
 
     @Inject(
         method = "toElement(Ldev/anvilcraft/lib/v2/recipe/cache/ItemCache;Lnet/minecraft/world/entity/Entity;)Ljava/util/Map$Entry;",
@@ -61,6 +72,8 @@ abstract class ItemCacheMixin {
         PlasticCauldron cauldron = plasticraft$activeTarget(cache);
         if (cauldron == null) return;
         Map.Entry<Set<ICacheElement>, Set<ICacheElement>> elements = plasticraft$cauldronElements(cache, cauldron);
+        this.associateOwner(cauldron.plasticraft$cauldronEntity(), elements.getKey());
+        this.associateOwner(cauldron.plasticraft$cauldronEntity(), elements.getValue());
         this.inputs.addAll(elements.getKey());
         this.outputs.addAll(elements.getValue());
     }
@@ -78,15 +91,17 @@ abstract class ItemCacheMixin {
         BlockPos cell = CauldronImpactRecipeProcessor.activeRecipeTargetCell();
         if (cell == null) return Map.entry(Set.of(), Set.of());
         Vec3 anchor = cell.getCenter();
-        Set<ICacheElement> inputs = new HashSet<>();
-        Set<ICacheElement> outputs = new HashSet<>();
+        Set<ICacheElement> inputs = new LinkedHashSet<>();
+        Set<ICacheElement> outputs = new LinkedHashSet<>();
+        // 复用砧库的物理槽索引与范围登记，让重复扩展范围仍共用同一份事务库存。
+        ItemCacheMixin access = (ItemCacheMixin) (Object) cache;
         IItemHandler input = cauldron.getInput();
         for (int slot = 0; slot < input.getSlots(); slot++) {
-            inputs.add(new ItemHandlerCacheElement(cache, input, slot, anchor, RECIPE_CELL_RANGE));
+            inputs.add(access.handlerElement(input, slot, anchor, RECIPE_CELL_RANGE));
         }
         IItemHandler output = cauldron.getOutput();
         for (int slot = 0; slot < output.getSlots(); slot++) {
-            outputs.add(new ItemHandlerCacheElement(cache, output, slot, anchor, RECIPE_CELL_RANGE));
+            outputs.add(access.handlerElement(output, slot, anchor, RECIPE_CELL_RANGE));
         }
         return Map.entry(inputs, outputs);
     }

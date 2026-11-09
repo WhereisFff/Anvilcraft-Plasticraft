@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.material;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.entity.ClearPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.ElasticPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.EngineeringPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.HeatResistantPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
@@ -33,7 +34,8 @@ public enum PlasticMaterial {
     UNIVERSAL("universal_plastic"),
     ENGINEERING("engineering_plastic"),
     CLEAR("clear_plastic"),
-    HEAT_RESISTANT("heat_resistant_plastic");
+    HEAT_RESISTANT("heat_resistant_plastic"),
+    ELASTIC("elastic_plastic");
 
     // Enum.values() 每次调用都会克隆数组，材质反查在渲染和碰撞路径里逐帧发生，必须共用同一份。
     private static final PlasticMaterial[] VALUES = values();
@@ -54,6 +56,7 @@ public enum PlasticMaterial {
             case ENGINEERING -> PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get();
             case CLEAR -> PlasticraftFluids.CLEAR_PLASTIC_MELT.get();
             case HEAT_RESISTANT -> PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT.get();
+            case ELASTIC -> PlasticraftFluids.ELASTIC_PLASTIC_MELT.get();
         };
     }
 
@@ -63,6 +66,7 @@ public enum PlasticMaterial {
             case ENGINEERING -> PlasticraftFluids.ENGINEERING_PLASTIC_MELT_TYPE.get();
             case CLEAR -> PlasticraftFluids.CLEAR_PLASTIC_MELT_TYPE.get();
             case HEAT_RESISTANT -> PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT_TYPE.get();
+            case ELASTIC -> PlasticraftFluids.ELASTIC_PLASTIC_MELT_TYPE.get();
         };
     }
 
@@ -72,6 +76,7 @@ public enum PlasticMaterial {
             case ENGINEERING -> PlasticraftBlocks.ENGINEERING_PLASTIC_MELT.get();
             case CLEAR -> PlasticraftBlocks.CLEAR_PLASTIC_MELT.get();
             case HEAT_RESISTANT -> PlasticraftBlocks.HEAT_RESISTANT_PLASTIC_MELT.get();
+            case ELASTIC -> PlasticraftBlocks.ELASTIC_PLASTIC_MELT.get();
         };
     }
 
@@ -81,6 +86,7 @@ public enum PlasticMaterial {
             case ENGINEERING -> PlasticraftBlocks.ENGINEERING_PLASTIC_MELT_CAULDRON.get();
             case CLEAR -> PlasticraftBlocks.CLEAR_PLASTIC_MELT_CAULDRON.get();
             case HEAT_RESISTANT -> PlasticraftBlocks.HEAT_RESISTANT_PLASTIC_MELT_CAULDRON.get();
+            case ELASTIC -> PlasticraftBlocks.ELASTIC_PLASTIC_MELT_CAULDRON.get();
         };
     }
 
@@ -90,6 +96,7 @@ public enum PlasticMaterial {
             case ENGINEERING -> PlasticraftBlocks.ENGINEERING_PLASTIC.get();
             case CLEAR -> PlasticraftBlocks.CLEAR_PLASTIC.get();
             case HEAT_RESISTANT -> PlasticraftBlocks.HEAT_RESISTANT_PLASTIC.get();
+            case ELASTIC -> PlasticraftBlocks.ELASTIC_PLASTIC.get();
         };
     }
 
@@ -99,6 +106,7 @@ public enum PlasticMaterial {
             case ENGINEERING -> PlasticraftItems.ENGINEERING_PLASTIC_MELT_BUCKET.get();
             case CLEAR -> PlasticraftItems.CLEAR_PLASTIC_MELT_BUCKET.get();
             case HEAT_RESISTANT -> PlasticraftItems.HEAT_RESISTANT_PLASTIC_MELT_BUCKET.get();
+            case ELASTIC -> PlasticraftItems.ELASTIC_PLASTIC_MELT_BUCKET.get();
         };
     }
 
@@ -108,6 +116,7 @@ public enum PlasticMaterial {
             case ENGINEERING -> PlasticraftItems.ENGINEERING_PLASTIC_GRANULE.get();
             case CLEAR -> PlasticraftItems.CLEAR_PLASTIC_GRANULE.get();
             case HEAT_RESISTANT -> PlasticraftItems.HEAT_RESISTANT_PLASTIC_GRANULE.get();
+            case ELASTIC -> PlasticraftItems.ELASTIC_PLASTIC_GRANULE.get();
         };
     }
 
@@ -117,6 +126,7 @@ public enum PlasticMaterial {
             case ENGINEERING -> PlasticraftEntities.ENGINEERING_PLASTIC.get();
             case CLEAR -> PlasticraftEntities.CLEAR_PLASTIC.get();
             case HEAT_RESISTANT -> PlasticraftEntities.HEAT_RESISTANT_PLASTIC.get();
+            case ELASTIC -> PlasticraftEntities.ELASTIC_PLASTIC.get();
         };
     }
 
@@ -143,7 +153,7 @@ public enum PlasticMaterial {
     }
 
     public boolean isTransparent() {
-        return this == CLEAR;
+        return this == CLEAR || this == ELASTIC;
     }
 
     public boolean hasPalette() {
@@ -184,6 +194,14 @@ public enum PlasticMaterial {
             );
             case HEAT_RESISTANT -> new HeatResistantPlasticEntity(
                 PlasticraftEntities.HEAT_RESISTANT_PLASTIC.get(),
+                level,
+                position,
+                displayState,
+                dropStack,
+                orientation
+            );
+            case ELASTIC -> new ElasticPlasticEntity(
+                PlasticraftEntities.ELASTIC_PLASTIC.get(),
                 level,
                 position,
                 displayState,

@@ -6,6 +6,7 @@ import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -45,10 +46,14 @@ public final class MoldedPlasticContentTooltip {
     }
 
     private static void appendFluids(List<Component> lines, MoldedPlasticContentSummary summary) {
+        PlasticCauldronLayout layout = PlasticCauldronLayout.of(summary.type());
+        String capacity = layout == null
+            ? Integer.toString(summary.capacity())
+            : BigDecimal.valueOf(layout.fluidCapacity(summary.capacity()), 3).stripTrailingZeros().toPlainString();
         lines.add(Component.translatable(
             "tooltip.anvilcraftplasticraft.molded_tank_contents",
             summary.totalFluid(),
-            summary.capacity()
+            capacity
         ));
         for (MoldedPlasticContentSummary.FluidEntry fluid : summary.fluids()) {
             lines.add(Component.translatable(

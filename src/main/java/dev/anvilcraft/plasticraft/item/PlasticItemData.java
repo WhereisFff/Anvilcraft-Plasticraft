@@ -40,9 +40,7 @@ public final class PlasticItemData {
         // 普通有序配方产出的新制品物品堆有意不含自定义数据，因此从物品 ID 推断材料。
         return switch (stack.getItem()) {
             case ResinAnvilItem resinAnvilItem -> "resin";
-            case ClearPlasticBlockItem clearPlasticBlockItem -> "clear_plastic";
-            case EngineeringPlasticBlockItem engineeringPlasticBlockItem -> "engineering_plastic";
-            case UniversalPlasticBlockItem universalPlasticBlockItem -> "universal_plastic";
+            case UniversalPlasticBlockItem universalPlasticBlockItem -> universalPlasticBlockItem.materialKey();
             default -> "hardened_resin";
         };
     }

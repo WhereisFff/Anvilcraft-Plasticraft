@@ -18,7 +18,7 @@ The recipe accepts a charged or empty Super Capacitor, and the chamber inherits 
 
 ## Melt and batch size
 
-The chamber's staging tank holds 8B, or 8000mB, and accepts universal, engineering, clear and heat-resistant plastic melt. The resource slot can empty a bucket of plastic melt and return the empty bucket. Note that the casting batch and printing component have their own separate storage and do not share this capacity. Once the structure and cycle are ready, the chamber pumps at most 250mB/gt
+The chamber's staging tank holds 8B, or 8000mB, and accepts universal, engineering, clear, heat-resistant and elastic plastic melt. The resource slot can empty a bucket of plastic melt and return the empty bucket. Note that the casting batch and printing component have their own separate storage and do not share this capacity. Once the structure and cycle are ready, the chamber pumps at most 250mB/gt
 
 The arithmetic is easy: one complete product needs 1mB of melt for every 4 cubic pixels, rounded up, with a minimum batch of 250mB
 
@@ -36,12 +36,10 @@ Running low on melt still ships something, just half of it. Casting can start wi
 
 3D Printing never makes a partial product. It first pumps the complete amount into the component, then prints the complete model pixel by pixel
 
-## Printing component and high precision
+## Printing component
 
 The printing component uses its model cubes for outlines and precise selection, including the screen and eyes shown while powered. The crosshair can pass through gaps between its cubes
 
-Hold a <ref item="anvilcraftplasticraft:plastic_3d_printing_component"/> and right-click any face of a chamber without one to install it exactly one block above. No Shift is needed, and this click does not open the GUI. If the space above is obstructed, installation fails without consuming the item. Installing it selects 3D Printing; right-clicking the component also opens the chamber. Without it, high-precision types cannot be locked at all
-
-Allay Hard Hats are a high-precision type and must be printed; their shape limits are listed in [Trays and Allay Hard Hats](../003_plastic/040_plastic_components.md)
+Hold a <ref item="anvilcraftplasticraft:plastic_3d_printing_component"/> and right-click any face of a chamber without one to install it exactly one block above. No Shift is needed, and this click does not open the GUI. If the space above is obstructed, installation fails without consuming the item. Installing it selects 3D Printing; right-clicking the component also opens the chamber
 
 Printing creates a complete plastic entity in the forming region — no clay, no 3x3 platform, no giant anvil needed. Casting's platform and output rules are in [Production modes, platform and logistics](030_production_modes.md)

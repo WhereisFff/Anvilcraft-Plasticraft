@@ -40,10 +40,10 @@ public final class MoldingHitTester {
     }
 
     private static boolean isVisible(MoldingElement element, Map<UUID, MoldingGroup> groups) {
-        if (!element.visible()) return false;
+        if (!element.visible() || element.locked()) return false;
         MoldingGroup group = element.groupId().map(groups::get).orElse(null);
         while (group != null) {
-            if (!group.visible()) return false;
+            if (!group.visible() || group.locked()) return false;
             group = group.parentId().map(groups::get).orElse(null);
         }
         return true;

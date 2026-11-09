@@ -1,0 +1,11 @@
+{
+  "type": "anvilcraft:block_processing",
+  "inputs": [
+    {
+      "blocks": "minecraft:red_concrete"
+    }
+  ],
+  "result": {
+    "block": "minecraft:lime_concrete"
+  }
+}

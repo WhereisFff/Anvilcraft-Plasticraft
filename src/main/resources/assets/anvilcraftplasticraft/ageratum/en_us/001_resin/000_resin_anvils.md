@@ -16,7 +16,7 @@ items:
 
 A Resin Anvil is an anvil that bounces. It and the Hardened Resin Anvil are both entities affected by gravity and buoyancy, and both attach to any block face — four rotations per face, 24 orientations in all, sideways or upside down included
 
-- Only an impact with the bottom face pointing down performs anvil processing; every other orientation is decoration
+- An actual block impact with the bottom face pointing down performs anvil processing, with no minimum falling height; hovering nearby or resting on a block does not repeatedly process it. A sideways Resin Anvil can also strike a sideways cauldron with its bottom face
 - Sneak-use either anvil with any Anvil Hammer to retrieve it; magnetism is preserved, and a mob captured inside comes along too
 - A Resin Anvil rebounds from blocks and entities, while a Hardened Resin Anvil does not
 - A falling block landing on a Resin Anvil bounces once before settling; using a Resin Anvil with an empty hand does not open the vanilla anvil menu

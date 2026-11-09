@@ -5,7 +5,6 @@ import dev.anvilcraft.lib.v2.recipe.init.LibItemSubPredicates;
 import dev.anvilcraft.lib.v2.registrum.providers.ProviderType;
 import dev.anvilcraft.lib.v2.registrum.providers.RegistrumRecipeProvider;
 import dev.anvilcraft.lib.v2.util.predicate.BlockStatePredicate;
-import dev.anvilcraft.lib.v2.util.predicate.ChanceItemStack;
 import dev.anvilcraft.lib.v2.util.predicate.ItemIngredientPredicate;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
@@ -29,19 +28,15 @@ import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItemSubPredicates;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.init.recipe.ModRecipeTriggers;
-import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
 import dev.dubhe.anvilcraft.item.property.predicate.ItemSavedEntityPredicate;
 import dev.dubhe.anvilcraft.recipe.FluidMixingRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.builder.ExtendInWorldRecipeBuilder;
 import dev.dubhe.anvilcraft.recipe.anvil.outcome.ResentmentAmberOutcome;
-import dev.dubhe.anvilcraft.recipe.anvil.outcome.ProduceHeat;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.FastCookingRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.SolidLiquidRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.TimeWarpRecipe;
-import dev.dubhe.anvilcraft.recipe.component.HasCauldronSimple;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockConversionRecipe;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockRecipe;
-import dev.dubhe.anvilcraft.util.FluidStackPredicate;
 import net.minecraft.advancements.Advancement;
 import net.minecraft.advancements.AdvancementHolder;
 import net.minecraft.advancements.AdvancementRequirements;
@@ -52,10 +47,7 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.data.recipes.RecipeCategory;
 import net.minecraft.data.recipes.RecipeOutput;
 import net.minecraft.data.recipes.ShapedRecipeBuilder;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.tags.ItemTags;
-import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.DyeItem;
 import net.minecraft.world.item.ItemStack;
@@ -66,7 +58,6 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.ShapedRecipe;
 import net.minecraft.world.item.crafting.ShapedRecipePattern;
-import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -90,20 +81,6 @@ public final class PlasticraftRecipeData {
     }
 
     private static void generateRecipes(RegistrumRecipeProvider provider) {
-        // 有序合成：电感灯、活版门与紫水晶碎片作顶，原木作柱，圆石台阶与磁性溜槽作底，产出悦灵休息室。
-        ShapedRecipeBuilder.shaped(RecipeCategory.DECORATIONS, PlasticraftBlocks.ALLAY_LOUNGE.asItem())
-            .pattern("ITA")
-            .pattern("L L")
-            .pattern("SMS")
-            .define('I', ModBlocks.INDUCTION_LIGHT.get())
-            .define('T', ItemTags.TRAPDOORS)
-            .define('A', Items.AMETHYST_SHARD)
-            .define('L', ItemTags.LOGS)
-            .define('S', Items.COBBLESTONE_SLAB)
-            .define('M', ModBlocks.MAGNETIC_CHUTE.get())
-            .unlockedBy("has_magnetic_chute", RegistrumRecipeProvider.has(ModBlocks.MAGNETIC_CHUTE))
-            .save(provider, AnvilcraftPlasticraft.of("allay_lounge"));
-
         // 有序合成：用树脂块构成砧面、树脂构成砧腰和底座，产出弹性树脂铁砧。
         ShapedRecipeBuilder.shaped(RecipeCategory.BUILDING_BLOCKS, PlasticraftBlocks.RESIN_ANVIL.asItem())
             .pattern("BBB")
@@ -518,6 +495,20 @@ public final class PlasticraftRecipeData {
             .requires(ModFluids.POWDER_SNOW.get(), 1000)
             .result(PlasticraftItems.CLEAR_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/clear_plastic_melt_with_powder_snow"));
+
+        // 流体混合配方：一桶弹性塑料熔体与一桶水冷却混合，凝固为 16 个弹性塑料颗粒。
+        FluidMixingRecipe.builder()
+            .requires(PlasticraftFluids.ELASTIC_PLASTIC_MELT.get(), 1000)
+            .requires(Fluids.WATER, 1000)
+            .result(PlasticraftItems.ELASTIC_PLASTIC_GRANULE, 16)
+            .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/elastic_plastic_melt_with_water"));
+
+        // 流体混合配方：一桶弹性塑料熔体与一桶细雪冷却混合，同样凝固为 16 个弹性塑料颗粒。
+        FluidMixingRecipe.builder()
+            .requires(PlasticraftFluids.ELASTIC_PLASTIC_MELT.get(), 1000)
+            .requires(ModFluids.POWDER_SNOW.get(), 1000)
+            .result(PlasticraftItems.ELASTIC_PLASTIC_GRANULE, 16)
+            .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/elastic_plastic_melt_with_powder_snow"));
     }
 
     private static void generatePlasticMeltSolidLiquidRecipes(RegistrumRecipeProvider provider) {
@@ -550,6 +541,14 @@ public final class PlasticraftRecipeData {
             .result(PlasticraftItems.HEAT_RESISTANT_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("solid_liquid/cool_heat_resistant_plastic_melt"));
 
+        // 固液配方：向一桶弹性塑料熔体投入冷却物品，消耗熔体并产出 16 个弹性塑料颗粒。
+        SolidLiquidRecipe.builder()
+            .cauldron(PlasticraftFluids.ELASTIC_PLASTIC_MELT.get())
+            .consume(1000)
+            .requires(PlasticraftItemTags.COLD_ITEMS)
+            .result(PlasticraftItems.ELASTIC_PLASTIC_GRANULE, 16)
+            .save(provider, AnvilcraftPlasticraft.of("solid_liquid/cool_elastic_plastic_melt"));
+
         // 固液配方（每种染料各一份）：投入染料后熔体种类与数量都不变，
         // 颜色由配方上下文在提交后写回，因此有意不声明物品或流体产出,
         // 用覆盖 validate 的构建器跳过本体"必须有产出"的数据生成校验。
@@ -557,6 +556,7 @@ public final class PlasticraftRecipeData {
         generatePlasticMeltDyeRecipes(provider, PlasticMaterial.ENGINEERING);
         generatePlasticMeltDyeRecipes(provider, PlasticMaterial.CLEAR);
         generatePlasticMeltDyeRecipes(provider, PlasticMaterial.HEAT_RESISTANT);
+        generatePlasticMeltDyeRecipes(provider, PlasticMaterial.ELASTIC);
     }
 
     private static void generatePlasticMeltDyeRecipes(
@@ -594,37 +594,6 @@ public final class PlasticraftRecipeData {
     }
 
     private static void generateResinTimeWarpRecipes(RegistrumRecipeProvider provider) {
-        // 时移配方：凋零之首借助不死图腾与 1 mB 经验修补液态魔咒转化为悦灵。
-        CompoundTag allayTag = new CompoundTag();
-        allayTag.putString("id", "minecraft:allay");
-        ItemStack capturedAllay = PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asStack();
-        capturedAllay.set(ModComponents.SAVED_ENTITY, new SavedEntity(allayTag, false));
-        // 本体时移构建器只接受流体类型，需要显式构造带魔咒组件条件的炼药锅参数。
-        TimeWarpRecipe.Builder allayBuilder = new TimeWarpRecipe.Builder() {
-            @Override
-            protected TimeWarpRecipe of(List<ItemIngredientPredicate> ingredients, List<ChanceItemStack> results) {
-                return new TimeWarpRecipe(ingredients, results,
-                    HasCauldronSimple.empty()
-                        .fluid(FluidStackPredicate.builder()
-                            .fluid(ModFluids.LIQUID_ENCHANTMENT)
-                            .component(builder -> builder.expect(ModComponents.LIQUID_ENCHANTMENT, Enchantments.MENDING))
-                            .build())
-                        .consume(1)
-                        .build(),
-                    ProduceHeat.builder().build());
-            }
-        };
-        allayBuilder
-            .requires(ItemIngredientPredicate.Builder.item()
-                .of(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
-                .withSubPredicate(
-                    ModItemSubPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.of(EntityType.WITHER_SKULL)
-                )
-                .build())
-            .requires(Items.TOTEM_OF_UNDYING)
-            .result(capturedAllay)
-            .save(provider, AnvilcraftPlasticraft.of("time_warp/wither_skull_to_allay"));
-
         // 时间扭曲配方：一桶液态高黏度树脂经过漫长时间固化，产出高黏度树脂块。
         TimeWarpRecipe.builder()
             .fluid(PlasticraftFluids.LIQUID_HIGH_VISCOSITY_RESIN.get())

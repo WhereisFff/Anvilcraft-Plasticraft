@@ -4,12 +4,10 @@ import dev.anvilcraft.lib.v2.registrum.util.entry.BlockEntityEntry;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
-import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.HighHeatFuelCauldronBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.Plastic3DPrintingComponentBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
-import dev.anvilcraft.plasticraft.client.renderer.blockentity.AllayLoungeRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.BondedEntityBlockEntityRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.CondenserTowerBlockEntityRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.HighHeatFuelCauldronBlockEntityRenderer;
@@ -18,12 +16,6 @@ import dev.anvilcraft.plasticraft.client.renderer.blockentity.PlasticMoldingCham
 
 /** Plasticraft 方块实体注册。 */
 public final class PlasticraftBlockEntities {
-    public static final BlockEntityEntry<AllayLoungeBlockEntity> ALLAY_LOUNGE = AnvilcraftPlasticraft.REGISTRUM
-        .<AllayLoungeBlockEntity>blockEntity("allay_lounge", AllayLoungeBlockEntity::new)
-        .validBlock(PlasticraftBlocks.ALLAY_LOUNGE)
-        .renderer(() -> AllayLoungeRenderer::new)
-        .register();
-
     public static final BlockEntityEntry<Plastic3DPrintingComponentBlockEntity> PLASTIC_3D_PRINTING_COMPONENT =
         AnvilcraftPlasticraft.REGISTRUM
             .<Plastic3DPrintingComponentBlockEntity>blockEntity(
@@ -53,6 +45,7 @@ public final class PlasticraftBlockEntities {
             PlasticraftBlocks.UNIVERSAL_PLASTIC,
             PlasticraftBlocks.ENGINEERING_PLASTIC,
             PlasticraftBlocks.CLEAR_PLASTIC,
+            PlasticraftBlocks.ELASTIC_PLASTIC,
             PlasticraftBlocks.HEAT_RESISTANT_PLASTIC
         )
         .renderer(() -> BondedEntityBlockEntityRenderer::new)
@@ -84,6 +77,7 @@ public final class PlasticraftBlockEntities {
             PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT,
             PlasticraftBlocks.ENGINEERING_PLASTIC_MELT,
             PlasticraftBlocks.CLEAR_PLASTIC_MELT,
+            PlasticraftBlocks.ELASTIC_PLASTIC_MELT,
             PlasticraftBlocks.HEAT_RESISTANT_PLASTIC_MELT
         )
         .register();

@@ -1,7 +1,6 @@
 {
   "values": [
     "anvilcraftplasticraft:plastic_molding_chamber",
-    "anvilcraftplasticraft:allay_lounge",
     "anvilcraftplasticraft:plastic_3d_printing_component",
     "anvilcraftplasticraft:condenser_tower",
     "anvilcraftplasticraft:liquid_high_viscosity_resin_cauldron",
@@ -15,6 +14,8 @@
     "anvilcraftplasticraft:heat_resistant_plastic",
     "anvilcraftplasticraft:clear_plastic_melt_cauldron",
     "anvilcraftplasticraft:clear_plastic",
+    "anvilcraftplasticraft:elastic_plastic_melt_cauldron",
+    "anvilcraftplasticraft:elastic_plastic",
     "anvilcraftplasticraft:hardend_resin_anvil",
     "anvilcraftplasticraft:hardend_resin_cauldron",
     "anvilcraftplasticraft:catalytic_press_lid",

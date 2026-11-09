@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 @Mixin(SpawnItem.class)
 abstract class SpawnItemMixin {
     @Redirect(
-        method = "accept",
+        method = "plan",
         at = @At(
             value = "INVOKE",
             target = "Lnet/minecraft/world/item/ItemStack;copyWithCount(I)Lnet/minecraft/world/item/ItemStack;"

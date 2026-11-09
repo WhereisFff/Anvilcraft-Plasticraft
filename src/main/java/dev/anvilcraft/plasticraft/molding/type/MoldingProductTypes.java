@@ -28,7 +28,6 @@ public final class MoldingProductTypes {
     public static final ResourceLocation CAULDRON_ID = AnvilcraftPlasticraft.of("cauldron");
     public static final ResourceLocation LARGE_CAULDRON_ID = AnvilcraftPlasticraft.of("large_cauldron");
     public static final ResourceLocation TRAY_ID = AnvilcraftPlasticraft.of("tray");
-    public static final ResourceLocation ALLAY_HARD_HAT_ID = AnvilcraftPlasticraft.of("allay_hard_hat");
     private static final Map<ResourceLocation, MoldingProductType> TYPES = createTypes();
 
     private MoldingProductTypes() {
@@ -202,7 +201,6 @@ public final class MoldingProductTypes {
         register(types, new CauldronType());
         register(types, new LargeCauldronType());
         register(types, new TrayType());
-        register(types, new AllayHardHatType());
         return types;
     }
 
@@ -355,10 +353,10 @@ public final class MoldingProductTypes {
         }
     }
 
-    /** 大型塑料炼药锅：固定 512 B 流体、8 槽输入 × 9 倍堆叠、落砧最多 9 组加工，由普通炼药锅自动升级得到。 */
+    /** 大型塑料炼药锅由普通锅自动升级，实际存储与加工限额跟随本体配置。 */
     private record LargeCauldronType() implements MoldingProductType {
-        /** 8 层 × 64 B；对齐 AnvilCraft LargeCauldronFluidHandler。 */
-        private static final int FIXED_CAPACITY = 8 * 64;
+        /** 制造数据使用确定的容量标记，配置变化不会改变模型校验；实际容量由 PlasticCauldronLayout 读取。 */
+        private static final int MODEL_CAPACITY = 8 * 64;
 
         @Override
         public ResourceLocation id() {
@@ -388,12 +386,12 @@ public final class MoldingProductTypes {
 
         @Override
         public int capacityFor(int cavityVolume) {
-            return FIXED_CAPACITY;
+            return MODEL_CAPACITY;
         }
 
         @Override
         public boolean validateCapacity(int capacity, MoldingVolumeMask cavityMask) {
-            return capacity == FIXED_CAPACITY;
+            return capacity == MODEL_CAPACITY;
         }
 
         @Override
@@ -401,35 +399,8 @@ public final class MoldingProductTypes {
             MoldingCauldronShapeAnalysis shape = analysis.cauldronShape();
             if (!shape.valid()) return MoldingTypeValidation.invalid(shape.reason());
             return shape.large()
-                ? MoldingTypeValidation.valid(FIXED_CAPACITY)
+                ? MoldingTypeValidation.valid(MODEL_CAPACITY)
                 : MoldingTypeValidation.invalid("cauldron_not_large");
-        }
-    }
-
-    private record AllayHardHatType() implements MoldingProductType {
-        @Override
-        public ResourceLocation id() {
-            return ALLAY_HARD_HAT_ID;
-        }
-
-        @Override
-        public String translationKey() {
-            return typeTranslationKey(ALLAY_HARD_HAT_ID);
-        }
-
-        @Override
-        public MoldingTypeValidation validate(MoldingFunctionalAnalysis analysis) {
-            return MoldingTypeValidation.invalid("allay_hard_hat_model_required");
-        }
-
-        @Override
-        public MoldingTypeValidation validate(EditableMoldingModel model, BakedMoldingModel baked) {
-            return MoldingHardHatShapeValidator.validate(model, baked);
-        }
-
-        @Override
-        public boolean requiresPrinting() {
-            return true;
         }
     }
 }

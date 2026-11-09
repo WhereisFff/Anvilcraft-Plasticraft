@@ -7,11 +7,9 @@ import dev.anvilcraft.lib.v2.cube.client.SelectionPart;
 import dev.anvilcraft.lib.v2.cube.geometry.ConvexShape;
 import dev.anvilcraft.lib.v2.cube.geometry.SelectionGeometry;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.block.AllayLoungeBlock;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.block.Plastic3DPrintingComponentBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberBlock;
-import dev.anvilcraft.plasticraft.block.entity.AllayLoungeBlockEntity;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.MachineModelTransforms;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
@@ -39,7 +37,7 @@ import java.util.Map;
 public final class MachineBlockSelection {
     private static final AABB MACHINE_BOUNDS = new AABB(-1, -1, -1, 2, 2, 2);
     private static final long MAX_GEOMETRY_BYTES = 16L * 1024 * 1024 - 64 * 1024;
-    private static Snapshot models = new Snapshot(Map.of(), Map.of(), null, null, null, Map.of(), Map.of());
+    private static Snapshot models = new Snapshot(Map.of(), Map.of(), null);
 
     private MachineBlockSelection() {
     }
@@ -51,7 +49,6 @@ public final class MachineBlockSelection {
         CubeSelection.registerDynamic(PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get(), MACHINE_BOUNDS, false, (level, pos, state, tick) ->
             staticParts(level, pos, state, state.getValue(Plastic3DPrintingComponentBlock.POWERED) ? Variant.PRINTER_ON : Variant.PRINTER_OFF,
                 state.getValue(Plastic3DPrintingComponentBlock.FACING)));
-        CubeSelection.registerDynamic(PlasticraftBlocks.ALLAY_LOUNGE.get(), MACHINE_BOUNDS, false, MachineBlockSelection::loungeParts);
         CubeSelection.registerDynamic(PlasticraftBlocks.CONDENSER_TOWER.get(), new AABB(0, 0, 0, 1, 1, 1), false,
             (level, pos, state, tick) -> {
                 List<SelectionPart> parts = models.tower().get(state.getValue(CondenserTowerBlock.HALF));
@@ -94,13 +91,6 @@ public final class MachineBlockSelection {
                 LogUtils.getLogger().warn("Unable to prepare machine selection for {}; keeping block shape", variant, exception);
             }
         }
-        SelectionGeometry left = null, right = null;
-        try {
-            left = geometry(shared, reader.load(modelId("allay_lounge_hatch_left")));
-            right = geometry(shared, reader.load(modelId("allay_lounge_hatch_right")));
-        } catch (RuntimeException exception) {
-            LogUtils.getLogger().warn("Unable to prepare lounge hatch selection; keeping block shape", exception);
-        }
         Map<Cube3x3PartHalf, List<SelectionPart>> tower = Map.of();
         SelectionPart towerOutline = null;
         try {
@@ -115,8 +105,7 @@ public final class MachineBlockSelection {
         } catch (RuntimeException exception) {
             LogUtils.getLogger().warn("Unable to prepare condenser selection; keeping block shapes", exception);
         }
-        return new Snapshot(Map.copyOf(parts), tower, towerOutline, left, right,
-            hatchEndpoints(left, right, 0), hatchEndpoints(left, right, 1));
+        return new Snapshot(Map.copyOf(parts), tower, towerOutline);
     }
 
     private static @Nullable SelectionGeometry geometry(Map<List<ConvexShape>, SelectionGeometry> shared, List<ConvexShape> shapes) {
@@ -135,45 +124,6 @@ public final class MachineBlockSelection {
         return directions == null ? fallback(level, pos, state) : directions.get(facing);
     }
 
-    private static List<SelectionPart> loungeParts(ClientLevel level, BlockPos pos, BlockState state, float partialTick) {
-        if (!(level.getBlockEntity(pos) instanceof AllayLoungeBlockEntity lounge)
-            || models.left() == null || models.right() == null) return fallback(level, pos, state);
-        Direction facing = state.getValue(AllayLoungeBlock.FACING);
-        Variant variant = switch (lounge.indicatorStatus()) {
-            case IDLE -> Variant.LOUNGE_IDLE;
-            case RUNNING -> Variant.LOUNGE_RUNNING;
-            case INTERRUPTED -> Variant.LOUNGE_INTERRUPTED;
-        };
-        if (!models.parts().containsKey(variant)) return fallback(level, pos, state);
-        List<SelectionPart> parts = new ArrayList<>(models.parts().get(variant).get(facing));
-        float openness = lounge.hatchOpenness(level.tickRateManager().runsNormally() ? partialTick : 1.0F);
-        // 静止舱门直接复用端点位姿，密集摆放时邻格查询也不重复计算矩阵和包围盒。
-        if (openness == 0) parts.addAll(models.closed().get(facing));
-        else if (openness == 1) parts.addAll(models.opened().get(facing));
-        else {
-            parts.add(hatch(models.left(), facing, true, openness));
-            parts.add(hatch(models.right(), facing, false, openness));
-        }
-        return List.copyOf(parts);
-    }
-
-    static SelectionPart hatch(SelectionGeometry geometry, Direction facing, boolean left, float openness) {
-        Matrix4f transform = MachineModelTransforms.facing(facing).mul(MachineModelTransforms.loungeHatch(left, openness))
-            .scale(1 / PlasticSelectionGeometry.GEOMETRY_SCALE);
-        return new SelectionPart(geometry, transform);
-    }
-
-    private static Map<Direction, List<SelectionPart>> hatchEndpoints(
-        @Nullable SelectionGeometry left, @Nullable SelectionGeometry right, float openness
-    ) {
-        if (left == null || right == null) return Map.of();
-        Map<Direction, List<SelectionPart>> poses = new EnumMap<>(Direction.class);
-        for (Direction facing : Direction.Plane.HORIZONTAL) {
-            poses.put(facing, List.of(hatch(left, facing, true, openness), hatch(right, facing, false, openness)));
-        }
-        return Map.copyOf(poses);
-    }
-
     private static List<SelectionPart> fallback(ClientLevel level, BlockPos pos, BlockState state) {
         VoxelShape shape = state.getShape(level, pos);
         return shape.isEmpty() ? List.of() : List.of(PlasticSelectionGeometry.fromShape(shape));
@@ -187,10 +137,7 @@ public final class MachineBlockSelection {
         CHAMBER_ON("plastic_molding_chamber"),
         CHAMBER_OFF("plastic_molding_chamber_off"),
         PRINTER_ON("print_component_body", "print_component_screen", "print_component_eye"),
-        PRINTER_OFF("print_component_off"),
-        LOUNGE_IDLE("allay_lounge", "allay_lounge_indicator_blue"),
-        LOUNGE_RUNNING("allay_lounge", "allay_lounge_indicator_green"),
-        LOUNGE_INTERRUPTED("allay_lounge", "allay_lounge_indicator_red");
+        PRINTER_OFF("print_component_off");
 
         private final List<String> models;
 
@@ -201,8 +148,6 @@ public final class MachineBlockSelection {
 
     record Snapshot(Map<Variant, Map<Direction, List<SelectionPart>>> parts,
                     Map<Cube3x3PartHalf, List<SelectionPart>> tower,
-                    @Nullable SelectionPart towerOutline,
-                    @Nullable SelectionGeometry left, @Nullable SelectionGeometry right,
-                    Map<Direction, List<SelectionPart>> closed, Map<Direction, List<SelectionPart>> opened) {
+                    @Nullable SelectionPart towerOutline) {
     }
 }

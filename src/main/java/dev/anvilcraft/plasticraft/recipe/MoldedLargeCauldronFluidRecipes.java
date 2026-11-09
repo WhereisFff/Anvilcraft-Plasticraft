@@ -38,7 +38,7 @@ public final class MoldedLargeCauldronFluidRecipes {
     }
 
     public static boolean test(InWorldRecipeContext context, UniversalPlasticEntity pot, HasCauldron predicate) {
-        if (predicate.consume() < 0 || predicate.consume() > LargeCauldronFluidHandler.TANK_CAPACITY
+        if (predicate.consume() < 0 || predicate.consume() > LargeCauldronFluidHandler.tankCapacity()
             || predicate.chance() < 0 || predicate.chance() > 1
             || predicate.fluid().amount().flatMap(MinMaxBounds.Ints::max).map(max -> predicate.consume() > max).orElse(false)
             || predicate.ignited() && !pot.anvilcraft$isIgnited()) return false;
@@ -100,7 +100,7 @@ public final class MoldedLargeCauldronFluidRecipes {
                 }
             }
             long total = (long) result.getAmount() + (target < 0 ? 0 : fluids.get(target).getAmount());
-            if (total > LargeCauldronFluidHandler.TANK_CAPACITY) return false;
+            if (total > LargeCauldronFluidHandler.tankCapacity()) return false;
             if (target < 0) {
                 for (int index = 0; index < fluids.size(); index++) {
                     if (fluids.get(index).isEmpty()) {

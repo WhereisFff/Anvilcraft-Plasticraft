@@ -6,6 +6,9 @@ import dev.anvilcraft.plasticraft.api.texture.PlasticTextureLayout;
 import dev.anvilcraft.plasticraft.client.renderer.DynamicPlasticTextureManager.MoldedTextureRef;
 import dev.anvilcraft.plasticraft.client.renderer.entity.TransparentPlasticFaceCullingVertexConsumer;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingConvexFace;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingConvexHull;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
@@ -19,6 +22,7 @@ import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
+import net.minecraft.util.FastColor;
 import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -104,6 +108,10 @@ public final class MoldedPlasticMeshRenderer {
             : translucent
                 ? RenderType.entityTranslucentCull(textureRef.texture())
                 : RenderType.entityCutoutNoCull(textureRef.texture());
+        if (PlasticMaterial.fromMeltOrNull(data.materialView()) == PlasticMaterial.ELASTIC) {
+            renderMesh(mesh.coreVertices(data), pose, buffers.getBuffer(renderType), packedLight,
+                FastColor.ARGB32.multiply(color, 0xFFD8D8D8), true, textureRef);
+        }
         if (deferredTransparent) {
             renderDeferredTransparentMesh(
                 mesh,
@@ -778,6 +786,7 @@ public final class MoldedPlasticMeshRenderer {
     private static final class PreparedMesh {
         private final float[] volumeVertices;
         private final float[] zeroThicknessVertices;
+        private float[] coreVertices;
 
         private PreparedMesh(float[] volumeVertices, float[] zeroThicknessVertices) {
             this.volumeVertices = volumeVertices;
@@ -791,6 +800,93 @@ public final class MoldedPlasticMeshRenderer {
                 createVertices(quads, layout, true, false),
                 createVertices(quads, layout, false, true)
             );
+        }
+
+        private float[] coreVertices(MoldedPlasticData data) {
+            if (this.coreVertices != null) return this.coreVertices;
+            int quadCount = 0;
+            for (MoldingConvexHull hull : data.collisionHulls()) {
+                for (MoldingConvexFace face : hull.faces()) {
+                    quadCount += face.vertices().size() == 4 ? 1 : face.vertices().size() - 2;
+                }
+            }
+            float[] vertices = new float[quadCount * 4 * VERTEX_STRIDE];
+            PlasticTextureLayout layout = data.textureLayout();
+            PlasticTextureLayout.UvRegion region = OutletGeometry.largestRegion(layout);
+            float u0 = region.x() / (float) layout.atlasWidth();
+            float v0 = region.y() / (float) layout.atlasHeight();
+            float u1 = (region.x() + region.width()) / (float) layout.atlasWidth();
+            float v1 = (region.y() + region.height()) / (float) layout.atlasHeight();
+            int offset = 0;
+            // 每个凸体围绕自身中心缩小，保留锅腔、零厚度面与部件间隙，不能缩放整个制品来伪造内芯。
+            for (MoldingConvexHull hull : data.collisionHulls()) {
+                MoldingVec3 center = MoldingVec3.ZERO;
+                for (MoldingVec3 vertex : hull.vertices()) center = center.add(vertex);
+                center = center.scale(1.0D / hull.vertices().size());
+                for (MoldingConvexFace face : hull.faces()) {
+                    float[] faceVertices = coreFaceVertices(hull, face, center, u0, v0, u1, v1);
+                    if (face.vertices().size() == 4) {
+                        System.arraycopy(faceVertices, 0, vertices, offset, faceVertices.length);
+                        offset += faceVertices.length;
+                    } else {
+                        for (int index = 1; index < face.vertices().size() - 1; index++) {
+                            offset = copyVertex(vertices, offset, faceVertices, 0);
+                            offset = copyVertex(vertices, offset, faceVertices, index);
+                            offset = copyVertex(vertices, offset, faceVertices, index + 1);
+                            offset = copyVertex(vertices, offset, faceVertices, 0);
+                        }
+                    }
+                }
+            }
+            this.coreVertices = vertices;
+            return vertices;
+        }
+
+        private static float[] coreFaceVertices(
+            MoldingConvexHull hull,
+            MoldingConvexFace face,
+            MoldingVec3 center,
+            float u0,
+            float v0,
+            float u1,
+            float v1
+        ) {
+            int size = face.vertices().size();
+            MoldingVec3 first = hull.vertices().get(face.vertices().getFirst());
+            MoldingVec3 tangent = hull.vertices().get(face.vertices().get(1)).subtract(first);
+            MoldingVec3 bitangent = face.normal().cross(tangent);
+            double[] projectedU = new double[size];
+            double[] projectedV = new double[size];
+            double minimumU = Double.POSITIVE_INFINITY;
+            double maximumU = Double.NEGATIVE_INFINITY;
+            double minimumV = Double.POSITIVE_INFINITY;
+            double maximumV = Double.NEGATIVE_INFINITY;
+            for (int index = 0; index < size; index++) {
+                MoldingVec3 relative = hull.vertices().get(face.vertices().get(index)).subtract(first);
+                projectedU[index] = relative.dot(tangent);
+                projectedV[index] = relative.dot(bitangent);
+                minimumU = Math.min(minimumU, projectedU[index]);
+                maximumU = Math.max(maximumU, projectedU[index]);
+                minimumV = Math.min(minimumV, projectedV[index]);
+                maximumV = Math.max(maximumV, projectedV[index]);
+            }
+            float[] vertices = new float[size * VERTEX_STRIDE];
+            int offset = 0;
+            // 整个凸面共享一次投影，三角扇的公共边才能保持相同 UV，避免内芯出现斜向纹理裂缝。
+            for (int index = 0; index < size; index++) {
+                MoldingVec3 vertex = hull.vertices().get(face.vertices().get(index));
+                float u = u0 + (u1 - u0) * (float) ((projectedU[index] - minimumU) / (maximumU - minimumU));
+                float v = v0 + (v1 - v0) * (float) ((projectedV[index] - minimumV) / (maximumV - minimumV));
+                offset = putVertex(
+                    vertices, offset, center.add(vertex.subtract(center).scale(0.75D)), face.normal(), u, v
+                );
+            }
+            return vertices;
+        }
+
+        private static int copyVertex(float[] target, int offset, float[] source, int index) {
+            System.arraycopy(source, index * VERTEX_STRIDE, target, offset, VERTEX_STRIDE);
+            return offset + VERTEX_STRIDE;
         }
 
         private static float[] createVertices(

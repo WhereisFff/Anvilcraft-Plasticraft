@@ -13,6 +13,7 @@ items:
 Bond a Catalytic Press Lid directly above a compatible vessel with High-Viscosity Resin and you get a sealed royal-steel catalytic surface. From then on the Plastic Oil to Universal Plastic route and the chilled Universal Plastic to Engineering Plastic route both run at full speed, with no royal-steel item in the vessel at all
 
 - The clear route does not benefit: it still needs royal glass or frost glass inside the vessel and uses the glass catalysts' open multiplier
+- The lid is also a resin product: with cold below Plastic Oil, it needs no extra catalyst and gives the Elastic Plastic route priority at full speed, converting an equal volume in 100gt (5 seconds)
 - The heat-resistant branch counts distinct ember-metal items in the vessel inventory and loose items inside it, and the heat source is still mandatory
 - Ordinary block vessels read heat and cold directly below. Upward-facing Hardened Resin and plastic cauldrons instead search from the center and every covered part of their physical bottom face along current gravity for one block. A valid processing block below the center takes priority, then the remaining covered bottom cells are tried
 - How much heat, whether cold is needed, and which branch wins all follow [Plastic Melts](010_plastic_melts.md)

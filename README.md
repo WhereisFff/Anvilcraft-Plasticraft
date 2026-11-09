@@ -1,5 +1,7 @@
 # 铁砧工艺：塑料工艺
 
+<img src="src/main/resources/icon.png" width="128" height="128" alt="塑料工艺图标">
+
 [![Build](https://github.com/WhereisFff/Anvilcraft-Plasticraft/actions/workflows/ci.yml/badge.svg)](https://github.com/WhereisFff/Anvilcraft-Plasticraft/actions/workflows/ci.yml)
 ![Minecraft 1.21.1](https://img.shields.io/badge/Minecraft-1.21.1-62B47A)
 ![NeoForge 21.1](https://img.shields.io/badge/NeoForge-21.1-E78A3A)
@@ -14,9 +16,8 @@
 
 - **树脂与粘接**：弹性树脂铁砧、硬化树脂铁砧、高粘性树脂及其移动、捕获和粘接机制
 - **原油分馏**：冷凝塔将气态原油分离为高热燃料、塑料油和原油精华
-- **四种塑料**：通用、工程、透明、耐热塑料均支持 16 色，分别提供精准采集、信标着色、耐火等材料特性
+- **五种塑料**：通用、工程、透明、耐热、弹性塑料均支持 16 色，分别提供精准采集、信标着色、耐火、碰撞回弹等材料特性
 - **塑料成型**：在成型舱编辑或导入模型，通过铸造或 3D 打印生产塑料实体与制品
-- **悦灵施工**：为悦灵戴上安全帽后，可由休息室使用结构磁盘完成蓝图施工、拆除与收集；安装 FTB Teams 时同队成员可协作管理
 
 配方、数值和操作说明见游戏内 Ageratum 手册；JEI 与 Jade 可提供配方和状态查询。项目仍在开发中，内容可能调整。
 
@@ -25,15 +26,15 @@
 | 项目 | 版本 / 说明 |
 | --- | --- |
 | Minecraft | 1.21.1 |
-| 模组加载器 | NeoForge 21.1+ |
-| 前置模组 | AnvilCraft 1.6.0+、AnvilLib 2.0.0+ |
-| 可选模组 | JEI、Jade、Ageratum、FTB Teams |
+| 模组加载器 | NeoForge 21.1.238+ |
+| 前置模组 | AnvilCraft 1.6.0+snapshot.2842 或更新版本、AnvilLib 2.0.0+snapshot.649 或更新版本 |
+| 可选模组 | JEI、Jade、Ageratum |
 
 将构建产物和所需前置模组放入游戏实例的 `mods` 目录。
 
 ## 构建与开发
 
-项目使用 JDK 21 和 Gradle Wrapper：
+项目使用 JDK 21 和 Gradle 9.7.1 Wrapper，依赖版本与 AnvilCraft 的 Minecraft 1.21.1 分支对齐：
 
 ```powershell
 .\gradlew.bat build

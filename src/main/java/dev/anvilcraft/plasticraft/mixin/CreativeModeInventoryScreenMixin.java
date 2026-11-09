@@ -4,10 +4,13 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.anvilcraft.lib.v2.registrum.util.CreativeTabSection;
 import dev.anvilcraft.lib.v2.registrum.util.CreativeTabSections;
+import dev.anvilcraft.lib.v2.registrum.util.CreativeVariantPickerRegistry;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.client.gui.PlasticraftCreativeTabContents;
-import dev.anvilcraft.plasticraft.client.gui.PlasticraftCreativeTabState;
+import dev.anvilcraft.plasticraft.client.gui.PlasticraftGuiSounds;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemGroups;
+import dev.anvilcraft.plasticraft.item.CreativeColorVariantItem;
+import dev.anvilcraft.plasticraft.item.PlasticraftCreativeTabState;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -17,16 +20,19 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.ItemStack;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
@@ -48,6 +54,10 @@ abstract class CreativeModeInventoryScreenMixin
 
     @Shadow
     private static CreativeModeTab selectedTab;
+
+    @Shadow
+    @Final
+    private static SimpleContainer CONTAINER;
 
     @Shadow
     private float scrollOffs;
@@ -90,32 +100,102 @@ abstract class CreativeModeInventoryScreenMixin
 
     // 变体浮层覆盖横幅时由 AnvilLib 先处理点击，避免展开逻辑截断浮层交互。
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true, order = 1100)
-    private void plasticraft$togglePlasticSection(
+    private void plasticraft$pressPlasticSection(
         double mouseX,
         double mouseY,
         int button,
         CallbackInfoReturnable<Boolean> callback
     ) {
-        if (button != 0 || !this.plasticraft$isPlasticraftTab()) return;
+        if (button != 0 || !this.plasticraft$isPlasticraftTab()) {
+            return;
+        }
         Optional<PlasticMaterial> material = this.plasticraft$materialAt(mouseX, mouseY);
         if (material.isEmpty()) {
             this.plasticraft$pressedMaterial = null;
             return;
         }
         this.plasticraft$pressedMaterial = material.get();
-        PlasticraftCreativeTabState.toggle(material.get());
-        this.plasticraft$refreshPlasticTab();
+        PlasticraftGuiSounds.click();
         callback.setReturnValue(true);
     }
 
-    @Inject(method = "mouseReleased", at = @At("HEAD"))
-    private void plasticraft$clearPressedBanner(
+    @Inject(method = "mouseReleased", at = @At("HEAD"), cancellable = true, order = 1100)
+    private void plasticraft$releasePlasticSection(
         double mouseX,
         double mouseY,
         int button,
         CallbackInfoReturnable<Boolean> callback
     ) {
-        if (button == 0) this.plasticraft$pressedMaterial = null;
+        if (button != 0 || this.plasticraft$pressedMaterial == null) {
+            return;
+        }
+        PlasticMaterial pressed = this.plasticraft$pressedMaterial;
+        this.plasticraft$pressedMaterial = null;
+        if (this.plasticraft$isPlasticraftTab() && this.plasticraft$materialAt(mouseX, mouseY).orElse(null) == pressed) {
+            PlasticraftCreativeTabState.toggle(pressed);
+            this.plasticraft$refreshPlasticTab();
+        }
+        callback.setReturnValue(true);
+    }
+
+    @Inject(method = "mouseDragged", at = @At("HEAD"), cancellable = true)
+    private void plasticraft$consumeBannerDrag(
+        double mouseX, double mouseY, int button, double dragX, double dragY,
+        CallbackInfoReturnable<Boolean> callback
+    ) {
+        if (button == 0 && this.plasticraft$pressedMaterial != null) {
+            callback.setReturnValue(true);
+        }
+    }
+
+    @ModifyVariable(method = "refreshCurrentTabContents", at = @At("HEAD"), argsOnly = true)
+    private Collection<ItemStack> plasticraft$arrangeRefreshedContents(Collection<ItemStack> items) {
+        if (!this.plasticraft$isPlasticraftTab()) {
+            return items;
+        }
+        return CreativeTabSections.arrange(PlasticraftItemGroups.MAIN_ID, CreativeVariantPickerRegistry.fold(items));
+    }
+
+    @Inject(method = "selectTab", at = @At("TAIL"))
+    private void plasticraft$restoreSectionLayout(CreativeModeTab tab, CallbackInfo callback) {
+        this.plasticraft$pressedMaterial = null;
+        this.plasticraft$hoveredMaterial = null;
+        if (this.plasticraft$isPlasticraftTab()) {
+            this.plasticraft$refreshPlasticTab();
+        }
+    }
+
+    @Inject(
+        method = "render",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen;"
+                + "renderTooltip(Lnet/minecraft/client/gui/GuiGraphics;II)V"
+        ),
+        order = 900
+    )
+    private void plasticraft$renderVariantBadges(
+        GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo callback
+    ) {
+        if (selectedTab == null || selectedTab.getType() != CreativeModeTab.Type.CATEGORY) {
+            return;
+        }
+        graphics.pose().pushPose();
+        try {
+            // 角标高于物品模型，低于变体选择浮层和提示框。
+            graphics.pose().translate(this.leftPos, this.topPos, 250);
+            for (Slot slot : this.menu.slots) {
+                if (slot.container != CONTAINER || !slot.isActive()) {
+                    continue;
+                }
+                ItemStack stack = slot.getItem();
+                if (stack.getItem() instanceof CreativeColorVariantItem provider && provider.isCreativePickerEnabled(stack)) {
+                    graphics.drawString(this.font, "+", slot.x + 10, slot.y + 1, 0xFFFFFFFF, true);
+                }
+            }
+        } finally {
+            graphics.pose().popPose();
+        }
     }
 
     @Inject(method = "removed", at = @At("HEAD"))

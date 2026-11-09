@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.recipe;
 
 import dev.anvilcraft.lib.v2.recipe.InWorldRecipe;
+import dev.anvilcraft.lib.v2.recipe.event.InWorldRecipeCommittedEvent;
 import dev.anvilcraft.lib.v2.recipe.event.InWorldRecipeEvent;
 import dev.anvilcraft.lib.v2.recipe.predicate.IRecipePredicate;
 import dev.anvilcraft.lib.v2.recipe.predicate.item.HasItemIngredient;
@@ -10,15 +11,11 @@ import dev.anvilcraft.plasticraft.entity.PlasticCauldronWorkBlockFinder;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
+import dev.dubhe.anvilcraft.AnvilCraft;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
-import dev.dubhe.anvilcraft.block.BurningHeaterBlock;
-import dev.dubhe.anvilcraft.block.CorruptedBeaconBlock;
+import dev.dubhe.anvilcraft.api.recipe.CauldronProcessing;
 import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
-import dev.dubhe.anvilcraft.block.HeaterBlock;
-import dev.dubhe.anvilcraft.block.NeutronIrradiatorBlock;
 import dev.dubhe.anvilcraft.block.entity.BurningHeaterBlockEntity;
-import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
-import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.recipe.ModRecipeTriggers;
 import dev.dubhe.anvilcraft.init.recipe.ModRecipeTypes;
 import dev.dubhe.anvilcraft.recipe.FluidMixingRecipe;
@@ -32,8 +29,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.RecipeHolder;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.CampfireBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.NeoForge;
@@ -67,14 +62,14 @@ public final class MoldedLargeCauldronRecipes {
         List<FluidStack> initialFluids = pot.getMoldedFluidHandler().copyFluids();
         List<Integer> initialOutputs = occupied(output);
         Set<Integer> specialSlots = new HashSet<>();
+        int limit = AnvilCraft.CONFIG.machines.largeCauldronMaxProcessEfficiency;
         int processed = 0;
         boolean damaged = false;
-        for (int slot = 0; slot < input.getSlots(); slot++) {
+        for (int slot = 0; slot < input.getSlots() && processed < limit; slot++) {
             if (!enchant(level, pot, slot, helpers)) continue;
             specialSlots.add(slot);
             processed++;
         }
-        int limit = LargeCauldronBlockEntity.MAX_PROCESS_EFFICIENCY;
         for (Pass pass : passes) {
             while (processed < limit) {
                 boolean progress = false;
@@ -170,6 +165,10 @@ public final class MoldedLargeCauldronRecipes {
                 if (!recipe.matches(context, level)) continue;
                 recipe.assemble(context, level.registryAccess());
                 NeoForge.EVENT_BUS.post(new InWorldRecipeEvent(recipe.getType(), holder.id(), recipe, context));
+                long batchId = context.getBatchId();
+                context.afterCommit(() -> NeoForge.EVENT_BUS.post(new InWorldRecipeCommittedEvent(
+                    recipe.getType(), holder.id(), recipe, context, batchId
+                )));
                 boolean damaged = context.get(DamageAnvil.DAMAGE_ANVIL);
                 boolean suppress = GiantAnvilBlock.SUPPRESS_DROPS.get();
                 GiantAnvilBlock.SUPPRESS_DROPS.set(true);
@@ -194,14 +193,11 @@ public final class MoldedLargeCauldronRecipes {
     }
 
     private static boolean activeHelper(BlockState state) {
-        return heating(state) || CampfireBlock.isLitCampfire(state) && state.is(Blocks.CAMPFIRE)
-            || state.is(ModBlocks.CORRUPTED_BEACON) && state.getValue(CorruptedBeaconBlock.LIT)
-            || state.getBlock() instanceof NeutronIrradiatorBlock;
+        return CauldronProcessing.isActive(state);
     }
 
     private static boolean heating(BlockState state) {
-        return state.is(ModBlocks.HEATER) && !state.getValue(HeaterBlock.OVERLOAD)
-            || state.is(ModBlocks.BURNING_HEATER) && state.getValue(BurningHeaterBlock.LEVEL) == 2;
+        return CauldronProcessing.matches(CauldronProcessing.SUPER_HEATING, state);
     }
 
     private static Stream<IRecipePredicate<?>> predicates(InWorldRecipe recipe) {

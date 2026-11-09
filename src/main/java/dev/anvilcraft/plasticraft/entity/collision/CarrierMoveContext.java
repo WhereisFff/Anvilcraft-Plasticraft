@@ -16,6 +16,7 @@ public final class CarrierMoveContext {
     private final CarrierMoveContext parent;
     private final Vec3 startPosition;
     private final Vec3 requestedMovement;
+    private final Vec3 incomingVelocity;
     @Nullable
     private List<CarrierMovableEntity> targets;
     @Nullable
@@ -27,11 +28,13 @@ public final class CarrierMoveContext {
     public CarrierMoveContext(
         @Nullable CarrierMoveContext parent,
         Vec3 startPosition,
-        Vec3 requestedMovement
+        Vec3 requestedMovement,
+        Vec3 incomingVelocity
     ) {
         this.parent = parent;
         this.startPosition = startPosition;
         this.requestedMovement = requestedMovement;
+        this.incomingVelocity = incomingVelocity;
     }
 
     @Nullable
@@ -45,6 +48,10 @@ public final class CarrierMoveContext {
 
     public Vec3 requestedMovement() {
         return this.requestedMovement;
+    }
+
+    public Vec3 incomingVelocity() {
+        return this.incomingVelocity;
     }
 
     @Nullable

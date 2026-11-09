@@ -6,6 +6,8 @@ import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.common.util.TriState;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.OptionalInt;
+
 /** 把实体锅与高热燃料接到本体喷流燃料扩展点。 */
 public final class PlasmaJetAddonFuels {
     public static final PlasmaJetFuelHandler RESIN_CAULDRON = new ResinCauldronFuel();
@@ -30,24 +32,8 @@ public final class PlasmaJetAddonFuels {
         }
 
         @Override
-        public TriState tryConsumeOnce(Level level, BlockPos cauldronPos) {
-            Boolean consumed = HardenedResinCauldronSupport.consumeOnce(level, cauldronPos);
-            if (consumed == null) return TriState.DEFAULT;
-            return consumed ? TriState.TRUE : TriState.FALSE;
-        }
-
-        @Override
-        public TriState usesContinuousFuel(Level level, BlockPos cauldronPos) {
-            Boolean continuous = HardenedResinCauldronSupport.usesContinuousFuel(level, cauldronPos);
-            if (continuous == null) return TriState.DEFAULT;
-            return continuous ? TriState.TRUE : TriState.FALSE;
-        }
-
-        @Override
-        public TriState tryConsumeContinuousFuel(Level level, BlockPos cauldronPos, int amount) {
-            Boolean consumed = HardenedResinCauldronSupport.consumeContinuousFuel(level, cauldronPos, amount);
-            if (consumed == null) return TriState.DEFAULT;
-            return consumed ? TriState.TRUE : TriState.FALSE;
+        public OptionalInt tryConsumeOnce(Level level, BlockPos cauldronPos, boolean simulate) {
+            return HardenedResinCauldronSupport.consumeOnce(level, cauldronPos, simulate);
         }
 
         @Override

@@ -1,6 +1,5 @@
 package dev.anvilcraft.plasticraft.item;
 
-import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.dubhe.anvilcraft.block.item.HasMobBlockItem;
 import dev.dubhe.anvilcraft.block.item.ResinBlockItem;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
@@ -58,7 +57,7 @@ public class HighViscosityResinBlockItem extends ResinBlockItem {
         return super.useOn(context);
     }
 
-    private static InteractionResult captureLookedAtSkull(Player player, ItemStack stack) {
+    public static InteractionResult captureLookedAtSkull(Player player, ItemStack stack) {
         if (stack.has(ModComponents.SAVED_ENTITY)) return InteractionResult.PASS;
         Vec3 start = player.getEyePosition();
         Vec3 end = player.level().clip(new ClipContext(
@@ -79,7 +78,15 @@ public class HighViscosityResinBlockItem extends ResinBlockItem {
                 return InteractionResult.PASS;
             }
             if (!player.level().isClientSide()) {
-                player.getInventory().placeItemBackInInventory(captureSkull(skull, stack));
+                InteractionHand hand = player.getMainHandItem() == stack ? InteractionHand.MAIN_HAND
+                    : player.getOffhandItem() == stack ? InteractionHand.OFF_HAND : null;
+                ItemStack captured = captureSkull(skull, stack);
+                if (captured.isEmpty()) return InteractionResult.PASS;
+                if (stack.isEmpty() && hand != null) {
+                    player.setItemInHand(hand, captured);
+                } else {
+                    player.getInventory().placeItemBackInInventory(captured);
+                }
             }
             return InteractionResult.SUCCESS;
         }
@@ -91,7 +98,6 @@ public class HighViscosityResinBlockItem extends ResinBlockItem {
     }
 
     public static boolean canMobBeSaved(Mob mob, @Nullable Player player, @Nullable ItemStack stack) {
-        if (mob instanceof WorkingAllayEntity) return false;
         if (player != null && player.getAbilities().instabuild) return true;
         if (stack != null && stack.has(ModComponents.SAVED_ENTITY)) return false;
         return !(mob instanceof Monster monster && !monster.hasEffect(MobEffects.WEAKNESS));

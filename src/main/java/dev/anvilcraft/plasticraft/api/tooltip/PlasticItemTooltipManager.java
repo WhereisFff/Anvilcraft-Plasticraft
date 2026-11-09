@@ -103,6 +103,27 @@ public final class PlasticItemTooltipManager {
                 All 16 dye colours tint beacon beams like their stained-glass counterparts"""
         );
         register(
+            AnvilcraftPlasticraft.of("elastic_plastic_melt_bucket"),
+            "Resin-catalyzed melt for translucent, bouncy plastic products",
+            """
+                Resin and items crafted from it catalyze plastic oil over a cold block
+                A hardened resin cauldron acts as its own catalyst; catalysts are not consumed
+                Supports all 16 dye colours"""
+        );
+        registerNormal(
+            AnvilcraftPlasticraft.of("elastic_plastic_granule"),
+            "Elastic plastic feedstock for bouncy molded products"
+        );
+        register(
+            AnvilcraftPlasticraft.of("elastic_plastic"),
+            "Smooth translucent plastic products that bounce without slowing surface walking",
+            """
+                Walking across the surface does not slow you down or trigger small bounces
+                Rebounds lose some speed each time and cushion falling entities
+                Sneak to suppress the landing bounce
+                All molded shapes retain the material's elasticity"""
+        );
+        register(
             AnvilcraftPlasticraft.of("engineering_plastic_melt_bucket"),
             "Royal-steel-reinforced melt for molding engineering plastic products",
             """
@@ -118,7 +139,6 @@ public final class PlasticItemTooltipManager {
             "High-strength plastic that blocks lasers and whose molded demolition tools preserve broken blocks",
             """
                 Molded anvils break targets above stonecutters with Silk Touch
-                Allay Hard Hats grant Silk Touch to demolition allays holding a stonecutter
                 Lasers at level 5 or above destroy the engineering plastic they hit"""
         );
         register(
@@ -127,7 +147,7 @@ public final class PlasticItemTooltipManager {
             """
                 Convert universal plastic melt with an item in the anvilcraftplasticraft:ember_metal_items tag
                 The reaction needs heat directly below and preserves the melt colour
-                Heat-resistant products and Allay Hard Hats are immune to fire"""
+                Heat-resistant products are immune to fire"""
         );
         registerNormal(
             AnvilcraftPlasticraft.of("heat_resistant_plastic_granule"),
@@ -138,15 +158,14 @@ public final class PlasticItemTooltipManager {
             "Heat-resistant plastic that blocks lasers and is immune to fire and laser damage",
             """
                 Molded anvils break targets above stonecutters with Smelting
-                Allay Hard Hats grant fire immunity and Smelting to demolition allays
                 The anvil behaves like an Ember Anvil when it lands
                 It blocks lasers without taking laser damage"""
         );
         register(
             AnvilcraftPlasticraft.of("catalytic_press_lid"),
-            "A sealed full-speed royal-steel catalyst for plastic oil and chilled universal melt",
+            "A sealed catalyst that converts plastic oil and universal melt at full speed",
             """
-                Plastic oil converts to universal plastic melt while heated from directly below
+                Plastic oil converts to universal melt over heat or elastic melt over a cold block
                 Universal plastic melt converts to engineering plastic melt over a cold block
                 Bond this lid above a vessel for full speed, then press it with a falling anvil"""
         );
@@ -155,11 +174,12 @@ public final class PlasticItemTooltipManager {
             "A hardened resin anvil that functions as a complete anvil",
             """
                 Rename it for free; falling does not damage it
-                Only impacts on its bottom face process anvil recipes; inserting a magnet lets magnets pull it"""
+                Any actual bottom-face landing can process recipes, with no minimum drop
+                Inserting a magnet lets magnets pull it"""
         );
         registerNormal(
             AnvilcraftPlasticraft.of("hardend_resin_cauldron"),
-            "A light, portable cauldron assembled from hardened resin plates"
+            "A portable resin cauldron that catalyzes plastic oil into elastic melt over a cold block"
         );
         register(
             AnvilcraftPlasticraft.of("high_viscosity_resin_block"),
@@ -167,7 +187,7 @@ public final class PlasticItemTooltipManager {
             """
                 Elastic and strongly sticks to adjacent blocks
                 Captures creatures of any size; hostile creatures must be weakened
-                Captures Wither Skulls, which can be transformed into Allays
+                Captures Wither Skulls
                 Each resin-connected group counts as one block against a piston's push limit"""
         );
         register(
@@ -182,13 +202,8 @@ public final class PlasticItemTooltipManager {
             "A resin block kneaded into an anvil shape, full of elasticity",
             """
                 Its elasticity means it cannot repair equipment or enchantments
-                Only impacts on its bottom face process anvil recipes; inserting a magnet lets magnets pull it"""
-        );
-        register(
-            AnvilcraftPlasticraft.of("allay_lounge"),
-            "A cozy little home for Allays?",
-            "Hosts up to 16 hard-hatted Allays and directs their construction work; "
-                + "Allays take or deposit items and fetch the tools they need from the container below"
+                Any actual bottom-face landing can process recipes, with no minimum drop
+                Inserting a magnet lets magnets pull it"""
         );
     }
 
@@ -213,7 +228,7 @@ public final class PlasticItemTooltipManager {
         boolean demonstrationModel = specializedMoldedProduct
             && PlasticItemData.isDemonstrationModel(stack);
         boolean shiftDown = Screen.hasShiftDown();
-        boolean showShiftHint = SHIFT.containsKey(itemId) || demonstrationModel;
+        boolean showShiftHint = SHIFT.containsKey(itemId) || demonstrationModel || MoldingBlueprintDisk.hasBlueprintData(stack);
         int dynamicTooltipIndex = 1;
         if (showShiftHint) {
             if (shiftDown) {
@@ -260,7 +275,9 @@ public final class PlasticItemTooltipManager {
             ));
             dynamicTooltip.add(Component.translatable(
                 "item.anvilcraft.structure_disk.size",
-                formatDimensions(size)
+                MoldingModelBounds.formatBlocks(size.x()),
+                MoldingModelBounds.formatBlocks(size.y()),
+                MoldingModelBounds.formatBlocks(size.z())
             ));
             boolean fitsChamber = MoldingModelBounds.all(blueprint.model())
                 .map(MoldingModelBounds::fitsWorkspaceSize)
@@ -271,6 +288,9 @@ public final class PlasticItemTooltipManager {
                     : "tooltip.anvilcraftplasticraft.molding.structure_disk.too_large_for_chamber"
             ).withStyle(fitsChamber ? ChatFormatting.GREEN : ChatFormatting.RED));
         });
+        if (Screen.hasShiftDown() && MoldingBlueprintDisk.hasBlueprintData(stack)) {
+            dynamicTooltip.add(Component.translatable("tooltip.anvilcraft.item.disk.clear").withStyle(ChatFormatting.GRAY));
+        }
         if (stack.getItem() instanceof AbstractPlasticEntityItem<?>) {
             if (PlasticItemData.isMagnetized(stack)) {
                 dynamicTooltip.add(Component.translatable("tooltip.anvilcraftplasticraft.magnetized")
@@ -341,18 +361,15 @@ public final class PlasticItemTooltipManager {
                 tooltip.add(Component.translatable(
                     "tooltip.anvilcraftplasticraft.molded_tray"
                 ).withStyle(ChatFormatting.GRAY));
-            } else if (MoldingProductTypes.ALLAY_HARD_HAT_ID.equals(data.finalType())) {
-                tooltip.add(Component.translatable(
-                    "tooltip.anvilcraftplasticraft.molded_allay_hard_hat",
-                    moldedFeature(data, false)
-                ).withStyle(ChatFormatting.GRAY));
             }
         });
     }
 
     private static Component moldedFeature(MoldedPlasticData data, boolean anvil) {
         PlasticMaterial material = PlasticMaterial.fromMelt(data.material()).orElse(null);
-        String key = material == PlasticMaterial.HEAT_RESISTANT
+        String key = material == PlasticMaterial.ELASTIC
+            ? "tooltip.anvilcraftplasticraft.molded_feature.elastic"
+            : material == PlasticMaterial.HEAT_RESISTANT
             ? "tooltip.anvilcraftplasticraft.molded_feature.heat_resistant"
             : material == PlasticMaterial.CLEAR
                 ? "tooltip.anvilcraftplasticraft.molded_feature.clear"
@@ -367,12 +384,6 @@ public final class PlasticItemTooltipManager {
         return MoldingProductTypes.isLargeCauldron(data.finalType())
             ? "tooltip.anvilcraftplasticraft.molded_large_cauldron"
             : "tooltip.anvilcraftplasticraft.molded_cauldron";
-    }
-
-    private static String formatDimensions(MoldingVec3 size) {
-        return MoldingModelBounds.formatBlocks(size.x()) + " x "
-            + MoldingModelBounds.formatBlocks(size.y()) + " x "
-            + MoldingModelBounds.formatBlocks(size.z());
     }
 
     private static void addCapturedEntityTooltip(

@@ -24,7 +24,6 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidType;
@@ -102,7 +101,7 @@ public final class PlasticMeltCatalysisCategory implements IRecipeCategory<Plast
                 .addItemStacks(recipe.environmentStacks());
         }
         builder.addSlot(RecipeIngredientRole.CATALYST, 80, 48)
-            .addIngredients(Ingredient.of(recipe.catalyst()))
+            .addIngredients(recipe.catalystIngredient())
             .addRichTooltipCallback((slotView, tooltip) -> {
                 tooltip.add(Component.translatable(TEXT_PREFIX + "not_consumed"));
                 tooltip.add(Component.translatable(TEXT_PREFIX + "variety"));

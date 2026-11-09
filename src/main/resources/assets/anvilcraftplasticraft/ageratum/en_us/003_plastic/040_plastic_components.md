@@ -1,10 +1,10 @@
 ---
 navigation:
-  title: "Trays and Allay Hard Hats"
+  title: "Redstone Trays"
   icon: "anvilcraftplasticraft:universal_plastic"
 ---
 
-# Trays and Allay Hard Hats
+# Redstone Trays
 
 ## Redstone tray
 
@@ -15,17 +15,3 @@ There is plenty to mount: Redstone Repeaters, Comparators, Redstone Torches, But
 - Components keep their vanilla model, menu, delay, interaction and redstone state, so everything you already know still applies
 - Adjacent cells can pass signals inside the tray, while external input and output follow the tray's position and orientation
 - Moving, rotating or bonding a tray takes its components and their states along
-
-## Allay Hard Hat
-
-Choose the Allay Hard Hat type in the molding chamber. The model may be at most 11x11px across and 16px tall. This type must be printed, so it also has to fit inside the central 32x32x32px printing region, and you need a [3D Printing Component](../004_molding/000_molding_chamber.md) on top of the chamber
-
-Right-click a vanilla Allay with the finished hat and it becomes a Working Allay; sneak-right-click to take the hat back off
-
-The material decides what perks come with it:
-
-- Universal and Clear Plastic Hard Hats have no extra ability
-- An Engineering Plastic Hard Hat gives a demolition allay Silk Touch while it holds a Stonecutter
-- A Heat-Resistant Plastic Hard Hat grants the Working Allay fire immunity and switches Stonecutter demolition to Smelting drops
-
-See [Working Allay](../005_construction/000_working_allay.md) for tools, material supply and job stages

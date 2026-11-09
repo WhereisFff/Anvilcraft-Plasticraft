@@ -7,9 +7,7 @@ import dev.anvilcraft.plasticraft.block.IgnitedFluidEffects;
 import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.MoldingBlueprintDiskPreviewRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticOilCatalysisRenderer;
-import dev.anvilcraft.plasticraft.client.renderer.StructureDiskPreviewRenderer;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
-import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintDisk;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
@@ -47,12 +45,7 @@ public final class AnvilCraftClientApiBootstrap {
 
     public static void register() {
         RecipeUtil.registerLevelLikeCustomizer(AnvilCraftClientApiBootstrap::seedCondenserValves);
-        StructureDiskPreviewSupport.registerPreviewHandler((graphics, stack, mouseX, mouseY) -> {
-            if (MoldingBlueprintDisk.hasBlueprintData(stack)) {
-                return MoldingBlueprintDiskPreviewRenderer.renderPreviewAt(graphics, stack, mouseX, mouseY);
-            }
-            return StructureDiskPreviewRenderer.renderPreviewAt(graphics, stack, mouseX, mouseY);
-        });
+        StructureDiskPreviewSupport.registerPreviewHandler(MoldingBlueprintDiskPreviewRenderer::renderPreviewAt);
         LargeCauldronRenderHooks.register(new LargeCauldronRenderHooks.Handler() {
             @Override
             public boolean showVanillaFire(LargeCauldronBlockEntity cauldron) {
@@ -161,7 +154,7 @@ public final class AnvilCraftClientApiBootstrap {
             FluidStack fluid = cauldron.getFluids().getFluidInTank(tank);
             if (fluid.isEmpty()) continue;
             float layerMaxY = layerMinY
-                + CAULDRON_CONTENT_HEIGHT * fluid.getAmount() / LargeCauldronFluidHandler.TOTAL_CAPACITY;
+                + CAULDRON_CONTENT_HEIGHT * fluid.getAmount() / LargeCauldronFluidHandler.totalCapacity();
             if (isCatalyzingFluid(fluid)) {
                 PlasticOilCatalysisRenderer.renderContainerOverlay(
                     cauldron.getLevel(),
@@ -184,7 +177,7 @@ public final class AnvilCraftClientApiBootstrap {
         }
         if (!cauldron.isIgnited() || !IgnitedFluidEffects.isHighHeatFuel(cauldron.getTopFluid())) return;
         float fill = Mth.clamp(
-            (float) cauldron.getFluids().getTotalAmount() / LargeCauldronFluidHandler.TOTAL_CAPACITY,
+            (float) cauldron.getFluids().getTotalAmount() / LargeCauldronFluidHandler.totalCapacity(),
             0.0F,
             1.0F
         );

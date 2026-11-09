@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.recipe;
 
 import dev.anvilcraft.lib.v2.recipe.AnvilLibRecipe;
 import dev.anvilcraft.lib.v2.recipe.InWorldRecipe;
+import dev.anvilcraft.lib.v2.recipe.event.InWorldRecipeCommittedEvent;
 import dev.anvilcraft.lib.v2.recipe.event.InWorldRecipeEvent;
 import dev.anvilcraft.lib.v2.recipe.predicate.IRecipePredicate;
 import dev.anvilcraft.lib.v2.recipe.predicate.block.HasBlockBase;
@@ -17,6 +18,7 @@ import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.init.recipe.ModRecipeTriggers;
 import dev.dubhe.anvilcraft.recipe.anvil.outcome.DamageAnvil;
 import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
+import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldronProcessor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.FallingBlockEntity;
@@ -285,6 +287,10 @@ public final class CauldronImpactRecipeProcessor {
                 accepted = true;
                 recipe.assemble(context, context.getLevel().registryAccess());
                 NeoForge.EVENT_BUS.post(new InWorldRecipeEvent(recipe.getType(), holder.id(), recipe, context));
+                long batchId = context.getBatchId();
+                context.afterCommit(() -> NeoForge.EVENT_BUS.post(new InWorldRecipeCommittedEvent(
+                    recipe.getType(), holder.id(), recipe, context, batchId
+                )));
             }
             if (accepted) return;
         }
@@ -316,10 +322,9 @@ public final class CauldronImpactRecipeProcessor {
         BlockPos workBlock
     ) {
         for (IRecipePredicate<?> predicate : predicates) {
-            if (predicate instanceof HasBlockBase<?> hasBlock
-                && BlockPos.containing(context.getPos().add(hasBlock.getOffset())).equals(workBlock)) {
-                return true;
-            }
+            Vec3 offset = predicate instanceof HasBlockBase<?> hasBlock ? hasBlock.getOffset()
+                : predicate instanceof HasCauldronProcessor processor ? processor.offset() : null;
+            if (offset != null && BlockPos.containing(context.getPos().add(offset)).equals(workBlock)) return true;
         }
         return false;
     }

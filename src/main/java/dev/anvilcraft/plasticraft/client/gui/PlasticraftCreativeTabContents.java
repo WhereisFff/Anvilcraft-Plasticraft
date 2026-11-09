@@ -1,8 +1,7 @@
 package dev.anvilcraft.plasticraft.client.gui;
 
-import dev.anvilcraft.lib.v2.registrum.util.CreativeTabSections;
-import dev.anvilcraft.lib.v2.registrum.util.CreativeVariantPickerRegistry;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemGroups;
+import dev.anvilcraft.plasticraft.item.PlasticraftCreativeTabState;
 import dev.anvilcraft.plasticraft.mixin.CreativeModeTabAccessor;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.ItemStack;
@@ -39,13 +38,10 @@ public final class PlasticraftCreativeTabContents {
             output,
             PlasticraftCreativeTabState::isExpanded
         );
-        Collection<ItemStack> arranged = CreativeTabSections.arrange(
-            PlasticraftItemGroups.MAIN_ID,
-            CreativeVariantPickerRegistry.fold(parentEntries)
-        );
         CreativeModeTabAccessor accessor = (CreativeModeTabAccessor) (Object) tab;
-        accessor.plasticraft$setDisplayItems(arranged);
+        // 标签缓存只保存真实物品，避免再次打开时重复插入横幅占位。
+        accessor.plasticraft$setDisplayItems(parentEntries);
         accessor.plasticraft$setSearchTabDisplayItems(searchEntries);
-        return arranged;
+        return parentEntries;
     }
 }

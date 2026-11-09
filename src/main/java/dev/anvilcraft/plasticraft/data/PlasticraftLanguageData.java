@@ -69,34 +69,20 @@ public final class PlasticraftLanguageData {
         provider.add("material.anvilcraftplasticraft.heat_resistant_plastic", "Heat-Resistant Plastic");
         provider.add("item.anvilcraftplasticraft.clear_plastic", "Clear Plastic Block");
         provider.add("material.anvilcraftplasticraft.clear_plastic", "Clear Plastic");
+        provider.add(PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "elastic_plastic", "Elastic Plastic");
+        provider.add(
+            PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "elastic_plastic.tooltip",
+            "Elastic plastic melt, granules and bouncy molded products; click the banner to expand or fold all 16 colors"
+        );
+        provider.add("item.anvilcraftplasticraft.elastic_plastic", "Elastic Plastic Block");
+        provider.add("material.anvilcraftplasticraft.elastic_plastic", "Elastic Plastic");
+        provider.add("tooltip.anvilcraftplasticraft.molded_feature.elastic", ", elastic");
+        provider.add(
+            "jei.anvilcraftplasticraft.plastic_melt_catalysis.resin_priority",
+            "Cold resin catalysts take priority for elastic melt; hardened resin cauldrons and catalytic press lids also act as catalysts"
+        );
         provider.add("item.anvilcraftplasticraft.molded_product_name", "%1$s %2$s");
         provider.add("item.anvilcraftplasticraft.molded_product_suffix.block", "Block");
-
-        // 休息室按钮提示与卡片工种名。施工悦灵本身没有设置界面,已删除的工人面板文案不要再生成。
-        provider.add("screen.anvilcraftplasticraft.allay.tool.none", "None");
-        provider.add("screen.anvilcraftplasticraft.allay.strategy.pause", "Pause and wait");
-        provider.add("screen.anvilcraftplasticraft.allay.strategy.skip", "Skip");
-        provider.add("screen.anvilcraftplasticraft.allay.clearance.clear_area", "Demolish the whole blueprint area");
-        provider.add(
-            "screen.anvilcraftplasticraft.allay.clearance.keep_blank",
-            "Keep blocks on cells the blueprint leaves blank"
-        );
-
-        // 悦灵休息室界面。
-        provider.add("container.anvilcraftplasticraft.allay_lounge", "Allay Lounge");
-        provider.add("screen.anvilcraftplasticraft.allay_lounge.recall", "Recall nearby working allays");
-        provider.add("screen.anvilcraftplasticraft.allay_lounge.tool", "Tool: %s");
-        provider.add("screen.anvilcraftplasticraft.allay_lounge.release", "Left-click to release");
-        provider.add("screen.anvilcraftplasticraft.allay_lounge.disk", "Insert a deployed structure disk to claim its job");
-        provider.add("screen.anvilcraftplasticraft.allay_lounge.strategy", "Shortage strategy for hosted allays");
-        provider.add(
-            "screen.anvilcraftplasticraft.allay_lounge.clearance",
-            "Blank-cell clearance for the claimed blueprint"
-        );
-        provider.add(
-            "tooltip.anvilcraftplasticraft.item.allay_lounge.permissions",
-            "Only the owner or a current teammate can manage it; without FTB Teams, only the owner"
-        );
 
         // 塑料成型舱物品说明、容器标题和建模器界面语言文件生成。
         provider.add(
@@ -111,7 +97,10 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.molding.search_json", "Search model");
         provider.add("screen.anvilcraftplasticraft.molding.rename", "Rename");
         provider.add("screen.anvilcraftplasticraft.molding.numeric", "Numeric property");
-        provider.add("screen.anvilcraftplasticraft.molding.numeric.tooltip", "%1$s %2$s");
+        provider.add(
+            "screen.anvilcraftplasticraft.molding.numeric.tooltip",
+            "%1$s %2$s\nExpressions: 8/2, +1, -=1, *2\nScroll: 1 px / 15° · Shift: 0.1 px / 1° · Ctrl: 10 px / 45°\nEnter: apply · Esc: cancel · Tab: next field"
+        );
         provider.add("screen.anvilcraftplasticraft.molding.numeric.position", "Position");
         provider.add("screen.anvilcraftplasticraft.molding.numeric.size", "Size");
         provider.add("screen.anvilcraftplasticraft.molding.numeric.pivot", "Pivot");
@@ -123,11 +112,11 @@ public final class PlasticraftLanguageData {
             "%1$s px / %2$s mB / %3$s clay"
         );
         provider.add("screen.anvilcraftplasticraft.molding.out_of_bounds", "Outside workspace");
-        provider.add("screen.anvilcraftplasticraft.molding.tool.move", "Move");
-        provider.add("screen.anvilcraftplasticraft.molding.tool.scale", "Resize");
-        provider.add("screen.anvilcraftplasticraft.molding.tool.rotate", "Rotate");
-        provider.add("screen.anvilcraftplasticraft.molding.tool.pivot", "Pivot");
-        provider.add("screen.anvilcraftplasticraft.molding.tool.mirror", "Mirror");
+        provider.add("screen.anvilcraftplasticraft.molding.tool.move", "Move (V)");
+        provider.add("screen.anvilcraftplasticraft.molding.tool.scale", "Resize (S)");
+        provider.add("screen.anvilcraftplasticraft.molding.tool.rotate", "Rotate (R)");
+        provider.add("screen.anvilcraftplasticraft.molding.tool.pivot", "Pivot (P)");
+        provider.add("screen.anvilcraftplasticraft.molding.tool.mirror", "Mirror (M)");
         provider.add("screen.anvilcraftplasticraft.molding.type", "Assign type");
         provider.add("screen.anvilcraftplasticraft.molding.type.normal", "Normal");
         provider.add("screen.anvilcraftplasticraft.molding.type.chest", "Chest");
@@ -137,15 +126,14 @@ public final class PlasticraftLanguageData {
         // 大型炼药锅不在类型面板中显示，该名称只用于成品后缀。
         provider.add("screen.anvilcraftplasticraft.molding.type.large_cauldron", "Large Cauldron");
         provider.add("screen.anvilcraftplasticraft.molding.type.tray", "Tray");
-        provider.add("screen.anvilcraftplasticraft.molding.type.allay_hard_hat", "Allay Hard Hat");
         provider.add("screen.anvilcraftplasticraft.molding.type_invalid", "This shape does not seem able to do that");
         provider.add("screen.anvilcraftplasticraft.molding.model_too_large", "Model is too large to process");
         provider.add("screen.anvilcraftplasticraft.molding.type_override_active", "Type limit bypass active");
         provider.add("screen.anvilcraftplasticraft.molding.creative_override_active", "Debug override active");
-        provider.add("screen.anvilcraftplasticraft.molding.undo", "Undo");
-        provider.add("screen.anvilcraftplasticraft.molding.copy", "Copy");
-        provider.add("screen.anvilcraftplasticraft.molding.cut", "Cut");
-        provider.add("screen.anvilcraftplasticraft.molding.paste", "Paste");
+        provider.add("screen.anvilcraftplasticraft.molding.undo", "Undo (Ctrl+Z)");
+        provider.add("screen.anvilcraftplasticraft.molding.copy", "Copy (Ctrl+C)");
+        provider.add("screen.anvilcraftplasticraft.molding.cut", "Cut (Ctrl+X)");
+        provider.add("screen.anvilcraftplasticraft.molding.paste", "Paste (Ctrl+V)");
         provider.add("screen.anvilcraftplasticraft.molding.json", "Model management");
         provider.add("screen.anvilcraftplasticraft.molding.takeover", "Take over editing");
         provider.add("screen.anvilcraftplasticraft.molding.element.tooltip", "%1$s - %2$s");
@@ -165,6 +153,79 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.molding.context.center_pivot", "Center pivot");
         provider.add("screen.anvilcraftplasticraft.molding.context.focus", "Focus selection");
         provider.add("screen.anvilcraftplasticraft.molding.context.reset_camera", "Frame workspace");
+
+        // 大建模工作区的工具栏、大纲、视角与操作反馈语言文件生成。
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.new_cube", "New");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.new_cube.tooltip", "Create a Cube (N)");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.duplicate", "Duplicate");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.duplicate.tooltip", "Duplicate the selection (Ctrl+D)");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.group", "Group");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.group.tooltip", "Group the selection (Ctrl+G)");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.undo", "Undo");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.undo.tooltip", "Undo the last edit (Ctrl+Z)");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.redo", "Redo");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.redo.tooltip", "Redo the last undone edit (Ctrl+Shift+Z / Ctrl+Y)");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.focus", "Focus");
+        provider.add(
+            "screen.anvilcraftplasticraft.molding.workspace.focus.tooltip",
+            "Focus the selection (F) or frame the whole model (Home)"
+        );
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.done", "Back");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.done.tooltip", "Return to the machine panel (Ctrl+Space)");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.search", "Find elements");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.outliner", "Outliner");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.status", "%s selected");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.pending", "Applying edit…");
+        provider.add(
+            "screen.anvilcraftplasticraft.molding.workspace.read_only",
+            "Read-only · Another player is editing or the chamber is locked"
+        );
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.empty", "No matching elements");
+        provider.add(
+            "screen.anvilcraftplasticraft.molding.workspace.outliner_lock",
+            "Toggle locking for this element or group (L for the selection)"
+        );
+        provider.add(
+            "screen.anvilcraftplasticraft.molding.workspace.outliner_visibility",
+            "Toggle visibility for this element or group (H for the selection)"
+        );
+        provider.add(
+            "screen.anvilcraftplasticraft.molding.workspace.outliner_selection",
+            "Click to select · Ctrl: add or remove · Shift: select a range · Right-click: actions"
+        );
+        provider.add(
+            "screen.anvilcraftplasticraft.molding.workspace.navigation",
+            "Left-drag: orbit · Right/middle-drag: pan · Scroll: zoom · Shift-drag: box select"
+        );
+        provider.add(
+            "screen.anvilcraftplasticraft.molding.workspace.precision",
+            "Snap: 1 px / 15° · Shift: 0.1 px / 1° · Ctrl: 10 px / 45° · Alt: free movement"
+        );
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.perspective.tooltip", "Perspective view (5 / Numpad 5)");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.front.tooltip", "Front view (1) · Ctrl+1 or right-click: back");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.right.tooltip", "Right view (3) · Ctrl+3 or right-click: left");
+        provider.add("screen.anvilcraftplasticraft.molding.workspace.top.tooltip", "Top view (7) · Ctrl+7 or right-click: bottom");
+        provider.add(
+            "screen.anvilcraftplasticraft.molding.workspace.expand.tooltip",
+            "Expand or restore the modeling workspace (Ctrl+Space)"
+        );
+        provider.add(
+            "screen.anvilcraftplasticraft.molding.workspace.numeric_invalid",
+            "Invalid number or expression · Keep editing or press Esc to cancel"
+        );
+        provider.add(
+            "screen.anvilcraftplasticraft.molding.workspace.transform_rejected",
+            "This transform cannot be applied to the current selection"
+        );
+
+        provider.add(
+            "screen.anvilcraftplasticraft.molding.workspace.rename_invalid",
+            "The name cannot be applied · Keep editing or press Esc to cancel"
+        );
+        provider.add(
+            "screen.anvilcraftplasticraft.molding.workspace.put_down_item",
+            "Place the carried item in a slot before expanding the editor"
+        );
 
         // 塑料成型舱磁盘控件和共享蓝图库叠加层语言文件生成。
         provider.add("screen.anvilcraftplasticraft.molding.disk.missing", "Place a Structure Disk in the disk slot");
@@ -293,10 +354,6 @@ public final class PlasticraftLanguageData {
                 + "You can still model or import any model you want in the Plastic Molding Chamber"
         );
         provider.add(
-            "tooltip.anvilcraftplasticraft.molded_allay_hard_hat",
-            "Can be worn on an allay's head%1$s"
-        );
-        provider.add(
             "tooltip.anvilcraftplasticraft.molded_giant_anvil",
             "Has giant anvil abilities%1$s"
         );
@@ -349,10 +406,6 @@ public final class PlasticraftLanguageData {
         provider.add("message.anvilcraftplasticraft.molding.type_tray_top_not_flat", "A tray needs a completely flat top face");
         provider.add("message.anvilcraftplasticraft.molding.type_tray_center_missing", "A tray needs a volumetric cube in its 3 x 3 modeling area");
         provider.add("message.anvilcraftplasticraft.molding.type_tray_shape_unavailable", "The tray shape analysis is unavailable");
-        provider.add("message.anvilcraftplasticraft.molding.type_allay_hard_hat_model_required", "Hard hat validation requires the complete editable model");
-        provider.add("message.anvilcraftplasticraft.molding.type_allay_hard_hat_empty", "A hard hat model cannot be empty");
-        provider.add("message.anvilcraftplasticraft.molding.type_allay_hard_hat_too_wide", "A hard hat may be at most 11 x 11 px across");
-        provider.add("message.anvilcraftplasticraft.molding.type_allay_hard_hat_too_tall", "A hard hat may be at most 16 px tall");
         provider.add("message.anvilcraftplasticraft.molding.type_unknown_type", "The selected type is unavailable");
         provider.add("message.anvilcraftplasticraft.molding.missing_printing_component", "Install a 3D Printing Component directly above the chamber");
         provider.add("message.anvilcraftplasticraft.molding.not_locked", "Model is not locked");
@@ -538,146 +591,5 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.hammer_direction.east", "East");
         provider.add("screen.anvilcraftplasticraft.hammer_direction.south", "South");
         provider.add("screen.anvilcraftplasticraft.hammer_direction.west", "West");
-
-        // 结构蓝图磁盘 Tooltip:名称和尺寸走本体「结构：」行,这里只追加部署状态;Shift 展开来源与内容标记。
-        provider.add("tooltip.anvilcraftplasticraft.blueprint.summary", "Construction blueprint: %s");
-        provider.add("tooltip.anvilcraftplasticraft.blueprint.state_imported", "Not placed, right-click to place a projection");
-        provider.add("tooltip.anvilcraftplasticraft.blueprint.state_placed", "Paused, yellow slot, right-click this slot to start");
-        provider.add("tooltip.anvilcraftplasticraft.blueprint.state_active", "Building, green slot");
-        provider.add(
-            "tooltip.anvilcraftplasticraft.blueprint.permissions",
-            "Only the owner or a current teammate can manage it; without FTB Teams, only the owner"
-        );
-        provider.add(
-            "tooltip.anvilcraftplasticraft.blueprint.cancel_commits",
-            "Cancel quietly commits delivered blocks, contents, fluids and entities and returns in-transit items"
-        );
-        provider.add("tooltip.anvilcraftplasticraft.blueprint.size", "Size: %1$s x %2$s x %3$s");
-        provider.add("tooltip.anvilcraftplasticraft.blueprint.source.vanilla_template", "Source: structure block template");
-        provider.add("tooltip.anvilcraftplasticraft.blueprint.source.scanner_disk", "Source: structure scanner");
-        provider.add("tooltip.anvilcraftplasticraft.blueprint.source.vanilla_file", "Source: vanilla .nbt file");
-        provider.add("tooltip.anvilcraftplasticraft.blueprint.source.create_file", "Source: Create .nbt file");
-        provider.add("tooltip.anvilcraftplasticraft.blueprint.source.litematica_file", "Source: Litematica file");
-        provider.add("tooltip.anvilcraftplasticraft.blueprint.has_block_entities", "Contains block entity data");
-        provider.add("tooltip.anvilcraftplasticraft.blueprint.has_entities", "Contains entities");
-        provider.add(
-            "tooltip.anvilcraftplasticraft.blueprint.controls",
-            "Ctrl+scroll switches tools, Alt+scroll adjusts the current tool, plain scroll still changes the hotbar"
-        );
-
-        // 蓝图文件导入界面。
-        provider.add("screen.anvilcraftplasticraft.blueprint_import.title", "Import Blueprint File");
-        provider.add("screen.anvilcraftplasticraft.blueprint_import.refresh", "Refresh");
-        provider.add("screen.anvilcraftplasticraft.blueprint_import.open_folder", "Open Folder");
-        provider.add(
-            "screen.anvilcraftplasticraft.blueprint_import.empty",
-            "Put .nbt or .litematic files into anvilcraftplasticraft/structures and refresh"
-        );
-
-        // 部署会话工具条与状态行。
-        provider.add("screen.anvilcraftplasticraft.blueprint_session.tool.move", "Move anchor");
-        provider.add("screen.anvilcraftplasticraft.blueprint_session.tool.rotate", "Rotate");
-        provider.add("screen.anvilcraftplasticraft.blueprint_session.tool.flip", "Mirror");
-        provider.add("screen.anvilcraftplasticraft.blueprint_session.tool.layer_down", "Layer down");
-        provider.add("screen.anvilcraftplasticraft.blueprint_session.tool.layer_up", "Layer up");
-        provider.add("screen.anvilcraftplasticraft.blueprint_session.tool.confirm", "Confirm placement");
-        provider.add("screen.anvilcraftplasticraft.blueprint_session.tool.cancel", "Cancel placement");
-        provider.add("screen.anvilcraftplasticraft.blueprint_session.layer_all", "All");
-        provider.add("screen.anvilcraftplasticraft.blueprint_session.anchor_locked", "Anchor locked");
-        provider.add("screen.anvilcraftplasticraft.blueprint_session.anchor_following", "Following crosshair");
-        provider.add(
-            "screen.anvilcraftplasticraft.blueprint_session.status",
-            "%1$s | %2$s | Rotation %3$s | Mirror %4$s | Layer %5$s | %6$s"
-        );
-        provider.add(
-            "screen.anvilcraftplasticraft.blueprint_session.hint",
-            "Ctrl+scroll: tools  Alt+scroll: adjust  Right-click: execute  Scroll: hotbar"
-        );
-        provider.add("screen.anvilcraftplasticraft.blueprint_session.cancel_target", "Right-click to delete: %s");
-
-        // 蓝图操作结果与导入错误消息;detail 由客户端原样追加在冒号后。
-        provider.add("message.anvilcraftplasticraft.blueprint.imported", "Blueprint imported");
-        provider.add("message.anvilcraftplasticraft.blueprint.deployed", "Projection placed");
-        provider.add("message.anvilcraftplasticraft.blueprint.cancelled", "Projection cancelled");
-        provider.add("message.anvilcraftplasticraft.blueprint.started", "Construction task started");
-        provider.add("message.anvilcraftplasticraft.blueprint.stopped", "Construction task stopped");
-        provider.add(
-            "message.anvilcraftplasticraft.blueprint.placement_locked",
-            "Cannot move a blueprint that already has construction progress"
-        );
-        provider.add(
-            "message.anvilcraftplasticraft.blueprint.placement_out_of_world",
-            "The blueprint must stay inside the world's buildable area"
-        );
-        provider.add(
-            "message.anvilcraftplasticraft.blueprint.placement_overlaps_job",
-            "The blueprint overlaps another deployed construction task"
-        );
-        provider.add("message.anvilcraftplasticraft.construction.completed", "Construction finished");
-        provider.add(
-            "message.anvilcraftplasticraft.construction.completed_incomplete",
-            "Construction finished with skipped blocks"
-        );
-        provider.add("message.anvilcraftplasticraft.construction.wait.material", "Construction is waiting for materials");
-        provider.add("message.anvilcraftplasticraft.construction.wait.occupied", "A construction position is occupied");
-        provider.add("message.anvilcraftplasticraft.construction.wait.world", "A construction position is blocked by the world");
-        provider.add("message.anvilcraftplasticraft.construction.wait.source", "Construction is waiting for the owner to return");
-        provider.add(
-            "message.anvilcraftplasticraft.construction.wait.source_lounge",
-            "Construction is waiting for the container below the lounge"
-        );
-        provider.add("message.anvilcraftplasticraft.construction.wait.energy", "Construction is waiting");
-        provider.add("message.anvilcraftplasticraft.construction.wait.demolition", "Construction is waiting for a demolition allay");
-        provider.add("message.anvilcraftplasticraft.construction.wait.permission", "Construction is waiting for world permission");
-        provider.add(
-            "message.anvilcraftplasticraft.construction.wait.unreachable",
-            "Allays cannot reach a construction position and will retry later"
-        );
-        provider.add(
-            "message.anvilcraftplasticraft.construction.wait.observer",
-            "Construction is waiting for a spyglass allay to keep the work area ticking"
-        );
-        provider.add("message.anvilcraftplasticraft.blueprint.not_structure_disk", "Hold a structure disk to import");
-        provider.add(
-            "message.anvilcraftplasticraft.blueprint.disk_in_molding_use",
-            "This disk stores a molding chamber blueprint"
-        );
-        provider.add("message.anvilcraftplasticraft.blueprint.disk_not_imported", "This disk has no blueprint yet");
-        provider.add("message.anvilcraftplasticraft.blueprint.structure_missing", "Structure data is missing from this world");
-        provider.add("message.anvilcraftplasticraft.blueprint.job_missing", "This deployment no longer exists");
-        provider.add(
-            "message.anvilcraftplasticraft.blueprint.not_owner",
-            "Only the owner or a current teammate can manage this blueprint"
-        );
-        provider.add("message.anvilcraftplasticraft.blueprint.template_missing", "Structure block has no saved template");
-        provider.add("message.anvilcraftplasticraft.blueprint.scanner_data_missing", "This disk has no scanner data");
-        provider.add("message.anvilcraftplasticraft.blueprint.scanner_file_missing", "Scanner structure file is missing");
-        provider.add("message.anvilcraftplasticraft.blueprint.unsafe_filename", "Rejected unsafe file name");
-        provider.add("message.anvilcraftplasticraft.blueprint.unsafe_path", "Rejected unsafe file path");
-        provider.add("message.anvilcraftplasticraft.blueprint.unsafe_symlink", "Rejected symbolic link in structure library");
-        provider.add("message.anvilcraftplasticraft.blueprint.library_directory_failed", "Cannot prepare structure library");
-        provider.add("message.anvilcraftplasticraft.blueprint.structure_write_failed", "Failed to write structure file");
-        provider.add("message.anvilcraftplasticraft.blueprint.structure_read_failed", "Failed to read structure file");
-        provider.add(
-            "message.anvilcraftplasticraft.blueprint.atomic_write_unsupported",
-            "Filesystem does not support atomic writes"
-        );
-        provider.add("message.anvilcraftplasticraft.blueprint.corrupt_size", "Corrupted structure size");
-        provider.add("message.anvilcraftplasticraft.blueprint.corrupt_palette", "Corrupted structure palette");
-        provider.add("message.anvilcraftplasticraft.blueprint.corrupt_blocks", "Corrupted structure blocks");
-        provider.add("message.anvilcraftplasticraft.blueprint.corrupt_entities", "Corrupted structure entities");
-        provider.add("message.anvilcraftplasticraft.blueprint.position_out_of_bounds", "Block position outside declared size");
-        provider.add("message.anvilcraftplasticraft.blueprint.oversized", "Structure exceeds size limits");
-        provider.add("message.anvilcraftplasticraft.blueprint.unknown_block", "Unknown blocks, likely missing mods");
-        provider.add("message.anvilcraftplasticraft.blueprint.unknown_entity", "Unknown entities, likely missing mods");
-        provider.add("message.anvilcraftplasticraft.blueprint.unsupported_format", "Unsupported file format");
-        provider.add("message.anvilcraftplasticraft.blueprint.corrupt_file", "File is not readable compressed NBT");
-        provider.add("message.anvilcraftplasticraft.blueprint.corrupt_litematic", "Corrupted Litematica file");
-        provider.add("message.anvilcraftplasticraft.blueprint.upload_rejected", "Upload rejected");
-        provider.add("message.anvilcraftplasticraft.blueprint.warning.multiple_palettes", "File has multiple palettes, used the first");
-        provider.add("message.anvilcraftplasticraft.blueprint.warning.duplicate_block_position", "Duplicate block positions, kept the last");
-        provider.add("message.anvilcraftplasticraft.blueprint.warning.entity_missing_id", "Entities without id kept as data only");
-        provider.add("message.anvilcraftplasticraft.blueprint.warning.overlapping_regions", "Overlapping regions, later regions override earlier ones");
-        provider.add("message.anvilcraftplasticraft.blueprint.warning.unmapped_fields", "Ignored unmapped extra fields");
     }
 }

@@ -23,7 +23,6 @@ import dev.anvilcraft.plasticraft.molding.bake.MoldingShellAnalyzer;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
-import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContentSummary;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContents;
@@ -37,8 +36,9 @@ import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticStorageHa
 import dev.anvilcraft.plasticraft.molding.product.storage.PlasticraftStorages;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductPreview;
-import dev.anvilcraft.plasticraft.molding.type.MoldingHardHatIconModel;
 import dev.anvilcraft.plasticraft.molding.type.MoldingTypeValidation;
+import dev.dubhe.anvilcraft.AnvilCraft;
+import dev.dubhe.anvilcraft.init.block.ModFluids;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
@@ -57,15 +57,16 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.GameType;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
+import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import net.neoforged.neoforge.fluids.capability.IFluidHandlerItem;
+import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
@@ -190,7 +191,71 @@ public final class MoldingProductGameTests {
         MoldedPlasticData data = completeData(largeCauldron);
         check(MoldingProductTypes.LARGE_CAULDRON_ID.equals(data.finalType()) && data.capacity() == 512,
             "manufacturing dropped the large cauldron upgrade: " + data.finalType() + " " + data.capacity());
+        assertLargeCauldronConfiguredStorage(helper, data);
         helper.succeed();
+    }
+
+    private static void assertLargeCauldronConfiguredStorage(ExtendedGameTestHelper helper, MoldedPlasticData data) {
+        int originalLayerCapacity = AnvilCraft.CONFIG.machines.largeCauldronTankCapacity;
+        int originalStackMultiplier = AnvilCraft.CONFIG.machines.largeCauldronInputStackMultiplier;
+        try {
+            AnvilCraft.CONFIG.machines.largeCauldronTankCapacity = 1234;
+            AnvilCraft.CONFIG.machines.largeCauldronInputStackMultiplier = 12;
+            final MoldedPlasticData[] stored = {data};
+            MoldedPlasticFluidHandler fluids = new MoldedPlasticFluidHandler(
+                () -> Optional.of(stored[0]), replacement -> stored[0] = replacement
+            );
+            MoldedPlasticItemHandler items = new MoldedPlasticItemHandler(
+                () -> Optional.of(stored[0]), replacement -> stored[0] = replacement
+            );
+            List<Fluid> layers = List.of(
+                Fluids.WATER, Fluids.LAVA, ModFluids.OIL.get(), PlasticraftFluids.HIGH_HEAT_FUEL.get(),
+                PlasticraftFluids.PLASTIC_OIL.get(), PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(),
+                PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get(), PlasticraftFluids.CLEAR_PLASTIC_MELT.get()
+            );
+            check(fluids.getTanks() == 8, "configured large cauldron lost fluid layers");
+            for (int layer = 0; layer < layers.size(); layer++) {
+                check(fluids.getTankCapacity(layer) == 1234,
+                    "configured large cauldron rounded its layer capacity at layer " + layer);
+                check(fluids.fill(new FluidStack(layers.get(layer), 2000), IFluidHandler.FluidAction.EXECUTE) == 1234,
+                    "configured large cauldron accepted the wrong fluid amount at layer " + layer);
+            }
+            check(fluids.copyFluids().stream().mapToInt(FluidStack::getAmount).sum() == 9872,
+                "configured large cauldron truncated its eight non-integral-bucket layers");
+            int inputSlot = PlasticCauldronLayout.LARGE.outputSlots();
+            check(items.insertItem(inputSlot, new ItemStack(Items.STONE, 800), false).getCount() == 32
+                    && items.getStackInSlot(inputSlot).getCount() == 768,
+                "configured large cauldron input did not honor the twelve-stack limit");
+            var ops = helper.getLevel().registryAccess().createSerializationContext(NbtOps.INSTANCE);
+            var encoded = MoldedPlasticData.CODEC.encodeStart(ops, stored[0]).getOrThrow();
+            stored[0] = MoldedPlasticData.CODEC.parse(ops, encoded).getOrThrow();
+            check(stored[0].capacity() == 512 && MoldingProductTypes.isLargeCauldron(stored[0].finalType()),
+                "configured capacity invalidated the manufactured large cauldron model");
+            check(items.getStackInSlot(inputSlot).getCount() == 768,
+                "configured large cauldron codec round trip lost its expanded input stack");
+            for (int layer = layers.size() - 1; layer >= 0; layer--) {
+                FluidStack beforeDrain = fluids.getFluidInTank(layer).copy();
+                FluidStack simulated = fluids.topAccess().drain(2000, IFluidHandler.FluidAction.SIMULATE);
+                check(simulated.is(layers.get(layer)) && simulated.getAmount() == 1234
+                        && FluidStack.matches(beforeDrain, fluids.getFluidInTank(layer)),
+                    "configured top access consumed or truncated simulated layer " + layer);
+                FluidStack drained = fluids.topAccess().drain(2000, IFluidHandler.FluidAction.EXECUTE);
+                check(drained.is(layers.get(layer)) && drained.getAmount() == 1234,
+                    "configured top access lost fluid from layer " + layer);
+            }
+            check(fluids.copyFluids().isEmpty(), "configured large cauldron retained drained fluid");
+            int extracted = 0;
+            while (!items.getStackInSlot(inputSlot).isEmpty()) {
+                ItemStack stack = items.extractItem(inputSlot, 800, false);
+                check(!stack.isEmpty() && stack.getCount() <= 64,
+                    "configured large cauldron could not extract a normal stack");
+                extracted += stack.getCount();
+            }
+            check(extracted == 768, "configured large cauldron lost items during extraction");
+        } finally {
+            AnvilCraft.CONFIG.machines.largeCauldronTankCapacity = originalLayerCapacity;
+            AnvilCraft.CONFIG.machines.largeCauldronInputStackMultiplier = originalStackMultiplier;
+        }
     }
 
     @GameTest(timeoutTicks = 20)
@@ -284,50 +349,6 @@ public final class MoldingProductGameTests {
         check(MoldingModelBaker.bake(emberAnvilModel(false)).functionalAnalysis().anvilShape().valid(),
             "ordinary 12 x 12 bottom did not pass the minimum rule");
         helper.succeed();
-    }
-
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "Hard hats accept the bundled icon and reject models wider than 11 px or taller than 16 px")
-    static void hardHatSurfaceAndHeightBoundaries(ExtendedGameTestHelper helper) {
-        checkHardHatValid(MoldingHardHatIconModel.model(), "bundled hard hat icon");
-        checkHardHatValid(centerHat(8.0D), "eight-pixel-tall hat");
-        checkHardHatValid(centerHat(16.0D), "sixteen-pixel-tall hat");
-        checkHardHatValid(offCenterHat(), "off-center hat inside the 11 x 11 footprint");
-        checkHardHatReason(centerHat(16.001D), "allay_hard_hat_too_tall");
-        checkHardHatReason(tooWideHat(), "allay_hard_hat_too_wide");
-        checkHardHatReason(emptyHat(), "allay_hard_hat_empty");
-
-        EditableMoldingModel icon = MoldingHardHatIconModel.model();
-        MoldingModelBounds bounds = MoldingModelBounds.visible(icon).orElseThrow();
-        check(bounds.minimum().equals(vec(18.5, 22, 18.5)) && bounds.maximum().equals(vec(29.5, 28, 29.5)),
-            "bundled hard hat icon bounds drifted: " + bounds);
-        check(icon.elements().size() == 2, "bundled hard hat icon no longer has two cubes");
-        checkIconElement(icon, icon.elements().get(0), vec(18.5, 22, 18.5), vec(29.5, 23, 29.5));
-        checkIconElement(icon, icon.elements().get(1), vec(20, 23, 20), vec(28, 28, 28));
-        for (MoldingElement element : icon.elements()) {
-            MoldingVec3 pivot = MoldingModelBaker.transformedPoint(
-                icon,
-                element,
-                element.transform().pivot()
-            );
-            check(pivot.equals(vec(24, 22, 24)),
-                "bundled hard hat icon element has a different common pivot: " + pivot);
-        }
-        helper.succeed();
-    }
-
-    private static void checkIconElement(
-        EditableMoldingModel model,
-        MoldingElement element,
-        MoldingVec3 expectedFrom,
-        MoldingVec3 expectedTo
-    ) {
-        MoldingVec3 actualFrom = MoldingModelBaker.transformedPoint(model, element, element.from());
-        MoldingVec3 actualTo = MoldingModelBaker.transformedPoint(model, element, element.to());
-        check(actualFrom.equals(expectedFrom) && actualTo.equals(expectedTo),
-            "bundled hard hat icon cube drifted from the complete model: "
-                + element.name() + " " + actualFrom + " -> " + actualTo);
     }
 
     @GameTest(timeoutTicks = 20)
@@ -505,7 +526,7 @@ public final class MoldingProductGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "3x3x3", floor = true)
-    @TestHolder(description = "Chest and tank contents survive capability round trips")
+    @TestHolder(description = "Storage contents survive capability round trips and every material exposes registered item and entity capabilities")
     static void capabilityRoundTrips(ExtendedGameTestHelper helper) {
         EditableMoldingModel chestModel = model(MoldingProductTypes.CHEST_ID);
         MoldedPlasticData chestData = fullData(chestModel);
@@ -575,7 +596,85 @@ public final class MoldingProductGameTests {
         double surfaceY = freeSurface.stream().mapToDouble(Vec3::y).average().orElseThrow();
         check(Math.abs(surfaceY - 3.8D) < 1.0E-5D,
             "axis-aligned liquid volume used the wrong slice integral: " + surfaceY);
+        MoldedPlasticData cauldronData = completeData(cauldronModel(MoldingProductTypes.CAULDRON_ID, 17, 12, 12));
+        for (PlasticMaterial material : PlasticMaterial.values()) {
+            assertRegisteredBucketCapability(material);
+            for (MoldedPlasticData template : List.of(chestData, tankData, cauldronData)) {
+                assertRegisteredProductCapabilities(helper, material, template);
+            }
+        }
         helper.succeed();
+    }
+
+    private static void assertRegisteredBucketCapability(PlasticMaterial material) {
+        ItemStack bucket = new ItemStack(material.bucket());
+        PlasticMeltColor.set(bucket, DyeColor.CYAN);
+        IFluidHandlerItem fluids = bucket.getCapability(Capabilities.FluidHandler.ITEM);
+        check(fluids != null, material.key() + " melt bucket has no registered fluid capability");
+        FluidStack preview = fluids.drain(1_000, IFluidHandler.FluidAction.SIMULATE);
+        check(preview.is(material.melt()) && preview.getAmount() == 1_000
+                && PlasticMeltColor.get(preview) == DyeColor.CYAN,
+            material.key() + " melt bucket capability lost its material, 1000 mB volume or colour");
+        FluidStack drained = fluids.drain(1_000, IFluidHandler.FluidAction.EXECUTE);
+        check(FluidStack.isSameFluidSameComponents(preview, drained) && drained.getAmount() == 1_000,
+            material.key() + " melt bucket drain disagreed with simulation");
+        check(fluids.getContainer().is(Items.BUCKET), material.key() + " drained melt bucket did not return an empty bucket");
+        check(fluids.fill(drained, IFluidHandler.FluidAction.EXECUTE) == 1_000,
+            material.key() + " melt bucket capability did not refill");
+        check(fluids.getContainer().is(material.bucket())
+                && PlasticMeltColor.get(fluids.getContainer()) == DyeColor.CYAN,
+            material.key() + " refilled melt bucket lost its item or colour");
+    }
+
+    private static void assertRegisteredProductCapabilities(
+        ExtendedGameTestHelper helper,
+        PlasticMaterial material,
+        MoldedPlasticData template
+    ) {
+        String carrier = material.key() + " " + template.finalType();
+        ItemStack stack = material.productStack(DyeColor.CYAN);
+        FluidStack moldedMaterial = new FluidStack(material.melt(), template.material().getAmount());
+        PlasticMeltColor.set(moldedMaterial, DyeColor.CYAN);
+        MoldedPlasticData.set(stack, template.withMaterial(moldedMaterial));
+        boolean holdsItems = MoldingProductTypes.isChest(template.finalType())
+            || MoldingProductTypes.isCauldron(template.finalType());
+        int inputSlot = MoldingProductTypes.isCauldron(template.finalType()) ? 8 : 0;
+        if (holdsItems) {
+            IItemHandler items = stack.getCapability(Capabilities.ItemHandler.ITEM);
+            check(items != null, carrier + " has no registered item inventory capability");
+            check(items.insertItem(inputSlot, new ItemStack(Items.DIAMOND, 3), false).isEmpty(),
+                carrier + " registered item inventory rejected input");
+        }
+        if (MoldingProductTypes.holdsFluids(template.finalType())) {
+            IFluidHandlerItem fluids = stack.getCapability(Capabilities.FluidHandler.ITEM);
+            check(fluids != null, carrier + " has no registered item fluid capability");
+            check(fluids.fill(moldedMaterial.copyWithAmount(500), IFluidHandler.FluidAction.EXECUTE) == 500,
+                carrier + " registered item fluid capability rejected melt");
+        }
+
+        UniversalPlasticEntity entity = createProduct(helper, new BlockPos(1, 2, 1), stack, material, DyeColor.CYAN);
+        if (holdsItems) {
+            IItemHandler items = entity.getCapability(Capabilities.ItemHandler.ENTITY);
+            IItemHandler automation = entity.getCapability(Capabilities.ItemHandler.ENTITY_AUTOMATION, Direction.UP);
+            check(items != null && automation != null, carrier + " has no registered entity inventory or automation capability");
+            check(items.getStackInSlot(inputSlot).is(Items.DIAMOND) && items.getStackInSlot(inputSlot).getCount() == 3,
+                carrier + " entity capability lost the item capability contents");
+            check(automation.insertItem(inputSlot, new ItemStack(Items.DIAMOND), false).isEmpty(),
+                carrier + " registered automation rejected input");
+            check(items.extractItem(inputSlot, 4, false).getCount() == 4,
+                carrier + " inventory and automation capabilities did not share the same contents");
+        }
+        if (MoldingProductTypes.holdsFluids(template.finalType())) {
+            IFluidHandler fluids = entity.getCapability(Capabilities.FluidHandler.ENTITY, Direction.UP);
+            check(fluids != null, carrier + " has no registered entity fluid capability");
+            check(fluids.fill(moldedMaterial.copyWithAmount(500), IFluidHandler.FluidAction.EXECUTE) == 500,
+                carrier + " registered entity fluid capability rejected melt");
+            FluidStack drained = fluids.drain(1_000, IFluidHandler.FluidAction.EXECUTE);
+            check(drained.is(material.melt()) && drained.getAmount() == 1_000
+                    && PlasticMeltColor.get(drained) == DyeColor.CYAN,
+                carrier + " item-to-entity fluid transfer lost material, amount or colour");
+        }
+        entity.discard();
     }
 
     @GameTest(timeoutTicks = 20)
@@ -1377,53 +1476,6 @@ public final class MoldingProductGameTests {
                 for (int z = minZ; z < maxZ; z++) mask.set(x, y, z);
             }
         }
-    }
-
-    private static EditableMoldingModel centerHat(double height) {
-        return hatModel(List.of(MoldingElement.cube("Crown", vec(18.5, 20, 18.5), vec(29.5, 20 + height, 29.5))));
-    }
-
-    private static EditableMoldingModel offCenterHat() {
-        return hatModel(List.of(MoldingElement.cube("Crown", vec(0, 20, 0), vec(11, 28, 11))));
-    }
-
-    private static EditableMoldingModel tooWideHat() {
-        return hatModel(List.of(MoldingElement.cube("Brim", vec(18.5, 20, 18.5), vec(29.501, 24, 29.501))));
-    }
-
-    private static EditableMoldingModel emptyHat() {
-        return hatModel(List.of());
-    }
-
-    private static EditableMoldingModel hatModel(List<MoldingElement> elements) {
-        return new EditableMoldingModel(
-            EditableMoldingModel.CURRENT_FORMAT_VERSION,
-            "Hard hat shape test",
-            MoldingProductTypes.ALLAY_HARD_HAT_ID,
-            elements,
-            List.of()
-        );
-    }
-
-    private static void checkHardHatValid(EditableMoldingModel model, String description) {
-        var baked = MoldingModelBaker.bake(model);
-        MoldingTypeValidation validation = MoldingProductTypes.validate(
-            MoldingProductTypes.ALLAY_HARD_HAT_ID,
-            model,
-            baked
-        );
-        check(validation.valid(), description + " was rejected: " + validation.reason());
-    }
-
-    private static void checkHardHatReason(EditableMoldingModel model, String reason) {
-        var baked = MoldingModelBaker.bake(model);
-        MoldingTypeValidation validation = MoldingProductTypes.validate(
-            MoldingProductTypes.ALLAY_HARD_HAT_ID,
-            model,
-            baked
-        );
-        check(!validation.valid() && reason.equals(validation.reason()),
-            "expected " + reason + " but received " + validation);
     }
 
     private static EditableMoldingModel model(ResourceLocation type) {

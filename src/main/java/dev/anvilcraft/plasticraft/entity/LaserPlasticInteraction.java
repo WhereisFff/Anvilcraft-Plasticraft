@@ -1,6 +1,5 @@
 package dev.anvilcraft.plasticraft.entity;
 
-import dev.dubhe.anvilcraft.init.entity.ModDamageTypes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -49,7 +48,8 @@ public final class LaserPlasticInteraction {
         Direction direction,
         BlockPos position,
         boolean checkImpact,
-        float amount
+        float amount,
+        DamageSource source
     ) {
         if (amount <= 0.0F) return;
         AABB searchBounds = checkImpact ? beamBounds(direction, position) : new AABB(position);
@@ -61,7 +61,6 @@ public final class LaserPlasticInteraction {
                 && intersects(entity, direction, position, checkImpact)
         );
         if (plastics.isEmpty()) return;
-        DamageSource source = ModDamageTypes.laser(level);
         plastics.forEach(entity -> entity.hurt(source, amount));
     }
 

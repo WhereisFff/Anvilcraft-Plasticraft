@@ -15,6 +15,6 @@ public final class MoldingPowerBridge {
     }
 
     public static int energyPerWorkingTick() {
-        return Math.multiplyExact(RATED_POWER_KW, AnvilCraft.CONFIG.powerConverter.powerConverterEfficiency);
+        return Math.multiplyExact(RATED_POWER_KW, AnvilCraft.CONFIG.machines.powerConverter.efficiency);
     }
 }

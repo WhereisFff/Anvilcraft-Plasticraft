@@ -2,13 +2,10 @@ package dev.anvilcraft.plasticraft.client;
 
 import dev.anvilcraft.lib.v2.cube.client.CubeSelection;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.blueprint.ConstructionProjectionIndex;
-import dev.anvilcraft.plasticraft.client.blueprint.ClientConstructionOverlayLookup;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureCache;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
 import dev.anvilcraft.plasticraft.client.hud.AdhesiveBondHud;
 import dev.anvilcraft.plasticraft.client.hud.BondedBlockTooltipProvider;
-import dev.anvilcraft.plasticraft.client.gui.PlasticraftCreativeTabState;
 import dev.anvilcraft.plasticraft.client.particle.EnhancedPlasmaJetsParticle;
 import dev.anvilcraft.plasticraft.client.particle.ExperienceVaporParticle;
 import dev.anvilcraft.plasticraft.client.particle.FluidVaporParticle;
@@ -19,11 +16,8 @@ import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticPaletteTintManager;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticPreviewRenderTypes;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticTextureSpriteSource;
-import dev.anvilcraft.plasticraft.client.renderer.StructureDiskPreviewRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.UniversalPlasticItemRenderer;
-import dev.anvilcraft.plasticraft.client.renderer.blueprint.BlueprintProjectionRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.Plastic3DPrintingComponentRenderer;
-import dev.anvilcraft.plasticraft.client.renderer.blockentity.AllayLoungeRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.PlasticMoldingChamberRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingViewportResources;
 import dev.anvilcraft.plasticraft.client.renderer.entity.CatalyticPressLidRenderer;
@@ -33,8 +27,8 @@ import dev.anvilcraft.plasticraft.client.selection.PlasticSelectionIntegration;
 import dev.anvilcraft.plasticraft.init.PlasticraftParticles;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
-import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.item.PlasticraftCreativeTabState;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.api.tooltip.HudTooltipManager;
 import net.minecraft.client.renderer.BlockEntityWithoutLevelRenderer;
@@ -133,66 +127,31 @@ public final class AnvilcraftPlasticraftClient {
                 RenderType.translucent()
             );
             ItemBlockRenderTypes.setRenderLayer(PlasticraftBlocks.CLEAR_PLASTIC.get(), RenderType.translucent());
-            ItemProperties.register(
-                PlasticraftBlocks.UNIVERSAL_PLASTIC.asItem(),
-                AnvilcraftPlasticraft.of("plastic_color"),
-                (stack, level, entity, seed) -> PlasticMeltColor.get(stack).getId()
-            );
-            ItemProperties.register(
-                PlasticraftBlocks.ENGINEERING_PLASTIC.asItem(),
-                AnvilcraftPlasticraft.of("plastic_color"),
-                (stack, level, entity, seed) -> PlasticMeltColor.get(stack).getId()
-            );
-            ItemProperties.register(
-                PlasticraftBlocks.HEAT_RESISTANT_PLASTIC.asItem(),
-                AnvilcraftPlasticraft.of("plastic_color"),
-                (stack, level, entity, seed) -> PlasticMeltColor.get(stack).getId()
-            );
-            ItemProperties.register(
-                PlasticraftBlocks.CLEAR_PLASTIC.asItem(),
-                AnvilcraftPlasticraft.of("plastic_color"),
-                (stack, level, entity, seed) -> PlasticMeltColor.get(stack).getId()
-            );
-            ConstructionProjectionIndex.setOverlayLookup(ClientConstructionOverlayLookup::plannedOverlay);
+            ItemBlockRenderTypes.setRenderLayer(PlasticraftFluids.ELASTIC_PLASTIC_MELT.get(), RenderType.translucent());
+            ItemBlockRenderTypes.setRenderLayer(
+                PlasticraftFluids.FLOWING_ELASTIC_PLASTIC_MELT.get(), RenderType.translucent());
+            ItemBlockRenderTypes.setRenderLayer(PlasticraftBlocks.ELASTIC_PLASTIC.get(), RenderType.translucent());
+            for (PlasticMaterial material : PlasticMaterial.values()) {
+                ItemProperties.register(
+                    material.productBlock().asItem(),
+                    AnvilcraftPlasticraft.of("plastic_color"),
+                    (stack, level, entity, seed) -> PlasticMeltColor.get(stack).getId()
+                );
+            }
         });
     }
 
     private static void registerBlockColors(RegisterColorHandlersEvent.Block event) {
-        registerMeltCauldronColor(event, PlasticMaterial.UNIVERSAL, PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get());
-        registerMeltCauldronColor(
-            event,
-            PlasticMaterial.ENGINEERING,
-            PlasticraftBlocks.ENGINEERING_PLASTIC_MELT_CAULDRON.get()
-        );
-        registerMeltCauldronColor(
-            event,
-            PlasticMaterial.HEAT_RESISTANT,
-            PlasticraftBlocks.HEAT_RESISTANT_PLASTIC_MELT_CAULDRON.get()
-        );
-        registerMeltCauldronColor(event, PlasticMaterial.CLEAR, PlasticraftBlocks.CLEAR_PLASTIC_MELT_CAULDRON.get());
+        for (PlasticMaterial material : PlasticMaterial.values()) {
+            registerMeltCauldronColor(event, material, material.meltCauldron());
+        }
     }
 
     private static void registerItemColors(RegisterColorHandlersEvent.Item event) {
-        registerGranuleColor(event, PlasticMaterial.UNIVERSAL, PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get());
-        registerGranuleColor(event, PlasticMaterial.ENGINEERING, PlasticraftItems.ENGINEERING_PLASTIC_GRANULE.get());
-        registerGranuleColor(
-            event,
-            PlasticMaterial.HEAT_RESISTANT,
-            PlasticraftItems.HEAT_RESISTANT_PLASTIC_GRANULE.get()
-        );
-        registerGranuleColor(event, PlasticMaterial.CLEAR, PlasticraftItems.CLEAR_PLASTIC_GRANULE.get());
-        registerMeltBucketColor(event, PlasticMaterial.UNIVERSAL, PlasticraftItems.UNIVERSAL_PLASTIC_MELT_BUCKET.get());
-        registerMeltBucketColor(
-            event,
-            PlasticMaterial.ENGINEERING,
-            PlasticraftItems.ENGINEERING_PLASTIC_MELT_BUCKET.get()
-        );
-        registerMeltBucketColor(
-            event,
-            PlasticMaterial.HEAT_RESISTANT,
-            PlasticraftItems.HEAT_RESISTANT_PLASTIC_MELT_BUCKET.get()
-        );
-        registerMeltBucketColor(event, PlasticMaterial.CLEAR, PlasticraftItems.CLEAR_PLASTIC_MELT_BUCKET.get());
+        for (PlasticMaterial material : PlasticMaterial.values()) {
+            registerGranuleColor(event, material, material.granule());
+            registerMeltBucketColor(event, material, material.bucket());
+        }
     }
 
     private static void registerMeltCauldronColor(
@@ -252,15 +211,11 @@ public final class AnvilcraftPlasticraftClient {
                 return UniversalPlasticItemRenderer.getInstance();
             }
         }, PlasticraftBlocks.UNIVERSAL_PLASTIC.asItem(), PlasticraftBlocks.ENGINEERING_PLASTIC.asItem(),
-            PlasticraftBlocks.CLEAR_PLASTIC.asItem(), PlasticraftBlocks.HEAT_RESISTANT_PLASTIC.asItem());
+            PlasticraftBlocks.CLEAR_PLASTIC.asItem(), PlasticraftBlocks.HEAT_RESISTANT_PLASTIC.asItem(),
+            PlasticraftBlocks.ELASTIC_PLASTIC.asItem());
     }
 
     private static void registerAdditionalModels(ModelEvent.RegisterAdditional event) {
-        event.register(AllayLoungeRenderer.HATCH_LEFT_MODEL);
-        event.register(AllayLoungeRenderer.HATCH_RIGHT_MODEL);
-        event.register(AllayLoungeRenderer.INDICATOR_BLUE_MODEL);
-        event.register(AllayLoungeRenderer.INDICATOR_GREEN_MODEL);
-        event.register(AllayLoungeRenderer.INDICATOR_RED_MODEL);
         event.register(PlasticMoldingChamberRenderer.PRINTER_FRAME_MODEL);
         event.register(PlasticMoldingChamberRenderer.PRINTER_GLASS_MODEL);
         event.register(PlasticMoldingChamberRenderer.PRINTER_GUI_MODEL);
@@ -296,8 +251,6 @@ public final class AnvilcraftPlasticraftClient {
         event.registerReloadListener(PlasticPaletteTintManager.INSTANCE);
         event.registerReloadListener(DynamicPlasticTextureManager.INSTANCE);
         event.registerReloadListener((ResourceManagerReloadListener) resourceManager -> {
-            BlueprintProjectionRenderer.clearCache();
-            StructureDiskPreviewRenderer.clearCache();
         });
     }
 }

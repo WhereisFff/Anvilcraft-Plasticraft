@@ -162,6 +162,31 @@ public final class PlasticraftItems {
             })
             .register();
 
+    public static final ItemEntry<UniversalPlasticMeltBucketItem> ELASTIC_PLASTIC_MELT_BUCKET =
+        AnvilcraftPlasticraft.REGISTRUM
+            .item(
+                "elastic_plastic_melt_bucket",
+                properties -> new UniversalPlasticMeltBucketItem(PlasticraftFluids.ELASTIC_PLASTIC_MELT, properties)
+            )
+            .lang("Elastic Plastic Melt Bucket")
+            .initialProperties(() -> new Item.Properties().stacksTo(1).craftRemainder(Items.BUCKET))
+            .tag(Tags.Items.BUCKETS)
+            .model(ModelProviderUtil::bucket)
+            .register();
+    public static final ItemEntry<UniversalPlasticGranuleItem> ELASTIC_PLASTIC_GRANULE =
+        AnvilcraftPlasticraft.REGISTRUM
+            .item("elastic_plastic_granule", UniversalPlasticGranuleItem::new)
+            .lang("Elastic Plastic Granule")
+            .model((context, provider) -> {
+                provider.existingFileHelper.trackGenerated(
+                    provider.modLoc("item/elastic_plastic_granule"),
+                    ModelProvider.TEXTURE
+                );
+                provider.generated(context, provider.modLoc("item/elastic_plastic_granule"))
+                    .renderType("minecraft:translucent");
+            })
+            .register();
+
     private PlasticraftItems() {
     }
 

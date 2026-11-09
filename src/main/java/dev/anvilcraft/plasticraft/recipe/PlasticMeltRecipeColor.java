@@ -18,13 +18,15 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /** 在一次世界内配方中传递熔体的源颜色和染料目标色。 */
 public final class PlasticMeltRecipeColor {
-    private static final InWorldRecipeData<State> DATA = InWorldRecipeData.of(
+    private static final InWorldRecipeData<Map<Long, State>> DATA = InWorldRecipeData.of(
         AnvilcraftPlasticraft.of("plastic_melt_recipe_color"),
-        (context, key) -> new State()
+        (context, key) -> new HashMap<>()
     );
 
     private PlasticMeltRecipeColor() {
@@ -38,24 +40,32 @@ public final class PlasticMeltRecipeColor {
         if (melt.isEmpty()) return;
         PlasticMaterial material = PlasticMaterial.fromMelt(melt).orElse(null);
         if (material == null) return;
-        State state = context.computeIfAbsent(DATA);
+        State state = state(context);
         state.cauldronPos = pos;
         state.sourceColor = colorAt(context, pos, melt);
         state.material = material;
         state.hasMelt = true;
+        if (!state.scheduled) {
+            state.scheduled = true;
+            context.afterCommit(() -> apply(context, state));
+        }
     }
 
     public static void captureDye(InWorldRecipeContext context, DyeColor color) {
-        context.computeIfAbsent(DATA).dyeColor = color;
+        state(context).dyeColor = color;
     }
 
     public static DyeColor resultColor(InWorldRecipeContext context) {
-        State state = context.computeIfAbsent(DATA);
+        State state = state(context);
         return state.dyeColor == null ? state.sourceColor : state.dyeColor;
     }
 
-    public static void apply(InWorldRecipeContext context) {
-        State data = context.computeIfAbsent(DATA);
+    private static State state(InWorldRecipeContext context) {
+        // 一次上下文可规划多批配方，染料颜色只属于本批，提交回调也必须持有本批状态。
+        return context.computeIfAbsent(DATA).computeIfAbsent(context.getBatchId(), ignored -> new State());
+    }
+
+    private static void apply(InWorldRecipeContext context, State data) {
         if (!data.hasMelt || data.dyeColor == null || data.cauldronPos == null || data.material == null) return;
         BlockPos pos = data.cauldronPos;
         BlockState blockState = context.getLevel().getBlockState(pos);
@@ -139,5 +149,6 @@ public final class PlasticMeltRecipeColor {
         private DyeColor dyeColor;
         private PlasticMaterial material;
         private boolean hasMelt;
+        private boolean scheduled;
     }
 }

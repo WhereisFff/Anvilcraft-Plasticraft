@@ -48,13 +48,15 @@ A cauldron may be round, square or any odd shape as long as it abstracts to a wa
 - Every plastic cauldron can store lava normally; only heat-resistant plastic remains immune to fire damage
 - Plastic Melt inside a cauldron slows entities that fall into it, just like the melt fluid block
 
+When filled with ordinary oil and ignited, molded cauldrons use AnvilCraft’s Fish Tank fuel behavior: each 1mB extends the jet by 24gt by default, with consumption and duration following AnvilCraft’s configuration. Enhanced jets still consume 10mB of High-Heat Fuel per jet per gt
+
 ## Large Plastic Cauldron
 
 A cauldron whose top opening covers **more than** 1600 square pixels is automatically upgraded to a Large Plastic Cauldron. This is an upgrade rather than a downgrade, and capacity is no longer derived from the cavity
 
-- Capacity is fixed at 512B, split into 8 layers of 64B, so it holds up to 8 different fluids at once
-- It has 8 input slots and 32 output slots; input slots stack 9 times the vanilla limit, which is 576 per slot for ordinary items
-- Each anvil impact processes at most 9 groups, with one normal stack of the selected ingredient as each group's consumption budget; ordinary stackable items allow up to 9×64 items, subject to each recipe's consumption amount
+- It has 8 fluid layers, each holding 64B by default for 512B total and up to 8 different fluids; layer capacity follows AnvilCraft’s Large Cauldron configuration
+- It has 8 input slots and 32 output slots; input slots stack 9 times the vanilla limit by default, which is 576 per slot for ordinary items; the multiplier follows AnvilCraft’s configuration
+- Each anvil impact processes at most 9 groups by default, following AnvilCraft’s configured processing limit. Each group has one normal stack of the selected ingredient as its consumption budget; default ordinary stackable items allow up to 9×64 items, subject to each recipe’s consumption amount
 - Inputs are processed first, with recipe priorities reconsidered after every group. Active processing blocks defer item compression until other recipes have been attempted. Outputs present before the impact may then be reprocessed; newly produced outputs are excluded from that impact
 - Supports AnvilCraft fluid mixing and liquid enchantment reactions. Remaining groups try fluid-only recipes when item processing has not changed the fluids. Mixing and liquid enchantment preserve their ingredients and fluids if outputs do not fit
 - The model's horizontal bounds form a 3×3 grid: the center selects outputs and the surrounding eight cells select inputs. This grid rotates with the model. Empty-hand clicks on the inner floor retrieve all items from the selected input cell, or all outputs from the center; the first stack goes into the main hand and the rest into the inventory

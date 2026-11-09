@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.event;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.item.HighViscosityResinBlockItem;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionResult;
@@ -50,6 +51,16 @@ public final class HighViscosityResinEvents {
         event.setCanceled(true);
     }
 
+    public static void useItem(PlayerInteractEvent.RightClickItem event) {
+        ItemStack stack = event.getItemStack();
+        if (!stack.is(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())) return;
+        // 本体的方块空隙放置会返回原物品栈，捕获成功后需在进入该路径前结束交互，避免覆盖手中的捕获物。
+        InteractionResult result = HighViscosityResinBlockItem.captureLookedAtSkull(event.getEntity(), stack);
+        if (!result.consumesAction()) return;
+        event.setCancellationResult(result);
+        event.setCanceled(true);
+    }
+
     public static void registerCauldronFluidContent(RegisterCauldronFluidContentEvent event) {
         event.register(
             PlasticraftBlocks.LIQUID_HIGH_VISCOSITY_RESIN_CAULDRON.get(),
@@ -69,29 +80,13 @@ public final class HighViscosityResinEvents {
             1000,
             Layered4LevelCauldronBlock.LEVEL
         );
-        event.register(
-            PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get(),
-            PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(),
-            1000,
-            Layered4LevelCauldronBlock.LEVEL
-        );
-        event.register(
-            PlasticraftBlocks.ENGINEERING_PLASTIC_MELT_CAULDRON.get(),
-            PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get(),
-            1000,
-            Layered4LevelCauldronBlock.LEVEL
-        );
-        event.register(
-            PlasticraftBlocks.HEAT_RESISTANT_PLASTIC_MELT_CAULDRON.get(),
-            PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT.get(),
-            1000,
-            Layered4LevelCauldronBlock.LEVEL
-        );
-        event.register(
-            PlasticraftBlocks.CLEAR_PLASTIC_MELT_CAULDRON.get(),
-            PlasticraftFluids.CLEAR_PLASTIC_MELT.get(),
-            1000,
-            Layered4LevelCauldronBlock.LEVEL
-        );
+        for (PlasticMaterial material : PlasticMaterial.values()) {
+            event.register(
+                material.meltCauldron(),
+                material.melt(),
+                1000,
+                Layered4LevelCauldronBlock.LEVEL
+            );
+        }
     }
 }

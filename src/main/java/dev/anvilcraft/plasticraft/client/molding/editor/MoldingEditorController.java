@@ -15,11 +15,13 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.DoubleUnaryOperator;
 
 /** 客户端编辑状态只产生语义命令，服务端快照始终可以覆盖并重建它。 */
 public final class MoldingEditorController {
@@ -79,6 +81,10 @@ public final class MoldingEditorController {
         return !selectedElements().isEmpty();
     }
 
+    public boolean hasTransformableSelection() {
+        return !editableSelectedElements().isEmpty();
+    }
+
     public boolean hasClipboardElements() {
         return !this.clipboardElements.isEmpty();
     }
@@ -111,14 +117,60 @@ public final class MoldingEditorController {
     }
 
     public void select(UUID id, boolean additive) {
+        if (!availableIds().contains(id)) return;
+        this.cancelDrag();
         this.selection = this.selection.select(id, additive);
     }
 
+    public void setSelection(List<UUID> ids, boolean additive) {
+        this.cancelDrag();
+        Set<UUID> available = availableIds();
+        Set<UUID> next = additive ? new LinkedHashSet<>(this.selection.ids()) : new LinkedHashSet<>();
+        ids.stream().filter(available::contains).forEach(next::add);
+        this.selection = new MoldingSelection(List.copyOf(next));
+    }
+
+    public void selectViewport(UUID id, boolean additive, boolean selectGroup) {
+        MoldingElement element = this.model.elements().stream().filter(value -> value.id().equals(id)).findFirst().orElse(null);
+        if (element == null || !selectable(element)) return;
+        select(selectGroup ? element.groupId().orElse(id) : id, additive);
+    }
+
+    public void selectAll() {
+        setSelection(this.model.elements().stream().filter(this::selectable).map(MoldingElement::id).toList(), false);
+    }
+
+    public void invertSelection() {
+        Set<UUID> selected = selectedElements().stream().map(MoldingElement::id).collect(HashSet::new, Set::add, Set::addAll);
+        setSelection(this.model.elements().stream().filter(this::selectable)
+            .map(MoldingElement::id).filter(id -> !selected.contains(id)).toList(), false);
+    }
+
+    private Set<UUID> availableIds() {
+        Set<UUID> ids = new HashSet<>();
+        this.model.elements().forEach(element -> ids.add(element.id()));
+        this.model.groups().forEach(group -> ids.add(group.id()));
+        return ids;
+    }
+
+    private boolean selectable(MoldingElement element) {
+        if (!element.visible() || element.locked()) return false;
+        Map<UUID, MoldingGroup> groups = this.model.groupMap();
+        MoldingGroup parent = element.groupId().map(groups::get).orElse(null);
+        while (parent != null) {
+            if (!parent.visible() || parent.locked()) return false;
+            parent = parent.parentId().map(groups::get).orElse(null);
+        }
+        return true;
+    }
+
     public void selectRange(List<UUID> orderedIds, UUID anchor, UUID target, boolean additive) {
+        this.cancelDrag();
         this.selection = this.selection.selectRange(orderedIds, anchor, target, additive);
     }
 
     public void clearSelection() {
+        this.cancelDrag();
         this.selection = MoldingSelection.EMPTY;
     }
 
@@ -142,7 +194,11 @@ public final class MoldingEditorController {
     }
 
     public Vector3d selectionCenter() {
-        List<MoldingVec3> vertices = selectedElements().stream()
+        return centerOf(selectedElements());
+    }
+
+    private Vector3d centerOf(List<MoldingElement> elements) {
+        List<MoldingVec3> vertices = elements.stream()
             .flatMap(element -> MoldingModelBaker.transformedVertices(this.model, element).stream())
             .toList();
         if (vertices.isEmpty()) return new Vector3d(24.0D, 24.0D, 24.0D);
@@ -165,10 +221,10 @@ public final class MoldingEditorController {
 
     public Vector3d gizmoOrigin() {
         if (this.dragGizmoOrigin != null) return new Vector3d(this.dragGizmoOrigin);
-        List<MoldingElement> selected = selectedElements();
-        if (this.tool != MoldingTool.ROTATE && this.tool != MoldingTool.PIVOT) return selectionCenter();
+        List<MoldingElement> selected = editableSelectedElements();
+        if (this.tool != MoldingTool.ROTATE && this.tool != MoldingTool.PIVOT) return centerOf(selected);
         if (selected.size() == 1) return vector(MoldingDragTransaction.worldPivot(this.model, selected.getFirst()));
-        return sharedPivot(selected).map(MoldingEditorController::vector).orElseGet(this::selectionCenter);
+        return sharedPivot(selected).map(MoldingEditorController::vector).orElseGet(() -> centerOf(selected));
     }
 
     public MoldingGizmoBasis gizmoBasis() {
@@ -206,8 +262,20 @@ public final class MoldingEditorController {
     }
 
     public boolean deleteSelection() {
-        List<UUID> elementIds = selectedElements().stream().map(MoldingElement::id).toList();
+        List<UUID> elementIds = editableSelectedElements().stream().map(MoldingElement::id).toList();
         Set<UUID> groupIds = selectedGroupClosure();
+        Map<UUID, MoldingGroup> groups = this.model.groupMap();
+        Set<UUID> protectedGroups = new HashSet<>();
+        for (MoldingElement element : this.model.elements()) {
+            if (isEffectivelyLocked(element, groups)) addGroupAncestors(protectedGroups, element.groupId(), groups);
+        }
+        for (MoldingGroup group : this.model.groups()) {
+            if (isEffectivelyLocked(group, groups)) {
+                protectedGroups.add(group.id());
+                addGroupAncestors(protectedGroups, group.parentId(), groups);
+            }
+        }
+        groupIds.removeAll(protectedGroups);
         List<MoldingCommand> commands = new ArrayList<>();
         if (!elementIds.isEmpty()) commands.add(new MoldingCommand.RemoveElements(elementIds));
         this.model.groups().stream()
@@ -219,15 +287,17 @@ public final class MoldingEditorController {
         boolean submitted = this.submit(
             commands.size() == 1 ? commands.getFirst() : new MoldingCommand.Batch(commands)
         );
-        if (submitted) this.selection = MoldingSelection.EMPTY;
+        if (submitted) this.selection = this.selection.retain(availableIds());
         return submitted;
     }
 
     public boolean deleteAllElements() {
-        List<UUID> elementIds = this.model.elements().stream().map(MoldingElement::id).toList();
+        Map<UUID, MoldingGroup> groups = this.model.groupMap();
+        List<UUID> elementIds = this.model.elements().stream().filter(element -> !isEffectivelyLocked(element, groups))
+            .map(MoldingElement::id).toList();
         if (elementIds.isEmpty()) return false;
         boolean submitted = this.submit(new MoldingCommand.RemoveElements(elementIds));
-        if (submitted) this.selection = MoldingSelection.EMPTY;
+        if (submitted) this.selection = this.selection.retain(availableIds());
         return submitted;
     }
 
@@ -258,6 +328,18 @@ public final class MoldingEditorController {
     public boolean cutSelection() {
         this.copySelection();
         return this.deleteSelection();
+    }
+
+    public boolean duplicateSelection() {
+        List<MoldingElement> previousElements = this.clipboardElements;
+        List<MoldingGroup> previousGroups = this.clipboardGroups;
+        try {
+            this.copySelection();
+            return this.paste();
+        } finally {
+            this.clipboardElements = previousElements;
+            this.clipboardGroups = previousGroups;
+        }
     }
 
     public boolean paste() {
@@ -349,29 +431,60 @@ public final class MoldingEditorController {
     }
 
     public boolean toggleHidden() {
+        Set<UUID> selected = selectedRootIds();
+        Map<UUID, MoldingGroup> groups = this.model.groupMap();
+        boolean visible = this.model.elements().stream().anyMatch(element -> selected.contains(element.id())
+            && !isEffectivelyLocked(element, groups) && element.visible())
+            || this.model.groups().stream().anyMatch(group -> selected.contains(group.id())
+                && !isEffectivelyLocked(group, groups) && group.visible());
         return replaceSelectedObjects(
             element -> new MoldingElement(
                 element.id(), element.name(), element.groupId(), element.from(), element.to(),
-                element.transform(), !element.visible(), element.locked()
+                element.transform(), !visible, element.locked()
             ),
             group -> new MoldingGroup(
-                group.id(), group.name(), group.parentId(), group.transform(), !group.visible(), group.locked()
+                group.id(), group.name(), group.parentId(), group.transform(), !visible, group.locked()
             ),
             false
         );
     }
 
     public boolean toggleLocked() {
+        Set<UUID> selected = selectedRootIds();
+        Map<UUID, MoldingGroup> groups = this.model.groupMap();
+        boolean locked = this.model.elements().stream().filter(element -> selected.contains(element.id())
+            && !hasLockedAncestor(element.groupId(), groups)).allMatch(MoldingElement::locked)
+            && this.model.groups().stream().filter(group -> selected.contains(group.id())
+                && !hasLockedAncestor(group.parentId(), groups)).allMatch(MoldingGroup::locked);
         return replaceSelectedObjects(
             element -> new MoldingElement(
                 element.id(), element.name(), element.groupId(), element.from(), element.to(),
-                element.transform(), element.visible(), !element.locked()
+                element.transform(), element.visible(), !locked
             ),
             group -> new MoldingGroup(
-                group.id(), group.name(), group.parentId(), group.transform(), group.visible(), !group.locked()
+                group.id(), group.name(), group.parentId(), group.transform(), group.visible(), !locked
             ),
             true
         );
+    }
+
+    public boolean toggleHidden(UUID id) {
+        return toggleObject(id, false);
+    }
+
+    public boolean toggleLocked(UUID id) {
+        return toggleObject(id, true);
+    }
+
+    private boolean toggleObject(UUID id, boolean lock) {
+        if (!availableIds().contains(id)) return false;
+        MoldingSelection previous = this.selection;
+        try {
+            this.selection = new MoldingSelection(List.of(id));
+            return lock ? toggleLocked() : toggleHidden();
+        } finally {
+            this.selection = previous;
+        }
     }
 
     public boolean renamePrimary(String name) {
@@ -400,7 +513,7 @@ public final class MoldingEditorController {
     }
 
     public boolean centerPivot() {
-        Vector3d center = this.selectionCenter();
+        Vector3d center = centerOf(editableSelectedElements());
         MoldingVec3 pivot = new MoldingVec3(center.x(), center.y(), center.z());
         return replaceSelected(
             element -> MoldingDragTransaction.withWorldPivot(this.model, element, pivot),
@@ -409,47 +522,51 @@ public final class MoldingEditorController {
     }
 
     public boolean align(MoldingAxis axis) {
-        Optional<MoldingElement> primary = this.primaryElement();
+        Optional<MoldingElement> primary = this.primaryElement().or(() -> editableSelectedElements().stream().findFirst());
         if (primary.isEmpty()) return false;
-        double target = position(primary.get(), axis);
-        return replaceSelected(element -> {
-            MoldingTransform old = element.transform();
-            double delta = target - position(element, axis);
-            return MoldingDragTransaction.replaceTransform(element, new MoldingTransform(
-                MoldingDragTransaction.add(old.translation(), axis, delta),
-                old.rotation(), old.scale(), old.pivot()
-            ));
-        }, false);
+        double target = position(this.model, primary.get(), axis);
+        return replaceSelected(element -> MoldingElementTransforms.move(this.model, element,
+            MoldingDragTransaction.add(MoldingVec3.ZERO, axis, target - position(this.model, element, axis))), false);
     }
 
     public boolean mirror(MoldingAxis axis) {
-        return replaceSelected(element -> {
-            MoldingTransform old = element.transform();
-            MoldingVec3 scale = MoldingDragTransaction.withComponent(
-                old.scale(), axis, -MoldingDragTransaction.component(old.scale(), axis)
-            );
-            return MoldingDragTransaction.replaceTransform(element, new MoldingTransform(
-                old.translation(), old.rotation(), scale, old.pivot()
-            ));
-        }, false);
+        Vector3d center = centerOf(editableSelectedElements());
+        MoldingVec3 origin = new MoldingVec3(center.x, center.y, center.z);
+        return replaceSelected(element -> MoldingElementTransforms.mirror(this.model, element, origin, axis), false);
     }
 
     public boolean setNumeric(MoldingNumericProperty property, MoldingAxis axis, double value) {
         if (!Double.isFinite(value)) return false;
+        return replaceSelected(element -> setNumeric(this.model, element, property, axis, value), false, true);
+    }
+
+    public boolean setNumeric(MoldingNumericProperty property, MoldingAxis axis, String expression) {
         try {
-            return replaceSelected(element -> setNumeric(element, property, axis, value), false);
+            DoubleUnaryOperator operation = MoldingNumericExpression.parse(expression);
+            return replaceSelected(element -> setNumeric(this.model, element, property, axis,
+                operation.applyAsDouble(numericValue(this.model, element, property, axis))), false, true);
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
+
+    public boolean adjustNumeric(MoldingNumericProperty property, MoldingAxis axis, String draft, double delta) {
+        if (!Double.isFinite(delta)) return false;
+        try {
+            DoubleUnaryOperator operation = draft.isBlank() ? value -> value : MoldingNumericExpression.parse(draft);
+            return replaceSelected(element -> setNumeric(this.model, element, property, axis,
+                operation.applyAsDouble(numericValue(this.model, element, property, axis)) + delta), false, true);
         } catch (IllegalArgumentException exception) {
             return false;
         }
     }
 
     public Optional<Double> numericValue(MoldingNumericProperty property, MoldingAxis axis) {
-        List<MoldingElement> selected = selectedElements();
+        List<MoldingElement> selected = editableSelectedElements();
         if (selected.isEmpty()) return Optional.empty();
-        double value = numericValue(selected.getFirst(), property, axis);
-        return selected.stream().allMatch(element -> Math.abs(numericValue(element, property, axis) - value) < 1.0E-8D)
-            ? Optional.of(value)
-            : Optional.empty();
+        double value = numericValue(this.model, selected.getFirst(), property, axis);
+        return selected.stream().allMatch(element -> Math.abs(numericValue(this.model, element, property, axis) - value) < 1.0E-8D)
+            ? Optional.of(value) : Optional.empty();
     }
 
     public boolean beginDrag(MoldingAxis axis) {
@@ -458,7 +575,8 @@ public final class MoldingEditorController {
 
     public boolean beginDrag(MoldingAxis axis, double axisDirection) {
         if (!canSubmit()
-            || selectedElements().isEmpty()
+            || !hasTransformableSelection()
+            || this.tool == MoldingTool.SCALE && !MoldingGizmoBasis.supportsScale(this.model, this.selection)
             || this.tool == MoldingTool.NONE
             || this.tool == MoldingTool.MIRROR) {
             return false;
@@ -469,20 +587,27 @@ public final class MoldingEditorController {
             this.selection,
             this.tool,
             axis,
-            axisDirection
+            axisDirection,
+            new MoldingVec3(gizmoOrigin.x, gizmoOrigin.y, gizmoOrigin.z)
         );
         this.dragGizmoOrigin = this.tool == MoldingTool.ROTATE ? gizmoOrigin : null;
         return true;
     }
 
     public void updateDrag(double amount) {
-        if (this.dragTransaction == null) return;
-        this.model = this.dragTransaction.preview(amount);
+        this.updateDrag(amount, this.tool == MoldingTool.ROTATE ? 15.0D : 1.0D);
+    }
+
+    public boolean updateDrag(double amount, double step) {
+        if (this.dragTransaction == null) return false;
         try {
+            this.model = this.dragTransaction.preview(amount, step);
             MoldingModelBaker.bake(this.model);
             this.invalidPreview = false;
+            return true;
         } catch (IllegalArgumentException exception) {
             this.invalidPreview = true;
+            return false;
         }
     }
 
@@ -523,14 +648,25 @@ public final class MoldingEditorController {
     }
 
     private boolean replaceSelected(ElementReplacement replacement, boolean includeLocked) {
+        return replaceSelected(replacement, includeLocked, false);
+    }
+
+    private boolean replaceSelected(ElementReplacement replacement, boolean includeLocked, boolean acceptUnchanged) {
+        if (!canSubmit()) return false;
         List<MoldingCommand> commands = new ArrayList<>();
         Map<UUID, MoldingGroup> groups = this.model.groupMap();
         for (MoldingElement element : selectedElements()) {
             if (isEffectivelyLocked(element, groups) && !includeLocked) continue;
-            MoldingElement replaced = replacement.replace(element);
+            MoldingElement replaced;
+            try {
+                replaced = replacement.replace(element);
+            } catch (IllegalArgumentException exception) {
+                return false;
+            }
             if (!replaced.equals(element)) commands.add(new MoldingCommand.ReplaceElement(replaced));
         }
-        if (commands.isEmpty() || commands.size() > MoldingCommand.MAX_BATCH_SIZE) return false;
+        if (commands.isEmpty()) return acceptUnchanged && hasTransformableSelection();
+        if (commands.size() > MoldingCommand.MAX_BATCH_SIZE) return false;
         return this.submit(commands.size() == 1 ? commands.getFirst() : new MoldingCommand.Batch(commands));
     }
 
@@ -542,14 +678,14 @@ public final class MoldingEditorController {
         Map<UUID, MoldingGroup> groups = this.model.groupMap();
         List<MoldingCommand> commands = new ArrayList<>();
         for (MoldingGroup group : this.model.groups()) {
-            if (!this.selection.contains(group.id())) continue;
+            if (!this.selection.contains(group.id()) || hasSelectedAncestor(group.parentId(), Set.copyOf(this.selection.ids()), groups)) continue;
             if (hasLockedAncestor(group.parentId(), groups)) continue;
             if (group.locked() && !includeLocked) continue;
             MoldingGroup replaced = groupReplacement.replace(group);
             if (!replaced.equals(group)) commands.add(new MoldingCommand.ReplaceGroup(replaced));
         }
         for (MoldingElement element : this.model.elements()) {
-            if (!this.selection.contains(element.id())) continue;
+            if (!this.selection.contains(element.id()) || hasSelectedAncestor(element.groupId(), Set.copyOf(this.selection.ids()), groups)) continue;
             if (hasLockedAncestor(element.groupId(), groups)) continue;
             if (element.locked() && !includeLocked) continue;
             MoldingElement replaced = elementReplacement.replace(element);
@@ -575,6 +711,22 @@ public final class MoldingEditorController {
 
     private boolean canSubmit() {
         return this.writable && !this.pending && this.dragTransaction == null;
+    }
+
+    private Set<UUID> selectedRootIds() {
+        Map<UUID, MoldingGroup> groups = this.model.groupMap();
+        Set<UUID> selected = Set.copyOf(this.selection.ids());
+        Set<UUID> roots = new HashSet<>();
+        this.model.groups().stream().filter(group -> selected.contains(group.id())
+            && !hasSelectedAncestor(group.parentId(), selected, groups)).forEach(group -> roots.add(group.id()));
+        this.model.elements().stream().filter(element -> selected.contains(element.id())
+            && !hasSelectedAncestor(element.groupId(), selected, groups)).forEach(element -> roots.add(element.id()));
+        return roots;
+    }
+
+    private List<MoldingElement> editableSelectedElements() {
+        Map<UUID, MoldingGroup> groups = this.model.groupMap();
+        return selectedElements().stream().filter(element -> !isEffectivelyLocked(element, groups)).toList();
     }
 
     private List<MoldingElement> selectedElements() {
@@ -683,77 +835,38 @@ public final class MoldingEditorController {
     }
 
     private static MoldingElement setNumeric(
-        MoldingElement element,
-        MoldingNumericProperty property,
-        MoldingAxis axis,
-        double value
+        EditableMoldingModel model, MoldingElement element, MoldingNumericProperty property, MoldingAxis axis, double value
     ) {
         MoldingTransform old = element.transform();
         return switch (property) {
-            case POSITION -> {
-                double rounded = Math.rint(value);
-                double delta = rounded - position(element, axis);
-                yield MoldingDragTransaction.replaceTransform(element, new MoldingTransform(
-                    MoldingDragTransaction.add(old.translation(), axis, delta),
-                    old.rotation(),
-                    old.scale(),
-                    MoldingDragTransaction.add(old.pivot(), axis, -delta)
-                ));
-            }
-            case PIVOT -> MoldingDragTransaction.replaceTransform(element, new MoldingTransform(
-                old.translation(), old.rotation(), old.scale(),
-                MoldingDragTransaction.withComponent(
-                    old.pivot(),
-                    axis,
-                    MoldingDragTransaction.component(MoldingCoordinateSystem.ORIGIN, axis)
-                        + Math.rint(value)
-                        - MoldingDragTransaction.component(old.translation(), axis)
-                )
-            ));
+            case POSITION -> MoldingElementTransforms.move(model, element,
+                MoldingDragTransaction.add(MoldingVec3.ZERO, axis, value - position(model, element, axis)));
+            case PIVOT -> MoldingElementTransforms.pivot(model, element, MoldingDragTransaction.withComponent(
+                MoldingElementTransforms.worldPivot(model, element), axis,
+                value + MoldingDragTransaction.component(MoldingCoordinateSystem.ORIGIN, axis)));
             case ROTATION -> MoldingDragTransaction.replaceTransform(element, new MoldingTransform(
-                old.translation(), MoldingDragTransaction.withComponent(old.rotation(), axis, value),
-                old.scale(), old.pivot()
-            ));
-            case SIZE -> resizeTo(element, axis, value);
+                old.translation(), MoldingDragTransaction.withComponent(old.rotation(), axis, value), old.scale(), old.pivot()));
+            case SIZE -> new MoldingElement(element.id(), element.name(), element.groupId(), element.from(),
+                MoldingDragTransaction.withComponent(element.to(), axis, MoldingDragTransaction.component(element.from(), axis) + value),
+                old, element.visible(), element.locked());
         };
     }
 
-    private static MoldingElement resizeTo(MoldingElement element, MoldingAxis axis, double rawValue) {
-        double size = Math.rint(rawValue);
-        MoldingVec3 to = MoldingDragTransaction.withComponent(
-            element.to(),
-            axis,
-            MoldingDragTransaction.component(element.from(), axis) + size
-        );
-        return new MoldingElement(
-            element.id(), element.name(), element.groupId(), element.from(), to,
-            element.transform(), element.visible(), element.locked()
-        );
-    }
-
     private static double numericValue(
-        MoldingElement element,
-        MoldingNumericProperty property,
-        MoldingAxis axis
+        EditableMoldingModel model, MoldingElement element, MoldingNumericProperty property, MoldingAxis axis
     ) {
         return switch (property) {
-            case POSITION -> position(element, axis);
-            case SIZE -> MoldingDragTransaction.component(element.to(), axis)
-                - MoldingDragTransaction.component(element.from(), axis);
-            case PIVOT -> MoldingDragTransaction.component(
-                element.transform().pivot()
-                    .add(element.transform().translation())
-                    .subtract(MoldingCoordinateSystem.ORIGIN),
-                axis
-            );
+            case POSITION -> position(model, element, axis);
+            case SIZE -> MoldingDragTransaction.component(element.to(), axis) - MoldingDragTransaction.component(element.from(), axis);
+            case PIVOT -> MoldingDragTransaction.component(MoldingElementTransforms.worldPivot(model, element)
+                .subtract(MoldingCoordinateSystem.ORIGIN), axis);
             case ROTATION -> MoldingDragTransaction.component(element.transform().rotation(), axis);
         };
     }
 
-    private static double position(MoldingElement element, MoldingAxis axis) {
-        return MoldingDragTransaction.component(element.from(), axis)
-            + MoldingDragTransaction.component(element.transform().translation(), axis)
-            - MoldingDragTransaction.component(MoldingCoordinateSystem.ORIGIN, axis);
+    private static double position(EditableMoldingModel model, MoldingElement element, MoldingAxis axis) {
+        return MoldingDragTransaction.component(MoldingModelBaker.transformedPoint(model, element, element.from())
+            .subtract(MoldingCoordinateSystem.ORIGIN), axis);
     }
 
     @FunctionalInterface

@@ -6,7 +6,6 @@ import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.client.renderer.ClearPlasticRenderTypes;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
-import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingConvexHull;
@@ -138,7 +137,9 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
     }
 
     private static boolean matches(UniversalPlasticEntity source, UniversalPlasticEntity other) {
-        return isTransparent(other) && source.getDisplayTint() == other.getDisplayTint();
+        return isTransparent(other)
+            && source.getDisplayState().getBlock() == other.getDisplayState().getBlock()
+            && source.getDisplayTint() == other.getDisplayTint();
     }
 
     private static boolean isLiveWorldEntity(UniversalPlasticEntity entity) {
@@ -247,7 +248,8 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
     }
 
     private static boolean matches(UniversalPlasticEntity entity, BlockState state) {
-        return state.is(PlasticraftBlocks.CLEAR_PLASTIC.get())
+        return PlasticEntityRenderHelper.isTransparent(state)
+            && entity.getDisplayState().getBlock() == state.getBlock()
             && entity.getDisplayTint() == DyeableMaterial.tint(state);
     }
 

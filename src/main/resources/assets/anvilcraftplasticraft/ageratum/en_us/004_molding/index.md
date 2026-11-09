@@ -14,5 +14,3 @@ The molding chamber does one simple thing: it turns the Cube models you build in
 2. [Edit, import and save models](010_model_editor_and_import.md)
 3. [Cast and print](020_casting_and_printing.md)
 4. [Production modes, platform and logistics](030_production_modes.md)
-
-The same disk item also carries construction blueprints; that side is covered in [Blueprint Deployment](../005_construction/020_blueprint_deployment.md)

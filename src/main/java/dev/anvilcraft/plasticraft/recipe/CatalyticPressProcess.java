@@ -50,6 +50,7 @@ public final class CatalyticPressProcess {
     private static final String CLEAR_PLASTIC_PROCESS = "clear_plastic_catalysis";
     private static final String ENGINEERING_PLASTIC_PROCESS = "engineering_plastic_catalysis";
     private static final String HEAT_RESISTANT_PLASTIC_PROCESS = "heat_resistant_plastic_catalysis";
+    private static final String ELASTIC_PLASTIC_PROCESS = "elastic_plastic_catalysis";
 
     private CatalyticPressProcess() {
     }
@@ -74,7 +75,12 @@ public final class CatalyticPressProcess {
         if (stored.is(PlasticraftFluids.PLASTIC_OIL.get())) {
             double heat = work.heat();
             GlassCatalysts glass = glassCatalysts(level, container);
-            if (glass.hasAny()) {
+            if (work.cold()) {
+                process = ELASTIC_PLASTIC_PROCESS;
+                workPerTick = PlasticOilCatalysis.ELASTIC_REACTION_POWER;
+                outputFluid = PlasticMaterial.ELASTIC.melt();
+                outputColor = null;
+            } else if (glass.hasAny()) {
                 process = CLEAR_PLASTIC_PROCESS;
                 workPerTick = heat * PlasticOilCatalysis.catalystMultiplier(
                     glass.royalItems(),

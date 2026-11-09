@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.item;
 
 import dev.anvilcraft.lib.v2.registrum.util.CreativeVariantPickerItem;
 import dev.anvilcraft.lib.v2.registrum.util.CreativeVariantPickerRegistry;
-import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
@@ -49,6 +49,12 @@ public interface CreativeColorVariantItem extends CreativeVariantPickerItem {
 
     @Override
     default boolean isCreativePickerEnabled(ItemStack source) {
-        return AnvilcraftPlasticraft.CLIENT_CONFIG.foldCreativeColorVariants;
+        for (PlasticMaterial material : PlasticMaterial.values()) {
+            if (source.is(material.bucket()) || source.is(material.granule())
+                || material.key().equals(PlasticItemData.getMaterial(source))) {
+                return !PlasticraftCreativeTabState.isExpanded(material);
+            }
+        }
+        return false;
     }
 }

@@ -598,12 +598,11 @@ public final class PlasticEntityPhysics {
 
     /** 仅当本刻移动前重力面已接触方块时返回 true。 */
     public static boolean hasImmediateBlockContact(FallingBlockEntity entity, Direction gravityDirection) {
-        return PlasticConvexCollisionResolver.hasBlockSupport(
-            entity,
-            entity.getBoundingBox(),
-            gravityDirection,
-            FACE_EPSILON * 4.0D
-        );
+        return hasImmediateBlockContact(entity, entity.getBoundingBox(), gravityDirection);
+    }
+
+    public static boolean hasImmediateBlockContact(FallingBlockEntity entity, AABB box, Direction gravityDirection) {
+        return PlasticConvexCollisionResolver.hasBlockSupport(entity, box, gravityDirection, FACE_EPSILON * 4.0D);
     }
 
     /** 仅丢弃指向当前支撑面的速度分量。 */

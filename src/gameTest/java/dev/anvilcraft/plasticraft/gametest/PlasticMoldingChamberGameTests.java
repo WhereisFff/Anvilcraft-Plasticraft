@@ -52,6 +52,7 @@ import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItems;
+import dev.dubhe.anvilcraft.item.property.component.StoredItem;
 import dev.dubhe.anvilcraft.item.property.component.StructureDiskData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -75,6 +76,8 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
@@ -823,34 +826,6 @@ public final class PlasticMoldingChamberGameTests {
     }
 
     @GameTest(timeoutTicks = 20)
-    @EmptyTemplate(value = "9x7x9", floor = true)
-    @TestHolder(description = "High-precision products require the printing component and need no forming-mode action")
-    static void highPrecisionTypeUsesInstalledPrintingComponent(ExtendedGameTestHelper helper) {
-        PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
-        EditableMoldingModel hardHat = EditableMoldingModel.empty().withElements(List.of(
-            MoldingElement.cube("Hat", new MoldingVec3(23, 24, 23), new MoldingVec3(25, 25, 25))
-        )).withRequestedType(MoldingProductTypes.ALLAY_HARD_HAT_ID);
-        check(chamber.replaceEditableModel(hardHat, chamber.revision()).accepted(),
-            "valid hard hat model was rejected");
-        PlasticMoldingChamberBlockEntity.MachineOutcome missingComponent = chamber.requestLock();
-        check(!missingComponent.accepted() && missingComponent.reason().equals("missing_printing_component"),
-            "high-precision product locked without a printing component");
-
-        helper.getLevel().setBlockAndUpdate(
-            chamber.getBlockPos().above(),
-            PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get().defaultBlockState()
-        );
-        PlasticMoldingChamberBlockEntity.MachineOutcome installedComponent = chamber.requestLock();
-        check(installedComponent.accepted(),
-            "installed printing component did not unlock high-precision processing: "
-                + installedComponent.reason());
-        check(chamber.cycleFormingMode() == MoldingFormingMode.PRINTING
-                && chamber.requiredClayBalls() == 0,
-            "high-precision cycle did not automatically lock as clay-free printing");
-        helper.succeed();
-    }
-
-    @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "3x3x3", floor = true)
     @TestHolder(description = "Printing voxels scan Y layers with X rows and alternating Z directions")
     static void printingPlanUsesSnakeOrder(ExtendedGameTestHelper helper) {
@@ -1165,7 +1140,7 @@ public final class PlasticMoldingChamberGameTests {
 
     @GameTest(timeoutTicks = 20)
     @EmptyTemplate(value = "9x7x9", floor = true)
-    @TestHolder(description = "Editable blueprints use structure disks and load oversized models as editable drafts")
+    @TestHolder(description = "Structure disks preserve embedded models, clear independent copies, and replace native data atomically")
     static void blueprintDiskAtomicStoreAndOfflineLoad(ExtendedGameTestHelper helper) throws BlueprintException {
         PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
         ServerPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
@@ -1215,6 +1190,37 @@ public final class PlasticMoldingChamberGameTests {
         check(shared.ownerId().equals(player.getUUID()), "shared file owner was not the storing player");
 
         ItemStack originalDisk = disk.copy();
+        player.setItemInHand(InteractionHand.MAIN_HAND, disk.copy());
+        player.setShiftKeyDown(false);
+        PlayerInteractEvent.RightClickItem ordinaryUse = NeoForge.EVENT_BUS.post(
+            new PlayerInteractEvent.RightClickItem(player, InteractionHand.MAIN_HAND)
+        );
+        check(!ordinaryUse.isCanceled() && ItemStack.matches(player.getMainHandItem(), originalDisk),
+            "ordinary structure disk use was intercepted or erased the molding model");
+        for (InteractionHand hand : InteractionHand.values()) {
+            ItemStack independentCopy = originalDisk.copy();
+            independentCopy.set(ModComponents.DISPLAY_ITEM, new StoredItem(new ItemStack(Items.STONE)));
+            player.setItemInHand(hand, independentCopy);
+            player.setShiftKeyDown(true);
+            PlayerInteractEvent.RightClickItem clearUse = NeoForge.EVENT_BUS.post(
+                new PlayerInteractEvent.RightClickItem(player, hand)
+            );
+            check(clearUse.isCanceled() && clearUse.getCancellationResult().consumesAction(),
+                "sneak-use did not consume the molding disk clear interaction in " + hand);
+            check(MoldingBlueprintDisk.isStructureDisk(independentCopy)
+                    && !independentCopy.has(ModComponents.DISK_DATA)
+                    && !independentCopy.has(ModComponents.DISPLAY_ITEM)
+                    && MoldingBlueprintDisk.read(independentCopy).isEmpty()
+                    && MoldingBlueprintDisk.stateToken(independentCopy).isEmpty(),
+                "sneak-use left data or a display item on the cleared structure disk in " + hand);
+            check(MoldingBlueprintDisk.read(originalDisk).orElseThrow().modelHash().equals(embedded.modelHash()),
+                "clearing a copied disk changed the original embedded model");
+            check(MoldingBlueprintLibrary.read(player.getServer(), stored.selectedFileId(), stored.fileRevision())
+                    .modelHash().equals(embedded.modelHash()),
+                "clearing a disk deleted or changed its shared model");
+            player.setItemInHand(hand, ItemStack.EMPTY);
+        }
+        player.setShiftKeyDown(false);
         check(chamber.replaceEditableModel(cubeModel(4.0D).withName("Replacement Draft"), chamber.revision()).accepted(),
             "replacement draft was rejected");
         String occupiedToken = MoldingBlueprintDisk.stateToken(disk);
@@ -1294,7 +1300,7 @@ public final class PlasticMoldingChamberGameTests {
             player.getGameProfile().getName(),
             System.currentTimeMillis()
         );
-        ItemStack blockStructureDisk = new ItemStack(ModItems.STRUCTURE_DISK.get());
+        ItemStack blockStructureDisk = originalDisk.copy();
         blockStructureDisk.set(ModComponents.STRUCTURE_DISK_DATA, new StructureDiskData(
             "test_structure.nbt",
             "Test Block Structure",
@@ -1305,12 +1311,41 @@ public final class PlasticMoldingChamberGameTests {
             5,
             false
         ));
+        blockStructureDisk.set(ModComponents.DISPLAY_ITEM, new StoredItem(new ItemStack(Items.STONE)));
+        ItemStack nativeDisk = blockStructureDisk.copy();
+        nativeDisk.remove(ModComponents.DISK_DATA);
+        for (ItemStack nativeDataDisk : List.of(nativeDisk, blockStructureDisk)) {
+            check(!MoldingBlueprintDisk.hasBlueprintData(nativeDataDisk)
+                    && MoldingBlueprintDisk.read(nativeDataDisk).isEmpty()
+                    && MoldingBlueprintDisk.previewToken(nativeDataDisk).isEmpty(),
+                "native structure data did not take precedence over an embedded molding model");
+            ItemStack beforeUse = nativeDataDisk.copy();
+            player.setItemInHand(InteractionHand.MAIN_HAND, nativeDataDisk);
+            player.setShiftKeyDown(true);
+            PlayerInteractEvent.RightClickItem nativeUse = NeoForge.EVENT_BUS.post(
+                new PlayerInteractEvent.RightClickItem(player, InteractionHand.MAIN_HAND)
+            );
+            check(!nativeUse.isCanceled() && ItemStack.matches(beforeUse, nativeDataDisk),
+                "molding disk clearing intercepted or modified a native structure disk");
+        }
+        player.setShiftKeyDown(false);
+        player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+        String originalStructureToken = MoldingBlueprintDisk.stateToken(blockStructureDisk);
+        ItemStack changedDisplay = blockStructureDisk.copy();
+        changedDisplay.set(ModComponents.DISPLAY_ITEM, new StoredItem(new ItemStack(Items.DIRT)));
+        check(!originalStructureToken.equals(MoldingBlueprintDisk.stateToken(changedDisplay)),
+            "changing the disk display item did not invalidate a pending overwrite");
         ItemStack oversizedDisk = MoldingBlueprintDisk.writeCopy(
             blockStructureDisk,
             oversizedBlueprint
         );
-        check(!oversizedDisk.has(ModComponents.STRUCTURE_DISK_DATA),
-            "molding blueprint disk retained the replaced block structure data");
+        check(!oversizedDisk.has(ModComponents.STRUCTURE_DISK_DATA)
+                && !oversizedDisk.has(ModComponents.DISPLAY_ITEM),
+            "molding blueprint disk retained replaced native structure data or its display item");
+        check(blockStructureDisk.has(ModComponents.STRUCTURE_DISK_DATA)
+                && blockStructureDisk.has(ModComponents.DISPLAY_ITEM)
+                && originalStructureToken.equals(MoldingBlueprintDisk.stateToken(blockStructureDisk)),
+            "writing the replacement disk mutated its source copy");
         check(MoldingBlueprintDisk.read(oversizedDisk).isPresent(),
             "oversized model could not be stored on a structure disk");
         check(MoldingModelBounds.visible(oversizedModel)

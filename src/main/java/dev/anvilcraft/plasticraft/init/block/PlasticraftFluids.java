@@ -190,6 +190,30 @@ public final class PlasticraftFluids {
         () -> new StationaryPlasticMeltFluid.Flowing(clearPlasticMeltProperties())
     );
 
+    public static final DeferredHolder<FluidType, FluidType> ELASTIC_PLASTIC_MELT_TYPE = FLUID_TYPES.register(
+        "elastic_plastic_melt",
+        () -> new UniversalPlasticMeltFluidType(FluidType.Properties.create()
+            .descriptionId("block.anvilcraftplasticraft.elastic_plastic_melt")
+            .density(1900)
+            .viscosity(20000)
+            .fallDistanceModifier(0.0F)
+            .motionScale(0.01D)
+            .canSwim(false)
+            .canDrown(false)
+            .supportsBoating(false)
+            .sound(SoundActions.BUCKET_FILL, SoundEvents.BUCKET_FILL)
+            .sound(SoundActions.BUCKET_EMPTY, SoundEvents.BUCKET_EMPTY),
+            () -> PlasticraftItems.ELASTIC_PLASTIC_MELT_BUCKET.asStack())
+    );
+    public static final DeferredHolder<Fluid, BaseFlowingFluid> ELASTIC_PLASTIC_MELT = FLUIDS.register(
+        "elastic_plastic_melt",
+        () -> new StationaryPlasticMeltFluid.Source(elasticPlasticMeltProperties())
+    );
+    public static final DeferredHolder<Fluid, BaseFlowingFluid> FLOWING_ELASTIC_PLASTIC_MELT = FLUIDS.register(
+        "flowing_elastic_plastic_melt",
+        () -> new StationaryPlasticMeltFluid.Flowing(elasticPlasticMeltProperties())
+    );
+
     public static final BaseFlowingFluid.Properties HIGH_VISCOSITY_RESIN_PROPERTIES = new BaseFlowingFluid.Properties(
         LIQUID_HIGH_VISCOSITY_RESIN_TYPE,
         LIQUID_HIGH_VISCOSITY_RESIN,
@@ -284,6 +308,19 @@ public final class PlasticraftFluids {
             .levelDecreasePerBlock(8)
             .explosionResistance(100.0F);
 
+    public static final BaseFlowingFluid.Properties ELASTIC_PLASTIC_MELT_PROPERTIES =
+        new BaseFlowingFluid.Properties(
+            ELASTIC_PLASTIC_MELT_TYPE,
+            ELASTIC_PLASTIC_MELT,
+            FLOWING_ELASTIC_PLASTIC_MELT
+        )
+            .bucket(PlasticraftItems.ELASTIC_PLASTIC_MELT_BUCKET)
+            .block(PlasticraftBlocks.ELASTIC_PLASTIC_MELT)
+            .tickRate(40)
+            .slopeFindDistance(1)
+            .levelDecreasePerBlock(8)
+            .explosionResistance(100.0F);
+
     private PlasticraftFluids() {
     }
 
@@ -333,6 +370,10 @@ public final class PlasticraftFluids {
         return CLEAR_PLASTIC_MELT_PROPERTIES;
     }
 
+    private static BaseFlowingFluid.Properties elasticPlasticMeltProperties() {
+        return ELASTIC_PLASTIC_MELT_PROPERTIES;
+    }
+
     public static void register(IEventBus modEventBus) {
         FLUID_TYPES.register(modEventBus);
         FLUIDS.register(modEventBus);
@@ -373,6 +414,15 @@ public final class PlasticraftFluids {
                 0x99E7F6FF
             ),
             CLEAR_PLASTIC_MELT_TYPE
+        );
+        event.registerFluidType(
+            new UniversalPlasticMeltFluidExtension(
+                PlasticMaterial.ELASTIC,
+                AnvilcraftPlasticraft.of("fluid/elastic_plastic_melt"),
+                false,
+                0x99FFFFFF
+            ),
+            ELASTIC_PLASTIC_MELT_TYPE
         );
     }
 

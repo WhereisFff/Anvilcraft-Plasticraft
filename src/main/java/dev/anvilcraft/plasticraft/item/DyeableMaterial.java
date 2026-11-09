@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.item;
 
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
@@ -43,10 +44,7 @@ public final class DyeableMaterial {
     /** 明确标记物品堆是否属于支持调色板的材料。 */
     public static boolean supportsDyeing(String materialKey) {
         return "hdpe".equals(materialKey)
-            || "universal_plastic".equals(materialKey)
-            || "engineering_plastic".equals(materialKey)
-            || "heat_resistant_plastic".equals(materialKey)
-            || "clear_plastic".equals(materialKey);
+            || PlasticMaterial.fromKey(materialKey).map(PlasticMaterial::supportsDyeing).orElse(false);
     }
 
     /** 调色板材料按需启用的共用方块状态属性和着色计算。 */

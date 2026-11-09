@@ -10,6 +10,7 @@ import org.joml.Vector3d;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -45,8 +46,24 @@ public record MoldingGizmoBasis(MoldingVec3 x, MoldingVec3 y, MoldingVec3 z) {
     ) {
         if (tool != MoldingTool.SCALE) return WORLD;
         List<MoldingElement> selected = selectedElements(model, selection);
-        if (selected.size() != 1) return WORLD;
-        MoldingElement element = selected.getFirst();
+        if (selected.isEmpty()) return WORLD;
+        return forElement(model, selected.getFirst());
+    }
+
+    public static boolean supportsScale(EditableMoldingModel model, MoldingSelection selection) {
+        List<MoldingElement> selected = selectedElements(model, selection);
+        if (selected.isEmpty()) return false;
+        MoldingGizmoBasis first = forElement(model, selected.getFirst());
+        for (MoldingElement element : selected) {
+            MoldingGizmoBasis basis = forElement(model, element);
+            for (MoldingAxis axis : MoldingAxis.values()) {
+                if (first.direction(axis).dot(basis.direction(axis)) < 1.0D - 1.0E-7D) return false;
+            }
+        }
+        return true;
+    }
+
+    static MoldingGizmoBasis forElement(EditableMoldingModel model, MoldingElement element) {
         MoldingVec3 pivot = element.transform().pivot();
         MoldingVec3 worldPivot = MoldingModelBaker.transformedPoint(model, element, pivot);
         MoldingVec3 x = transformedAxis(model, element, pivot, worldPivot, MoldingAxis.X);
@@ -101,9 +118,17 @@ public record MoldingGizmoBasis(MoldingVec3 x, MoldingVec3 y, MoldingVec3 z) {
             }
         } while (changed);
         List<MoldingElement> result = new ArrayList<>();
+        Map<UUID, MoldingGroup> groups = model.groupMap();
         for (MoldingElement element : model.elements()) {
             if (selection.contains(element.id()) || element.groupId().filter(selectedGroups::contains).isPresent()) {
-                result.add(element);
+                if (element.locked()) continue;
+                MoldingGroup parent = element.groupId().map(groups::get).orElse(null);
+                boolean locked = false;
+                while (parent != null) {
+                    locked |= parent.locked();
+                    parent = parent.parentId().map(groups::get).orElse(null);
+                }
+                if (!locked) result.add(element);
             }
         }
         return List.copyOf(result);

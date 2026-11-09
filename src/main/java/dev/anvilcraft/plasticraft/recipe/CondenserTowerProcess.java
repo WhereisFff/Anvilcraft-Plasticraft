@@ -19,6 +19,7 @@ import dev.anvilcraft.plasticraft.vapor.VaporStack;
 import dev.anvilcraft.plasticraft.vapor.VaporizationContext;
 import dev.anvilcraft.plasticraft.vapor.VaporizationManager;
 import dev.anvilcraft.plasticraft.vapor.event.LargeCauldronProcessEvent;
+import dev.dubhe.anvilcraft.AnvilCraft;
 import dev.dubhe.anvilcraft.api.block.IIgnitableCauldron;
 import dev.dubhe.anvilcraft.api.event.LargeCauldronEvent;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
@@ -179,15 +180,16 @@ public final class CondenserTowerProcess {
         BlockCache cache = new BlockCache(level);
         Fluid fluid = cauldron.getFluid(cache, targetPos);
         if (!fluid.builtInRegistryHolder().is(ModFluidTags.OIL)) return;
-        int interval = Math.max(1, Math.ceilDiv(250, vaporizationRate));
+        int consumedAmount = 250 * AnvilCraft.CONFIG.machines.plasmaJets.cauldronConsumeAmount;
+        int interval = Math.max(1, Math.ceilDiv(consumedAmount, vaporizationRate));
         if (Math.floorMod(level.getGameTime() + targetPos.asLong(), interval) != 0) return;
-        if (cauldron.consumeOnce(cache, targetPos)) {
+        if (cauldron.consumeOnce(cache, targetPos, false).isPresent()) {
             cache.accept();
             emitSmallContainerVaporParticles(
                 level,
                 ordinaryCauldronSurface(targetPos, targetState),
                 vaporizationRate,
-                new FluidStack(fluid, 250)
+                new FluidStack(fluid, consumedAmount)
             );
         }
     }
@@ -920,7 +922,7 @@ public final class CondenserTowerProcess {
 
     static Vec3 largeCauldronSurface(LargeCauldronBlockEntity cauldron) {
         float fill = Math.clamp(
-            (float) cauldron.getFluids().getTotalAmount() / LargeCauldronFluidHandler.TOTAL_CAPACITY,
+            (float) cauldron.getFluids().getTotalAmount() / LargeCauldronFluidHandler.totalCapacity(),
             0.0F,
             1.0F
         );

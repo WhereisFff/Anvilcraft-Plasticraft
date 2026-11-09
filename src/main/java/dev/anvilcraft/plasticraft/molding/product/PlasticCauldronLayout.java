@@ -1,6 +1,8 @@
 package dev.anvilcraft.plasticraft.molding.product;
 
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
+import dev.dubhe.anvilcraft.AnvilCraft;
+import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 
@@ -15,11 +17,9 @@ import net.minecraft.world.item.ItemStack;
 public enum PlasticCauldronLayout {
     /** 硬化树脂炼药锅同规格：输出 8 槽、输入 8 槽、单次落砧一次配方。 */
     NORMAL(8, 8, 1, 1, 1),
-    /** 对齐本体大型炼药锅：输出 32 槽、输入 8 槽 × 9 倍堆叠、8 层 × 64 B、单次落砧最多 9 组加工。 */
+    /** 对齐本体大型炼药锅，输入堆叠倍率、分层容量与加工上限在运行时读取配置。 */
     LARGE(32, 8, 9, 8, 9);
 
-    /** 所有形态中最大的输入槽堆叠倍率，供不知道具体形态的通用校验取上界。 */
-    public static final int MAX_STACK_MULTIPLIER = 9;
     /** 物品未知时的槽位基准上限，与本体 {@code LargeCauldronInputHandler.getSlotLimit} 的空槽取值一致。 */
     private static final int DEFAULT_STACK_LIMIT = 64;
 
@@ -76,24 +76,28 @@ public enum PlasticCauldronLayout {
     /** 输入槽按物品自身堆叠上限的整数倍放宽，输出槽只取物品堆叠上限，与本体大型锅一致。 */
     public int slotLimit(int slot, ItemStack stack) {
         int base = stack.isEmpty() ? DEFAULT_STACK_LIMIT : stack.getMaxStackSize();
-        return this.isOutputSlot(slot) ? base : base * this.inputStackMultiplier;
+        return this.isOutputSlot(slot) ? base : base * this.inputStackMultiplier();
     }
 
     public int fluidLayers() {
         return this.fluidLayers;
     }
 
-    /**
-     * 单层流体上限，由制品总容量均分到各层。
-     *
-     * <p>普通锅只有一层，上限即整锅容量；大型锅固定 512 B / 8 层 = 64 B，与本体大型炼药锅一致。
-     */
+    /** 普通锅由模型容量决定，大型锅与本体共用运行时配置，保留不足一桶的精确 mB 数量。 */
     public int fluidLayerCapacity(int capacity) {
-        return Math.multiplyExact(capacity, 1000) / this.fluidLayers;
+        return this == LARGE ? LargeCauldronFluidHandler.tankCapacity() : Math.multiplyExact(capacity, 1000);
+    }
+
+    public int fluidCapacity(int capacity) {
+        return Math.multiplyExact(this.fluidLayerCapacity(capacity), this.fluidLayers);
+    }
+
+    public int inputStackMultiplier() {
+        return this == LARGE ? AnvilCraft.CONFIG.machines.largeCauldronInputStackMultiplier : this.inputStackMultiplier;
     }
 
     /** 单次落砧最多执行的加工组数，大型锅每组以一个普通堆叠为预算。 */
     public int recipePasses() {
-        return this.recipePasses;
+        return this == LARGE ? AnvilCraft.CONFIG.machines.largeCauldronMaxProcessEfficiency : this.recipePasses;
     }
 }

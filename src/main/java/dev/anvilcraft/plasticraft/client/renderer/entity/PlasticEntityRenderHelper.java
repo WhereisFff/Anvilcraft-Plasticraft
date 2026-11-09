@@ -43,7 +43,7 @@ public final class PlasticEntityRenderHelper {
     ) {
         BlockState state = PlasticEntityRenderTransforms.canonicalize(entity.getDisplayState());
         BakedModel model = dispatcher.getBlockModel(state);
-        RenderType renderType = state.is(PlasticraftBlocks.CLEAR_PLASTIC.get())
+        RenderType renderType = isTransparent(state)
             ? ClearPlasticRenderTypes.block()
             : entity instanceof ResinAnvilEntity || entity instanceof CatalyticPressLidEntity
                 ? Sheets.translucentItemSheet()
@@ -96,11 +96,15 @@ public final class PlasticEntityRenderHelper {
 
     /** 逐帧多次问询，因此避开熔体栈复制和 Optional 链。 */
     public static boolean isTransparent(UniversalPlasticEntity entity) {
-        if (entity.getDisplayState().is(PlasticraftBlocks.CLEAR_PLASTIC.get())) return true;
+        if (isTransparent(entity.getDisplayState())) return true;
         MoldedPlasticData data = entity.getMoldedData().orElse(null);
         if (data == null) return false;
         PlasticMaterial material = PlasticMaterial.fromMeltOrNull(data.materialView());
         return material != null && material.isTransparent();
+    }
+
+    public static boolean isTransparent(BlockState state) {
+        return state.is(PlasticraftBlocks.CLEAR_PLASTIC.get()) || state.is(PlasticraftBlocks.ELASTIC_PLASTIC.get());
     }
 
     /** 使用本体铁砧锤的蓝色半透明材质渲染方向预览。 */

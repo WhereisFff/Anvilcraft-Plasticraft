@@ -14,12 +14,4 @@ public final class MachineModelTransforms {
         return new Matrix4f().translation(0.5F, 0, 0.5F)
             .rotate(Axis.YP.rotationDegrees(-rotation)).translate(-0.5F, 0, -0.5F);
     }
-
-    public static Matrix4f loungeHatch(boolean left, float openness) {
-        float hingeX = (left ? 1.0F : 15.0F) / 16;
-        float hingeY = 14.5F / 16;
-        float angle = 100.0F * openness * (left ? 1 : -1);
-        return new Matrix4f().translation(hingeX, hingeY, 0.5F)
-            .rotate(Axis.ZP.rotationDegrees(angle)).translate(-hingeX, -hingeY, -0.5F);
-    }
 }

@@ -21,6 +21,7 @@ A cauldron you can carry away. Like a resin anvil it is an entity affected by gr
 - Sneak-use it with any Anvil Hammer to collect the cauldron together with its items, though fluid does not come along
 - A non-magnetic cauldron pours the moment its opening faces sideways or downward: partial fluid is discarded, a full tank creates a source when the target accepts it, and otherwise it just empties. A magnetized cauldron never pours on its own
 - Catalysis and cauldron recipes require the opening to face up
+- The cauldron itself catalyzes Elastic Plastic: fill an upward-facing cauldron with Plastic Oil and provide cold below. No extra resin is needed; equal-volume conversion takes 400gt (20 seconds). Water, ice, snow and other accepted coolant blocks qualify, as explained in [Plastic Melts](../002_refining/010_plastic_melts.md)
 - When facing up, catalysis, plasma jets, and every falling-anvil cauldron recipe search from the center and every covered part of the physical bottom face along current gravity for one block. A valid processing block below the center takes priority, then the remaining covered bottom cells are tried; that is why a small cauldron can share a cell with a campfire, and a cauldron taller than one block still reads the block beside its actual bottom
 - Striking a cauldron with an Anvil Hammer processes only the one you actually hit. A falling anvil instead processes every cauldron whose collision box actually enters its landing cell, never cauldrons in neighboring cells
 - Non-placeable fluids such as milk are still emptied, they simply leave no block behind
@@ -31,3 +32,7 @@ A Hardened Resin Cauldron can store lava normally, but its body is not fire-resi
 </warning>
 
 Plastic cauldrons are a first-class product type in the Plastic Molding Chamber, taking their shape and capacity from your own model while behaving exactly like a Hardened Resin Cauldron, and every plastic material can store lava normally. A model with a large enough opening upgrades to a Large Plastic Cauldron. See [Plastic Chests, Tanks and Cauldrons](../003_plastic/020_plastic_containers.md)
+
+## Plasma jet fuel
+
+Ignited ordinary oil uses AnvilCraft’s Fish Tank fuel behavior: each 1mB extends the jet by 24gt by default, with consumption and duration following AnvilCraft’s configuration. Entity cauldrons and bonded block cauldrons follow the same rules; enhanced jets still consume 10mB of High-Heat Fuel per jet per gt

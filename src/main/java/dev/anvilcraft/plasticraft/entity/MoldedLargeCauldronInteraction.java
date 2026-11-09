@@ -96,7 +96,7 @@ public final class MoldedLargeCauldronInteraction {
         AABB cavity = cavity(pot);
         double fraction = Math.clamp((point.y - cavity.minY) / cavity.getYsize(), 0.0, 1.0);
         IFluidHandler fluids = pot.getMoldedFluidHandler().sideAccess(
-            Math.max(1, (int) Math.ceil(fraction * LargeCauldronFluidHandler.TOTAL_CAPACITY))
+            Math.max(1, (int) Math.ceil(fraction * LargeCauldronFluidHandler.totalCapacity()))
         );
         if (FluidHandlerWrapper.tryInteractWithBottle(player, hand, fluids, pot.level(), pot.blockPosition())
             || FluidUtil.interactWithFluidHandler(player, hand, fluids)

@@ -59,6 +59,12 @@ public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAn
     private static final ResourceLocation CLEAR_BACKGROUND_BASE = AnvilcraftPlasticraft.of(
         "textures/gui/background/clear_plastic_anvil_base.png"
     );
+    private static final ResourceLocation ELASTIC_BACKGROUND_BASE = AnvilcraftPlasticraft.of(
+        "textures/gui/background/elastic_plastic_anvil_base.png"
+    );
+    private static final ResourceLocation ELASTIC_BACKGROUND_OVERLAY = AnvilcraftPlasticraft.of(
+        "textures/gui/background/elastic_plastic_anvil_overlay.png"
+    );
     private EditBox name;
     private final Player player;
 
@@ -149,7 +155,7 @@ public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAn
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
         PlasticMaterial material = this.targetMaterial();
         if (this.isPlasticAnvilTarget()) {
-            boolean transparent = material == PlasticMaterial.CLEAR;
+            boolean transparent = material.isTransparent();
             int tint = PlasticPaletteTintManager.INSTANCE.tint(material, this.targetColor());
             if (transparent) {
                 // GUI 默认贴图绘制路径不会开启混合，透明塑料的 alpha 必须在这里显式启用
@@ -163,6 +169,7 @@ public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAn
                         case ENGINEERING -> ENGINEERING_BACKGROUND_BASE;
                         case HEAT_RESISTANT -> HEAT_RESISTANT_BACKGROUND_BASE;
                         case CLEAR -> CLEAR_BACKGROUND_BASE;
+                        case ELASTIC -> ELASTIC_BACKGROUND_BASE;
                         case UNIVERSAL -> UNIVERSAL_BACKGROUND_BASE;
                     },
                     this.leftPos,
@@ -178,6 +185,7 @@ public class HardenedResinAnvilScreen extends ItemCombinerScreen<HardenedResinAn
                         case ENGINEERING -> ENGINEERING_BACKGROUND_OVERLAY;
                         case HEAT_RESISTANT -> HEAT_RESISTANT_BACKGROUND_OVERLAY;
                         case CLEAR -> CLEAR_BACKGROUND_OVERLAY;
+                        case ELASTIC -> ELASTIC_BACKGROUND_OVERLAY;
                         case UNIVERSAL -> UNIVERSAL_BACKGROUND_OVERLAY;
                     },
                     this.leftPos,

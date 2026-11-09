@@ -250,7 +250,8 @@ public record MoldedPlasticData(
                 long fluidAmount = contents.fluids().stream()
                     .mapToLong(FluidStack::getAmount)
                     .sum();
-                if (fluidAmount > (long) capacity * 1000L) {
+                long fluidCapacity = layout == null ? (long) capacity * 1000L : layout.fluidCapacity(capacity);
+                if (fluidAmount > fluidCapacity) {
                     throw new IllegalArgumentException("Molded tank fluids exceed its capacity");
                 }
             }

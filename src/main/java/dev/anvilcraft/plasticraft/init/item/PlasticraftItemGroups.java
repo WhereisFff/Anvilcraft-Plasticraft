@@ -6,6 +6,7 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.item.CreativeColorVariantItem;
 import dev.anvilcraft.plasticraft.item.MoldedPlasticDemoItemStacks;
+import dev.anvilcraft.plasticraft.item.PlasticraftCreativeTabState;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.init.item.ModItemGroups;
 import net.minecraft.core.registries.Registries;
@@ -36,7 +37,7 @@ public final class PlasticraftItemGroups {
             .displayItems((parameters, output) -> buildDisplayItems(
                 parameters,
                 output,
-                material -> !AnvilcraftPlasticraft.CLIENT_CONFIG.foldCreativeColorVariants
+                PlasticraftCreativeTabState::isExpanded
             ))
             .title(Component.translatable(TITLE_KEY))
             // NeoForge 的排序图将 withTabsBefore(X) 记录为 X -> this。
@@ -71,7 +72,6 @@ public final class PlasticraftItemGroups {
                 sections.accept(PlasticraftBlocks.CONDENSER_TOWER.asItem());
                 sections.accept(PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.asItem());
                 sections.accept(PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.asItem());
-                sections.accept(PlasticraftBlocks.ALLAY_LOUNGE.asItem());
                 for (PlasticMaterial material : PlasticMaterial.values()) {
                     boolean expand = expandVariants.test(material);
                     sections.section(plasticSection(material), section -> {

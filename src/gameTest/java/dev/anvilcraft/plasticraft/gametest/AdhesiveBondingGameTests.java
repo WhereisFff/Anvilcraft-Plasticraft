@@ -361,7 +361,7 @@ public final class AdhesiveBondingGameTests {
 
     @GameTest(timeoutTicks = 35)
     @EmptyTemplate(value = "12x9x8", floor = true)
-    @TestHolder(description = "Falling giant anvils bonded to entities stay as 3x3x3 entities")
+    @TestHolder(description = "Falling giant anvils bonded to entities retain their original dimensions and pause their lifetime")
     static void fallingGiantAnvilBondedToEntityStaysEntity(ExtendedGameTestHelper helper) {
         FallingGiantAnvilEntity giantAnvil = FallingGiantAnvilEntity.fall(
             helper.getLevel(),
@@ -369,6 +369,7 @@ public final class AdhesiveBondingGameTests {
             ModBlocks.GIANT_ANVIL.get().defaultBlockState(),
             false
         );
+        AABB originalBounds = giantAnvil.getBoundingBox();
         Zombie support = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(8.5D, 3.0D, 4.5D));
         support.setNoGravity(true);
         GameTestPlayer player = bucketPlayer(helper, new Vec3(5.5D, 3.0D, 1.5D));
@@ -391,10 +392,10 @@ public final class AdhesiveBondingGameTests {
             check(EntityBondManager.hasBonds(giantAnvil), "entity-bonded giant anvil lost its entity link");
             AABB box = giantAnvil.getBoundingBox();
             check(
-                Math.abs(box.getXsize() - 3.0D) <= EPSILON
-                    && Math.abs(box.getYsize() - 3.0D) <= EPSILON
-                    && Math.abs(box.getZsize() - 3.0D) <= EPSILON,
-                "entity-bonded giant anvil lost its 3x3x3 bounds"
+                Math.abs(box.getXsize() - originalBounds.getXsize()) <= EPSILON
+                    && Math.abs(box.getYsize() - originalBounds.getYsize()) <= EPSILON
+                    && Math.abs(box.getZsize() - originalBounds.getZsize()) <= EPSILON,
+                "entity-bonded giant anvil changed its original collision dimensions"
             );
             giantAnvil.time = 600;
             helper.runAfterDelay(2, () -> {

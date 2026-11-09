@@ -106,7 +106,8 @@ public final class MoldedPlasticRedstoneConductor {
     }
 
     private static boolean conductsRedstone(UniversalPlasticEntity host) {
-        if (host.getDisplayState().is(PlasticraftBlocks.CLEAR_PLASTIC.get())) return false;
+        if (PlasticMaterial.fromProductBlock(host.getDisplayState())
+            .map(PlasticMaterial::isTransparent).orElse(false)) return false;
         return host.getMoldedData()
             .flatMap(data -> PlasticMaterial.fromMelt(data.material()))
             .map(material -> !material.isTransparent())

@@ -4,6 +4,7 @@ import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.dubhe.anvilcraft.AnvilCraft;
 import dev.dubhe.anvilcraft.init.block.ModFluidTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -16,6 +17,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.OptionalInt;
 
 /** 给本体喷流静态 API 提供实体炼药锅的兼容查询。 */
 public final class HardenedResinCauldronSupport {
@@ -48,16 +50,18 @@ public final class HardenedResinCauldronSupport {
         return fluid.isEmpty() || fluid.is(ModFluidTags.OIL) || fluid.is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
     }
 
-    public static Boolean consumeOnce(Level level, BlockPos pos) {
-        return consumeOil(level, pos, 250);
-    }
-
-    public static Boolean usesContinuousFuel(Level level, BlockPos pos) {
-        return find(level, pos) == null ? null : true;
-    }
-
-    public static Boolean consumeContinuousFuel(Level level, BlockPos pos, int amount) {
-        return consumeOil(level, pos, amount);
+    public static OptionalInt consumeOnce(Level level, BlockPos pos, boolean simulate) {
+        PlasticCauldron cauldron = find(level, pos);
+        if (cauldron == null) return OptionalInt.empty();
+        int amount = AnvilCraft.CONFIG.machines.plasmaJets.fishTankConsumeAmount;
+        IFluidHandler handler = cauldron.plasticraft$ignitionFluidAccess();
+        FluidStack available = handler.drain(amount, IFluidHandler.FluidAction.SIMULATE);
+        if (!available.is(ModFluidTags.OIL) || available.getAmount() != amount) return OptionalInt.empty();
+        if (!simulate) {
+            FluidStack drained = handler.drain(available, IFluidHandler.FluidAction.EXECUTE);
+            if (!FluidStack.matches(drained, available)) return OptionalInt.empty();
+        }
+        return OptionalInt.of(AnvilCraft.CONFIG.machines.plasmaJets.fishTankExtraDuration);
     }
 
     public static Boolean consumeHighHeatFuel(Level level, BlockPos pos, int amount) {
@@ -71,17 +75,6 @@ public final class HardenedResinCauldronSupport {
         if (!FluidStack.matches(simulated, request)) return false;
         FluidStack drained = handler.drain(request, IFluidHandler.FluidAction.EXECUTE);
         return FluidStack.matches(drained, request);
-    }
-
-    private static Boolean consumeOil(Level level, BlockPos pos, int amount) {
-        PlasticCauldron cauldron = find(level, pos);
-        if (cauldron == null) return null;
-        if (amount <= 0) return false;
-        IFluidHandler handler = cauldron.plasticraft$ignitionFluidAccess();
-        FluidStack simulated = handler.drain(amount, IFluidHandler.FluidAction.SIMULATE);
-        if (!simulated.is(ModFluidTags.OIL) || simulated.getAmount() != amount) return false;
-        handler.drain(amount, IFluidHandler.FluidAction.EXECUTE);
-        return true;
     }
 
     public static Integer fluidAmount(Level level, BlockPos pos) {

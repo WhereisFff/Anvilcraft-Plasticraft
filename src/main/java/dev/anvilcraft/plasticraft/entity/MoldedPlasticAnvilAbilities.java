@@ -95,7 +95,7 @@ public final class MoldedPlasticAnvilAbilities {
             .map(material -> switch (material) {
                 case ENGINEERING -> BlockMiningEffect.SILK_TOUCH;
                 case HEAT_RESISTANT -> BlockMiningEffect.SMELTING;
-                case UNIVERSAL, CLEAR -> BlockMiningEffect.NORMAL;
+                case UNIVERSAL, CLEAR, ELASTIC -> BlockMiningEffect.NORMAL;
             })
             .orElse(BlockMiningEffect.NORMAL);
     }

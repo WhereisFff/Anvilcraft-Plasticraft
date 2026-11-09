@@ -11,6 +11,7 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.recipe.CatalyticPressProcess;
 import dev.anvilcraft.plasticraft.recipe.PlasticGranuleCauldronOutput;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
@@ -143,6 +144,108 @@ public final class UniversalPlasticProductionGameTests {
         check(output.getCount() == GRANULES, "engineering outlet produced the wrong granule count");
         check(PlasticMeltColor.get(output) == DyeColor.LIGHT_BLUE, "engineering outlet lost the melt colour");
         helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 500)
+    @EmptyTemplate("17x6x14")
+    @TestHolder(description = "Cold oil accepts resin materials and recursively crafted processors without consuming catalysts")
+    static void resinItemsAndProcessorProductsCatalyzeColdOil(ExtendedGameTestHelper helper) {
+        List<ItemStack> catalysts = List.of(
+            ModItems.RESIN.asStack(),
+            ModItems.HARDEND_RESIN.asStack(),
+            ModBlocks.RESIN_BLOCK.asStack(),
+            PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack(),
+            PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asStack(),
+            PlasticraftBlocks.RESIN_ANVIL.asStack(),
+            PlasticraftBlocks.HARDEND_RESIN_ANVIL.asStack(),
+            PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(),
+            PlasticraftBlocks.CATALYTIC_PRESS_LID.asStack(),
+            PlasticraftItems.RESIN_ANVIL_HAMMER.asStack(),
+            ModItems.PROCESSOR.asStack(),
+            ModBlocks.SMART_BLOCK_PLACER.asStack(),
+            ModBlocks.STRUCTURE_SCANNER.asStack(),
+            PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.asStack(),
+            ModItems.CAPACITOR.asStack(),
+            Items.COMPARATOR.getDefaultInstance()
+        );
+        List<BlockPos> positions = new ArrayList<>();
+        for (int index = 0; index < catalysts.size(); index++) {
+            BlockPos pos = new BlockPos(2 + index % 4 * 3, 2, 2 + index / 4 * 3);
+            positions.add(pos);
+            helper.setBlock(pos.below(), Blocks.ICE);
+            helper.setBlock(pos, PlasticraftBlocks.PLASTIC_OIL_CAULDRON.getDefaultState()
+                .setValue(Layered4LevelCauldronBlock.LEVEL, 3));
+            spawnCatalyst(helper, pos, catalysts.get(index).copy());
+        }
+        BlockPos copperPos = new BlockPos(14, 2, 11);
+        helper.setBlock(copperPos.below(), Blocks.ICE);
+        helper.setBlock(copperPos, PlasticraftBlocks.PLASTIC_OIL_CAULDRON.getDefaultState());
+        spawnCatalyst(helper, copperPos, Items.COPPER_INGOT.getDefaultInstance());
+
+        helper.runAfterDelay(450, () -> {
+            for (int index = 0; index < catalysts.size(); index++) {
+                BlockPos pos = positions.get(index);
+                ItemStack catalyst = catalysts.get(index);
+                BlockState result = helper.getBlockState(pos);
+                check(result.is(PlasticMaterial.ELASTIC.meltCauldron()),
+                    "cold resin catalyst failed to produce elastic melt: " + catalyst.getItem());
+                check(result.getValue(Layered4LevelCauldronBlock.LEVEL) == 3,
+                    "elastic catalysis changed the oil amount for " + catalyst.getItem());
+                int retained = helper.getLevel().getEntitiesOfClass(
+                    ItemEntity.class,
+                    new AABB(helper.absolutePos(pos)),
+                    item -> item.getItem().is(catalyst.getItem())
+                ).stream().mapToInt(item -> item.getItem().getCount()).sum();
+                check(retained == catalyst.getCount(), "elastic catalysis consumed " + catalyst.getItem());
+            }
+            check(helper.getBlockState(copperPos).is(PlasticraftBlocks.PLASTIC_OIL_CAULDRON.get()),
+                "resin processing incorrectly turned basic copper into a resin catalyst");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 520)
+    @EmptyTemplate("8x6x5")
+    @TestHolder(description = "Resin cauldrons and sealed resin lids catalyze their own oil only over cold blocks")
+    static void resinContainersCatalyzeTheirOwnOilOnlyOverCold(ExtendedGameTestHelper helper) {
+        BlockPos openPos = new BlockPos(2, 2, 2);
+        BlockPos sealedPos = new BlockPos(5, 2, 2);
+        helper.setBlock(openPos.below(), Blocks.STONE);
+        helper.setBlock(sealedPos.below(), Blocks.STONE);
+        HardenedResinCauldronEntity open = spawnCauldron(helper, openPos);
+        HardenedResinCauldronEntity sealed = spawnCauldron(helper, sealedPos);
+        for (HardenedResinCauldronEntity cauldron : List.of(open, sealed)) {
+            check(cauldron.getFluidHandler().fill(
+                new FluidStack(PlasticraftFluids.PLASTIC_OIL.get(), 750), IFluidHandler.FluidAction.EXECUTE
+            ) == 750, "resin cauldron rejected oil for self-catalysis");
+        }
+        CatalyticPressLidEntity lid = spawnReadyLid(helper, sealedPos.above());
+        lid.setNoGravity(true);
+        lid.resetCatalysis();
+
+        helper.startSequence()
+            .thenExecuteAfter(40, () -> {
+                for (HardenedResinCauldronEntity cauldron : List.of(open, sealed)) {
+                    check(cauldron.getFluidHandler().getFluid().is(PlasticraftFluids.PLASTIC_OIL.get()),
+                        "resin container catalyzed its own oil without cold");
+                }
+                helper.setBlock(openPos.below(), Blocks.ICE);
+                helper.setBlock(sealedPos.below(), Blocks.ICE);
+            })
+            .thenExecuteAfter(120, () -> {
+                check(sealed.getFluidHandler().getFluid().is(PlasticMaterial.ELASTIC.melt()),
+                    "sealed resin lid did not catalyze cold oil at full speed");
+                check(open.getFluidHandler().getFluid().is(PlasticraftFluids.PLASTIC_OIL.get()),
+                    "open resin cauldron incorrectly used sealed catalyst speed");
+            })
+            .thenExecuteAfter(310, () -> {
+                for (HardenedResinCauldronEntity cauldron : List.of(open, sealed)) {
+                    FluidStack result = cauldron.getFluidHandler().getFluid();
+                    check(result.is(PlasticMaterial.ELASTIC.melt()) && result.getAmount() == 750,
+                        "resin container self-catalysis failed to preserve oil volume as elastic melt");
+                }
+            })
+            .thenSucceed();
     }
 
     @GameTest(timeoutTicks = 520)

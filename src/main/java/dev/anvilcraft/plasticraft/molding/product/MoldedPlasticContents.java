@@ -75,7 +75,7 @@ public record MoldedPlasticContents(
             if (item.slot() <= previousSlot) throw new IllegalArgumentException("Duplicate molded plastic item slot");
             // 分层锅输入槽允许多倍堆叠，这里只拦住上界，精确的按槽上限由 MoldedPlasticData 依类型布局校验
             if (item.stack().getCount()
-                > item.stack().getMaxStackSize() * PlasticCauldronLayout.MAX_STACK_MULTIPLIER) {
+                > item.stack().getMaxStackSize() * PlasticCauldronLayout.LARGE.inputStackMultiplier()) {
                 throw new IllegalArgumentException("Molded plastic stored item exceeds its stack limit");
             }
             previousSlot = item.slot();

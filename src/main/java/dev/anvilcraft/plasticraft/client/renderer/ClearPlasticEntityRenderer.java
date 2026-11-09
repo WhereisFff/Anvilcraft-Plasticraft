@@ -7,11 +7,9 @@ import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderHelper;
 import dev.anvilcraft.plasticraft.client.renderer.entity.UniversalPlasticEntityRenderer;
-import dev.anvilcraft.plasticraft.entity.ClearPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
-import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
-import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -41,13 +39,13 @@ public final class ClearPlasticEntityRenderer {
     private static final Set<BondedEntityBlockEntity> DEFERRED_BLOCK_ENTITIES = Collections.newSetFromMap(
         new IdentityHashMap<>()
     );
-    private static final Map<BondedEntityBlockEntity, ClearPlasticEntity> STATIC_BLOCK_PROXIES = new WeakHashMap<>();
+    private static final Map<BondedEntityBlockEntity, UniversalPlasticEntity> STATIC_BLOCK_PROXIES = new WeakHashMap<>();
 
     private ClearPlasticEntityRenderer() {
     }
 
     public static boolean enqueue(BondedEntityBlockEntity blockEntity) {
-        if (!blockEntity.getBlockState().is(PlasticraftBlocks.CLEAR_PLASTIC.get())) return false;
+        if (!PlasticEntityRenderHelper.isTransparent(blockEntity.getBlockState())) return false;
         if (blockEntity.isInitialized() && blockEntity.isHammerDeflected()) return false;
         if (blockEntity.isInitialized()
             && (!(blockEntity.getOrCreateRenderEntity() instanceof UniversalPlasticEntity plastic)
@@ -229,7 +227,7 @@ public final class ClearPlasticEntityRenderer {
     private static UniversalPlasticEntity queuedPlastic(BondedEntityBlockEntity blockEntity, ClientLevel level) {
         if (blockEntity.isRemoved()
             || blockEntity.getLevel() != level
-            || !blockEntity.getBlockState().is(PlasticraftBlocks.CLEAR_PLASTIC.get())) {
+            || !PlasticEntityRenderHelper.isTransparent(blockEntity.getBlockState())) {
             return null;
         }
         if (blockEntity.isInitialized()) {
@@ -238,9 +236,11 @@ public final class ClearPlasticEntityRenderer {
                 ? plastic
                 : null;
         }
-        ClearPlasticEntity proxy = STATIC_BLOCK_PROXIES.get(blockEntity);
-        if (proxy == null || proxy.level() != level) {
-            proxy = new ClearPlasticEntity(PlasticraftEntities.CLEAR_PLASTIC.get(), level);
+        PlasticMaterial material = PlasticMaterial.fromProductBlock(blockEntity.getBlockState()).orElseThrow();
+        UniversalPlasticEntity proxy = STATIC_BLOCK_PROXIES.get(blockEntity);
+        if (proxy == null || proxy.level() != level || proxy.getType() != material.entityType()) {
+            proxy = material.entityType().create(level);
+            if (proxy == null) return null;
             STATIC_BLOCK_PROXIES.put(blockEntity, proxy);
         }
         PlasticEntityOrientation orientation = PlasticEntityOrientation.DEFAULT;

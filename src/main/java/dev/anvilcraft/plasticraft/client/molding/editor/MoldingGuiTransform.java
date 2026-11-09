@@ -26,9 +26,9 @@ public record MoldingGuiTransform(double scale, double originX, double originY) 
             1.0D,
             Math.min((double) availableWidth / visibleWidth, (double) availableHeight / logicalHeight)
         );
-        // 每个逻辑像素必须覆盖整数个 framebuffer 像素，避免不同绘制路径各自取整后错位
-        int framebufferScale = Math.max(1, (int) Math.floor(maximumScale * guiScale + 1.0E-9D));
-        double scale = Math.min(1.0D, framebufferScale / guiScale);
+        // 优先让逻辑像素对应整数个 framebuffer 像素；极窄窗口无法容纳一倍时按可用空间缩放。
+        int framebufferScale = (int) Math.floor(maximumScale * guiScale + 1.0E-9D);
+        double scale = framebufferScale >= 1 ? Math.min(1.0D, framebufferScale / guiScale) : maximumScale;
         return new MoldingGuiTransform(
             scale,
             Math.floor((screenWidth - visibleWidth * scale) * 0.5D),

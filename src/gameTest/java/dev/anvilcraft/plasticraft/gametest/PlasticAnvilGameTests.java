@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
 import dev.anvilcraft.plasticraft.block.piston.HighViscosityPistonBudget;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
+import dev.anvilcraft.plasticraft.entity.ElasticPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
@@ -31,6 +32,12 @@ import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.HighViscosityResinBlockItem;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
+import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
+import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
+import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
@@ -1636,8 +1643,8 @@ public final class PlasticAnvilGameTests {
     }
 
     @GameTest(timeoutTicks = 20)
-    @EmptyTemplate("15x12x15")
-    @TestHolder(description = "A resin anvil reflects its velocity from block impacts on all six faces")
+    @EmptyTemplate("15x16x15")
+    @TestHolder(description = "Resin anvils and elastic plastic products reflect block impacts on all six faces")
     static void resinAnvilBouncesFromBlocksInAllDirections(ExtendedGameTestHelper helper) {
         List<Direction> directions = List.of(
             Direction.DOWN,
@@ -1655,23 +1662,27 @@ public final class PlasticAnvilGameTests {
             new BlockPos(6, 4, 8),
             new BlockPos(10, 4, 8)
         );
-        List<ResinAnvilEntity> anvils = new ArrayList<>();
-        for (int index = 0; index < directions.size(); index++) {
-            Direction direction = directions.get(index);
-            BlockPos cell = cells.get(index);
-            helper.setBlock(cell.relative(direction), Blocks.STONE);
-            ResinAnvilEntity anvil = createResinAnvilInCell(helper, cell, PlasticraftBlocks.RESIN_ANVIL.asStack());
-            anvil.setNoGravity(true);
-            anvil.setDeltaMovement(Vec3.atLowerCornerOf(direction.getNormal()).scale(0.32D));
-            anvils.add(anvil);
+        List<AbstractPlasticEntity> products = new ArrayList<>();
+        for (int form = 0; form < 3; form++) {
+            for (int index = 0; index < directions.size(); index++) {
+                Direction direction = directions.get(index);
+                BlockPos cell = cells.get(index).above(form * 4);
+                helper.setBlock(cell.relative(direction), Blocks.STONE);
+                AbstractPlasticEntity product = createElasticCollisionProduct(helper, cell, form);
+                product.setNoGravity(true);
+                product.setDeltaMovement(Vec3.atLowerCornerOf(direction.getNormal()).scale(0.32D));
+                products.add(product);
+            }
         }
 
         helper.runAfterDelay(2, () -> {
-            for (int index = 0; index < directions.size(); index++) {
-                Direction direction = directions.get(index);
-                ResinAnvilEntity anvil = anvils.get(index);
-                double reflectedSpeed = anvil.getDeltaMovement().dot(Vec3.atLowerCornerOf(direction.getNormal()));
-                check(reflectedSpeed < -0.04D, direction + " block impact did not reflect velocity: " + anvil.getDeltaMovement());
+            for (int index = 0; index < products.size(); index++) {
+                Direction direction = directions.get(index % directions.size());
+                AbstractPlasticEntity product = products.get(index);
+                double reflectedSpeed = product.getDeltaMovement().dot(Vec3.atLowerCornerOf(direction.getNormal()));
+                check(reflectedSpeed < -0.04D,
+                    "elastic form " + index / directions.size() + " " + direction
+                        + " block impact did not reflect velocity: " + product.getDeltaMovement());
             }
             helper.succeed();
         });
@@ -1715,24 +1726,33 @@ public final class PlasticAnvilGameTests {
     }
 
     @GameTest(timeoutTicks = 20)
-    @EmptyTemplate(value = "9x5x7", floor = true)
-    @TestHolder(description = "A resin anvil bounces from an entity and applies a bounded outward impulse")
+    @EmptyTemplate(value = "9x5x15", floor = true)
+    @TestHolder(description = "Resin anvils and elastic plastic products rebound with a bounded non-damaging entity impulse")
     static void resinAnvilBouncesFromEntity(ExtendedGameTestHelper helper) {
-        ResinAnvilEntity anvil = createResinAnvilInCell(
-            helper,
-            new BlockPos(3, 2, 3),
-            PlasticraftBlocks.RESIN_ANVIL.asStack()
-        );
-        anvil.setNoGravity(true);
-        Creeper target = helper.spawnWithNoFreeWill(EntityType.CREEPER, new Vec3(4.35D, 2.0D, 3.5D));
-        target.setNoGravity(true);
-        float healthBefore = target.getHealth();
-        anvil.setDeltaMovement(0.32D, 0.0D, 0.0D);
+        List<AbstractPlasticEntity> products = new ArrayList<>();
+        List<Creeper> targets = new ArrayList<>();
+        List<Float> healthBefore = new ArrayList<>();
+        for (int form = 0; form < 3; form++) {
+            double lane = 2.5D + form * 4.0D;
+            AbstractPlasticEntity product = createElasticCollisionProduct(helper, new BlockPos(3, 2, (int) lane), form);
+            product.setNoGravity(true);
+            Creeper target = helper.spawnWithNoFreeWill(EntityType.CREEPER, new Vec3(4.35D, 2.0D, lane));
+            target.setNoGravity(true);
+            healthBefore.add(target.getHealth());
+            product.setDeltaMovement(0.32D, 0.0D, 0.0D);
+            products.add(product);
+            targets.add(target);
+        }
         helper.runAfterDelay(2, () -> {
-            check(anvil.getDeltaMovement().x < -0.04D, "entity impact did not bounce the resin anvil");
-            check(target.getDeltaMovement().x > 0.0D, "entity impact did not push the target outward");
-            check(target.getDeltaMovement().x <= 0.45D + EPSILON, "entity impulse exceeded its configured bound");
-            check(close(target.getHealth(), healthBefore), "resin anvil impact damaged its target");
+            for (int form = 0; form < products.size(); form++) {
+                AbstractPlasticEntity product = products.get(form);
+                Creeper target = targets.get(form);
+                String name = "elastic form " + form;
+                check(product.getDeltaMovement().x < -0.04D, name + " did not rebound from its target");
+                check(target.getDeltaMovement().x > 0.0D, name + " did not push its target outward");
+                check(target.getDeltaMovement().x <= 0.45D + EPSILON, name + " exceeded the bounded impulse");
+                check(close(target.getHealth(), healthBefore.get(form)), name + " damaged its target");
+            }
             helper.succeed();
         });
     }
@@ -2131,37 +2151,131 @@ public final class PlasticAnvilGameTests {
     }
 
     @GameTest(timeoutTicks = 20)
-    @EmptyTemplate(value = "11x8x7", floor = true)
-    @TestHolder(description = "A player rebounds from resin anvil entities and blockified resin anvils")
+    @EmptyTemplate(value = "11x8x15", floor = true)
+    @TestHolder(description = "Players rebound from dynamic and blockified resin and elastic products unless sneaking")
     static void playerBouncesFromResinAnvilForms(ExtendedGameTestHelper helper) {
-        ResinAnvilEntity anvil = createResinAnvil(
-            helper,
-            new Vec3(3.5D, 1.0D, 3.5D),
-            PlasticraftBlocks.RESIN_ANVIL.asStack()
-        );
-        anvil.setNoGravity(true);
-        GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        Vec3 start = helper.absoluteVec(new Vec3(3.5D, 2.45D, 3.5D));
-        player.moveTo(start.x, start.y, start.z);
-        player.setDeltaMovement(0.0D, -0.75D, 0.0D);
-        player.move(MoverType.SELF, player.getDeltaMovement());
-        check(player.getDeltaMovement().y > 0.70D, "falling player did not rebound from the resin anvil");
-        check(
-            Math.abs(player.getBoundingBox().minY - anvil.getBoundingBox().maxY) < 0.03D,
-            "falling player was not collision-clipped at the resin anvil surface"
-        );
+        for (int form = 0; form < 3; form++) {
+            int lane = 2 + form * 4;
+            AbstractPlasticEntity product = createElasticCollisionProduct(helper, new BlockPos(3, 2, lane), form);
+            product.setNoGravity(true);
+            GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+            AABB bounds = product.getBoundingBox();
+            Vec3 start = new Vec3(bounds.getCenter().x, bounds.maxY + 0.45D, bounds.getCenter().z);
+            player.moveTo(start.x, start.y, start.z);
+            player.fallDistance = 0.75F;
+            player.setDeltaMovement(0.0D, -0.75D, 0.0D);
+            player.move(MoverType.SELF, player.getDeltaMovement());
+            String name = "elastic form " + form;
+            check(player.getDeltaMovement().y > (form == 0 ? 0.70D : 0.59D),
+                name + " did not rebound its falling player");
+            check(Math.abs(player.getBoundingBox().minY - bounds.maxY) < 0.03D,
+                name + " did not clip its player at the real surface");
+            check(player.fallDistance == 0.0F, name + " did not clear the rebounding player's fall distance");
+            player.setShiftKeyDown(true);
+            player.moveTo(start.x, start.y, start.z);
+            player.setDeltaMovement(0.0D, -0.75D, 0.0D);
+            player.move(MoverType.SELF, player.getDeltaMovement());
+            check(player.getDeltaMovement().y <= 0.0D, name + " rebounded a sneaking player");
+            if (form > 0) {
+                player.setShiftKeyDown(false);
+                player.moveTo(bounds.getCenter().x, bounds.maxY, bounds.getCenter().z);
+                for (int step = 0; step < 8; step++) {
+                    double horizontal = step % 2 == 0 ? 0.12D : -0.12D;
+                    Vec3 before = player.position();
+                    player.setDeltaMovement(horizontal, -0.0784D, 0.0D);
+                    player.move(MoverType.SELF, player.getDeltaMovement());
+                    check(close(player.getX() - before.x, horizontal), name + " clipped walking movement");
+                    check(close(player.getDeltaMovement().x, horizontal), name + " slowed walking movement");
+                    check(player.getDeltaMovement().y <= 0.0D && close(player.getY(), bounds.maxY),
+                        name + " bounced a grounded walking player");
+                }
+            }
+            player.discard();
 
-        BlockPos pos = new BlockPos(7, 1, 3);
-        BlockState state = PlasticraftBlocks.RESIN_ANVIL.get()
-            .defaultBlockState()
-            .setValue(AbstractPlasticEntityBlock.BONDED, true);
-        helper.setBlock(pos, state);
-        Zombie falling = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(7.5D, 2.0D, 3.5D));
-        falling.setDeltaMovement(0.0D, -0.75D, 0.0D);
-        state.getBlock().updateEntityAfterFallOn(helper.getLevel(), falling);
-        check(falling.getDeltaMovement().y > 0.70D, "blockified resin anvil did not bounce a falling entity");
-        check(state.getBlock().isSlimeBlock(state), "blockified resin anvil was not marked as a slime block");
+            BlockPos pos = new BlockPos(7, 2, lane);
+            BlockState state = product.getDisplayState().setValue(AbstractPlasticEntityBlock.BONDED, true);
+            helper.setBlock(pos, state);
+            Zombie falling = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, new Vec3(7.5D, 3.0D, lane + 0.5D));
+            float health = falling.getHealth();
+            state.getBlock().fallOn(helper.getLevel(), state, helper.absolutePos(pos), falling, 10.0F);
+            check(close(falling.getHealth(), health), name + " block form dealt fall damage");
+            falling.setDeltaMovement(0.0D, -0.75D, 0.0D);
+            state.getBlock().updateEntityAfterFallOn(helper.getLevel(), falling);
+            check(falling.getDeltaMovement().y > (form == 0 ? 0.70D : 0.59D),
+                name + " block form did not rebound a falling entity");
+            check(state.getBlock().isSlimeBlock(state), name + " block form was not marked as a slime block");
+            if (form > 0) {
+                Vec3 walking = new Vec3(0.18D, 0.0D, -0.12D);
+                falling.setDeltaMovement(walking);
+                state.getBlock().stepOn(helper.getLevel(), helper.absolutePos(pos), state, falling);
+                check(falling.getDeltaMovement().equals(walking), name + " block form slowed surface walking");
+                falling.setDeltaMovement(0.18D, -0.0784D, 0.0D);
+                state.getBlock().updateEntityAfterFallOn(helper.getLevel(), falling);
+                check(falling.getDeltaMovement().y == 0.0D,
+                    name + " block form rebounded a resting entity");
+            }
+            falling.setShiftKeyDown(true);
+            falling.setDeltaMovement(0.0D, -0.75D, 0.0D);
+            state.getBlock().updateEntityAfterFallOn(helper.getLevel(), falling);
+            check(falling.getDeltaMovement().y <= 0.0D, name + " block form rebounded a sneaking entity");
+        }
         helper.succeed();
+    }
+
+    @GameTest(timeoutTicks = 190)
+    @EmptyTemplate(value = "11x9x7", floor = true)
+    @TestHolder(description = "Elastic surfaces cannot turn corrected displacement into speed and living rebounds lose height")
+    static void elasticSurfaceReboundsDoNotGainEnergy(ExtendedGameTestHelper helper) {
+        List<Zombie> falling = new ArrayList<>();
+        double[] surfaceY = new double[2];
+        double[] previousPeak = new double[2];
+        double[] currentPeak = new double[2];
+        boolean[] rising = new boolean[2];
+        int[] rebounds = new int[2];
+        for (int index = 0; index < 2; index++) {
+            AbstractPlasticEntity support = createElasticCollisionProduct(helper, new BlockPos(2 + index * 5, 2, 3), index + 1);
+            support.setNoGravity(true);
+            AABB bounds = support.getBoundingBox();
+            GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+            player.moveTo(bounds.getCenter().x, bounds.maxY + 0.2D, bounds.getCenter().z);
+            player.setDeltaMovement(0.0D, -0.4D, 0.0D);
+            player.move(MoverType.SELF, new Vec3(0.0D, -0.75D, 0.0D));
+            check(player.getDeltaMovement().y > 0.0D && player.getDeltaMovement().y <= 0.4D,
+                "elastic form " + index + " converted corrected displacement into extra rebound speed");
+            check(!player.onGround(), "elastic rebound kept the player grounded");
+            player.discard();
+            Vec3 spawn = new Vec3(bounds.getCenter().x, bounds.maxY + 3.0D, bounds.getCenter().z);
+            Zombie zombie = helper.spawnWithNoFreeWill(EntityType.ZOMBIE, spawn.subtract(Vec3.atLowerCornerOf(helper.absolutePos(BlockPos.ZERO))));
+            zombie.setDeltaMovement(0.0D, -0.1D, 0.0D);
+            falling.add(zombie);
+            surfaceY[index] = bounds.maxY;
+            previousPeak[index] = 3.0D;
+        }
+        helper.startSequence().thenExecuteFor(160, () -> {
+            for (int index = 0; index < falling.size(); index++) {
+                Zombie zombie = falling.get(index);
+                double height = zombie.getY() - surfaceY[index];
+                if (zombie.getDeltaMovement().y > 0.01D) {
+                    if (!rising[index]) {
+                        rebounds[index]++;
+                        currentPeak[index] = height;
+                    }
+                    rising[index] = true;
+                    currentPeak[index] = Math.max(currentPeak[index], height);
+                } else if (rising[index]) {
+                    check(currentPeak[index] <= previousPeak[index] + 0.01D,
+                        "elastic form " + index + " gained bounce height: " + previousPeak[index] + " -> " + currentPeak[index]);
+                    previousPeak[index] = currentPeak[index];
+                    rising[index] = false;
+                }
+            }
+        }).thenExecute(() -> {
+            for (int index = 0; index < falling.size(); index++) {
+                check(rebounds[index] >= 2, "elastic form " + index + " did not exercise repeated living rebounds");
+                check(Math.abs(falling.get(index).getY() - surfaceY[index]) < 0.02D,
+                    "elastic form " + index + " did not settle after losing bounce energy");
+            }
+        }).thenSucceed();
     }
 
     @GameTest(timeoutTicks = 150)
@@ -2206,10 +2320,10 @@ public final class PlasticAnvilGameTests {
     }
 
     @GameTest(timeoutTicks = 190)
-    @EmptyTemplate(value = "17x9x7", floor = true)
+    @EmptyTemplate(value = "23x9x7", floor = true)
     @TestHolder(description = "Every movable plastic product repeatedly rebounds and then settles on a resin anvil")
     static void allPlasticProductsBounceAndSettleOnResinAnvils(ExtendedGameTestHelper helper) {
-        double[] laneCenters = {2.5D, 5.5D, 8.5D, 11.5D, 14.5D};
+        double[] laneCenters = {2.5D, 5.5D, 8.5D, 11.5D, 14.5D, 17.5D, 20.5D};
         List<ResinAnvilEntity> supports = new ArrayList<>();
         for (double laneCenter : laneCenters) {
             ResinAnvilEntity support = createResinAnvil(
@@ -2259,7 +2373,9 @@ public final class PlasticAnvilGameTests {
             cauldron,
             lid,
             universal,
-            resinAnvil
+            resinAnvil,
+            createElasticCollisionProduct(helper, new BlockPos(17, 5, 3), 1),
+            createElasticCollisionProduct(helper, new BlockPos(20, 5, 3), 2)
         );
         for (AbstractPlasticEntity product : fallingProducts) {
             product.setDeltaMovement(0.0D, -0.15D, 0.0D);
@@ -4555,18 +4671,45 @@ public final class PlasticAnvilGameTests {
     }
 
     @GameTest(timeoutTicks = 50)
-    @EmptyTemplate(value = "9x8x5", floor = true)
-    @TestHolder(description = "Each landing edge publishes exactly one event, including a drop that reaches the support probe before being clipped")
+    @EmptyTemplate(value = "17x8x9", floor = true)
+    @TestHolder(description = "Resin and hardened resin anvils process blocks once after short or long falls, only after contact")
     static void landingEventFiresOnce(ExtendedGameTestHelper helper) {
         HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(2.5D, 5.0D, 2.5D));
-        // 自由落体逐刻位移是固定序列，落差 1.375 的第八刻正好停在地面上方 0.0002 格：
-        // 支撑探针已经报告接触，位移却没有被裁剪，落地边沿因此被拆成「先接触、后裁剪」两刻。
+        // 1.375 格落差会先进入宽支撑探针，下一刻才被碰撞裁剪，必须等到真正接触后加工。
         HardenedResinAnvilEntity settlingAnvil = createAnvil(helper, new Vec3(6.5D, 3.375D, 2.5D));
+        helper.setBlock(new BlockPos(2, 1, 2), Blocks.RED_CONCRETE);
+        helper.setBlock(new BlockPos(6, 1, 2), Blocks.RED_CONCRETE);
+        List<AbstractPlasticEntity> shortFalls = new ArrayList<>();
+        List<BlockPos> shortTargets = new ArrayList<>();
+        int[] shortEvents = new int[4];
+        for (int index = 0; index < 4; index++) {
+            double gap = index % 2 == 0 ? 0.001D : 0.025D;
+            BlockPos target = new BlockPos(2 + index * 4, 1, 6);
+            helper.setBlock(target, Blocks.RED_CONCRETE);
+            Vec3 position = new Vec3(target.getX() + 0.5D, 2.0D + gap, 6.5D);
+            shortFalls.add(index < 2
+                ? createAnvil(helper, position)
+                : createResinAnvil(helper, position, PlasticraftBlocks.RESIN_ANVIL.asStack()));
+            shortTargets.add(target);
+        }
+        HardenedResinAnvilEntity resting = createAnvil(helper, new Vec3(10.5D, 2.0D, 2.5D));
+        HardenedResinAnvilEntity hovering = createAnvil(helper, new Vec3(14.5D, 2.025D, 2.5D));
+        hovering.setNoGravity(true);
+        helper.setBlock(new BlockPos(10, 1, 2), Blocks.RED_CONCRETE);
+        helper.setBlock(new BlockPos(14, 1, 2), Blocks.RED_CONCRETE);
         AtomicInteger eventCount = new AtomicInteger();
         AtomicInteger settlingEventCount = new AtomicInteger();
         float[] fallDistance = {0.0F};
         float[] settlingFallDistance = {0.0F};
         helper.addTemporaryListener((AnvilEvent.OnLand event) -> {
+            check(event.getEntity() != resting && event.getEntity() != hovering,
+                "a resting or suspended plastic anvil processed without landing");
+            int shortIndex = shortFalls.indexOf(event.getEntity());
+            if (shortIndex >= 0) {
+                shortEvents[shortIndex]++;
+                check(event.getEntity().getBoundingBox().minY <= helper.absolutePos(shortTargets.get(shortIndex)).getY() + 1.0001D,
+                    "short-fall specimen " + shortIndex + " processed before touching its block");
+            }
             if (event.getEntity() == anvil) {
                 eventCount.incrementAndGet();
                 fallDistance[0] = event.getFallDistance();
@@ -4584,6 +4727,19 @@ public final class PlasticAnvilGameTests {
                 "expected one landing edge event for the 1.375 drop, got " + settlingEventCount.get());
             check(settlingFallDistance[0] > 1.3F,
                 "1.375 drop reported only " + settlingFallDistance[0] + " fall distance");
+            check(helper.getBlockState(new BlockPos(2, 1, 2)).is(Blocks.LIME_CONCRETE),
+                "long fall did not process the struck block");
+            check(helper.getBlockState(new BlockPos(6, 1, 2)).is(Blocks.LIME_CONCRETE),
+                "probe-before-contact fall did not process the struck block");
+            for (int index = 0; index < shortFalls.size(); index++) {
+                check(shortEvents[index] == 1, "short-fall specimen " + index + " published " + shortEvents[index] + " impacts");
+                check(helper.getBlockState(shortTargets.get(index)).is(Blocks.LIME_CONCRETE),
+                    "short-fall specimen " + index + " did not process its struck block");
+            }
+            check(helper.getBlockState(new BlockPos(10, 1, 2)).is(Blocks.RED_CONCRETE),
+                "resting plastic anvil processed its support block");
+            check(helper.getBlockState(new BlockPos(14, 1, 2)).is(Blocks.RED_CONCRETE),
+                "suspended plastic anvil processed before touching its support block");
             helper.succeed();
         });
     }
@@ -4761,6 +4917,43 @@ public final class PlasticAnvilGameTests {
             if (stack.is(item)) return stack;
         }
         return ItemStack.EMPTY;
+    }
+
+    private static AbstractPlasticEntity createElasticCollisionProduct(
+        ExtendedGameTestHelper helper,
+        BlockPos relativeCell,
+        int form
+    ) {
+        if (form == 0) return createResinAnvilInCell(helper, relativeCell, PlasticraftBlocks.RESIN_ANVIL.asStack());
+        ItemStack stack = PlasticraftBlocks.ELASTIC_PLASTIC.asStack();
+        if (form == 2) {
+            EditableMoldingModel model = new EditableMoldingModel(
+                EditableMoldingModel.CURRENT_FORMAT_VERSION,
+                "Elastic collision anvil",
+                MoldingProductTypes.ANVIL_ID,
+                List.of(
+                    MoldingElement.cube("Base", new MoldingVec3(1, 0, 1), new MoldingVec3(15, 4, 15)),
+                    MoldingElement.cube("Waist", new MoldingVec3(4, 4, 4), new MoldingVec3(12, 10, 12)),
+                    MoldingElement.cube("Top", new MoldingVec3(0, 10, 0), new MoldingVec3(16, 16, 16))
+                ),
+                List.of()
+            );
+            var baked = MoldingModelBaker.bake(model);
+            int melt = baked.analysis().minimumMeltMillibuckets();
+            MoldedPlasticData data = MoldedPlasticData.manufacture(
+                model, baked, new FluidStack(PlasticraftFluids.ELASTIC_PLASTIC_MELT.get(), melt), melt
+            );
+            check(MoldingProductTypes.ANVIL_ID.equals(data.finalType()), "elastic collision test anvil was not manufactured");
+            MoldedPlasticData.set(stack, data);
+        }
+        ElasticPlasticEntity product = new ElasticPlasticEntity(
+            PlasticraftEntities.ELASTIC_PLASTIC.get(), helper.getLevel(), Vec3.ZERO,
+            PlasticraftBlocks.ELASTIC_PLASTIC.get().defaultBlockState(), stack, PlasticEntityOrientation.DEFAULT
+        );
+        product.setPos(product.plasticraft$placementPosition(helper.absolutePos(relativeCell), PlasticEntityOrientation.DEFAULT));
+        product.setStartPos(product.blockPosition());
+        check(helper.getLevel().addFreshEntity(product), "failed to spawn elastic collision form " + form);
+        return product;
     }
 
     private static ResinAnvilEntity createResinAnvil(

@@ -8,7 +8,9 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingModelPersistence;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.item.property.component.DiskData;
+import dev.dubhe.anvilcraft.item.property.component.StoredItem;
 import dev.dubhe.anvilcraft.item.property.component.StructureDiskData;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.ItemStack;
 
@@ -42,15 +44,16 @@ public final class MoldingBlueprintDisk {
     }
 
     public static boolean hasBlueprintData(ItemStack stack) {
-        if (!isStructureDisk(stack)) return false;
+        // 本体扫描器会保留磁盘的其它组件；新写入的方块结构必须覆盖旧成型模型的读取与预览。
+        if (!isStructureDisk(stack) || stack.has(ModComponents.STRUCTURE_DISK_DATA)) return false;
         DiskData data = stack.get(ModComponents.DISK_DATA);
         return data != null && data.tag().contains(TAG_BLUEPRINT, CompoundTag.TAG_COMPOUND);
     }
 
     public static String previewToken(ItemStack stack) {
-        if (!isStructureDisk(stack)) return "";
+        if (!hasBlueprintData(stack)) return "";
         DiskData data = stack.get(ModComponents.DISK_DATA);
-        if (data == null || !data.tag().contains(TAG_BLUEPRINT, CompoundTag.TAG_COMPOUND)) return "";
+        if (data == null) return "";
         CompoundTag encoded = data.tag().getCompound(TAG_BLUEPRINT);
         if (!encoded.contains(TAG_SCHEMA, CompoundTag.TAG_INT)
             || !encoded.contains(TAG_MODEL_HASH, CompoundTag.TAG_STRING)) {
@@ -65,8 +68,16 @@ public final class MoldingBlueprintDisk {
         CompoundTag data = new CompoundTag();
         writeToTag(data, blueprint);
         replacement.remove(ModComponents.STRUCTURE_DISK_DATA);
+        replacement.remove(ModComponents.DISPLAY_ITEM);
         replacement.set(ModComponents.DISK_DATA, new DiskData(data));
         return replacement;
+    }
+
+    public static boolean clear(ItemStack stack) {
+        if (!hasBlueprintData(stack)) return false;
+        stack.remove(ModComponents.DISK_DATA);
+        stack.remove(ModComponents.DISPLAY_ITEM);
+        return true;
     }
 
     public static void writeToTag(CompoundTag data, MoldingBlueprint blueprint) {
@@ -90,7 +101,7 @@ public final class MoldingBlueprintDisk {
     }
 
     public static Optional<MoldingBlueprint> read(ItemStack stack) {
-        if (!isStructureDisk(stack)) return Optional.empty();
+        if (!hasBlueprintData(stack)) return Optional.empty();
         DiskData data = stack.get(ModComponents.DISK_DATA);
         return data == null ? Optional.empty() : readTag(data.tag());
     }
@@ -140,10 +151,14 @@ public final class MoldingBlueprintDisk {
         if (!isStructureDisk(stack)) return "";
         DiskData moldingData = stack.get(ModComponents.DISK_DATA);
         StructureDiskData structureData = stack.get(ModComponents.STRUCTURE_DISK_DATA);
-        if (moldingData == null && structureData == null) return "";
+        StoredItem displayItem = stack.get(ModComponents.DISPLAY_ITEM);
+        if (moldingData == null && structureData == null && displayItem == null) return "";
         String state = (moldingData == null ? "" : moldingData.tag().toString())
             + '|'
-            + (structureData == null ? "" : structureData.toString());
+            + (structureData == null ? "" : structureData.toString())
+            + '|'
+            + (displayItem == null ? "" : BuiltInRegistries.ITEM.getKey(displayItem.stored().getItem())
+                + ":" + displayItem.stored().getCount());
         return "data:" + sha256(state);
     }
 

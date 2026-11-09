@@ -1,12 +1,16 @@
 package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.recipe.EnhancedPlasmaJets;
+import dev.anvilcraft.plasticraft.recipe.PlasmaJetAddonFuels;
+import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
+import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
+import dev.dubhe.anvilcraft.AnvilCraft;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import dev.dubhe.anvilcraft.api.heat.HeaterManager;
 import dev.dubhe.anvilcraft.block.HeaterBlock;
@@ -18,6 +22,7 @@ import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.heatable.HeatableBlockEntity;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
+import dev.dubhe.anvilcraft.init.block.ModFluids;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
@@ -34,6 +39,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -43,7 +49,6 @@ import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
 
 import java.util.List;
-import java.util.Set;
 
 /** 高热燃料容器、点火交互和强化喷流的服务器端回归测试。 */
 public final class IgnitedFuelGameTests {
@@ -114,7 +119,7 @@ public final class IgnitedFuelGameTests {
         LargeCauldronBlockEntity largeCauldron = placeLargeCauldron(helper, new BlockPos(17, 2, 3));
         largeCauldron.getFluids().setFluids(List.of(new FluidStack(
             PlasticraftFluids.HIGH_HEAT_FUEL.get(),
-            LargeCauldronFluidHandler.TANK_CAPACITY
+            LargeCauldronFluidHandler.tankCapacity()
         )));
         largeCauldron.setIgnited(true);
         var largeTarget = helper.spawnWithNoFreeWill(EntityType.CREEPER, new Vec3(17.5D, 2.55D, 3.5D));
@@ -282,6 +287,71 @@ public final class IgnitedFuelGameTests {
         helper.succeed();
     }
 
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "9x5x7", floor = true)
+    @TestHolder(description = "Entity and bonded resin cauldrons simulate oil fuel without consumption and execute exact transactions")
+    static void resinCauldronFuelConsumptionIsTransactional(ExtendedGameTestHelper helper) {
+        Level level = helper.getLevel();
+        int amount = AnvilCraft.CONFIG.machines.plasmaJets.fishTankConsumeAmount;
+        int duration = AnvilCraft.CONFIG.machines.plasmaJets.fishTankExtraDuration;
+        for (boolean bondedForm : new boolean[]{false, true}) {
+            String form = bondedForm ? "bonded cauldron" : "entity cauldron";
+            BlockPos pos = helper.absolutePos(new BlockPos(bondedForm ? 6 : 2, 2, 3));
+            HardenedResinCauldronEntity cauldron = new HardenedResinCauldronEntity(
+                PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
+                level,
+                pos.getBottomCenter(),
+                PlasticraftBlocks.HARDEND_RESIN_CAULDRON.get().defaultBlockState(),
+                PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(),
+                PlasticEntityOrientation.DEFAULT
+            );
+            IFluidHandler handler;
+            if (bondedForm) {
+                level.setBlock(pos, cauldron.getDisplayState().setValue(AbstractPlasticEntityBlock.BONDED, true),
+                    Block.UPDATE_ALL);
+                check(level.getBlockEntity(pos) instanceof BondedEntityBlockEntity,
+                    "fuel test did not create the bonded cauldron");
+                BondedEntityBlockEntity bonded = (BondedEntityBlockEntity) level.getBlockEntity(pos);
+                check(bonded.initialize(cauldron, cauldron.getDisplayState(), Direction.UP,
+                    PlasticEntityOrientation.DEFAULT, true), "fuel test could not initialize the bonded cauldron");
+                handler = bonded.getFluidHandler();
+            } else {
+                cauldron.setNoGravity(true);
+                check(level.addFreshEntity(cauldron), "fuel test could not spawn the entity cauldron");
+                handler = cauldron.getFluidHandler();
+            }
+            int initialAmount = Math.min(HardenedResinCauldronEntity.CAPACITY, amount * 2);
+            check(handler.fill(new FluidStack(ModFluids.OIL.get(), initialAmount), IFluidHandler.FluidAction.EXECUTE)
+                    == initialAmount, form + " could not store the fuel test oil");
+            FluidStack beforeSimulation = handler.getFluidInTank(0).copy();
+            check(PlasmaJetAddonFuels.RESIN_CAULDRON.tryConsumeOnce(level, pos, true).orElse(-1) == duration,
+                form + " simulated fuel with the wrong burn duration");
+            check(FluidStack.matches(beforeSimulation, handler.getFluidInTank(0)),
+                form + " simulation consumed oil");
+            check(PlasmaJetAddonFuels.RESIN_CAULDRON.tryConsumeOnce(level, pos, false).orElse(-1) == duration,
+                form + " executed fuel with the wrong burn duration");
+            check(handler.getFluidInTank(0).getAmount() == initialAmount - amount,
+                form + " execution consumed the wrong amount of oil");
+            handler.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.EXECUTE);
+            handler.fill(new FluidStack(ModFluids.OIL.get(), amount - 1), IFluidHandler.FluidAction.EXECUTE);
+            FluidStack insufficient = handler.getFluidInTank(0).copy();
+            for (boolean simulate : new boolean[]{true, false}) {
+                check(PlasmaJetAddonFuels.RESIN_CAULDRON.tryConsumeOnce(level, pos, simulate).isEmpty()
+                        && FluidStack.matches(insufficient, handler.getFluidInTank(0)),
+                    form + " accepted or consumed insufficient oil while simulate=" + simulate);
+            }
+            handler.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.EXECUTE);
+            handler.fill(new FluidStack(Fluids.WATER, amount), IFluidHandler.FluidAction.EXECUTE);
+            FluidStack nonFuel = handler.getFluidInTank(0).copy();
+            for (boolean simulate : new boolean[]{true, false}) {
+                check(PlasmaJetAddonFuels.RESIN_CAULDRON.tryConsumeOnce(level, pos, simulate).isEmpty()
+                        && FluidStack.matches(nonFuel, handler.getFluidInTank(0)),
+                    form + " accepted or consumed non-oil fluid while simulate=" + simulate);
+            }
+        }
+        helper.succeed();
+    }
+
     private static HeatingJet placeHeatingJet(
         ExtendedGameTestHelper helper,
         BlockPos relativeCauldronPos,
@@ -305,13 +375,11 @@ public final class IgnitedFuelGameTests {
         level.setBlock(heatablePos, Blocks.NETHERITE_BLOCK.defaultBlockState(), Block.UPDATE_ALL);
         BlockState jetState = ModBlocks.PLASMA_JETS.getDefaultState();
         level.setBlock(jetPos, jetState, Block.UPDATE_ALL);
-        PlasmaJetsBlockEntity jet = new PlasmaJetsBlockEntity(
-            jetPos,
-            jetState,
-            100,
-            Set.of(TubeWallLayer.of(tubeCenter))
-        );
-        level.setBlockEntity(jet);
+        check(level.getBlockEntity(jetPos) instanceof PlasmaJetsBlockEntity,
+            "heating test did not create a plasma jet block entity");
+        PlasmaJetsBlockEntity jet = (PlasmaJetsBlockEntity) level.getBlockEntity(jetPos);
+        jet.setDuration(100);
+        jet.getTubeWalls().add(TubeWallLayer.of(tubeCenter));
         return new HeatingJet(jet, heatablePos);
     }
 

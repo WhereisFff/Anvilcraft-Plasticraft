@@ -7,33 +7,19 @@ import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinAnvilRende
 import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinCauldronRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.ResinAnvilRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.UniversalPlasticEntityRenderer;
-import dev.anvilcraft.plasticraft.client.renderer.entity.allay.WorkingAllayRenderer;
 import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.ClearPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.ElasticPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.EngineeringPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.HeatResistantPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
-import dev.anvilcraft.plasticraft.entity.allay.WorkingAllayEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import net.minecraft.world.entity.MobCategory;
-import net.minecraft.world.level.storage.loot.LootTable;
 
 public final class PlasticraftEntities {
-    public static final EntityEntry<WorkingAllayEntity> WORKING_ALLAY = AnvilcraftPlasticraft.REGISTRUM
-        .<WorkingAllayEntity>entity("working_allay", WorkingAllayEntity::new, MobCategory.CREATURE)
-        .properties(builder -> builder
-            .sized(0.35F, 0.6F)
-            .eyeHeight(0.36F)
-            .clientTrackingRange(8)
-            .updateInterval(2))
-        .lang("Working Allay")
-        .renderer(() -> WorkingAllayRenderer::new)
-        .loot((tables, type) -> tables.add(type, LootTable.lootTable()))
-        .register();
-
     public static final EntityEntry<CatalyticPressLidEntity> CATALYTIC_PRESS_LID = AnvilcraftPlasticraft.REGISTRUM
         .<CatalyticPressLidEntity>entity("catalytic_press_lid", CatalyticPressLidEntity::new, MobCategory.MISC)
         .properties(builder -> builder
@@ -113,6 +99,16 @@ public final class PlasticraftEntities {
             .clientTrackingRange(10)
             .updateInterval(1))
         .lang("Clear Plastic Block")
+        .renderer(() -> UniversalPlasticEntityRenderer::new)
+        .register();
+
+    public static final EntityEntry<ElasticPlasticEntity> ELASTIC_PLASTIC = AnvilcraftPlasticraft.REGISTRUM
+        .<ElasticPlasticEntity>entity("elastic_plastic", ElasticPlasticEntity::new, MobCategory.MISC)
+        .properties(builder -> builder
+            .sized(UniversalPlasticEntity.COLLISION_SIZE, UniversalPlasticEntity.COLLISION_SIZE)
+            .clientTrackingRange(10)
+            .updateInterval(1))
+        .lang("Elastic Plastic Block")
         .renderer(() -> UniversalPlasticEntityRenderer::new)
         .register();
 

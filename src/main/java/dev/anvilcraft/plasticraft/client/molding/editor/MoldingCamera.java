@@ -28,6 +28,12 @@ public final class MoldingCamera {
     }
 
     public void setPreset(MoldingViewPreset preset) {
+        if (this.preset == MoldingViewPreset.PERSPECTIVE && preset != MoldingViewPreset.PERSPECTIVE) {
+            this.orthographicSpan = Math.clamp(2.0D * this.distance * Math.tan(FIELD_OF_VIEW * 0.5D),
+                MIN_ORTHOGRAPHIC_SPAN, MAX_ORTHOGRAPHIC_SPAN);
+        } else if (this.preset != MoldingViewPreset.PERSPECTIVE && preset == MoldingViewPreset.PERSPECTIVE) {
+            alignOrbitToPreset();
+        }
         this.preset = preset;
     }
 
@@ -41,12 +47,15 @@ public final class MoldingCamera {
     }
 
     public void orbit(double deltaYaw, double deltaPitch) {
+        if (!Double.isFinite(deltaYaw) || !Double.isFinite(deltaPitch)) return;
+        if (this.preset != MoldingViewPreset.PERSPECTIVE) alignOrbitToPreset();
         this.preset = MoldingViewPreset.PERSPECTIVE;
-        this.yaw += deltaYaw;
+        this.yaw = Math.IEEEremainder(this.yaw + deltaYaw, Math.TAU);
         this.pitch = Math.clamp(this.pitch + deltaPitch, Math.toRadians(-89.0D), Math.toRadians(89.0D));
     }
 
     public void pan(double horizontal, double vertical, int width, int height) {
+        if (!Double.isFinite(horizontal) || !Double.isFinite(vertical)) return;
         ViewportTransform transform = this.transform(width, height);
         ViewportRay center = transform.ray(width * 0.5D, height * 0.5D);
         Vector3d forward = center.direction();
@@ -58,6 +67,7 @@ public final class MoldingCamera {
     }
 
     public void zoom(double amount) {
+        if (!Double.isFinite(amount)) return;
         if (this.preset == MoldingViewPreset.PERSPECTIVE) {
             this.distance = Math.clamp(this.distance * Math.pow(1.1D, amount), MIN_DISTANCE, MAX_DISTANCE);
         } else {
@@ -70,10 +80,33 @@ public final class MoldingCamera {
     }
 
     public void focus(Vector3d center, double extent) {
+        this.focus(center, extent, 1, 1);
+    }
+
+    public void focus(Vector3d center, double extent, int width, int height) {
+        if (!center.isFinite() || !Double.isFinite(extent) || width <= 0 || height <= 0) return;
         this.target.set(center);
-        double boundedExtent = Math.max(extent, 2.0D);
-        this.distance = Math.clamp(boundedExtent * 2.4D, MIN_DISTANCE, MAX_DISTANCE);
-        this.orthographicSpan = Math.clamp(boundedExtent * 1.35D, MIN_ORTHOGRAPHIC_SPAN, MAX_ORTHOGRAPHIC_SPAN);
+        double radius = Math.max(extent, 1.0D) * 1.15D;
+        double aspect = (double) width / height;
+        double halfFov = Math.min(FIELD_OF_VIEW * 0.5D, Math.atan(Math.tan(FIELD_OF_VIEW * 0.5D) * aspect));
+        // 以包围球与较窄的视野求距离，窄面板也能完整容纳选择内容。
+        this.distance = Math.clamp(radius / Math.sin(halfFov), MIN_DISTANCE, MAX_DISTANCE);
+        this.orthographicSpan = Math.clamp(2.0D * radius / Math.min(1.0D, aspect),
+            MIN_ORTHOGRAPHIC_SPAN, MAX_ORTHOGRAPHIC_SPAN);
+    }
+
+    private void alignOrbitToPreset() {
+        switch (this.preset) {
+            case FRONT -> { this.yaw = Math.PI; this.pitch = 0.0D; }
+            case BACK -> { this.yaw = 0.0D; this.pitch = 0.0D; }
+            case LEFT -> { this.yaw = -Math.PI * 0.5D; this.pitch = 0.0D; }
+            case RIGHT -> { this.yaw = Math.PI * 0.5D; this.pitch = 0.0D; }
+            case TOP -> { this.yaw = Math.PI; this.pitch = Math.toRadians(89.0D); }
+            case BOTTOM -> { this.yaw = Math.PI; this.pitch = Math.toRadians(-89.0D); }
+            case PERSPECTIVE -> { }
+        }
+        this.distance = Math.clamp(this.orthographicSpan / (2.0D * Math.tan(FIELD_OF_VIEW * 0.5D)),
+            MIN_DISTANCE, MAX_DISTANCE);
     }
 
     public ViewportTransform transform(int width, int height) {
@@ -142,7 +175,7 @@ public final class MoldingCamera {
     private static Vector3d cameraUp(MoldingViewPreset preset, Vector3d forward) {
         if (preset == MoldingViewPreset.TOP) return new Vector3d(0.0D, 0.0D, 1.0D);
         if (preset == MoldingViewPreset.BOTTOM) return new Vector3d(0.0D, 0.0D, -1.0D);
-        if (Math.abs(forward.y) > 0.999D) return new Vector3d(0.0D, 0.0D, 1.0D);
+        if (Math.abs(forward.y) > 0.999D) return new Vector3d(0.0D, 0.0D, forward.y > 0.0D ? -1.0D : 1.0D);
         return new Vector3d(0.0D, 1.0D, 0.0D);
     }
 }

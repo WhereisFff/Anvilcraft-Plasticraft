@@ -3,6 +3,10 @@ tasks.register('sourcesJar', Jar) {
     archiveClassifier = 'sources'
 }
 
+tasks.withType(Jar).configureEach {
+    includeEmptyDirs = false
+}
+
 jar {
     from project.file('LICENSE')
     from project.file('ASSETS_LICENSE')
