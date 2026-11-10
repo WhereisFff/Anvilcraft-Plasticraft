@@ -119,7 +119,7 @@ public final class PlasticraftLanguageData {
         provider.add("screen.anvilcraftplasticraft.molding.tool.mirror", "Mirror (M)");
         provider.add("screen.anvilcraftplasticraft.molding.type", "Assign type");
         provider.add("screen.anvilcraftplasticraft.molding.type.normal", "Normal");
-        provider.add("screen.anvilcraftplasticraft.molding.type.chest", "Chest");
+        provider.add("screen.anvilcraftplasticraft.molding.type.crate", "Crate");
         provider.add("screen.anvilcraftplasticraft.molding.type.tank", "Tank");
         provider.add("screen.anvilcraftplasticraft.molding.type.anvil", "Anvil");
         provider.add("screen.anvilcraftplasticraft.molding.type.cauldron", "Cauldron");
@@ -333,7 +333,7 @@ public final class PlasticraftLanguageData {
         );
         provider.add("tooltip.anvilcraftplasticraft.molding.clay", "Clay slot %1$s, molded %2$s / %3$s");
         provider.add("tooltip.anvilcraftplasticraft.molding.partial_downgrade", "This result will downgrade to a normal product");
-        provider.add("tooltip.anvilcraftplasticraft.molded_chest", "A plastic chest that stores %1$s stacks of items%2$s");
+        provider.add("tooltip.anvilcraftplasticraft.molded_crate", "A plastic crate that stores %1$s stacks of items%2$s");
         provider.add(
             "tooltip.anvilcraftplasticraft.molded_tank",
             "A plastic tank that stores %1$s B of fluid%2$s"
@@ -361,7 +361,7 @@ public final class PlasticraftLanguageData {
             "tooltip.anvilcraftplasticraft.molded_tray",
             "A plastic tray that carries up to nine compatible redstone components with their native behavior and lighting"
         );
-        provider.add("tooltip.anvilcraftplasticraft.molded_chest_contents", "Occupied slots: %1$s/%2$s");
+        provider.add("tooltip.anvilcraftplasticraft.molded_crate_contents", "Used capacity: %1$s/%2$s stacks");
         provider.add("tooltip.anvilcraftplasticraft.molded_tank_contents", "Stored fluid: %1$s mB/%2$s B");
         provider.add("tooltip.anvilcraftplasticraft.molded_more_contents", "%s more content types");
         provider.add("tooltip.anvilcraftplasticraft.molded_feature.heat_resistant", ", fireproof");

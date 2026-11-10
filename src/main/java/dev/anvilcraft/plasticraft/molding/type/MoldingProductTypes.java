@@ -22,7 +22,7 @@ import java.util.Objects;
 /** 当前版本注册的制品类型。顺序同时是类型叠加层的稳定显示顺序。 */
 public final class MoldingProductTypes {
     public static final ResourceLocation NORMAL_ID = AnvilcraftPlasticraft.of("normal");
-    public static final ResourceLocation CHEST_ID = AnvilcraftPlasticraft.of("chest");
+    public static final ResourceLocation CRATE_ID = AnvilcraftPlasticraft.of("crate");
     public static final ResourceLocation TANK_ID = AnvilcraftPlasticraft.of("tank");
     public static final ResourceLocation ANVIL_ID = AnvilcraftPlasticraft.of("anvil");
     public static final ResourceLocation CAULDRON_ID = AnvilcraftPlasticraft.of("cauldron");
@@ -51,7 +51,7 @@ public final class MoldingProductTypes {
         }
     }
 
-    public static boolean isChest(ResourceLocation id) {
+    public static boolean isCrate(ResourceLocation id) {
         return storageKind(id) == MoldingProductType.StorageKind.ITEMS;
     }
 
@@ -145,7 +145,7 @@ public final class MoldingProductTypes {
         EditableMoldingModel model,
         BakedMoldingModel baked
     ) {
-        if (CHEST_ID.equals(id) || TANK_ID.equals(id)) {
+        if (CRATE_ID.equals(id) || TANK_ID.equals(id)) {
             return MoldingNegativeCavityAnalyzer.analyzeSealed(model, baked);
         }
         if (isCauldron(id)) return MoldingNegativeCavityAnalyzer.analyzeCauldron(model, baked);
@@ -153,7 +153,7 @@ public final class MoldingProductTypes {
     }
 
     private static boolean usesNegativeCavitySemantics(ResourceLocation id) {
-        return CHEST_ID.equals(id) || TANK_ID.equals(id) || isCauldron(id);
+        return CRATE_ID.equals(id) || TANK_ID.equals(id) || isCauldron(id);
     }
 
     public static boolean requiresPrinting(ResourceLocation id) {
@@ -186,10 +186,10 @@ public final class MoldingProductTypes {
             "item.anvilcraftplasticraft.molded_product_suffix.block"
         ));
         register(types, new SimpleType(
-            CHEST_ID,
+            CRATE_ID,
             MoldingProductType.StorageKind.ITEMS,
             64,
-            typeTranslationKey(CHEST_ID)
+            typeTranslationKey(CRATE_ID)
         ));
         register(types, new SimpleType(
             TANK_ID,

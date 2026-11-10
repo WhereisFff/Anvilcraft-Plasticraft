@@ -326,9 +326,9 @@ public final class PlasticItemTooltipManager {
 
     private static void addMoldedProductTooltip(ItemStack stack, List<Component> tooltip) {
         MoldedPlasticData.get(stack).ifPresent(data -> {
-            if (MoldingProductTypes.isChest(data.finalType())) {
+            if (MoldingProductTypes.isCrate(data.finalType())) {
                 tooltip.add(Component.translatable(
-                    "tooltip.anvilcraftplasticraft.molded_chest",
+                    "tooltip.anvilcraftplasticraft.molded_crate",
                     data.capacity(),
                     moldedFeature(data, false)
                 ).withStyle(ChatFormatting.GRAY));

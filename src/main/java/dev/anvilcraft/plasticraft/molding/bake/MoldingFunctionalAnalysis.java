@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.molding.bake;
 
-/** 箱子与储罐共用的密封外壳分析结果。 */
+/** 板条箱与储罐共用的密封外壳分析结果。 */
 public record MoldingFunctionalAnalysis(
     MoldingVolumeMask cavityMask,
     int cavityCount,

@@ -1,6 +1,7 @@
 package dev.anvilcraft.plasticraft.molding.product;
 
 import dev.anvilcraft.plasticraft.init.PlasticraftDataComponents;
+import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticCrateStorage;
 import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticStorageHandle;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import net.minecraft.world.item.ItemStack;
@@ -10,18 +11,20 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
- * 无菜单箱子与塑料炼药锅使用的稀疏物品能力。
+ * 塑料板条箱与炼药锅的物品能力。
  *
- * <p>箱子每格上限即物品自身堆叠上限，槽数等于容量；炼药锅按 {@link PlasticCauldronLayout} 取槽数与上限，
+ * <p>板条箱委托本体仓储按类型合并；炼药锅按 {@link PlasticCauldronLayout} 取槽数与上限，
  * 并沿用硬化树脂炼药锅的槽序语义：只能向输入槽插入，输出槽与输入槽都允许取出。
  */
 public final class MoldedPlasticItemHandler implements IItemHandler {
     private final MoldedPlasticStorageHandle handle;
     private final Runnable onOutputChanged;
+    private final BooleanSupplier dispose;
 
     public MoldedPlasticItemHandler(
         Supplier<Optional<MoldedPlasticData>> data,
@@ -36,22 +39,50 @@ public final class MoldedPlasticItemHandler implements IItemHandler {
         Consumer<MoldedPlasticData> update,
         Runnable onOutputChanged
     ) {
+        this(data, update, onOutputChanged, () -> false);
+    }
+
+    public MoldedPlasticItemHandler(
+        Supplier<Optional<MoldedPlasticData>> data,
+        Consumer<MoldedPlasticData> update,
+        Runnable onOutputChanged,
+        BooleanSupplier dispose
+    ) {
         this.handle = new MoldedPlasticStorageHandle(data, update);
         this.onOutputChanged = onOutputChanged;
+        this.dispose = dispose;
     }
 
     @Override
     public int getSlots() {
+        if (this.handle.isCrate()) {
+            return this.crateStorage(false).map(storage -> storage.getItems().getSlots()).orElse(0);
+        }
         return this.handle.data().map(MoldedPlasticItemHandler::slotCount).orElse(0);
     }
 
     @Override
     public ItemStack getStackInSlot(int slot) {
+        if (this.handle.isCrate()) {
+            return this.crateStorage(false).map(storage -> storage.getItems().getStackInSlot(slot))
+                .orElse(ItemStack.EMPTY);
+        }
         return slot >= 0 && slot < this.getSlots() ? this.handle.itemInSlot(slot) : ItemStack.EMPTY;
     }
 
     @Override
     public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
+        if (this.handle.isCrate()) {
+            ItemStack preview = this.crateStorage(false)
+                .map(storage -> storage.getItems().insertItem(slot, stack, true)).orElse(stack);
+            if (simulate || preview.getCount() == stack.getCount()) {
+                return preview;
+            }
+            ItemStack remaining = this.crateStorage(true)
+                .map(storage -> storage.getItems().insertItem(slot, stack, false)).orElse(stack);
+            this.handle.refreshCrate();
+            return remaining;
+        }
         return this.insert(slot, stack, simulate, false);
     }
 
@@ -86,6 +117,14 @@ public final class MoldedPlasticItemHandler implements IItemHandler {
 
     @Override
     public ItemStack extractItem(int slot, int amount, boolean simulate) {
+        if (this.handle.isCrate()) {
+            ItemStack extracted = this.crateStorage(false)
+                .map(storage -> storage.getItems().extractItem(slot, amount, simulate)).orElse(ItemStack.EMPTY);
+            if (!simulate) {
+                this.handle.refreshCrate();
+            }
+            return extracted;
+        }
         if (amount <= 0 || slot < 0 || slot >= this.getSlots()) return ItemStack.EMPTY;
         ItemStack existing = this.handle.itemInSlot(slot);
         if (existing.isEmpty()) return ItemStack.EMPTY;
@@ -104,6 +143,9 @@ public final class MoldedPlasticItemHandler implements IItemHandler {
 
     @Override
     public int getSlotLimit(int slot) {
+        if (this.handle.isCrate()) {
+            return this.crateStorage(false).map(storage -> storage.getItems().getSlotLimit(slot)).orElse(0);
+        }
         return slot >= 0 && slot < this.getSlots()
             ? this.handle.data().map(value -> slotLimit(value, slot, this.handle.itemInSlot(slot))).orElse(0)
             : 0;
@@ -111,6 +153,9 @@ public final class MoldedPlasticItemHandler implements IItemHandler {
 
     /** 配方缓存与熔岩修复需要原位更新，避免先清空再写入时触发出口或丢失超大堆叠。 */
     public void setStackInSlot(int slot, ItemStack stack) {
+        if (this.handle.isCrate()) {
+            throw new IllegalStateException("Crate contents must be changed through warehouse insertion and extraction");
+        }
         Optional<MoldedPlasticData> current = this.handle.data();
         if (current.isEmpty() || slot < 0 || slot >= this.getSlots()) throw new IndexOutOfBoundsException(slot);
         if (!stack.isEmpty() && stack.getCount() > slotLimit(current.orElseThrow(), slot, stack)) {
@@ -122,7 +167,24 @@ public final class MoldedPlasticItemHandler implements IItemHandler {
 
     @Override
     public boolean isItemValid(int slot, ItemStack stack) {
+        if (this.handle.isCrate()) {
+            return this.crateStorage(false).map(storage -> storage.getItems().isItemValid(slot, stack)).orElse(false);
+        }
         return this.accepts(slot, stack, false);
+    }
+
+    public Optional<MoldedPlasticCrateStorage> crateStorage(boolean create) {
+        return this.handle.crateStorage(create).map(storage -> {
+            storage.getItems().setDispose(this.dispose.getAsBoolean());
+            return storage;
+        });
+    }
+
+    public void refreshCrate() {
+        if (this.handle.data().flatMap(MoldedPlasticData::storageId).isPresent() && this.handle.isCrate()) {
+            this.crateStorage(false);
+            this.handle.refreshCrate();
+        }
     }
 
     private boolean accepts(int slot, ItemStack stack, boolean intoOutput) {
@@ -151,7 +213,7 @@ public final class MoldedPlasticItemHandler implements IItemHandler {
     private static int slotCount(MoldedPlasticData data) {
         PlasticCauldronLayout layout = PlasticCauldronLayout.of(data.finalType());
         if (layout != null) return layout.totalSlots();
-        return MoldingProductTypes.isChest(data.finalType()) ? data.capacity() : 0;
+        return MoldingProductTypes.isCrate(data.finalType()) ? data.capacity() : 0;
     }
 
     private static boolean isOutputSlot(MoldedPlasticData data, int slot) {

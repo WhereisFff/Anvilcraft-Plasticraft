@@ -6,11 +6,11 @@ navigation:
 
 # Shared Movable-Product Rules
 
-The special 16x16x14px products that cool straight out of world melt and the ordinary products the molding chamber makes are all movable plastic products. Chests, tanks, anvils, and trays have not changed material — they simply grew a function on top of the same material and shape rules
+The special 16x16x14px products that cool straight out of world melt and the ordinary products the molding chamber makes are all movable plastic products. Crates, tanks, anvils, and trays have not changed material — they simply grew a function on top of the same material and shape rules
 
 ## Creative inventory
 
-Each plastic material gets its own labeled section in the Plasticraft creative tab. Its banner starts on a new row and shows a material tooltip on hover, and the section holds that material's melt bucket, granules, standard 16x16x16px block, chest, tank, anvil, and tray product slots
+Each plastic material gets its own labeled section in the Plasticraft creative tab. Its banner starts on a new row and shows a material tooltip on hover, and the section holds that material's melt bucket, granules, standard 16x16x16px block, crate, tank, anvil, and tray product slots
 
 16-color items are folded into one representative slot by default, so the tab stays readable. Right-click that slot to open the 16-color picker; click a material banner to expand every color-capable slot in the section, and click it again to fold it back. The client configuration controls the initial state, and disabling folding starts with all sixteen colors visible
 

@@ -10,23 +10,26 @@ import dev.anvilcraft.plasticraft.api.texture.PlasticTextureLayout;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.init.PlasticraftDataComponents;
+import dev.anvilcraft.plasticraft.init.PlasticraftStorageTypes;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
 import dev.anvilcraft.plasticraft.molding.bake.ManufacturedMoldingGeometry;
-import dev.anvilcraft.plasticraft.molding.bake.MoldingBarrierFace;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingAnvilShapeAnalyzer;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingBarrierFace;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingConvexFace;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingConvexHull;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingTrayShapeAnalysis;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingTrayShapeAnalyzer;
-import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
-import dev.anvilcraft.plasticraft.molding.type.MoldingProductPreview;
-import dev.anvilcraft.plasticraft.molding.type.MoldingProductType;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductPreview;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductType;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
+import dev.dubhe.anvilcraft.init.item.ModComponents;
+import dev.dubhe.anvilcraft.item.property.component.StorageRef;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -212,14 +215,14 @@ public record MoldedPlasticData(
             }
             case ITEMS -> {
                 if (!contents.fluids().isEmpty() || !contents.trayComponents().isEmpty()) {
-                    throw new IllegalArgumentException("Molded chest cannot carry fluids");
+                    throw new IllegalArgumentException("Molded crate cannot carry fluids");
                 }
                 if (contents.items().stream().anyMatch(item -> item.slot() >= capacity)) {
-                    throw new IllegalArgumentException("Molded chest item slot exceeds its capacity");
+                    throw new IllegalArgumentException("Molded crate item slot exceeds its capacity");
                 }
                 if (contents.items().stream()
                     .anyMatch(item -> item.stack().getCount() > item.stack().getMaxStackSize())) {
-                    throw new IllegalArgumentException("Molded chest item exceeds its stack limit");
+                    throw new IllegalArgumentException("Molded crate item exceeds its stack limit");
                 }
             }
             case FLUIDS -> {
@@ -650,6 +653,11 @@ public record MoldedPlasticData(
             ? data
             : data.withOrientation(PlasticEntityOrientation.DEFAULT);
         stack.set(PlasticraftDataComponents.MOLDED_PLASTIC.get(), normalized);
+        if (MoldingProductTypes.isCrate(normalized.finalType()) && normalized.storageId().isPresent()) {
+            stack.set(ModComponents.STORAGE, new StorageRef(PlasticraftStorageTypes.MOLDED_CRATE, normalized.storageId().orElseThrow()));
+        } else {
+            stack.remove(ModComponents.STORAGE);
+        }
     }
 
     private DerivedData derivedData() {

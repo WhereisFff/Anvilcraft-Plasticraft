@@ -1512,7 +1512,7 @@ public final class PlasticMoldingChamberGameTests {
     @TestHolder(description = "Multiphase Transcendium bypasses type validation but never the chamber size limit")
     static void multiphaseTranscendiumOnlyOverridesType(ExtendedGameTestHelper helper) {
         PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
-        EditableMoldingModel invalidChest = cubeModel(8.0D).withRequestedType(MoldingProductTypes.CHEST_ID);
+        EditableMoldingModel invalidChest = cubeModel(8.0D).withRequestedType(MoldingProductTypes.CRATE_ID);
         check(chamber.replaceEditableModel(invalidChest, chamber.revision()).accepted(),
             "invalid chest model could not be staged for override testing");
         PlasticMoldingChamberBlockEntity.MachineOutcome missingOverride = chamber.requestLock();
@@ -1532,7 +1532,7 @@ public final class PlasticMoldingChamberGameTests {
         check(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.RESOURCE_SLOT).getCount() == 1,
             "unlock refunded the committed Multiphase Transcendium");
 
-        EditableMoldingModel oversizedChest = cubeModel(49.0D).withRequestedType(MoldingProductTypes.CHEST_ID);
+        EditableMoldingModel oversizedChest = cubeModel(49.0D).withRequestedType(MoldingProductTypes.CRATE_ID);
         check(chamber.replaceEditableModel(oversizedChest, chamber.revision()).accepted(),
             "oversized chest model could not be staged for limit testing");
         PlasticMoldingChamberBlockEntity.MachineOutcome oversized = chamber.requestLock();
@@ -1548,7 +1548,7 @@ public final class PlasticMoldingChamberGameTests {
     @TestHolder(description = "Creative Generator bypasses size, type, and melt limits and is consumed when processing starts")
     static void creativeGeneratorIsConsumedAtProcessingStart(ExtendedGameTestHelper helper) {
         PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
-        EditableMoldingModel oversizedChest = cubeModel(49.0D).withRequestedType(MoldingProductTypes.CHEST_ID);
+        EditableMoldingModel oversizedChest = cubeModel(49.0D).withRequestedType(MoldingProductTypes.CRATE_ID);
         check(chamber.replaceEditableModel(oversizedChest, chamber.revision()).accepted(),
             "oversized creative model could not be staged");
         PlasticMoldingChamberBlockEntity.MachineOutcome ordinaryLock = chamber.requestLock();

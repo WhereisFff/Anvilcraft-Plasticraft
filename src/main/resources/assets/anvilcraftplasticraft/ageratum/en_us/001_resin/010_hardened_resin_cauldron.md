@@ -31,7 +31,7 @@ A cauldron you can carry away. Like a resin anvil it is an entity affected by gr
 A Hardened Resin Cauldron can store lava normally, but its body is not fire-resistant. Touching world lava still destroys the cauldron and its contents
 </warning>
 
-Plastic cauldrons are a first-class product type in the Plastic Molding Chamber, taking their shape and capacity from your own model while behaving exactly like a Hardened Resin Cauldron, and every plastic material can store lava normally. A model with a large enough opening upgrades to a Large Plastic Cauldron. See [Plastic Chests, Tanks and Cauldrons](../003_plastic/020_plastic_containers.md)
+Plastic cauldrons are a first-class product type in the Plastic Molding Chamber, taking their shape and capacity from your own model while behaving exactly like a Hardened Resin Cauldron, and every plastic material can store lava normally. A model with a large enough opening upgrades to a Large Plastic Cauldron. See [Plastic Crates, Tanks and Cauldrons](../003_plastic/020_plastic_containers.md)
 
 ## Plasma jet fuel
 

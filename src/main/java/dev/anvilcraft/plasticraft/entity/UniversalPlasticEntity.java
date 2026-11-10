@@ -14,54 +14,56 @@ import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
-import dev.dubhe.anvilcraft.api.entity.IGenericAnvilEntity;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingTrayShapeAnalyzer;
-import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContentSummary;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContents;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticFluidHandler;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticItemHandler;
-import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticStorageHandle;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticNames;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayCell;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponent;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponentGeometry;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponentPlacement;
 import dev.anvilcraft.plasticraft.molding.product.PlasticCauldronLayout;
+import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticCrateAccess;
+import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticStorageHandle;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
+import dev.dubhe.anvilcraft.api.entity.IGenericAnvilEntity;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.api.giantanvil.IShockEntity;
 import dev.dubhe.anvilcraft.api.giantanvil.ShockAnvilBehavior;
+import dev.dubhe.anvilcraft.block.container.storage.CrateBlock;
 import dev.dubhe.anvilcraft.init.item.ModItemTags;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.core.HolderLookup;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityType;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.world.entity.player.Player;
+import net.minecraft.stats.Stats;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraft.world.phys.shapes.BooleanOp;
 import net.minecraft.world.phys.shapes.Shapes;
-import net.minecraft.stats.Stats;
-import net.minecraft.world.level.gameevent.GameEvent;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidUtil;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
@@ -106,7 +108,8 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
     private final MoldedPlasticItemHandler moldedItemHandler = new MoldedPlasticItemHandler(
         this::getMoldedData,
         this::replaceMoldedData,
-        this::onMoldedCauldronOutputChanged
+        this::onMoldedCauldronOutputChanged,
+        () -> CrateBlock.hasAdjacentVoidMatter(this.level(), BlockPos.containing(this.getBoundingBox().getCenter()))
     );
     private final MoldedPlasticFluidHandler moldedFluidHandler = new MoldedPlasticFluidHandler(
         this::getMoldedData,
@@ -400,6 +403,15 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
 
     @Override
     protected InteractionResult interactNormally(Player player, InteractionHand hand) {
+        if (this.getMoldedData().filter(data -> MoldingProductTypes.isCrate(data.finalType())).isPresent()) {
+            if (player.isSpectator()) {
+                return InteractionResult.PASS;
+            }
+            if (player instanceof ServerPlayer serverPlayer) {
+                MoldedPlasticCrateAccess.open(serverPlayer, this, null);
+            }
+            return InteractionResult.sidedSuccess(this.level().isClientSide);
+        }
         if (this.isMoldedTray()) {
             ItemStack held = player.getItemInHand(hand);
             Optional<MoldedPlasticData> data = this.getMoldedData();
@@ -544,10 +556,13 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
     }
 
     private CompoundTag createDisplayItemsTag(MoldedPlasticData data, HolderLookup.Provider registries) {
+        CompoundTag tag = new CompoundTag();
+        if (!MoldingProductTypes.isCauldron(data.finalType())) {
+            return tag;
+        }
         List<MoldedPlasticContents.StoredItem> items = this.level().isClientSide
             ? data.contents().items()
             : new MoldedPlasticStorageHandle(() -> Optional.of(data), ignored -> {}).items();
-        CompoundTag tag = new CompoundTag();
         ListTag stacks = new ListTag();
         for (MoldedPlasticContents.StoredItem item : items) {
             if (item.slot() < 0 || item.slot() >= DISPLAY_ITEM_SLOTS || item.stack().isEmpty()) continue;
@@ -647,6 +662,9 @@ public class UniversalPlasticEntity extends AbstractCauldronPlasticEntity implem
         if (this.isRemoved()) return;
         super.tick();
         if (this.isRemoved()) return;
+        if (!this.level().isClientSide) {
+            this.moldedItemHandler.refreshCrate();
+        }
         // 托盘光源只由位置与朝向派生，休眠期间两者都不变，跳过重复的收集与网络比较。
         if (!this.plasticraft$isResting()) MoldedTrayLightSource.update(this);
     }

@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
 
-/** 一份塑料箱子/储罐的权威稀疏内容。物品 NBT 复用本体无限堆处理器，不改用板条箱按类型合并。 */
+/** 塑料储罐与炼药锅的权威内容，保留锅内配方所需的固定槽位。 */
 public final class MoldedPlasticStorage {
     private final UUID id;
     private final TreeMap<Integer, ItemStack> items = new TreeMap<>();

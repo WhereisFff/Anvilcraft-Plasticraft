@@ -42,7 +42,7 @@ public final class AdhesiveBondHud {
         MoldedPlasticContentSummary summary = entity instanceof UniversalPlasticEntity plastic
             ? plastic.getMoldedContentSummary()
             : MoldedPlasticContentSummary.EMPTY;
-        boolean functional = MoldingProductTypes.isChest(summary.type())
+        boolean functional = MoldingProductTypes.isCrate(summary.type())
             || MoldingProductTypes.isTank(summary.type())
             || MoldingProductTypes.isCauldron(summary.type());
         if (!bonded && !functional) {

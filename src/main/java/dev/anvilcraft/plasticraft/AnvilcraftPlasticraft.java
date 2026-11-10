@@ -1,34 +1,35 @@
 package dev.anvilcraft.plasticraft;
 
 import com.mojang.logging.LogUtils;
-import dev.anvilcraft.lib.v2.network.register.NetworkRegistrar;
 import dev.anvilcraft.lib.v2.config.ConfigManager;
+import dev.anvilcraft.lib.v2.network.register.NetworkRegistrar;
 import dev.anvilcraft.lib.v2.registrum.Registrum;
 import dev.anvilcraft.plasticraft.api.tooltip.PlasticItemTooltipManager;
 import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
+import dev.anvilcraft.plasticraft.config.PlasticraftClientConfig;
 import dev.anvilcraft.plasticraft.data.PlasticraftDatagen;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveInvisibilityService;
-import dev.anvilcraft.plasticraft.config.PlasticraftClientConfig;
 import dev.anvilcraft.plasticraft.event.AnvilCraftApiBootstrap;
 import dev.anvilcraft.plasticraft.event.HighViscosityResinEvents;
 import dev.anvilcraft.plasticraft.event.PlasticVillagerTrades;
 import dev.anvilcraft.plasticraft.fluid.UniversalPlasticMeltBucketWrapper;
-import dev.anvilcraft.plasticraft.material.PlasticMaterial;
-import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
-import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticFluidHandler;
-import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticItemHandler;
-import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import dev.anvilcraft.plasticraft.init.PlasticraftDataComponents;
 import dev.anvilcraft.plasticraft.init.PlasticraftMenuTypes;
 import dev.anvilcraft.plasticraft.init.PlasticraftParticles;
 import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
+import dev.anvilcraft.plasticraft.init.PlasticraftStorageTypes;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemGroups;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticFluidHandler;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticItemHandler;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
 import dev.anvilcraft.plasticraft.recipe.EscapingVaporEffects;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetVaporizationSource;
@@ -65,6 +66,7 @@ public final class AnvilcraftPlasticraft {
     );
 
     public AnvilcraftPlasticraft(IEventBus modEventBus, ModContainer ignored) {
+        PlasticraftStorageTypes.register(modEventBus);
         PlasticraftAttachments.register(modEventBus);
         PlasticraftDataComponents.register(modEventBus);
         PlasticraftItemGroups.register(modEventBus);
@@ -189,7 +191,7 @@ public final class AnvilcraftPlasticraft {
             Capabilities.ItemHandler.ITEM,
             (stack, ignored) -> MoldedPlasticData.get(stack)
                 .filter(data -> stack.getCount() == 1
-                    && (MoldingProductTypes.isChest(data.finalType())
+                    && (MoldingProductTypes.isCrate(data.finalType())
                         || MoldingProductTypes.isCauldron(data.finalType())))
                 .map(data -> new MoldedPlasticItemHandler(
                     () -> MoldedPlasticData.get(stack),

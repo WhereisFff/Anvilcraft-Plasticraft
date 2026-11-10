@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** 托盘元件与储罐渲染用流体快照。箱子物品不再随制品数据展开。 */
+/** 托盘元件与储罐渲染用流体快照。板条箱物品不再随制品数据展开。 */
 public record MoldedPlasticContents(
     List<StoredItem> items,
     List<FluidStack> fluids,

@@ -41,7 +41,7 @@ Catalysts, heat and cold conditions for every melt are listed in [Plastic Melts]
 
 ## Elastic plastic rebounds
 
-Elastic blocks, chests, tanks, anvils, cauldrons, large cauldrons, and trays bounce while retaining their real model gaps and cavities. Their smooth surface does not apply resin's walking slowdown, and ordinary grounded movement does not trigger small bounces.
+Elastic blocks, crates, tanks, anvils, cauldrons, large cauldrons, and trays bounce while retaining their real model gaps and cavities. Their smooth surface does not apply resin's walking slowdown, and ordinary grounded movement does not trigger small bounces.
 
 - A moving product retains 80% of its incident normal speed against blocks or 72% against collidable entities; the bounce does not reduce its tangential speed
 - Product impacts below 0.06 blocks/gt stop bouncing, with a 3gt cooldown per contact face

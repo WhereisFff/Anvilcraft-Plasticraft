@@ -1,12 +1,12 @@
 ---
 navigation:
-  title: "Plastic Chests, Tanks and Cauldrons"
+  title: "Plastic Crates, Tanks and Cauldrons"
   icon: "anvilcraftplasticraft:universal_plastic"
 ---
 
-# Plastic Chests, Tanks and Cauldrons
+# Plastic Crates, Tanks and Cauldrons
 
-What a model turns into comes down to what kind of cavity it encloses. Chests and tanks want a genuinely sealed one: the shell must close each cavity in all six directions, and cavities must make up at least half of the model's total volume. A zero-thickness face may seal a cavity without adding solid volume
+What a model turns into comes down to what kind of cavity it encloses. Crates and tanks want a genuinely sealed one: the shell must close each cavity in all six directions, and cavities must make up at least half of the model's total volume. A zero-thickness face may seal a cavity without adding solid volume
 
 Several sealed cavities combine their capacity. Working against you, interior decoration, geometry poking into a cavity or an open side will invalidate the type on the spot
 
@@ -16,12 +16,12 @@ Cauldrons play by a different rule. They are open-top vessels to begin with, so 
 An inward-facing volume cube can act as either wall or cavity in all three checks: when it wholly or partly fills a valid cavity enclosed by the surrounding wall, its occupied portion counts as cavity rather than interior decoration; when it cannot create or extend a valid cavity, it stays wall
 </tip>
 
-## Chest
+## Crate
 
 - The cavity must contain at least 64 cubic pixels
 - Every 64 cubic pixels of cavity volume provides one item slot: 64 gives 1 slot and 1728 gives 27 slots
-- There is no extra menu — hoppers, chutes and other item logistics do all the inserting and extracting
-- Items and their slots survive pickup and placement
+- Right-click the entity or bonded block to open the AnvilCraft crate interface for search, sorting, bulk transfers and crafting unlocks. Hoppers and chutes share the same inventory
+- Matching items merge by type. Contents and crafting unlocks survive pickup, placement and world reloads
 
 ## Tank
 
@@ -72,7 +72,7 @@ A cauldron whose top opening covers **more than** 1600 square pixels is automati
 
 ## Type override
 
-When a model does not qualify but you want the type anyway, <ref item="anvilcraft:multiphase_transcendium"/> can force a Chest, Tank or Cauldron. The price is that capacity is calculated from the model's complete outer bounding volume instead of its actual cavity. A forced fluid container still accepts and outputs fluids normally, it just does not render its internal fluid or surface; to see what is inside, use containers, Jade or the Anvil Hammer overlay
+When a model does not qualify but you want the type anyway, <ref item="anvilcraft:multiphase_transcendium"/> can force a Crate, Tank or Cauldron. The price is that capacity is calculated from the model's complete outer bounding volume instead of its actual cavity. A forced fluid container still accepts and outputs fluids normally, it just does not render its internal fluid or surface; to see what is inside, use containers, Jade or the Anvil Hammer overlay
 
 A forced cauldron also measures its opening from the horizontal projection of that bounding box — so a model with a large enough bounding box lands on a Large Plastic Cauldron in one step
 

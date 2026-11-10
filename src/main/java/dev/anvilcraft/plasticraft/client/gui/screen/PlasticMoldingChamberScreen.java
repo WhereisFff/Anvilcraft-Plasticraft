@@ -2167,7 +2167,7 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
     }
 
     private static ItemStack typeIcon(ResourceLocation type) {
-        if (MoldingProductTypes.CHEST_ID.equals(type)) return Items.CHEST.getDefaultInstance();
+        if (MoldingProductTypes.CRATE_ID.equals(type)) return ModBlocks.CRATE.asStack();
         if (MoldingProductTypes.TANK_ID.equals(type)) return ModBlocks.FLUID_TANK.asStack();
         if (MoldingProductTypes.ANVIL_ID.equals(type)) return Items.ANVIL.getDefaultInstance();
         // 锅类型图标用原版炼药锅物品，不用默认蓝图模型

@@ -45,7 +45,7 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
         }
         if (entity instanceof UniversalPlasticEntity plastic) {
             MoldedPlasticContentSummary summary = plastic.getMoldedContentSummary();
-            if (MoldingProductTypes.isChest(summary.type()) || MoldingProductTypes.isCauldron(summary.type())) {
+            if (MoldingProductTypes.isCrate(summary.type()) || MoldingProductTypes.isCauldron(summary.type())) {
                 tag.put(MOLDED_SUMMARY_KEY, summary.toTag(entity.registryAccess()));
             }
         }
@@ -110,7 +110,7 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
 
     private static void appendMoldedSummary(ITooltip tooltip, MoldedPlasticContentSummary summary) {
         PlasticCauldronLayout layout = PlasticCauldronLayout.of(summary.type());
-        if (layout == null && !MoldingProductTypes.isChest(summary.type())) return;
+        if (layout == null && !MoldingProductTypes.isCrate(summary.type())) return;
         if (layout != null) {
             appendItems(tooltip, summary);
             return;
@@ -120,7 +120,7 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
 
     private static void appendItemSummary(ITooltip tooltip, MoldedPlasticContentSummary summary, int slots) {
         tooltip.add(Component.translatable(
-            "tooltip.anvilcraftplasticraft.molded_chest_contents",
+            "tooltip.anvilcraftplasticraft.molded_crate_contents",
             summary.occupiedSlots(),
             slots
         ).withStyle(ChatFormatting.GRAY));

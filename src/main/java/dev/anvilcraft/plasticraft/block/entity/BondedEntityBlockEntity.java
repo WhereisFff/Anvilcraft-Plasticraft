@@ -6,20 +6,21 @@ import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
+import dev.anvilcraft.plasticraft.entity.MoldedLargeCauldronInteraction;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
-import dev.anvilcraft.plasticraft.entity.MoldedLargeCauldronInteraction;
 import dev.anvilcraft.plasticraft.entity.collision.BondedPlasticShapeIndex;
 import dev.anvilcraft.plasticraft.entity.redstone.MoldedTrayLightSource;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
+import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticCrateAccess;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.dubhe.anvilcraft.api.fluid.IFluidHandlerHolder;
 import dev.dubhe.anvilcraft.api.injection.tooltip.ITooltipProviderExtension;
 import dev.dubhe.anvilcraft.item.AnvilHammerItem;
-import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -61,6 +62,7 @@ import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
 import java.util.List;
+import javax.annotation.Nullable;
 
 /** 保存被方块化实体完整数据并负责在解胶时恢复实体。 */
 public class BondedEntityBlockEntity extends BlockEntity
@@ -332,6 +334,15 @@ public class BondedEntityBlockEntity extends BlockEntity
             return this.useAnvilHammer(player, hand, hit.getDirection());
         }
 
+        if (!player.isShiftKeyDown() && !player.isSpectator()
+            && plasticEntity instanceof UniversalPlasticEntity crate
+            && crate.getMoldedData().filter(data -> MoldingProductTypes.isCrate(data.finalType())).isPresent()) {
+            if (player instanceof ServerPlayer serverPlayer) {
+                MoldedPlasticCrateAccess.open(serverPlayer, crate, this.getBlockPos());
+                this.captureCachedEntity(true);
+            }
+            return InteractionResult.sidedSuccess(player.level().isClientSide);
+        }
         Vec3 relativeHit = hit.getLocation().subtract(plasticEntity.position());
         InteractionResult result = plasticEntity.interactAt(player, relativeHit, hand);
         if (result == InteractionResult.PASS) {
@@ -380,6 +391,7 @@ public class BondedEntityBlockEntity extends BlockEntity
         this.tickHammerDeflection(serverLevel);
         Entity functionalEntity = this.getOrCreateRenderEntity();
         if (functionalEntity instanceof UniversalPlasticEntity universal) {
+            universal.getMoldedItemHandler().refreshCrate();
             universal.plasticraft$tickRedstoneConductor();
             if (universal.isMoldedTray()) {
                 universal.plasticraft$tickBondedTray();

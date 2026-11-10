@@ -21,7 +21,7 @@ public final class MoldedPlasticContentTooltip {
             // 炼药锅同时有分层流体与加工槽位，两段都要列出，槽数取自布局而非容量
             appendFluids(lines, summary);
             appendItems(lines, summary, layout.totalSlots());
-        } else if (MoldingProductTypes.isChest(summary.type())) {
+        } else if (MoldingProductTypes.isCrate(summary.type())) {
             appendItems(lines, summary, summary.capacity());
         } else if (MoldingProductTypes.isTank(summary.type())) {
             appendFluids(lines, summary);
@@ -31,7 +31,7 @@ public final class MoldedPlasticContentTooltip {
 
     private static void appendItems(List<Component> lines, MoldedPlasticContentSummary summary, int slots) {
         lines.add(Component.translatable(
-            "tooltip.anvilcraftplasticraft.molded_chest_contents",
+            "tooltip.anvilcraftplasticraft.molded_crate_contents",
             summary.occupiedSlots(),
             slots
         ));

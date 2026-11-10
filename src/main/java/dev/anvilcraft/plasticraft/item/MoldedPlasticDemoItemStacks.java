@@ -24,7 +24,7 @@ import java.util.Optional;
 public final class MoldedPlasticDemoItemStacks {
     private static final String RESOURCE_ROOT = "/data/anvilcraftplasticraft/molding/demo/";
     private static final List<DemoDefinition> DEFINITIONS = List.of(
-        new DemoDefinition("chest.json", MoldingProductTypes.CHEST_ID),
+        new DemoDefinition("crate.json", MoldingProductTypes.CRATE_ID),
         new DemoDefinition("fluid-tank.json", MoldingProductTypes.TANK_ID),
         new DemoDefinition("anvil.json", MoldingProductTypes.ANVIL_ID),
         new DemoDefinition("cauldron.json", MoldingProductTypes.CAULDRON_ID),
@@ -33,7 +33,7 @@ public final class MoldedPlasticDemoItemStacks {
     // 大型塑料炼药锅只能由玩家自制大开口模型升级得到，故不列入创造栏演示制品
     public static final List<ResourceLocation> PRODUCT_TYPES = List.of(
         MoldingProductTypes.NORMAL_ID,
-        MoldingProductTypes.CHEST_ID,
+        MoldingProductTypes.CRATE_ID,
         MoldingProductTypes.TANK_ID,
         MoldingProductTypes.ANVIL_ID,
         MoldingProductTypes.CAULDRON_ID,
