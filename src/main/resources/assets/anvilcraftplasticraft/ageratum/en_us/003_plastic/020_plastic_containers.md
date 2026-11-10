@@ -29,6 +29,7 @@ An inward-facing volume cube can act as either wall or cavity in all three check
 - The cavity must contain at least 171 cubic pixels
 - Every 171 cubic pixels of cavity volume provides 1B of capacity: 171 gives 1B and 2744 gives 16B
 - Pipes and handheld fluid containers can insert or extract fluids, and multiple fluids share that one total capacity
+- Jade shows total contents, capacity and utilization in the header; each fluid row shows its name, amount and share of total capacity, for both entities and bonded blocks
 - Every plastic tank can store lava normally; only heat-resistant plastic remains immune to fire damage
 - The liquid surface follows the current gravity direction, and moving or recovering the tank preserves its capacity and the order in which fluids are extracted
 
