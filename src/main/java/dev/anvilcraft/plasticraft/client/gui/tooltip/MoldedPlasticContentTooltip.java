@@ -31,9 +31,7 @@ public final class MoldedPlasticContentTooltip {
 
     private static void appendItems(List<Component> lines, MoldedPlasticContentSummary summary, int slots) {
         lines.add(Component.translatable(
-            MoldingProductTypes.isCrate(summary.type())
-                ? "tooltip.anvilcraftplasticraft.molded_crate_contents"
-                : "tooltip.anvilcraftplasticraft.molded_cauldron_item_contents",
+            "tooltip.anvilcraftplasticraft.molded_crate_contents",
             summary.occupiedSlots(),
             slots
         ));

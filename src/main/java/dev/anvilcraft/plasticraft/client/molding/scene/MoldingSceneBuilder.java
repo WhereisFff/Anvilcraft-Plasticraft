@@ -15,7 +15,7 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingGroup;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import org.joml.Vector3d;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -234,7 +234,9 @@ public final class MoldingSceneBuilder {
             );
         }
         if (showAxes) addGroundAxes(scene.accumulator(EditorDrawPhase.MAIN_GRID), gizmoWorldUnitsPerPixel);
-        if (includeSourceSurfaces) addSourceSurfaces(scene, model);
+        if (includeSourceSurfaces) {
+            addSourceSurfaces(scene, model, true);
+        }
         addSourceOutlines(
             scene.accumulator(EditorDrawPhase.SOURCE_OUTLINE),
             model,
@@ -420,7 +422,7 @@ public final class MoldingSceneBuilder {
             WORLD_UNITS_PER_PIXEL,
             null
         );
-        addSourceSurfaces(scene, model);
+        addSourceSurfaces(scene, model, false);
         return scene.build(revision, 0L);
     }
 
@@ -717,14 +719,32 @@ public final class MoldingSceneBuilder {
         }
     }
 
-    private static void addSourceSurfaces(SceneAccumulators scene, EditableMoldingModel model) {
+    private static void addSourceSurfaces(SceneAccumulators scene, EditableMoldingModel model, boolean ambientOcclusion) {
         Map<UUID, MoldingGroup> groups = model.groupMap();
+        List<List<Vector3d>> faces = new ArrayList<>();
+        if (ambientOcclusion) {
+            for (MoldingElement element : model.elements()) {
+                if (!isVisible(element, groups)) {
+                    continue;
+                }
+                List<Vector3d> vertices = MoldingModelBaker.transformedVertices(model, element).stream()
+                    .map(MoldingSceneBuilder::vector).toList();
+                if (element.hasVolume()) {
+                    for (int[] face : CUBE_FACES) {
+                        faces.add(List.of(vertices.get(face[0]), vertices.get(face[1]), vertices.get(face[2]), vertices.get(face[3])));
+                    }
+                } else {
+                    faces.add(vertices);
+                }
+            }
+        }
+        MoldingAmbientOcclusion lighting = ambientOcclusion ? new MoldingAmbientOcclusion(faces) : null;
         for (MoldingElement element : model.elements()) {
             if (!isVisible(element, groups)) continue;
-            MeshAccumulator target = scene.accumulator(element.hasVolume()
+            MeshAccumulator target = scene.accumulator(ambientOcclusion || element.hasVolume()
                 ? EditorDrawPhase.MANUFACTURING_SURFACE
                 : EditorDrawPhase.ZERO_THICKNESS_SURFACE);
-            addElementSurface(target, model, element, SURFACE_COLOR);
+            addElementSurface(target, model, element, SURFACE_COLOR, lighting);
         }
     }
 
@@ -737,14 +757,15 @@ public final class MoldingSceneBuilder {
         model.elements().stream()
             .filter(element -> element.id().equals(hoveredElement) && isVisible(element, groups))
             .findFirst()
-            .ifPresent(element -> addElementSurface(mesh, model, element, HOVER_COLOR));
+            .ifPresent(element -> addElementSurface(mesh, model, element, HOVER_COLOR, null));
     }
 
     private static void addElementSurface(
         MeshAccumulator mesh,
         EditableMoldingModel model,
         MoldingElement element,
-        int color
+        int color,
+        @Nullable MoldingAmbientOcclusion lighting
     ) {
         List<Vector3d> vertices = MoldingModelBaker.transformedVertices(model, element).stream()
             .map(MoldingSceneBuilder::vector)
@@ -759,17 +780,15 @@ public final class MoldingSceneBuilder {
                 Vector3d second = vertices.get(face[1]);
                 Vector3d third = vertices.get(face[2]);
                 Vector3d fourth = vertices.get(face[3]);
-                addDirectedSurface(mesh, center, first, second, third, fourth, color, inward);
+                addDirectedSurface(mesh, center, first, second, third, fourth, color, inward, lighting);
             }
             return;
         }
-        mesh.quad(
-            vertices.get(0),
-            vertices.get(1),
-            vertices.get(2),
-            vertices.get(3),
-            shadeSurface(color, vertices.get(0), vertices.get(1), vertices.get(2))
-        );
+        addLitSurface(mesh, vertices.get(0), vertices.get(1), vertices.get(2), vertices.get(3), color, lighting);
+        if (lighting != null) {
+            // 零厚度面两侧独立采样并通过背面剔除选择可见侧，遮挡侧不能借用开放侧的亮度。
+            addLitSurface(mesh, vertices.get(3), vertices.get(2), vertices.get(1), vertices.get(0), color, lighting);
+        }
     }
 
     private static boolean hasInwardWinding(MoldingElement element) {
@@ -788,17 +807,66 @@ public final class MoldingSceneBuilder {
         Vector3d third,
         Vector3d fourth,
         int color,
-        boolean inward
+        boolean inward,
+        @Nullable MoldingAmbientOcclusion lighting
     ) {
         Vector3d normal = new Vector3d(second).sub(first).cross(new Vector3d(third).sub(first));
         Vector3d faceCenter = new Vector3d(first).add(second).add(third).add(fourth).mul(0.25D);
         boolean pointsInward = normal.dot(new Vector3d(faceCenter).sub(center)) < 0.0D;
         // cube 的端点顺序同时决定可见正面和逐面光照，两者必须使用同一绕序。
         if (pointsInward != inward) {
-            mesh.quad(fourth, third, second, first, shadeSurface(color, fourth, third, second));
+            addLitSurface(mesh, fourth, third, second, first, color, lighting);
             return;
         }
-        mesh.quad(first, second, third, fourth, shadeSurface(color, first, second, third));
+        addLitSurface(mesh, first, second, third, fourth, color, lighting);
+    }
+
+    private static void addLitSurface(
+        MeshAccumulator mesh,
+        Vector3d first,
+        Vector3d second,
+        Vector3d third,
+        Vector3d fourth,
+        int color,
+        @Nullable MoldingAmbientOcclusion lighting
+    ) {
+        if (lighting == null) {
+            mesh.quad(first, second, third, fourth, shadeSurface(color, first, second, third));
+            return;
+        }
+        Vector3d u = new Vector3d(second).sub(first);
+        Vector3d v = new Vector3d(fourth).sub(first);
+        Vector3d normal = new Vector3d(u).cross(v);
+        if (normal.lengthSquared() < 1e-12) {
+            mesh.quad(first, second, third, fourth, color);
+            return;
+        }
+        normal.normalize();
+        int columns = lighting.subdivisions(u.length());
+        int rows = lighting.subdivisions(v.length());
+        Vector3d center = new Vector3d(first).add(second).add(third).add(fourth).mul(0.25);
+        Vector3d[][] points = new Vector3d[rows + 1][columns + 1];
+        int[][] colors = new int[rows + 1][columns + 1];
+        for (int row = 0; row <= rows; row++) {
+            for (int column = 0; column <= columns; column++) {
+                Vector3d point = new Vector3d(first).fma((double) column / columns, u).fma((double) row / rows, v);
+                points[row][column] = point;
+                // 边界采样略移向面内，避免相交容差把相邻凸边当成遮挡。
+                double distance = point.distance(center);
+                Vector3d sample = new Vector3d(point).lerp(center, distance > 0 ? Math.min(0.02 / distance, 1) : 0);
+                colors[row][column] = lighting.color(color, sample, normal);
+            }
+        }
+        for (int row = 0; row < rows; row++) {
+            for (int column = 0; column < columns; column++) {
+                mesh.quad(
+                    points[row][column], colors[row][column],
+                    points[row][column + 1], colors[row][column + 1],
+                    points[row + 1][column + 1], colors[row + 1][column + 1],
+                    points[row + 1][column], colors[row + 1][column]
+                );
+            }
+        }
     }
 
     private static int shadeSurface(int color, Vector3d first, Vector3d second, Vector3d third) {

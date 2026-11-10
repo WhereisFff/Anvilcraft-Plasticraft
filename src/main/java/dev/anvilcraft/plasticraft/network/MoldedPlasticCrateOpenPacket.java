@@ -9,6 +9,8 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentSerialization;
 import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.player.Player;
 
 /** 使用服务端授予的仓储来源打开本体板条箱界面。 */
@@ -27,6 +29,7 @@ public record MoldedPlasticCrateOpenPacket(BlockPos source, Component title) imp
 
     @Override
     public void handleOnClient(Player player) {
+        player.level().playSound(player, player.blockPosition(), SoundEvents.BARREL_OPEN, SoundSource.BLOCKS, 1f, 1f);
         StorageScreen.openScreen(this.source, this.title);
     }
 }
