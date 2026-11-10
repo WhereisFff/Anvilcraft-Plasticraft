@@ -16,7 +16,11 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 供实体同步、Jade 和铁砧锤共用的有界内容摘要。 */
+/**
+ * 供实体同步、Jade 和铁砧锤共用的有界内容摘要。
+ *
+ * @param occupiedSlots 板条箱的仓储空间占用量，或炼药锅的已用物品槽数
+ */
 public record MoldedPlasticContentSummary(
     ResourceLocation type,
     int capacity,

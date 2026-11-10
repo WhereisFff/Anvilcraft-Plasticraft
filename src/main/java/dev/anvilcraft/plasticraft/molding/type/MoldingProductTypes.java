@@ -188,7 +188,7 @@ public final class MoldingProductTypes {
         register(types, new SimpleType(
             CRATE_ID,
             MoldingProductType.StorageKind.ITEMS,
-            64,
+            1,
             typeTranslationKey(CRATE_ID)
         ));
         register(types, new SimpleType(
@@ -231,6 +231,13 @@ public final class MoldingProductTypes {
         }
 
         @Override
+        public int capacityFor(int cavityVolume) {
+            return CRATE_ID.equals(this.id)
+                ? Math.multiplyExact(cavityVolume, 2)
+                : MoldingProductType.super.capacityFor(cavityVolume);
+        }
+
+        @Override
         public MoldingTypeValidation validate(MoldingFunctionalAnalysis analysis) {
             if (this.unitsPerCapacity == 0) return MoldingTypeValidation.valid(0);
             if (analysis.cavityVolume() < this.unitsPerCapacity) {
@@ -243,7 +250,7 @@ public final class MoldingProductTypes {
                     < (long) analysis.cavityVolume() + analysis.shellVolume()) {
                 return MoldingTypeValidation.invalid("cavity_ratio_too_small");
             }
-            return MoldingTypeValidation.valid(analysis.cavityVolume() / this.unitsPerCapacity);
+            return MoldingTypeValidation.valid(this.capacityFor(analysis.cavityVolume()));
         }
     }
 

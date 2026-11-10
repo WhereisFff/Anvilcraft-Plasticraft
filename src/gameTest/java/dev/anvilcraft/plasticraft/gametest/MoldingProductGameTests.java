@@ -9,6 +9,7 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
+import dev.anvilcraft.plasticraft.item.MoldedPlasticDemoItemStacks;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
@@ -100,9 +101,9 @@ public final class MoldingProductGameTests {
     @EmptyTemplate(value = "3x3x3", floor = true)
     @TestHolder(description = "Chest, tank and cauldron capacity boundaries remain exact")
     static void capacityBoundaries(ExtendedGameTestHelper helper) {
-        checkCapacity(helper, MoldingProductTypes.CRATE_ID, 1728, 27, true);
-        checkCapacity(helper, MoldingProductTypes.CRATE_ID, 64, 1, true);
-        checkCapacity(helper, MoldingProductTypes.CRATE_ID, 63, 0, false);
+        checkCapacity(helper, MoldingProductTypes.CRATE_ID, 1728, 3456, true);
+        checkCapacity(helper, MoldingProductTypes.CRATE_ID, 1, 2, true);
+        checkCapacity(helper, MoldingProductTypes.CRATE_ID, 0, 0, false);
         checkCapacity(helper, MoldingProductTypes.TANK_ID, 2744, 16, true);
         checkCapacity(helper, MoldingProductTypes.TANK_ID, 171, 1, true);
         checkCapacity(helper, MoldingProductTypes.TANK_ID, 170, 0, false);
@@ -374,7 +375,7 @@ public final class MoldingProductGameTests {
             baked,
             baked.analysis().minimumMeltMillibuckets()
         );
-        check(!complete.downgraded() && complete.capacity() == 64,
+        check(!complete.downgraded() && complete.capacity() == 8192,
             "complete shell did not retain chest type: " + complete);
         MoldingProductPreview partial = MoldingProductPreview.evaluate(model, baked, 250);
         check(partial.downgraded(), "partial open shell retained chest type");
@@ -411,8 +412,8 @@ public final class MoldingProductGameTests {
         MoldingProductPreview preview = MoldingProductPreview.evaluate(model, baked, 0, false, true);
         check(MoldingProductTypes.CRATE_ID.equals(preview.finalType()),
             "creative override did not retain the forced chest type");
-        check(preview.capacity() == 15_625,
-            "creative override did not derive 1,000,000 / 64 chest slots: " + preview.capacity());
+        check(preview.capacity() == 2_000_000,
+            "creative override did not derive two storage units per cubic pixel: " + preview.capacity());
         check(preview.analysis().cavityVolume() == 1_000_000,
             "creative override did not treat the complete outer bounds as usable space");
         check(preview.formedVolume().volume() == 1_000_000,
@@ -426,7 +427,7 @@ public final class MoldingProductGameTests {
             false,
             true
         );
-        check(MoldingProductTypes.CRATE_ID.equals(product.finalType()) && product.capacity() == 15_625,
+        check(MoldingProductTypes.CRATE_ID.equals(product.finalType()) && product.capacity() == 2_000_000,
             "manufactured creative chest lost its forced type or maximum capacity");
         check(product.limitOverride(), "manufactured creative chest lost its limit-override marker");
         check(product.volumeMask().sizeX() == 100
@@ -555,7 +556,7 @@ public final class MoldingProductGameTests {
         check(items.getStackInSlot(0).getCount() == 3, "chest item was not retained");
         check(chest[0].storageId().isPresent(), "chest capability did not allocate an external storage id");
         check(chest[0].contents().items().isEmpty(), "chest capability kept inline item contents");
-        check(chest[0].summary().occupiedSlots() == 1, "chest capability did not refresh its content summary");
+        check(chest[0].summary().occupiedSlots() == 3, "chest capability did not refresh its content summary");
 
         EditableMoldingModel tankModel = model(MoldingProductTypes.TANK_ID);
         MoldedPlasticData tankData = fullData(tankModel);
@@ -624,16 +625,20 @@ public final class MoldingProductGameTests {
     static void crateWarehouseAccess(ExtendedGameTestHelper helper) {
         ServerPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         player.setPos(helper.absoluteVec(new Vec3(2.5d, 2, 1.5d)));
-        MoldedPlasticData template = fullData(model(MoldingProductTypes.CRATE_ID));
+        ItemStack demonstration = MoldedPlasticDemoItemStacks.product(PlasticMaterial.UNIVERSAL, MoldingProductTypes.CRATE_ID)
+            .orElseThrow();
+        MoldedPlasticData template = MoldedPlasticData.get(demonstration).orElseThrow();
         for (PlasticMaterial material : PlasticMaterial.values()) {
             ItemStack stack = material.productStack(DyeColor.CYAN);
             MoldedPlasticData.set(stack, template.withMaterial(new FluidStack(material.melt(), template.material().getAmount())));
             UniversalPlasticEntity crate = createProduct(helper, new BlockPos(2, 2, 3), stack, material, DyeColor.CYAN);
             MoldedPlasticItemHandler items = crate.getMoldedItemHandler();
+            check(items.insertItem(0, new ItemStack(Items.DIAMOND, 3201), true).getCount() == 1,
+                "默认板条箱未按实际内腔提供3200个普通物品的空间");
             check(items.insertItem(0, new ItemStack(Items.DIAMOND, 96), false).isEmpty(), "板条箱未接受合并库存");
             long source = MoldedPlasticCrateAccess.open(player, crate, null);
             validateCrateRequest(player, source);
-            check(StorageServerStub.load(player.getUUID(), source).capacity().spaceSize() == template.capacity() * 64,
+            check(StorageServerStub.load(player.getUUID(), source).capacity().spaceSize() == template.capacity(),
                 "本体仓储界面未使用成型容量");
             validateCrateRequest(player, source);
             check(StorageServerStub.craftingStorageContents(player.getUUID(), source, 0).getFirst().getCount() == 96,
@@ -690,6 +695,16 @@ public final class MoldingProductGameTests {
             helper.setBlock(voidPos, Blocks.AIR);
             check(items.insertItem(0, new ItemStack(Items.DIAMOND), false).getCount() == 1,
                 "移除虚空物质后仍销毁溢出物品");
+            storage.getItems().extractUnlimited(0, Integer.MAX_VALUE, false);
+            check(items.insertItem(0, new ItemStack(Items.ENDER_PEARL, 801), false).getCount() == 1,
+                "16堆叠物品未按每个4单位空间计量");
+            check(crate.getMoldedContentSummary().occupiedSlots() == 3200, "板条箱摘要未显示实际空间占用");
+            storage.getItems().extractUnlimited(0, Integer.MAX_VALUE, false);
+            check(items.insertItem(0, new ItemStack(Items.DIAMOND_PICKAXE, 51), false).getCount() == 1,
+                "不可堆叠物品未按每个64单位空间计量");
+            check(items.extractItem(0, 2, false).getCount() == 1, "不可堆叠物品取出时超过自身堆叠上限");
+            check(storage.getItems().insertItem(new ItemStack(Items.DIAMOND, 65), false).getCount() == 1,
+                "取出不可堆叠物品后未释放64单位空间");
             long replacementSource = MoldedPlasticCrateAccess.open(player, crate, null);
             check(!new StorageServerStub.StorageAccessValidator().validate(
                 new ServerPayloadContext(player.connection, AnvilcraftPlasticraft.of("crate_test")),
@@ -1241,7 +1256,7 @@ public final class MoldingProductGameTests {
         }
         UniversalPlasticEntity entity = createProduct(helper, new BlockPos(2, 2, 2), stack);
         MoldedPlasticContentSummary summary = entity.getMoldedContentSummary();
-        check(summary.occupiedSlots() == 1,
+        check(summary.occupiedSlots() == samples.size(),
             "entity summary lost occupied slot count: " + summary.occupiedSlots());
         check(summary.items().size() == MoldedPlasticContentSummary.MAX_VISIBLE_ENTRIES,
             "entity summary did not cap visible item types");
@@ -1270,7 +1285,7 @@ public final class MoldingProductGameTests {
             false,
             true
         );
-        check(product.capacity() == 15_625, "debug chest lost its 15625 slot capacity");
+        check(product.capacity() == 2_000_000, "debug crate lost its volume-based storage capacity");
         ItemStack chest = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
         MoldedPlasticData.set(chest, product);
         var ops = helper.getLevel().registryAccess().createSerializationContext(NbtOps.INSTANCE);
@@ -1294,7 +1309,7 @@ public final class MoldingProductGameTests {
         check(items.getStackInSlot(0).getCount() == 68, "板条箱未按类型合并超过一组的物品");
         UUID storageId = MoldedPlasticData.get(chest).flatMap(MoldedPlasticData::storageId).orElseThrow();
         MoldedPlasticCrateStorage storage = Storages.get().get(storageId, MoldedPlasticCrateStorage.class).orElseThrow();
-        check(storage.getItems().getSpaceSize() == product.capacity() * 64, "仓储容量未使用成型容量");
+        check(storage.getItems().getSpaceSize() == product.capacity(), "仓储容量未使用成型容量");
         CompoundTag stored = storage.serializeNBT(helper.getLevel().registryAccess());
         MoldedPlasticCrateStorage restored = new MoldedPlasticCrateStorage(storageId);
         restored.deserializeNBT(helper.getLevel().registryAccess(), stored);

@@ -26,8 +26,7 @@ public final class MoldedPlasticCrateStorage extends BaseStorage<OverflowDisposa
         super(id);
     }
 
-    public void initializeCapacity(int stacks) {
-        int space = Math.multiplyExact(stacks, 64);
+    public void initializeCapacity(int space) {
         this.getItems().addSpaceSize(current -> space);
     }
 
@@ -88,12 +87,12 @@ public final class MoldedPlasticCrateStorage extends BaseStorage<OverflowDisposa
 
     public MoldedPlasticContentSummary summary() {
         if (this.summary == null) {
-            int capacity = this.getItems().getSpaceSize() / 64;
+            int capacity = this.getItems().getSpaceSize();
             MoldedPlasticContentSummary contents = MoldedPlasticContentSummary.create(
                 MoldingProductTypes.CRATE_ID, capacity, this.items(), List.of()
             );
             this.summary = new MoldedPlasticContentSummary(
-                contents.type(), capacity, Math.ceilDiv(this.getItems().getSpace(), 64), 0,
+                contents.type(), capacity, this.getItems().getSpace(), 0,
                 contents.items(), contents.omittedItemTypes(), List.of(), 0
             );
         }

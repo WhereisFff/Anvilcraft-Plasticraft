@@ -18,8 +18,9 @@ An inward-facing volume cube can act as either wall or cavity in all three check
 
 ## Crate
 
-- The cavity must contain at least 64 cubic pixels
-- Every 64 cubic pixels of cavity volume provides one item slot: 64 gives 1 slot and 1728 gives 27 slots
+- The cavity must contain at least 1 cubic pixel
+- Every cubic pixel of cavity volume provides 2 storage units; the default model has 1600 cubic pixels of cavity and 3200 storage units
+- Items stacking to 64 use 1 unit each, items stacking to 16 use 4 units each, and unstackable items use 64 units each
 - Right-click the entity or bonded block to open the AnvilCraft crate interface for search, sorting, bulk transfers and crafting unlocks. Hoppers and chutes share the same inventory
 - Matching items merge by type. Contents and crafting unlocks survive pickup, placement and world reloads
 

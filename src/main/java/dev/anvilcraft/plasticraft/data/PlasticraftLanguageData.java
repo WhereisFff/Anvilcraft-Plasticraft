@@ -333,7 +333,10 @@ public final class PlasticraftLanguageData {
         );
         provider.add("tooltip.anvilcraftplasticraft.molding.clay", "Clay slot %1$s, molded %2$s / %3$s");
         provider.add("tooltip.anvilcraftplasticraft.molding.partial_downgrade", "This result will downgrade to a normal product");
-        provider.add("tooltip.anvilcraftplasticraft.molded_crate", "A plastic crate that stores %1$s stacks of items%2$s");
+        provider.add(
+            "tooltip.anvilcraftplasticraft.molded_crate",
+            "A plastic crate with %1$s storage units (items stacking to 64 use one unit each)%2$s"
+        );
         provider.add(
             "tooltip.anvilcraftplasticraft.molded_tank",
             "A plastic tank that stores %1$s B of fluid%2$s"
@@ -361,7 +364,8 @@ public final class PlasticraftLanguageData {
             "tooltip.anvilcraftplasticraft.molded_tray",
             "A plastic tray that carries up to nine compatible redstone components with their native behavior and lighting"
         );
-        provider.add("tooltip.anvilcraftplasticraft.molded_crate_contents", "Used capacity: %1$s/%2$s stacks");
+        provider.add("tooltip.anvilcraftplasticraft.molded_crate_contents", "Used space: %1$s/%2$s (64-stack item units)");
+        provider.add("tooltip.anvilcraftplasticraft.molded_cauldron_item_contents", "Occupied slots: %1$s/%2$s");
         provider.add("tooltip.anvilcraftplasticraft.molded_tank_contents", "Stored fluid: %1$s mB/%2$s B");
         provider.add("tooltip.anvilcraftplasticraft.molded_more_contents", "%s more content types");
         provider.add("tooltip.anvilcraftplasticraft.molded_feature.heat_resistant", ", fireproof");
