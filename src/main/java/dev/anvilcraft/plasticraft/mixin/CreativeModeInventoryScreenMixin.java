@@ -182,8 +182,9 @@ abstract class CreativeModeInventoryScreenMixin
         }
         graphics.pose().pushPose();
         try {
-            // 角标高于物品模型，低于变体选择浮层和提示框。
-            graphics.pose().translate(this.leftPos, this.topPos, 250);
+            // 槽位与物品的深度偏移叠加为 250，模型表面还会向前凸出。
+            // 角标使用原版数量文字的 300 层，保持低于拖拽物品、变体浮层和提示框。
+            graphics.pose().translate(this.leftPos, this.topPos, 300);
             for (Slot slot : this.menu.slots) {
                 if (slot.container != CONTAINER || !slot.isActive()) {
                     continue;
