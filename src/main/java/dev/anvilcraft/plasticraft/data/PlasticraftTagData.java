@@ -64,7 +64,6 @@ public final class PlasticraftTagData {
                 itemKey(PlasticraftBlocks.RESIN_ANVIL),
                 itemKey(PlasticraftBlocks.HARDEND_RESIN_ANVIL),
                 itemKey(PlasticraftBlocks.HARDEND_RESIN_CAULDRON),
-                itemKey(PlasticraftBlocks.CATALYTIC_PRESS_LID),
                 itemKey(PlasticraftItems.RESIN_ANVIL_HAMMER)
             );
 
@@ -158,7 +157,6 @@ public final class PlasticraftTagData {
                 itemKey(ModItems.EMBER_METAL_UPGRADE_SMITHING_TEMPLATE)
             );
 
-            // 皇家钢催化剂标签覆盖本体皇家钢制品，并包含 Plasticraft 的催化压盖。
             provider.addTag(PlasticraftItemTags.ROYAL_STEEL_ITEMS).add(
                 itemKey(ModBlocks.ROYAL_ANVIL),
                 itemKey(ModBlocks.ROYAL_GRINDSTONE),
@@ -178,8 +176,7 @@ public final class PlasticraftTagData {
                 itemKey(ModItems.ROYAL_STEEL_SWORD),
                 itemKey(ModItems.ROYAL_ANVIL_HAMMER),
                 itemKey(ModItems.ROYAL_DRAGON_ROD),
-                itemKey(ModItems.ROYAL_STEEL_UPGRADE_SMITHING_TEMPLATE),
-                itemKey(PlasticraftBlocks.CATALYTIC_PRESS_LID)
+                itemKey(ModItems.ROYAL_STEEL_UPGRADE_SMITHING_TEMPLATE)
             );
             // 浮霜玻璃作为透明塑料催化剂单独建标签，效率按玻璃种类参与半速计算。
             provider.addTag(PlasticraftItemTags.FROST_GLASS_ITEMS).add(itemKey(ModBlocks.FROST_GLASS));

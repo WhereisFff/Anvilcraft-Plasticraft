@@ -5,7 +5,6 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
-import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
@@ -380,11 +379,6 @@ public class BondedEntityBlockEntity extends BlockEntity
         if (!(this.level instanceof ServerLevel serverLevel)) return;
         this.tickHammerDeflection(serverLevel);
         Entity functionalEntity = this.getOrCreateRenderEntity();
-        if (functionalEntity instanceof CatalyticPressLidEntity lid) {
-            lid.plasticraft$tickBonded();
-            if (lid.plasticraft$consumeBondedDataDirty()) this.captureCachedEntity(true);
-            return;
-        }
         if (functionalEntity instanceof UniversalPlasticEntity universal) {
             universal.plasticraft$tickRedstoneConductor();
             if (universal.isMoldedTray()) {

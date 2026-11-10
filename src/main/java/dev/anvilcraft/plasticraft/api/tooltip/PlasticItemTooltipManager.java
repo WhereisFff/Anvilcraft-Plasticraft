@@ -162,14 +162,6 @@ public final class PlasticItemTooltipManager {
                 It blocks lasers without taking laser damage"""
         );
         register(
-            AnvilcraftPlasticraft.of("catalytic_press_lid"),
-            "A sealed catalyst that converts plastic oil and universal melt at full speed",
-            """
-                Plastic oil converts to universal melt over heat or elastic melt over a cold block
-                Universal plastic melt converts to engineering plastic melt over a cold block
-                Bond this lid above a vessel for full speed, then press it with a falling anvil"""
-        );
-        register(
             AnvilcraftPlasticraft.of("hardend_resin_anvil"),
             "A hardened resin anvil that functions as a complete anvil",
             """

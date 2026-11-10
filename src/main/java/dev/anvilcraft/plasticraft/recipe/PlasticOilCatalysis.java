@@ -3,9 +3,7 @@ package dev.anvilcraft.plasticraft.recipe;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.PlasticOilCauldronBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
-import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
-import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldronWorkBlockFinder;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
@@ -89,7 +87,7 @@ public final class PlasticOilCatalysis {
         BlockState state = level.getBlockState(pos);
         if (state.is(PlasticraftBlocks.PLASTIC_OIL_CAULDRON.get())) {
             PlasticOilCauldronBlock cauldron = (PlasticOilCauldronBlock) state.getBlock();
-            if (!cauldron.containsEntity(state, pos, catalyst) || hasSealedLid(level, pos)) return;
+            if (!cauldron.containsEntity(state, pos, catalyst)) return;
             List<ItemEntity> catalysts = looseCatalysts(
                 level,
                 pos,
@@ -99,7 +97,7 @@ public final class PlasticOilCatalysis {
             boolean cold = PlasticCatalysisCold.isCold(level.getBlockState(pos.below()));
             PlasticMaterial productMaterial = oilProduct(counts, cold);
             advance(level, pos, oilWorkPerTick(
-                CatalyticPressHeat.power(level.getBlockState(pos.below())),
+                PlasticCatalysisHeat.power(level.getBlockState(pos.below())),
                 cold,
                 counts
             ), () -> {
@@ -115,14 +113,14 @@ public final class PlasticOilCatalysis {
         }
         if (state.is(PlasticraftBlocks.UNIVERSAL_PLASTIC_MELT_CAULDRON.get())) {
             UniversalPlasticMeltCauldronBlock cauldron = (UniversalPlasticMeltCauldronBlock) state.getBlock();
-            if (!cauldron.containsEntity(state, pos, catalyst) || hasSealedLid(level, pos)) return;
+            if (!cauldron.containsEntity(state, pos, catalyst)) return;
             List<ItemEntity> catalysts = looseCatalysts(
                 level,
                 pos,
                 item -> cauldron.containsEntity(state, pos, item)
             );
             CatalystCounts counts = countCatalysts(level, catalysts);
-            double heat = CatalyticPressHeat.power(level.getBlockState(pos.below()));
+            double heat = PlasticCatalysisHeat.power(level.getBlockState(pos.below()));
             boolean cold = PlasticCatalysisCold.isCold(level.getBlockState(pos.below()));
             PlasticMaterial productMaterial = universalProduct(counts, heat, cold);
             advance(level, pos, universalWorkPerTick(counts, heat, cold), () -> {
@@ -142,7 +140,7 @@ public final class PlasticOilCatalysis {
             }
             List<ItemEntity> catalysts = looseCatalysts(level, pos, item -> item.blockPosition().equals(pos));
             CatalystCounts counts = countCatalysts(level, catalysts);
-            double heat = CatalyticPressHeat.power(level.getBlockState(pos.below()));
+            double heat = PlasticCatalysisHeat.power(level.getBlockState(pos.below()));
             boolean cold = PlasticCatalysisCold.isCold(level.getBlockState(pos.below()));
             PlasticMaterial productMaterial = universalProduct(counts, heat, cold);
             advance(level, pos, universalWorkPerTick(counts, heat, cold), () -> {
@@ -151,7 +149,7 @@ public final class PlasticOilCatalysis {
                     : DyeColor.WHITE;
                 FluidStack output = new FluidStack(productMaterial.melt(), 1_000);
                 PlasticMeltColor.set(output, color);
-                CatalyticPressProcess.placeMelt(level, pos, output);
+                placeMelt(level, pos, output);
                 return true;
             });
             return;
@@ -160,12 +158,12 @@ public final class PlasticOilCatalysis {
         CatalystCounts counts = countCatalysts(level, catalysts);
         boolean cold = PlasticCatalysisCold.isCold(level.getBlockState(pos.below()));
         advance(level, pos, oilWorkPerTick(
-            CatalyticPressHeat.power(level.getBlockState(pos.below())),
+            PlasticCatalysisHeat.power(level.getBlockState(pos.below())),
             cold,
             counts
         ), () -> {
             PlasticMaterial material = oilProduct(counts, cold);
-            CatalyticPressProcess.placeMelt(level, pos, new FluidStack(material.melt(), 1_000));
+            placeMelt(level, pos, new FluidStack(material.melt(), 1_000));
             return true;
         });
     }
@@ -177,16 +175,15 @@ public final class PlasticOilCatalysis {
             tank.getBlockPos(),
             tank.getFluidHandler(),
             countCatalysts(level, tank.getItemHandler(), ItemStack.EMPTY),
-            CatalyticPressHeat.power(level.getBlockState(tank.getBlockPos().below())),
-            PlasticCatalysisCold.isCold(level.getBlockState(tank.getBlockPos().below())),
-            true
+            PlasticCatalysisHeat.power(level.getBlockState(tank.getBlockPos().below())),
+            PlasticCatalysisCold.isCold(level.getBlockState(tank.getBlockPos().below()))
         );
     }
 
     /** 实体炼药锅只在开口向上时接受重力面一格内的工作方块。 */
     public static void tickResinCauldron(ServerLevel level, PlasticCauldron cauldron) {
         if (cauldron.getOrientation().attachmentFace() != Direction.UP) return;
-        BlockPos pos = CatalyticPressProcess.occupiedPos(cauldron.plasticraft$cauldronEntity());
+        BlockPos pos = BlockPos.containing(cauldron.plasticraft$cauldronEntity().getBoundingBox().getCenter());
         @Nullable CauldronWorkConditions work = PlasticCauldronWorkBlockFinder.find(
             cauldron,
             PlasticOilCatalysis::cauldronWorkConditions
@@ -202,8 +199,7 @@ public final class PlasticOilCatalysis {
                 new ItemStack(cauldron.plasticraft$cauldronEntity().getBlockState().getBlock())
             ),
             work.heat(),
-            work.cold(),
-            true
+            work.cold()
         );
     }
 
@@ -249,8 +245,7 @@ public final class PlasticOilCatalysis {
                 resinCatalysts.size()
             ),
             largeCauldronHeat(level, cauldron.getBlockPos()),
-            PlasticCatalysisCold.isCold(level.getBlockState(cauldron.getBlockPos().below(2))),
-            false
+            PlasticCatalysisCold.isCold(level.getBlockState(cauldron.getBlockPos().below(2)))
         );
     }
 
@@ -259,7 +254,7 @@ public final class PlasticOilCatalysis {
         int total = 0;
         for (int x = -1; x <= 1; x++) {
             for (int z = -1; z <= 1; z++) {
-                total += CatalyticPressHeat.power(level.getBlockState(heatCenter.offset(x, 0, z)));
+                total += PlasticCatalysisHeat.power(level.getBlockState(heatCenter.offset(x, 0, z)));
             }
         }
         return total / 9.0D;
@@ -276,15 +271,13 @@ public final class PlasticOilCatalysis {
         IFluidHandler fluids,
         CatalystCounts catalysts,
         double heat,
-        boolean cold,
-        boolean checkLid
+        boolean cold
     ) {
         FluidStack input = findReactiveFluid(fluids);
         if (input.isEmpty()) {
             clearProgress(level, pos);
             return;
         }
-        if (checkLid && hasSealedLid(level, pos)) return;
 
         ProgressData data = ProgressData.get(level);
         boolean universal = input.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get());
@@ -311,9 +304,39 @@ public final class PlasticOilCatalysis {
         }
         if (!transformFluid(fluids, input, output)) return;
         data.clear(pos);
-        CatalyticPressProcess.syncMeltContainerColor(level, pos, output);
+        syncMeltContainerColor(level, pos, output);
         PlasticOilCatalysisVisualSync.complete(level, pos);
         playCompletionSound(level, pos);
+    }
+
+    private static void syncMeltContainerColor(ServerLevel level, BlockPos pos, FluidStack melt) {
+        PlasticMaterial material = PlasticMaterial.fromMelt(melt).orElse(null);
+        if (material == null || !material.supportsDyeing()) {
+            return;
+        }
+        DyeColor color = PlasticMeltColor.get(melt);
+        BlockState state = level.getBlockState(pos);
+        if (PlasticMaterial.fromMeltCauldron(state).isPresent()
+            && state.hasProperty(UniversalPlasticMeltCauldronBlock.COLOR)
+            && state.getValue(UniversalPlasticMeltCauldronBlock.COLOR) != color) {
+            level.setBlock(
+                pos,
+                state.setValue(UniversalPlasticMeltCauldronBlock.COLOR, color),
+                Block.UPDATE_CLIENTS
+            );
+        }
+        if (level.getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity blockEntity) {
+            blockEntity.setColor(color);
+        }
+    }
+
+    private static void placeMelt(ServerLevel level, BlockPos pos, FluidStack melt) {
+        PlasticMaterial material = PlasticMaterial.fromMelt(melt).orElse(PlasticMaterial.UNIVERSAL);
+        level.setBlock(pos, material.meltBlock().defaultBlockState(), Block.UPDATE_ALL);
+        if (material.supportsDyeing()
+            && level.getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity blockEntity) {
+            blockEntity.setColor(PlasticMeltColor.get(melt));
+        }
     }
 
     private static void advance(
@@ -380,7 +403,7 @@ public final class PlasticOilCatalysis {
                 && item.blockPosition().equals(pos)
                 && (item.getItem().is(PlasticraftItemTags.FROST_METAL_ITEMS)
                     || coldBelow && item.getItem().is(PlasticraftItemTags.ROYAL_STEEL_ITEMS)
-                    || CatalyticPressHeat.power(level.getBlockState(pos.below())) > 0.0D
+                    || PlasticCatalysisHeat.power(level.getBlockState(pos.below())) > 0.0D
                         && item.getItem().is(PlasticraftItemTags.EMBER_METAL_ITEMS))
         ).isEmpty();
     }
@@ -530,28 +553,12 @@ public final class PlasticOilCatalysis {
         return catalysts.hasGlass() ? PlasticMaterial.CLEAR : PlasticMaterial.UNIVERSAL;
     }
 
-    private static boolean hasSealedLid(ServerLevel level, BlockPos containerPos) {
-        BlockPos lidPos = containerPos.above();
-        if (level.getBlockEntity(lidPos) instanceof BondedEntityBlockEntity bonded
-            && bonded.getOrCreateRenderEntity() instanceof CatalyticPressLidEntity lid
-            && lid.getOrientation().attachmentFace() == Direction.UP) {
-            return true;
-        }
-        return !level.getEntitiesOfClass(
-            CatalyticPressLidEntity.class,
-            new AABB(lidPos),
-            lid -> !lid.isRemoved()
-                && lid.getOrientation().attachmentFace() == Direction.UP
-                && CatalyticPressProcess.occupiedPos(lid).equals(lidPos)
-        ).isEmpty();
-    }
-
     private static void playCompletionSound(ServerLevel level, BlockPos pos) {
         level.playSound(null, pos, SoundEvents.FIRE_EXTINGUISH, SoundSource.BLOCKS, 0.7F, 0.85F);
     }
 
     private static @Nullable CauldronWorkConditions cauldronWorkConditions(BlockState state) {
-        int heat = CatalyticPressHeat.power(state);
+        int heat = PlasticCatalysisHeat.power(state);
         boolean cold = PlasticCatalysisCold.isCold(state);
         return heat > 0 || cold ? new CauldronWorkConditions(heat, cold) : null;
     }

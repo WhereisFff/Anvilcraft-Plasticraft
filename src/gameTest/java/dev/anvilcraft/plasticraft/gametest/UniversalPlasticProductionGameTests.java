@@ -2,7 +2,6 @@ package dev.anvilcraft.plasticraft.gametest;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
-import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
@@ -12,8 +11,6 @@ import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
-import dev.anvilcraft.plasticraft.recipe.CatalyticPressProcess;
-import dev.anvilcraft.plasticraft.recipe.PlasticGranuleCauldronOutput;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
@@ -28,36 +25,26 @@ import dev.dubhe.anvilcraft.recipe.FluidMixingRecipe;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.npc.VillagerTrades;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.DyeColor;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.crafting.RecipeHolder;
-import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.LayeredCauldronBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
@@ -76,76 +63,6 @@ public final class UniversalPlasticProductionGameTests {
     private UniversalPlasticProductionGameTests() {
     }
 
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate("7x6x7")
-    @TestHolder(description = "A catalytic outlet consumes one full water cauldron and one bucket of coloured melt")
-    static void catalyticOutletProducesColoredGranules(ExtendedGameTestHelper helper) {
-        BlockPos cauldronPos = new BlockPos(2, 2, 3);
-        BlockPos outputPos = cauldronPos.east();
-        HardenedResinCauldronEntity cauldron = spawnCauldron(helper, cauldronPos);
-        CatalyticPressLidEntity lid = spawnReadyLid(helper, cauldronPos.above());
-        FluidStack melt = coloredMelt(BUCKET, DyeColor.PURPLE);
-        check(
-            cauldron.getFluidHandler().fill(melt, IFluidHandler.FluidAction.EXECUTE) == BUCKET,
-            "source cauldron rejected the plastic melt"
-        );
-
-        Player player = helper.makeMockPlayer(GameType.CREATIVE);
-        player.setPos(cauldron.position().add(0.0D, 0.5D, -2.0D));
-        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.ANVIL_HAMMER.asStack());
-        check(
-            cauldron.plasticraft$useAnvilHammer(player, InteractionHand.MAIN_HAND, Direction.EAST).consumesAction(),
-            "anvil hammer did not open the catalytic outlet"
-        );
-        check(cauldron.getOutletDirection() == Direction.EAST, "catalytic outlet faced the wrong direction");
-        helper.setBlock(outputPos, fullWaterCauldron());
-
-        CatalyticPressProcess.press(lid);
-
-        check(cauldron.getFluidHandler().getFluid().isEmpty(), "catalytic outlet did not consume exactly one bucket");
-        check(helper.getBlockState(outputPos).is(Blocks.CAULDRON), "catalytic outlet did not consume the full water");
-        ItemStack output = singleGranuleDrop(helper, outputPos);
-        check(output.getCount() == GRANULES, "catalytic outlet produced " + output.getCount() + " granules");
-        check(PlasticMeltColor.get(output) == DyeColor.PURPLE, "catalytic outlet lost the melt colour");
-        check(!helper.getBlockState(outputPos).is(PlasticraftBlocks.UNIVERSAL_PLASTIC.get()), "outlet created a plastic block");
-        helper.succeed();
-    }
-
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate("7x6x7")
-    @TestHolder(description = "A catalytic outlet preserves engineering-plastic material and colour")
-    static void catalyticOutletProducesEngineeringGranules(ExtendedGameTestHelper helper) {
-        BlockPos cauldronPos = new BlockPos(2, 2, 3);
-        BlockPos outputPos = cauldronPos.east();
-        HardenedResinCauldronEntity cauldron = spawnCauldron(helper, cauldronPos);
-        CatalyticPressLidEntity lid = spawnReadyLid(helper, cauldronPos.above());
-        FluidStack melt = coloredEngineeringMelt(BUCKET, DyeColor.LIGHT_BLUE);
-        check(
-            cauldron.getFluidHandler().fill(melt, IFluidHandler.FluidAction.EXECUTE) == BUCKET,
-            "source cauldron rejected engineering plastic melt"
-        );
-
-        Player player = helper.makeMockPlayer(GameType.CREATIVE);
-        player.setPos(cauldron.position().add(0.0D, 0.5D, -2.0D));
-        player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.ANVIL_HAMMER.asStack());
-        check(
-            cauldron.plasticraft$useAnvilHammer(player, InteractionHand.MAIN_HAND, Direction.EAST).consumesAction(),
-            "anvil hammer did not open the engineering-plastic outlet"
-        );
-        helper.setBlock(outputPos, fullWaterCauldron());
-
-        CatalyticPressProcess.press(lid);
-
-        ItemStack output = singleGranuleDrop(
-            helper,
-            outputPos,
-            PlasticraftItems.ENGINEERING_PLASTIC_GRANULE.get()
-        );
-        check(output.getCount() == GRANULES, "engineering outlet produced the wrong granule count");
-        check(PlasticMeltColor.get(output) == DyeColor.LIGHT_BLUE, "engineering outlet lost the melt colour");
-        helper.succeed();
-    }
-
     @GameTest(timeoutTicks = 500)
     @EmptyTemplate("17x6x14")
     @TestHolder(description = "Cold oil accepts resin materials and recursively crafted processors without consuming catalysts")
@@ -159,7 +76,6 @@ public final class UniversalPlasticProductionGameTests {
             PlasticraftBlocks.RESIN_ANVIL.asStack(),
             PlasticraftBlocks.HARDEND_RESIN_ANVIL.asStack(),
             PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(),
-            PlasticraftBlocks.CATALYTIC_PRESS_LID.asStack(),
             PlasticraftItems.RESIN_ANVIL_HAMMER.asStack(),
             ModItems.PROCESSOR.asStack(),
             ModBlocks.SMART_BLOCK_PLACER.asStack(),
@@ -205,45 +121,30 @@ public final class UniversalPlasticProductionGameTests {
     }
 
     @GameTest(timeoutTicks = 520)
-    @EmptyTemplate("8x6x5")
-    @TestHolder(description = "Resin cauldrons and sealed resin lids catalyze their own oil only over cold blocks")
+    @EmptyTemplate("5x6x5")
+    @TestHolder(description = "树脂锅仅在底部寒冷时催化自身塑料油，并保持流体数量")
     static void resinContainersCatalyzeTheirOwnOilOnlyOverCold(ExtendedGameTestHelper helper) {
-        BlockPos openPos = new BlockPos(2, 2, 2);
-        BlockPos sealedPos = new BlockPos(5, 2, 2);
-        helper.setBlock(openPos.below(), Blocks.STONE);
-        helper.setBlock(sealedPos.below(), Blocks.STONE);
-        HardenedResinCauldronEntity open = spawnCauldron(helper, openPos);
-        HardenedResinCauldronEntity sealed = spawnCauldron(helper, sealedPos);
-        for (HardenedResinCauldronEntity cauldron : List.of(open, sealed)) {
-            check(cauldron.getFluidHandler().fill(
-                new FluidStack(PlasticraftFluids.PLASTIC_OIL.get(), 750), IFluidHandler.FluidAction.EXECUTE
-            ) == 750, "resin cauldron rejected oil for self-catalysis");
-        }
-        CatalyticPressLidEntity lid = spawnReadyLid(helper, sealedPos.above());
-        lid.setNoGravity(true);
-        lid.resetCatalysis();
+        BlockPos cauldronPos = new BlockPos(2, 2, 2);
+        helper.setBlock(cauldronPos.below(), Blocks.STONE);
+        HardenedResinCauldronEntity cauldron = spawnCauldron(helper, cauldronPos);
+        check(cauldron.getFluidHandler().fill(
+            new FluidStack(PlasticraftFluids.PLASTIC_OIL.get(), 750), IFluidHandler.FluidAction.EXECUTE
+        ) == 750, "树脂锅未接受自催化所需的塑料油");
 
         helper.startSequence()
             .thenExecuteAfter(40, () -> {
-                for (HardenedResinCauldronEntity cauldron : List.of(open, sealed)) {
-                    check(cauldron.getFluidHandler().getFluid().is(PlasticraftFluids.PLASTIC_OIL.get()),
-                        "resin container catalyzed its own oil without cold");
-                }
-                helper.setBlock(openPos.below(), Blocks.ICE);
-                helper.setBlock(sealedPos.below(), Blocks.ICE);
+                check(cauldron.getFluidHandler().getFluid().is(PlasticraftFluids.PLASTIC_OIL.get()),
+                    "树脂锅在底部不寒冷时催化了塑料油");
+                helper.setBlock(cauldronPos.below(), Blocks.ICE);
             })
             .thenExecuteAfter(120, () -> {
-                check(sealed.getFluidHandler().getFluid().is(PlasticMaterial.ELASTIC.melt()),
-                    "sealed resin lid did not catalyze cold oil at full speed");
-                check(open.getFluidHandler().getFluid().is(PlasticraftFluids.PLASTIC_OIL.get()),
-                    "open resin cauldron incorrectly used sealed catalyst speed");
+                check(cauldron.getFluidHandler().getFluid().is(PlasticraftFluids.PLASTIC_OIL.get()),
+                    "树脂锅在催化所需时间前完成了反应");
             })
             .thenExecuteAfter(310, () -> {
-                for (HardenedResinCauldronEntity cauldron : List.of(open, sealed)) {
-                    FluidStack result = cauldron.getFluidHandler().getFluid();
-                    check(result.is(PlasticMaterial.ELASTIC.melt()) && result.getAmount() == 750,
-                        "resin container self-catalysis failed to preserve oil volume as elastic melt");
-                }
+                FluidStack result = cauldron.getFluidHandler().getFluid();
+                check(result.is(PlasticMaterial.ELASTIC.melt()) && result.getAmount() == 750,
+                    "树脂锅自催化未生成等量弹性塑料熔体");
             })
             .thenSucceed();
     }
@@ -340,118 +241,6 @@ public final class UniversalPlasticProductionGameTests {
                 );
             })
             .thenSucceed();
-    }
-
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate("7x5x7")
-    @TestHolder(description = "The water-cauldron transaction consumes exactly one bucket and preserves components")
-    static void directCauldronTransactionConsumesExactAmount(ExtendedGameTestHelper helper) {
-        BlockPos outputPos = new BlockPos(3, 2, 3);
-        helper.setBlock(outputPos, fullWaterCauldron());
-        FluidStack melt = coloredMelt(1_500, DyeColor.CYAN);
-        CompoundTag marker = melt.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
-        marker.putBoolean("Preserved", true);
-        melt.set(DataComponents.CUSTOM_DATA, CustomData.of(marker));
-        FluidTank source = new FluidTank(2_000);
-        check(source.fill(melt, IFluidHandler.FluidAction.EXECUTE) == 1_500, "test tank rejected melt");
-
-        check(
-            PlasticGranuleCauldronOutput.tryProcess(
-                helper.getLevel(),
-                helper.absolutePos(outputPos),
-                source,
-                source.getFluid().copy()
-            ),
-            "valid full-water transaction was rejected"
-        );
-
-        check(source.getFluidAmount() == 500, "transaction consumed a non-bucket amount of melt");
-        check(PlasticMeltColor.get(source.getFluid()) == DyeColor.CYAN, "remaining melt lost its colour");
-        check(
-            source.getFluid().getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag().getBoolean("Preserved"),
-            "remaining melt lost an unrelated component"
-        );
-        ItemStack output = singleGranuleDrop(helper, outputPos);
-        check(output.getCount() == GRANULES, "direct transaction produced the wrong granule count");
-        check(PlasticMeltColor.get(output) == DyeColor.CYAN, "direct transaction lost the melt colour");
-        helper.succeed();
-    }
-
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate("9x5x7")
-    @TestHolder(description = "Insufficient melt and partial water leave both sides unchanged")
-    static void cauldronPreflightFailuresPreserveResources(ExtendedGameTestHelper helper) {
-        BlockPos insufficientPos = new BlockPos(2, 2, 3);
-        BlockPos partialWaterPos = new BlockPos(6, 2, 3);
-        helper.setBlock(insufficientPos, fullWaterCauldron());
-        helper.setBlock(
-            partialWaterPos,
-            Blocks.WATER_CAULDRON.defaultBlockState().setValue(LayeredCauldronBlock.LEVEL, 2)
-        );
-        FluidTank insufficient = filledTank(coloredMelt(999, DyeColor.RED));
-        FluidTank partialWater = filledTank(coloredMelt(BUCKET, DyeColor.BLUE));
-
-        check(
-            !PlasticGranuleCauldronOutput.tryProcess(
-                helper.getLevel(),
-                helper.absolutePos(insufficientPos),
-                insufficient,
-                insufficient.getFluid().copy()
-            ),
-            "insufficient melt unexpectedly completed the transaction"
-        );
-        check(
-            !PlasticGranuleCauldronOutput.tryProcess(
-                helper.getLevel(),
-                helper.absolutePos(partialWaterPos),
-                partialWater,
-                partialWater.getFluid().copy()
-            ),
-            "partial water unexpectedly completed the transaction"
-        );
-
-        check(insufficient.getFluidAmount() == 999, "insufficient transaction consumed melt");
-        check(partialWater.getFluidAmount() == BUCKET, "partial-water transaction consumed melt");
-        check(helper.getBlockState(insufficientPos).equals(fullWaterCauldron()), "failed transaction consumed water");
-        check(
-            helper.getBlockState(partialWaterPos).getValue(LayeredCauldronBlock.LEVEL) == 2,
-            "failed transaction changed the partial water level"
-        );
-        check(granuleDrops(helper, new AABB(
-            helper.absoluteVec(Vec3.ZERO),
-            helper.absoluteVec(new Vec3(9.0D, 5.0D, 7.0D))
-        )).isEmpty(), "preflight failure created granules");
-        helper.succeed();
-    }
-
-    @GameTest(timeoutTicks = 20)
-    @EmptyTemplate("7x5x7")
-    @TestHolder(description = "A simulation-only fluid handler failure rolls back water, items, and partial drainage")
-    static void cauldronExecutionFailureRollsBack(ExtendedGameTestHelper helper) {
-        BlockPos outputPos = new BlockPos(3, 2, 3);
-        helper.setBlock(outputPos, fullWaterCauldron());
-        PartialExecutionTank source = new PartialExecutionTank(BUCKET);
-        FluidStack melt = coloredMelt(BUCKET, DyeColor.LIME);
-        check(source.fill(melt, IFluidHandler.FluidAction.EXECUTE) == BUCKET, "test tank rejected melt");
-
-        check(
-            !PlasticGranuleCauldronOutput.tryProcess(
-                helper.getLevel(),
-                helper.absolutePos(outputPos),
-                source,
-                source.getFluid().copy()
-            ),
-            "partial execution unexpectedly committed"
-        );
-
-        check(source.getFluidAmount() == BUCKET, "rollback did not restore partially drained melt");
-        check(PlasticMeltColor.get(source.getFluid()) == DyeColor.LIME, "rollback changed the melt colour");
-        check(helper.getBlockState(outputPos).equals(fullWaterCauldron()), "rollback did not restore full water");
-        check(
-            granuleDrops(helper, new AABB(helper.absolutePos(outputPos)).inflate(1.0D)).isEmpty(),
-            "rollback left a granule item entity"
-        );
-        helper.succeed();
     }
 
     private static FluidMixingRecipe fluidMixingRecipe(ExtendedGameTestHelper helper, String name) {
@@ -568,37 +357,8 @@ public final class UniversalPlasticProductionGameTests {
         return anvil;
     }
 
-    private static CatalyticPressLidEntity spawnReadyLid(
-        ExtendedGameTestHelper helper,
-        BlockPos relativePos
-    ) {
-        BlockPos pos = helper.absolutePos(relativePos);
-        Vec3 position = PlasticEntityOrientation.DEFAULT.entityPosition(
-            pos,
-            CatalyticPressLidEntity.WIDTH,
-            CatalyticPressLidEntity.HEIGHT
-        );
-        CatalyticPressLidEntity lid = new CatalyticPressLidEntity(
-            PlasticraftEntities.CATALYTIC_PRESS_LID.get(),
-            helper.getLevel(),
-            position,
-            PlasticraftBlocks.CATALYTIC_PRESS_LID.get().defaultBlockState(),
-            PlasticraftBlocks.CATALYTIC_PRESS_LID.asStack(),
-            PlasticEntityOrientation.DEFAULT
-        );
-        lid.completeCatalysis();
-        check(helper.getLevel().addFreshEntity(lid), "failed to add catalytic press lid");
-        return lid;
-    }
-
     private static FluidStack coloredMelt(int amount, DyeColor color) {
         FluidStack melt = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), amount);
-        PlasticMeltColor.set(melt, color);
-        return melt;
-    }
-
-    private static FluidStack coloredEngineeringMelt(int amount, DyeColor color) {
-        FluidStack melt = new FluidStack(PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get(), amount);
         PlasticMeltColor.set(melt, color);
         return melt;
     }
@@ -619,50 +379,6 @@ public final class UniversalPlasticProductionGameTests {
         catalyst.setDeltaMovement(Vec3.ZERO);
         catalyst.setPickUpDelay(Integer.MAX_VALUE);
         check(helper.getLevel().addFreshEntity(catalyst), "failed to spawn catalyst " + stack.getItem());
-    }
-
-    private static FluidTank filledTank(FluidStack fluid) {
-        FluidTank tank = new FluidTank(Math.max(BUCKET, fluid.getAmount()));
-        check(tank.fill(fluid, IFluidHandler.FluidAction.EXECUTE) == fluid.getAmount(), "test tank rejected fluid");
-        return tank;
-    }
-
-    private static BlockState fullWaterCauldron() {
-        return Blocks.WATER_CAULDRON.defaultBlockState().setValue(LayeredCauldronBlock.LEVEL, 3);
-    }
-
-    private static ItemStack singleGranuleDrop(ExtendedGameTestHelper helper, BlockPos relativePos) {
-        return singleGranuleDrop(helper, relativePos, PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get());
-    }
-
-    private static ItemStack singleGranuleDrop(
-        ExtendedGameTestHelper helper,
-        BlockPos relativePos,
-        Item granule
-    ) {
-        List<ItemStack> drops = granuleDrops(
-            helper,
-            new AABB(helper.absolutePos(relativePos)).inflate(1.0D),
-            granule
-        );
-        check(drops.size() == 1, "expected one granule stack, found " + drops.size());
-        return drops.getFirst();
-    }
-
-    private static List<ItemStack> granuleDrops(ExtendedGameTestHelper helper, AABB bounds) {
-        return granuleDrops(helper, bounds, PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get());
-    }
-
-    private static List<ItemStack> granuleDrops(
-        ExtendedGameTestHelper helper,
-        AABB bounds,
-        Item granule
-    ) {
-        return helper.getLevel().getEntitiesOfClass(
-            ItemEntity.class,
-            bounds,
-            item -> item.isAlive() && item.getItem().is(granule)
-        ).stream().map(ItemEntity::getItem).toList();
     }
 
     private static void assertInventoryGranules(IItemHandler inventory, DyeColor color, String path) {
@@ -690,18 +406,5 @@ public final class UniversalPlasticProductionGameTests {
 
     private static void check(boolean condition, String message) {
         if (!condition) throw new GameTestAssertException(message);
-    }
-
-    /** 模拟阶段守约、执行阶段只排出一半，用于验证跨方块与能力的补偿回滚。 */
-    private static final class PartialExecutionTank extends FluidTank {
-        private PartialExecutionTank(int capacity) {
-            super(capacity);
-        }
-
-        @Override
-        public FluidStack drain(FluidStack resource, FluidAction action) {
-            if (action.simulate()) return super.drain(resource, action);
-            return super.drain(resource.copyWithAmount(Math.min(resource.getAmount(), BUCKET / 2)), action);
-        }
     }
 }

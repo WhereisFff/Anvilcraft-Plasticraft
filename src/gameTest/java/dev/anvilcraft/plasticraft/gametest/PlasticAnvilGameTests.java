@@ -8,7 +8,6 @@ import dev.anvilcraft.plasticraft.block.HardenedResinCauldronBlock;
 import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
 import dev.anvilcraft.plasticraft.block.piston.HighViscosityPistonBudget;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
-import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.ElasticPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
@@ -2319,11 +2318,57 @@ public final class PlasticAnvilGameTests {
             .thenSucceed();
     }
 
+    @GameTest(timeoutTicks = 20)
+    @EmptyTemplate(value = "5x7x5", floor = true)
+    @TestHolder(description = "下落铁砧接触树脂锅表面前保持实体")
+    static void fallingAnvilWaitsForPlasticSurfaceContact(ExtendedGameTestHelper helper) {
+        HardenedResinCauldronEntity cauldron = createPot(
+            helper, new Vec3(2.5d, 2, 2.5d), PlasticEntityOrientation.DEFAULT
+        );
+        cauldron.setNoGravity(true);
+        BlockPos anvilPos = new BlockPos(2, 4, 2);
+        helper.setBlock(anvilPos, Blocks.ANVIL);
+        FallingBlockEntity anvil = FallingBlockEntity.fall(
+            helper.getLevel(), helper.absolutePos(anvilPos), Blocks.ANVIL.defaultBlockState()
+        );
+        anvil.setDeltaMovement(0, -0.1d, 0);
+        BlockPos landedPos = new BlockPos(2, 3, 2);
+
+        helper.runAfterDelay(1, () -> {
+            check(helper.getBlockState(landedPos).isAir(), "铁砧尚未接触树脂锅就变成了方块");
+            check(anvil.isAlive(), "铁砧尚未接触树脂锅就消失了");
+            check(anvil.getBoundingBox().minY > cauldron.getBoundingBox().maxY + EPSILON,
+                "下落铁砧过早接触树脂锅");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(timeoutTicks = 45)
+    @EmptyTemplate(value = "5x9x5", floor = true)
+    @TestHolder(description = "普通沙子落在硬化树脂锅实体上后成为方块")
+    static void fallingSandLandsOnHardenedResinCauldron(ExtendedGameTestHelper helper) {
+        createPot(helper, new Vec3(2.5d, 2, 2.5d), PlasticEntityOrientation.DEFAULT);
+        helper.runAfterDelay(5, () -> {
+            BlockPos sandPos = new BlockPos(2, 7, 2);
+            helper.setBlock(sandPos, Blocks.SAND);
+            FallingBlockEntity sand = FallingBlockEntity.fall(
+                helper.getLevel(), helper.absolutePos(sandPos), Blocks.SAND.defaultBlockState()
+            );
+            sand.setDeltaMovement(0, -0.1d, 0);
+        });
+
+        helper.runAfterDelay(35, () -> {
+            check(helper.getBlockState(new BlockPos(2, 3, 2)).is(Blocks.SAND),
+                "沙子落在树脂锅上后没有成为方块");
+            helper.succeed();
+        });
+    }
+
     @GameTest(timeoutTicks = 190)
     @EmptyTemplate(value = "23x9x7", floor = true)
     @TestHolder(description = "Every movable plastic product repeatedly rebounds and then settles on a resin anvil")
     static void allPlasticProductsBounceAndSettleOnResinAnvils(ExtendedGameTestHelper helper) {
-        double[] laneCenters = {2.5D, 5.5D, 8.5D, 11.5D, 14.5D, 17.5D, 20.5D};
+        double[] laneCenters = {2.5D, 5.5D, 11.5D, 14.5D, 17.5D, 20.5D};
         List<ResinAnvilEntity> supports = new ArrayList<>();
         for (double laneCenter : laneCenters) {
             ResinAnvilEntity support = createResinAnvil(
@@ -2345,19 +2390,10 @@ public final class PlasticAnvilGameTests {
             new Vec3(laneCenters[1], 5.0D, 3.5D),
             PlasticEntityOrientation.DEFAULT
         );
-        CatalyticPressLidEntity lid = new CatalyticPressLidEntity(
-            PlasticraftEntities.CATALYTIC_PRESS_LID.get(),
-            helper.getLevel(),
-            helper.absoluteVec(new Vec3(laneCenters[2], 5.0D, 3.5D)),
-            PlasticraftBlocks.CATALYTIC_PRESS_LID.get().defaultBlockState(),
-            PlasticraftBlocks.CATALYTIC_PRESS_LID.asStack(),
-            PlasticEntityOrientation.DEFAULT
-        );
-        check(helper.getLevel().addFreshEntity(lid), "failed to add catalytic press lid rebound target");
         UniversalPlasticEntity universal = new UniversalPlasticEntity(
             PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
             helper.getLevel(),
-            helper.absoluteVec(new Vec3(laneCenters[3], 5.0D, 3.5D)),
+            helper.absoluteVec(new Vec3(laneCenters[2], 5.0D, 3.5D)),
             PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(),
             PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack(),
             PlasticEntityOrientation.DEFAULT
@@ -2365,13 +2401,12 @@ public final class PlasticAnvilGameTests {
         check(helper.getLevel().addFreshEntity(universal), "failed to add universal plastic rebound target");
         ResinAnvilEntity resinAnvil = createResinAnvil(
             helper,
-            new Vec3(laneCenters[4], 5.0D, 3.5D),
+            new Vec3(laneCenters[3], 5.0D, 3.5D),
             PlasticraftBlocks.RESIN_ANVIL.asStack()
         );
         List<AbstractPlasticEntity> fallingProducts = List.of(
             hardenedAnvil,
             cauldron,
-            lid,
             universal,
             resinAnvil,
             createElasticCollisionProduct(helper, new BlockPos(17, 5, 3), 1),
@@ -2551,15 +2586,6 @@ public final class PlasticAnvilGameTests {
             new Vec3(8.5D, 2.5D, 3.5D),
             initial
         );
-        CatalyticPressLidEntity lid = new CatalyticPressLidEntity(
-            PlasticraftEntities.CATALYTIC_PRESS_LID.get(),
-            helper.getLevel(),
-            helper.absoluteVec(new Vec3(11.5D, 2.5D, 3.5D)),
-            PlasticraftBlocks.CATALYTIC_PRESS_LID.get().defaultBlockState(),
-            PlasticraftBlocks.CATALYTIC_PRESS_LID.asStack(),
-            initial
-        );
-        check(helper.getLevel().addFreshEntity(lid), "failed to add catalytic press lid");
         UniversalPlasticEntity universal = new UniversalPlasticEntity(
             PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
             helper.getLevel(),
@@ -2572,14 +2598,12 @@ public final class PlasticAnvilGameTests {
         hardened.setNoGravity(true);
         resin.setNoGravity(true);
         pot.setNoGravity(true);
-        lid.setNoGravity(true);
         universal.setNoGravity(true);
 
         List<Vec3> originalPositions = List.of(
             hardened.position(),
             resin.position(),
             pot.position(),
-            lid.position(),
             universal.position()
         );
 
@@ -2590,7 +2614,7 @@ public final class PlasticAnvilGameTests {
         player.setItemInHand(InteractionHand.MAIN_HAND, hammer);
 
         int targetIndex = 0;
-        for (AbstractPlasticEntity target : List.of(hardened, resin, pot, lid, universal)) {
+        for (AbstractPlasticEntity target : List.of(hardened, resin, pot, universal)) {
             check(target.supportsAnvilHammerOrientationMenu(), "plastic product did not expose its orientation menu");
             for (Direction face : Direction.values()) {
                 check(
@@ -2608,14 +2632,13 @@ public final class PlasticAnvilGameTests {
         }
         check(hammer.getDamageValue() == 0, "rotating resin anvils damaged the anvil hammer");
         check(
-            hardened.isAlive() && resin.isAlive() && pot.isAlive() && lid.isAlive() && universal.isAlive(),
+            hardened.isAlive() && resin.isAlive() && pot.isAlive() && universal.isAlive(),
             "rotating a plastic product removed its entity"
         );
 
         hardened.discard();
         resin.discard();
         pot.discard();
-        lid.discard();
         universal.discard();
         player.discard();
         helper.succeed();

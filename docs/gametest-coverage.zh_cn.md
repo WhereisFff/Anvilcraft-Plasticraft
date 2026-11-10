@@ -101,10 +101,9 @@ GameTest 只验证**服务器运行时**的玩法契约：玩家或实体实际�
 - **`MoldingProductGameTests`**：成型产品在服务器物品上的类型边界、容量、能力编解码与堆叠。炼药锅的开口面积/最矮壁高/开口过大升级为大型锅，以及成型储罐与成型锅的四材质熔岩储存矩阵都在本类，不要再按材质或按 tier 拆一套。不是客户端编辑器数学。
 - **`MoldedPlasticTrayGameTests`**：托盘外形、元件白名单、红石端口与方块化交接后的网络。比较器/中继/脉冲的短 tick 契约在此覆盖；不要再写 20 秒以上的随机红石钟。
 - **`MoldedPlasticAnvilGameTests`**：成型铁砧谓词与菜单、落地朝向、巨型多方块与冲击。落地时底面覆盖到的每一格各发布一次落砧事件的契约与落地朝向同场景，不要为覆盖格数另开测试。成型锅单次撞击的落砧加工预算（普通 1 个通道、大型最多 9 组普通堆叠预算），以及大型锅的分区交互、分层流体事务和环境行为也在本类：断言产出、剩余输入与世界状态，不要断言配方管线的中间值。
-- **`CatalyticPressLidGameTests`**：压盖碰撞、下落接近才开启动画、接触等待、失败压合清胶。
 - **`CondenserTowerGameTests`**：背压、层级连通、经验蒸汽、出口熄火/点燃。蒸汽 API 用本模组 `vapor` 包。
 - **`IgnitedFuelGameTests`**：高热燃料容器伤害、手持点火、增强等离子喷口，以及实体锅和粘合方块锅的普通油模拟/执行燃料事务。
-- **`UniversalPlasticProductionGameTests`**：催化出口与锅事务的精确消耗、预检保资源、执行失败回滚。
+- **`UniversalPlasticProductionGameTests`**：锅内催化的温度条件、催化剂保留与流体数量。
 - **`PlasticEntityPortalGameTests`**：塑料实体经传送门事件后保持身份；普通下落方块仍转末地尘作为对照。
 - **`PlasticEntityItemTransferGameTests`**：塑料锅与 Hopper / 漏斗矿车 / Chute 的物品传输。
 - **`HardenedResinCauldronFluidHazardGameTests`**：硬化树脂锅的熔岩储存、世界熔岩伤害、移动后位置与溢出清理。只管这一个固定形状的实体锅；成型锅的四材质熔岩耐受在 `MoldingProductGameTests`，不要搬进来。

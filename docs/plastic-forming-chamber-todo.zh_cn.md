@@ -668,7 +668,7 @@ GUI 使用三段模式选择，默认值为“红石控制”：
 
 ### 13.1 范围变更和强制约束
 
-1. 连续凸碰撞不再是成型舱动态制品的特例。`UniversalPlasticEntity` 的默认 `16x16x16` 模型、`ResinAnvilEntity`、`HardenedResinAnvilEntity`、`HardenedResinCauldronEntity`、`CatalyticPressLidEntity` 以及以后新增的全部塑料实体都必须走同一套模型 Cube、朝向缓存、宽相位和 SAT 窄相位逻辑。
+1. 连续凸碰撞不再是成型舱动态制品的特例。`UniversalPlasticEntity` 的默认 `16x16x16` 模型、`ResinAnvilEntity`、`HardenedResinAnvilEntity`、`HardenedResinCauldronEntity` 以及以后新增的全部塑料实体都必须走同一套模型 Cube、朝向缓存、宽相位和 SAT 窄相位逻辑。
 2. 统一入口放在 `AbstractPlasticEntity`：抽象基类负责取得不可变局部模型几何、按当前姿态取得世界碰撞、刷新宽相位边界，并向移动、支撑、承载、侧推、粘合和调试显示暴露同一份几何。SAT 数学、空间索引和几何构建仍拆在 `entity.collision` 的小型公共类中，子类不得各自复制碰撞流程。
 3. 服务端物理不能读取客户端烘焙模型。每种内置塑料实体必须有位于公共代码的源 Cube 描述；成型制品继续使用持久化的实际裁切 Cube/凸包。渲染、实体碰撞、选取轮廓和粘合方块兼容轮廓都从同一源几何派生，不能维护彼此不一致的手写形状。
 4. 原版 `VoxelShape` 只能作为方块 API、宽相位、选取或粘合方块态的兼容表示。实体之间和实体对方块的实际移动裁剪、斜面支撑与侧面接触必须使用连续凸体，不能在任意重试分支退回凸体外接 AABB。
@@ -691,16 +691,16 @@ GUI 使用三段模式选择，默认值为“红石控制”：
 11. `CarrierMoveContext` 已新增“与任一已记录目标共同移动”的统一判断；粘合组件成员、锅内承载物等同一移动单元不再被 SAT 重新查询后阻挡自身，碰撞重试也按完整移动单元恢复碰撞。`PlasticConvexCollisionResolver` 已使用该判断，先前的混合组方块化、对角接缝、侧置砧和短轴承载等 6 项失败均已恢复，现无确定性 GameTest 失败。
 12. 为定位上述失败加入的临时诊断日志已经全部删除；`AdhesiveBondingService`、`AdhesiveGroupTransform`、`PlasticEntityPhysics`、`PlasticPushChain`、`CarrierMoveContext` 和 `EntityCarrierCollisionMixin` 均不再保留本轮诊断输出。
 13. 既有回归文件 `PlasticAnvilGameTests.java` 没有 tracked diff，当前 SHA-256 为 `69B1B8CB1E2CBE757D27F20F4C89E9793D95FE7B9416F0D65FF511C87DC891FA`；本工作树新增的 `PlasticMoldingProductionGameTests.java` SHA-256 为 `0E5EBB001FE2B8478071E9747FD968CC3B59DAD0DDB7592BAEB4F1A80C94529B`。334/334 检查点取得后两份哈希仍未变化，后续修复不得修改这两份基线文件。
-14. 当前 5 个 `AbstractPlasticEntity` 子类已经全部显式返回真实模型几何：默认 `UniversalPlasticEntity` 为 1 Cube，`ResinAnvilEntity` 为 8 Cube，`HardenedResinAnvilEntity` 为 5 Cube，`HardenedResinCauldronEntity` 为 13 Cube，`CatalyticPressLidEntity` 为 19 Cube且保留 `±45°`、`±22.5°` 旋转；动态成型制品继续使用持久化的 `MoldingConvexHull`。`AbstractPlasticEntity.getLocalGeometry()` 已改为抽象方法并删除完整方块兜底，锅的树脂砧入锅判定也改为选取同一真实 Cube 集合的底部子集。迁移时暴露的枢轴、混合组旋转、压盖反弹和支撑回归均已修复并包含在第 9 项的 334/334 检查点内。
-15. `BuiltInPlasticEntityModels` 的数值目前是从 `resin_anvil.json`、`hardend_resin_anvil.json`、`hardend_resin_cauldron.json` 和 `catalytic_press_lid.json` 手工镜像到服务端公共代码；尚未建立模型 JSON 与公共 Cube 的静态一致性测试，因此资源修改后仍有几何漂移风险。下一任务不得退回客户端烘焙模型或手写粗碰撞，应新增构建期校验来锁定 element 数量、端点、枢轴和旋转。
+14. 当前 4 个 `AbstractPlasticEntity` 子类已经全部显式返回真实模型几何：默认 `UniversalPlasticEntity` 为 1 Cube，`ResinAnvilEntity` 为 8 Cube，`HardenedResinAnvilEntity` 为 5 Cube，`HardenedResinCauldronEntity` 为 13 Cube；动态成型制品继续使用持久化的 `MoldingConvexHull`。`AbstractPlasticEntity.getLocalGeometry()` 已改为抽象方法并删除完整方块兜底，锅的树脂砧入锅判定也改为选取同一真实 Cube 集合的底部子集。迁移时暴露的枢轴、混合组旋转和支撑回归均已修复并包含在第 9 项的 334/334 检查点内。
+15. `BuiltInPlasticEntityModels` 的数值目前是从 `resin_anvil.json`、`hardend_resin_anvil.json` 和 `hardend_resin_cauldron.json` 手工镜像到服务端公共代码；尚未建立模型 JSON 与公共 Cube 的静态一致性测试，因此资源修改后仍有几何漂移风险。下一任务不得退回客户端烘焙模型或手写粗碰撞，应新增构建期校验来锁定 element 数量、端点、枢轴和旋转。
 16. 当前实现断点位于方块化/粘合态。`BondedPlasticShapeIndex` 仍只接受带成型数据的 `UniversalPlasticEntity`，`Entry` 只保存兼容 `VoxelShape` 和其世界边界，尚未保存真实世界凸体；因此内置塑料方块态以及锚点格内的斜面仍没有统一进入 SAT。对应代码尚未开始修改，后续任务应直接从该索引和 `PlasticConvexCollisionResolver` 接续。
 
 ### 13.3 完成审计结论
 
 > 真实 Cube、实体态与方块态 SAT、斜面专项回归、内部 Cube 剔除、候选索引、采光、物品缩放和尺寸 Tooltip 均已实现并通过当前允许执行的静态与自动化验证，没有已知确定性回归失败。
 
-1. 五种现有 `AbstractPlasticEntity` 子类均显式返回真实模型几何；动态制品从持久化的实际裁切 Cube 凸包生成同一种 `PlasticEntityGeometry`。移动、跨步、支撑、接触、侧推、承载和粘合后的方块态均进入统一 SAT 解析器，专用锅口规则也只筛选同一源 Cube 的允许区域。
-2. 内置模型公共 Cube 与四份模型 JSON 的 element 数量、端点、旋转轴、角度和枢轴已有一致性回归；方块态测试确认五种内置实体均保留源 Cube 凸体，催化压盖仍含真实斜法线。
+1. 四种现有 `AbstractPlasticEntity` 子类均显式返回真实模型几何；动态制品从持久化的实际裁切 Cube 凸包生成同一种 `PlasticEntityGeometry`。移动、跨步、支撑、接触、侧推、承载和粘合后的方块态均进入统一 SAT 解析器，专用锅口规则也只筛选同一源 Cube 的允许区域。
+2. 内置模型公共 Cube 与三份模型 JSON 的 element 数量、端点、旋转轴、角度和枢轴已有一致性回归；方块态测试确认四种内置实体均保留源 Cube 凸体。
 3. 玩家、苦力怕、掉落物和塑料实体均已覆盖斜 Cube 外接盒空角穿越及真实斜面稳定落地；最新完整 351 项回归于 2026-08-04 21:01:30 +08:00 全部通过，没有修改、删除或放宽既有行为基线。
 4. 重复、单体包含和可证明被轴对齐 Cube 并集完全包裹的内部 Cube 会在构建期剔除；平移、投影和分离轴使用共享缓存，障碍索引按请求轴与方向懒排序并对小列表直接扫描。性能回归覆盖正负三轴、256 障碍、实心、棋盘格、长薄斜体和断开结构，并锁定与源顺序 SAT 相同的位移结果。
 5. `UniversalPlasticItemRenderer` 已缓存表面中心，并在归一化前拒绝零、负数、NaN 或无穷最大边长；正常制品仍严格按真实表面最大边长归一化。实体采光从真实 AABB 中心和六个外表面取方块光、天空光最大值，Tooltip 使用同一真实表面边界并最多保留四位必要小数。
@@ -747,7 +747,7 @@ GUI 使用三段模式选择，默认值为“红石控制”：
 
 #### 13.8.1 已完成实现
 
-1. 五种内置塑料实体和成型制品都已从真实模型 Cube 生成 `PlasticEntityGeometry`：默认通用塑料为 1 Cube，树脂砧为 8 Cube，硬化树脂砧为 5 Cube，硬化树脂锅为 13 Cube，催化压盖为 19 Cube且保留 `±45°`、`±22.5°` 旋转；`AbstractPlasticEntity.getLocalGeometry()` 已为抽象方法，不再允许完整方块回退。
+1. 四种内置塑料实体和成型制品都已从真实模型 Cube 生成 `PlasticEntityGeometry`：默认通用塑料为 1 Cube，树脂砧为 8 Cube，硬化树脂砧为 5 Cube，硬化树脂锅为 13 Cube；`AbstractPlasticEntity.getLocalGeometry()` 已为抽象方法，不再允许完整方块回退。
 2. `BondedPlasticShapeIndex` 已索引全部 `AbstractPlasticEntityBlock` 方块态，`Entry` 保存世界空间真实凸体、真实边界和兼容轮廓，并区分全部碰撞条目与越出锚点格的补扫条目。`PlasticConvexCollisionResolver` 已注入方块态真实凸体并排除同一方块的兼容 `VoxelShape`，玩家、掉落物、生物和塑料实体都可把方块态斜面作为 SAT 障碍；`BlockCollisionsMixin` 与 `BlockGetterMixin` 只补扫越出锚点格的兼容轮廓。
 3. 已新增独立回归文件 `PlasticConvexCollisionGameTests.java`，没有修改两份既有行为基线。当前 12 项专项测试覆盖玩家、苦力怕、掉落物和塑料实体穿过斜 Cube 外接盒空角、在动态与方块态真实斜面稳定落地、玩家跨越斜面顶点、服务端移动包接受真实斜面位置、潜行遵循真实支撑边缘、玩家与生物沿旋转 Cube 的真实法线推动，以及内置方块态凸体、模型一致性、优化计数和宽相位结果等价。
 4. `PlasticConvexShape` 已使用共享不可变几何的轻量平移视图；`move()` 不再重建顶点、边和法线，平移后的顶点与边按需生成，SAT 投影按基础几何缓存并只叠加平移偏移，两种凸体的分离轴集合也按几何缓存。面法线、边方向和边叉积分离轴会统一去重，并可识别轴对齐盒。

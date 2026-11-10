@@ -68,7 +68,7 @@ If you want granules, you need a coolant. For every 1000mB of melt, any one of t
 <recipe id="anvilcraftplasticraft:solid_liquid/cool_universal_plastic_melt"/>
 </row>
 
-Equivalent recipes exist for all five materials, and the [Catalytic Press Lid](../002_refining/020_catalytic_press_lid.md) can press melt into granules too. All five melts accept any dye, with fluid type and amount unchanged; Clear Plastic Melt keeps its stained-glass appearance after solidification, and Elastic Plastic keeps its translucent shell and core
+Equivalent recipes exist for all five materials. All five melts accept any dye, with fluid type and amount unchanged; Clear Plastic Melt keeps its stained-glass appearance after solidification, and Elastic Plastic keeps its translucent shell and core
 
 ## Jeweler trade
 

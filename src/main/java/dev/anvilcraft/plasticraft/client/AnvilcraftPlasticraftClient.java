@@ -20,7 +20,6 @@ import dev.anvilcraft.plasticraft.client.renderer.UniversalPlasticItemRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.Plastic3DPrintingComponentRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.PlasticMoldingChamberRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingViewportResources;
-import dev.anvilcraft.plasticraft.client.renderer.entity.CatalyticPressLidRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinCauldronRenderer;
 import dev.anvilcraft.plasticraft.client.selection.PlasticSelectionGeometry;
 import dev.anvilcraft.plasticraft.client.selection.PlasticSelectionIntegration;
@@ -228,7 +227,6 @@ public final class AnvilcraftPlasticraftClient {
         event.register(PlasticMoldingChamberRenderer.PRINTER_DOOR_LEFT_MODEL);
         event.register(PlasticMoldingChamberRenderer.PRINTER_DOOR_RIGHT_MODEL);
         event.register(HardenedResinCauldronRenderer.OUTLET_MODEL);
-        event.register(CatalyticPressLidRenderer.ARM_MODEL);
         event.register(AdhesivePatchRenderer.MODEL);
         event.register(IgnitedFluidFlameRenderer.BLUE_FLAME_MODEL);
     }

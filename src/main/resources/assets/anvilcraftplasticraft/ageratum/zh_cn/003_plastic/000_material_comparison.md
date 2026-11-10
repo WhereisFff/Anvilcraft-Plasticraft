@@ -67,7 +67,7 @@ items:
 <recipe id="anvilcraftplasticraft:solid_liquid/cool_universal_plastic_melt"/>
 </row>
 
-上面这三个配方对五种材料各有一份，[催化压盖](../002_refining/020_catalytic_press_lid.md)也能把熔体压成塑料粒。五种熔体随便用什么染料都能改色，流体种类和数量不变；透明熔体凝固之后依然保持染色玻璃外观，弹性熔体凝固后保留半透明双层外观
+上面这三个配方对五种材料各有一份。五种熔体随便用什么染料都能改色，流体种类和数量不变；透明熔体凝固之后依然保持染色玻璃外观，弹性熔体凝固后保留半透明双层外观
 
 ## 珠宝商交易
 

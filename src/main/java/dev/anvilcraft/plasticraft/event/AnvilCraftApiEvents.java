@@ -41,7 +41,6 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -132,11 +131,6 @@ public final class AnvilCraftApiEvents {
             event.setCanceled(true);
             return;
         }
-    }
-
-    @SubscribeEvent(priority = EventPriority.HIGH)
-    public static void notifyCatalyticPress(GiantAnvilEvent.FallingTick event) {
-        CatalyticPressAnvilEvents.beforeFallingAnvilTick(event.getEntity());
     }
 
     @SubscribeEvent

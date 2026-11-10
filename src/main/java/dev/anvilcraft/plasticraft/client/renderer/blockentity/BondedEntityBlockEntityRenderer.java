@@ -6,9 +6,7 @@ import dev.anvilcraft.plasticraft.client.renderer.AdhesivePatchRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.ClearPlasticEntityRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
-import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
-import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -96,9 +94,6 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
         AABB bounds = new AABB(blockEntity.getBlockPos());
         if (blockEntity.getOrCreateRenderEntity() instanceof AbstractPlasticEntity plasticEntity) {
             return bounds.minmax(plasticEntity.getBoundingBox());
-        }
-        if (blockEntity.getDisplayState().is(PlasticraftBlocks.CATALYTIC_PRESS_LID.get())) {
-            return bounds.inflate(CatalyticPressLidEntity.RENDER_BOUNDS_EXPANSION);
         }
         return bounds;
     }

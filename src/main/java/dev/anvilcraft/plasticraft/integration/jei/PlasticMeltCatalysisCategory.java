@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.integration.jei;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
-import dev.anvilcraft.plasticraft.recipe.CatalyticPressHeat;
+import dev.anvilcraft.plasticraft.recipe.PlasticCatalysisHeat;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiFluidUtil;
 import dev.dubhe.anvilcraft.integration.jei.util.JeiRenderHelper;
 import mezz.jei.api.constants.VanillaTypes;
@@ -167,7 +167,7 @@ public final class PlasticMeltCatalysisCategory implements IRecipeCategory<Plast
             return List.of(
                 state.getBlock().getName(),
                 condition,
-                Component.translatable(TEXT_PREFIX + "heat_power", CatalyticPressHeat.power(state))
+                Component.translatable(TEXT_PREFIX + "heat_power", PlasticCatalysisHeat.power(state))
             );
         }
         return List.of(state.getBlock().getName(), condition);

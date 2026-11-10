@@ -5,7 +5,6 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveFallingBlockBehavior;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticFallingBlockSupport;
-import dev.anvilcraft.plasticraft.event.CatalyticPressAnvilEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.FallingBlockEntity;
@@ -28,12 +27,6 @@ import java.util.List;
 abstract class FallingBlockEntityAdhesionMixin {
     @Shadow
     public boolean dropItem;
-
-    @Inject(method = "tick", at = @At("HEAD"))
-    private void plasticraft$notifyCatalyticPress(CallbackInfo callback) {
-        FallingBlockEntity entity = (FallingBlockEntity) (Object) this;
-        CatalyticPressAnvilEvents.beforeFallingAnvilTick(entity);
-    }
 
     @Inject(method = "tick", at = @At("HEAD"), cancellable = true)
     private void plasticraft$holdAdhesiveControlledFallingBlock(CallbackInfo callback) {

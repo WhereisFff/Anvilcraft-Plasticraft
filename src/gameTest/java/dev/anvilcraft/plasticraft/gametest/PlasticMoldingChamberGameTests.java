@@ -1850,22 +1850,22 @@ public final class PlasticMoldingChamberGameTests {
 
         String localElementsWithExternalParent = """
             {
-              "name": "Catalytic Press Lid",
+              "name": "Example",
               "parent": "anvilcraft:block/template_large_block",
               "elements": [
-                {"name": "Lid", "from": [-1, -1, -1], "to": [17, 17, 17]}
+                {"name": "Example", "from": [-1, -1, -1], "to": [17, 17, 17]}
               ]
             }
             """;
-        MoldingBlueprintImporter.ImportPreview lidPreview = MoldingBlueprintImporter.inspect(
-            "catalytic_press_lid.json",
+        MoldingBlueprintImporter.ImportPreview examplePreview = MoldingBlueprintImporter.inspect(
+            "example.json",
             localElementsWithExternalParent
         );
-        MoldingElement importedLid = lidPreview.model().elements().getFirst();
-        check(!lidPreview.translationRequired(), "centered Java lid requested translation");
-        check(MoldingCoordinateSystem.toDisplay(importedLid.from()).equals(new MoldingVec3(-1.0D, -1.0D, -1.0D))
-                && MoldingCoordinateSystem.toDisplay(importedLid.to()).equals(new MoldingVec3(17.0D, 17.0D, 17.0D)),
-            "Java lid did not remain in the center cell");
+        MoldingElement importedExample = examplePreview.model().elements().getFirst();
+        check(!examplePreview.translationRequired(), "centered Java model requested translation");
+        check(MoldingCoordinateSystem.toDisplay(importedExample.from()).equals(new MoldingVec3(-1.0D, -1.0D, -1.0D))
+                && MoldingCoordinateSystem.toDisplay(importedExample.to()).equals(new MoldingVec3(17.0D, 17.0D, 17.0D)),
+            "Java model did not remain in the center cell");
 
         String blockbench = """
             {

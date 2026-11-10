@@ -4,7 +4,6 @@ import dev.anvilcraft.lib.v2.registrum.providers.RegistrumBlockstateProvider;
 import dev.anvilcraft.lib.v2.registrum.providers.loot.RegistrumBlockLootTables;
 import dev.anvilcraft.lib.v2.registrum.util.entry.BlockEntry;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.block.CatalyticPressLidBlock;
 import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.block.EngineeringPlasticBlock;
 import dev.anvilcraft.plasticraft.block.ElasticPlasticBlock;
@@ -28,7 +27,6 @@ import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltFluidBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticShape;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
-import dev.anvilcraft.plasticraft.item.CatalyticPressLidItem;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.EngineeringPlasticBlockItem;
 import dev.anvilcraft.plasticraft.item.ElasticPlasticBlockItem;
@@ -789,33 +787,6 @@ public final class PlasticraftBlocks {
         .tag(PlasticraftItemTags.PLASTIC_CAULDRONS, PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS)
         .model((context, provider) -> {
         })
-        .build()
-        .register();
-
-    public static final BlockEntry<CatalyticPressLidBlock> CATALYTIC_PRESS_LID = AnvilcraftPlasticraft.REGISTRUM
-        .block("catalytic_press_lid", CatalyticPressLidBlock::new)
-        .initialProperties(() -> Blocks.ANVIL)
-        .properties(properties -> properties
-            .noOcclusion()
-            .strength(2.0F, 20.0F)
-            .pushReaction(PushReaction.NORMAL))
-        .lang("Catalytic Press Lid")
-        .tag(BlockTags.MINEABLE_WITH_PICKAXE, ModBlockTags.END_PORTAL_UNABLE_CHANGE)
-        .blockstate((context, provider) -> provider.simpleBlock(
-            context.get(),
-            provider.models().getExistingFile(provider.modLoc("block/catalytic_press_lid"))
-        ))
-        .item((block, properties) -> new CatalyticPressLidItem(
-            block,
-            properties,
-            PlasticraftEntities.CATALYTIC_PRESS_LID,
-            block::defaultBlockState
-        ))
-        .tag(PlasticraftItemTags.BUOYANT_PLASTIC_ITEMS)
-        .model((context, provider) -> provider.withExistingParent(
-            context.getName(),
-            provider.modLoc("block/catalytic_press_lid")
-        ))
         .build()
         .register();
 

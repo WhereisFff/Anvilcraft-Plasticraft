@@ -54,13 +54,13 @@ Clear Plastic Melt supports all 16 dye colors, and that color carries through mo
 
 ## Elastic Plastic Melt
 
-Resin, Hardened Resin, Resin Blocks, High-Viscosity Resin Buckets, High-Viscosity Resin Blocks, Resin Anvils, Hardened Resin Anvils, Hardened Resin Cauldrons, Catalytic Press Lids and Resin Anvil Hammers all catalyze this route. Items made from them by crafting or smithing count recursively, including processors and machines crafted with processors. Reusable crafting tools and ordinary metals recovered by smelting or crushing do not spread resin identity
+Resin, Hardened Resin, Resin Blocks, High-Viscosity Resin Buckets, High-Viscosity Resin Blocks, Resin Anvils, Hardened Resin Anvils, Hardened Resin Cauldrons and Resin Anvil Hammers all catalyze this route. Items made from them by crafting or smithing count recursively, including processors and machines crafted with processors. Reusable crafting tools and ordinary metals recovered by smelting or crushing do not spread resin identity
 
 Put a resin catalyst in an ordinary cauldron, fish tank, large cauldron, plastic cauldron or world Plastic Oil source, then provide cold below. An upward-facing Hardened Resin Cauldron already counts as one resin catalyst: fill it with Plastic Oil and provide cold underneath, with no extra resin item needed
 
 Cold follows the Engineering Plastic rules and includes water, ice, packed ice, blue ice, snow blocks, powder snow, snow layers and other accepted coolant blocks or blocks whose items qualify as cold. Neither the cold block nor the resin catalyst is consumed. Plastic Oil becomes an equal volume of melt at a 1:1 ratio while preserving color
 
-Open catalysis with one distinct resin item takes 400gt (20 seconds), eight take 200gt (10 seconds), and maximum efficiency takes 182gt (about 9.1 seconds). Extra copies of one item do not speed it up. A sealed [Catalytic Press Lid](020_catalytic_press_lid.md) supplies a resin catalytic surface and completes the cold route at full speed in 100gt (5 seconds). Elastic Melt accepts all 16 dyes and does not continue into Engineering or Heat-Resistant Plastic
+Open catalysis with one distinct resin item takes 400gt (20 seconds), eight take 200gt (10 seconds), and maximum efficiency takes 182gt (about 9.1 seconds). Extra copies of one item do not speed it up. Elastic Melt accepts all 16 dyes and does not continue into Engineering or Heat-Resistant Plastic
 
 ## Engineering Plastic Melt
 

@@ -79,7 +79,7 @@ public final class PlasticraftLanguageData {
         provider.add("tooltip.anvilcraftplasticraft.molded_feature.elastic", ", elastic");
         provider.add(
             "jei.anvilcraftplasticraft.plastic_melt_catalysis.resin_priority",
-            "Cold resin catalysts take priority for elastic melt; hardened resin cauldrons and catalytic press lids also act as catalysts"
+            "Cold resin catalysts take priority for elastic melt; hardened resin cauldrons also act as catalysts"
         );
         provider.add("item.anvilcraftplasticraft.molded_product_name", "%1$s %2$s");
         provider.add("item.anvilcraftplasticraft.molded_product_suffix.block", "Block");

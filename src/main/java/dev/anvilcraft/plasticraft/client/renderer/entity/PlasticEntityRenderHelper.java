@@ -5,7 +5,6 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.plasticraft.client.renderer.ClearPlasticRenderTypes;
 import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
-import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
@@ -45,7 +44,7 @@ public final class PlasticEntityRenderHelper {
         BakedModel model = dispatcher.getBlockModel(state);
         RenderType renderType = isTransparent(state)
             ? ClearPlasticRenderTypes.block()
-            : entity instanceof ResinAnvilEntity || entity instanceof CatalyticPressLidEntity
+            : entity instanceof ResinAnvilEntity
                 ? Sheets.translucentItemSheet()
                 : Sheets.cutoutBlockSheet();
         VertexConsumer consumer = buffers.getBuffer(renderType);

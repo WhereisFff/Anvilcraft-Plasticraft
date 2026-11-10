@@ -26,7 +26,6 @@ import dev.anvilcraft.plasticraft.entity.physics.PlasticRestIndex;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticSlidingRailPhysics;
 import dev.anvilcraft.plasticraft.entity.physics.PlasticWallSnapping;
 import dev.anvilcraft.plasticraft.entity.redstone.PlasticObserverContact;
-import dev.anvilcraft.plasticraft.event.CatalyticPressAnvilEvents;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
@@ -767,7 +766,6 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
         );
         // FallingBlockEntity.tick 有意跳过 Entity#baseTick。
         // 此处保留通常由 baseTick 推进的插值和边沿触发状态。
-        CatalyticPressAnvilEvents.beforeFallingAnvilTick(this);
         this.xo = this.getX();
         this.yo = this.getY();
         this.zo = this.getZ();

@@ -63,7 +63,6 @@ public final class PlasticraftItemGroups {
                 sections.accept(PlasticraftBlocks.RESIN_ANVIL.asItem());
                 sections.accept(PlasticraftBlocks.HARDEND_RESIN_ANVIL.asItem());
                 sections.accept(PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asItem());
-                sections.accept(PlasticraftBlocks.CATALYTIC_PRESS_LID.asItem());
                 sections.accept(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get());
                 sections.accept(PlasticraftItems.HIGH_HEAT_FUEL_BUCKET.get());
                 sections.accept(PlasticraftItems.PLASTIC_OIL_BUCKET.get());

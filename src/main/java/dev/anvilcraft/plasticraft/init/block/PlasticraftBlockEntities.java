@@ -39,7 +39,6 @@ public final class PlasticraftBlockEntities {
         .blockEntity("bonded_entity", BondedEntityBlockEntity::new)
         .validBlocks(
             PlasticraftBlocks.HARDEND_RESIN_CAULDRON,
-            PlasticraftBlocks.CATALYTIC_PRESS_LID,
             PlasticraftBlocks.RESIN_ANVIL,
             PlasticraftBlocks.HARDEND_RESIN_ANVIL,
             PlasticraftBlocks.UNIVERSAL_PLASTIC,

@@ -2,12 +2,10 @@ package dev.anvilcraft.plasticraft.init.entity;
 
 import dev.anvilcraft.lib.v2.registrum.util.entry.EntityEntry;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.client.renderer.entity.CatalyticPressLidRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinAnvilRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinCauldronRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.ResinAnvilRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.UniversalPlasticEntityRenderer;
-import dev.anvilcraft.plasticraft.entity.CatalyticPressLidEntity;
 import dev.anvilcraft.plasticraft.entity.ClearPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.ElasticPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.EngineeringPlasticEntity;
@@ -20,16 +18,6 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import net.minecraft.world.entity.MobCategory;
 
 public final class PlasticraftEntities {
-    public static final EntityEntry<CatalyticPressLidEntity> CATALYTIC_PRESS_LID = AnvilcraftPlasticraft.REGISTRUM
-        .<CatalyticPressLidEntity>entity("catalytic_press_lid", CatalyticPressLidEntity::new, MobCategory.MISC)
-        .properties(builder -> builder
-            .sized(CatalyticPressLidEntity.WIDTH, CatalyticPressLidEntity.HEIGHT)
-            .clientTrackingRange(10)
-            .updateInterval(1))
-        .lang("Catalytic Press Lid")
-        .renderer(() -> CatalyticPressLidRenderer::new)
-        .register();
-
     public static final EntityEntry<HardenedResinAnvilEntity> HARDEND_RESIN_ANVIL = AnvilcraftPlasticraft.REGISTRUM
         .<HardenedResinAnvilEntity>entity("hardend_resin_anvil", HardenedResinAnvilEntity::new, MobCategory.MISC)
         .properties(builder -> builder
@@ -116,7 +104,6 @@ public final class PlasticraftEntities {
     }
 
     public static void register() {
-        CatalyticPressLidEntity.configureDefaultDrop(PlasticraftBlocks.CATALYTIC_PRESS_LID::asStack);
         HardenedResinAnvilEntity.configureDefaultDrop(PlasticraftBlocks.HARDEND_RESIN_ANVIL::asStack);
         HardenedResinCauldronEntity.configureDefaultDrop(PlasticraftBlocks.HARDEND_RESIN_CAULDRON::asStack);
         ResinAnvilEntity.configureDefaultDrop(PlasticraftBlocks.RESIN_ANVIL::asStack);

@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.integration.jei;
 
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
-import dev.anvilcraft.plasticraft.recipe.CatalyticPressHeat;
+import dev.anvilcraft.plasticraft.recipe.PlasticCatalysisHeat;
 import dev.anvilcraft.plasticraft.recipe.PlasticCatalysisCold;
 import dev.anvilcraft.plasticraft.recipe.ResinCatalysts;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
@@ -97,8 +97,8 @@ public record PlasticMeltCatalysisRecipe(
             }
             // 每种方块只展示一个有效状态，避免朝向挤占轮播，并排除未点燃或未工作的加热器。
             block.getStateDefinition().getPossibleStates().stream()
-                .filter(state -> CatalyticPressHeat.power(state) > 0)
-                .max(Comparator.comparingInt(CatalyticPressHeat::power))
+                .filter(state -> PlasticCatalysisHeat.power(state) > 0)
+                .max(Comparator.comparingInt(PlasticCatalysisHeat::power))
                 .filter(state -> displayItem(state) != Items.AIR)
                 .ifPresent(states::add);
         }
