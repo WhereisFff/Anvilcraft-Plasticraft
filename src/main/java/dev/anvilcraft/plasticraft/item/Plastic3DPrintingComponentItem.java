@@ -16,12 +16,17 @@ public class Plastic3DPrintingComponentItem extends BlockItem {
 
     @Override
     public InteractionResult useOn(UseOnContext context) {
+        return super.useOn(placementContext(context));
+    }
+
+    /** 在控制器上安装部件时，预览与交互使用同一个顶部安装位置。 */
+    public static UseOnContext placementContext(UseOnContext context) {
         BlockPos pos = context.getClickedPos();
         if (context.getLevel().getBlockState(pos).is(PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.get())) {
             // 只重定向安装位置，保留原版的占位检查、组件数据、音效与物品消耗。
             context = new UseOnContext(context.getLevel(), context.getPlayer(), context.getHand(), context.getItemInHand(),
                 new BlockHitResult(pos.getCenter().add(0, 0.5, 0), Direction.UP, pos, false));
         }
-        return super.useOn(context);
+        return context;
     }
 }

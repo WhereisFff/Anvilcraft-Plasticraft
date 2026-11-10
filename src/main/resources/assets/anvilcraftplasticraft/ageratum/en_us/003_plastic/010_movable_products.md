@@ -16,6 +16,8 @@ Each plastic material gets its own labeled section in the Plasticraft creative t
 
 ## Placement and recovery
 
+The client Placement Preview Mode setting selects Outline, Ghost or Off, with separate opacity controls. Previews cover the molding chamber and its workspace, condenser towers, 3D printing components and all plastic entities. Entity previews use the actual shape, color and orientation, with red outlines when blocked. Sneaking while targeting a plastic entity also previews placement against its surface.
+
 - Products are entities, so gravity, buoyancy, pushing and sliding rails all apply, and they can be magnetized
 - Click any of the six block faces to place one, with four in-face turns per face for 24 orientations; hold an Anvil Hammer use to adjust the orientation wheel
 - Sneak-use any Anvil Hammer to retrieve a product; model, material, color, magnetism and container contents are all preserved, while the orientation is chosen again when placing it

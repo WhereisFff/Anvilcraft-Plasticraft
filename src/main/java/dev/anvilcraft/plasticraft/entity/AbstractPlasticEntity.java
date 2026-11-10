@@ -2370,12 +2370,8 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             return InteractionResult.sidedSuccess(this.level().isClientSide);
         }
         if (stack.isEmpty()) return InteractionResult.PASS;
-        Vec3 absoluteHit = this.position().add(location);
-        Direction face = this.nearestInteractionFace(location);
-        Vec3 faceLocation = AdhesiveFaces.faceLocation(this, absoluteHit, face);
-        BlockPos targetPos = outsideFaceBlockPos(faceLocation, face);
-        if (!this.level().getBlockState(targetPos).canBeReplaced()) return InteractionResult.FAIL;
-        BlockHitResult hit = new BlockHitResult(faceLocation, face, targetPos, false);
+        BlockHitResult hit = this.placementHit(location);
+        if (!this.level().getBlockState(hit.getBlockPos()).canBeReplaced()) return InteractionResult.FAIL;
         if (stack.getItem() instanceof EntityFacePlaceableItem entityItem) {
             if (this.level().isClientSide) return InteractionResult.SUCCESS;
             return entityItem.plasticraft$placeOnEntityFace(this.level(), player, hand, stack, hit);
@@ -2384,6 +2380,14 @@ public abstract class AbstractPlasticEntity extends FallingBlockEntity
             return stack.useOn(new UseOnContext(this.level(), player, hand, stack, hit));
         }
         return InteractionResult.PASS;
+    }
+
+    /** 实体表面的放置命中使用实际几何外侧单元，供交互与放置预览共用。 */
+    public final BlockHitResult placementHit(Vec3 relativeLocation) {
+        Vec3 absoluteHit = this.position().add(relativeLocation);
+        Direction face = this.nearestInteractionFace(relativeLocation);
+        Vec3 faceLocation = AdhesiveFaces.faceLocation(this, absoluteHit, face);
+        return new BlockHitResult(faceLocation, face, outsideFaceBlockPos(faceLocation, face), false);
     }
 
     public final Direction nearestInteractionFace(Vec3 relativeLocation) {

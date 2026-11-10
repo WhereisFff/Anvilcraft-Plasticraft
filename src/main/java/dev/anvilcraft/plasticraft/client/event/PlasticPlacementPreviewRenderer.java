@@ -4,9 +4,9 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.client.renderer.ThickLineRenderer;
+import dev.anvilcraft.plasticraft.config.PlasticraftClientConfig.PlacementPreviewMode;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.item.AbstractPlasticEntityItem;
-import javax.annotation.Nullable;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -16,9 +16,8 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
-import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -27,6 +26,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 
 import java.util.ArrayList;
 import java.util.List;
+import javax.annotation.Nullable;
 
 /** 手持塑料制品时，在命中方块面显示与实际放置规则一致的四分区预览。 */
 @EventBusSubscriber(modid = AnvilcraftPlasticraft.MOD_ID, value = Dist.CLIENT)
@@ -58,17 +58,16 @@ public final class PlasticPlacementPreviewRenderer {
         Minecraft minecraft = Minecraft.getInstance();
         LocalPlayer player = minecraft.player;
         ClientLevel level = minecraft.level;
-        if (player == null || level == null || !isHoldingPlasticEntity(player)) {
+        UseOnContext context = AnvilcraftPlasticraft.CLIENT_CONFIG.placementPreviewMode
+            == PlacementPreviewMode.OFF
+            ? null : PlasticraftPlacementPreviewRenderer.placementContext(minecraft);
+        if (player == null || level == null || context == null
+            || !(context.getItemInHand().getItem() instanceof AbstractPlasticEntityItem<?> item)) {
             resetAnimation();
             return;
         }
-        if (!(minecraft.hitResult instanceof BlockHitResult hit)
-            || hit.getType() != HitResult.Type.BLOCK) {
-            resetAnimation();
-            return;
-        }
-
-        PlasticEntityOrientation orientation = PlasticEntityOrientation.forPlacement(hit, player);
+        BlockHitResult hit = new BlockHitResult(context.getClickLocation(), context.getClickedFace(), context.getClickedPos(), false);
+        PlasticEntityOrientation orientation = item.placementOrientation(context.getItemInHand(), hit, player);
         PreviewGeometry preview = animatedPreview(hit, orientation);
         PoseStack pose = event.getPoseStack();
         Vec3 camera = event.getCamera().getPosition();
@@ -79,14 +78,6 @@ public final class PlasticPlacementPreviewRenderer {
         renderFaceLines(pose, buffers, preview.frame());
         renderSelectedLines(pose, buffers, preview);
         pose.popPose();
-    }
-
-    private static boolean isHoldingPlasticEntity(LocalPlayer player) {
-        return isPlasticEntityItem(player.getMainHandItem()) || isPlasticEntityItem(player.getOffhandItem());
-    }
-
-    private static boolean isPlasticEntityItem(ItemStack stack) {
-        return stack.getItem() instanceof AbstractPlasticEntityItem<?>;
     }
 
     private static void renderFaceLines(

@@ -27,6 +27,7 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
+import dev.anvilcraft.plasticraft.item.AbstractPlasticEntityItem;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.HighViscosityResinBlockItem;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
@@ -211,6 +212,13 @@ public final class PlasticAnvilGameTests {
                     absoluteClicked,
                     false
                 );
+                AbstractPlasticEntity candidate = ((AbstractPlasticEntityItem<?>) stack.getItem())
+                    .createPlacementEntity(helper.getLevel(), player, stack, hit);
+                if (candidate == null) {
+                    throw new GameTestAssertException("放置实体构造失败：" + face + " / " + longAxis);
+                }
+                check(helper.getLevel().getEntity(candidate.getUUID()) == null && stack.getCount() == 1,
+                    "构造放置预览改变了世界或消耗了物品");
                 InteractionResult result = stack.useOn(new UseOnContext(
                     helper.getLevel(),
                     player,
@@ -232,6 +240,9 @@ public final class PlasticAnvilGameTests {
                     .orElseThrow(() -> new GameTestAssertException(
                         "item did not create an entity on " + face + " toward " + longAxis
                     ));
+                check(placed.position().equals(candidate.position()) && placed.getOrientation().equals(candidate.getOrientation())
+                    && ItemStack.matches(placed.getDropStack(), candidate.getDropStack()),
+                    "实际放置与预览实体的位置、朝向或物品数据不一致");
                 check(placed.getOrientation().equals(expected), "item selected the wrong in-plane direction");
                 check(
                     close(placed.getBoundingBox().getCenter(), expectedCenter),

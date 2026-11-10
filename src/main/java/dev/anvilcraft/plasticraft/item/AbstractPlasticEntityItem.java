@@ -27,6 +27,7 @@ import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -92,47 +93,17 @@ public abstract class AbstractPlasticEntityItem<E extends AbstractPlasticEntity>
 
     private InteractionResult placeFromHit(
         Level level,
-        Player player,
+        @Nullable Player player,
         ItemStack stack,
         BlockHitResult hit
     ) {
-        BlockPos clickedPos = hit.getBlockPos();
-        Direction attachmentFace = hit.getDirection();
-        BlockPos occupiedPos = level.getBlockState(clickedPos).canBeReplaced()
-            ? clickedPos
-            : clickedPos.relative(attachmentFace);
-        PlasticEntityOrientation orientation = this.placementOrientation(stack, hit, player);
-
-        EntityType<? extends E> type = this.entityType.get();
-        if (type == null) {
+        E entity = this.createPlacementEntity(level, player, stack, hit);
+        if (entity == null) {
             return InteractionResult.FAIL;
         }
-        Vec3 provisionalPosition = Vec3.atBottomCenterOf(occupiedPos);
-
-        ItemStack entityStack = this.prepareEntityStack(stack.copyWithCount(1), orientation);
-        PlasticItemData.setMaterial(entityStack, this.materialKey());
-        if (!this.supportsDyeing()) {
-            PlasticItemData.clearColor(entityStack);
-        }
-
-        BlockState state = this.displayState.get();
-        if (state == null) {
-            state = Blocks.ANVIL.defaultBlockState();
-        }
-        state = this.prepareDisplayState(entityStack, state);
-        if (state.hasProperty(AbstractPlasticEntityBlock.MAGNETIZED)) {
-            state = state.setValue(
-                AbstractPlasticEntityBlock.MAGNETIZED,
-                PlasticItemData.isMagnetized(entityStack)
-            );
-        }
-        state = orientation.applyToState(state);
-
-        E entity = this.createEntity(type, level, provisionalPosition, state, entityStack, orientation);
-        Vec3 position = entity.plasticraft$placementPosition(occupiedPos, orientation);
-        entity.setPos(position);
-        entity.setStartPos(entity.blockPosition());
-        entity.setMagnetized(PlasticItemData.isMagnetized(entityStack));
+        PlasticEntityOrientation orientation = entity.getOrientation();
+        Vec3 position = entity.position();
+        BlockState state = entity.getBlockState();
         if (!entity.plasticraft$canOccupy(orientation, position)) {
             return InteractionResult.FAIL;
         }
@@ -160,6 +131,48 @@ public abstract class AbstractPlasticEntityItem<E extends AbstractPlasticEntity>
         return InteractionResult.sidedSuccess(level.isClientSide);
     }
 
+    /** 构造尚未加入世界的放置实体，预览与实际放置共用形状、材料和朝向。 */
+    public @Nullable E createPlacementEntity(Level level, @Nullable Player player, ItemStack stack, BlockHitResult hit) {
+        BlockPos clickedPos = hit.getBlockPos();
+        Direction attachmentFace = hit.getDirection();
+        BlockPos occupiedPos = level.getBlockState(clickedPos).canBeReplaced()
+            ? clickedPos
+            : clickedPos.relative(attachmentFace);
+        PlasticEntityOrientation orientation = this.placementOrientation(stack, hit, player);
+
+        EntityType<? extends E> type = this.entityType.get();
+        if (type == null) {
+            return null;
+        }
+        Vec3 provisionalPosition = Vec3.atBottomCenterOf(occupiedPos);
+
+        ItemStack entityStack = this.prepareEntityStack(stack.copyWithCount(1), orientation);
+        PlasticItemData.setMaterial(entityStack, this.materialKey());
+        if (!this.supportsDyeing()) {
+            PlasticItemData.clearColor(entityStack);
+        }
+
+        BlockState state = this.displayState.get();
+        if (state == null) {
+            state = Blocks.ANVIL.defaultBlockState();
+        }
+        state = this.prepareDisplayState(entityStack, state);
+        if (state.hasProperty(AbstractPlasticEntityBlock.MAGNETIZED)) {
+            state = state.setValue(
+                AbstractPlasticEntityBlock.MAGNETIZED,
+                PlasticItemData.isMagnetized(entityStack)
+            );
+        }
+        state = orientation.applyToState(state);
+
+        E entity = this.createEntity(type, level, provisionalPosition, state, entityStack, orientation);
+        Vec3 position = entity.plasticraft$placementPosition(occupiedPos, orientation);
+        entity.setPos(position);
+        entity.setStartPos(entity.blockPosition());
+        entity.setMagnetized(PlasticItemData.isMagnetized(entityStack));
+        return entity;
+    }
+
     protected SoundEvent placementSound(BlockState displayState) {
         return SoundEvents.BONE_BLOCK_PLACE;
     }
@@ -169,15 +182,15 @@ public abstract class AbstractPlasticEntityItem<E extends AbstractPlasticEntity>
     }
 
     /** 允许尺寸不是完整立方体的制品约束放置朝向，确保实体包围盒和局部碰撞保持一致。 */
-    protected PlasticEntityOrientation placementOrientation(BlockHitResult hit, Player player) {
+    protected PlasticEntityOrientation placementOrientation(BlockHitResult hit, @Nullable Player player) {
         return PlasticEntityOrientation.forPlacement(hit, player);
     }
 
     /** 允许带姿态组件的制品在选择放置面后保留面内旋转。 */
-    protected PlasticEntityOrientation placementOrientation(
+    public PlasticEntityOrientation placementOrientation(
         ItemStack stack,
         BlockHitResult hit,
-        Player player
+        @Nullable Player player
     ) {
         return this.placementOrientation(hit, player);
     }
