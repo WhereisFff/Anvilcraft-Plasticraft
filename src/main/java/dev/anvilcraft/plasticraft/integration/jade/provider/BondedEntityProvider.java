@@ -2,6 +2,8 @@ package dev.anvilcraft.plasticraft.integration.jade.provider;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
+import dev.anvilcraft.plasticraft.integration.jade.PlasticJadeLayout;
+import net.minecraft.ChatFormatting;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -10,6 +12,7 @@ import snownee.jade.api.IEntityComponentProvider;
 import snownee.jade.api.IServerDataProvider;
 import snownee.jade.api.ITooltip;
 import snownee.jade.api.config.IPluginConfig;
+import snownee.jade.api.ui.IElementHelper;
 
 /** 为所有被树脂固定的实体显示 Jade 状态。 */
 public enum BondedEntityProvider implements IEntityComponentProvider, IServerDataProvider<EntityAccessor> {
@@ -29,7 +32,9 @@ public enum BondedEntityProvider implements IEntityComponentProvider, IServerDat
     @Override
     public void appendTooltip(ITooltip tooltip, EntityAccessor accessor, IPluginConfig config) {
         if (accessor.getServerData().getBoolean(BONDED)) {
-            tooltip.add(Component.translatable("tooltip.anvilcraftplasticraft.bonded"));
+            tooltip.add(IElementHelper.get().text(Component.literal("  ")
+                .append(Component.translatable("tooltip.anvilcraftplasticraft.bonded"))
+                .withStyle(ChatFormatting.GRAY)).tag(PlasticJadeLayout.BONDED));
         }
     }
 

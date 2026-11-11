@@ -12,6 +12,8 @@ items:
 
 The chamber uses its model cubes for selection, preserving slanted edges and allowing the crosshair through gaps between cubes in both powered and unpowered appearances. The forming region behind it keeps the interaction bounds defined by the current production stage
 
+Jade places the current state at the right of the name. The energy bar directly below shows the chamber power draw while the grid supplies it, with battery charge as the background. On battery power it shows stored FE and capacity. The forming method follows the energy bar, and the forming-region fluid group is labeled Current batch.
+
 ## Forming region
 
 Place a <ref item="anvilcraftplasticraft:plastic_molding_chamber"/> and it reserves a 3x3x3 forming region behind the block — that is where your product shows up. Model coordinates use pixels: the ordinary workspace is 48x48x48px, with 16px per world block. A model may contain volumetric Cubes and zero-thickness planes

@@ -527,11 +527,11 @@ public final class PlasticraftLanguageData {
             "tooltip.anvilcraftplasticraft.molding.structure_disk.too_large_for_chamber",
             "✗ Model is too large to process"
         );
-        provider.add("tooltip.anvilcraftplasticraft.bonded", "Bonded in place");
+        provider.add("tooltip.anvilcraftplasticraft.bonded", "Bonded");
 
         // Jade 插件配置项及其方块、实体状态文本。
         provider.add("tooltip.anvilcraftplasticraft.jade.color", "Material colour: %s");
-        provider.add("tooltip.anvilcraftplasticraft.jade.pushable", "Can be pushed");
+        provider.add("tooltip.anvilcraftplasticraft.jade.pushable", "Pushable");
         provider.add("tooltip.anvilcraftplasticraft.jade.item_count", "%1$s x %2$s");
         provider.add("tooltip.anvilcraftplasticraft.jade.fluid_count", "%1$s: %2$s mB");
         provider.add("tooltip.anvilcraftplasticraft.jade.empty", "Empty");
@@ -541,6 +541,10 @@ public final class PlasticraftLanguageData {
         provider.add("config.jade.plugin_anvilcraftplasticraft.bonded_block", "Bonded blocks");
         provider.add("config.jade.plugin_anvilcraftplasticraft.hardend_resin_anvil", "Hardened Resin Anvil");
         provider.add("config.jade.plugin_anvilcraftplasticraft.fluid_storage", "Fluid Storage");
+        provider.add("config.jade.plugin_anvilcraftplasticraft.item_storage", "Item Storage");
+        provider.add("tooltip.anvilcraftplasticraft.jade.storage", "Storage: %1$s/%2$s");
+        provider.add("tooltip.anvilcraftplasticraft.jade.grid_power", "— Grid power: %s kW —");
+        provider.add("tooltip.anvilcraftplasticraft.jade.current_batch", "Current batch: %s / %s (%s)");
         provider.add(
             "config.jade.plugin_anvilcraftplasticraft.plastic_molding_chamber",
             "Plastic Molding Chamber"

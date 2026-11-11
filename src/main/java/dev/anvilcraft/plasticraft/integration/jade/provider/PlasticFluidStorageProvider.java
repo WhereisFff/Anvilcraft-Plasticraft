@@ -45,6 +45,7 @@ public enum PlasticFluidStorageProvider implements IServerExtensionProvider<Comp
     private static final String CAPACITY = "Capacity";
     private static final String SHARED = "Shared";
     private static final String GAS = "Gas";
+    private static final String BATCH = "Batch";
     private static final ResourceLocation UID = AnvilcraftPlasticraft.of("fluid_storage");
 
     @Override
@@ -68,6 +69,7 @@ public enum PlasticFluidStorageProvider implements IServerExtensionProvider<Comp
                     ViewGroup<CompoundTag> group = new ViewGroup<>(List.of(this.fluidData(accessor, fluid, capacity)));
                     group.getExtraData().putLong(TOTAL, fluid.getAmount());
                     group.getExtraData().putLong(CAPACITY, capacity);
+                    group.getExtraData().putBoolean(BATCH, tank == 1);
                     groups.add(group);
                 }
             }
@@ -167,7 +169,9 @@ public enum PlasticFluidStorageProvider implements IServerExtensionProvider<Comp
             long total = extra.getLong(TOTAL);
             long capacity = extra.getLong(CAPACITY);
             client.title = Component.translatable(
-                "tooltip.anvilcraft.large_fluid_tank.total", formatAmount(total), formatAmount(capacity), percent(total, capacity)
+                extra.getBoolean(BATCH) ? "tooltip.anvilcraftplasticraft.jade.current_batch"
+                    : "tooltip.anvilcraft.large_fluid_tank.total",
+                formatAmount(total), formatAmount(capacity), percent(total, capacity)
             ).withStyle(ChatFormatting.GRAY);
             for (int index = 0; index < client.views.size(); index++) {
                 FluidView view = client.views.get(index);

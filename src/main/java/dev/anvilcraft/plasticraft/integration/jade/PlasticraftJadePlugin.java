@@ -12,6 +12,7 @@ import dev.anvilcraft.plasticraft.integration.jade.provider.BondedBlockProvider;
 import dev.anvilcraft.plasticraft.integration.jade.provider.BondedEntityProvider;
 import dev.anvilcraft.plasticraft.integration.jade.provider.PlasticEntityProvider;
 import dev.anvilcraft.plasticraft.integration.jade.provider.PlasticFluidStorageProvider;
+import dev.anvilcraft.plasticraft.integration.jade.provider.PlasticItemStorageProvider;
 import dev.anvilcraft.plasticraft.integration.jade.provider.PlasticMoldingChamberProvider;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.block.Block;
@@ -28,6 +29,8 @@ public final class PlasticraftJadePlugin implements IWailaPlugin {
         registration.registerEntityDataProvider(PlasticEntityProvider.INSTANCE, AbstractPlasticEntity.class);
         registration.registerEntityDataProvider(BondedEntityProvider.INSTANCE, Entity.class);
         registration.registerBlockDataProvider(BondedBlockProvider.INSTANCE, Block.class);
+        registration.registerItemStorage(PlasticItemStorageProvider.INSTANCE, AbstractPlasticEntity.class);
+        registration.registerItemStorage(PlasticItemStorageProvider.INSTANCE, BondedEntityBlockEntity.class);
         registration.registerFluidStorage(PlasticFluidStorageProvider.INSTANCE, AbstractPlasticEntity.class);
         registration.registerFluidStorage(PlasticFluidStorageProvider.INSTANCE, BondedEntityBlockEntity.class);
         registration.registerFluidStorage(PlasticFluidStorageProvider.INSTANCE, PlasticOilCauldronBlock.class);
@@ -48,7 +51,9 @@ public final class PlasticraftJadePlugin implements IWailaPlugin {
         registration.registerEntityComponent(PlasticEntityProvider.INSTANCE, AbstractPlasticEntity.class);
         registration.registerEntityComponent(BondedEntityProvider.INSTANCE, Entity.class);
         registration.registerBlockComponent(BondedBlockProvider.INSTANCE, Block.class);
+        registration.registerItemStorageClient(PlasticItemStorageProvider.INSTANCE);
         registration.registerFluidStorageClient(PlasticFluidStorageProvider.INSTANCE);
+        registration.addTooltipCollectedCallback(PlasticJadeLayout::finish);
         registration.registerBlockComponent(
             PlasticMoldingChamberProvider.INSTANCE,
             PlasticMoldingChamberBlock.class

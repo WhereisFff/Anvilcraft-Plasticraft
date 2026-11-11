@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.integration.jade.PlasticJadeLayout;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContentSummary;
 import dev.anvilcraft.plasticraft.molding.product.PlasticCauldronLayout;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
@@ -45,7 +46,7 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
         }
         if (entity instanceof UniversalPlasticEntity plastic) {
             MoldedPlasticContentSummary summary = plastic.getMoldedContentSummary();
-            if (MoldingProductTypes.isCrate(summary.type()) || MoldingProductTypes.isCauldron(summary.type())) {
+            if (MoldingProductTypes.isCauldron(summary.type())) {
                 tag.put(MOLDED_SUMMARY_KEY, summary.toTag(entity.registryAccess()));
             }
         }
@@ -70,7 +71,9 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
 
         CompoundTag data = accessor.getServerData();
         if (data.getBoolean(PUSHABLE_KEY)) {
-            tooltip.add(Component.translatable("tooltip.anvilcraftplasticraft.jade.pushable"));
+            tooltip.add(IElementHelper.get().text(Component.literal("  ")
+                .append(Component.translatable("tooltip.anvilcraftplasticraft.jade.pushable"))
+                .withStyle(ChatFormatting.GRAY)).tag(PlasticJadeLayout.PUSHABLE));
         }
         if (data.getBoolean(MAGNETIZED_KEY)) {
             tooltip.add(Component.translatable("tooltip.anvilcraftplasticraft.magnetized"));
@@ -109,22 +112,9 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
     }
 
     private static void appendMoldedSummary(ITooltip tooltip, MoldedPlasticContentSummary summary) {
-        PlasticCauldronLayout layout = PlasticCauldronLayout.of(summary.type());
-        if (layout == null && !MoldingProductTypes.isCrate(summary.type())) return;
-        if (layout != null) {
+        if (PlasticCauldronLayout.of(summary.type()) != null) {
             appendItems(tooltip, summary);
-            return;
         }
-        appendItemSummary(tooltip, summary, summary.capacity());
-    }
-
-    private static void appendItemSummary(ITooltip tooltip, MoldedPlasticContentSummary summary, int slots) {
-        tooltip.add(Component.translatable(
-            "tooltip.anvilcraftplasticraft.molded_crate_contents",
-            summary.occupiedSlots(),
-            slots
-        ).withStyle(ChatFormatting.GRAY));
-        appendItems(tooltip, summary);
     }
 
     private static void appendItems(ITooltip tooltip, MoldedPlasticContentSummary summary) {
