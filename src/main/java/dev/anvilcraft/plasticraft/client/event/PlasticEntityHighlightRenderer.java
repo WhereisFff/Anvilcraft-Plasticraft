@@ -44,7 +44,7 @@ public final class PlasticEntityHighlightRenderer {
         OutlineRenderer.render(
             event.getPoseStack(),
             event.getMultiBufferSource().getBuffer(RenderType.lines()),
-            CubeSelection.outlines().get(part.geometry()),
+            CubeSelection.outlines().get(part.geometry()).forView(part.localPosition(camera.subtract(interpolated))),
             0, 0, 0, 0.4F
         );
         event.getPoseStack().popPose();
@@ -68,7 +68,8 @@ public final class PlasticEntityHighlightRenderer {
         event.getPoseStack().translate(pos.getX() - camera.x, pos.getY() - camera.y, pos.getZ() - camera.z);
         part.apply(event.getPoseStack());
         OutlineRenderer.render(event.getPoseStack(), event.getMultiBufferSource().getBuffer(RenderType.lines()),
-            CubeSelection.outlines().get(part.geometry()), 0, 0, 0, 0.4F);
+            CubeSelection.outlines().get(part.geometry())
+                .forView(part.localPosition(camera.subtract(Vec3.atLowerCornerOf(pos)))), 0, 0, 0, 0.4F);
         event.getPoseStack().popPose();
         event.setCanceled(true);
     }

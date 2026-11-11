@@ -39,7 +39,8 @@ public final class CondenserTowerHighlightRenderer {
         event.getPoseStack().translate(main.getX() - camera.x, main.getY() - camera.y, main.getZ() - camera.z);
         outline.apply(event.getPoseStack());
         OutlineRenderer.render(event.getPoseStack(), event.getMultiBufferSource().getBuffer(RenderType.lines()),
-            CubeSelection.outlines().get(outline.geometry()), 0, 0, 0, 0.4F);
+            CubeSelection.outlines().get(outline.geometry())
+                .forView(outline.localPosition(camera.subtract(Vec3.atLowerCornerOf(main)))), 0, 0, 0, 0.4F);
         event.getPoseStack().popPose();
         event.setCanceled(true);
     }

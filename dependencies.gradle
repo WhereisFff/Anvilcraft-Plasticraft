@@ -24,9 +24,9 @@ dependencies {
         interfaceInjectionData(libs.anvilcraft) { transitive = false }
     }
 
-    // 可选集成不打入发布的 JAR。Ageratum 通常由本体模组提供，
-    // 这些运行时依赖仅用于完善本地客户端的运行环境。
+    // 显式指定本地运行的可选集成版本，覆盖本体内嵌的旧版本；这些依赖不打入发布的 JAR。
     compileOnly(libs.ageratum)
+    runtimeOnly(libs.ageratum)
     compileOnly(libs.jei.common.api)
     compileOnly(libs.jei.forge.api)
     runtimeOnly(libs.jei.forge)

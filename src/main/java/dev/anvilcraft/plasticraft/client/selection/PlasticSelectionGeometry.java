@@ -98,11 +98,11 @@ public final class PlasticSelectionGeometry {
         for (AABB box : shape.toAabbs()) {
             shapes.add(box(box));
             if (shapes.size() > SelectionGeometry.MAX_SHAPES) {
-                return new SelectionGeometry(List.of(box(shape.bounds())));
+                return new SelectionGeometry(List.of(box(shape.bounds())), GEOMETRY_SCALE);
             }
         }
         if (shapes.isEmpty()) throw new IllegalArgumentException("Selection shape must not be empty");
-        return new SelectionGeometry(shapes);
+        return new SelectionGeometry(shapes, GEOMETRY_SCALE);
     }
 
     private static Model create(PlasticEntityGeometry geometry) {
@@ -112,7 +112,7 @@ public final class PlasticSelectionGeometry {
         } else {
             solids.add(box(geometry.localBounds()));
         }
-        SelectionGeometry collision = solids.isEmpty() ? null : new SelectionGeometry(solids);
+        SelectionGeometry collision = solids.isEmpty() ? null : new SelectionGeometry(solids, GEOMETRY_SCALE);
         SelectionGeometry selection = collision;
         if (solids.isEmpty()) {
             // 零厚度制品没有物理凸体，仍须保留其已有的可选取区域。
@@ -123,8 +123,8 @@ public final class PlasticSelectionGeometry {
                 if (solids.size() > SelectionGeometry.MAX_SHAPES) break;
             }
             selection = solids.size() <= SelectionGeometry.MAX_SHAPES
-                ? new SelectionGeometry(solids)
-                : new SelectionGeometry(List.of(box(geometry.localBounds())));
+                ? new SelectionGeometry(solids, GEOMETRY_SCALE)
+                : new SelectionGeometry(List.of(box(geometry.localBounds())), GEOMETRY_SCALE);
         }
         return new Model(collision, selection, geometry.rotationPivot(), geometry.entityOrigin());
     }

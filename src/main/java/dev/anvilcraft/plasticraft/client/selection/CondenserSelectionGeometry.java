@@ -41,7 +41,7 @@ public final class CondenserSelectionGeometry {
             if (pieces.isEmpty()) {
                 result.put(half, List.of());
             } else {
-                SelectionGeometry geometry = new SelectionGeometry(pieces);
+                SelectionGeometry geometry = new SelectionGeometry(pieces, PlasticSelectionGeometry.GEOMETRY_SCALE);
                 budget -= geometry.estimatedBytes() + 512;
                 if (budget < 0) throw new IllegalArgumentException("Condenser selection geometry exceeds memory budget");
                 result.put(half, List.of(new SelectionPart(geometry,

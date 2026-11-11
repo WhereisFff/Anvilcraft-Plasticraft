@@ -112,7 +112,7 @@ public final class MachineBlockSelection {
         if (shapes.isEmpty()) return null;
         SelectionGeometry existing = shared.get(shapes);
         if (existing != null) return existing;
-        SelectionGeometry built = new SelectionGeometry(shapes);
+        SelectionGeometry built = new SelectionGeometry(shapes, PlasticSelectionGeometry.GEOMETRY_SCALE);
         long bytes = built.estimatedBytes() + shared.values().stream().mapToLong(SelectionGeometry::estimatedBytes).sum();
         if (bytes > MAX_GEOMETRY_BYTES) throw new IllegalArgumentException("Machine selection geometry exceeds memory budget");
         shared.put(built.shapes(), built);

@@ -94,8 +94,6 @@
   "jei.anvilcraftplasticraft.gas.gaseous_experience": "气态经验",
   "jei.anvilcraftplasticraft.vaporization_rate": "气化速度：%s mB/gt",
   "tooltip.anvilcraftplasticraft.jade.empty": "空",
-  "tooltip.anvilcraftplasticraft.jade.fluid_total": "总存量：%s / %s（%s）",
-  "tooltip.anvilcraftplasticraft.jade.fluid_share": "（%s）",
   "tooltip.anvilcraftplasticraft.jade.gas": "%1$s %2$s / %3$s",
   "tooltip.anvilcraftplasticraft.jade.fluid": "%1$s %2$s / %3$s",
   "screen.anvilcraftplasticraft.hammer_direction.up": "上",

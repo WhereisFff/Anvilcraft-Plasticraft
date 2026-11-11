@@ -1,12 +1,12 @@
 [versions]
 minecraft = "1.21.1"
-neoForge = "21.1.238"
-jei = "19.50.0.414"
-jade = "15.10.5+neoforge"
-anvillib = "2.0.0+snapshot.649"
-ageratum = "0.0.1+build.138"
-anvilcraft = "1.6.0+snapshot.2847"
-modDevGradle = "2.0.147"
+neoForge = "21.1.265"
+jei = "19.70.0.469"
+jade = "15.10.6+neoforge"
+anvillib = "2.0.0+snapshot.674"
+ageratum = "0.0.1+build.140"
+anvilcraft = "1.6.0+snapshot.2849"
+modDevGradle = "2.0.148"
 
 [libraries]
 jei-common-api = { group = "mezz.jei", name = "jei-1.21.1-common-api", version.ref = "jei" }

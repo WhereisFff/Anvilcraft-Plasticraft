@@ -296,7 +296,8 @@ public final class PlasticraftPlacementPreviewRenderer {
                 Vec3 position = outline.origin().subtract(camera);
                 pose.translate(position.x, position.y, position.z);
                 outline.part().apply(pose);
-                OutlineRenderer.render(pose, buffers.getBuffer(RenderType.lines()), CubeSelection.outlines().get(outline.part().geometry()),
+                OutlineRenderer.render(pose, buffers.getBuffer(RenderType.lines()), CubeSelection.outlines().get(outline.part().geometry())
+                    .forView(outline.part().localPosition(camera.subtract(outline.origin()))),
                     1, valid ? 1 : 0.2f, valid ? 1 : 0.2f, alpha);
             } finally {
                 pose.popPose();

@@ -25,13 +25,11 @@ import snownee.jade.api.BlockAccessor;
 import snownee.jade.api.EntityAccessor;
 import snownee.jade.api.fluid.JadeFluidObject;
 import snownee.jade.api.ui.IDisplayHelper;
-import snownee.jade.api.ui.IElementHelper;
 import snownee.jade.api.view.ClientViewGroup;
 import snownee.jade.api.view.FluidView;
 import snownee.jade.api.view.IClientExtensionProvider;
 import snownee.jade.api.view.IServerExtensionProvider;
 import snownee.jade.api.view.ViewGroup;
-import snownee.jade.util.CommonProxy;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -156,10 +154,7 @@ public enum PlasticFluidStorageProvider implements IServerExtensionProvider<Comp
 
     private CompoundTag fluidData(Accessor<?> accessor, FluidStack fluid, long capacity) {
         JadeFluidObject object = JadeFluidObject.of(fluid.getFluid(), fluid.getAmount(), fluid.getComponentsPatch());
-        CompoundTag tag = new CompoundTag();
-        tag.put("fluid", JadeFluidObject.CODEC.encodeStart(accessor.nbtOps(), object)
-            .getOrThrow(message -> new IllegalStateException("Unable to encode Plasticraft Jade fluid: " + message)));
-        tag.putLong("capacity", capacity);
+        CompoundTag tag = FluidView.writeDefault(object, capacity, accessor.nbtOps());
         tag.putLong(TOTAL, fluid.getAmount());
         tag.putBoolean("Empty", fluid.isEmpty());
         return tag;
@@ -172,7 +167,7 @@ public enum PlasticFluidStorageProvider implements IServerExtensionProvider<Comp
             long total = extra.getLong(TOTAL);
             long capacity = extra.getLong(CAPACITY);
             client.title = Component.translatable(
-                "tooltip.anvilcraftplasticraft.jade.fluid_total", formatAmount(total), formatAmount(capacity), percent(total, capacity)
+                "tooltip.anvilcraft.large_fluid_tank.total", formatAmount(total), formatAmount(capacity), percent(total, capacity)
             ).withStyle(ChatFormatting.GRAY);
             for (int index = 0; index < client.views.size(); index++) {
                 FluidView view = client.views.get(index);
@@ -181,13 +176,13 @@ public enum PlasticFluidStorageProvider implements IServerExtensionProvider<Comp
                     view.ratio = ratio(total, capacity);
                     view.current = formatAmount(total);
                     view.overrideText = Component.translatable(extra.getString(GAS)).withStyle(ChatFormatting.WHITE)
-                        .append(" ").append(Component.literal(formatAmount(total)).withStyle(ChatFormatting.GRAY));
+                        .append(" ").append(Component.literal(formatAmount(total)));
                 } else if (!tag.getBoolean("Empty") && view.fluidName != null) {
                     view.overrideText = view.fluidName.copy().withStyle(ChatFormatting.WHITE)
-                        .append(" ").append(Component.literal(formatAmount(tag.getLong(TOTAL))).withStyle(ChatFormatting.GRAY));
+                        .append(" ").append(Component.literal(formatAmount(tag.getLong(TOTAL))));
                     if (extra.getBoolean(SHARED)) {
                         view.overrideText = view.overrideText.copy().append(" ").append(Component.translatable(
-                            "tooltip.anvilcraftplasticraft.jade.fluid_share", percent(tag.getLong(TOTAL), capacity)
+                            "tooltip.anvilcraft.large_fluid_tank.share", percent(tag.getLong(TOTAL), capacity)
                         ).withStyle(ChatFormatting.GRAY));
                     }
                 }
@@ -201,10 +196,10 @@ public enum PlasticFluidStorageProvider implements IServerExtensionProvider<Comp
         if (capacity <= 0) {
             return null;
         }
-        JadeFluidObject fluid = JadeFluidObject.CODEC.parse(accessor.nbtOps(), tag.getCompound("fluid"))
-            .getOrThrow(message -> new IllegalStateException("Unable to decode Plasticraft Jade fluid: " + message));
-        FluidView view = new FluidView(IElementHelper.get().fluid(fluid));
-        view.fluidName = CommonProxy.getFluidName(fluid);
+        FluidView view = FluidView.readDefault(tag, accessor.nbtOps());
+        if (view == null) {
+            throw new IllegalStateException("Unable to decode Plasticraft Jade fluid: " + tag);
+        }
         view.current = formatAmount(tag.getLong(TOTAL));
         view.max = formatAmount(capacity);
         view.ratio = ratio(tag.getLong(TOTAL), capacity);
@@ -221,11 +216,11 @@ public enum PlasticFluidStorageProvider implements IServerExtensionProvider<Comp
     }
 
     private static float ratio(long amount, long capacity) {
-        return capacity <= 0 ? 0 : Math.clamp((float) amount / capacity, 0, 1);
+        return capacity <= 0 ? 0 : (float) Math.clamp((double) amount / capacity, 0, 1);
     }
 
     private static String percent(long amount, long capacity) {
-        return String.format(Locale.ROOT, "%.1f%%", ratio(amount, capacity) * 100);
+        return String.format(Locale.ROOT, "%.1f%%", capacity <= 0 ? 0 : Math.clamp(amount * 100d / capacity, 0, 100));
     }
 
     @Override

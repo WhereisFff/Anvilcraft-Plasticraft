@@ -535,8 +535,6 @@ public final class PlasticraftLanguageData {
         provider.add("tooltip.anvilcraftplasticraft.jade.item_count", "%1$s x %2$s");
         provider.add("tooltip.anvilcraftplasticraft.jade.fluid_count", "%1$s: %2$s mB");
         provider.add("tooltip.anvilcraftplasticraft.jade.empty", "Empty");
-        provider.add("tooltip.anvilcraftplasticraft.jade.fluid_total", "Total: %s / %s (%s)");
-        provider.add("tooltip.anvilcraftplasticraft.jade.fluid_share", "(%s)");
         provider.add("tooltip.anvilcraftplasticraft.jade.gas", "%1$s %2$s / %3$s");
         provider.add("tooltip.anvilcraftplasticraft.jade.fluid", "%1$s %2$s / %3$s");
         provider.add("config.jade.plugin_anvilcraftplasticraft.bonded_entity", "Bonded entities");
