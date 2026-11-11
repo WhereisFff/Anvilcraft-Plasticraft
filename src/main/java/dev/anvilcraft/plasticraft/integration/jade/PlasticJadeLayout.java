@@ -69,15 +69,22 @@ public final class PlasticJadeLayout {
             }
         }
         if (omitted > 0) {
-            for (IElement element : tooltip.get(JadeIds.UNIVERSAL_ITEM_STORAGE)) {
-                if (element instanceof IBoxElement box) {
-                    box.getTooltip().remove(OMITTED);
-                    box.getTooltip().add(IElementHelper.get().text(Component.translatable(
-                        "tooltip.anvilcraftplasticraft.molded_more_contents", omitted
-                    ).withStyle(ChatFormatting.DARK_GRAY)).tag(OMITTED));
-                    box.size(null);
+            int omittedCount = omitted;
+            // 子框高度变化后，包含它的外层行也必须失效，否则后续模组名仍按旧高度绘制。
+            tooltip.replace(JadeIds.UNIVERSAL_ITEM_STORAGE, lines -> {
+                for (List<IElement> line : lines) {
+                    for (IElement element : line) {
+                        if (element instanceof IBoxElement box) {
+                            box.getTooltip().remove(OMITTED);
+                            box.getTooltip().add(IElementHelper.get().text(Component.translatable(
+                                "tooltip.anvilcraftplasticraft.molded_more_contents", omittedCount
+                            ).withStyle(ChatFormatting.DARK_GRAY)).tag(OMITTED));
+                            box.size(null);
+                        }
+                    }
                 }
-            }
+                return lines;
+            });
         }
         root.size(null);
     }

@@ -24,7 +24,7 @@ An inward-facing volume cube can act as either wall or cavity in all three check
 - Right-click the entity or bonded block to open the AnvilCraft crate interface for search, sorting, bulk transfers and crafting unlocks. Hoppers and chutes share the same inventory
 - Matching items merge by type. Contents and crafting unlocks survive pickup, placement and world reloads
 
-- Jade shows Pushable or Bonded in gray at the right of the name; beneath Storage: used/capacity, item icons show their counts at the lower right
+- Jade shows Pushable or Bonded in gray at the right of the name; beneath Storage: used/capacity, item icons show their counts at the lower right; hold Shift to expand more item rows
 
 ## Tank
 

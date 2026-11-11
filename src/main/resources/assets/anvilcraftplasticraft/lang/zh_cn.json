@@ -73,7 +73,7 @@
   "config.jade.plugin_anvilcraftplasticraft.fluid_storage": "流体存储",
   "config.jade.plugin_anvilcraftplasticraft.item_storage": "物品存储",
   "tooltip.anvilcraftplasticraft.jade.storage": "存储：%1$s/%2$s",
-  "tooltip.anvilcraftplasticraft.jade.grid_power": "——电网供电中：%s kW——",
+  "tooltip.anvilcraftplasticraft.jade.grid_power": "—电网供电中：%s kW—",
   "tooltip.anvilcraftplasticraft.jade.current_batch": "当前批次：%s / %s（%s）",
   "config.jade.plugin_anvilcraftplasticraft.bonded_entity": "粘附实体",
   "config.jade.plugin_anvilcraftplasticraft.bonded_block": "粘附方块",

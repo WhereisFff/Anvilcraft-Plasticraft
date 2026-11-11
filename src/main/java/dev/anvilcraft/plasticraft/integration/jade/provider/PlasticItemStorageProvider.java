@@ -20,11 +20,13 @@ import snownee.jade.api.view.ClientViewGroup;
 import snownee.jade.api.view.IClientExtensionProvider;
 import snownee.jade.api.view.IServerExtensionProvider;
 import snownee.jade.api.view.ItemView;
+import snownee.jade.api.view.ItemViewUtils;
 import snownee.jade.api.view.ViewGroup;
 
+import java.util.ArrayList;
 import java.util.List;
 
-/** 实体与粘合板条箱共用有界仓储摘要，物品由 Jade 标准网格绘制数量角标。 */
+/** 实体与粘合板条箱共用 Jade 库存收集与显示上限，支持详细模式展开物品网格。 */
 public enum PlasticItemStorageProvider implements IServerExtensionProvider<ItemStack>,
     IClientExtensionProvider<ItemStack, ItemView> {
     INSTANCE;
@@ -37,6 +39,39 @@ public enum PlasticItemStorageProvider implements IServerExtensionProvider<ItemS
 
     @Override
     public @Nullable List<ViewGroup<ItemStack>> getGroups(Accessor<?> accessor) {
+        UniversalPlasticEntity plastic = plastic(accessor);
+        if (plastic == null) {
+            return null;
+        }
+        MoldedPlasticContentSummary summary = plastic.getMoldedContentSummary();
+        if (!MoldingProductTypes.isCrate(summary.type())) {
+            return null;
+        }
+        // 实体同步摘要只有八类；Jade 使用自己的有界收集器，保证 Shift 能显示后续物品。
+        List<ViewGroup<ItemStack>> collected = ItemViewUtils.groupOf(plastic.getMoldedItemHandler(), accessor, source -> {
+            UniversalPlasticEntity target = plastic(source);
+            return target == null ? null : target.getMoldedItemHandler();
+        });
+        if (collected == null) {
+            return null;
+        }
+        List<ViewGroup<ItemStack>> groups = new ArrayList<>(collected.size());
+        int previewCount = 0;
+        for (ViewGroup<ItemStack> source : collected) {
+            ViewGroup<ItemStack> group = new ViewGroup<>(source.views.stream().map(stack -> stack.copyWithCount(1)).toList());
+            group.getExtraData().merge(source.getExtraData());
+            group.getExtraData().putIntArray(COUNTS, source.views.stream().mapToInt(ItemStack::getCount).toArray());
+            group.getExtraData().putInt(USED, summary.occupiedSlots());
+            group.getExtraData().putInt(CAPACITY, summary.capacity());
+            groups.add(group);
+            previewCount += group.views.size();
+        }
+        accessor.getServerData().putInt(OMITTED, Math.max(0, summary.items().size() + summary.omittedItemTypes() - previewCount));
+        accessor.getServerData().putInt(PREVIEW_COUNT, previewCount);
+        return groups;
+    }
+
+    private static @Nullable UniversalPlasticEntity plastic(Accessor<?> accessor) {
         Entity entity = null;
         if (accessor instanceof EntityAccessor target) {
             entity = target.getEntity();
@@ -44,22 +79,7 @@ public enum PlasticItemStorageProvider implements IServerExtensionProvider<ItemS
             && block.getBlockEntity() instanceof BondedEntityBlockEntity bonded) {
             entity = bonded.getOrCreateRenderEntity();
         }
-        if (!(entity instanceof UniversalPlasticEntity plastic)) {
-            return null;
-        }
-        MoldedPlasticContentSummary summary = plastic.getMoldedContentSummary();
-        if (!MoldingProductTypes.isCrate(summary.type())) {
-            return null;
-        }
-        // Jade 的物品网格不绘制省略数量，完成回调将这行信息追加到同一分组内部。
-        accessor.getServerData().putInt(OMITTED, summary.omittedItemTypes());
-        accessor.getServerData().putInt(PREVIEW_COUNT, summary.items().size());
-        ViewGroup<ItemStack> group = new ViewGroup<>(summary.items().stream()
-            .map(entry -> entry.stack().copyWithCount(1)).toList());
-        group.getExtraData().putIntArray(COUNTS, summary.items().stream().mapToInt(MoldedPlasticContentSummary.ItemEntry::count).toArray());
-        group.getExtraData().putInt(USED, summary.occupiedSlots());
-        group.getExtraData().putInt(CAPACITY, summary.capacity());
-        return List.of(group);
+        return entity instanceof UniversalPlasticEntity plastic ? plastic : null;
     }
 
     @Override
