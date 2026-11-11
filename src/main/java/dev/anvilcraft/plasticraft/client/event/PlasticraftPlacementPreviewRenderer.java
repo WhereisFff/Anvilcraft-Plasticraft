@@ -92,7 +92,9 @@ public final class PlasticraftPlacementPreviewRenderer {
             GHOST.close();
             return;
         }
-        PoseStack pose = event.getPoseStack();
+        // AFTER_LEVEL 不再保留世界渲染的相机旋转，必须先恢复视图矩阵再应用相对位置。
+        PoseStack pose = new PoseStack();
+        pose.mulPose(event.getModelViewMatrix());
         Vec3 camera = event.getCamera().getPosition();
         MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
         if (mode == PlacementPreviewMode.GHOST) {
