@@ -6,9 +6,12 @@ import dev.anvilcraft.plasticraft.integration.jade.PlasticJadeLayout;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
 import dev.dubhe.anvilcraft.api.power.PowerGrid;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import org.jspecify.annotations.Nullable;
 import snownee.jade.api.BlockAccessor;
 import snownee.jade.api.IBlockComponentProvider;
 import snownee.jade.api.IServerDataProvider;
@@ -17,6 +20,8 @@ import snownee.jade.api.config.IPluginConfig;
 import snownee.jade.api.ui.BoxStyle;
 import snownee.jade.api.ui.IDisplayHelper;
 import snownee.jade.api.ui.IElementHelper;
+import snownee.jade.impl.ui.SimpleProgressStyle;
+import snownee.jade.overlay.DisplayHelper;
 
 import java.util.Locale;
 
@@ -84,7 +89,7 @@ public enum PlasticMoldingChamberProvider implements IBlockComponentProvider, IS
                     .withStyle(ChatFormatting.GRAY));
         }
         tooltip.add(helper.progress(
-            (float) stored / capacity, energyText, helper.progressStyle().color(0xFFAA0000, 0xFF660000),
+            (float) stored / capacity, energyText, new CenteredEnergyStyle().color(0xFFAA0000, 0xFF660000),
             BoxStyle.getNestedBox(), true
         ).tag(PlasticJadeLayout.CHAMBER_ENERGY));
         String formingMode = tag.getString(FORMING_MODE);
@@ -106,6 +111,20 @@ public enum PlasticMoldingChamberProvider implements IBlockComponentProvider, IS
             tooltip.add(Component.translatable(
                 "tooltip.anvilcraftplasticraft.molding.partial_downgrade"
             ).withStyle(ChatFormatting.RED));
+        }
+    }
+
+    private static final class CenteredEnergyStyle extends SimpleProgressStyle {
+        @Override
+        public void render(GuiGraphics graphics, float x, float y, float width, float height,
+                           float progress, @Nullable Component text) {
+            super.render(graphics, x, y, width, height, progress, null);
+            if (text != null) {
+                Font font = DisplayHelper.font();
+                IDisplayHelper.get().drawText(graphics, text,
+                    x + (width - font.width(text)) / 2,
+                    y + (height - font.lineHeight) / 2, 0xFFFFFFFF);
+            }
         }
     }
 

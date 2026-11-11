@@ -78,7 +78,7 @@ public final class PlasticJadeLayout {
                             box.getTooltip().remove(OMITTED);
                             box.getTooltip().add(IElementHelper.get().text(Component.translatable(
                                 "tooltip.anvilcraftplasticraft.molded_more_contents", omittedCount
-                            ).withStyle(ChatFormatting.DARK_GRAY)).tag(OMITTED));
+                            ).withStyle(ChatFormatting.GRAY)).tag(OMITTED));
                             box.size(null);
                         }
                     }
