@@ -435,17 +435,19 @@ public final class PlasticEntityPhysics {
         Direction gravityDirection,
         Vec3 requestedMovement
     ) {
-        if (!isContinuousSidePushCarrier(target, pusher, pusherBox)
-            || !isWithinCarryDistance(requestedMovement)) {
+        // 承载关系查询会传入零位移；先排除无侧向位移，避免逐层重做方块和实体支撑探测。
+        if (!isWithinCarryDistance(requestedMovement)
+            || tangentialMovement(requestedMovement, gravityDirection).lengthSqr() <= FACE_EPSILON * FACE_EPSILON) {
             return null;
         }
-        return PlasticEntityContactResolver.sidePush(
+        PlasticEntityContactResolver.PushContact contact = PlasticEntityContactResolver.sidePush(
             target,
             pusher,
             pusherBox,
             gravityDirection,
             requestedMovement
         );
+        return contact != null && isContinuousSidePushCarrier(target, pusher, pusherBox) ? contact : null;
     }
 
     /** 返回该实体接触是否由连续侧推负责，而不依赖某一种实体类型。 */

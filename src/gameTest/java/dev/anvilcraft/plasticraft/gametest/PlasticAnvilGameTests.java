@@ -3838,6 +3838,80 @@ public final class PlasticAnvilGameTests {
         });
     }
 
+    @GameTest(timeoutTicks = 40)
+    @EmptyTemplate(value = "13x6x15", floor = true)
+    @TestHolder(description = "玩家推动逐层叠放的薄塑料片时各层同步移动并在墙前停止")
+    static void playerPushesStackedThinPlastic(ExtendedGameTestHelper helper) {
+        EditableMoldingModel model = EditableMoldingModel.empty().withElements(List.of(
+            MoldingElement.cube("薄片", MoldingVec3.ZERO, new MoldingVec3(16, 1, 16))
+        ));
+        var baked = MoldingModelBaker.bake(model);
+        int melt = baked.analysis().minimumMeltMillibuckets();
+        ItemStack stack = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        MoldedPlasticData.set(stack, MoldedPlasticData.manufacture(
+            model, baked, new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), melt), melt
+        ));
+        List<List<UniversalPlasticEntity>> stacks = new ArrayList<>();
+        List<GameTestPlayer> players = new ArrayList<>();
+        int[] counts = {1, 4, 16};
+        for (int lane = 0; lane < counts.length; lane++) {
+            List<UniversalPlasticEntity> plates = new ArrayList<>();
+            for (int layer = 0; layer < counts[lane]; layer++) {
+                UniversalPlasticEntity plate = new UniversalPlasticEntity(
+                    PlasticraftEntities.UNIVERSAL_PLASTIC.get(), helper.getLevel(), Vec3.ZERO,
+                    PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState(), stack.copy(),
+                    PlasticEntityOrientation.DEFAULT
+                );
+                AABB bounds = plate.plasticraft$getCollisionBox().bounds();
+                Vec3 bottom = helper.absoluteVec(new Vec3(4, 2 + layer / 16d, 2 + lane * 4));
+                plate.setPos(bottom.subtract(new Vec3(bounds.minX, bounds.minY, bounds.minZ)));
+                check(helper.getLevel().addFreshEntity(plate), "薄片第 " + layer + " 层生成失败");
+                plates.add(plate);
+            }
+            stacks.add(plates);
+            GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
+            AABB bounds = plates.getFirst().getBoundingBox();
+            player.moveTo(bounds.minX - player.getBbWidth() / 2d, bounds.minY, bounds.getCenter().z);
+            players.add(player);
+        }
+        helper.runAfterDelay(3, () -> {
+            for (int lane = 0; lane < counts.length; lane++) {
+                List<UniversalPlasticEntity> plates = stacks.get(lane);
+                GameTestPlayer player = players.get(lane);
+                double start = plates.getFirst().getX();
+                double playerStart = player.getX();
+                for (int step = 0; step < 4; step++) {
+                    player.setOnGround(true);
+                    player.move(MoverType.SELF, new Vec3(0.125d, 0, 0));
+                }
+                double moved = plates.getFirst().getX() - start;
+                check(moved > 0.45d, counts[lane] + " 层薄片阻止玩家连续推动：" + moved);
+                check(Math.abs(moved - (player.getX() - playerStart)) < 1e-4d,
+                    counts[lane] + " 层薄片位移与玩家不一致，可能发生重复推动");
+                for (int layer = 0; layer < plates.size(); layer++) {
+                    UniversalPlasticEntity plate = plates.get(layer);
+                    check(Math.abs(plate.getX() - plates.getFirst().getX()) < 1e-4d,
+                        counts[lane] + " 层薄片的第 " + layer + " 层发生重复推动或未随动");
+                    check(Math.abs(plate.getBoundingBox().minY - plates.getFirst().getBoundingBox().minY - layer / 16d) < 1e-4d,
+                        counts[lane] + " 层薄片的第 " + layer + " 层发生竖直穿透");
+                }
+                for (int y = 2; y <= 4; y++) {
+                    helper.setBlock(6, y, 2 + lane * 4, Blocks.STONE);
+                }
+                for (int step = 0; step < 8; step++) {
+                    player.setOnGround(true);
+                    player.move(MoverType.SELF, new Vec3(0.125d, 0, 0));
+                }
+                double wall = helper.absolutePos(new BlockPos(6, 2, 2 + lane * 4)).getX();
+                for (UniversalPlasticEntity plate : plates) {
+                    check(Math.abs(plate.getBoundingBox().maxX - wall) < 1e-4d, counts[lane] + " 层薄片未贴墙停止或推动后穿墙");
+                    check(Math.abs(plate.getX() - plates.getFirst().getX()) < 1e-4d, counts[lane] + " 层薄片在墙前散开");
+                }
+            }
+            helper.succeed();
+        });
+    }
+
     @GameTest(timeoutTicks = 30)
     @EmptyTemplate("11x6x11")
     @TestHolder(description = "A walking player can continuously transfer side movement to a plastic body")
