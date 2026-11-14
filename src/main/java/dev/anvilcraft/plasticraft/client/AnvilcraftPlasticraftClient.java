@@ -1,6 +1,5 @@
 package dev.anvilcraft.plasticraft.client;
 
-import dev.anvilcraft.lib.v2.cube.client.CubeSelection;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureCache;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
@@ -58,7 +57,6 @@ import net.neoforged.neoforge.common.NeoForge;
 @Mod(value = AnvilcraftPlasticraft.MOD_ID, dist = Dist.CLIENT)
 public final class AnvilcraftPlasticraftClient {
     public AnvilcraftPlasticraftClient(IEventBus modEventBus, ModContainer ignoredContainer) {
-        CubeSelection.enableNamespace(AnvilcraftPlasticraft.MOD_ID);
         modEventBus.addListener(PlasticraftFluids::registerClientExtensions);
         modEventBus.addListener(AnvilcraftPlasticraftClient::clientSetup);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerAdditionalModels);

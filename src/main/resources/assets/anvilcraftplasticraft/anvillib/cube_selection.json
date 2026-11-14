@@ -1,0 +1,8 @@
+{
+  "namespaces": {
+    "anvilcraftplasticraft": "model"
+  },
+  "blocks": {
+    "anvilcraftplasticraft:plastic_molding_region": "vanilla"
+  }
+}

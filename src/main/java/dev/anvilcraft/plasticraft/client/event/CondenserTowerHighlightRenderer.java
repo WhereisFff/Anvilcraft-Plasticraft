@@ -29,6 +29,9 @@ public final class CondenserTowerHighlightRenderer {
         BlockPos pos = event.getTarget().getBlockPos();
         BlockState state = level.getBlockState(pos);
         if (!(state.getBlock() instanceof CondenserTowerBlock tower)) return;
+        if (!CubeSelection.isEnabled(state.getBlock()) || CubeSelection.isTargetExcluded(state)) {
+            return;
+        }
         SelectionPart outline = MachineBlockSelection.condenserOutline();
         if (outline == null) return;
 

@@ -45,6 +45,7 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -235,7 +236,8 @@ public final class PlasticraftPlacementPreviewRenderer {
         Cell first = blocks.getFirst();
         List<Outline> outlines = new ArrayList<>();
         SelectionPart towerOutline = MachineBlockSelection.condenserOutline();
-        if (first.state().getBlock() instanceof CondenserTowerBlock tower && towerOutline != null) {
+        if (first.state().getBlock() instanceof CondenserTowerBlock tower && towerOutline != null
+            && CubeSelection.isEnabled(first.state().getBlock()) && !CubeSelection.isTargetExcluded(first.state())) {
             BlockPos main = tower.getMainPartPos(first.pos(), first.state());
             outlines.add(new Outline(Vec3.atLowerCornerOf(main), towerOutline));
         } else {
@@ -248,11 +250,17 @@ public final class PlasticraftPlacementPreviewRenderer {
 
     private static List<Outline> blockOutlines(ClientLevel level, BlockPos pos, BlockState state) {
         List<Outline> parts = new ArrayList<>();
-        CubeSelection.Target target = CubeSelection.target(level, pos, state, 0);
+        CubeSelection.Target target = CubeSelection.outlineTarget(level, pos, state, 0);
         if (target != null) {
             Vec3 origin = Vec3.atLowerCornerOf(pos).add(target.offset());
             for (SelectionPart part : target.parts()) {
                 parts.add(new Outline(origin, part));
+            }
+        } else {
+            // 关闭模型选择或模型不可用时，仍显示方块原有的放置范围。
+            VoxelShape shape = state.getShape(level, pos);
+            if (!shape.isEmpty()) {
+                parts.add(new Outline(Vec3.atLowerCornerOf(pos), PlasticSelectionGeometry.fromShape(shape)));
             }
         }
         return parts;
