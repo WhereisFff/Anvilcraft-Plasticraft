@@ -1,6 +1,6 @@
 # 模型选取与描边配置
 
-客户端通过 `assets/anvilcraftplasticraft/anvillib/cube_selection.json` 启用 Cube 模型选取与描边，须配套使用支持资源规则及 `outlineTarget` 的 AnvilLib Cube。
+客户端通过 `assets/anvilcraftplasticraft/anvillib/cube_selection.json` 启用 Cube 模型选取与描边，需要 AnvilLib `2.0.0+snapshot.682` 或更新版本提供的资源规则及 `outlineTarget` 接口。
 
 `model` 使用模型精确选取与描边，`outline` 保留原有选取并绘制模型轮廓，`vanilla` 保留原有选取与描边。
 单个方块规则优先于命名空间规则，高优先级资源包逐项覆盖同名规则，同一资源包内按配置资源 ID 字典序合并。
