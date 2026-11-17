@@ -4,6 +4,8 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.client.renderer.MoldedTrayComponentRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticPreviewRenderTypes;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticRenderGeometry;
 import dev.anvilcraft.plasticraft.client.renderer.ThickLineRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderHelper;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
@@ -24,17 +26,18 @@ import dev.anvilcraft.plasticraft.network.AdhesiveClearSelectionPacket;
 import dev.anvilcraft.plasticraft.network.AdhesivePlacePatchPacket;
 import dev.anvilcraft.plasticraft.network.AdhesivePreviewRequestPacket;
 import dev.anvilcraft.plasticraft.network.AdhesiveSelectEntityPacket;
-import javax.annotation.Nullable;
 import net.minecraft.ChatFormatting;
-import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.Util;
+import net.minecraft.util.context.ContextKey;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
@@ -54,9 +57,11 @@ import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.ExtractLevelRenderStateEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
-import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent;
+import net.neoforged.neoforge.client.network.ClientPacketDistributor;
+import org.jspecify.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -101,9 +106,9 @@ public final class AdhesiveSelectionClientHandler {
     private static long boxEnterStarted;
     private static long boxExitStarted = -1L;
     private static @Nullable PreviewKey cachedPreviewKey;
-    private static @Nullable AdhesivePathPlanner.Plan cachedPreview;
+    private static AdhesivePathPlanner.@Nullable Plan cachedPreview;
     private static @Nullable PreviewKey previewTaskKey;
-    private static @Nullable AdhesivePathPlanner.Plan pendingPreview;
+    private static AdhesivePathPlanner.@Nullable Plan pendingPreview;
     private static int nextPreviewRequestId;
     private static int activePreviewRequestId = -1;
     private static long previewRequestStartedAt;
@@ -113,16 +118,16 @@ public final class AdhesiveSelectionClientHandler {
     private static Vec3 cachedPreviewSupportStart = Vec3.ZERO;
     private static @Nullable List<Vec3> sampledPreviewInput;
     private static List<Vec3> sampledPreviewPath = List.of();
-    private static @Nullable AdhesivePathPlanner.Plan cachedRenderPlan;
+    private static AdhesivePathPlanner.@Nullable Plan cachedRenderPlan;
     private static @Nullable Entity cachedRenderEntity;
     private static @Nullable Entity cachedRenderSupportEntity;
     private static @Nullable BlockPos cachedRenderSupportPos;
     private static @Nullable Direction cachedRenderFace;
     private static Vec3 cachedRenderSupportPosition = Vec3.ZERO;
     private static List<Vec3> cachedRenderPath = List.of();
-    private static @Nullable AdhesivePathPlanner.Plan cachedPreviewProjectionPlan;
+    private static AdhesivePathPlanner.@Nullable Plan cachedPreviewProjectionPlan;
     private static @Nullable Entity cachedPreviewProjectionRoot;
-    private static @Nullable AdhesiveGroupTransform.Projection cachedPreviewProjection;
+    private static AdhesiveGroupTransform.@Nullable Projection cachedPreviewProjection;
     private static @Nullable PendingBlockUse pendingBlockUse;
 
     private AdhesiveSelectionClientHandler() {
@@ -171,12 +176,12 @@ public final class AdhesiveSelectionClientHandler {
                 AdhesiveSelectionManager.clear(player);
                 clearPreviewTask();
                 startExitAnimation();
-                PacketDistributor.sendToServer(new AdhesiveSelectEntityPacket(target.getId(), hand, hitFace));
+                ClientPacketDistributor.sendToServer(new AdhesiveSelectEntityPacket(target.getId(), hand, hitFace));
                 cancel(event);
                 return;
             }
             if (selected != null && selected != target) {
-                PacketDistributor.sendToServer(new AdhesiveBondEntitiesPacket(
+                ClientPacketDistributor.sendToServer(new AdhesiveBondEntitiesPacket(
                     selected.getId(),
                     target.getId(),
                     hand,
@@ -189,7 +194,7 @@ public final class AdhesiveSelectionClientHandler {
                 && !target.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)) {
                 AdhesiveSelectionManager.select(player, target, hitFace);
                 beginSelectionAnimation(target);
-                PacketDistributor.sendToServer(new AdhesiveSelectEntityPacket(target.getId(), hand, hitFace));
+                ClientPacketDistributor.sendToServer(new AdhesiveSelectEntityPacket(target.getId(), hand, hitFace));
             }
             cancel(event);
             return;
@@ -198,7 +203,7 @@ public final class AdhesiveSelectionClientHandler {
         if (selected != null
             && hitResult instanceof BlockHitResult blockHit
             && blockHit.getType() != HitResult.Type.MISS) {
-            PacketDistributor.sendToServer(new AdhesiveBondEntityPacket(
+            ClientPacketDistributor.sendToServer(new AdhesiveBondEntityPacket(
                 selected.getId(),
                 hand,
                 blockHit.getBlockPos(),
@@ -408,7 +413,7 @@ public final class AdhesiveSelectionClientHandler {
             selectedStart
         ).displayPlan();
         startPreviewRequest(key, selectedStart, Vec3.ZERO, direct);
-        PacketDistributor.sendToServer(new AdhesivePreviewRequestPacket(
+        ClientPacketDistributor.sendToServer(new AdhesivePreviewRequestPacket(
             nextPreviewRequestId(),
             AdhesivePreviewRequestPacket.Mode.BLOCK,
             selected.getId(),
@@ -445,7 +450,7 @@ public final class AdhesiveSelectionClientHandler {
             anchorStart
         ).displayPlan();
         startPreviewRequest(key, selectedStart, supportStart, direct);
-        PacketDistributor.sendToServer(new AdhesivePreviewRequestPacket(
+        ClientPacketDistributor.sendToServer(new AdhesivePreviewRequestPacket(
             nextPreviewRequestId(),
             AdhesivePreviewRequestPacket.Mode.ENTITY,
             selected.getId(),
@@ -483,7 +488,7 @@ public final class AdhesiveSelectionClientHandler {
         if (sendCancel
             && activePreviewRequestId >= 0
             && Minecraft.getInstance().getConnection() != null) {
-            PacketDistributor.sendToServer(new AdhesivePreviewRequestPacket(
+            ClientPacketDistributor.sendToServer(new AdhesivePreviewRequestPacket(
                 activePreviewRequestId,
                 AdhesivePreviewRequestPacket.Mode.CANCEL,
                 -1,
@@ -532,14 +537,14 @@ public final class AdhesiveSelectionClientHandler {
     public static void onKeyReleased(InputEvent.Key event) {
         if (event.getAction() != GLFW.GLFW_RELEASE) return;
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.options.keyUse.matches(event.getKey(), event.getScanCode())) releasePendingBlockUse();
+        if (minecraft.options.keyUse.matches(event.getKeyEvent())) releasePendingBlockUse();
     }
 
     @SubscribeEvent
     public static void onMouseReleased(InputEvent.MouseButton.Post event) {
         if (event.getAction() != GLFW.GLFW_RELEASE) return;
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.options.keyUse.matchesMouse(event.getButton())) releasePendingBlockUse();
+        if (minecraft.options.keyUse.matchesMouse(new MouseButtonEvent(0, 0, event.getMouseButtonInfo()))) releasePendingBlockUse();
     }
 
     private static void releasePendingBlockUse() {
@@ -575,7 +580,7 @@ public final class AdhesiveSelectionClientHandler {
     }
 
     private static void placePatch(PendingBlockUse pending, LocalPlayer player) {
-        PacketDistributor.sendToServer(new AdhesivePlacePatchPacket(
+        ClientPacketDistributor.sendToServer(new AdhesivePlacePatchPacket(
             pending.hand(),
             pending.hit().getBlockPos(),
             pending.hit().getDirection()
@@ -643,8 +648,18 @@ public final class AdhesiveSelectionClientHandler {
     }
 
     @SubscribeEvent
-    public static void renderSelection(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) return;
+    public static void submit(SubmitCustomGeometryEvent event) {
+        var state = event.getLevelRenderState();
+        var geometry = state.getRenderData(GEOMETRY);
+        if (geometry != null) {
+            geometry.submit(event.getPoseStack(), event.getSubmitNodeCollector(), state.cameraRenderState);
+        }
+    }
+
+    private static final ContextKey<PlasticRenderGeometry> GEOMETRY = new ContextKey<>(AnvilcraftPlasticraft.of("adhesive_selection"));
+
+    @SubscribeEvent
+    public static void renderSelection(ExtractLevelRenderStateEvent event) {
         Minecraft minecraft = Minecraft.getInstance();
         LocalPlayer player = minecraft.player;
         ClientLevel level = minecraft.level;
@@ -672,7 +687,7 @@ public final class AdhesiveSelectionClientHandler {
         Entity transitSupport = transit == null ? null : resolveTransitSupport(level, transit);
         List<Vec3> path = List.of();
         int pathColor = WHITE;
-        @Nullable AdhesivePathPlanner.Plan preview = null;
+        AdhesivePathPlanner.@Nullable Plan preview = null;
         @Nullable Entity previewSupport = null;
         @Nullable Entity previewMovingEntity = selected;
         @Nullable BlockPos previewSupportPos = null;
@@ -727,9 +742,10 @@ public final class AdhesiveSelectionClientHandler {
             && preview != null
             && preview.valid()
             && cachedPreviewGroupClear;
-        PoseStack pose = event.getPoseStack();
-        Vec3 camera = event.getCamera().getPosition();
-        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
+        PoseStack pose = new PoseStack();
+        Vec3 camera = event.getCamera().position();
+        PlasticRenderGeometry buffers = new PlasticRenderGeometry();
+        event.getRenderState().setRenderData(GEOMETRY, buffers);
         pose.pushPose();
         pose.translate(-camera.x, -camera.y, -camera.z);
         if (animatedBox != null && boxProgress > 0.0F) {
@@ -785,7 +801,7 @@ public final class AdhesiveSelectionClientHandler {
         if (selected == null && transit == null && boxProgress <= 0.0F) resetAnimation();
     }
 
-    private static @Nullable AdhesivePathPlanner.Plan previewPath(
+    private static AdhesivePathPlanner.@Nullable Plan previewPath(
         ClientLevel level,
         Entity selected,
         LocalPlayer player,
@@ -804,7 +820,7 @@ public final class AdhesiveSelectionClientHandler {
         return previewForKey(key);
     }
 
-    private static @Nullable AdhesivePathPlanner.Plan previewAtHit(
+    private static AdhesivePathPlanner.@Nullable Plan previewAtHit(
         Minecraft minecraft,
         Entity selected,
         LocalPlayer player
@@ -838,15 +854,14 @@ public final class AdhesiveSelectionClientHandler {
         AdhesiveSelectionManager.clear(player);
         clearPreviewTask();
         if (minecraft.getConnection() != null) {
-            PacketDistributor.sendToServer(new AdhesiveClearSelectionPacket());
+            ClientPacketDistributor.sendToServer(new AdhesiveClearSelectionPacket());
         }
         startExitAnimation();
     }
 
     private static void displayRangeMessage(LocalPlayer player, String translationKey, String fallback) {
-        player.displayClientMessage(
-            Component.translatableWithFallback(translationKey, fallback).withStyle(ChatFormatting.RED),
-            true
+        player.sendOverlayMessage(
+            Component.translatableWithFallback(translationKey, fallback).withStyle(ChatFormatting.RED)
         );
     }
 
@@ -859,7 +874,7 @@ public final class AdhesiveSelectionClientHandler {
             : WARNING_YELLOW;
     }
 
-    private static @Nullable AdhesivePathPlanner.Plan previewPath(
+    private static AdhesivePathPlanner.@Nullable Plan previewPath(
         ClientLevel level,
         Entity selected,
         LocalPlayer player,
@@ -879,7 +894,7 @@ public final class AdhesiveSelectionClientHandler {
         return previewForKey(key);
     }
 
-    private static @Nullable AdhesivePathPlanner.Plan previewForKey(PreviewKey key) {
+    private static AdhesivePathPlanner.@Nullable Plan previewForKey(PreviewKey key) {
         if (key.equals(cachedPreviewKey)) return cachedPreview;
         return key.equals(previewTaskKey)
             ? pendingPreview
@@ -1120,7 +1135,7 @@ public final class AdhesiveSelectionClientHandler {
 
     private static void renderAnimatedBox(
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         AABB box,
         float progress
     ) {
@@ -1158,7 +1173,7 @@ public final class AdhesiveSelectionClientHandler {
 
     private static void renderPath(
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         List<Vec3> points,
         int color
     ) {
@@ -1198,7 +1213,7 @@ public final class AdhesiveSelectionClientHandler {
 
     private static void renderPreviewEndpoint(
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         Entity selected,
         AdhesivePathPlanner.Plan preview,
         boolean previewReady,
@@ -1245,7 +1260,7 @@ public final class AdhesiveSelectionClientHandler {
 
     private static void renderTransitEndpoint(
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         Entity movingEntity,
         AdhesiveTransit transit,
         @Nullable Entity supportEntity
@@ -1279,7 +1294,7 @@ public final class AdhesiveSelectionClientHandler {
 
     private static void renderPreviewGroup(
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         AdhesiveGroupTransform.Projection projection,
         boolean valid
     ) {
@@ -1296,7 +1311,7 @@ public final class AdhesiveSelectionClientHandler {
 
     private static void renderTargetGhost(
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         FallingBlockEntity entity,
         Vec3 targetPosition,
         @Nullable PlasticEntityOrientation orientation,
@@ -1308,7 +1323,6 @@ public final class AdhesiveSelectionClientHandler {
             PlasticEntityRenderTransforms.applyPreview(pose, plastic, orientation);
             PlasticEntityRenderHelper.renderHammerPreviewModel(
                 plastic,
-                Minecraft.getInstance().getBlockRenderer(),
                 pose,
                 buffers,
                 valid
@@ -1316,7 +1330,6 @@ public final class AdhesiveSelectionClientHandler {
             if (plastic instanceof UniversalPlasticEntity universal) {
                 universal.getMoldedData().ifPresent(data -> MoldedTrayComponentRenderer.renderPreview(
                     data,
-                    Minecraft.getInstance().getBlockRenderer(),
                     pose,
                     buffers,
                     valid
@@ -1326,7 +1339,6 @@ public final class AdhesiveSelectionClientHandler {
             pose.translate(-0.5D, 0.0D, -0.5D);
             PlasticEntityRenderHelper.renderFallingPreviewModel(
                 entity,
-                Minecraft.getInstance().getBlockRenderer(),
                 pose,
                 buffers,
                 valid
@@ -1337,7 +1349,7 @@ public final class AdhesiveSelectionClientHandler {
 
     private static void renderFaceGrid(
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         AABB box,
         Direction face
     ) {
@@ -1346,12 +1358,12 @@ public final class AdhesiveSelectionClientHandler {
 
     private static void renderFaceGrid(
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         AABB box,
         Direction face,
         double normalOffset
     ) {
-        RenderType renderType = RenderType.debugQuads();
+        RenderType renderType = PlasticPreviewRenderTypes.coloredQuads();
         VertexConsumer consumer = buffers.getBuffer(renderType);
         double firstLength = switch (face.getAxis()) {
             case X -> box.getYsize();
@@ -1379,7 +1391,6 @@ public final class AdhesiveSelectionClientHandler {
                 );
             }
         }
-        buffers.endBatch(renderType);
     }
 
     private static int gridCellCount(double length) {

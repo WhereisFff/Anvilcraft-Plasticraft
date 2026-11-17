@@ -2,9 +2,9 @@
 	"format_version": "1.9.0",
 	"credit": "Made with Blockbench",
 	"ambientocclusion": false,
-	"render_type": "minecraft:cutout",
+
 	"textures": {
-		"2": "anvilcraft:item/supercapacitor",
+		"2": "anvilcraftplasticraft:block/supercapacitor",
 		"particle": "anvilcraftplasticraft:block/plastic_molding_chamber_particle"
 	},
 	"elements": [

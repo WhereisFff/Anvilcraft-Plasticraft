@@ -44,7 +44,7 @@ public record MoldingReleasePacket(
             this.sessionId
         );
         if (chamber != null && chamber.releaseSession(serverPlayer, this.sessionId)) {
-            MoldingSessionStatusPacket.broadcast(serverPlayer.serverLevel(), chamber);
+            MoldingSessionStatusPacket.broadcast(serverPlayer.level(), chamber);
         }
     }
 }

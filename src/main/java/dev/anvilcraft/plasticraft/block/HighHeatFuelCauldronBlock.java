@@ -7,22 +7,23 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.dubhe.anvilcraft.api.block.IIgnitableCauldron;
-import dev.dubhe.anvilcraft.block.HeaterBlock;
-import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
-import dev.dubhe.anvilcraft.block.PlasmaJetsBlock;
+import dev.dubhe.anvilcraft.block.cauldron.Layered4LevelCauldronBlock;
+import dev.dubhe.anvilcraft.block.power.consumer.HeaterBlock;
+import dev.dubhe.anvilcraft.block.special.PlasmaJetsBlock;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModItemTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.cauldron.CauldronInteraction;
+import net.minecraft.core.cauldron.CauldronInteractions;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.ItemInteractionResult;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.InsideBlockEffectApplier;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
@@ -38,14 +39,14 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.redstone.Orientation;
 import net.minecraft.world.phys.BlockHitResult;
+import org.jspecify.annotations.Nullable;
 
 /** 以每层高热燃料分段维持强化喷流的四级炼药锅。 */
 public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implements IIgnitableCauldron, EntityBlock {
     public static final BooleanProperty IGNITED = BooleanProperty.create("ignited");
-    private static final CauldronInteraction.InteractionMap INTERACTIONS = CauldronInteraction.newInteractionMap(
-        "anvilcraftplasticraft_high_heat_fuel"
-    );
+    private static final CauldronInteraction.Dispatcher INTERACTIONS = new CauldronInteraction.Dispatcher();
 
     public HighHeatFuelCauldronBlock(Properties properties) {
         super(properties, INTERACTIONS);
@@ -68,9 +69,9 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
     }
 
     public static void registerInteractions() {
-        INTERACTIONS.map().put(
+        INTERACTIONS.put(
             Items.BUCKET,
-            (state, level, pos, player, hand, stack) -> CauldronInteraction.fillBucket(
+            (state, level, pos, player, hand, stack) -> CauldronInteractions.fillBucket(
                 state,
                 level,
                 pos,
@@ -84,9 +85,9 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
                 SoundEvents.BUCKET_FILL
             )
         );
-        CauldronInteraction.EMPTY.map().put(
+        CauldronInteractions.EMPTY.put(
             PlasticraftItems.HIGH_HEAT_FUEL_BUCKET.get(),
-            (state, level, pos, player, hand, stack) -> CauldronInteraction.emptyBucket(
+            (state, level, pos, player, hand, stack) -> CauldronInteractions.emptyBucket(
                 level,
                 pos,
                 player,
@@ -101,11 +102,11 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
     }
 
     private static void registerIgniter(Item item, boolean damages) {
-        INTERACTIONS.map().put(item, (state, level, pos, player, hand, stack) -> {
-            if (!canIgnite(state)) return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        INTERACTIONS.put(item, (state, level, pos, player, hand, stack) -> {
+            if (!canIgnite(state)) return InteractionResult.TRY_WITH_EMPTY_HAND;
             ignite(level, pos, state);
             if (damages) {
-                stack.hurtAndBreak(1, player, LivingEntity.getSlotForHand(hand));
+                stack.hurtAndBreak(1, player, hand.asEquipmentSlot());
             } else if (!player.getAbilities().instabuild) {
                 stack.shrink(1);
             }
@@ -115,7 +116,7 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
                 damages ? SoundEvents.FLINTANDSTEEL_USE : SoundEvents.FIRECHARGE_USE,
                 SoundSource.BLOCKS
             );
-            return ItemInteractionResult.sidedSuccess(level.isClientSide());
+            return InteractionResult.SUCCESS;
         });
     }
 
@@ -161,7 +162,7 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
     }
 
     @Override
-    public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
+    public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity, InsideBlockEffectApplier effectApplier, boolean isPrecise) {
         if (!this.isEntityInsideContent(state, pos, entity)) return;
         if (state.getValue(IGNITED)) {
             if (!isSpent(level, pos)) {
@@ -184,7 +185,7 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
     }
 
     @Override
-    protected ItemInteractionResult useItemOn(
+    protected InteractionResult useItemOn(
         ItemStack stack,
         BlockState state,
         Level level,
@@ -193,9 +194,9 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
         InteractionHand hand,
         BlockHitResult hitResult
     ) {
-        CauldronInteraction interaction = this.interactions.map().get(stack.getItem());
+        CauldronInteraction interaction = this.interactions.get(stack);
         return interaction == null
-            ? ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION
+            ? InteractionResult.TRY_WITH_EMPTY_HAND
             : interaction.interact(state, level, pos, player, hand, stack);
     }
 
@@ -212,7 +213,7 @@ public class HighHeatFuelCauldronBlock extends Layered4LevelCauldronBlock implem
         Level level,
         BlockPos pos,
         Block neighborBlock,
-        BlockPos neighborPos,
+        @Nullable Orientation orientation,
         boolean movedByPiston
     ) {
         if (state.getValue(IGNITED) && level.getBlockState(pos.below()).is(ModBlocks.HEATER)) {

@@ -3,7 +3,7 @@ package dev.anvilcraft.plasticraft.vapor;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import net.minecraft.core.Direction;
 import net.neoforged.neoforge.capabilities.BlockCapability;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 public final class VaporCapabilities {
     public static final BlockCapability<IVaporConsumer, @Nullable Direction> VAPOR_CONSUMER =

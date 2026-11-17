@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.event;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
-import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
+import dev.dubhe.anvilcraft.block.workstation.GiantAnvilBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -12,6 +12,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.ExplosionEvent;
+import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
 
 import java.util.List;
 
@@ -22,7 +23,7 @@ public final class BondedFallingBlockEvents {
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
-    public static void blockBroken(BlockEvent.BreakEvent event) {
+    public static void blockBroken(BreakBlockEvent event) {
         if (!(event.getLevel() instanceof ServerLevel level) || event.isCanceled()) return;
         List<BlockPos> neighbors = BondedFallingBlocks.bondedNeighbors(level, event.getPos());
         BondedFallingBlocks.removeAll(level, event.getPos());

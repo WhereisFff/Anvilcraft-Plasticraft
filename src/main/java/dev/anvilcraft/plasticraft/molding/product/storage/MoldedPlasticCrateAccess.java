@@ -3,7 +3,6 @@ package dev.anvilcraft.plasticraft.molding.product.storage;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
-import dev.anvilcraft.plasticraft.init.PlasticraftStorageTypes;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.anvilcraft.plasticraft.network.MoldedPlasticCrateOpenPacket;
@@ -12,9 +11,7 @@ import dev.dubhe.anvilcraft.block.entity.storage.CrateBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.storage.StorageBlockEntity;
 import dev.dubhe.anvilcraft.init.block.ModBlockEntities;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
-import dev.dubhe.anvilcraft.saved.storage.IStorageType;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Holder;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
@@ -71,13 +68,13 @@ public final class MoldedPlasticCrateAccess {
         }
         UniversalPlasticEntity entity;
         if (session.bondedPos() != null) {
-            if (!player.serverLevel().hasChunkAt(session.bondedPos())
+            if (!player.level().hasChunkAt(session.bondedPos())
                 || !(player.level().getBlockEntity(session.bondedPos()) instanceof BondedEntityBlockEntity bonded)
                 || !(bonded.getOrCreateRenderEntity() instanceof UniversalPlasticEntity plastic)) {
                 return null;
             }
             entity = plastic;
-        } else if (player.serverLevel().getEntity(session.entityId()) instanceof UniversalPlasticEntity plastic) {
+        } else if (player.level().getEntity(session.entityId()) instanceof UniversalPlasticEntity plastic) {
             entity = plastic;
         } else {
             return null;
@@ -103,7 +100,7 @@ public final class MoldedPlasticCrateAccess {
     }
 
     public static List<CrateBlockEntity> includeNearby(Level level, BlockPos pos, List<CrateBlockEntity> vanilla) {
-        if (level.isClientSide) {
+        if (level.isClientSide()) {
             return vanilla;
         }
         List<CrateBlockEntity> crates = new ArrayList<>();
@@ -161,16 +158,6 @@ public final class MoldedPlasticCrateAccess {
             this.entity = entity;
             this.storageId = storageId;
             this.setLevel(entity.level());
-        }
-
-        @Override
-        public Holder<IStorageType<?>> getStorageTypeHolder() {
-            return PlasticraftStorageTypes.MOLDED_CRATE;
-        }
-
-        @Override
-        public IStorageType<?> getStorageType() {
-            return PlasticraftStorageTypes.MOLDED_CRATE.get();
         }
 
         @Override

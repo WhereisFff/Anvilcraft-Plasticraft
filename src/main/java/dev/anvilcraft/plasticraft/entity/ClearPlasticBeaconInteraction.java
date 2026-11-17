@@ -45,13 +45,13 @@ public final class ClearPlasticBeaconInteraction {
         private static ColumnSnapshot create(Level level, int x, int z) {
             AABB column = new AABB(
                 x,
-                level.getMinBuildHeight(),
+                level.getMinY(),
                 z,
                 x + 1.0D,
-                level.getMaxBuildHeight(),
+                level.getMaxY() + 1,
                 z + 1.0D
             );
-            int maximumHeight = level.getMinBuildHeight();
+            int maximumHeight = level.getMinY();
             Map<Integer, Integer> colors = new HashMap<>();
             for (ClearPlasticEntity entity : level.getEntitiesOfClass(
                 ClearPlasticEntity.class,
@@ -65,8 +65,8 @@ public final class ClearPlasticBeaconInteraction {
             )) {
                 AABB bounds = entity.getBoundingBox();
                 maximumHeight = Math.max(maximumHeight, (int) Math.ceil(bounds.maxY));
-                int minimumY = Math.max(level.getMinBuildHeight(), (int) Math.floor(bounds.minY));
-                int maximumY = Math.min(level.getMaxBuildHeight(), (int) Math.ceil(bounds.maxY));
+                int minimumY = Math.max(level.getMinY(), (int) Math.floor(bounds.minY));
+                int maximumY = Math.min(level.getMaxY() + 1, (int) Math.ceil(bounds.maxY));
                 int color = entity.getDisplayState().getValue(DyeableMaterial.COLOR).getTextureDiffuseColor();
                 for (int y = minimumY; y < maximumY; y++) {
                     colors.putIfAbsent(y, color);

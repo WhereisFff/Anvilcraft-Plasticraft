@@ -7,11 +7,11 @@ import dev.anvilcraft.plasticraft.entity.MoldedLargeCauldronInteraction;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
-import net.minecraft.advancements.critereon.MinMaxBounds;
+import net.minecraft.advancements.criterion.MinMaxBounds;
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.neoforged.neoforge.fluids.FluidStack;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -25,7 +25,7 @@ public final class MoldedLargeCauldronFluidRecipes {
     private static final InWorldRecipeData<Map<UniversalPlasticEntity, State>> STATES = InWorldRecipeData.of(
         AnvilcraftPlasticraft.of("molded_large_cauldron_fluids"), (context, key) -> new IdentityHashMap<>()
     );
-    private static final ResourceLocation ACCEPTOR = AnvilcraftPlasticraft.of("molded_large_cauldron_fluids");
+    private static final Identifier ACCEPTOR = AnvilcraftPlasticraft.of("molded_large_cauldron_fluids");
 
     private MoldedLargeCauldronFluidRecipes() {
     }
@@ -48,7 +48,7 @@ public final class MoldedLargeCauldronFluidRecipes {
     public static void snapshot(InWorldRecipeContext context, UniversalPlasticEntity pot, HasCauldron predicate) {
         State state = state(context, pot);
         state.rollback.push(copy(state.fluids));
-        if (context.getLevel().random.nextFloat() <= predicate.chance()) apply(state.fluids, predicate);
+        if (context.getLevel().getRandom().nextFloat() <= predicate.chance()) apply(state.fluids, predicate);
     }
 
     public static void rollback(InWorldRecipeContext context, UniversalPlasticEntity pot) {
@@ -91,7 +91,8 @@ public final class MoldedLargeCauldronFluidRecipes {
         if (source >= 0 && predicate.consume() > 0) {
             fluids.set(source, fluids.get(source).copyWithAmount(amount - predicate.consume()));
         }
-        for (FluidStack result : predicate.transforms()) {
+        for (var template : predicate.transforms()) {
+            FluidStack result = template.create();
             int target = -1;
             for (int index = 0; index < fluids.size(); index++) {
                 if (FluidStack.isSameFluidSameComponents(fluids.get(index), result)) {

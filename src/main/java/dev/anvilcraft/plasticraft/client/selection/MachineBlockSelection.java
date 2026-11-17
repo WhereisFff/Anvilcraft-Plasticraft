@@ -17,13 +17,13 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.VoxelShape;
-import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
+import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -59,7 +59,7 @@ public final class MachineBlockSelection {
     public static void reload() {
         ResourceManager resources = Minecraft.getInstance().getResourceManager();
         MachineModelGeometry reader = new MachineModelGeometry(id -> {
-            ResourceLocation file = ResourceLocation.fromNamespaceAndPath(id.getNamespace(), "models/" + id.getPath() + ".json");
+            Identifier file = Identifier.fromNamespaceAndPath(id.getNamespace(), "models/" + id.getPath() + ".json");
             try (Reader input = resources.getResourceOrThrow(file).openAsReader()) {
                 return JsonParser.parseReader(input).getAsJsonObject();
             } catch (IOException exception) {
@@ -129,8 +129,8 @@ public final class MachineBlockSelection {
         return shape.isEmpty() ? List.of() : List.of(PlasticSelectionGeometry.fromShape(shape));
     }
 
-    private static ResourceLocation modelId(String name) {
-        return ResourceLocation.fromNamespaceAndPath(AnvilcraftPlasticraft.MOD_ID, "block/" + name);
+    private static Identifier modelId(String name) {
+        return Identifier.fromNamespaceAndPath(AnvilcraftPlasticraft.MOD_ID, "block/" + name);
     }
 
     enum Variant {

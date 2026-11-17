@@ -3,12 +3,12 @@ package dev.anvilcraft.plasticraft.init.block;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.client.renderer.HighViscosityResinFluidExtension;
 import dev.anvilcraft.plasticraft.client.renderer.UniversalPlasticMeltFluidExtension;
+import dev.anvilcraft.plasticraft.fluid.StationaryPlasticMeltFluid;
 import dev.anvilcraft.plasticraft.fluid.UniversalPlasticMeltFluidType;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
-import dev.anvilcraft.plasticraft.fluid.StationaryPlasticMeltFluid;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.level.material.Fluid;
 import net.neoforged.bus.api.IEventBus;
@@ -427,7 +427,7 @@ public final class PlasticraftFluids {
     }
 
     private static HighViscosityResinFluidExtension fluidExtension(String textureName) {
-        ResourceLocation texture = AnvilcraftPlasticraft.of("fluid/" + textureName);
+        Identifier texture = AnvilcraftPlasticraft.of("fluid/" + textureName);
         return new HighViscosityResinFluidExtension(
             texture,
             0xFFFFFFFF,
@@ -437,7 +437,7 @@ public final class PlasticraftFluids {
         );
     }
 
-    public static ResourceLocation liquidHighViscosityResinId() {
+    public static Identifier liquidHighViscosityResinId() {
         return LIQUID_HIGH_VISCOSITY_RESIN.getId();
     }
 }

@@ -1,49 +1,75 @@
 package dev.anvilcraft.plasticraft.client.renderer;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import dev.anvilcraft.plasticraft.entity.MoldedPlasticCauldronState;
+import com.mojang.serialization.MapCodec;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderHelper;
+import dev.anvilcraft.plasticraft.entity.MoldedPlasticCauldronState;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
-import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.BlockEntityWithoutLevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.Sheets;
-import net.minecraft.client.renderer.block.BlockRenderDispatcher;
-import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
+import net.minecraft.client.renderer.special.SpecialModelRenderer;
 import net.minecraft.core.Direction;
-import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Vector3f;
+import org.joml.Vector3fc;
+import org.jspecify.annotations.Nullable;
+
+import java.util.function.Consumer;
 
 /** 在同一物品 ID 上渲染旧方块外形和动态制造外形。 */
-public final class UniversalPlasticItemRenderer extends BlockEntityWithoutLevelRenderer {
-    private static UniversalPlasticItemRenderer instance;
+public final class UniversalPlasticItemRenderer implements SpecialModelRenderer<ItemStackTemplate> {
+    public enum Unbaked implements SpecialModelRenderer.Unbaked<ItemStackTemplate> {
+        INSTANCE;
 
-    private UniversalPlasticItemRenderer(Minecraft minecraft) {
-        super(minecraft.getBlockEntityRenderDispatcher(), minecraft.getEntityModels());
-    }
+        public static final MapCodec<Unbaked> CODEC = MapCodec.unit(INSTANCE);
 
-    public static UniversalPlasticItemRenderer getInstance() {
-        if (instance == null) instance = new UniversalPlasticItemRenderer(Minecraft.getInstance());
-        return instance;
+        @Override
+        public SpecialModelRenderer<ItemStackTemplate> bake(BakingContext context) {
+            return new UniversalPlasticItemRenderer();
+        }
+
+        @Override
+        public MapCodec<Unbaked> type() {
+            return CODEC;
+        }
     }
 
     @Override
-    public void renderByItem(
-        ItemStack stack,
-        ItemDisplayContext displayContext,
-        PoseStack pose,
-        MultiBufferSource buffers,
-        int packedLight,
-        int packedOverlay
-    ) {
+    public void getExtents(Consumer<Vector3fc> output) {
+        for (int corner = 0; corner < 8; corner++) {
+            output.accept(new Vector3f(corner & 1, corner >> 1 & 1, corner >> 2));
+        }
+    }
+
+    @Override
+    public ItemStackTemplate extractArgument(ItemStack stack) {
+        return new ItemStackTemplate(stack.typeHolder(), stack.getComponentsPatch());
+    }
+
+    @Override
+    public void submit(@Nullable ItemStackTemplate stack, PoseStack parent, SubmitNodeCollector collector,
+                       int light, int overlay, boolean foil, int outlineColor) {
+        if (stack == null) {
+            return;
+        }
+        PlasticRenderGeometry geometry = new PlasticRenderGeometry();
+        renderItem(stack.create(), new PoseStack(), geometry, light, overlay);
+        geometry.submit(parent, collector, Minecraft.getInstance().gameRenderer.getGameRenderState().levelRenderState.cameraRenderState);
+    }
+
+    private static void renderItem(ItemStack stack, PoseStack pose, MultiBufferSource buffers, int packedLight, int packedOverlay) {
         MoldedPlasticData data = MoldedPlasticData.get(stack).orElse(null);
         if (data == null) {
             Block productBlock = Block.byItem(stack.getItem());
@@ -54,7 +80,7 @@ public final class UniversalPlasticItemRenderer extends BlockEntityWithoutLevelR
             if (PlasticEntityRenderHelper.isTransparent(state)) {
                 renderClearPlasticBlock(state, pose, buffers, packedLight, packedOverlay);
             } else {
-                Minecraft.getInstance().getBlockRenderer().renderSingleBlock(
+                PlasticBlockModel.render(
                     state,
                     pose,
                     buffers,
@@ -98,7 +124,6 @@ public final class UniversalPlasticItemRenderer extends BlockEntityWithoutLevelR
         }
         MoldedTrayComponentRenderer.render(
             data,
-            Minecraft.getInstance().getBlockRenderer(),
             pose,
             buffers,
             packedLight,
@@ -114,12 +139,10 @@ public final class UniversalPlasticItemRenderer extends BlockEntityWithoutLevelR
         int packedLight,
         int packedOverlay
     ) {
-        BlockRenderDispatcher dispatcher = Minecraft.getInstance().getBlockRenderer();
-        BakedModel model = dispatcher.getBlockModel(state);
-        dispatcher.getModelRenderer().renderModel(
+        BlockStateModel model = PlasticBlockModel.of(state);
+        PlasticBlockModel.render(
             pose.last(),
-            buffers.getBuffer(Sheets.translucentItemSheet()),
-            state,
+            buffers.getBuffer(Sheets.translucentBlockItemSheet()),
             model,
             1.0F,
             1.0F,

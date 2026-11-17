@@ -1,9 +1,9 @@
 {
   "parent": "anvilcraft:block/template_large_block",
-  "render_type": "minecraft:translucent",
+
   "textures": {
-    "resin": "anvilcraftplasticraft:block/high_viscosity_resin",
-    "particle": "anvilcraftplasticraft:block/high_viscosity_resin"
+    "resin": {"sprite": "anvilcraftplasticraft:block/high_viscosity_resin", "force_translucent": true},
+    "particle": {"sprite": "anvilcraftplasticraft:block/high_viscosity_resin", "force_translucent": true}
   },
   "elements": [
     {

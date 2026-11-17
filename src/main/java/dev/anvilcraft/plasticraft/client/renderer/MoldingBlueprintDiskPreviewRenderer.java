@@ -1,6 +1,5 @@
 package dev.anvilcraft.plasticraft.client.renderer;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
@@ -14,9 +13,8 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
 
@@ -32,7 +30,7 @@ public final class MoldingBlueprintDiskPreviewRenderer {
     private MoldingBlueprintDiskPreviewRenderer() {
     }
 
-    public static boolean renderPreviewAt(GuiGraphics graphics, ItemStack stack, int mouseX, int mouseY) {
+    public static boolean renderPreviewAt(GuiGraphicsExtractor graphics, ItemStack stack, int mouseX, int mouseY) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null) return false;
         Preview preview = preview(stack);
@@ -45,9 +43,7 @@ public final class MoldingBlueprintDiskPreviewRenderer {
         if (previewX + PREVIEW_SIZE > screenWidth) previewX = screenWidth - PREVIEW_SIZE - 5;
         if (previewX < 0) previewX = 5;
 
-        PoseStack pose = graphics.pose();
-        pose.pushPose();
-        pose.translate(0.0F, 0.0F, 5000.0F);
+        graphics.nextStratum();
         graphics.fill(
             previewX - 2,
             previewY - 2,
@@ -55,9 +51,8 @@ public final class MoldingBlueprintDiskPreviewRenderer {
             previewY + PREVIEW_SIZE + 2,
             0xF0100010
         );
-        graphics.renderOutline(previewX - 2, previewY - 2, PREVIEW_SIZE + 4, PREVIEW_SIZE + 4, 0x505000FF);
+        graphics.outline(previewX - 2, previewY - 2, PREVIEW_SIZE + 4, PREVIEW_SIZE + 4, 0x505000FF);
         renderModel(graphics, preview, previewX, previewY);
-        pose.popPose();
         return true;
     }
 
@@ -80,7 +75,7 @@ public final class MoldingBlueprintDiskPreviewRenderer {
     }
 
     private static void renderModel(
-        GuiGraphics graphics,
+        GuiGraphicsExtractor graphics,
         Preview preview,
         int previewX,
         int previewY
@@ -94,22 +89,17 @@ public final class MoldingBlueprintDiskPreviewRenderer {
         float scaleY = (float) (MODEL_SIZE / verticalSize);
         float scale = Math.min(scaleX, scaleY);
 
-        DeltaTracker tracker = minecraft.getTimer();
+        DeltaTracker tracker = minecraft.getDeltaTracker();
         float rotation = (minecraft.level.getGameTime() + tracker.getGameTimeDeltaPartialTick(true))
             * ROTATION_SPEED + 45.0F;
-        PoseStack pose = graphics.pose();
-        pose.pushPose();
-        pose.translate(previewX + PREVIEW_SIZE * 0.5F, previewY + PREVIEW_SIZE * 0.5F, 100.0F);
-        pose.scale(-scale, -scale, -scale);
+        PoseStack pose = new PoseStack();
+        pose.scale(-1, -1, 1);
         pose.mulPose(Axis.XP.rotationDegrees(-30.0F));
         pose.mulPose(Axis.YP.rotationDegrees(rotation));
         pose.translate(-center.x(), -center.y(), -center.z());
 
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.enableDepthTest();
-        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
-        RenderType renderType = RenderType.debugQuads();
+        PlasticRenderGeometry buffers = new PlasticRenderGeometry();
+        RenderType renderType = PlasticPreviewRenderTypes.coloredQuads();
         VertexConsumer consumer = buffers.getBuffer(renderType);
         for (EditorScenePart part : preview.mesh.parts()) {
             int[] indices = part.indices();
@@ -119,10 +109,7 @@ public final class MoldingBlueprintDiskPreviewRenderer {
                     .setColor(tint(vertex.color()));
             }
         }
-        buffers.endBatch(renderType);
-        RenderSystem.disableDepthTest();
-        RenderSystem.disableBlend();
-        pose.popPose();
+        PlasticGeometryPicture.add(graphics, buffers, previewX, previewY, PREVIEW_SIZE, PREVIEW_SIZE, scale);
     }
 
     private static int tint(int sourceColor) {

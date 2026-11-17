@@ -6,10 +6,10 @@ import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.fluids.FluidStack;
 
@@ -22,7 +22,7 @@ import java.util.List;
  * @param occupiedSlots 板条箱的仓储空间占用量，或炼药锅的已用物品槽数
  */
 public record MoldedPlasticContentSummary(
-    ResourceLocation type,
+    Identifier type,
     int capacity,
     int occupiedSlots,
     int totalFluid,
@@ -33,7 +33,7 @@ public record MoldedPlasticContentSummary(
 ) {
     public static final int MAX_VISIBLE_ENTRIES = 8;
     public static final Codec<MoldedPlasticContentSummary> CODEC = RecordCodecBuilder.create(instance -> instance.group(
-        ResourceLocation.CODEC.fieldOf("type").forGetter(MoldedPlasticContentSummary::type),
+        Identifier.CODEC.fieldOf("type").forGetter(MoldedPlasticContentSummary::type),
         Codec.INT.fieldOf("capacity").forGetter(MoldedPlasticContentSummary::capacity),
         Codec.INT.fieldOf("occupied_slots").forGetter(MoldedPlasticContentSummary::occupiedSlots),
         Codec.INT.fieldOf("total_fluid").forGetter(MoldedPlasticContentSummary::totalFluid),
@@ -78,7 +78,7 @@ public record MoldedPlasticContentSummary(
     }
 
     public static MoldedPlasticContentSummary create(
-        ResourceLocation type,
+        Identifier type,
         int capacity,
         List<MoldedPlasticContents.StoredItem> storedItems,
         List<FluidStack> storedFluids
@@ -130,7 +130,7 @@ public record MoldedPlasticContentSummary(
         ListTag itemTags = new ListTag();
         for (ItemEntry item : this.items) {
             CompoundTag entry = new CompoundTag();
-            entry.put("Stack", item.stack.save(registries));
+            entry.store("Stack", ItemStack.CODEC, registries.createSerializationContext(NbtOps.INSTANCE), item.stack);
             entry.putInt("Count", item.count);
             itemTags.add(entry);
         }
@@ -147,7 +147,7 @@ public record MoldedPlasticContentSummary(
     }
 
     private static void encode(RegistryFriendlyByteBuf buffer, MoldedPlasticContentSummary summary) {
-        buffer.writeResourceLocation(summary.type);
+        buffer.writeIdentifier(summary.type);
         buffer.writeVarInt(summary.capacity);
         buffer.writeVarInt(summary.occupiedSlots);
         buffer.writeVarInt(summary.totalFluid);
@@ -166,7 +166,7 @@ public record MoldedPlasticContentSummary(
     }
 
     private static MoldedPlasticContentSummary decode(RegistryFriendlyByteBuf buffer) {
-        ResourceLocation type = buffer.readResourceLocation();
+        Identifier type = buffer.readIdentifier();
         int capacity = buffer.readVarInt();
         int occupiedSlots = buffer.readVarInt();
         int totalFluid = buffer.readVarInt();
@@ -198,34 +198,34 @@ public record MoldedPlasticContentSummary(
     }
 
     public static MoldedPlasticContentSummary fromTag(CompoundTag tag, HolderLookup.Provider registries) {
-        ResourceLocation type = ResourceLocation.tryParse(tag.getString("Type"));
+        Identifier type = Identifier.tryParse(tag.getStringOr("Type", ""));
         if (type == null || !MoldingProductTypes.isRegistered(type)) return EMPTY;
-        ListTag itemTags = tag.getList("Items", Tag.TAG_COMPOUND);
+        ListTag itemTags = tag.getListOrEmpty("Items");
         List<ItemEntry> items = new ArrayList<>(Math.min(itemTags.size(), MAX_VISIBLE_ENTRIES));
         for (int index = 0; index < itemTags.size() && index < MAX_VISIBLE_ENTRIES; index++) {
-            CompoundTag entry = itemTags.getCompound(index);
-            ItemStack stack = ItemStack.parseOptional(registries, entry.getCompound("Stack"));
-            if (!stack.isEmpty() && entry.getInt("Count") > 0) {
-                items.add(new ItemEntry(stack.copyWithCount(1), entry.getInt("Count")));
+            CompoundTag entry = itemTags.getCompoundOrEmpty(index);
+            ItemStack stack = entry.read("Stack", ItemStack.CODEC, registries.createSerializationContext(NbtOps.INSTANCE)).orElse(ItemStack.EMPTY);
+            if (!stack.isEmpty() && entry.getIntOr("Count", 0) > 0) {
+                items.add(new ItemEntry(stack.copyWithCount(1), entry.getIntOr("Count", 0)));
             }
         }
-        ListTag fluidTags = tag.getList("Fluids", Tag.TAG_COMPOUND);
+        ListTag fluidTags = tag.getListOrEmpty("Fluids");
         List<FluidEntry> fluids = new ArrayList<>(Math.min(fluidTags.size(), MAX_VISIBLE_ENTRIES));
         for (int index = 0; index < fluidTags.size() && index < MAX_VISIBLE_ENTRIES; index++) {
-            CompoundTag entry = fluidTags.getCompound(index);
-            if (!entry.getString("Name").isBlank() && entry.getInt("Amount") > 0) {
-                fluids.add(new FluidEntry(entry.getString("Name"), entry.getInt("Amount")));
+            CompoundTag entry = fluidTags.getCompoundOrEmpty(index);
+            if (!entry.getStringOr("Name", "").isBlank() && entry.getIntOr("Amount", 0) > 0) {
+                fluids.add(new FluidEntry(entry.getStringOr("Name", ""), entry.getIntOr("Amount", 0)));
             }
         }
         return new MoldedPlasticContentSummary(
             type,
-            Math.max(0, tag.getInt("Capacity")),
-            Math.max(0, tag.getInt("OccupiedSlots")),
-            Math.max(0, tag.getInt("TotalFluid")),
+            Math.max(0, tag.getIntOr("Capacity", 0)),
+            Math.max(0, tag.getIntOr("OccupiedSlots", 0)),
+            Math.max(0, tag.getIntOr("TotalFluid", 0)),
             items,
-            Math.max(0, tag.getInt("OmittedItemTypes")),
+            Math.max(0, tag.getIntOr("OmittedItemTypes", 0)),
             fluids,
-            Math.max(0, tag.getInt("OmittedFluidTypes"))
+            Math.max(0, tag.getIntOr("OmittedFluidTypes", 0))
         );
     }
 

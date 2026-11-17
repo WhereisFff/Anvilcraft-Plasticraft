@@ -32,46 +32,43 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.gametest.framework.GameTest;
-import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.network.protocol.game.ServerboundAcceptTeleportationPacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.entity.projectile.Arrow;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
-import net.minecraft.world.entity.projectile.Snowball;
+import net.minecraft.world.entity.projectile.arrow.Arrow;
+import net.minecraft.world.entity.projectile.throwableitemprojectile.Snowball;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
+import net.neoforged.testframework.gametest.GameTest;
 import net.neoforged.testframework.gametest.GameTestPlayer;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -440,7 +437,8 @@ public final class PlasticConvexCollisionGameTests {
         snowball.tick();
         check(!snowball.isRemoved(), "snowball hit the slope's empty AABB corner");
         check(!slope.isRemoved(), "snowball damaged the slope from its empty AABB corner");
-        check(snowball.position().distanceToSqr(corner) <= EPSILON * EPSILON,
+        check(bounds.contains(snowball.position())
+                && snowball.position().distanceToSqr(above.add(snowball.getDeltaMovement())) <= EPSILON * EPSILON,
             "snowball did not fly into the empty AABB corner");
 
         Arrow arrow = new Arrow(EntityType.ARROW, helper.getLevel());
@@ -510,7 +508,8 @@ public final class PlasticConvexCollisionGameTests {
             check(helper.getLevel().addFreshEntity(snowball), "failed to spawn " + label + " snowball");
             snowball.setDeltaMovement(corner.subtract(above));
             snowball.tick();
-            check(!snowball.isRemoved() && snowball.position().distanceToSqr(corner) <= EPSILON * EPSILON,
+            check(!snowball.isRemoved() && bounds.contains(snowball.position())
+                && snowball.position().distanceToSqr(above.add(snowball.getDeltaMovement())) <= EPSILON * EPSILON,
                 label + " blocked a snowball in its empty corner");
 
             Arrow arrow = new Arrow(EntityType.ARROW, helper.getLevel());
@@ -585,11 +584,11 @@ public final class PlasticConvexCollisionGameTests {
         ClientboundPlayerPositionPacket initialPosition = player
             .getOutboundPackets(ClientboundPlayerPositionPacket.class)
             .reduce((first, second) -> second)
-            .orElseThrow(() -> new GameTestAssertException("mock player login did not send an initial position"));
-        player.connection.handleAcceptTeleportPacket(new ServerboundAcceptTeleportationPacket(initialPosition.getId()));
+            .orElseThrow(() -> new PlasticraftTestFailure("mock player login did not send an initial position"));
+        player.connection.handleAcceptTeleportPacket(new ServerboundAcceptTeleportationPacket(initialPosition.id()));
         player.clearOutboundPackets();
         player.setNoGravity(true);
-        player.moveTo(
+        player.snapTo(
             compatibility.getCenter().x + compatibility.getXsize() * 0.28D,
             compatibility.maxY + 0.2D,
             compatibility.getCenter().z
@@ -603,13 +602,14 @@ public final class PlasticConvexCollisionGameTests {
             "network test target entered the dynamic real slope"
         );
 
-        player.moveTo(target.x, compatibility.maxY + 0.1D, target.z);
+        player.snapTo(target.x, compatibility.maxY + 0.1D, target.z);
         player.connection.resetPosition();
         player.connection.handleMovePlayer(new ServerboundMovePlayerPacket.Pos(
             target.x,
             target.y,
             target.z,
-            true
+            true,
+            false
         ));
         check(
             player.position().distanceToSqr(target) <= EPSILON * EPSILON,
@@ -693,8 +693,8 @@ public final class PlasticConvexCollisionGameTests {
         UniversalPlasticEntity playerTarget = createDynamicPlastic(helper, new Vec3(5.5D, 2.0D, 5.5D), model);
         UniversalPlasticEntity mobTarget = createDynamicPlastic(helper, new Vec3(11.5D, 2.0D, 11.5D), model);
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        Creeper mob = EntityType.CREEPER.create(helper.getLevel());
-        if (mob == null) throw new GameTestAssertException("failed to create rotated-face mob pusher");
+        Creeper mob = EntityType.CREEPER.create(helper.getLevel(), EntitySpawnReason.TRIGGERED);
+        if (mob == null) throw new PlasticraftTestFailure("failed to create rotated-face mob pusher");
         mob.setNoAi(true);
         mob.setNoGravity(true);
         check(helper.getLevel().addFreshEntity(mob), "failed to add rotated-face mob pusher");
@@ -720,7 +720,7 @@ public final class PlasticConvexCollisionGameTests {
         }
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 floorPosition = helper.absoluteVec(new Vec3(4.5D, 2.0D, 5.5D));
-        player.moveTo(floorPosition.x, floorPosition.y, floorPosition.z);
+        player.snapTo(floorPosition.x, floorPosition.y, floorPosition.z);
         player.setOnGround(true);
 
         HardenedResinCauldronEntity cauldron = new HardenedResinCauldronEntity(
@@ -734,7 +734,7 @@ public final class PlasticConvexCollisionGameTests {
         check(helper.getLevel().addFreshEntity(cauldron), "failed to add upside-down cauldron");
         AABB cauldronBounds = cauldron.getBoundingBox();
         double rimOverlap = 0.06D;
-        player.moveTo(
+        player.snapTo(
             cauldronBounds.minX - player.getBbWidth() * 0.5D + rimOverlap,
             floorPosition.y,
             cauldronBounds.getCenter().z
@@ -799,11 +799,11 @@ public final class PlasticConvexCollisionGameTests {
         }
         GameTestPlayer rimPlayer = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 rimPlayerPosition = helper.absoluteVec(new Vec3(5.5D, 2.0D, 5.5D));
-        rimPlayer.moveTo(rimPlayerPosition.x, rimPlayerPosition.y, rimPlayerPosition.z);
+        rimPlayer.snapTo(rimPlayerPosition.x, rimPlayerPosition.y, rimPlayerPosition.z);
         rimPlayer.setOnGround(true);
         HardenedResinCauldronEntity rimCauldron = spawnUpsideDownCauldron(helper, new Vec3(5.5D, 4.0D, 5.5D));
         AABB rimBounds = rimCauldron.getBoundingBox();
-        rimPlayer.moveTo(
+        rimPlayer.snapTo(
             rimBounds.minX - rimPlayer.getBbWidth() * 0.5D + 0.18D,
             rimPlayerPosition.y,
             rimBounds.getCenter().z
@@ -817,7 +817,7 @@ public final class PlasticConvexCollisionGameTests {
 
         GameTestPlayer innerPlayer = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 innerPlayerPosition = helper.absoluteVec(new Vec3(15.5D, 2.0D, 5.5D));
-        innerPlayer.moveTo(innerPlayerPosition.x, innerPlayerPosition.y, innerPlayerPosition.z);
+        innerPlayer.snapTo(innerPlayerPosition.x, innerPlayerPosition.y, innerPlayerPosition.z);
         innerPlayer.setOnGround(true);
         HardenedResinCauldronEntity innerCauldron = spawnUpsideDownCauldron(helper, new Vec3(15.5D, 4.0D, 5.5D));
         AABB innerPlayerBox = innerPlayer.getBoundingBox();
@@ -829,7 +829,7 @@ public final class PlasticConvexCollisionGameTests {
                 && bounds.maxZ >= innerPlayerBox.maxZ - EPSILON)
             .mapToDouble(bounds -> bounds.minY)
             .min()
-            .orElseThrow(() -> new GameTestAssertException(
+            .orElseThrow(() -> new PlasticraftTestFailure(
                 "upside-down cauldron exposed no inner ceiling over the player"
             ));
         innerCauldron.setPos(
@@ -869,7 +869,7 @@ public final class PlasticConvexCollisionGameTests {
         }
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 floorPosition = helper.absoluteVec(new Vec3(4.6D, 2.0D, 5.5D));
-        player.moveTo(floorPosition.x, floorPosition.y, floorPosition.z);
+        player.snapTo(floorPosition.x, floorPosition.y, floorPosition.z);
         player.setOnGround(true);
 
         UniversalPlasticEntity slope = createDynamicPlastic(
@@ -951,7 +951,7 @@ public final class PlasticConvexCollisionGameTests {
         }
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 floorPosition = helper.absoluteVec(new Vec3(5.5D, 2.0D, 3.5D));
-        player.moveTo(floorPosition.x, floorPosition.y, floorPosition.z);
+        player.snapTo(floorPosition.x, floorPosition.y, floorPosition.z);
         player.setOnGround(true);
 
         UniversalPlasticEntity cube = createDynamicPlastic(
@@ -1396,8 +1396,8 @@ public final class PlasticConvexCollisionGameTests {
 
         BlockState bondedState = displayState.setValue(AbstractPlasticEntityBlock.BONDED, true);
         helper.setBlock(relativeAnchor, bondedState);
-        if (!(helper.getBlockEntity(relativeAnchor) instanceof BondedEntityBlockEntity bonded)) {
-            throw new GameTestAssertException("bonded sloped product block entity was missing");
+        if (!(helper.getLevel().getBlockEntity(helper.absolutePos(relativeAnchor)) instanceof BondedEntityBlockEntity bonded)) {
+            throw helper.assertionException("bonded sloped product block entity was missing");
         }
         check(
             bonded.initialize(
@@ -1416,7 +1416,7 @@ public final class PlasticConvexCollisionGameTests {
             helper.getLevel(),
             new AABB(absoluteAnchor).inflate(4.0D)
         ).stream().filter(candidate -> candidate.anchor().equals(absoluteAnchor)).findFirst().orElseThrow(() ->
-            new GameTestAssertException("bonded sloped product was absent from the convex index")
+            helper.assertionException("bonded sloped product was absent from the convex index")
         );
         check(entry.convexShapes().size() == 1, "single source cube did not produce one bonded convex body");
         check(
@@ -1438,7 +1438,7 @@ public final class PlasticConvexCollisionGameTests {
                 && Math.abs(normal.x) > 0.2D
                 && Math.abs(normal.z) > 0.2D
         ).findFirst().orElseThrow(() ->
-            new GameTestAssertException("rotated cube exposed no horizontal diagonal face normal")
+            new PlasticraftTestFailure("rotated cube exposed no horizontal diagonal face normal")
         ).normalize();
         AABB targetBounds = target.getBoundingBox();
         Vec3 targetBase = new Vec3(
@@ -1508,8 +1508,8 @@ public final class PlasticConvexCollisionGameTests {
             model.relativeAnchor(),
             displayState.setValue(AbstractPlasticEntityBlock.BONDED, true)
         );
-        if (!(helper.getBlockEntity(model.relativeAnchor()) instanceof BondedEntityBlockEntity bonded)) {
-            throw new GameTestAssertException(entity.getType() + " bonded block entity was missing");
+        if (!(helper.getLevel().getBlockEntity(helper.absolutePos(model.relativeAnchor())) instanceof BondedEntityBlockEntity bonded)) {
+            throw helper.assertionException(entity.getType() + " bonded block entity was missing");
         }
         check(
             bonded.initialize(
@@ -1527,7 +1527,7 @@ public final class PlasticConvexCollisionGameTests {
             helper.getLevel(),
             new AABB(absoluteAnchor).inflate(4.0D)
         ).stream().filter(entry -> entry.anchor().equals(absoluteAnchor)).findFirst().orElseThrow(() ->
-            new GameTestAssertException(entity.getType() + " was absent from the bonded convex index")
+            helper.assertionException(entity.getType() + " was absent from the bonded convex index")
         );
     }
 
@@ -1537,8 +1537,8 @@ public final class PlasticConvexCollisionGameTests {
         player.setNoGravity(true);
         movers.add(player);
 
-        Creeper creeper = EntityType.CREEPER.create(helper.getLevel());
-        if (creeper == null) throw new GameTestAssertException("failed to create creeper collision probe");
+        Creeper creeper = EntityType.CREEPER.create(helper.getLevel(), EntitySpawnReason.TRIGGERED);
+        if (creeper == null) throw helper.assertionException("failed to create creeper collision probe");
         creeper.setNoGravity(true);
         check(helper.getLevel().addFreshEntity(creeper), "failed to add creeper collision probe");
         movers.add(creeper);
@@ -1577,11 +1577,8 @@ public final class PlasticConvexCollisionGameTests {
 
     private static void assertModelResource(BuiltInPlasticEntityModels.Model model) {
         String resourceName = "assets/anvilcraftplasticraft/models/block/" + model.resourceName() + ".json";
-        Path resourcePath = ModList.get()
-            .getModFileById(AnvilcraftPlasticraft.MOD_ID)
-            .getFile()
-            .findResource(resourceName.split("/"));
-        try (InputStream stream = Files.newInputStream(resourcePath)) {
+        try (InputStream stream = AnvilcraftPlasticraft.class.getResourceAsStream("/" + resourceName)) {
+            check(stream != null, "缺少实体模型 " + resourceName);
             JsonObject root = JsonParser.parseReader(new InputStreamReader(stream, StandardCharsets.UTF_8))
                 .getAsJsonObject();
             JsonArray elements = root.getAsJsonArray("elements");
@@ -1625,7 +1622,7 @@ public final class PlasticConvexCollisionGameTests {
                 );
             }
         } catch (IOException exception) {
-            throw new GameTestAssertException(
+            throw new PlasticraftTestFailure(
                 "unable to read model resource " + resourceName + ": " + exception.getMessage()
             );
         }
@@ -1880,7 +1877,7 @@ public final class PlasticConvexCollisionGameTests {
     }
 
     private static void check(boolean condition, String message) {
-        if (!condition) throw new GameTestAssertException(message);
+        if (!condition) throw new PlasticraftTestFailure(message);
     }
 
     private static void assertIntegerPlane(double coordinate, String label) {

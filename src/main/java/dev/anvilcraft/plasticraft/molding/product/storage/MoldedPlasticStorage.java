@@ -1,107 +1,36 @@
 package dev.anvilcraft.plasticraft.molding.product.storage;
 
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContents;
-import dev.dubhe.anvilcraft.api.itemhandler.unlimited.UnlimitedItemStacksResourceHandler;
-import net.minecraft.core.HolderLookup;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
+import net.minecraft.core.UUIDUtil;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.fluids.FluidStack;
 
-import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
 import java.util.UUID;
 
-/** 塑料储罐与炼药锅的权威内容，保留锅内配方所需的固定槽位。 */
-public final class MoldedPlasticStorage {
-    private final UUID id;
-    private final TreeMap<Integer, ItemStack> items = new TreeMap<>();
-    private final List<FluidStack> fluids = new ArrayList<>();
+/** 塑料锅与储罐的内容快照，保留原料槽位置及流体层序。 */
+public record MoldedPlasticStorage(UUID id, List<MoldedPlasticContents.StoredItem> items, List<FluidStack> fluids) {
+    public static final Codec<MoldedPlasticStorage> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+        UUIDUtil.CODEC.fieldOf("id").forGetter(MoldedPlasticStorage::id),
+        MoldedPlasticContents.StoredItem.CODEC.listOf().fieldOf("items").forGetter(MoldedPlasticStorage::items),
+        FluidStack.CODEC.listOf().fieldOf("fluids").forGetter(MoldedPlasticStorage::fluids)
+    ).apply(instance, MoldedPlasticStorage::new));
 
-    public MoldedPlasticStorage(UUID id) {
-        this.id = id;
+    public MoldedPlasticStorage {
+        items = items.stream().sorted(Comparator.comparingInt(MoldedPlasticContents.StoredItem::slot)).toList();
+        fluids = fluids.stream().map(FluidStack::copy).toList();
     }
 
-    public UUID id() {
-        return this.id;
-    }
-
-    public List<MoldedPlasticContents.StoredItem> items() {
-        List<MoldedPlasticContents.StoredItem> result = new ArrayList<>(this.items.size());
-        for (Map.Entry<Integer, ItemStack> entry : this.items.entrySet()) {
-            result.add(new MoldedPlasticContents.StoredItem(entry.getKey(), entry.getValue()));
-        }
-        return result;
-    }
-
+    @Override
     public List<FluidStack> fluids() {
         return this.fluids.stream().map(FluidStack::copy).toList();
     }
 
     public ItemStack itemInSlot(int slot) {
-        ItemStack stack = this.items.get(slot);
-        return stack == null ? ItemStack.EMPTY : stack.copy();
-    }
-
-    public void setItems(List<MoldedPlasticContents.StoredItem> replacement) {
-        this.items.clear();
-        for (MoldedPlasticContents.StoredItem item : replacement) {
-            if (!item.stack().isEmpty()) this.items.put(item.slot(), item.stack().copy());
-        }
-    }
-
-    public void setItem(int slot, ItemStack stack) {
-        if (stack.isEmpty()) this.items.remove(slot);
-        else this.items.put(slot, stack.copy());
-    }
-
-    public void setFluids(List<FluidStack> replacement) {
-        this.fluids.clear();
-        for (FluidStack fluid : replacement) {
-            if (!fluid.isEmpty()) this.fluids.add(fluid.copy());
-        }
-    }
-
-    public boolean isEmpty() {
-        return this.items.isEmpty() && this.fluids.isEmpty();
-    }
-
-    public CompoundTag save(HolderLookup.Provider registries) {
-        CompoundTag tag = new CompoundTag();
-        int size = this.items.isEmpty() ? 0 : this.items.lastKey() + 1;
-        UnlimitedItemStacksResourceHandler handler = new UnlimitedItemStacksResourceHandler(size);
-        for (Map.Entry<Integer, ItemStack> entry : this.items.entrySet()) {
-            handler.insertItem(entry.getKey(), entry.getValue(), false);
-        }
-        tag.put("items", handler.serializeNBT(registries));
-        ListTag fluidTags = new ListTag();
-        for (FluidStack fluid : this.fluids) {
-            fluidTags.add(fluid.save(registries));
-        }
-        tag.put("fluids", fluidTags);
-        return tag;
-    }
-
-    public void load(CompoundTag tag, HolderLookup.Provider registries) {
-        this.items.clear();
-        this.fluids.clear();
-        if (tag.contains("items", Tag.TAG_COMPOUND)) {
-            UnlimitedItemStacksResourceHandler handler = new UnlimitedItemStacksResourceHandler(0);
-            handler.deserializeNBT(registries, tag.getCompound("items"));
-            for (int slot = 0; slot < handler.size(); slot++) {
-                ItemStack stack = handler.getStackInSlot(slot);
-                if (!stack.isEmpty()) this.items.put(slot, stack);
-            }
-        }
-        if (tag.contains("fluids", Tag.TAG_LIST)) {
-            ListTag fluidTags = tag.getList("fluids", Tag.TAG_COMPOUND);
-            for (int index = 0; index < fluidTags.size(); index++) {
-                FluidStack fluid = FluidStack.parse(registries, fluidTags.getCompound(index)).orElse(FluidStack.EMPTY);
-                if (!fluid.isEmpty()) this.fluids.add(fluid);
-            }
-        }
+        return this.items.stream().filter(item -> item.slot() == slot).findFirst()
+            .map(MoldedPlasticContents.StoredItem::stack).orElse(ItemStack.EMPTY);
     }
 }

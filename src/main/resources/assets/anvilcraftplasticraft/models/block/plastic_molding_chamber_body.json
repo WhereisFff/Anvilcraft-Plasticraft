@@ -1,7 +1,7 @@
 {
 	"format_version": "1.9.0",
 	"credit": "Made with Blockbench",
-	"render_type": "minecraft:cutout",
+
 	"textures": {
 		"0": "anvilcraftplasticraft:block/plastic_molding_chamber",
 		"2": "anvilcraft:block/pipe",

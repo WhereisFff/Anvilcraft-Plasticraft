@@ -3,14 +3,20 @@
   "ingredients": [
     {
       "components": {
-        "minecraft:custom_model_data": 0
-      },
-      "items": "anvilcraftplasticraft:resin_anvil",
-      "predicates": {
-        "anvillib:not": {
-          "anvilcraft:saved_entity": {}
+        "components": {
+          "minecraft:custom_model_data": {
+            "floats": [
+              0.0
+            ]
+          }
+        },
+        "predicates": {
+          "anvillib:not": {
+            "anvilcraft:saved_entity": {}
+          }
         }
-      }
+      },
+      "items": "anvilcraftplasticraft:resin_anvil"
     }
   ],
   "results": [

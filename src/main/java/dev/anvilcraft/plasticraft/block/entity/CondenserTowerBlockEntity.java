@@ -7,45 +7,51 @@ import dev.anvilcraft.plasticraft.vapor.IVaporConsumer;
 import dev.anvilcraft.plasticraft.vapor.VaporAction;
 import dev.anvilcraft.plasticraft.vapor.VaporStack;
 import dev.anvilcraft.plasticraft.vapor.VaporizationContext;
-import dev.dubhe.anvilcraft.api.fluid.IFluidHandlerHolder;
-import dev.dubhe.anvilcraft.api.injection.tooltip.ITooltipProviderExtension;
+import dev.dubhe.anvilcraft.api.fluid.IFluidResourceHandlerHolder;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidNetworkManager;
-import dev.dubhe.anvilcraft.util.UnitUtil;
+import dev.dubhe.anvilcraft.api.injection.tooltip.ITooltipProviderExtension;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
+import dev.dubhe.anvilcraft.util.UnitUtil;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
-import net.minecraft.network.chat.Component;
-import net.minecraft.ChatFormatting;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
-import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.transfer.DelegatingResourceHandler;
+import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.transaction.TransactionContext;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /** 冷凝塔单模块的 64 B 流体缓存；顶层接口只允许向外排液。 */
-public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHandlerHolder, ITooltipProviderExtension {
+public class CondenserTowerBlockEntity extends BlockEntity implements IFluidResourceHandlerHolder, ITooltipProviderExtension {
     public static final int CAPACITY = 64 * FluidType.BUCKET_VOLUME;
     private static final String TAG_TANK = "Tank";
     private static final String TAG_GAS_ID = "GasId";
     private static final String TAG_GAS_AMOUNT = "GasAmount";
 
-    private final FluidTank tank = new FluidTank(CAPACITY) {
+    private final PlasticFluidTank tank = new PlasticFluidTank(CAPACITY) {
         @Override
-        protected void onContentsChanged() {
+        protected void onContentsChanged(int index, FluidStack previous) {
             CondenserTowerBlockEntity.this.setChanged();
             if (CondenserTowerBlockEntity.this.level != null) {
                 CondenserTowerBlockEntity.this.level.sendBlockUpdated(
@@ -57,7 +63,17 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
             }
         }
     };
-    private final IFluidHandler outputHandler = new OutputOnlyHandler(this.tank);
+    private final ResourceHandler<FluidResource> outputHandler = new DelegatingResourceHandler<>(this.tank) {
+        @Override
+        public int insert(int index, FluidResource resource, int amount, TransactionContext transaction) {
+            return 0;
+        }
+
+        @Override
+        public int insert(FluidResource resource, int amount, TransactionContext transaction) {
+            return 0;
+        }
+    };
     private final IVaporConsumer vaporConsumer = new IVaporConsumer() {
         @Override
         public int receiveVapor(VaporStack vapor, VaporAction action, VaporizationContext context) {
@@ -75,7 +91,7 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
         }
     };
     private final List<BlockPos> registeredInterfaces = new ArrayList<>();
-    private ResourceLocation gasId;
+    private Identifier gasId;
     private int gasAmount;
     private long vaporRateTick = Long.MIN_VALUE;
     private int vaporAcceptedThisTick;
@@ -122,12 +138,12 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
     }
 
     @Override
-    public IFluidHandler getFluidHandler() {
+    public ResourceHandler<FluidResource> getFluidHandler() {
         CondenserTowerBlockEntity main = this.getMainPart();
         return main.tank;
     }
 
-    public IFluidHandler getOutputHandler() {
+    public ResourceHandler<FluidResource> getOutputHandler() {
         return this.getMainPart().outputHandler;
     }
 
@@ -137,13 +153,13 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
     }
 
     /** 将虚拟气体存入塔内，返回实际接收量。 */
-    public int collectGas(ResourceLocation id, int amount) {
+    public int collectGas(Identifier id, int amount) {
         return this.getMainPart().acceptGas(id, amount, VaporAction.EXECUTE);
     }
 
     /** 按单层每刻吞吐上限接收蒸汽，模拟调用不会推进计数器。 */
     public int receiveGas(
-        ResourceLocation id,
+        Identifier id,
         int amount,
         int rateLimit,
         long gameTime,
@@ -165,7 +181,7 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
         return main.acceptGas(id, accepted, VaporAction.EXECUTE);
     }
 
-    private int acceptGas(ResourceLocation id, int amount, VaporAction action) {
+    private int acceptGas(Identifier id, int amount, VaporAction action) {
         CondenserTowerBlockEntity main = this.getMainPart();
         id = CondenserGas.canonicalize(id);
         if (id == null || amount <= 0) return 0;
@@ -179,7 +195,7 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
         return accepted;
     }
 
-    public ResourceLocation getGasId() {
+    public Identifier getGasId() {
         return this.getMainPart().gasId;
     }
 
@@ -187,7 +203,7 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
         return this.getMainPart().gasAmount;
     }
 
-    public int drainGas(ResourceLocation id, int amount) {
+    public int drainGas(Identifier id, int amount) {
         CondenserTowerBlockEntity main = this.getMainPart();
         id = CondenserGas.canonicalize(id);
         if (amount <= 0 || main.gasId == null || !main.gasId.equals(id)) return 0;
@@ -265,10 +281,10 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
     }
 
     @Override
-    protected void saveAdditional(CompoundTag tag, HolderLookup.Provider provider) {
-        super.saveAdditional(tag, provider);
+    protected void saveAdditional(ValueOutput tag) {
+        super.saveAdditional(tag);
         if (this.isMainPart()) {
-            tag.put(TAG_TANK, this.tank.writeToNBT(provider, new CompoundTag()));
+            tag.putChild(TAG_TANK, this.tank);
             if (this.gasId != null && this.gasAmount > 0) {
                 tag.putString(TAG_GAS_ID, this.gasId.toString());
                 tag.putInt(TAG_GAS_AMOUNT, this.gasAmount);
@@ -277,14 +293,14 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
     }
 
     @Override
-    public void loadAdditional(CompoundTag tag, HolderLookup.Provider provider) {
-        super.loadAdditional(tag, provider);
+    public void loadAdditional(ValueInput tag) {
+        super.loadAdditional(tag);
         if (this.isMainPart()) {
-            this.tank.readFromNBT(provider, tag.getCompound(TAG_TANK));
-            ResourceLocation parsed = CondenserGas.canonicalize(
-                ResourceLocation.tryParse(tag.getString(TAG_GAS_ID))
+            tag.readChild(TAG_TANK, this.tank);
+            Identifier parsed = CondenserGas.canonicalize(
+                Identifier.tryParse(tag.getStringOr(TAG_GAS_ID, ""))
             );
-            int amount = parsed == null ? 0 : Math.clamp(tag.getInt(TAG_GAS_AMOUNT), 0, CAPACITY);
+            int amount = parsed == null ? 0 : Math.clamp(tag.getIntOr(TAG_GAS_AMOUNT, 0), 0, CAPACITY);
             this.gasId = amount > 0 ? parsed : null;
             this.gasAmount = amount;
         }
@@ -292,15 +308,7 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
 
     @Override
     public CompoundTag getUpdateTag(HolderLookup.Provider provider) {
-        CompoundTag tag = super.getUpdateTag(provider);
-        if (this.isMainPart()) {
-            tag.put(TAG_TANK, this.tank.writeToNBT(provider, new CompoundTag()));
-            if (this.gasId != null && this.gasAmount > 0) {
-                tag.putString(TAG_GAS_ID, this.gasId.toString());
-                tag.putInt(TAG_GAS_AMOUNT, this.gasAmount);
-            }
-        }
-        return tag;
+        return this.saveWithoutMetadata(provider);
     }
 
     @Override
@@ -309,7 +317,7 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
     }
 
     /** 从任意塔部件返回对应的外向端口能力。 */
-    public static @Nullable IFluidHandler capability(
+    public static @Nullable ResourceHandler<FluidResource> capability(
         Level level,
         BlockPos pos,
         BlockState state,
@@ -340,56 +348,21 @@ public class CondenserTowerBlockEntity extends BlockEntity implements IFluidHand
         return main == null ? null : main.vaporConsumer;
     }
 
-    private static final class OutputOnlyHandler implements IFluidHandler {
-        private final IFluidHandler delegate;
-
-        private OutputOnlyHandler(IFluidHandler delegate) {
-            this.delegate = delegate;
-        }
-
-        @Override
-        public int getTanks() {
-            return this.delegate.getTanks();
-        }
-
-        @Override
-        public FluidStack getFluidInTank(int tank) {
-            return this.delegate.getFluidInTank(tank);
-        }
-
-        @Override
-        public int getTankCapacity(int tank) {
-            return this.delegate.getTankCapacity(tank);
-        }
-
-        @Override
-        public boolean isFluidValid(int tank, FluidStack stack) {
-            return false;
-        }
-
-        @Override
-        public int fill(FluidStack resource, FluidAction action) {
-            return 0;
-        }
-
-        @Override
-        public FluidStack drain(FluidStack resource, FluidAction action) {
-            return this.delegate.drain(resource, action);
-        }
-
-        @Override
-        public FluidStack drain(int maxDrain, FluidAction action) {
-            return this.delegate.drain(maxDrain, action);
+    private void sendTankUpdate() {
+        if (this.level != null) {
+            this.level.sendBlockUpdated(this.worldPosition, this.getBlockState(), this.getBlockState(), Block.UPDATE_ALL);
         }
     }
 
-    private void sendTankUpdate() {
-        if (this.level == null) return;
-        this.level.sendBlockUpdated(
-            this.worldPosition,
-            this.getBlockState(),
-            this.getBlockState(),
-            Block.UPDATE_ALL
-        );
+    @Override
+    public void preRemoveSideEffects(BlockPos pos, BlockState state) {
+        super.preRemoveSideEffects(pos, state);
+        if (this.level instanceof ServerLevel serverLevel) {
+            serverLevel.invalidateCapabilities(pos);
+            FluidNetworkManager.INSTANCE.markDirty(serverLevel);
+            if (this.isMainPart()) {
+                this.dropContents();
+            }
+        }
     }
 }

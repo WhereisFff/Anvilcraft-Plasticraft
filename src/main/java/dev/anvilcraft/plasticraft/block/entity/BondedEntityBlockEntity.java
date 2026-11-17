@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.block.entity;
 
-import dev.anvilcraft.lib.v2.recipe.cache.IItemHandlerCache;
+import dev.anvilcraft.lib.v2.recipe.cache.ItemResourceHandlerCache;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
@@ -18,28 +18,27 @@ import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticCrateAccess;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
-import dev.dubhe.anvilcraft.api.fluid.IFluidHandlerHolder;
+import dev.dubhe.anvilcraft.api.fluid.IFluidResourceHandlerHolder;
 import dev.dubhe.anvilcraft.api.injection.tooltip.ITooltipProviderExtension;
-import dev.dubhe.anvilcraft.item.AnvilHammerItem;
+import dev.dubhe.anvilcraft.item.tool.AnvilHammerItem;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.NbtUtils;
-import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.stats.Stats;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -52,21 +51,26 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.level.material.PushReaction;
+import net.minecraft.world.level.storage.TagValueInput;
+import net.minecraft.world.level.storage.TagValueOutput;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.attachment.AttachmentHolder;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
-import net.neoforged.neoforge.items.IItemHandler;
-import net.neoforged.neoforge.items.ItemStackHandler;
+import net.neoforged.neoforge.transfer.EmptyResourceHandler;
+import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.fluid.FluidStacksResourceHandler;
+import net.neoforged.neoforge.transfer.item.ItemResource;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
-import javax.annotation.Nullable;
 
 /** 保存被方块化实体完整数据并负责在解胶时恢复实体。 */
 public class BondedEntityBlockEntity extends BlockEntity
-    implements ITooltipProviderExtension, IItemHandlerCache, IFluidHandlerHolder {
+    implements ITooltipProviderExtension, ItemResourceHandlerCache, IFluidResourceHandlerHolder {
     private static final String TAG_INITIALIZED = "Initialized";
     private static final String TAG_ENTITY = "Entity";
     private static final String TAG_DISPLAY_STATE = "DisplayState";
@@ -92,7 +96,7 @@ public class BondedEntityBlockEntity extends BlockEntity
     private CompoundTag entityTag = new CompoundTag();
     private BlockState displayState = Blocks.AIR.defaultBlockState();
     private Direction attachmentFace = Direction.UP;
-    private @Nullable ResourceLocation supportBlockId;
+    private @Nullable Identifier supportBlockId;
     private boolean plastic;
     private byte orientation = PlasticEntityOrientation.DEFAULT.pack();
     private boolean pistonMovable = true;
@@ -105,9 +109,9 @@ public class BondedEntityBlockEntity extends BlockEntity
     private @Nullable Entity renderEntity;
     private @Nullable VoxelShape bondedInteractionShape;
     private @Nullable VoxelShape bondedCollisionShape;
-    private static final IItemHandler EMPTY_ITEM_HANDLER = new ItemStackHandler(0);
-    private static final IFluidHandler EMPTY_FLUID_HANDLER =
-        new FluidTank(0);
+    private static final ResourceHandler<ItemResource> EMPTY_ITEM_HANDLER = EmptyResourceHandler.instance();
+    // 砧工艺的锅谓词会查询第一个槽位；无可用锅时，对它报告零容量。
+    private static final ResourceHandler<FluidResource> EMPTY_FLUID_HANDLER = new FluidStacksResourceHandler(1, 0);
 
     public BondedEntityBlockEntity(
         BlockEntityType<? extends BondedEntityBlockEntity> type,
@@ -139,8 +143,9 @@ public class BondedEntityBlockEntity extends BlockEntity
         @Nullable PlasticEntityOrientation plasticOrientation,
         boolean originalNoGravity
     ) {
-        CompoundTag savedEntity = new CompoundTag();
-        if (!entity.save(savedEntity)) return false;
+        var output = TagValueOutput.createWithContext(ProblemReporter.DISCARDING, entity.registryAccess());
+        if (!entity.save(output)) return false;
+        CompoundTag savedEntity = output.buildResult();
         removeTransitFromSnapshot(savedEntity);
         this.entityTag = savedEntity;
         this.displayState = displayState;
@@ -171,8 +176,8 @@ public class BondedEntityBlockEntity extends BlockEntity
 
     private static void removeTransitFromSnapshot(CompoundTag savedEntity) {
         String attachmentsKey = AttachmentHolder.ATTACHMENTS_NBT_KEY;
-        if (!savedEntity.contains(attachmentsKey, Tag.TAG_COMPOUND)) return;
-        CompoundTag attachments = savedEntity.getCompound(attachmentsKey);
+        if (!savedEntity.contains(attachmentsKey)) return;
+        CompoundTag attachments = savedEntity.getCompoundOrEmpty(attachmentsKey);
         attachments.remove(ADHESIVE_TRANSIT_ATTACHMENT);
         attachments.remove(ENTITY_BONDS_ATTACHMENT);
         if (attachments.isEmpty()) {
@@ -291,7 +296,7 @@ public class BondedEntityBlockEntity extends BlockEntity
     public @Nullable Entity getOrCreateRenderEntity() {
         if (!this.initialized || !this.plastic || this.level == null) return null;
         if (this.renderEntity == null) {
-            this.renderEntity = EntityType.loadEntityRecursive(this.entityTag.copy(), this.level, entity -> entity);
+            this.renderEntity = EntityType.loadEntityRecursive(this.entityTag.copy(), this.level, EntitySpawnReason.LOAD, entity -> entity);
         }
         if (this.renderEntity instanceof UniversalPlasticEntity universal) {
             universal.setMoldedContentsChangedListener(() -> this.captureCachedEntity(true));
@@ -341,7 +346,7 @@ public class BondedEntityBlockEntity extends BlockEntity
                 MoldedPlasticCrateAccess.open(serverPlayer, crate, this.getBlockPos());
                 this.captureCachedEntity(true);
             }
-            return InteractionResult.sidedSuccess(player.level().isClientSide);
+            return InteractionResult.SUCCESS;
         }
         Vec3 relativeHit = hit.getLocation().subtract(plasticEntity.position());
         InteractionResult result = plasticEntity.interactAt(player, relativeHit, hand);
@@ -358,7 +363,7 @@ public class BondedEntityBlockEntity extends BlockEntity
                 result = plasticEntity.interact(player, hand);
             }
         }
-        if (!player.level().isClientSide) this.captureCachedEntity(true);
+        if (!player.level().isClientSide()) this.captureCachedEntity(true);
         return result;
     }
 
@@ -377,7 +382,7 @@ public class BondedEntityBlockEntity extends BlockEntity
         } else {
             result = plasticEntity.plasticraft$useAnvilHammer(player, hand, interactionFace);
         }
-        if (!player.level().isClientSide) this.captureCachedEntity(true);
+        if (!player.level().isClientSide()) this.captureCachedEntity(true);
         return result;
     }
 
@@ -419,25 +424,28 @@ public class BondedEntityBlockEntity extends BlockEntity
     }
 
     @Override
-    public IFluidHandler getFluidHandler() {
+    public ResourceHandler<FluidResource> getFluidHandler() {
         Entity entity = this.getOrCreateRenderEntity();
-        if (entity instanceof PlasticCauldron cauldron) {
-            return canAccessRecipeInventory(cauldron) ? cauldron.getFluidHandler() : EMPTY_FLUID_HANDLER;
+        if (entity instanceof PlasticCauldron cauldron && canAccessRecipeInventory(cauldron)) {
+            ResourceHandler<FluidResource> handler = cauldron.getFluidHandler();
+            if (handler.size() > 0) {
+                return handler;
+            }
         }
         return EMPTY_FLUID_HANDLER;
     }
 
-    public @Nullable IFluidHandler getCapabilityFluidHandler() {
+    public @Nullable ResourceHandler<FluidResource> getCapabilityFluidHandler() {
         Entity entity = this.getOrCreateRenderEntity();
         if (entity instanceof PlasticCauldron cauldron) {
             return canAccessRecipeInventory(cauldron) ? cauldron.getFluidHandler() : null;
         }
         if (entity instanceof UniversalPlasticEntity universal
-            && universal.getMoldedFluidHandler().getTanks() > 0) return universal.getMoldedFluidHandler();
+            && universal.getMoldedFluidHandler().size() > 0) return universal.getMoldedFluidHandler();
         return null;
     }
 
-    public @Nullable IFluidHandler getCapabilityFluidHandler(@Nullable Direction side) {
+    public @Nullable ResourceHandler<FluidResource> getCapabilityFluidHandler(@Nullable Direction side) {
         if (this.getOrCreateRenderEntity() instanceof UniversalPlasticEntity pot
             && MoldedLargeCauldronInteraction.applies(pot)) {
             return MoldedLargeCauldronInteraction.fluidAccess(pot, side);
@@ -445,23 +453,23 @@ public class BondedEntityBlockEntity extends BlockEntity
         return this.getCapabilityFluidHandler();
     }
 
-    public @Nullable IItemHandler getAutomationItemHandler(@Nullable Direction side) {
+    public @Nullable ResourceHandler<ItemResource> getAutomationItemHandler(@Nullable Direction side) {
         if (this.getOrCreateRenderEntity() instanceof UniversalPlasticEntity pot
             && MoldedLargeCauldronInteraction.applies(pot)) {
             Vec3 point = this.worldPosition.getCenter();
-            if (side != null) point = point.add(Vec3.atLowerCornerOf(side.getNormal()).scale(0.5));
+            if (side != null) point = point.add(Vec3.atLowerCornerOf(side.getUnitVec3i()).scale(0.5));
             return MoldedLargeCauldronInteraction.itemAccess(pot, side, point);
         }
         return this.getItemHandler();
     }
 
-    public @Nullable IItemHandler getItemHandler() {
+    public @Nullable ResourceHandler<ItemResource> getItemHandler() {
         Entity entity = this.getOrCreateRenderEntity();
         if (entity instanceof PlasticCauldron cauldron) {
             return canAccessRecipeInventory(cauldron) ? cauldron.getItemHandler() : null;
         }
         if (entity instanceof UniversalPlasticEntity universal
-            && universal.getMoldedItemHandler().getSlots() > 0) return universal.getMoldedItemHandler();
+            && universal.getMoldedItemHandler().size() > 0) return universal.getMoldedItemHandler();
         return null;
     }
 
@@ -476,7 +484,7 @@ public class BondedEntityBlockEntity extends BlockEntity
     }
 
     @Override
-    public IItemHandler getInput() {
+    public ResourceHandler<ItemResource> getInput() {
         Entity entity = this.getOrCreateRenderEntity();
         if (entity instanceof PlasticCauldron cauldron) {
             return canAccessRecipeInventory(cauldron) ? cauldron.getInput() : EMPTY_ITEM_HANDLER;
@@ -485,7 +493,7 @@ public class BondedEntityBlockEntity extends BlockEntity
     }
 
     @Override
-    public IItemHandler getOutput() {
+    public ResourceHandler<ItemResource> getOutput() {
         Entity entity = this.getOrCreateRenderEntity();
         if (entity instanceof PlasticCauldron cauldron) {
             return canAccessRecipeInventory(cauldron) ? cauldron.getOutput() : EMPTY_ITEM_HANDLER;
@@ -516,7 +524,7 @@ public class BondedEntityBlockEntity extends BlockEntity
     public @Nullable Entity releaseEntity(@Nullable Direction changedAttachmentFace) {
         if (!this.initialized || !(this.level instanceof ServerLevel serverLevel)) return null;
         this.captureCachedEntity(false);
-        Entity restored = EntityType.loadEntityRecursive(this.entityTag.copy(), serverLevel, entity -> entity);
+        Entity restored = EntityType.loadEntityRecursive(this.entityTag.copy(), serverLevel, EntitySpawnReason.LOAD, entity -> entity);
         if (restored == null) return null;
 
         if (restored instanceof AbstractPlasticEntity plasticEntity) {
@@ -555,7 +563,7 @@ public class BondedEntityBlockEntity extends BlockEntity
 
         serverLevel.setBlock(this.worldPosition, fixedState, Block.UPDATE_ALL);
         if (serverLevel.getBlockEntity(this.worldPosition) instanceof BondedEntityBlockEntity replacement) {
-            replacement.loadWithComponents(savedData, serverLevel.registryAccess());
+            replacement.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, serverLevel.registryAccess(), savedData));
             replacement.setChangedAndSync();
         }
         return null;
@@ -574,51 +582,51 @@ public class BondedEntityBlockEntity extends BlockEntity
     }
 
     @Override
-    protected void saveAdditional(CompoundTag tag, HolderLookup.Provider provider) {
+    protected void saveAdditional(ValueOutput tag) {
         this.captureCachedEntity(false);
-        super.saveAdditional(tag, provider);
+        super.saveAdditional(tag);
         this.saveBondData(tag);
     }
 
     @Override
-    public void loadAdditional(CompoundTag tag, HolderLookup.Provider provider) {
+    public void loadAdditional(ValueInput tag) {
         if (this.renderEntity instanceof UniversalPlasticEntity universal) {
             universal.plasticraft$removeVirtualRedstone();
         }
-        super.loadAdditional(tag, provider);
-        this.initialized = tag.getBoolean(TAG_INITIALIZED);
-        this.entityTag = tag.contains(TAG_ENTITY, Tag.TAG_COMPOUND)
-            ? tag.getCompound(TAG_ENTITY).copy()
+        super.loadAdditional(tag);
+        this.initialized = tag.getBooleanOr(TAG_INITIALIZED, false);
+        this.entityTag = tag.keySet().contains(TAG_ENTITY)
+            ? tag.read(TAG_ENTITY, CompoundTag.CODEC).orElseGet(CompoundTag::new)
             : new CompoundTag();
-        this.displayState = tag.contains(TAG_DISPLAY_STATE, Tag.TAG_COMPOUND)
-            ? NbtUtils.readBlockState(provider.lookupOrThrow(Registries.BLOCK), tag.getCompound(TAG_DISPLAY_STATE))
+        this.displayState = tag.keySet().contains(TAG_DISPLAY_STATE)
+            ? tag.read(TAG_DISPLAY_STATE, BlockState.CODEC).orElse(Blocks.AIR.defaultBlockState())
             : Blocks.AIR.defaultBlockState();
-        Direction loadedFace = Direction.byName(tag.getString(TAG_ATTACHMENT_FACE));
+        Direction loadedFace = Direction.byName(tag.getStringOr(TAG_ATTACHMENT_FACE, ""));
         this.attachmentFace = loadedFace == null ? Direction.UP : loadedFace;
-        this.supportBlockId = tag.contains(TAG_SUPPORT_BLOCK, Tag.TAG_STRING)
-            ? ResourceLocation.tryParse(tag.getString(TAG_SUPPORT_BLOCK))
+        this.supportBlockId = tag.keySet().contains(TAG_SUPPORT_BLOCK)
+            ? Identifier.tryParse(tag.getStringOr(TAG_SUPPORT_BLOCK, ""))
             : null;
-        this.plastic = tag.getBoolean(TAG_PLASTIC);
-        this.orientation = tag.contains(TAG_ORIENTATION, Tag.TAG_ANY_NUMERIC)
-            ? tag.getByte(TAG_ORIENTATION)
+        this.plastic = tag.getBooleanOr(TAG_PLASTIC, false);
+        this.orientation = tag.keySet().contains(TAG_ORIENTATION)
+            ? tag.getByteOr(TAG_ORIENTATION, (byte) 0)
             : PlasticEntityOrientation.DEFAULT.pack();
-        this.pistonMovable = !tag.contains(TAG_PISTON_MOVABLE) || tag.getBoolean(TAG_PISTON_MOVABLE);
-        this.originalNoGravity = tag.getBoolean(TAG_ORIGINAL_NO_GRAVITY);
-        Direction loadedAdhesiveFace = Direction.byName(tag.getString(TAG_ADHESIVE_LOCAL_FACE));
+        this.pistonMovable = !tag.keySet().contains(TAG_PISTON_MOVABLE) || tag.getBooleanOr(TAG_PISTON_MOVABLE, false);
+        this.originalNoGravity = tag.getBooleanOr(TAG_ORIGINAL_NO_GRAVITY, false);
+        Direction loadedAdhesiveFace = Direction.byName(tag.getStringOr(TAG_ADHESIVE_LOCAL_FACE, ""));
         this.adhesiveLocalFace = loadedAdhesiveFace == null
             ? this.getPlasticOrientation().localDirection(this.attachmentFace.getOpposite())
             : loadedAdhesiveFace;
-        this.pendingReturnOrientation = tag.contains(TAG_PENDING_RETURN_ORIENTATION, Tag.TAG_ANY_NUMERIC)
-            ? tag.getByte(TAG_PENDING_RETURN_ORIENTATION)
+        this.pendingReturnOrientation = tag.keySet().contains(TAG_PENDING_RETURN_ORIENTATION)
+            ? tag.getByteOr(TAG_PENDING_RETURN_ORIENTATION, (byte) 0)
             : null;
-        this.hammerReturnAt = tag.contains(TAG_HAMMER_RETURN_AT, Tag.TAG_ANY_NUMERIC)
-            ? tag.getLong(TAG_HAMMER_RETURN_AT)
+        this.hammerReturnAt = tag.keySet().contains(TAG_HAMMER_RETURN_AT)
+            ? tag.getLongOr(TAG_HAMMER_RETURN_AT, 0L)
             : -1L;
-        this.hammerReturnFrom = tag.contains(TAG_HAMMER_RETURN_FROM, Tag.TAG_ANY_NUMERIC)
-            ? tag.getByte(TAG_HAMMER_RETURN_FROM)
+        this.hammerReturnFrom = tag.keySet().contains(TAG_HAMMER_RETURN_FROM)
+            ? tag.getByteOr(TAG_HAMMER_RETURN_FROM, (byte) 0)
             : this.orientation;
-        this.hammerReturnStarted = tag.contains(TAG_HAMMER_RETURN_STARTED, Tag.TAG_ANY_NUMERIC)
-            ? tag.getLong(TAG_HAMMER_RETURN_STARTED)
+        this.hammerReturnStarted = tag.keySet().contains(TAG_HAMMER_RETURN_STARTED)
+            ? tag.getLongOr(TAG_HAMMER_RETURN_STARTED, 0L)
             : -1L;
         this.renderEntity = null;
         this.clearBondedShapeCache();
@@ -628,9 +636,9 @@ public class BondedEntityBlockEntity extends BlockEntity
     @Override
     public CompoundTag getUpdateTag(HolderLookup.Provider provider) {
         this.captureCachedEntity(false);
-        CompoundTag tag = super.getUpdateTag(provider);
+        TagValueOutput tag = TagValueOutput.createWithContext(ProblemReporter.DISCARDING, provider);
         this.saveBondData(tag);
-        return tag;
+        return tag.buildResult();
     }
 
     @Override
@@ -645,11 +653,11 @@ public class BondedEntityBlockEntity extends BlockEntity
             : List.of();
     }
 
-    private void saveBondData(CompoundTag tag) {
+    private void saveBondData(ValueOutput tag) {
         tag.putBoolean(TAG_INITIALIZED, this.initialized);
         if (!this.initialized) return;
-        tag.put(TAG_ENTITY, this.entityTag.copy());
-        tag.put(TAG_DISPLAY_STATE, NbtUtils.writeBlockState(this.displayState));
+        tag.store(TAG_ENTITY, CompoundTag.CODEC, this.entityTag);
+        tag.store(TAG_DISPLAY_STATE, BlockState.CODEC, this.displayState);
         tag.putString(TAG_ATTACHMENT_FACE, this.attachmentFace.getName());
         if (this.supportBlockId != null) tag.putString(TAG_SUPPORT_BLOCK, this.supportBlockId.toString());
         tag.putBoolean(TAG_PLASTIC, this.plastic);
@@ -717,9 +725,10 @@ public class BondedEntityBlockEntity extends BlockEntity
     }
 
     private void captureCachedEntity(boolean sync) {
-        if (!this.initialized || this.renderEntity == null || this.level == null || this.level.isClientSide) return;
-        CompoundTag savedEntity = new CompoundTag();
-        if (!this.renderEntity.save(savedEntity)) return;
+        if (!this.initialized || this.renderEntity == null || this.level == null || this.level.isClientSide()) return;
+        var output = TagValueOutput.createWithContext(ProblemReporter.DISCARDING, this.renderEntity.registryAccess());
+        if (!this.renderEntity.save(output)) return;
+        CompoundTag savedEntity = output.buildResult();
         this.entityTag = savedEntity;
         this.clearBondedShapeCache();
         if (this.renderEntity instanceof AbstractPlasticEntity plasticEntity) {

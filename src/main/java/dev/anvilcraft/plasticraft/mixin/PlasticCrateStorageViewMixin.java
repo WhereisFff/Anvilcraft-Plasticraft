@@ -41,14 +41,14 @@ abstract class PlasticCrateStorageViewMixin {
         method = "getView(Lnet/minecraft/core/HolderLookup$Provider;Ljava/util/UUID;J)"
             + "Ldev/dubhe/anvilcraft/rpc/StorageServerStub$StorageView;",
         at = @At(value = "INVOKE",
-            target = "Lnet/minecraft/world/level/Level;getBlockEntity(Lnet/minecraft/core/BlockPos;)"
+            target = "Lnet/minecraft/server/level/ServerLevel;getBlockEntity(Lnet/minecraft/core/BlockPos;)"
                 + "Lnet/minecraft/world/level/block/entity/BlockEntity;", remap = true)
     )
     private static @Nullable BlockEntity plasticraft$crateSource(
-        Level level, BlockPos pos, HolderLookup.Provider registries, UUID playerId, long source
+        ServerLevel level, BlockPos pos, HolderLookup.Provider registries, UUID playerId, long source
     ) {
-        if (MoldedPlasticCrateAccess.isSource(source) && level instanceof ServerLevel serverLevel) {
-            ServerPlayer player = serverLevel.getServer().getPlayerList().getPlayer(playerId);
+        if (MoldedPlasticCrateAccess.isSource(source)) {
+            ServerPlayer player = level.getServer().getPlayerList().getPlayer(playerId);
             return player == null ? null : MoldedPlasticCrateAccess.resolve(player, source);
         }
         return level.getBlockEntity(pos);

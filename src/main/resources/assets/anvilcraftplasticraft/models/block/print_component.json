@@ -7,16 +7,9 @@
 		"particle": "anvilcraftplasticraft:block/plastic_molding_chamber"
 	},
 	"children": {
-		"body": {
-			"parent": "anvilcraftplasticraft:block/print_component_body",
-			"render_type": "minecraft:cutout"
-		},
-		"screen": {
-			"parent": "anvilcraftplasticraft:block/print_component_screen",
-			"render_type": "minecraft:translucent"
-		}
+		"body": "anvilcraftplasticraft:block/print_component_body",
+		"screen": "anvilcraftplasticraft:block/print_component_screen"
 	},
-	"item_render_order": ["body", "screen"],
 	"display": {
 		"thirdperson_righthand": {
 			"rotation": [75, 45, 0],

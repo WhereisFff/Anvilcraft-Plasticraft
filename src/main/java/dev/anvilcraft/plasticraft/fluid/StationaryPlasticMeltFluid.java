@@ -1,8 +1,9 @@
 package dev.anvilcraft.plasticraft.fluid;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.BlockGetter;
-import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.fluids.BaseFlowingFluid;
@@ -18,7 +19,7 @@ public final class StationaryPlasticMeltFluid {
         }
 
         @Override
-        public void tick(Level level, BlockPos pos, FluidState state) {
+        public void tick(ServerLevel level, BlockPos pos, BlockState block, FluidState state) {
             // 熔体只保留被放置的一格，不执行原版扩散。
         }
 
@@ -34,7 +35,7 @@ public final class StationaryPlasticMeltFluid {
         }
 
         @Override
-        public void tick(Level level, BlockPos pos, FluidState state) {
+        public void tick(ServerLevel level, BlockPos pos, BlockState block, FluidState state) {
             // 兼容旧存档中的 flowing 状态，同样禁止扩散。
         }
 

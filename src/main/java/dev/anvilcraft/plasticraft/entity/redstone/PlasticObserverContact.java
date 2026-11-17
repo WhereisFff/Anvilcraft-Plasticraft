@@ -49,14 +49,14 @@ public final class PlasticObserverContact {
             BlockState state = entity.level().getBlockState(pos);
             if (!state.is(Blocks.OBSERVER)) continue;
             Direction facing = state.getValue(ObserverBlock.FACING);
-            Vec3 probe = Vec3.atLowerCornerOf(facing.getOpposite().getNormal()).scale(PROBE_DISTANCE);
+            Vec3 probe = Vec3.atLowerCornerOf(facing.getOpposite().getUnitVec3i()).scale(PROBE_DISTANCE);
             PlasticConvexCollisionResolver.SweepContact contact = PlasticConvexCollisionResolver.sweep(
                 entityShapes,
                 List.of(PlasticConvexShape.box(new AABB(pos))),
                 probe
             );
             if (contact != null
-                && contact.normal().dot(Vec3.atLowerCornerOf(facing.getNormal()))
+                && contact.normal().dot(Vec3.atLowerCornerOf(facing.getUnitVec3i()))
                     > NORMAL_ALIGNMENT_EPSILON) {
                 contacts.add(pos);
             }
@@ -84,7 +84,7 @@ public final class PlasticObserverContact {
     }
 
     private static void scheduleSignal(Level level, BlockPos pos) {
-        if (level.isClientSide || !level.hasChunkAt(pos)) return;
+        if (level.isClientSide() || !level.hasChunkAt(pos)) return;
         BlockState state = level.getBlockState(pos);
         if (!state.is(Blocks.OBSERVER)
             || state.getValue(ObserverBlock.POWERED)

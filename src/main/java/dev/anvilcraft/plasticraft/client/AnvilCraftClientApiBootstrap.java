@@ -7,19 +7,22 @@ import dev.anvilcraft.plasticraft.block.IgnitedFluidEffects;
 import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.MoldingBlueprintDiskPreviewRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticOilCatalysisRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticRenderGeometry;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
-import dev.dubhe.anvilcraft.block.entity.fluid.PipeCheckValveBlockEntity;
+import dev.dubhe.anvilcraft.block.entity.fluid.AbstractPipeBlockEntity;
 import dev.dubhe.anvilcraft.block.fluid.PipeBlock;
 import dev.dubhe.anvilcraft.client.renderer.blockentity.FishTankRenderHooks;
 import dev.dubhe.anvilcraft.client.renderer.blockentity.LargeCauldronRenderHooks;
 import dev.dubhe.anvilcraft.client.support.StructureDiskPreviewSupport;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.util.LevelLike;
-import dev.dubhe.anvilcraft.util.RecipeUtil;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
@@ -30,6 +33,9 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.Half;
 import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.fluid.FluidUtil;
+import org.jspecify.annotations.Nullable;
 
 /** 客户端扩展点注册。不得在此初始化 JEI/Jade 客户端 API。 */
 public final class AnvilCraftClientApiBootstrap {
@@ -44,7 +50,6 @@ public final class AnvilCraftClientApiBootstrap {
     }
 
     public static void register() {
-        RecipeUtil.registerLevelLikeCustomizer(AnvilCraftClientApiBootstrap::seedCondenserValves);
         StructureDiskPreviewSupport.registerPreviewHandler(MoldingBlueprintDiskPreviewRenderer::renderPreviewAt);
         LargeCauldronRenderHooks.register(new LargeCauldronRenderHooks.Handler() {
             @Override
@@ -53,38 +58,38 @@ public final class AnvilCraftClientApiBootstrap {
             }
 
             @Override
-            public void afterRender(
-                LargeCauldronBlockEntity cauldron,
-                float partialTick,
-                PoseStack poseStack,
-                MultiBufferSource buffers,
-                int packedLight,
-                int packedOverlay
-            ) {
-                renderLargeCauldronOverlay(cauldron, partialTick, poseStack, buffers, packedLight, packedOverlay);
+            public LargeCauldronRenderHooks.@Nullable AfterRender extract(LargeCauldronBlockEntity cauldron, float partialTick) {
+                if (cauldron.getLevel() == null) {
+                    return null;
+                }
+                PlasticRenderGeometry geometry = new PlasticRenderGeometry();
+                int light = LevelRenderer.getLightCoords(cauldron.getLevel(), cauldron.getBlockPos());
+                renderLargeCauldronOverlay(cauldron, partialTick, new PoseStack(), geometry, light, OverlayTexture.NO_OVERLAY);
+                return (pose, collector, packedLight, overlay) -> geometry.submit(pose, collector,
+                    Minecraft.getInstance().gameRenderer.getGameRenderState().levelRenderState.cameraRenderState);
             }
         });
         FishTankRenderHooks.register(new FishTankRenderHooks.Handler() {
             @Override
             public boolean showVanillaFire(FishTankBlockEntity tank) {
-                return !tank.getFluidHandler().getFluid().is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
+                return !FluidUtil.getStack(tank.getFluidHandler(), 0).is(PlasticraftFluids.HIGH_HEAT_FUEL.get());
             }
 
             @Override
-            public void afterRender(
-                FishTankBlockEntity tank,
-                float partialTick,
-                PoseStack poseStack,
-                MultiBufferSource buffers,
-                int packedLight,
-                int packedOverlay
-            ) {
-                renderFishTankOverlay(tank, partialTick, poseStack, buffers, packedLight, packedOverlay);
+            public FishTankRenderHooks.@Nullable AfterRender extract(FishTankBlockEntity tank, float partialTick) {
+                if (tank.getLevel() == null) {
+                    return null;
+                }
+                PlasticRenderGeometry geometry = new PlasticRenderGeometry();
+                int light = LevelRenderer.getLightCoords(tank.getLevel(), tank.getBlockPos());
+                renderFishTankOverlay(tank, partialTick, new PoseStack(), geometry, light, OverlayTexture.NO_OVERLAY);
+                return (pose, collector, packedLight, overlay) -> geometry.submit(pose, collector,
+                    Minecraft.getInstance().gameRenderer.getGameRenderState().levelRenderState.cameraRenderState);
             }
         });
     }
 
-    private static void seedCondenserValves(MultiblockDefinition definition, LevelLike level) {
+    public static void seedCondenserValves(MultiblockDefinition definition, LevelLike level) {
         if (!isCondenserInput(definition)) return;
         seedValve(level, new BlockPos(0, 2, 1), Direction.WEST);
         seedValve(level, new BlockPos(2, 2, 1), Direction.EAST);
@@ -132,7 +137,7 @@ public final class AnvilCraftClientApiBootstrap {
     }
 
     private static void seedValve(LevelLike level, BlockPos pos, Direction outward) {
-        if (level.getBlockEntity(pos) instanceof PipeCheckValveBlockEntity valve) {
+        if (level.getBlockEntity(pos) instanceof AbstractPipeBlockEntity valve) {
             var parent = valve.getLevel();
             valve.setLevel(null);
             valve.setValve(outward, outward);
@@ -150,8 +155,8 @@ public final class AnvilCraftClientApiBootstrap {
     ) {
         if (!cauldron.isMainPart() || cauldron.getLevel() == null) return;
         float layerMinY = CAULDRON_MIN_Y;
-        for (int tank = 0; tank < cauldron.getFluids().getTanks(); tank++) {
-            FluidStack fluid = cauldron.getFluids().getFluidInTank(tank);
+        for (int tank = 0; tank < cauldron.getFluids().size(); tank++) {
+            FluidStack fluid = FluidUtil.getStack(cauldron.getFluids(), tank);
             if (fluid.isEmpty()) continue;
             float layerMaxY = layerMinY
                 + CAULDRON_CONTENT_HEIGHT * fluid.getAmount() / LargeCauldronFluidHandler.totalCapacity();
@@ -198,9 +203,9 @@ public final class AnvilCraftClientApiBootstrap {
         int packedLight,
         int packedOverlay
     ) {
-        FluidStack fluid = tank.getFluidHandler().getFluid();
+        FluidStack fluid = FluidUtil.getStack(tank.getFluidHandler(), 0);
         if (tank.getLevel() != null && isCatalyzingFluid(fluid)) {
-            float fill = Math.min((float) fluid.getAmount() / tank.getFluidHandler().getCapacity(), 1.0F);
+            float fill = Math.min((float) fluid.getAmount() / tank.getFluidHandler().getCapacityAsInt(0, FluidResource.EMPTY), 1.0F);
             float surfaceY = TANK_WALL + (1.0F - 2.0F * TANK_WALL) * fill;
             PlasticOilCatalysisRenderer.renderContainerOverlay(
                 tank.getLevel(),
@@ -220,7 +225,7 @@ public final class AnvilCraftClientApiBootstrap {
             );
         }
         if (!tank.isIgnited() || !fluid.is(PlasticraftFluids.HIGH_HEAT_FUEL.get())) return;
-        float fill = Math.min((float) fluid.getAmount() / tank.getFluidHandler().getCapacity(), 1.0F);
+        float fill = Math.min((float) fluid.getAmount() / tank.getFluidHandler().getCapacityAsInt(0, FluidResource.EMPTY), 1.0F);
         float surfaceY = TANK_WALL + (1.0F - 2.0F * TANK_WALL) * fill;
         IgnitedFluidFlameRenderer.renderBlue(poseStack, buffers, surfaceY, 1.0F, packedOverlay);
     }

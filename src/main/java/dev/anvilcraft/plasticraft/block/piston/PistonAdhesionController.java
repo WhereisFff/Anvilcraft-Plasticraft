@@ -6,15 +6,15 @@ import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.piston.PistonMovingBlockEntity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,7 +50,7 @@ public final class PistonAdhesionController {
         }
 
         // 客户端在原版活塞事件前已经收到服务端迁移后的区块和实体附件。
-        if (level.isClientSide) return;
+        if (level.isClientSide()) return;
 
         BondedFallingBlocks.moveAll(level, positions, movementDirection);
         AABB searchBounds = structureBounds(positions).inflate(ENTITY_SEARCH_MARGIN);
@@ -141,7 +141,7 @@ public final class PistonAdhesionController {
     private static @Nullable PistonMovement findMovement(
         Level level,
         BlockPos supportPos,
-        ResourceLocation supportBlockId
+        Identifier supportBlockId
     ) {
         PistonMovement atDestination = movementFromPiston(level, supportPos, supportBlockId);
         if (atDestination != null) return atDestination;
@@ -156,7 +156,7 @@ public final class PistonAdhesionController {
     private static @Nullable PistonMovement movementFromPiston(
         Level level,
         BlockPos destination,
-        ResourceLocation supportBlockId
+        Identifier supportBlockId
     ) {
         if (!level.hasChunkAt(destination)) return null;
         BlockEntity blockEntity = level.getBlockEntity(destination);
@@ -177,7 +177,7 @@ public final class PistonAdhesionController {
     private static @Nullable Vec3 movingOffset(
         Level level,
         PistonMovement movement,
-        ResourceLocation supportBlockId,
+        Identifier supportBlockId,
         float partialTick,
         boolean advanceToNextTick
     ) {
@@ -208,7 +208,7 @@ public final class PistonAdhesionController {
 
     private static boolean isCompletedSupport(Level level, PistonMovement movement, EntityAdhesion adhesion) {
         if (!level.hasChunkAt(movement.destination())) return false;
-        ResourceLocation blockId = BuiltInRegistries.BLOCK.getKey(
+        Identifier blockId = BuiltInRegistries.BLOCK.getKey(
             level.getBlockState(movement.destination()).getBlock()
         );
         return adhesion.supportBlockId().equals(blockId)

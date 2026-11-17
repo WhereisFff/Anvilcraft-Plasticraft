@@ -6,10 +6,10 @@ import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContentSummary;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.dubhe.anvilcraft.api.tooltip.TooltipRenderHelper;
-import dev.dubhe.anvilcraft.item.AnvilHammerItem;
+import dev.dubhe.anvilcraft.item.tool.AnvilHammerItem;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
@@ -29,7 +29,7 @@ public final class AdhesiveBondHud {
     private AdhesiveBondHud() {
     }
 
-    public static void render(GuiGraphics graphics, DeltaTracker ignored) {
+    public static void render(GuiGraphicsExtractor graphics, DeltaTracker ignored) {
         Minecraft minecraft = Minecraft.getInstance();
         LocalPlayer player = minecraft.player;
         if (player == null || minecraft.screen != null || minecraft.options.hideGui) return;

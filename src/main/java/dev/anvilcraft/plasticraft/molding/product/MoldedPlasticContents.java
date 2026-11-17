@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.molding.product;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import dev.anvilcraft.lib.v2.util.UnlimitedItemStack;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -136,7 +137,7 @@ public record MoldedPlasticContents(
         int result = 1;
         for (StoredItem item : this.items) {
             result = 31 * result + item.slot;
-            result = 31 * result + Objects.hash(item.stack.getItemHolder().unwrapKey().orElse(null), item.stack.getCount(), item.stack.getComponentsPatch());
+            result = 31 * result + Objects.hash(item.stack.typeHolder().unwrapKey().orElse(null), item.stack.getCount(), item.stack.getComponentsPatch());
         }
         for (FluidStack fluid : this.fluids) {
             result = 31 * result + Objects.hash(fluid.getFluid(), fluid.getAmount(), fluid.getComponentsPatch());
@@ -234,7 +235,8 @@ public record MoldedPlasticContents(
     public record StoredItem(int slot, ItemStack stack) {
         public static final Codec<StoredItem> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.fieldOf("slot").forGetter(StoredItem::slot),
-            ItemStack.CODEC.fieldOf("stack").forGetter(StoredItem::stack)
+            UnlimitedItemStack.CODEC.xmap(UnlimitedItemStack::toStack, UnlimitedItemStack::new)
+                .fieldOf("stack").forGetter(StoredItem::stack)
         ).apply(instance, StoredItem::new));
 
         public StoredItem {

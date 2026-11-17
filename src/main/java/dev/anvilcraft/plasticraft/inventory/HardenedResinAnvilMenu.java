@@ -176,9 +176,9 @@ public class HardenedResinAnvilMenu extends AnvilMenu {
     }
 
     @Override
-    public void createResult() {
+    protected void createResultInternal() {
         if (this.calculatingVanillaResult) {
-            super.createResult();
+            super.createResultInternal();
             return;
         }
 
@@ -213,7 +213,7 @@ public class HardenedResinAnvilMenu extends AnvilMenu {
             output.set(DataComponents.REPAIR_COST, previousRepairCost);
         }
         this.freeResinHammerRepair = true;
-        this.setMaximumCost(0L);
+        this.setCost(0);
         this.broadcastChanges();
     }
 
@@ -227,7 +227,7 @@ public class HardenedResinAnvilMenu extends AnvilMenu {
         this.calculatingVanillaResult = true;
         try {
             if (!super.setItemName(unchangedName)) {
-                super.createResult();
+                super.createResultInternal();
             }
         } finally {
             this.calculatingVanillaResult = false;
@@ -245,7 +245,7 @@ public class HardenedResinAnvilMenu extends AnvilMenu {
             this.freeRename = true;
             // 原版的临时计算会包含先前工作惩罚。
             // 纯重命名明确免费，此规则也适用于曾经修复过的物品。
-            this.setMaximumCost(0L);
+            this.setCost(0);
         }
 
         if (StringUtil.isBlank(this.requestedItemName)) {

@@ -8,8 +8,8 @@ import dev.anvilcraft.plasticraft.block.PlasticMoldingMachineState;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.PlasticMoldingChamberBlockEntity;
 import dev.anvilcraft.plasticraft.block.piston.PlasticPistonOccupancy;
-import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.EngineeringPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesivePathPlanner;
@@ -30,8 +30,8 @@ import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingFormingMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
-import dev.anvilcraft.plasticraft.molding.machine.MoldingProcessSnapshot;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingDoorState;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingProcessSnapshot;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProductionMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingWaitReason;
 import dev.anvilcraft.plasticraft.molding.machine.PlasticMoldingAnvilProcessor;
@@ -42,14 +42,9 @@ import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.event.giantanvil.GiantAnvilLandingEventListener;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Optional;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.gametest.framework.GameTest;
-import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -87,6 +82,11 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
+import net.neoforged.testframework.gametest.GameTest;
+
+import java.util.Comparator;
+import java.util.List;
+import java.util.Optional;
 
 public final class PlasticMoldingProductionGameTests {
     private static final double EPSILON = 1.0E-8;
@@ -420,7 +420,7 @@ public final class PlasticMoldingProductionGameTests {
                 Direction direction = index < directions.length ? directions[index] : Direction.EAST;
                 BlockState carrier = carriers[Math.max(0, index - directions.length + 1)];
                 Vec3 offset = plastics[index].position().subtract(starts[index]);
-                double travel = offset.dot(Vec3.atLowerCornerOf(direction.getNormal()));
+                double travel = offset.dot(Vec3.atLowerCornerOf(direction.getUnitVec3i()));
                 String label = carrier + " toward " + direction;
                 check(!PlasticPistonOccupancy.isMoving(plastics[index]),
                     label + " did not finish moving the plastic entity");
@@ -430,7 +430,7 @@ public final class PlasticMoldingProductionGameTests {
                     check(Math.abs(travel - 1.0D) < 0.08D,
                         label + " unexpectedly launched plastic: travel=" + travel);
                 }
-                check(offset.subtract(Vec3.atLowerCornerOf(direction.getNormal()).scale(travel)).length() < 0.08D,
+                check(offset.subtract(Vec3.atLowerCornerOf(direction.getUnitVec3i()).scale(travel)).length() < 0.08D,
                     label + " deflected plastic away from the push axis");
             }
             helper.succeed();
@@ -791,7 +791,7 @@ public final class PlasticMoldingProductionGameTests {
             BlockPos occupied = support.above();
             check(helper.getBlockState(occupied).is(PlasticraftBlocks.UNIVERSAL_PLASTIC.get()),
                 "sideways model canceled instead of completing its upright transit");
-            check(helper.getBlockEntity(occupied) instanceof BondedEntityBlockEntity bonded
+            check(helper.getLevel().getBlockEntity(helper.absolutePos(occupied)) instanceof BondedEntityBlockEntity bonded
                     && bonded.getPlasticOrientation().equals(plan.targetOrientation()),
                 "completed upright transit lost its target orientation");
             helper.succeed();
@@ -825,9 +825,9 @@ public final class PlasticMoldingProductionGameTests {
             for (int turn = 0; turn < 4; ++turn) {
                 PlasticEntityOrientation orientation = new PlasticEntityOrientation(face, turn);
                 entity.setOrientation(orientation);
-                CompoundTag saved = entity.saveWithoutId(new CompoundTag());
+                CompoundTag saved = PlasticraftTestData.save(entity);
                 UniversalPlasticEntity loaded = new UniversalPlasticEntity(PlasticraftEntities.UNIVERSAL_PLASTIC.get(), helper.getLevel());
-                loaded.load(saved);
+                PlasticraftTestData.read(loaded.registryAccess(), saved, loaded::load);
                 check(loaded.getOrientation().equals(orientation), "saved product entity lost orientation " + face + "/" + turn);
                 check(loaded.getMoldedData().orElseThrow().orientation().equals(PlasticEntityOrientation.DEFAULT), "saved product item data retained orientation " + face + "/" + turn);
                 ItemStack recovered = entity.getDropStack();
@@ -867,9 +867,9 @@ public final class PlasticMoldingProductionGameTests {
         helper.setBlock(bondedPos.west(), Blocks.STONE);
         BlockState bondedState = displayState.setValue(AbstractPlasticEntityBlock.BONDED, true);
         helper.setBlock(bondedPos, bondedState);
-        BlockEntity blockEntity = helper.getBlockEntity(bondedPos);
+        BlockEntity blockEntity = helper.getLevel().getBlockEntity(helper.absolutePos(bondedPos));
         if (!(blockEntity instanceof BondedEntityBlockEntity bonded)) {
-            throw new GameTestAssertException("bonded dynamic product block entity was missing");
+            throw new PlasticraftTestFailure("bonded dynamic product block entity was missing");
         }
         check(bonded.initialize(bondedProduct, displayState, Direction.EAST, bondedOrientation, false), "dynamic product could not initialize bonded storage");
         UniversalPlasticEntity renderEntity = (UniversalPlasticEntity)bonded.getOrCreateRenderEntity();
@@ -880,21 +880,21 @@ public final class PlasticMoldingProductionGameTests {
         CompoundTag bondedTag = bonded.saveWithoutMetadata(helper.getLevel().registryAccess());
         BondedEntityBlockEntity loadedBonded = new BondedEntityBlockEntity(PlasticraftBlockEntities.BONDED_ENTITY.get(), bonded.getBlockPos(), bondedState);
         loadedBonded.setLevel(helper.getLevel());
-        loadedBonded.loadWithComponents(bondedTag, helper.getLevel().registryAccess());
+        PlasticraftTestData.read(helper.getLevel().registryAccess(), bondedTag, loadedBonded::loadWithComponents);
         check(loadedBonded.getPlasticOrientation().equals(bondedOrientation), "bonded persistence lost the 24-way orientation");
         Entity entity = loadedBonded.getOrCreateRenderEntity();
         check(entity instanceof UniversalPlasticEntity loadedRender
             && loadedRender.getMoldedData().orElseThrow().equals(bondedData), "bonded persistence lost dynamic product data");
         ItemStack bondedClone = PlasticraftBlocks.UNIVERSAL_PLASTIC.get().getCloneItemStack(
-            bondedState,
-            new BlockHitResult(helper.absolutePos(bondedPos).getCenter(), Direction.UP, helper.absolutePos(bondedPos), false),
             helper.getLevel(),
             helper.absolutePos(bondedPos),
+            bondedState,
+            true,
             player
         );
         check(MoldedPlasticData.get(bondedClone).orElseThrow().equals(baseData), "pick-block on a bonded product returned the generic universal-plastic block");
         check(helper.getLevel().destroyBlock(helper.absolutePos(bondedPos), true, player), "bonded product could not be destroyed for drop verification");
-        ItemStack bondedDrop = helper.getLevel().getEntitiesOfClass(ItemEntity.class, new AABB(helper.absolutePos(bondedPos)).inflate(1.0), item -> MoldedPlasticData.get(item.getItem()).isPresent()).stream().map(ItemEntity::getItem).findFirst().orElseThrow(() -> new GameTestAssertException("bonded product destruction produced no molded item"));
+        ItemStack bondedDrop = helper.getLevel().getEntitiesOfClass(ItemEntity.class, new AABB(helper.absolutePos(bondedPos)).inflate(1.0), item -> MoldedPlasticData.get(item.getItem()).isPresent()).stream().map(ItemEntity::getItem).findFirst().orElseThrow(() -> new PlasticraftTestFailure("bonded product destruction produced no molded item"));
         check(ItemStack.isSameItemSameComponents(bondedClone, bondedDrop), "bonded pick-block result differed from its destruction drop");
         player.discard();
         helper.succeed();
@@ -1099,7 +1099,7 @@ public final class PlasticMoldingProductionGameTests {
         for (Entity entity : entitiesIn(helper.getLevel(), ready.bounds())) {
             entity.discard();
         }
-        ItemStack clayRemainder = ready.chamber().clayItemHandler().insertItem(0, new ItemStack(Items.CLAY_BALL, 108), false);
+        ItemStack clayRemainder = PlasticraftTestData.items(ready.chamber().clayItemHandler()).insertItem(0, new ItemStack(Items.CLAY_BALL, 108), false);
         check(clayRemainder.isEmpty(), "returned clay could not be fed back through the item capability");
         tick(ready.chamber(), 1);
         check(ready.chamber().machineState() == PlasticMoldingMachineState.WAITING_TO_LOCK, "cleared continuous cycle did not prepare the next mold");
@@ -1114,13 +1114,13 @@ public final class PlasticMoldingProductionGameTests {
     static void interruptedProcessingReloadRestoresTransaction(ExtendedGameTestHelper helper) {
         ReadyChamber ready = prepareChamber(helper, new BlockPos(5, 2, 3), Direction.NORTH, model("Reload", cube("Body", 0.0, 0.0, 0.0, 8.0, 8.0, 8.0)), 108, MoldingProductionMode.SINGLE, PlasticMoldingAnvilProcessor.OutputMode.ITEM, DyeColor.PURPLE);
         int energyBefore = ready.chamber().energyStored();
-        MoldingProcessSnapshot snapshot = ready.chamber().beginProcessing().orElseThrow(() -> new GameTestAssertException("process-ready chamber refused an interruption snapshot"));
+        MoldingProcessSnapshot snapshot = ready.chamber().beginProcessing().orElseThrow(() -> new PlasticraftTestFailure("process-ready chamber refused an interruption snapshot"));
         check(ready.chamber().machineState() == PlasticMoldingMachineState.PROCESSING, "beginProcessing did not enter the transaction state");
         check(ready.chamber().energyStored() == energyBefore - MoldingPowerBridge.energyPerWorkingTick(), "beginProcessing did not reserve one processing tick of energy");
         CompoundTag saved = ready.chamber().saveWithoutMetadata(helper.getLevel().registryAccess());
         PlasticMoldingChamberBlockEntity restored = new PlasticMoldingChamberBlockEntity(PlasticraftBlockEntities.PLASTIC_MOLDING_CHAMBER.get(), ready.chamber().getBlockPos(), ready.chamber().getBlockState());
         restored.setLevel(helper.getLevel());
-        restored.loadWithComponents(saved, helper.getLevel().registryAccess());
+        PlasticraftTestData.read(helper.getLevel().registryAccess(), saved, restored::loadWithComponents);
         check(restored.machineState() == PlasticMoldingMachineState.PROCESSING, "saved interruption did not retain its transaction marker");
         restored.onLoad();
         check(restored.machineState() == PlasticMoldingMachineState.PROCESS_READY, "interrupted transaction did not return to process-ready after load");
@@ -1419,8 +1419,8 @@ public final class PlasticMoldingProductionGameTests {
         );
         check(chamber.formingMode() == MoldingFormingMode.PRINTING,
             "printing component did not select automatic printing");
-        chamber.energyStorage().receiveEnergy(MoldingPowerBridge.capacity(), false);
-        check(chamber.fluidHandler().fill(
+        PlasticraftTestData.energy(chamber.energyStorage()).receiveEnergy(MoldingPowerBridge.capacity(), false);
+        check(PlasticraftTestData.fluids(chamber.fluidHandler()).fill(
             melt(meltAmount, DyeColor.WHITE),
             IFluidHandler.FluidAction.EXECUTE
         ) == meltAmount, "automatic printer rejected its staged melt");
@@ -1495,12 +1495,12 @@ public final class PlasticMoldingProductionGameTests {
         check(chamber.bakedModel().analysis().clayBallRequirement() == clayBalls, "production model did not require the expected clay total");
         check(chamber.setProductionMode(mode, chamber.revision()).accepted(), "production mode was rejected");
         chamber.inventory().setItem(0, new ItemStack(Items.CLAY_BALL, clayBalls));
-        check(chamber.energyStorage().receiveEnergy(MoldingPowerBridge.capacity(), false) == MoldingPowerBridge.capacity(), "production chamber did not accept a full energy buffer");
+        check(PlasticraftTestData.energy(chamber.energyStorage()).receiveEnergy(MoldingPowerBridge.capacity(), false) == MoldingPowerBridge.capacity(), "production chamber did not accept a full energy buffer");
         check(chamber.requestLock().accepted(), "production model could not be locked");
         tick(chamber, 12);
         check(chamber.machineState() == PlasticMoldingMachineState.MOLD_READY, "production mold did not finish in twelve active ticks");
         check(chamber.moldedClayBalls() == clayBalls, "production mold did not reserve exact clay");
-        IFluidHandler fluids = chamber.fluidHandler();
+        IFluidHandler fluids = PlasticraftTestData.fluids(chamber.fluidHandler());
         check(fluids.fill(melt(material, 250, color), IFluidHandler.FluidAction.EXECUTE) == 250, "production chamber did not accept its minimum batch melt");
         tick(chamber, 1);
         check(chamber.machineState() == PlasticMoldingMachineState.PROCESS_READY, "minimum batch melt did not make the chamber process-ready");
@@ -1519,7 +1519,7 @@ public final class PlasticMoldingProductionGameTests {
         check(PlasticMoldingChamberStructure.placeAtomically(helper.getLevel(), controller, state), "production test chamber placement failed for " + front);
         BlockEntity blockEntity = helper.getLevel().getBlockEntity(controller);
         if (!(blockEntity instanceof PlasticMoldingChamberBlockEntity chamber)) {
-            throw new GameTestAssertException("production test chamber block entity was missing");
+            throw helper.assertionException("production test chamber block entity was missing");
         }
         tick(chamber, 1);
         check(chamber.structureComplete(), "production test chamber structure was incomplete");
@@ -1593,7 +1593,7 @@ public final class PlasticMoldingProductionGameTests {
     private static UniversalPlasticEntity onlyPlasticEntity(ExtendedGameTestHelper helper, AABB bounds) {
         List<UniversalPlasticEntity> entities = helper.getLevel().getEntitiesOfClass(UniversalPlasticEntity.class, bounds, Entity::isAlive);
         if (entities.size() != 1) {
-            throw new GameTestAssertException("expected one dynamic plastic entity, found " + entities.size());
+            throw helper.assertionException("expected one dynamic plastic entity, found " + entities.size());
         }
         return entities.getFirst();
     }
@@ -1641,7 +1641,7 @@ public final class PlasticMoldingProductionGameTests {
 
     private static void check(boolean condition, String message) {
         if (!condition) {
-            throw new GameTestAssertException(message);
+            throw new PlasticraftTestFailure(message);
         }
     }
 

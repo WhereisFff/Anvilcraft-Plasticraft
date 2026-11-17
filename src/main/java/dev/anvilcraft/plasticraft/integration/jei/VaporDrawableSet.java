@@ -4,8 +4,8 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.recipe.CondenserGas;
 import mezz.jei.api.gui.drawable.IDrawable;
 import mezz.jei.api.helpers.IGuiHelper;
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.resources.Identifier;
 
 final class VaporDrawableSet {
     private final IDrawable water;
@@ -18,8 +18,8 @@ final class VaporDrawableSet {
         this.experience = create(helper, "experience_steam.png");
     }
 
-    void draw(GuiGraphics graphics, ResourceLocation gas, int x, int y) {
-        ResourceLocation canonical = CondenserGas.canonicalize(gas);
+    void draw(GuiGraphicsExtractor graphics, Identifier gas, int x, int y) {
+        Identifier canonical = CondenserGas.canonicalize(gas);
         IDrawable drawable = this.water;
         if (CondenserGas.GASEOUS_OIL.equals(canonical)) {
             drawable = this.oil;

@@ -15,9 +15,10 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.Sheets;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
+import net.minecraft.util.context.ContextKey;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -26,8 +27,10 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.ExtractLevelRenderStateEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
 
 import java.util.HashMap;
 import java.util.List;
@@ -161,18 +164,18 @@ public final class PlasticOilCatalysisRenderer {
         );
     }
 
+    private static final ContextKey<PlasticRenderGeometry> GEOMETRY = new ContextKey<>(AnvilcraftPlasticraft.of("oil_catalysis"));
+
     @SubscribeEvent
-    public static void renderLevel(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
+    public static void extract(ExtractLevelRenderStateEvent event) {
         Minecraft minecraft = Minecraft.getInstance();
-        ClientLevel level = minecraft.level;
+        ClientLevel level = event.getLevel();
         if (level == null || level != syncedLevel || STATES.isEmpty()) return;
 
-        PoseStack pose = event.getPoseStack();
-        Vec3 camera = event.getCamera().getPosition();
-        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
-        float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(minecraft.isPaused());
-        boolean rendered = false;
+        PoseStack pose = new PoseStack();
+        Vec3 camera = event.getCamera().position();
+        PlasticRenderGeometry buffers = new PlasticRenderGeometry();
+        float partialTick = event.getDeltaTracker().getGameTimeDeltaPartialTick(minecraft.isPaused());
         pose.pushPose();
         pose.translate(-camera.x, -camera.y, -camera.z);
         for (long key : List.copyOf(STATES.keySet())) {
@@ -205,7 +208,7 @@ public final class PlasticOilCatalysisRenderer {
 
             pose.pushPose();
             pose.translate(pos.getX(), pos.getY(), pos.getZ());
-            int packedLight = LevelRenderer.getLightColor(level, pos);
+            int packedLight = LevelRenderer.getLightCoords(level, pos);
             if (cauldron) {
                 float surface = cauldronSurface(state.getValue(PlasticOilCauldronBlock.LEVEL));
                 renderMeltBox(
@@ -242,10 +245,20 @@ public final class PlasticOilCatalysisRenderer {
                 );
             }
             pose.popPose();
-            rendered = true;
         }
         pose.popPose();
-        if (rendered) buffers.endBatch(RenderType.translucent());
+        event.getRenderState().setRenderData(GEOMETRY, buffers);
+    }
+
+    @SubscribeEvent
+    public static void renderExtracted(RenderLevelStageEvent.AfterTranslucentBlocks event) {
+        var state = event.getLevelRenderState();
+        var geometry = state.getRenderData(GEOMETRY);
+        if (geometry != null) {
+            var buffers = Minecraft.getInstance().renderBuffers().bufferSource();
+            geometry.draw(event.getPoseStack(), buffers, state.cameraRenderState);
+            buffers.endBatch();
+        }
     }
 
     @SubscribeEvent
@@ -289,15 +302,15 @@ public final class PlasticOilCatalysisRenderer {
         PlasticMeltColor.set(overlay, PlasticMeltColor.get(source));
         UniversalPlasticMeltFluidExtension.setCatalysisOpacity(overlay, opacity);
         FluidRenderHelper.INSTANCE.renderFluidBox(
-            overlay,
+            FluidRenderOpacity.model(overlay).stillMaterial().sprite(), FluidResource.of(overlay),
             minX - BOX_OFFSET,
             minY - BOX_OFFSET,
             minZ - BOX_OFFSET,
             maxX + BOX_OFFSET,
             maxY + BOX_OFFSET,
             maxZ + BOX_OFFSET,
-            buffers.getBuffer(deferredTransparent ? ClearPlasticRenderTypes.fluid() : RenderType.translucent()),
-            pose,
+            FluidRenderOpacity.tint(overlay), buffers.getBuffer(deferredTransparent ? ClearPlasticRenderTypes.fluid() : Sheets.translucentBlockSheet()),
+            pose.last(),
             packedLight,
             renderBottom,
             false

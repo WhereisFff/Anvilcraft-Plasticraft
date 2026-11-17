@@ -10,7 +10,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -93,7 +93,7 @@ abstract class LivingEntityResinHeadMixin {
         double newZ = clippedZ ? -vz * ELYTRA_RESTITUTION : vz;
         player.setDeltaMovement(newX, preVelocity.y, newZ);
         player.resetFallDistance();
-        player.hasImpulse = true;
+        player.needsSync = true;
         player.hurtMarked = true;
         plasticraft$playResinSound(player);
     }
@@ -104,7 +104,7 @@ abstract class LivingEntityResinHeadMixin {
         double downSpeed = preVelocity.y * CEILING_RESTITUTION;
         player.setDeltaMovement(current.x, -downSpeed, current.z);
         player.resetFallDistance();
-        player.hasImpulse = true;
+        player.needsSync = true;
         player.hurtMarked = true;
         plasticraft$playResinSound(player);
     }
@@ -131,10 +131,10 @@ abstract class LivingEntityResinHeadMixin {
             if (!launchedComponents.add(impulseTarget.getUUID())) continue;
             Vec3 targetVelocity = impulseTarget.getDeltaMovement();
             impulseTarget.setDeltaMovement(targetVelocity.x, targetVelocity.y + impulse, targetVelocity.z);
-            impulseTarget.hasImpulse = true;
+            impulseTarget.needsSync = true;
             impulseTarget.hurtMarked = true;
         }
-        if (!player.level().isClientSide) {
+        if (!player.level().isClientSide()) {
             player.getItemBySlot(EquipmentSlot.HEAD)
                 .hurtAndBreak(1, player, EquipmentSlot.HEAD);
         }

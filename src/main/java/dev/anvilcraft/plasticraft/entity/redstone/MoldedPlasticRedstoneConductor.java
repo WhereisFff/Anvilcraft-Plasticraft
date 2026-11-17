@@ -249,7 +249,8 @@ public final class MoldedPlasticRedstoneConductor {
             level.updateNeighborsAtExceptFromFacing(
                 key.receiverPos(),
                 notifyingBlock,
-                key.queryDirection
+                key.queryDirection,
+                null
             );
         }
     }

@@ -10,7 +10,6 @@ import dev.anvilcraft.plasticraft.api.texture.PlasticTextureLayout;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import dev.anvilcraft.plasticraft.init.PlasticraftDataComponents;
-import dev.anvilcraft.plasticraft.init.PlasticraftStorageTypes;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
 import dev.anvilcraft.plasticraft.molding.bake.ManufacturedMoldingGeometry;
@@ -30,11 +29,12 @@ import dev.anvilcraft.plasticraft.molding.type.MoldingProductType;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.item.property.component.StorageRef;
+import dev.dubhe.anvilcraft.saved.storage.StorageType;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -56,7 +56,7 @@ public record MoldedPlasticData(
     MoldingVolumeMask cavityMask,
     List<MoldingQuad> surfaceMesh,
     FluidStack material,
-    ResourceLocation finalType,
+    Identifier finalType,
     int capacity,
     MoldedPlasticContents contents,
     String name,
@@ -119,7 +119,7 @@ public record MoldedPlasticData(
         MoldingVolumeMask.CODEC.fieldOf("cavities").forGetter(MoldedPlasticData::cavityMask),
         SURFACE_MESH_CODEC.fieldOf("surface_mesh").forGetter(MoldedPlasticData::surfaceMesh),
         FluidStack.CODEC.fieldOf("material").forGetter(MoldedPlasticData::material),
-        ResourceLocation.CODEC.fieldOf("final_type").forGetter(MoldedPlasticData::finalType),
+        Identifier.CODEC.fieldOf("final_type").forGetter(MoldedPlasticData::finalType),
         Codec.INT.optionalFieldOf("capacity", 0).forGetter(MoldedPlasticData::capacity),
         MoldedPlasticContents.CODEC.optionalFieldOf("contents", MoldedPlasticContents.EMPTY)
             .forGetter(MoldedPlasticData::contents),
@@ -297,7 +297,7 @@ public record MoldedPlasticData(
         MoldingVolumeMask cavityMask,
         List<MoldingQuad> surfaceMesh,
         FluidStack material,
-        ResourceLocation finalType,
+        Identifier finalType,
         int capacity,
         MoldedPlasticContents contents,
         String name,
@@ -445,7 +445,7 @@ public record MoldedPlasticData(
     }
 
     public MoldedPlasticData withFunction(
-        ResourceLocation type,
+        Identifier type,
         int replacementCapacity,
         MoldingVolumeMask cavities
     ) {
@@ -654,7 +654,7 @@ public record MoldedPlasticData(
             : data.withOrientation(PlasticEntityOrientation.DEFAULT);
         stack.set(PlasticraftDataComponents.MOLDED_PLASTIC.get(), normalized);
         if (MoldingProductTypes.isCrate(normalized.finalType()) && normalized.storageId().isPresent()) {
-            stack.set(ModComponents.STORAGE, new StorageRef(PlasticraftStorageTypes.MOLDED_CRATE, normalized.storageId().orElseThrow()));
+            stack.set(ModComponents.STORAGE, new StorageRef(StorageType.CRATE, normalized.storageId()));
         } else {
             stack.remove(ModComponents.STORAGE);
         }
@@ -687,7 +687,7 @@ public record MoldedPlasticData(
         buffer.writeVarInt(data.surfaceMesh.size());
         for (MoldingQuad quad : data.surfaceMesh) writeQuad(buffer, quad);
         FluidStack.STREAM_CODEC.encode(buffer, data.material);
-        buffer.writeResourceLocation(data.finalType);
+        buffer.writeIdentifier(data.finalType);
         buffer.writeVarInt(data.capacity);
         buffer.writeUtf(data.name, MAX_TEXT_LENGTH);
         writeVector(buffer, data.rotationPivot);
@@ -710,7 +710,7 @@ public record MoldedPlasticData(
         List<MoldingQuad> quads = new ArrayList<>(quadCount);
         for (int index = 0; index < quadCount; index++) quads.add(readQuad(buffer));
         FluidStack material = FluidStack.STREAM_CODEC.decode(buffer);
-        ResourceLocation finalType = buffer.readResourceLocation();
+        Identifier finalType = buffer.readIdentifier();
         int capacity = buffer.readVarInt();
         String name = buffer.readUtf(MAX_TEXT_LENGTH);
         MoldingVec3 rotationPivot = readVector(buffer);

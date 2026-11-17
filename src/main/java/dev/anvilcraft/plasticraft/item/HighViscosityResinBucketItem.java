@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.item;
 
 import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveSelectionManager;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BucketItem;
 import net.minecraft.world.item.ItemStack;
@@ -18,10 +18,10 @@ public class HighViscosityResinBucketItem extends BucketItem {
     }
 
     @Override
-    public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
+    public InteractionResult use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
         if (!player.isShiftKeyDown() && AdhesiveSelectionManager.hasSelection(player)) {
-            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
+            return InteractionResult.SUCCESS;
         }
         return super.use(level, player, hand);
     }

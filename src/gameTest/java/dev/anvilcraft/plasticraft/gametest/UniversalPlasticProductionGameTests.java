@@ -12,26 +12,23 @@ import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
-import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
-import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
+import dev.dubhe.anvilcraft.block.cauldron.Layered4LevelCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.BurningHeaterBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.block.state.GiantAnvilCube;
+import dev.dubhe.anvilcraft.block.workstation.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.recipe.FluidMixingRecipe;
-import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
-import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import net.minecraft.core.BlockPos;
-import net.minecraft.gametest.framework.GameTest;
-import net.minecraft.gametest.framework.GameTestAssertException;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.entity.npc.VillagerTrades;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -49,6 +46,7 @@ import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
+import net.neoforged.testframework.gametest.GameTest;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -127,22 +125,22 @@ public final class UniversalPlasticProductionGameTests {
         BlockPos cauldronPos = new BlockPos(2, 2, 2);
         helper.setBlock(cauldronPos.below(), Blocks.STONE);
         HardenedResinCauldronEntity cauldron = spawnCauldron(helper, cauldronPos);
-        check(cauldron.getFluidHandler().fill(
+        check(PlasticraftTestData.fluids(cauldron.getFluidHandler()).fill(
             new FluidStack(PlasticraftFluids.PLASTIC_OIL.get(), 750), IFluidHandler.FluidAction.EXECUTE
         ) == 750, "树脂锅未接受自催化所需的塑料油");
 
         helper.startSequence()
             .thenExecuteAfter(40, () -> {
-                check(cauldron.getFluidHandler().getFluid().is(PlasticraftFluids.PLASTIC_OIL.get()),
+                check(PlasticraftTestData.fluids(cauldron.getFluidHandler()).getFluidInTank(0).is(PlasticraftFluids.PLASTIC_OIL.get()),
                     "树脂锅在底部不寒冷时催化了塑料油");
                 helper.setBlock(cauldronPos.below(), Blocks.ICE);
             })
             .thenExecuteAfter(120, () -> {
-                check(cauldron.getFluidHandler().getFluid().is(PlasticraftFluids.PLASTIC_OIL.get()),
+                check(PlasticraftTestData.fluids(cauldron.getFluidHandler()).getFluidInTank(0).is(PlasticraftFluids.PLASTIC_OIL.get()),
                     "树脂锅在催化所需时间前完成了反应");
             })
             .thenExecuteAfter(310, () -> {
-                FluidStack result = cauldron.getFluidHandler().getFluid();
+                FluidStack result = PlasticraftTestData.fluids(cauldron.getFluidHandler()).getFluidInTank(0);
                 check(result.is(PlasticMaterial.ELASTIC.melt()) && result.getAmount() == 750,
                     "树脂锅自催化未生成等量弹性塑料熔体");
             })
@@ -203,8 +201,8 @@ public final class UniversalPlasticProductionGameTests {
         BlockPos cauldronPos = new BlockPos(2, 2, 2);
         helper.setBlock(cauldronPos.below(), ModBlocks.BURNING_HEATER.getDefaultState());
         check(
-            helper.getBlockEntity(cauldronPos.below()) instanceof BurningHeaterBlockEntity heater
-                && heater.getItemHandler().insertItem(0, Items.LAVA_BUCKET.getDefaultInstance(), false).isEmpty(),
+            helper.getLevel().getBlockEntity(helper.absolutePos(cauldronPos.below())) instanceof BurningHeaterBlockEntity heater
+                && IItemHandler.of(heater.getItemHandler()).insertItem(0, Items.LAVA_BUCKET.getDefaultInstance(), false).isEmpty(),
             "failed to fuel the burning heater"
         );
         helper.setBlock(
@@ -244,9 +242,9 @@ public final class UniversalPlasticProductionGameTests {
     }
 
     private static FluidMixingRecipe fluidMixingRecipe(ExtendedGameTestHelper helper, String name) {
-        RecipeHolder<?> holder = helper.getLevel().getRecipeManager()
-            .byKey(AnvilcraftPlasticraft.of("fluid_mixing/" + name))
-            .orElseThrow(() -> new GameTestAssertException(name + " recipe was not loaded"));
+        RecipeHolder<?> holder = helper.getLevel().recipeAccess()
+            .byKey(ResourceKey.create(Registries.RECIPE, AnvilcraftPlasticraft.of("fluid_mixing/" + name)))
+            .orElseThrow(() -> helper.assertionException(name + " recipe was not loaded"));
         check(holder.value() instanceof FluidMixingRecipe, name + " did not load as fluid mixing");
         return (FluidMixingRecipe) holder.value();
     }
@@ -392,12 +390,6 @@ public final class UniversalPlasticProductionGameTests {
         check(count == GRANULES, path + " produced " + count + " granules");
     }
 
-    private static Int2ObjectMap<List<VillagerTrades.ItemListing>> emptyTradeMap() {
-        Int2ObjectMap<List<VillagerTrades.ItemListing>> trades = new Int2ObjectOpenHashMap<>();
-        for (int level = 1; level <= 5; level++) trades.put(level, new ArrayList<>());
-        return trades;
-    }
-
     private static ItemStack coloredGranules(DyeColor color) {
         ItemStack granules = new ItemStack(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE.get(), GRANULES);
         PlasticMeltColor.set(granules, color);
@@ -405,6 +397,6 @@ public final class UniversalPlasticProductionGameTests {
     }
 
     private static void check(boolean condition, String message) {
-        if (!condition) throw new GameTestAssertException(message);
+        if (!condition) throw new PlasticraftTestFailure(message);
     }
 }

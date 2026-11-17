@@ -5,7 +5,7 @@ import dev.anvilcraft.lib.v2.network.packet.IPacket;
 import dev.anvilcraft.lib.v2.network.packet.IServerboundPacket;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
-import dev.dubhe.anvilcraft.item.AnvilHammerItem;
+import dev.dubhe.anvilcraft.item.tool.AnvilHammerItem;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -40,7 +40,7 @@ public record BondedPlasticHammerUsePacket(
     @Override
     public void handleOnServer(Player player) {
         if (!(player.getItemInHand(this.hand).getItem() instanceof AnvilHammerItem)
-            || !player.canInteractWithBlock(this.pos, 0.0D)
+            || !player.isWithinBlockInteractionRange(this.pos, 0.0D)
             || !player.level().mayInteract(player, this.pos)
             || !(player.level().getBlockEntity(this.pos) instanceof BondedEntityBlockEntity bonded)
             || !bonded.isInitialized()

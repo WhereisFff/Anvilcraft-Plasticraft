@@ -69,9 +69,14 @@
       ]
     }
   ],
-  "render_type": "minecraft:translucent",
   "textures": {
-    "particle": "anvilcraftplasticraft:block/clear_plastic/lime",
-    "plastic": "anvilcraftplasticraft:block/clear_plastic/lime"
+    "particle": {
+      "force_translucent": true,
+      "sprite": "anvilcraftplasticraft:block/clear_plastic/lime"
+    },
+    "plastic": {
+      "force_translucent": true,
+      "sprite": "anvilcraftplasticraft:block/clear_plastic/lime"
+    }
   }
 }

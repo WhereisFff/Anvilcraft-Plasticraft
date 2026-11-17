@@ -5,7 +5,6 @@ import dev.anvilcraft.plasticraft.block.BondedFallingBlockInfo;
 import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
-import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -19,6 +18,7 @@ import net.minecraft.world.level.material.PushReaction;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -173,7 +173,7 @@ public final class AdhesiveGroupBlockifier {
     private static Direction directionBetween(Entity from, Entity to) {
         Vec3 difference = to.getBoundingBox().getCenter().subtract(from.getBoundingBox().getCenter());
         if (difference.lengthSqr() < 1.0E-8D) return Direction.UP;
-        return Direction.getNearest(difference.x, difference.y, difference.z);
+        return Direction.getApproximateNearest(difference.x, difference.y, difference.z);
     }
 
     private static BlockPos blockPosition(Entity entity) {
@@ -344,11 +344,11 @@ public final class AdhesiveGroupBlockifier {
     }
 
     private static @Nullable Direction directionFromTo(BlockPos from, BlockPos to) {
-        return Direction.fromDelta(
+        return Direction.getNearest(
             to.getX() - from.getX(),
             to.getY() - from.getY(),
             to.getZ() - from.getZ()
-        );
+        , null);
     }
 
     private record Layout(

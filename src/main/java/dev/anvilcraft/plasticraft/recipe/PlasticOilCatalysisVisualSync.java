@@ -53,7 +53,7 @@ public final class PlasticOilCatalysisVisualSync {
             gameTime,
             PlasticOilCatalysisSyncPacket.UPDATE
         );
-        PacketDistributor.sendToPlayersTrackingChunk(level, new ChunkPos(pos), packet);
+        PacketDistributor.sendToPlayersTrackingChunk(level, ChunkPos.containing(pos), packet);
         levelSyncs.put(key, new LastSync(progress, rate, gameTime));
     }
 
@@ -61,7 +61,7 @@ public final class PlasticOilCatalysisVisualSync {
         removeLastSync(level, pos);
         PacketDistributor.sendToPlayersTrackingChunk(
             level,
-            new ChunkPos(pos),
+            ChunkPos.containing(pos),
             packet(pos, 1.0F, 0.0F, level.getGameTime(), PlasticOilCatalysisSyncPacket.COMPLETE)
         );
     }
@@ -75,7 +75,7 @@ public final class PlasticOilCatalysisVisualSync {
         if (!tracked && !force) return;
         PacketDistributor.sendToPlayersTrackingChunk(
             level,
-            new ChunkPos(pos),
+            ChunkPos.containing(pos),
             packet(pos, 0.0F, 0.0F, level.getGameTime(), PlasticOilCatalysisSyncPacket.CLEAR)
         );
     }

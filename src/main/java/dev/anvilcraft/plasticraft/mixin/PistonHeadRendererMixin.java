@@ -1,13 +1,13 @@
 package dev.anvilcraft.plasticraft.mixin;
 
-import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
-import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.blockentity.PistonHeadRenderer;
-import net.minecraft.core.BlockPos;
-import net.minecraft.world.level.Level;
+import net.minecraft.client.renderer.blockentity.state.PistonHeadRenderState;
+import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
 import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.piston.PistonMovingBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -19,20 +19,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(PistonHeadRenderer.class)
 abstract class PistonHeadRendererMixin {
-    @Inject(method = "renderBlock", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "extractRenderState(Lnet/minecraft/world/level/block/piston/PistonMovingBlockEntity;"
+        + "Lnet/minecraft/client/renderer/blockentity/state/PistonHeadRenderState;FLnet/minecraft/world/phys/Vec3;"
+        + "Lnet/minecraft/client/renderer/feature/ModelFeatureRenderer$CrumblingOverlay;)V", at = @At("RETURN"))
     private void plasticraft$skipInvisiblePlasticModel(
-        BlockPos pos,
-        BlockState state,
-        PoseStack pose,
-        MultiBufferSource buffers,
-        Level level,
-        boolean checkSides,
-        int packedOverlay,
-        CallbackInfo ci
+        PistonMovingBlockEntity piston, PistonHeadRenderState state, float partialTick, Vec3 camera,
+        ModelFeatureRenderer.CrumblingOverlay breaking, CallbackInfo callback
     ) {
-        if (state.getBlock() instanceof AbstractPlasticEntityBlock<?>
-            && state.getRenderShape() == RenderShape.INVISIBLE) {
-            ci.cancel();
+        BlockState moved = piston.getMovedState();
+        if (moved.getBlock() instanceof AbstractPlasticEntityBlock<?> && moved.getRenderShape() == RenderShape.INVISIBLE) {
+            state.block = null;
         }
     }
 }

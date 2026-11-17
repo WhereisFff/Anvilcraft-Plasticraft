@@ -13,40 +13,35 @@ import dev.anvilcraft.plasticraft.item.CreativeColorVariantItem;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.atlas.SpriteSource;
-import net.minecraft.client.renderer.texture.atlas.SpriteSourceType;
 import net.minecraft.client.resources.metadata.animation.FrameSize;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
-import net.minecraft.server.packs.resources.ResourceMetadata;
 import net.minecraft.world.item.DyeColor;
-import net.neoforged.neoforge.client.event.RegisterSpriteSourceTypesEvent;
+import net.neoforged.neoforge.client.event.RegisterSpriteSourcesEvent;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.util.Objects;
 
 /** 在方块图集准备阶段生成各颜色通用塑料精灵。 */
 public final class PlasticTextureSpriteSource implements SpriteSource {
     public static final PlasticTextureSpriteSource INSTANCE = new PlasticTextureSpriteSource();
     public static final MapCodec<PlasticTextureSpriteSource> CODEC = MapCodec.unit(INSTANCE);
 
-    private static final ResourceLocation TYPE_ID = AnvilcraftPlasticraft.of("generated_plastic");
-    private static SpriteSourceType sourceType;
+    private static final Identifier TYPE_ID = AnvilcraftPlasticraft.of("generated_plastic");
 
     private PlasticTextureSpriteSource() {
     }
 
-    public static void registerType(RegisterSpriteSourceTypesEvent event) {
-        sourceType = new SpriteSourceType(CODEC);
-        event.register(TYPE_ID, sourceType);
+    public static void registerType(RegisterSpriteSourcesEvent event) {
+        event.register(TYPE_ID, CODEC);
     }
 
-    public static ResourceLocation sprite(DyeColor color) {
+    public static Identifier sprite(DyeColor color) {
         return sprite(PlasticMaterial.UNIVERSAL, color);
     }
 
-    public static ResourceLocation sprite(PlasticMaterial material, DyeColor color) {
+    public static Identifier sprite(PlasticMaterial material, DyeColor color) {
         return material.sprite(color);
     }
 
@@ -73,8 +68,8 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
     }
 
     @Override
-    public SpriteSourceType type() {
-        return Objects.requireNonNull(sourceType, "Plastic sprite source type is not registered");
+    public MapCodec<PlasticTextureSpriteSource> codec() {
+        return CODEC;
     }
 
     private static void addGeneratedSprites(
@@ -153,21 +148,21 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
         DyeColor color,
         GeneratedPlasticTexture generated
     ) {
-        ResourceLocation spriteId = sprite(material, color);
+        Identifier spriteId = sprite(material, color);
         output.add(spriteId, loader -> createSprite(spriteId, generated));
     }
 
-    private static SpriteContents createSprite(ResourceLocation id, GeneratedPlasticTexture generated) {
+    private static SpriteContents createSprite(Identifier id, GeneratedPlasticTexture generated) {
         int width = generated.layout().atlasWidth();
         int height = generated.layout().atlasHeight();
         NativeImage image = new NativeImage(width, height, false);
         try {
             for (int y = 0; y < height; y++) {
                 for (int x = 0; x < width; x++) {
-                    image.setPixelRGBA(x, y, swapRedBlue(generated.argbAt(x, y)));
+                    image.setPixel(x, y, generated.argbAt(x, y));
                 }
             }
-            return new SpriteContents(id, new FrameSize(width, height), image, ResourceMetadata.EMPTY);
+            return new SpriteContents(id, new FrameSize(width, height), image);
         } catch (RuntimeException exception) {
             image.close();
             throw exception;
@@ -192,7 +187,7 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
         );
     }
 
-    static byte[] readResource(ResourceManager manager, ResourceLocation id) throws IOException {
+    static byte[] readResource(ResourceManager manager, Identifier id) throws IOException {
         Resource resource = manager.getResource(id).orElseThrow(() ->
             new PlasticTextureResourceException("Missing plastic texture resource " + id)
         );
@@ -201,7 +196,7 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
         }
     }
 
-    static NativeImage readImage(ResourceLocation id, byte[] bytes) throws IOException {
+    static NativeImage readImage(Identifier id, byte[] bytes) throws IOException {
         try {
             return NativeImage.read(new ByteArrayInputStream(bytes));
         } catch (IOException exception) {
@@ -210,17 +205,6 @@ public final class PlasticTextureSpriteSource implements SpriteSource {
     }
 
     static int[] toArgbPixels(NativeImage image) {
-        int[] pixels = new int[image.getWidth() * image.getHeight()];
-        for (int y = 0; y < image.getHeight(); y++) {
-            for (int x = 0; x < image.getWidth(); x++) {
-                pixels[y * image.getWidth() + x] = swapRedBlue(image.getPixelRGBA(x, y));
-            }
-        }
-        return pixels;
-    }
-
-    /** NativeImage 使用 ABGR，而公共生成器固定使用 ARGB；交换红蓝通道即可双向转换。 */
-    static int swapRedBlue(int color) {
-        return color & 0xFF00FF00 | color >> 16 & 0xFF | (color & 0xFF) << 16;
+        return image.getPixels();
     }
 }

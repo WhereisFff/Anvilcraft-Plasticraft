@@ -1,0 +1,11 @@
+{
+  "model": {
+    "type": "minecraft:model",
+    "model": "anvilcraftplasticraft:item/elastic_plastic_granule",
+    "tints": [
+      {
+        "type": "anvilcraftplasticraft:palette"
+      }
+    ]
+  }
+}

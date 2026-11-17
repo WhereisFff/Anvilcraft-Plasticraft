@@ -7,7 +7,7 @@ import dev.anvilcraft.plasticraft.api.texture.PlasticGrayscaleImage;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureInput;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureResourceException;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.item.DyeColor;
 
@@ -15,9 +15,9 @@ import java.io.IOException;
 
 /** 集中加载并校验程序化塑料贴图使用的客户端资源。 */
 final class PlasticTextureResourceLoader {
-    static final ResourceLocation BASE_RESOURCE = PlasticMaterial.UNIVERSAL.baseTexture(16);
+    static final Identifier BASE_RESOURCE = PlasticMaterial.UNIVERSAL.baseTexture(16);
     /** 各行从上到下对应创造物品栏十六色顺序。 */
-    static final ResourceLocation PALETTE_RESOURCE = PlasticMaterial.UNIVERSAL.paletteTexture();
+    static final Identifier PALETTE_RESOURCE = PlasticMaterial.UNIVERSAL.paletteTexture();
 
     private PlasticTextureResourceLoader() {
     }
@@ -27,11 +27,11 @@ final class PlasticTextureResourceLoader {
     }
 
     static LoadedResources load(ResourceManager manager, PlasticMaterial material) throws IOException {
-        ResourceLocation base8 = material.baseTexture(8);
-        ResourceLocation base16 = material.baseTexture(16);
-        ResourceLocation base32 = material.baseTexture(32);
-        ResourceLocation base48 = material.baseTexture(48);
-        ResourceLocation paletteResource = material.paletteTexture();
+        Identifier base8 = material.baseTexture(8);
+        Identifier base16 = material.baseTexture(16);
+        Identifier base32 = material.baseTexture(32);
+        Identifier base48 = material.baseTexture(48);
+        Identifier paletteResource = material.paletteTexture();
         byte[] base8Bytes = PlasticTextureSpriteSource.readResource(manager, base8);
         byte[] base16Bytes = PlasticTextureSpriteSource.readResource(manager, base16);
         byte[] base32Bytes = PlasticTextureSpriteSource.readResource(manager, base32);
@@ -67,7 +67,7 @@ final class PlasticTextureResourceLoader {
     }
 
     static PlasticColorPalette loadPalette(ResourceManager manager, PlasticMaterial material) throws IOException {
-        ResourceLocation paletteResource = material.paletteTexture();
+        Identifier paletteResource = material.paletteTexture();
         return palette(
             material,
             paletteResource,
@@ -77,7 +77,7 @@ final class PlasticTextureResourceLoader {
 
     private static PlasticColorPalette palette(
         PlasticMaterial material,
-        ResourceLocation paletteResource,
+        Identifier paletteResource,
         byte[] paletteBytes
     ) throws IOException {
         try (NativeImage paletteImage = PlasticTextureSpriteSource.readImage(paletteResource, paletteBytes)) {

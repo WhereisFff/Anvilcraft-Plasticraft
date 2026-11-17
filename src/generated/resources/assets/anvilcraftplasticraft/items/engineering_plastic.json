@@ -1,0 +1,9 @@
+{
+  "model": {
+    "type": "minecraft:special",
+    "base": "anvilcraftplasticraft:item/engineering_plastic",
+    "model": {
+      "type": "anvilcraftplasticraft:plastic"
+    }
+  }
+}

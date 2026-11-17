@@ -1,5 +1,6 @@
 package dev.anvilcraft.plasticraft.client.event;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.lib.v2.cube.client.CubeSelection;
 import dev.anvilcraft.lib.v2.cube.client.OutlineRenderer;
@@ -11,6 +12,7 @@ import dev.anvilcraft.plasticraft.block.CondenserTowerBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberBlock;
 import dev.anvilcraft.plasticraft.block.PlasticMoldingChamberStructure;
 import dev.anvilcraft.plasticraft.block.entity.Plastic3DPrintingComponentBlockEntity;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticRenderGeometry;
 import dev.anvilcraft.plasticraft.client.selection.MachineBlockSelection;
 import dev.anvilcraft.plasticraft.client.selection.PlasticSelectionGeometry;
 import dev.anvilcraft.plasticraft.config.PlasticraftClientConfig.PlacementPreviewMode;
@@ -26,14 +28,14 @@ import dev.dubhe.anvilcraft.util.PlacementInteractions;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.util.context.ContextKey;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.ClipContext;
@@ -49,8 +51,10 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ExtractLevelRenderStateEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import org.jspecify.annotations.Nullable;
 
@@ -76,10 +80,18 @@ public final class PlasticraftPlacementPreviewRenderer {
     }
 
     @SubscribeEvent
-    public static void render(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_LEVEL) {
-            return;
+    public static void submit(SubmitCustomGeometryEvent event) {
+        var state = event.getLevelRenderState();
+        var geometry = state.getRenderData(GEOMETRY);
+        if (geometry != null) {
+            geometry.submit(event.getPoseStack(), event.getSubmitNodeCollector(), state.cameraRenderState);
         }
+    }
+
+    private static final ContextKey<PlasticRenderGeometry> GEOMETRY = new ContextKey<>(AnvilcraftPlasticraft.of("machine_placement"));
+
+    @SubscribeEvent
+    public static void render(ExtractLevelRenderStateEvent event) {
         Minecraft minecraft = Minecraft.getInstance();
         PlacementPreviewMode mode = AnvilcraftPlasticraft.CLIENT_CONFIG.placementPreviewMode;
         UseOnContext context = mode == PlacementPreviewMode.OFF ? null : placementContext(minecraft);
@@ -93,24 +105,16 @@ public final class PlasticraftPlacementPreviewRenderer {
             GHOST.close();
             return;
         }
-        // AFTER_LEVEL 不再保留世界渲染的相机旋转，必须先恢复视图矩阵再应用相对位置。
         PoseStack pose = new PoseStack();
-        pose.mulPose(event.getModelViewMatrix());
-        Vec3 camera = event.getCamera().getPosition();
-        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
+        Vec3 camera = event.getCamera().position();
+        PlasticRenderGeometry buffers = new PlasticRenderGeometry();
+        event.getRenderState().setRenderData(GEOMETRY, buffers);
         if (mode == PlacementPreviewMode.GHOST) {
             int alpha = (int) (255 * AnvilcraftPlasticraft.CLIENT_CONFIG.placementPreviewGhostOpacity);
             if (ghostDirty || !GHOST.isValid() || ghostAlpha != alpha) {
                 rebuildGhost(minecraft.level, context, current, alpha);
             }
-            pose.pushPose();
-            try {
-                pose.translate(current.origin().getX() - camera.x, current.origin().getY() - camera.y,
-                    current.origin().getZ() - camera.z);
-                GHOST.render(pose, event.getProjectionMatrix(), buffers);
-            } finally {
-                pose.popPose();
-            }
+            event.getRenderState().setRenderData(GHOST_ORIGIN, current.origin());
         }
         if (mode != PlacementPreviewMode.GHOST && GHOST.isValid()) {
             GHOST.close();
@@ -120,6 +124,31 @@ public final class PlasticraftPlacementPreviewRenderer {
         } else if (current.workspace() != null) {
             // 成型工作区没有可见方块模型，虚影模式仍需标出其真实占用范围。
             renderOutlines(pose, buffers, camera, List.of(current.workspace()), true);
+        }
+    }
+
+    private static final ContextKey<BlockPos> GHOST_ORIGIN = new ContextKey<>(AnvilcraftPlasticraft.of("machine_ghost_origin"));
+
+    @SubscribeEvent
+    public static void drawGhost(RenderLevelStageEvent.AfterTranslucentBlocks event) {
+        var state = event.getLevelRenderState();
+        var origin = state.getRenderData(GHOST_ORIGIN);
+        if (origin == null || !GHOST.isValid()) {
+            return;
+        }
+        var matrices = RenderSystem.getModelViewStack();
+        matrices.pushMatrix().identity();
+        var pose = event.getPoseStack();
+        pose.pushPose();
+        try {
+            pose.setIdentity();
+            pose.mulPose(event.getModelViewMatrix());
+            var camera = state.cameraRenderState.pos;
+            pose.translate(origin.getX() - camera.x, origin.getY() - camera.y, origin.getZ() - camera.z);
+            GHOST.render(pose, state.cameraRenderState);
+        } finally {
+            pose.popPose();
+            matrices.popMatrix();
         }
     }
 
@@ -228,7 +257,7 @@ public final class PlasticraftPlacementPreviewRenderer {
                 && PlasticMoldingChamberStructure.canPlace(level, origin, facing);
             return new Preview(origin, List.of(new Cell(origin, state)), List.copyOf(outlines), null, workspace, valid);
         }
-        List<BuildingRodService.Cell> placed = BuildingRodService.singlePlacement(context);
+        var placed = BuildingRodService.singlePlacement(context);
         if (placed.isEmpty()) {
             return null;
         }
@@ -273,9 +302,9 @@ public final class PlasticraftPlacementPreviewRenderer {
             BlockEntity blockEntity = null;
             if (cell.state().is(PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.get())) {
                 blockEntity = new Plastic3DPrintingComponentBlockEntity(local, cell.state());
-                CustomData data = context.getItemInHand().get(DataComponents.BLOCK_ENTITY_DATA);
+                var data = context.getItemInHand().get(DataComponents.BLOCK_ENTITY_DATA);
                 if (data != null) {
-                    blockEntity.loadWithComponents(data.copyTag(), level.registryAccess());
+                    data.loadInto(blockEntity, level.registryAccess());
                 }
             }
             scene.put(local, cell.state(), blockEntity);
@@ -297,7 +326,7 @@ public final class PlasticraftPlacementPreviewRenderer {
         return new BlockHitResult(context.getClickLocation(), context.getClickedFace(), context.getClickedPos(), false);
     }
 
-    private static void renderOutlines(PoseStack pose, MultiBufferSource.BufferSource buffers, Vec3 camera,
+    private static void renderOutlines(PoseStack pose, MultiBufferSource buffers, Vec3 camera,
                                        List<Outline> outlines, boolean valid) {
         float alpha = (float) AnvilcraftPlasticraft.CLIENT_CONFIG.placementPreviewOutlineOpacity;
         for (Outline outline : outlines) {
@@ -306,14 +335,13 @@ public final class PlasticraftPlacementPreviewRenderer {
                 Vec3 position = outline.origin().subtract(camera);
                 pose.translate(position.x, position.y, position.z);
                 outline.part().apply(pose);
-                OutlineRenderer.render(pose, buffers.getBuffer(RenderType.lines()), CubeSelection.outlines().get(outline.part().geometry())
+                OutlineRenderer.render(pose, buffers.getBuffer(RenderTypes.lines()), CubeSelection.outlines().get(outline.part().geometry())
                     .forView(outline.part().localPosition(camera.subtract(outline.origin()))),
                     1, valid ? 1 : 0.2f, valid ? 1 : 0.2f, alpha);
             } finally {
                 pose.popPose();
             }
         }
-        buffers.endBatch(RenderType.lines());
     }
 
     @SubscribeEvent

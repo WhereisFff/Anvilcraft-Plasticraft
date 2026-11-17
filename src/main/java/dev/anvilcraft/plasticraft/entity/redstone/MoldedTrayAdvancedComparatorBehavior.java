@@ -1,8 +1,8 @@
 package dev.anvilcraft.plasticraft.entity.redstone;
 
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponent;
-import dev.dubhe.anvilcraft.block.AdvancedComparatorBlock;
 import dev.dubhe.anvilcraft.block.entity.AdvancedComparatorBlockEntity;
+import dev.dubhe.anvilcraft.block.utility.redstone.AdvancedComparatorBlock;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;

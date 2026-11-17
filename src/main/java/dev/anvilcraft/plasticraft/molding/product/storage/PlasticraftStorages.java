@@ -1,100 +1,85 @@
 package dev.anvilcraft.plasticraft.molding.product.storage;
 
+import com.google.common.collect.MapMaker;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import net.minecraft.core.HolderLookup;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.saveddata.SavedDataType;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
+import net.neoforged.neoforge.transfer.transaction.SnapshotJournal;
+import net.neoforged.neoforge.transfer.transaction.TransactionContext;
+import org.jspecify.annotations.Nullable;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 /** 主世界级塑料制品仓储。物品与实体只持 UUID，权威内容在此。 */
 public final class PlasticraftStorages extends SavedData {
-    private static final String DATA_NAME = AnvilcraftPlasticraft.MOD_ID + "_storages";
-    private static final SavedData.Factory<PlasticraftStorages> FACTORY = new SavedData.Factory<>(
-        PlasticraftStorages::new,
-        PlasticraftStorages::load,
-        null
+    public static final SavedDataType<PlasticraftStorages> TYPE = new SavedDataType<>(
+        AnvilcraftPlasticraft.of("storages"), PlasticraftStorages::new,
+        MoldedPlasticStorage.CODEC.listOf().fieldOf("storages").codec()
+            .xmap(PlasticraftStorages::new, store -> List.copyOf(store.storages.values()))
     );
-    private static PlasticraftStorages loading;
     private final Map<UUID, MoldedPlasticStorage> storages = new HashMap<>();
+    // 同一外层事务可能经物品、实体或多个能力实例交替访问同一 UUID。
+    private final Map<UUID, SnapshotJournal<Optional<MoldedPlasticStorage>>> journals = new MapMaker().weakValues().makeMap();
 
     private PlasticraftStorages() {
+    }
+
+    private PlasticraftStorages(List<MoldedPlasticStorage> contents) {
+        for (MoldedPlasticStorage storage : contents) {
+            this.storages.put(storage.id(), storage);
+        }
     }
 
     public static Optional<PlasticraftStorages> tryGet() {
         MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
         // 集成服务器与客户端同处一个进程，客户端线程不得借生命周期钩子写入服务端 SavedData。
         if (server == null || !server.isSameThread()) return Optional.empty();
-        PlasticraftStorages inProgress = loading;
-        if (inProgress != null) return Optional.of(inProgress);
         return Optional.of(get(server));
     }
 
     public static PlasticraftStorages get(MinecraftServer server) {
-        PlasticraftStorages inProgress = loading;
-        if (inProgress != null) return inProgress;
-        ServerLevel overworld = server.overworld();
-        return overworld.getDataStorage().computeIfAbsent(FACTORY, DATA_NAME);
+        return server.overworld().getDataStorage().computeIfAbsent(TYPE);
     }
 
     public Optional<MoldedPlasticStorage> get(UUID id) {
         return Optional.ofNullable(this.storages.get(id));
     }
 
-    public MoldedPlasticStorage getOrCreate(UUID id) {
-        return this.storages.computeIfAbsent(id, key -> {
-            this.setDirty();
-            return new MoldedPlasticStorage(key);
-        });
-    }
-
-    public void remove(UUID id) {
-        if (this.storages.remove(id) != null) this.setDirty();
-    }
-
-    public void markDirty() {
-        this.setDirty();
-    }
-
-    private static PlasticraftStorages load(CompoundTag tag, HolderLookup.Provider registries) {
-        PlasticraftStorages previous = loading;
-        PlasticraftStorages store = new PlasticraftStorages();
-        loading = store;
-        try {
-            if (!tag.contains("storages", Tag.TAG_COMPOUND)) return store;
-            CompoundTag storagesTag = tag.getCompound("storages");
-            for (String key : storagesTag.getAllKeys()) {
-                UUID id;
-                try {
-                    id = UUID.fromString(key);
-                } catch (IllegalArgumentException ignored) {
-                    AnvilcraftPlasticraft.LOGGER.warn("Skipping molded plastic storage with invalid id {}", key);
-                    continue;
+    void replace(UUID id, @Nullable MoldedPlasticStorage replacement, @Nullable TransactionContext tx) {
+        if (tx != null) {
+            this.journals.computeIfAbsent(id, key -> new SnapshotJournal<>() {
+                @Override
+                protected Optional<MoldedPlasticStorage> createSnapshot() {
+                    return PlasticraftStorages.this.get(key);
                 }
-                MoldedPlasticStorage storage = new MoldedPlasticStorage(id);
-                storage.load(storagesTag.getCompound(key), registries);
-                store.storages.put(id, storage);
-            }
-            return store;
-        } finally {
-            loading = previous;
+
+                @Override
+                protected void revertToSnapshot(Optional<MoldedPlasticStorage> snapshot) {
+                    PlasticraftStorages.this.set(key, snapshot.orElse(null));
+                }
+
+                @Override
+                protected void onRootCommit(Optional<MoldedPlasticStorage> original) {
+                    PlasticraftStorages.this.setDirty();
+                }
+            }).updateSnapshots(tx);
+        } else {
+            this.setDirty();
         }
+        this.set(id, replacement);
     }
 
-    @Override
-    public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
-        CompoundTag storagesTag = new CompoundTag();
-        for (Map.Entry<UUID, MoldedPlasticStorage> entry : this.storages.entrySet()) {
-            storagesTag.put(entry.getKey().toString(), entry.getValue().save(registries));
+    private void set(UUID id, @Nullable MoldedPlasticStorage replacement) {
+        if (replacement == null) {
+            this.storages.remove(id);
+        } else {
+            this.storages.put(id, replacement);
         }
-        tag.put("storages", storagesTag);
-        return tag;
     }
 }

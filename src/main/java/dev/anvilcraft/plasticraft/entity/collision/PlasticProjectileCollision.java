@@ -4,7 +4,7 @@ import dev.anvilcraft.plasticraft.api.entity.ShapedCollisionEntity;
 import net.minecraft.core.Direction;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Optional;
@@ -57,7 +57,7 @@ public final class PlasticProjectileCollision {
                 }
             }
             nearest = new BlockHitResult(
-                position, Direction.getNearest(normal.x, normal.y, normal.z), target.anchor(),
+                position, Direction.getApproximateNearest(normal.x, normal.y, normal.z), target.anchor(),
                 shape.contains(start, 0.0D)
             );
             nearestDistance = distance;

@@ -7,6 +7,21 @@
     },
     {
       "type": "anvilcraftplasticraft:generated_plastic"
+    },
+    {
+      "type": "minecraft:single",
+      "resource": "anvilcraft:item/supercapacitor",
+      "sprite": "anvilcraftplasticraft:block/supercapacitor"
+    },
+    {
+      "type": "minecraft:single",
+      "resource": "anvilcraft:item/supercapacitor_electric",
+      "sprite": "anvilcraftplasticraft:block/supercapacitor_electric"
+    },
+    {
+      "type": "minecraft:single",
+      "resource": "anvilcraft:item/empty_supercapacitor",
+      "sprite": "anvilcraftplasticraft:block/supercapacitor_empty"
     }
   ]
 }

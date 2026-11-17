@@ -2,12 +2,8 @@
   "type": "minecraft:crafting_shaped",
   "category": "building",
   "key": {
-    "B": {
-      "item": "anvilcraft:resin_block"
-    },
-    "R": {
-      "item": "anvilcraft:resin"
-    }
+    "B": "anvilcraft:resin_block",
+    "R": "anvilcraft:resin"
   },
   "pattern": [
     "BBB",
@@ -15,7 +11,6 @@
     "RRR"
   ],
   "result": {
-    "count": 1,
     "id": "anvilcraftplasticraft:resin_anvil"
   }
 }

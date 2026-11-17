@@ -14,7 +14,7 @@ import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
@@ -211,15 +211,15 @@ public enum PlasticMaterial {
         };
     }
 
-    public ResourceLocation baseTexture(int size) {
+    public Identifier baseTexture(int size) {
         return AnvilcraftPlasticraft.of("textures/entity/" + this.key + "_base_" + size + "x" + size + ".png");
     }
 
-    public ResourceLocation paletteTexture() {
+    public Identifier paletteTexture() {
         return AnvilcraftPlasticraft.of("textures/palette/" + this.key + "_palette.png");
     }
 
-    public ResourceLocation sprite(DyeColor color) {
+    public Identifier sprite(DyeColor color) {
         return AnvilcraftPlasticraft.of("block/" + this.key + "/" + color.getName());
     }
 

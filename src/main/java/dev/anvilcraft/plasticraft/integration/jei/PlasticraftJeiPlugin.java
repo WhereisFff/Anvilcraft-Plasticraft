@@ -14,6 +14,7 @@ import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.constants.RecipeTypes;
 import mezz.jei.api.gui.handlers.IGuiProperties;
 import mezz.jei.api.recipe.RecipeType;
+import mezz.jei.api.recipe.types.IRecipeType;
 import mezz.jei.api.registration.IGuiHandlerRegistration;
 import mezz.jei.api.registration.IRecipeCatalystRegistration;
 import mezz.jei.api.registration.IRecipeCategoryRegistration;
@@ -21,7 +22,9 @@ import mezz.jei.api.registration.IRecipeRegistration;
 import mezz.jei.api.runtime.IJeiRuntime;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingRecipe;
@@ -38,7 +41,7 @@ import java.util.stream.Collectors;
  */
 @JeiPlugin
 public final class PlasticraftJeiPlugin implements IModPlugin {
-    private static final ResourceLocation UID = AnvilcraftPlasticraft.of("jei_plugin");
+    private static final Identifier UID = AnvilcraftPlasticraft.of("jei_plugin");
     private static final String ENHANCED_RECIPE_PREFIX = "jei/enhanced/";
     public static final RecipeType<PlasticMeltCatalysisRecipe> PLASTIC_MELT_CATALYSIS = new RecipeType<>(
         AnvilcraftPlasticraft.of("plastic_melt_catalysis"), PlasticMeltCatalysisRecipe.class
@@ -51,7 +54,7 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
         RecipeType.createRecipeHolderType(
             AnvilcraftPlasticraft.of("condenser")
         );
-    private static final List<RecipeType<?>> ANVIL_PROCESSING_TYPES = List.of(
+    private static final List<IRecipeType<?>> ANVIL_PROCESSING_TYPES = List.of(
         AnvilCraftJeiPlugin.MESH,
         AnvilCraftJeiPlugin.BLOCK_COMPRESS,
         AnvilCraftJeiPlugin.BLOCK_CRUSH,
@@ -70,7 +73,7 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
         AnvilCraftJeiPlugin.NEUTRON_IRRADIATION,
         AnvilCraftJeiPlugin.PROCEDURAL_PROCESS
     );
-    private static final List<RecipeType<?>> CAULDRON_PROCESSING_TYPES = List.of(
+    private static final List<IRecipeType<?>> CAULDRON_PROCESSING_TYPES = List.of(
         AnvilCraftJeiPlugin.FAST_COOKING,
         AnvilCraftJeiPlugin.ITEM_COMPRESS,
         AnvilCraftJeiPlugin.NEUTRON_IRRADIATION,
@@ -81,7 +84,7 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
     );
 
     @Override
-    public ResourceLocation getPluginUid() {
+    public Identifier getPluginUid() {
         return UID;
     }
 
@@ -107,10 +110,10 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
         for (RecipeHolder<PlasmaJetBlastingRecipe> holder : plasmaRecipes) {
             displayRecipes.add(holder);
             displayRecipes.add(new RecipeHolder<>(
-                ResourceLocation.fromNamespaceAndPath(
-                    holder.id().getNamespace(),
-                    ENHANCED_RECIPE_PREFIX + holder.id().getPath()
-                ),
+                ResourceKey.create(Registries.RECIPE, Identifier.fromNamespaceAndPath(
+                    holder.id().identifier().getNamespace(),
+                    ENHANCED_RECIPE_PREFIX + holder.id().identifier().getPath()
+                )),
                 holder.value()
             ));
         }
@@ -170,7 +173,7 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
     }
 
     static boolean isEnhancedRecipe(RecipeHolder<PlasmaJetBlastingRecipe> holder) {
-        return holder.id().getPath().startsWith(ENHANCED_RECIPE_PREFIX);
+        return holder.id().identifier().getPath().startsWith(ENHANCED_RECIPE_PREFIX);
     }
 
     @Override
@@ -185,16 +188,16 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
         );
         registration.addRecipeCatalyst(PlasticraftBlocks.CONDENSER_TOWER.asStack(), PLASMA_JET_BLASTING);
         registration.addRecipeCatalyst(PlasticraftBlocks.CONDENSER_TOWER.asStack(), CONDENSER);
-        for (RecipeType<?> recipeType : ANVIL_PROCESSING_TYPES) {
+        for (IRecipeType<?> recipeType : ANVIL_PROCESSING_TYPES) {
             registration.addRecipeCatalyst(PlasticraftBlocks.RESIN_ANVIL.asStack(), recipeType);
             registration.addRecipeCatalyst(PlasticraftBlocks.HARDEND_RESIN_ANVIL.asStack(), recipeType);
         }
         // 液体混合不在此列表中，继续只接受大型炼药锅和巨型铁砧。
-        for (RecipeType<?> recipeType : CAULDRON_PROCESSING_TYPES) {
+        for (IRecipeType<?> recipeType : CAULDRON_PROCESSING_TYPES) {
             registration.addRecipeCatalyst(PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack(), recipeType);
         }
         registration.addRecipeCatalyst(
-            new ItemStack(PlasticraftBlocks.HARDEND_RESIN_ANVIL.get()),
+            PlasticraftBlocks.HARDEND_RESIN_ANVIL.asStack(),
             RecipeTypes.ANVIL
         );
     }
@@ -206,17 +209,16 @@ public final class PlasticraftJeiPlugin implements IModPlugin {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null) return;
 
-        Set<ResourceLocation> registeredIds = jeiRuntime.getRecipeManager()
+        Set<Identifier> registeredIds = jeiRuntime.getRecipeManager()
             .createRecipeLookup(RecipeTypes.CRAFTING)
             .includeHidden()
             .get()
-            .map(RecipeHolder::id)
+            .map(holder -> holder.id().identifier())
             .collect(Collectors.toSet());
-        List<RecipeHolder<CraftingRecipe>> missingRecipes = minecraft.level.getRecipeManager()
-            .getAllRecipesFor(VanillaRecipeTypes.CRAFTING)
+        List<RecipeHolder<CraftingRecipe>> missingRecipes = JeiRecipeUtil.getRecipeHoldersFromType(VanillaRecipeTypes.CRAFTING)
             .stream()
-            .filter(holder -> holder.id().getNamespace().equals(AnvilcraftPlasticraft.MOD_ID))
-            .filter(holder -> !registeredIds.contains(holder.id()))
+            .filter(holder -> holder.id().identifier().getNamespace().equals(AnvilcraftPlasticraft.MOD_ID))
+            .filter(holder -> !registeredIds.contains(holder.id().identifier()))
             .toList();
         if (!missingRecipes.isEmpty()) {
             jeiRuntime.getRecipeManager().addRecipes(RecipeTypes.CRAFTING, missingRecipes);

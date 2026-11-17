@@ -5,18 +5,23 @@ import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
 import dev.anvilcraft.plasticraft.item.PlasticMoldingChamberItem;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
 import dev.dubhe.anvilcraft.init.item.ModItems;
-import net.minecraft.core.HolderLookup;
 import net.minecraft.core.NonNullList;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.CraftingRecipe;
-import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.PlacementInfo;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.ShapedRecipe;
+import net.minecraft.world.item.crafting.display.RecipeDisplay;
+import net.minecraft.world.item.crafting.display.ShapedCraftingRecipeDisplay;
+import net.minecraft.world.item.crafting.display.SlotDisplay;
 import net.minecraft.world.level.Level;
+
+import java.util.List;
 
 /** 将合成输入中的超级电容器充电状态写入成型舱物品。 */
 public final class PlasticMoldingChamberRecipe implements CraftingRecipe {
@@ -32,8 +37,8 @@ public final class PlasticMoldingChamberRecipe implements CraftingRecipe {
     }
 
     @Override
-    public ItemStack assemble(CraftingInput input, HolderLookup.Provider provider) {
-        ItemStack result = this.base.assemble(input, provider);
+    public ItemStack assemble(CraftingInput input) {
+        ItemStack result = this.base.assemble(input);
         boolean charged = input.items().stream().anyMatch(stack -> stack.is(ModItems.SUPER_CAPACITOR));
         return PlasticMoldingChamberItem.setStoredEnergy(
             result,
@@ -42,26 +47,29 @@ public final class PlasticMoldingChamberRecipe implements CraftingRecipe {
     }
 
     @Override
-    public boolean canCraftInDimensions(int width, int height) {
-        return this.base.canCraftInDimensions(width, height);
+    public PlacementInfo placementInfo() {
+        return this.base.placementInfo();
     }
 
     @Override
-    public ItemStack getResultItem(HolderLookup.Provider provider) {
-        return PlasticMoldingChamberItem.setStoredEnergy(
-            this.base.getResultItem(provider).copy(),
-            MoldingPowerBridge.capacity()
-        );
+    public List<RecipeDisplay> display() {
+        return this.base.display().stream().map(display -> {
+            if (display instanceof ShapedCraftingRecipeDisplay shaped
+                && shaped.result() instanceof SlotDisplay.ItemStackSlotDisplay result) {
+                SlotDisplay charged = new SlotDisplay.ItemStackSlotDisplay(ItemStackTemplate.fromNonEmptyStack(
+                    PlasticMoldingChamberItem.setStoredEnergy(result.stack().create(), MoldingPowerBridge.capacity())
+                ));
+                return (RecipeDisplay) new ShapedCraftingRecipeDisplay(
+                    shaped.width(), shaped.height(), shaped.ingredients(), charged, shaped.craftingStation()
+                );
+            }
+            return display;
+        }).toList();
     }
 
     @Override
     public NonNullList<ItemStack> getRemainingItems(CraftingInput input) {
         return this.base.getRemainingItems(input);
-    }
-
-    @Override
-    public NonNullList<Ingredient> getIngredients() {
-        return this.base.getIngredients();
     }
 
     @Override
@@ -75,13 +83,8 @@ public final class PlasticMoldingChamberRecipe implements CraftingRecipe {
     }
 
     @Override
-    public String getGroup() {
-        return this.base.getGroup();
-    }
-
-    @Override
-    public ItemStack getToastSymbol() {
-        return this.base.getToastSymbol();
+    public String group() {
+        return this.base.group();
     }
 
     @Override
@@ -90,12 +93,7 @@ public final class PlasticMoldingChamberRecipe implements CraftingRecipe {
     }
 
     @Override
-    public boolean isIncomplete() {
-        return this.base.isIncomplete();
-    }
-
-    @Override
-    public RecipeSerializer<?> getSerializer() {
+    public RecipeSerializer<PlasticMoldingChamberRecipe> getSerializer() {
         return PlasticraftRecipeTypes.PLASTIC_MOLDING_CHAMBER.get();
     }
 
@@ -103,25 +101,15 @@ public final class PlasticMoldingChamberRecipe implements CraftingRecipe {
         return this.base;
     }
 
-    public static final class Serializer implements RecipeSerializer<PlasticMoldingChamberRecipe> {
-        private static final MapCodec<PlasticMoldingChamberRecipe> CODEC = ShapedRecipe.Serializer.CODEC.xmap(
+    private static final MapCodec<PlasticMoldingChamberRecipe> CODEC = ShapedRecipe.MAP_CODEC.xmap(
+        PlasticMoldingChamberRecipe::new,
+        PlasticMoldingChamberRecipe::base
+    );
+    private static final StreamCodec<RegistryFriendlyByteBuf, PlasticMoldingChamberRecipe> STREAM_CODEC =
+        ShapedRecipe.STREAM_CODEC.map(
             PlasticMoldingChamberRecipe::new,
             PlasticMoldingChamberRecipe::base
         );
-        private static final StreamCodec<RegistryFriendlyByteBuf, PlasticMoldingChamberRecipe> STREAM_CODEC =
-            ShapedRecipe.Serializer.STREAM_CODEC.map(
-                PlasticMoldingChamberRecipe::new,
-                PlasticMoldingChamberRecipe::base
-            );
+    public static final RecipeSerializer<PlasticMoldingChamberRecipe> SERIALIZER = new RecipeSerializer<>(CODEC, STREAM_CODEC);
 
-        @Override
-        public MapCodec<PlasticMoldingChamberRecipe> codec() {
-            return CODEC;
-        }
-
-        @Override
-        public StreamCodec<RegistryFriendlyByteBuf, PlasticMoldingChamberRecipe> streamCodec() {
-            return STREAM_CODEC;
-        }
-    }
 }

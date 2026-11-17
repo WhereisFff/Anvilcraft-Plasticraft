@@ -8,7 +8,6 @@ import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexCollisionResolve
 import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexShape;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityContactResolver;
 import dev.dubhe.anvilcraft.util.GravityManager;
-import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
@@ -17,6 +16,7 @@ import net.minecraft.world.entity.EntitySelector;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -43,13 +43,13 @@ public final class PlasticEntityPhysics {
     /** 返回占主导的有效重力面，合力抵消时回退为向下。 */
     public static Direction effectiveDirection(FallingBlockEntity entity, double buoyancyAcceleration) {
         Vec3 gravity = effectiveGravity(entity, buoyancyAcceleration);
-        return gravity.lengthSqr() <= MIN_EFFECTIVE_GRAVITY_SQR ? Direction.DOWN : Direction.getNearest(gravity);
+        return gravity.lengthSqr() <= MIN_EFFECTIVE_GRAVITY_SQR ? Direction.DOWN : Direction.getApproximateNearest(gravity);
     }
 
     /** 合力抵消时不返回支撑方向，避免任意锁定为向下。 */
     @Nullable
     public static Direction directionOrNull(Vec3 gravity) {
-        return gravity.lengthSqr() <= MIN_EFFECTIVE_GRAVITY_SQR ? null : Direction.getNearest(gravity);
+        return gravity.lengthSqr() <= MIN_EFFECTIVE_GRAVITY_SQR ? null : Direction.getApproximateNearest(gravity);
     }
 
     /** 紧贴给定碰撞箱重力朝向面的外侧构造薄接触探针。 */
@@ -300,7 +300,7 @@ public final class PlasticEntityPhysics {
 
     /** 保留切向和朝被承载实体的法向位移，支撑者离开时不把目标一同拖走。 */
     public static Vec3 carriedMovement(Vec3 displacement, Direction gravityDirection) {
-        Vec3 normal = Vec3.atLowerCornerOf(gravityDirection.getNormal());
+        Vec3 normal = Vec3.atLowerCornerOf(gravityDirection.getUnitVec3i());
         double normalMovement = displacement.dot(normal);
         Vec3 tangentialMovement = displacement.subtract(normal.scale(normalMovement));
         return tangentialMovement.add(normal.scale(Math.min(normalMovement, 0.0D)));
@@ -427,8 +427,7 @@ public final class PlasticEntityPhysics {
     }
 
     /** 返回由真实接触法线推导出的侧推位移和反向裁剪关系。 */
-    @Nullable
-    public static PlasticEntityContactResolver.PushContact sidePushContact(
+    public static PlasticEntityContactResolver.@Nullable PushContact sidePushContact(
         FallingBlockEntity target,
         Entity pusher,
         AABB pusherBox,
@@ -501,7 +500,7 @@ public final class PlasticEntityPhysics {
 
     /** 移除当前重力支撑面的法向分量。 */
     public static Vec3 tangentialMovement(Vec3 movement, Direction gravityDirection) {
-        Vec3 normal = Vec3.atLowerCornerOf(gravityDirection.getNormal());
+        Vec3 normal = Vec3.atLowerCornerOf(gravityDirection.getUnitVec3i());
         return movement.subtract(normal.scale(movement.dot(normal)));
     }
 
@@ -609,7 +608,7 @@ public final class PlasticEntityPhysics {
 
     /** 仅丢弃指向当前支撑面的速度分量。 */
     public static Vec3 removeIntoSupportVelocity(Vec3 velocity, Direction gravityDirection) {
-        Vec3 normal = Vec3.atLowerCornerOf(gravityDirection.getNormal());
+        Vec3 normal = Vec3.atLowerCornerOf(gravityDirection.getUnitVec3i());
         double component = velocity.dot(normal);
         return component > 0.0D ? velocity.subtract(normal.scale(component)) : velocity;
     }
@@ -658,7 +657,7 @@ public final class PlasticEntityPhysics {
             case Y -> new Vec3(center.x, faceCoordinate(box, gravityDirection), center.z);
             case Z -> new Vec3(center.x, center.y, faceCoordinate(box, gravityDirection));
         };
-        Vec3 inward = Vec3.atLowerCornerOf(gravityDirection.getNormal()).scale(-FACE_EPSILON);
+        Vec3 inward = Vec3.atLowerCornerOf(gravityDirection.getUnitVec3i()).scale(-FACE_EPSILON);
         return BlockPos.containing(faceCenter.add(inward));
     }
 

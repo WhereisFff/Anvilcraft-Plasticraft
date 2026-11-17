@@ -12,7 +12,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.material.Fluid;
@@ -38,37 +38,27 @@ public final class FluidFastCookingRecipe extends FastCookingRecipe {
         return new Builder();
     }
 
-    public static final class Serializer implements RecipeSerializer<FastCookingRecipe> {
-        private static final MapCodec<FastCookingRecipe> CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
-            ItemIngredientPredicate.CODEC.listOf()
-                .optionalFieldOf("ingredients", List.of())
-                .forGetter(FastCookingRecipe::getInputItems),
-            ChanceItemStack.CODEC.listOf()
-                .optionalFieldOf("results", List.of())
-                .forGetter(FastCookingRecipe::getResultItems),
-            HasCauldronSimple.CODEC.forGetter(FastCookingRecipe::getHasCauldron)
-        ).apply(instance, FluidFastCookingRecipe::new));
+    private static final MapCodec<FastCookingRecipe> CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
+        ItemIngredientPredicate.CODEC.listOf()
+            .optionalFieldOf("ingredients", List.of())
+            .forGetter(FastCookingRecipe::getInputItems),
+        ChanceItemStack.CODEC.listOf()
+            .optionalFieldOf("results", List.of())
+            .forGetter(FastCookingRecipe::getResultItems),
+        HasCauldronSimple.CODEC.forGetter(FastCookingRecipe::getHasCauldron)
+    ).apply(instance, FluidFastCookingRecipe::new));
 
-        private static final StreamCodec<RegistryFriendlyByteBuf, FastCookingRecipe> STREAM_CODEC = StreamCodec.composite(
-            ItemIngredientPredicate.STREAM_CODEC.apply(ByteBufCodecs.list()),
-            FastCookingRecipe::getInputItems,
-            ChanceItemStack.STREAM_CODEC.apply(ByteBufCodecs.list()),
-            FastCookingRecipe::getResultItems,
-            HasCauldronSimple.STREAM_CODEC,
-            FastCookingRecipe::getHasCauldron,
-            FluidFastCookingRecipe::new
-        );
+    private static final StreamCodec<RegistryFriendlyByteBuf, FastCookingRecipe> STREAM_CODEC = StreamCodec.composite(
+        ItemIngredientPredicate.STREAM_CODEC.apply(ByteBufCodecs.list()),
+        FastCookingRecipe::getInputItems,
+        ChanceItemStack.STREAM_CODEC.apply(ByteBufCodecs.list()),
+        FastCookingRecipe::getResultItems,
+        HasCauldronSimple.STREAM_CODEC,
+        FastCookingRecipe::getHasCauldron,
+        FluidFastCookingRecipe::new
+    );
+    public static final RecipeSerializer<FastCookingRecipe> SERIALIZER = new RecipeSerializer<>(CODEC, STREAM_CODEC);
 
-        @Override
-        public MapCodec<FastCookingRecipe> codec() {
-            return CODEC;
-        }
-
-        @Override
-        public StreamCodec<RegistryFriendlyByteBuf, FastCookingRecipe> streamCodec() {
-            return STREAM_CODEC;
-        }
-    }
 
     public static final class Builder extends SimpleAbstractBuilder<FastCookingRecipe, Builder> {
         private final HasCauldronSimple.Builder hasCauldron = HasCauldronSimple.empty();
@@ -79,7 +69,7 @@ public final class FluidFastCookingRecipe extends FastCookingRecipe {
         }
 
         public Builder cauldron(Block cauldron) {
-            return this.cauldron(BuiltInRegistries.FLUID.get(WrapUtils.cauldron2Fluid(cauldron)));
+            return this.cauldron(BuiltInRegistries.FLUID.getValue(WrapUtils.cauldron2Fluid(cauldron)));
         }
 
         public Builder transform(Fluid fluid, int amount) {
@@ -101,7 +91,7 @@ public final class FluidFastCookingRecipe extends FastCookingRecipe {
         }
 
         @Override
-        public void validate(ResourceLocation id) {
+        public void validate(Identifier id) {
             HasCauldronSimple cauldron = this.hasCauldron.build();
             if (this.itemIngredients.isEmpty()) {
                 throw new IllegalArgumentException("Recipe ingredients must not be empty, RecipeId: " + id);

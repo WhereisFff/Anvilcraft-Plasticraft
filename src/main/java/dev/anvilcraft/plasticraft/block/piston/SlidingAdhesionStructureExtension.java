@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.block.piston;
 
 import dev.dubhe.anvilcraft.api.sliding.SlidingBlockStructureResolver;
 import dev.dubhe.anvilcraft.api.sliding.SlidingStructureExtension;
-import dev.dubhe.anvilcraft.block.sliding.ISlidingRail;
+import dev.dubhe.anvilcraft.block.logistics.sliding.ISlidingRail;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;

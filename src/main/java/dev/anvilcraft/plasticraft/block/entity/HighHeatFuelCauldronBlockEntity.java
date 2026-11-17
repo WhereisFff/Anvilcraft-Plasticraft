@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.block.entity;
 
 import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
-import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
+import dev.dubhe.anvilcraft.block.cauldron.Layered4LevelCauldronBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -13,6 +13,8 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 
 /** 为高热燃料炼药锅提供动态火焰渲染锚点。 */
 public final class HighHeatFuelCauldronBlockEntity extends BlockEntity {
@@ -50,16 +52,16 @@ public final class HighHeatFuelCauldronBlockEntity extends BlockEntity {
     }
 
     @Override
-    protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
-        super.saveAdditional(tag, registries);
+    protected void saveAdditional(ValueOutput tag) {
+        super.saveAdditional(tag);
         tag.putBoolean(TAG_SPENT, this.spent);
     }
 
     @Override
-    protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
-        super.loadAdditional(tag, registries);
-        this.spent = tag.contains(TAG_SPENT)
-            ? tag.getBoolean(TAG_SPENT)
+    protected void loadAdditional(ValueInput tag) {
+        super.loadAdditional(tag);
+        this.spent = tag.keySet().contains(TAG_SPENT)
+            ? tag.getBooleanOr(TAG_SPENT, false)
             : this.getBlockState().hasProperty(HighHeatFuelCauldronBlock.IGNITED)
                 && this.getBlockState().getValue(HighHeatFuelCauldronBlock.IGNITED)
                 && this.getBlockState().getValue(Layered4LevelCauldronBlock.LEVEL) == 1;

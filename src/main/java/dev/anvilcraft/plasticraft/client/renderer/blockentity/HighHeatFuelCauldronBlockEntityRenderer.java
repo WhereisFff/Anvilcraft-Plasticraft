@@ -4,25 +4,24 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
 import dev.anvilcraft.plasticraft.block.entity.HighHeatFuelCauldronBlockEntity;
 import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
-import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticRenderGeometry;
+import dev.dubhe.anvilcraft.block.cauldron.Layered4LevelCauldronBlock;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 
 /** 在高热燃料液面上渲染动态蓝白色火焰。 */
 public final class HighHeatFuelCauldronBlockEntityRenderer
-    implements BlockEntityRenderer<HighHeatFuelCauldronBlockEntity> {
+    extends PlasticBlockEntityRenderer<HighHeatFuelCauldronBlockEntity> {
     public HighHeatFuelCauldronBlockEntityRenderer(BlockEntityRendererProvider.Context context) {
     }
 
     @Override
-    public void render(
+    protected void extractGeometry(
         HighHeatFuelCauldronBlockEntity blockEntity,
         float partialTick,
         PoseStack pose,
-        MultiBufferSource buffers,
+        PlasticRenderGeometry buffers,
         int packedLight,
         int packedOverlay
     ) {

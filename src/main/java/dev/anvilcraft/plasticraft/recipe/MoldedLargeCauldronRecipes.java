@@ -14,8 +14,8 @@ import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.AnvilCraft;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import dev.dubhe.anvilcraft.api.recipe.CauldronProcessing;
-import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.block.entity.BurningHeaterBlockEntity;
+import dev.dubhe.anvilcraft.block.workstation.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.init.recipe.ModRecipeTriggers;
 import dev.dubhe.anvilcraft.init.recipe.ModRecipeTypes;
 import dev.dubhe.anvilcraft.recipe.FluidMixingRecipe;
@@ -23,7 +23,6 @@ import dev.dubhe.anvilcraft.recipe.LiquidEnchantmentCauldronRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.outcome.DamageAnvil;
 import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.ItemCompressRecipe;
-import dev.dubhe.anvilcraft.recipe.anvil.wrap.SuperHeatingRecipe;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.FallingBlockEntity;
@@ -33,11 +32,12 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.fluids.FluidStack;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import net.neoforged.neoforge.items.IItemHandler;
-import net.neoforged.neoforge.items.ItemHandlerHelper;
-import net.neoforged.neoforge.items.ItemStackHandler;
-import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.item.ItemResource;
+import net.neoforged.neoforge.transfer.item.ItemUtil;
+import net.neoforged.neoforge.transfer.transaction.Transaction;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -55,17 +55,17 @@ public final class MoldedLargeCauldronRecipes {
         List<BlockPos> helpers = PlasticCauldronWorkBlockFinder.findWorkBlockPositions(pot, position).stream()
             .filter(level::hasChunkAt).filter(pos -> activeHelper(level.getBlockState(pos))).toList();
         List<Pass> passes = helpers.isEmpty() ? List.of(Pass.ALL) : List.of(Pass.NON_COMPRESSION, Pass.COMPRESSION);
-        List<RecipeHolder<InWorldRecipe>> recipes = new ArrayList<>(level.getRecipeManager()
+        List<RecipeHolder<InWorldRecipe>> recipes = new ArrayList<>(level.recipeAccess()
             .anvillib$getInWorldRecipeManager().recipeHolders.get(ModRecipeTriggers.ON_ANVIL_FALL_ON.get()));
-        IItemHandler input = pot.getMoldedItemHandler().inputView();
-        IItemHandler output = pot.getMoldedItemHandler().outputView();
+        ResourceHandler<ItemResource> input = pot.getMoldedItemHandler().inputView();
+        ResourceHandler<ItemResource> output = pot.getMoldedItemHandler().outputView();
         List<FluidStack> initialFluids = pot.getMoldedFluidHandler().copyFluids();
         List<Integer> initialOutputs = occupied(output);
         Set<Integer> specialSlots = new HashSet<>();
         int limit = AnvilCraft.CONFIG.machines.largeCauldronMaxProcessEfficiency;
         int processed = 0;
         boolean damaged = false;
-        for (int slot = 0; slot < input.getSlots() && processed < limit; slot++) {
+        for (int slot = 0; slot < input.size() && processed < limit; slot++) {
             if (!enchant(level, pot, slot, helpers)) continue;
             specialSlots.add(slot);
             processed++;
@@ -74,7 +74,7 @@ public final class MoldedLargeCauldronRecipes {
             while (processed < limit) {
                 boolean progress = false;
                 List<Integer> slots = occupied(input);
-                slots.sort(Comparator.comparingInt((Integer slot) -> priority(recipes, input.getStackInSlot(slot), pass))
+                slots.sort(Comparator.comparingInt((Integer slot) -> priority(recipes, ItemUtil.getStack(input, slot), pass))
                     .reversed().thenComparingInt(i -> i));
                 for (int slot : slots) {
                     if (specialSlots.contains(slot)) continue;
@@ -124,23 +124,23 @@ public final class MoldedLargeCauldronRecipes {
         ServerLevel level, FallingBlockEntity anvil, UniversalPlasticEntity pot, Vec3 position,
         List<BlockPos> helpers, List<RecipeHolder<InWorldRecipe>> recipes, int slot, boolean outputs, Pass pass
     ) {
-        IItemHandler source = outputs ? pot.getMoldedItemHandler().outputView() : pot.getMoldedItemHandler().inputView();
-        if (source.getStackInSlot(slot).isEmpty()) return Execution.EMPTY;
+        ResourceHandler<ItemResource> source = outputs ? pot.getMoldedItemHandler().outputView() : pot.getMoldedItemHandler().inputView();
+        if (ItemUtil.getStack(source, slot).isEmpty()) return Execution.EMPTY;
         for (BlockPos cell : cells(pot, position, helpers, outputs ? -1 : slot)) {
             pot.selectLargeRecipeInput(slot, outputs);
             try {
-                int budget = source.getStackInSlot(slot).getMaxStackSize();
+                int budget = ItemUtil.getStack(source, slot).getMaxStackSize();
                 int consumed = 0;
                 boolean executed = false;
                 boolean damaged = false;
                 while (consumed < budget) {
-                    ItemStack stack = pot.getInput().getStackInSlot(0).copy();
+                    ItemStack stack = ItemUtil.getStack(pot.getInput(), 0).copy();
                     if (stack.isEmpty()) break;
                     Execution result = one(level, anvil, pot, cell, recipes, stack, pass);
                     if (!result.executed()) break;
                     executed = true;
                     damaged |= result.damaged();
-                    int used = stack.getCount() - pot.getInput().getStackInSlot(0).getCount();
+                    int used = stack.getCount() - ItemUtil.getStack(pot.getInput(), 0).getCount();
                     if (used <= 0) break;
                     consumed += used;
                 }
@@ -163,11 +163,11 @@ public final class MoldedLargeCauldronRecipes {
                 InWorldRecipe recipe = holder.value();
                 if (pass.rejects(recipe) || (stack.isEmpty() ? !fluidOnly(recipe) : !anchored(recipe, stack))) continue;
                 if (!recipe.matches(context, level)) continue;
-                recipe.assemble(context, level.registryAccess());
-                NeoForge.EVENT_BUS.post(new InWorldRecipeEvent(recipe.getType(), holder.id(), recipe, context));
+                recipe.assemble(context);
+                NeoForge.EVENT_BUS.post(new InWorldRecipeEvent(recipe.getType(), holder.id().identifier(), recipe, context));
                 long batchId = context.getBatchId();
                 context.afterCommit(() -> NeoForge.EVENT_BUS.post(new InWorldRecipeCommittedEvent(
-                    recipe.getType(), holder.id(), recipe, context, batchId
+                    recipe.getType(), holder.id().identifier(), recipe, context, batchId
                 )));
                 boolean damaged = context.get(DamageAnvil.DAMAGE_ANVIL);
                 boolean suppress = GiantAnvilBlock.SUPPRESS_DROPS.get();
@@ -219,30 +219,34 @@ public final class MoldedLargeCauldronRecipes {
             .mapToInt(InWorldRecipe::priority).max().orElse(Integer.MIN_VALUE);
     }
 
-    private static List<Integer> occupied(IItemHandler handler) {
+    private static List<Integer> occupied(ResourceHandler<ItemResource> handler) {
         List<Integer> result = new ArrayList<>();
-        for (int slot = 0; slot < handler.getSlots(); slot++) if (!handler.getStackInSlot(slot).isEmpty()) result.add(slot);
+        for (int slot = 0; slot < handler.size(); slot++) if (!ItemUtil.getStack(handler, slot).isEmpty()) result.add(slot);
         return result;
     }
 
     private static boolean enchant(ServerLevel level, UniversalPlasticEntity pot, int slot, List<BlockPos> helpers) {
-        IItemHandler input = pot.getMoldedItemHandler().inputView();
-        ItemStack starting = input.getStackInSlot(slot);
+        ResourceHandler<ItemResource> input = pot.getMoldedItemHandler().inputView();
+        ItemStack starting = ItemUtil.getStack(input, slot);
         if (starting.isEmpty()) return false;
         int consumed = 0;
         while (consumed < starting.getMaxStackSize()) {
             BlockPos heater = helpers.stream().filter(pos -> heating(level.getBlockState(pos)))
                 .min(Comparator.comparingDouble(pos -> pos.getCenter().distanceToSqr(MoldedLargeCauldronInteraction.inputPosition(pot, slot))))
                 .orElse(null);
-            var matched = LiquidEnchantmentCauldronRecipe.match(pot.getMoldedFluidHandler().copyFluids(), input.getStackInSlot(slot), heater != null);
+            var matched = LiquidEnchantmentCauldronRecipe.match(pot.getMoldedFluidHandler().copyFluids(), ItemUtil.getStack(input, slot), heater != null);
             if (matched.isEmpty()) break;
             LiquidEnchantmentCauldronRecipe.Result result = matched.orElseThrow();
-            if (!ItemHandlerHelper.insertItem(pot.getMoldedItemHandler().outputView(), result.itemResult(), true).isEmpty()) break;
+            try (var tx = Transaction.openRoot()) {
+                var output = pot.getMoldedItemHandler().outputView();
+                ItemStack product = result.itemResult();
+                if (input.extract(slot, input.getResource(slot), result.itemCost(), tx) != result.itemCost()
+                    || !product.isEmpty() && output.insert(ItemResource.of(product), product.getCount(), tx) != product.getCount()) break;
+                tx.commit();
+            }
             pot.getMoldedFluidHandler().setFluids(result.fluids());
-            input.extractItem(slot, result.itemCost(), false);
-            ItemHandlerHelper.insertItem(pot.getMoldedItemHandler().outputView(), result.itemResult(), false);
             if (result.consumesHeat() && heater != null && level.getBlockEntity(heater) instanceof BurningHeaterBlockEntity burning) {
-                burning.consumeBurnTime(SuperHeatingRecipe.ConsumeFuel.FUEL_COST_TICKS);
+                burning.consumeBurnTime(240 * 20);
             }
             consumed += result.itemCost();
             if (result.itemCost() <= 0) break;
@@ -252,7 +256,7 @@ public final class MoldedLargeCauldronRecipes {
 
     private static boolean mix(ServerLevel level, UniversalPlasticEntity pot) {
         List<FluidStack> stored = pot.getMoldedFluidHandler().copyFluids();
-        for (RecipeHolder<FluidMixingRecipe> holder : level.getRecipeManager().getAllRecipesFor(ModRecipeTypes.FLUID_MIXING_TYPE.get())) {
+        for (RecipeHolder<FluidMixingRecipe> holder : level.recipeAccess().recipeMap().byType(ModRecipeTypes.FLUID_MIXING.get())) {
             FluidMixingRecipe recipe = holder.value();
             int batches = recipe.getMaximumBatches(stored);
             if (batches <= 0) continue;
@@ -271,20 +275,20 @@ public final class MoldedLargeCauldronRecipes {
                 }
             } else mixed = mixFluids(recipe, stored, 1);
             if (mixed == null) continue;
-            IItemHandler output = pot.getMoldedItemHandler().outputView();
-            ItemStackHandler simulated = new ItemStackHandler(output.getSlots());
-            for (int slot = 0; slot < output.getSlots(); slot++) simulated.setStackInSlot(slot, output.getStackInSlot(slot).copy());
-            List<ItemStack> results = recipe.getItemResults().stream().map(stack -> color(stack.copy(), stored)).toList();
-            boolean fits = true;
-            for (ItemStack result : results) {
-                if (!ItemHandlerHelper.insertItem(simulated, result, false).isEmpty()) {
-                    fits = false;
-                    break;
+            ResourceHandler<ItemResource> output = pot.getMoldedItemHandler().outputView();
+            try (var tx = Transaction.openRoot()) {
+                boolean fits = true;
+                for (ItemStack stack : recipe.getItemResults()) {
+                    ItemStack result = color(stack.copy(), stored);
+                    if (output.insert(ItemResource.of(result), result.getCount(), tx) != result.getCount()) {
+                        fits = false;
+                        break;
+                    }
                 }
+                if (!fits) continue;
+                tx.commit();
             }
-            if (!fits) continue;
             pot.getMoldedFluidHandler().setFluids(mixed);
-            for (ItemStack result : results) ItemHandlerHelper.insertItem(output, result, false);
             return true;
         }
         return false;
@@ -297,7 +301,10 @@ public final class MoldedLargeCauldronRecipes {
         LargeCauldronFluidHandler simulated = new LargeCauldronFluidHandler(() -> {});
         simulated.setFluids(remaining.orElseThrow());
         for (FluidStack result : results.orElseThrow()) {
-            if (simulated.fill(result.copy(), IFluidHandler.FluidAction.EXECUTE) != result.getAmount()) return null;
+            try (var tx = Transaction.openRoot()) {
+                if (simulated.insert(FluidResource.of(result), result.getAmount(), tx) != result.getAmount()) return null;
+                tx.commit();
+            }
         }
         return simulated.copyFluids();
     }

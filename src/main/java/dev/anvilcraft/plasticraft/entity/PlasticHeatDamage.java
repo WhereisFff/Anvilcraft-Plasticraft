@@ -20,7 +20,7 @@ public final class PlasticHeatDamage {
 
     public static void hurtFromSupport(UniversalPlasticEntity entity) {
         Level level = entity.level();
-        if (level.isClientSide || entity.isRemoved()) return;
+        if (level.isClientSide() || entity.isRemoved()) return;
         AABB bounds = entity.getBoundingBox();
         int minX = Mth.floor(bounds.minX + PlasticEntityPhysics.FACE_EPSILON);
         int maxX = Mth.floor(bounds.maxX - PlasticEntityPhysics.FACE_EPSILON);

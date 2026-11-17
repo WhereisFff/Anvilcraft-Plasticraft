@@ -11,24 +11,24 @@ import dev.anvilcraft.plasticraft.molding.bake.MoldingTrayShapeAnalysis;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingTrayShapeAnalyzer;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Objects;
+import java.util.Optional;
 
 /** 当前版本注册的制品类型。顺序同时是类型叠加层的稳定显示顺序。 */
 public final class MoldingProductTypes {
-    public static final ResourceLocation NORMAL_ID = AnvilcraftPlasticraft.of("normal");
-    public static final ResourceLocation CRATE_ID = AnvilcraftPlasticraft.of("crate");
-    public static final ResourceLocation TANK_ID = AnvilcraftPlasticraft.of("tank");
-    public static final ResourceLocation ANVIL_ID = AnvilcraftPlasticraft.of("anvil");
-    public static final ResourceLocation CAULDRON_ID = AnvilcraftPlasticraft.of("cauldron");
-    public static final ResourceLocation LARGE_CAULDRON_ID = AnvilcraftPlasticraft.of("large_cauldron");
-    public static final ResourceLocation TRAY_ID = AnvilcraftPlasticraft.of("tray");
-    private static final Map<ResourceLocation, MoldingProductType> TYPES = createTypes();
+    public static final Identifier NORMAL_ID = AnvilcraftPlasticraft.of("normal");
+    public static final Identifier CRATE_ID = AnvilcraftPlasticraft.of("crate");
+    public static final Identifier TANK_ID = AnvilcraftPlasticraft.of("tank");
+    public static final Identifier ANVIL_ID = AnvilcraftPlasticraft.of("anvil");
+    public static final Identifier CAULDRON_ID = AnvilcraftPlasticraft.of("cauldron");
+    public static final Identifier LARGE_CAULDRON_ID = AnvilcraftPlasticraft.of("large_cauldron");
+    public static final Identifier TRAY_ID = AnvilcraftPlasticraft.of("tray");
+    private static final Map<Identifier, MoldingProductType> TYPES = createTypes();
 
     private MoldingProductTypes() {
     }
@@ -39,54 +39,54 @@ public final class MoldingProductTypes {
         }
     }
 
-    public static Optional<MoldingProductType> get(ResourceLocation id) {
+    public static Optional<MoldingProductType> get(Identifier id) {
         synchronized (TYPES) {
             return Optional.ofNullable(TYPES.get(id));
         }
     }
 
-    public static boolean isRegistered(ResourceLocation id) {
+    public static boolean isRegistered(Identifier id) {
         synchronized (TYPES) {
             return TYPES.containsKey(id);
         }
     }
 
-    public static boolean isCrate(ResourceLocation id) {
+    public static boolean isCrate(Identifier id) {
         return storageKind(id) == MoldingProductType.StorageKind.ITEMS;
     }
 
     /** 仅指储罐本身；炼药锅同样存流体，需要「能存流体」语义时用 {@link #holdsFluids}。 */
-    public static boolean isTank(ResourceLocation id) {
+    public static boolean isTank(Identifier id) {
         return TANK_ID.equals(id);
     }
 
-    public static boolean isCauldron(ResourceLocation id) {
+    public static boolean isCauldron(Identifier id) {
         return CAULDRON_ID.equals(id) || LARGE_CAULDRON_ID.equals(id);
     }
 
-    public static boolean isLargeCauldron(ResourceLocation id) {
+    public static boolean isLargeCauldron(Identifier id) {
         return LARGE_CAULDRON_ID.equals(id);
     }
 
-    public static boolean holdsFluids(ResourceLocation id) {
+    public static boolean holdsFluids(Identifier id) {
         return storageKind(id) == MoldingProductType.StorageKind.FLUIDS;
     }
 
-    public static boolean isAnvil(ResourceLocation id) {
+    public static boolean isAnvil(Identifier id) {
         return ANVIL_ID.equals(id);
     }
 
-    public static boolean isTray(ResourceLocation id) {
+    public static boolean isTray(Identifier id) {
         return storageKind(id) == MoldingProductType.StorageKind.TRAY;
     }
 
-    public static boolean selectable(ResourceLocation id) {
+    public static boolean selectable(Identifier id) {
         synchronized (TYPES) {
             return Optional.ofNullable(TYPES.get(id)).map(MoldingProductType::selectable).orElse(false);
         }
     }
 
-    public static MoldingProductType.StorageKind storageKind(ResourceLocation id) {
+    public static MoldingProductType.StorageKind storageKind(Identifier id) {
         synchronized (TYPES) {
             return Optional.ofNullable(TYPES.get(id))
                 .map(MoldingProductType::storageKind)
@@ -94,19 +94,19 @@ public final class MoldingProductTypes {
         }
     }
 
-    public static int unitsPerCapacity(ResourceLocation id) {
+    public static int unitsPerCapacity(Identifier id) {
         synchronized (TYPES) {
             return Optional.ofNullable(TYPES.get(id)).map(MoldingProductType::unitsPerCapacity).orElse(0);
         }
     }
 
-    public static int capacityFor(ResourceLocation id, int cavityVolume) {
+    public static int capacityFor(Identifier id, int cavityVolume) {
         synchronized (TYPES) {
             return Optional.ofNullable(TYPES.get(id)).map(type -> type.capacityFor(cavityVolume)).orElse(0);
         }
     }
 
-    public static boolean validateCapacity(ResourceLocation id, int capacity, MoldingVolumeMask cavityMask) {
+    public static boolean validateCapacity(Identifier id, int capacity, MoldingVolumeMask cavityMask) {
         MoldingProductType type;
         synchronized (TYPES) {
             type = TYPES.get(id);
@@ -114,7 +114,7 @@ public final class MoldingProductTypes {
         return type == null ? capacity == 0 : type.validateCapacity(capacity, cavityMask);
     }
 
-    public static MoldingTypeValidation validate(ResourceLocation id, MoldingFunctionalAnalysis analysis) {
+    public static MoldingTypeValidation validate(Identifier id, MoldingFunctionalAnalysis analysis) {
         MoldingProductType type;
         synchronized (TYPES) {
             type = TYPES.get(id);
@@ -125,7 +125,7 @@ public final class MoldingProductTypes {
     }
 
     public static MoldingTypeValidation validate(
-        ResourceLocation id,
+        Identifier id,
         EditableMoldingModel model,
         BakedMoldingModel baked
     ) {
@@ -141,7 +141,7 @@ public final class MoldingProductTypes {
     }
 
     static MoldingFunctionalAnalysis functionalAnalysis(
-        ResourceLocation id,
+        Identifier id,
         EditableMoldingModel model,
         BakedMoldingModel baked
     ) {
@@ -152,11 +152,11 @@ public final class MoldingProductTypes {
         return baked.functionalAnalysis();
     }
 
-    private static boolean usesNegativeCavitySemantics(ResourceLocation id) {
+    private static boolean usesNegativeCavitySemantics(Identifier id) {
         return CRATE_ID.equals(id) || TANK_ID.equals(id) || isCauldron(id);
     }
 
-    public static boolean requiresPrinting(ResourceLocation id) {
+    public static boolean requiresPrinting(Identifier id) {
         synchronized (TYPES) {
             return Optional.ofNullable(TYPES.get(id))
                 .map(MoldingProductType::requiresPrinting)
@@ -177,8 +177,8 @@ public final class MoldingProductTypes {
         }
     }
 
-    private static Map<ResourceLocation, MoldingProductType> createTypes() {
-        Map<ResourceLocation, MoldingProductType> types = new LinkedHashMap<>();
+    private static Map<Identifier, MoldingProductType> createTypes() {
+        Map<Identifier, MoldingProductType> types = new LinkedHashMap<>();
         register(types, new SimpleType(
             NORMAL_ID,
             MoldingProductType.StorageKind.NONE,
@@ -204,18 +204,18 @@ public final class MoldingProductTypes {
         return types;
     }
 
-    private static String typeTranslationKey(ResourceLocation id) {
+    private static String typeTranslationKey(Identifier id) {
         return "screen.anvilcraftplasticraft.molding.type." + id.getPath();
     }
 
-    private static void register(Map<ResourceLocation, MoldingProductType> types, MoldingProductType type) {
+    private static void register(Map<Identifier, MoldingProductType> types, MoldingProductType type) {
         if (types.putIfAbsent(type.id(), type) != null) {
             throw new IllegalStateException("Duplicate molding product type " + type.id());
         }
     }
 
     private record SimpleType(
-        ResourceLocation id,
+        Identifier id,
         MoldingProductType.StorageKind storageKind,
         int unitsPerCapacity,
         String productNameSuffixKey
@@ -256,7 +256,7 @@ public final class MoldingProductTypes {
 
     private record AnvilType() implements MoldingProductType {
         @Override
-        public ResourceLocation id() {
+        public Identifier id() {
             return ANVIL_ID;
         }
 
@@ -280,7 +280,7 @@ public final class MoldingProductTypes {
 
     private record TrayType() implements MoldingProductType {
         @Override
-        public ResourceLocation id() {
+        public Identifier id() {
             return TRAY_ID;
         }
 
@@ -321,7 +321,7 @@ public final class MoldingProductTypes {
     // 炼药锅：开顶内腔容量 = max(1, floor(v/1728))，两种形态均存流体，以 FLUIDS 注册
     private record CauldronType() implements MoldingProductType {
         @Override
-        public ResourceLocation id() {
+        public Identifier id() {
             return CAULDRON_ID;
         }
 
@@ -366,7 +366,7 @@ public final class MoldingProductTypes {
         private static final int MODEL_CAPACITY = 8 * 64;
 
         @Override
-        public ResourceLocation id() {
+        public Identifier id() {
             return LARGE_CAULDRON_ID;
         }
 

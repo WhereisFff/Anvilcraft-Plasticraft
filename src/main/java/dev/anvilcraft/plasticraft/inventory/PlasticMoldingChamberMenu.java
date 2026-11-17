@@ -6,8 +6,8 @@ import dev.anvilcraft.plasticraft.init.PlasticraftMenuTypes;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintDisk;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintSummary;
-import dev.anvilcraft.plasticraft.molding.machine.MoldingProductionMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingFormingMode;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingProductionMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingWaitReason;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingCommand;
@@ -29,7 +29,7 @@ import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.UUID;
@@ -365,7 +365,7 @@ public class PlasticMoldingChamberMenu extends AbstractContainerMenu {
         super.removed(player);
         if (player instanceof ServerPlayer serverPlayer && this.chamber != null) {
             if (this.chamber.releaseSession(serverPlayer, this.sessionId)) {
-                MoldingSessionStatusPacket.broadcast(serverPlayer.serverLevel(), this.chamber);
+                MoldingSessionStatusPacket.broadcast(serverPlayer.level(), this.chamber);
             }
         }
     }

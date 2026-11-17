@@ -10,7 +10,7 @@ import net.minecraft.tags.BlockTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.entity.projectile.AbstractArrow;
+import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
 import net.minecraft.world.level.block.ButtonBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.AttachFace;
@@ -59,14 +59,14 @@ final class MoldedTrayButtonBehavior implements MoldedTrayRedstoneBehavior {
         BlockState state
     ) {
         if (state.getValue(BlockStateProperties.POWERED)) return InteractionResult.CONSUME;
-        if (!player.level().isClientSide) {
+        if (!player.level().isClientSide()) {
             runtime.setState(state.setValue(BlockStateProperties.POWERED, true));
             runtime.remainingTicks(pressedTime(state));
             playSound(runtime, true);
             runtime.host().gameEvent(GameEvent.BLOCK_ACTIVATE, player);
             runtime.persistAndPublish();
         }
-        return InteractionResult.sidedSuccess(player.level().isClientSide);
+        return InteractionResult.SUCCESS;
     }
 
     @Override

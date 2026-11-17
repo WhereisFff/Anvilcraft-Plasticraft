@@ -1,34 +1,35 @@
 package dev.anvilcraft.plasticraft.item;
 
-import dev.dubhe.anvilcraft.block.item.HasMobBlockItem;
-import dev.dubhe.anvilcraft.block.item.ResinBlockItem;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
+import dev.dubhe.anvilcraft.item.block.HasMobBlockItem;
+import dev.dubhe.anvilcraft.item.block.ResinBlockItem;
 import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.dispenser.BlockSource;
 import net.minecraft.core.dispenser.DefaultDispenseItemBehavior;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
-import net.minecraft.world.entity.projectile.WitherSkull;
+import net.minecraft.world.entity.projectile.hurtingprojectile.WitherSkull;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.DispenserBlock;
+import net.minecraft.world.level.storage.TagValueOutput;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /** 取消体型上限、但保留敌对生物虚弱要求的树脂捕获物品。 */
 public class HighViscosityResinBlockItem extends ResinBlockItem {
@@ -39,10 +40,10 @@ public class HighViscosityResinBlockItem extends ResinBlockItem {
     }
 
     @Override
-    public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
+    public InteractionResult use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
         if (captureLookedAtSkull(player, stack).consumesAction()) {
-            return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
+            return InteractionResult.SUCCESS;
         }
         return super.use(level, player, hand);
     }
@@ -106,11 +107,12 @@ public class HighViscosityResinBlockItem extends ResinBlockItem {
     public static ItemStack captureSkull(WitherSkull skull, ItemStack stack) {
         if (skull.level().isClientSide() || skull.isRemoved() || stack.isEmpty()
             || stack.has(ModComponents.SAVED_ENTITY)) return ItemStack.EMPTY;
-        CompoundTag tag = new CompoundTag();
-        if (!skull.saveAsPassenger(tag)) return ItemStack.EMPTY;
-        tag.remove(Entity.UUID_TAG);
+        TagValueOutput output = TagValueOutput.createWithContext(ProblemReporter.DISCARDING, skull.registryAccess());
+        skull.saveWithoutId(output);
+        CompoundTag tag = output.buildResult();
+        tag.remove("UUID");
         ItemStack captured = stack.split(1);
-        captured.set(ModComponents.SAVED_ENTITY, new SavedEntity(tag, false));
+        captured.set(ModComponents.SAVED_ENTITY, new SavedEntity(skull.getType(), tag, false));
         skull.discard();
         return captured;
     }

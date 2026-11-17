@@ -1,9 +1,16 @@
 package dev.anvilcraft.plasticraft.item;
 
+import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.component.CustomModelData;
+import net.minecraft.world.level.ItemLike;
+
+import java.util.List;
 
 /** 所有可移动塑料方块变体共用的稳定物品数据。 */
 public final class PlasticItemData {
@@ -32,7 +39,7 @@ public final class PlasticItemData {
         if (data == null || !data.contains(MATERIAL_KEY)) {
             return defaultMaterial(stack);
         }
-        String value = data.copyTag().getString(MATERIAL_KEY);
+        String value = data.copyTag().getStringOr(MATERIAL_KEY, "");
         return value.isBlank() ? defaultMaterial(stack) : value;
     }
 
@@ -55,7 +62,7 @@ public final class PlasticItemData {
         CustomData data = stack.get(DataComponents.CUSTOM_DATA);
         return data != null
             && data.contains(DEMONSTRATION_MODEL_KEY)
-            && data.copyTag().getBoolean(DEMONSTRATION_MODEL_KEY);
+            && data.copyTag().getBooleanOr(DEMONSTRATION_MODEL_KEY, false);
     }
 
     public static void markDemonstrationModel(ItemStack stack) {
@@ -64,9 +71,21 @@ public final class PlasticItemData {
         );
     }
 
+    public static ItemStackTemplate resinProductTemplate(ItemLike item, String material, boolean magnetized) {
+        CompoundTag data = new CompoundTag();
+        data.putString(MATERIAL_KEY, material);
+        var components = DataComponentPatch.builder();
+        if (magnetized) {
+            data.putBoolean(MAGNETIZED_KEY, true);
+            components.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(List.of(1f), List.of(), List.of(), List.of()));
+        }
+        components.set(DataComponents.CUSTOM_DATA, CustomData.of(data));
+        return new ItemStackTemplate(item.asItem(), components.build());
+    }
+
     public static boolean isMagnetized(ItemStack stack) {
         CustomData data = stack.get(DataComponents.CUSTOM_DATA);
-        return data != null && data.contains(MAGNETIZED_KEY) && data.copyTag().getBoolean(MAGNETIZED_KEY);
+        return data != null && data.contains(MAGNETIZED_KEY) && data.copyTag().getBooleanOr(MAGNETIZED_KEY, false);
     }
 
     public static void setMagnetized(ItemStack stack, boolean magnetized) {

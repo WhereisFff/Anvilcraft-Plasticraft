@@ -105,7 +105,7 @@ public final class AdhesiveFallingBlockBehavior {
         }
         for (Neighbor entry : anchors.values()) {
             Entity anchor = entry.entity();
-            Direction face = Direction.getNearest(
+            Direction face = Direction.getApproximateNearest(
                 anchor.getBoundingBox().getCenter().subtract(placedPos.getCenter())
             );
             if (!BondedFallingBlocks.setEntityBond(level, placedPos, face, true)) continue;
@@ -123,7 +123,7 @@ public final class AdhesiveFallingBlockBehavior {
             if (entry.invisible()) BondedFallingBlocks.setInvisible(level, placedPos, face);
             anchor.setDeltaMovement(Vec3.ZERO);
             anchor.fallDistance = 0.0F;
-            anchor.hasImpulse = true;
+            anchor.needsSync = true;
             anchor.hurtMarked = true;
         }
     }

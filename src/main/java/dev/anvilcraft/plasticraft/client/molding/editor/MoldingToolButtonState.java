@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.client.molding.editor;
 
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Optional;
 

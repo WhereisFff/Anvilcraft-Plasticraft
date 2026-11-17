@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.block;
 
-import dev.dubhe.anvilcraft.block.ResinBlock;
+import dev.dubhe.anvilcraft.block.storage.ResinBlock;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
 

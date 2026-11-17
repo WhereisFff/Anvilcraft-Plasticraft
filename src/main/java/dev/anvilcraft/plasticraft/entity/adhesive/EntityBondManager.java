@@ -5,15 +5,15 @@ import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexCollisionResolver;
 import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
-import net.minecraft.core.Direction;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -496,7 +496,7 @@ public final class EntityBondManager {
         entity.setNoGravity(state.originalNoGravity());
         entity.setDeltaMovement(Vec3.ZERO);
         entity.fallDistance = 0.0F;
-        entity.hasImpulse = true;
+        entity.needsSync = true;
         entity.hurtMarked = true;
     }
 
@@ -580,7 +580,7 @@ public final class EntityBondManager {
                 );
                 if (neighbor.position().distanceToSqr(targetPosition) > 1.0E-10D) {
                     neighbor.setPos(targetPosition);
-                    neighbor.hasImpulse = true;
+                    neighbor.needsSync = true;
                     neighbor.hurtMarked = true;
                 }
                 pending.addLast(neighbor);
@@ -596,9 +596,9 @@ public final class EntityBondManager {
         follower.setNoGravity(true);
         follower.setDeltaMovement(Vec3.ZERO);
         follower.fallDistance = 0.0F;
-        if (follower.level().isClientSide) alignClientInterpolation(follower, leader, state.offsetFromLeader());
+        if (follower.level().isClientSide()) alignClientInterpolation(follower, leader, state.offsetFromLeader());
         if (follower.position().distanceToSqr(expected) > 1.0E-10D) follower.setPos(expected);
-        follower.hasImpulse = true;
+        follower.needsSync = true;
         follower.hurtMarked = true;
     }
 

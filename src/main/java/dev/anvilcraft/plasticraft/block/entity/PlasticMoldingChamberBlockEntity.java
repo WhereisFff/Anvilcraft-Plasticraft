@@ -9,50 +9,52 @@ import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.inventory.PlasticMoldingChamberMenu;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
 import dev.anvilcraft.plasticraft.molding.bake.ManufacturedMoldingGeometry;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintDisk;
-import dev.anvilcraft.plasticraft.molding.machine.MoldingMachineAction;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingCycleFeedback;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingFormingMode;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingMachineAction;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrinterMotion;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingDoorState;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingMotionPhase;
-import dev.anvilcraft.plasticraft.molding.machine.MoldingProcessSnapshot;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingPlan;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingVoxel;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingProcessSnapshot;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProductionMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingWaitReason;
 import dev.anvilcraft.plasticraft.molding.machine.PlasticMoldingAnvilProcessor;
-import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticSurfaceAdapter;
-import dev.anvilcraft.plasticraft.molding.type.MoldingProductPreview;
-import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
-import dev.anvilcraft.plasticraft.material.PlasticMaterial;
-import dev.anvilcraft.plasticraft.molding.type.MoldingTypeValidation;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingCommand;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelPersistence;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticSurfaceAdapter;
 import dev.anvilcraft.plasticraft.molding.session.MoldingSessionSnapshot;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductPreview;
+import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
+import dev.anvilcraft.plasticraft.molding.type.MoldingTypeValidation;
 import dev.anvilcraft.plasticraft.network.MoldingPrinterMotionPacket;
 import dev.anvilcraft.plasticraft.network.MoldingSessionStatusPacket;
 import dev.dubhe.anvilcraft.api.injection.tooltip.ITooltipProviderExtension;
 import dev.dubhe.anvilcraft.api.item.IFullCapacitor;
+import dev.dubhe.anvilcraft.api.itemhandler.ItemHandlerUtil;
 import dev.dubhe.anvilcraft.api.power.IPowerConsumer;
 import dev.dubhe.anvilcraft.api.power.PowerGrid;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModItems;
-import dev.dubhe.anvilcraft.item.CapacitorItem;
-import dev.dubhe.anvilcraft.item.SuperCapacitorItem;
+import dev.dubhe.anvilcraft.item.ingredients.CapacitorItem;
+import dev.dubhe.anvilcraft.item.ingredients.SuperCapacitorItem;
 import dev.dubhe.anvilcraft.util.UnitUtil;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.NonNullList;
+import net.minecraft.core.UUIDUtil;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
@@ -60,6 +62,7 @@ import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.Containers;
 import net.minecraft.world.SimpleContainer;
@@ -68,27 +71,36 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.TagValueOutput;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.EntityCollisionContext;
 import net.neoforged.neoforge.capabilities.Capabilities;
-import net.neoforged.neoforge.energy.IEnergyStorage;
-import net.neoforged.neoforge.fluids.FluidActionResult;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidType;
-import net.neoforged.neoforge.fluids.FluidUtil;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import net.neoforged.neoforge.fluids.capability.IFluidHandlerItem;
-import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
-import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.network.PacketDistributor;
-import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.ResourceHandlerUtil;
+import net.neoforged.neoforge.transfer.access.ItemAccess;
+import net.neoforged.neoforge.transfer.energy.EnergyHandler;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.fluid.FluidUtil;
+import net.neoforged.neoforge.transfer.item.ItemResource;
+import net.neoforged.neoforge.transfer.item.ItemStackResourceHandler;
+import net.neoforged.neoforge.transfer.item.ItemStacksResourceHandler;
+import net.neoforged.neoforge.transfer.transaction.SnapshotJournal;
+import net.neoforged.neoforge.transfer.transaction.Transaction;
+import net.neoforged.neoforge.transfer.transaction.TransactionContext;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -162,34 +174,40 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     private static final String TAG_PRINTING_DOOR_START = "PrintingDoorStart";
     private static final String TAG_PRINTING_DOOR_REMAINING = "PrintingDoorRemaining";
 
-    private final SimpleContainer inventory = createInventory();
+    private final SimpleContainer inventory = new MoldingInventory() {
+        @Override
+        public void setChanged() {
+            super.setChanged();
+            PlasticMoldingChamberBlockEntity.this.setChanged();
+        }
+    };
     private final Deque<EditableMoldingModel> undoHistory = new ArrayDeque<>();
     private final Deque<EditableMoldingModel> redoHistory = new ArrayDeque<>();
-    private final FluidTank stagingTank = new FluidTank(STAGING_TANK_CAPACITY) {
+    private final PlasticFluidTank stagingTank = new PlasticFluidTank(STAGING_TANK_CAPACITY) {
         @Override
-        public boolean isFluidValid(FluidStack stack) {
-            return PlasticMoldingChamberBlockEntity.this.isCompatibleStagingFluid(stack);
+        public boolean isValid(int index, FluidResource resource) {
+            return PlasticMoldingChamberBlockEntity.this.isCompatibleStagingFluid(resource.toStack(1));
         }
 
         @Override
-        protected void onContentsChanged() {
+        protected void onContentsChanged(int index, FluidStack previous) {
             PlasticMoldingChamberBlockEntity.this.onFluidChanged();
         }
     };
-    private final FluidTank batchTank = new FluidTank(0) {
+    private final PlasticFluidTank batchTank = new PlasticFluidTank(0) {
         @Override
-        public boolean isFluidValid(FluidStack stack) {
-            return isPlasticMelt(stack);
+        public boolean isValid(int index, FluidResource resource) {
+            return isPlasticMelt(resource.toStack(1));
         }
 
         @Override
-        protected void onContentsChanged() {
+        protected void onContentsChanged(int index, FluidStack previous) {
             PlasticMoldingChamberBlockEntity.this.onFluidChanged();
         }
     };
-    private final IFluidHandler fluidHandler = new ChamberFluidHandler();
-    private final IItemHandler clayItemHandler = new ClayItemHandler();
-    private final IEnergyStorage energyStorage = new ChamberEnergyStorage();
+    private final ResourceHandler<FluidResource> fluidHandler = new ChamberFluidHandler();
+    private final ResourceHandler<ItemResource> clayItemHandler = new ClayItemHandler();
+    private final EnergyHandler energyStorage = new ChamberEnergyStorage();
     private final ContainerData menuData = new ChamberMenuData();
     private EditableMoldingModel model = EditableMoldingModel.empty();
     private BakedMoldingModel bakedModel = MoldingModelBaker.bake(this.model);
@@ -248,7 +266,6 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
 
     public PlasticMoldingChamberBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
-        this.inventory.addListener(ignored -> this.setChanged());
     }
 
     public static void serverTick(
@@ -285,7 +302,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     @Override
     public void onLoad() {
         super.onLoad();
-        if (this.level != null && !this.level.isClientSide) {
+        if (this.level != null && !this.level.isClientSide()) {
             if (this.machineState == PlasticMoldingMachineState.PROCESSING) {
                 if (this.isPrintingProcess()
                     && this.processingSnapshot != null) {
@@ -412,7 +429,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         MoldingPrinterMotion motion,
         int completedProgress
     ) {
-        if (this.level == null || !this.level.isClientSide) return;
+        if (this.level == null || !this.level.isClientSide()) return;
         this.printingMotionPhase = phase;
         this.printingMotion = motion;
         this.printingProgress = Math.clamp(completedProgress, 0, this.printingTotal);
@@ -471,7 +488,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     }
 
     public void refreshFormingRegionShapes() {
-        if (this.level == null || this.level.isClientSide) return;
+        if (this.level == null || this.level.isClientSide()) return;
         this.stopInterruptedPrinting();
         this.syncProductionState(true);
     }
@@ -584,15 +601,15 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         return this.inventory;
     }
 
-    public IItemHandler clayItemHandler() {
+    public ResourceHandler<ItemResource> clayItemHandler() {
         return this.clayItemHandler;
     }
 
-    public IFluidHandler fluidHandler() {
+    public ResourceHandler<FluidResource> fluidHandler() {
         return this.fluidHandler;
     }
 
-    public IEnergyStorage energyStorage() {
+    public EnergyHandler energyStorage() {
         return this.energyStorage;
     }
 
@@ -603,7 +620,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     public void openMenu(ServerPlayer player) {
         MoldingSessionSnapshot snapshot = this.openSession(player, false);
         PlasticMoldingChamberMenu.open(player, this, snapshot);
-        MoldingSessionStatusPacket.broadcast(player.serverLevel(), this);
+        MoldingSessionStatusPacket.broadcast(player.level(), this);
     }
 
     public MoldingSessionSnapshot openSession(ServerPlayer player, boolean forceTakeover) {
@@ -615,7 +632,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         if (writable) {
             this.writerPlayerId = player.getUUID();
             this.writerSessionId = session;
-            this.writerName = player.getGameProfile().getName();
+            this.writerName = player.getGameProfile().name();
             this.leaseExpiresAt = now + LEASE_TICKS;
             this.undoHistory.clear();
             this.redoHistory.clear();
@@ -862,28 +879,25 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     private boolean interactWithCarriedFluid(ServerPlayer player) {
         ItemStack carried = player.containerMenu.getCarried();
         if (carried.isEmpty()) return false;
-        IItemHandler playerInventory = player.getCapability(Capabilities.ItemHandler.ENTITY);
-        if (playerInventory == null) return false;
-        FluidActionResult result = FluidUtil.tryFillContainerAndStow(
-            carried,
-            this.stagingTank,
-            playerInventory,
-            Integer.MAX_VALUE,
-            player,
-            true
-        );
-        if (!result.isSuccess()) {
-            result = FluidUtil.tryEmptyContainerAndStow(
-                carried,
-                this.stagingTank,
-                playerInventory,
-                Integer.MAX_VALUE,
-                player,
-                true
-            );
+        var access = (player.hasInfiniteMaterials() ? ItemAccess.forInfiniteMaterials(player, carried)
+            : ItemAccess.forPlayerCursor(player, player.containerMenu)).oneByOne();
+        var container = access.getCapability(Capabilities.Fluid.ITEM);
+        if (container == null) return false;
+        FluidResource fluid;
+        boolean pickup;
+        try (var tx = Transaction.openRoot()) {
+            var moved = ResourceHandlerUtil.moveFirst(this.stagingTank, container, resource -> true, Integer.MAX_VALUE, tx);
+            pickup = moved != null;
+            if (!pickup) {
+                moved = ResourceHandlerUtil.moveFirst(container, this.stagingTank, resource -> true, Integer.MAX_VALUE, tx);
+            }
+            if (moved == null) {
+                return false;
+            }
+            fluid = moved.resource();
+            tx.commit();
         }
-        if (!result.isSuccess()) return false;
-        player.containerMenu.setCarried(result.getResult());
+        FluidUtil.triggerSoundAndGameEvent(fluid, player.level(), player.position(), player, pickup);
         player.containerMenu.broadcastChanges();
         return true;
     }
@@ -1109,7 +1123,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         if (!(this.level instanceof ServerLevel serverLevel)) return;
         PacketDistributor.sendToPlayersTrackingChunk(
             serverLevel,
-            new ChunkPos(this.worldPosition),
+            ChunkPos.containing(this.worldPosition),
             new MoldingPrinterMotionPacket(
                 this.worldPosition,
                 this.printingMotionPhase,
@@ -1243,7 +1257,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     }
 
     public void dropContents() {
-        if (this.level == null || this.level.isClientSide) return;
+        if (this.level == null || this.level.isClientSide()) return;
         Containers.dropContents(this.level, this.worldPosition, this.inventory);
         this.inventory.clearContent();
         this.dropClayInRegion(this.moldedClayBalls);
@@ -1471,23 +1485,22 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     }
 
     private boolean tryEmptyResourceFluidContainer(ItemStack input) {
-        IFluidHandlerItem container = FluidUtil.getFluidHandler(input.copyWithCount(1)).orElse(null);
+        var single = new ItemStacksResourceHandler(1);
+        single.set(0, ItemResource.of(input), 1);
+        var access = ItemAccess.forHandlerIndexStrict(single, 0);
+        var container = access.getCapability(Capabilities.Fluid.ITEM);
         if (container == null) return false;
-        FluidStack contained = container.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.SIMULATE);
-        if (!isPlasticMelt(contained)
-            || this.stagingTank.fill(contained, IFluidHandler.FluidAction.SIMULATE) != contained.getAmount()) {
-            return false;
+        FluidStack contained = FluidUtil.getFirstStackContained(input.copyWithCount(1));
+        if (!isPlasticMelt(contained)) return false;
+        try (var tx = Transaction.openRoot()) {
+            FluidResource resource = FluidResource.of(contained);
+            int amount = contained.getAmount();
+            if (container.extract(resource, amount, tx) != amount || this.stagingTank.insert(resource, amount, tx) != amount) {
+                return false;
+            }
+            tx.commit();
         }
-        FluidStack stagingBefore = this.stagingTank.getFluid().copy();
-        FluidStack drained = container.drain(contained, IFluidHandler.FluidAction.EXECUTE);
-        if (drained.getAmount() != contained.getAmount()
-            || this.stagingTank.fill(drained, IFluidHandler.FluidAction.EXECUTE) != drained.getAmount()) {
-            this.stagingTank.setFluid(stagingBefore);
-            this.inventory.setItem(RESOURCE_SLOT, input.copy());
-            AnvilcraftPlasticraft.LOGGER.error("Failed molding resource-slot fluid transfer at {}", this.worldPosition);
-            return false;
-        }
-        this.finishResourceInput(container.getContainer());
+        this.finishResourceInput(access.getResource().toStack(access.getAmount()));
         return true;
     }
 
@@ -1570,7 +1583,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
                  INVALID_MODEL,
                  BATCH_FULL -> this.waitReason;
             case MOLD_READY -> this.machineState == PlasticMoldingMachineState.PROCESSING
-                || this.stagingTank.isEmpty() ? this.waitReason : MoldingWaitReason.NONE;
+                || this.stagingTank.getFluidAmount() == 0 ? this.waitReason : MoldingWaitReason.NONE;
             case PROCESS_READY -> this.cycleFormingMode == MoldingFormingMode.CASTING
                 ? this.waitReason
                 : MoldingWaitReason.NONE;
@@ -1715,7 +1728,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
                 : MoldingWaitReason.BATCH_FULL);
             return;
         }
-        if (this.stagingTank.isEmpty()) {
+        if (this.stagingTank.getFluidAmount() == 0) {
             this.setWaitReason(this.machineState == PlasticMoldingMachineState.PROCESS_READY
                 ? MoldingWaitReason.PROCESS_READY
                 : MoldingWaitReason.MOLD_READY);
@@ -1820,7 +1833,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     private void tickClayCollection() {
         if (--this.clayCollectionCountdown > 0) return;
         this.clayCollectionCountdown = CLAY_COLLECTION_INTERVAL;
-        if (this.level == null || this.level.isClientSide
+        if (this.level == null || this.level.isClientSide()
             || this.inventory.getItem(CLAY_SLOT).getCount() >= this.clayLimit) {
             return;
         }
@@ -1832,7 +1845,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             entity -> entity.isAlive() && entity.getItem().is(Items.CLAY_BALL)
         );
         for (ItemEntity entity : clayEntities) {
-            ItemStack remainder = this.clayItemHandler.insertItem(0, entity.getItem(), false);
+            ItemStack remainder = ItemHandlerUtil.insertItem(this.clayItemHandler, entity.getItem(), false);
             if (remainder.isEmpty()) {
                 entity.remove(Entity.RemovalReason.DISCARDED);
             } else {
@@ -1882,7 +1895,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     }
 
     private void dropClayInRegion(int amount) {
-        if (amount <= 0 || this.level == null || this.level.isClientSide) return;
+        if (amount <= 0 || this.level == null || this.level.isClientSide()) return;
         Direction front = this.getBlockState().getValue(PlasticMoldingChamberBlock.FACING);
         List<BlockPos> positions = PlasticMoldingChamberStructure.regionPositions(this.worldPosition, front);
         int dropped = 0;
@@ -1955,7 +1968,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     }
 
     private void syncPowerState() {
-        if (this.level == null || this.level.isClientSide) return;
+        if (this.level == null || this.level.isClientSide()) return;
         BlockState state = this.getBlockState();
         if (!state.hasProperty(PlasticMoldingChamberBlock.POWERED)) return;
         boolean powered = this.energy > 0;
@@ -1974,13 +1987,13 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
 
     private void requestClientSync() {
         this.setChanged();
-        if (this.level == null || this.level.isClientSide) return;
+        if (this.level == null || this.level.isClientSide()) return;
         this.clientSyncPending = true;
         this.flushClientSync();
     }
 
     private void flushClientSync() {
-        if (!this.clientSyncPending || this.level == null || this.level.isClientSide) return;
+        if (!this.clientSyncPending || this.level == null || this.level.isClientSide()) return;
         long gameTime = this.level.getGameTime();
         if (this.lastClientSyncGameTime != Long.MIN_VALUE
             && gameTime - this.lastClientSyncGameTime < CLIENT_SYNC_INTERVAL) {
@@ -2045,9 +2058,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     }
 
     private static boolean isPlasticMeltContainer(ItemStack stack) {
-        IFluidHandlerItem container = FluidUtil.getFluidHandler(stack.copyWithCount(1)).orElse(null);
-        if (container == null) return false;
-        return isPlasticMelt(container.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.SIMULATE));
+        return isPlasticMelt(FluidUtil.getFirstStackContained(stack.copyWithCount(1)));
     }
 
     private static int capacitorEnergy(ItemStack stack) {
@@ -2121,21 +2132,30 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
     }
 
     @Override
-    protected void saveAdditional(CompoundTag tag, HolderLookup.Provider provider) {
-        super.saveAdditional(tag, provider);
-        tag.put(TAG_MODEL, MoldingModelPersistence.save(this.model));
-        tag.putLong(TAG_REVISION, this.revision);
-        tag.put(TAG_INVENTORY, this.saveInventory(provider));
-        tag.putInt(TAG_CLAY_COUNT, this.inventory.getItem(CLAY_SLOT).getCount());
-        this.saveProduction(tag, provider);
+    public void preRemoveSideEffects(BlockPos pos, BlockState state) {
+        super.preRemoveSideEffects(pos, state);
+        if (this.level instanceof ServerLevel serverLevel) {
+            this.dropContents();
+            PlasticMoldingChamberStructure.removeParts(serverLevel, pos, state.getValue(PlasticMoldingChamberBlock.FACING));
+        }
     }
 
     @Override
-    protected void loadAdditional(CompoundTag tag, HolderLookup.Provider provider) {
-        super.loadAdditional(tag, provider);
+    protected void saveAdditional(ValueOutput tag) {
+        super.saveAdditional(tag);
+        tag.store(TAG_MODEL, CompoundTag.CODEC, MoldingModelPersistence.save(this.model));
+        tag.putLong(TAG_REVISION, this.revision);
+        this.saveInventory(tag.child(TAG_INVENTORY));
+        tag.putInt(TAG_CLAY_COUNT, this.inventory.getItem(CLAY_SLOT).getCount());
+        this.saveProduction(tag);
+    }
+
+    @Override
+    protected void loadAdditional(ValueInput tag) {
+        super.loadAdditional(tag);
         try {
-            this.model = tag.contains(TAG_MODEL, CompoundTag.TAG_COMPOUND)
-                ? MoldingModelPersistence.load(tag.getCompound(TAG_MODEL))
+            this.model = tag.keySet().contains(TAG_MODEL)
+                ? MoldingModelPersistence.load(tag.read(TAG_MODEL, CompoundTag.CODEC).orElseGet(CompoundTag::new))
                 : EditableMoldingModel.empty();
             this.bakedModel = MoldingModelBaker.bake(this.model);
         } catch (RuntimeException exception) {
@@ -2144,13 +2164,13 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
             this.bakedModel = MoldingModelBaker.bake(this.model);
         }
         this.batchTank.setCapacity(this.bakedModel.analysis().minimumMeltMillibuckets());
-        this.revision = Math.max(0L, tag.getLong(TAG_REVISION));
-        this.loadInventory(tag, provider);
-        this.loadProduction(tag, provider);
+        this.revision = Math.max(0L, tag.getLongOr(TAG_REVISION, 0L));
+        this.loadInventory(tag);
+        this.loadProduction(tag);
         this.clearLease();
     }
 
-    private CompoundTag saveInventory(HolderLookup.Provider provider) {
+    private void saveInventory(ValueOutput output) {
         NonNullList<ItemStack> savedItems = NonNullList.withSize(INVENTORY_SIZE, ItemStack.EMPTY);
         for (int slot = 0; slot < INVENTORY_SIZE; slot++) {
             savedItems.set(slot, this.inventory.getItem(slot).copy());
@@ -2158,20 +2178,18 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         ItemStack clay = savedItems.get(CLAY_SLOT);
         // 1.21.1 的 ItemStack 编码不接受三位数数量，槽位保留物品组件，数量单独持久化。
         if (!clay.isEmpty()) clay.setCount(1);
-        return ContainerHelper.saveAllItems(new CompoundTag(), savedItems, provider);
+        ContainerHelper.saveAllItems(output, savedItems);
     }
 
-    private void loadInventory(CompoundTag tag, HolderLookup.Provider provider) {
+    private void loadInventory(ValueInput tag) {
         this.inventory.clearContent();
-        if (tag.contains(TAG_INVENTORY, CompoundTag.TAG_COMPOUND)) {
+        if (tag.keySet().contains(TAG_INVENTORY)) {
             ContainerHelper.loadAllItems(
-                tag.getCompound(TAG_INVENTORY),
-                this.inventory.getItems(),
-                provider
+                tag.childOrEmpty(TAG_INVENTORY), this.inventory.getItems()
             );
         }
         ItemStack clay = this.inventory.getItem(CLAY_SLOT);
-        int clayCount = Math.clamp(tag.getInt(TAG_CLAY_COUNT), 0, CLAY_LIMIT_MAX);
+        int clayCount = Math.clamp(tag.getIntOr(TAG_CLAY_COUNT, 0), 0, CLAY_LIMIT_MAX);
         if (clayCount == 0 || !clay.is(Items.CLAY_BALL)) {
             this.inventory.getItems().set(CLAY_SLOT, ItemStack.EMPTY);
         } else {
@@ -2181,29 +2199,29 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
 
     @Override
     public CompoundTag getUpdateTag(HolderLookup.Provider provider) {
-        CompoundTag tag = new CompoundTag();
-        tag.put(TAG_MODEL, MoldingModelPersistence.save(this.model));
+        TagValueOutput tag = TagValueOutput.createWithContext(ProblemReporter.DISCARDING, provider);
+        tag.store(TAG_MODEL, CompoundTag.CODEC, MoldingModelPersistence.save(this.model));
         tag.putLong(TAG_REVISION, this.revision);
-        this.saveProduction(tag, provider);
-        return tag;
+        this.saveProduction(tag);
+        return tag.buildResult();
     }
 
-    private void saveProduction(CompoundTag tag, HolderLookup.Provider provider) {
+    private void saveProduction(ValueOutput tag) {
         tag.putString(TAG_MACHINE_STATE, this.machineState.getSerializedName());
         tag.putBoolean(TAG_STRUCTURE_COMPLETE, this.structureComplete);
         tag.putInt(TAG_CLAY_LIMIT, this.clayLimit);
         tag.putInt(TAG_MOLDED_CLAY, this.moldedClayBalls);
         tag.putInt(TAG_REQUIRED_CLAY, this.requiredClayBalls);
         tag.putInt(TAG_FILL_PROGRESS, this.moldFillProgress);
-        tag.put(TAG_STAGING_TANK, this.stagingTank.writeToNBT(provider, new CompoundTag()));
-        tag.put(TAG_BATCH_TANK, this.batchTank.writeToNBT(provider, new CompoundTag()));
+        tag.putChild(TAG_STAGING_TANK, this.stagingTank);
+        tag.putChild(TAG_BATCH_TANK, this.batchTank);
         tag.putInt(TAG_ENERGY, this.energy);
         tag.putString(TAG_SELECTED_MODE, this.selectedMode.getSerializedName());
         tag.putString(TAG_CYCLE_MODE, this.cycleMode.getSerializedName());
         tag.putString(TAG_CYCLE_FORMING_MODE, this.cycleFormingMode.getSerializedName());
         tag.putInt(TAG_PRINTING_PROGRESS, this.printingProgress);
         tag.putInt(TAG_PRINTING_TOTAL, this.printingTotal);
-        tag.put(TAG_PRINTING_MATERIAL, this.printingMaterial.saveOptional(provider));
+        tag.store(TAG_PRINTING_MATERIAL, FluidStack.OPTIONAL_CODEC, this.printingMaterial);
         tag.putInt(TAG_PRINTING_MELT_CONSUMED, this.printingMeltConsumed);
         tag.putString(TAG_PRINTING_MOTION_PHASE, this.printingMotionPhase.name());
         tag.putDouble(TAG_PRINTING_MOTION_FROM_X, this.printingMotion.from().x());
@@ -2220,7 +2238,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         tag.putLong(TAG_PRINTING_DOOR_START, this.printingDoorStartGameTime);
         tag.putInt(TAG_PRINTING_DOOR_REMAINING, this.printingDoorTicksRemaining);
         if (this.printingDischargeProductId != null) {
-            tag.putUUID(TAG_PRINTING_DISCHARGE_PRODUCT, this.printingDischargeProductId);
+            tag.store(TAG_PRINTING_DISCHARGE_PRODUCT, UUIDUtil.CODEC, this.printingDischargeProductId);
         }
         tag.putBoolean(TAG_REDSTONE_POWERED, this.redstonePowered);
         tag.putString(TAG_WAIT_REASON, this.waitReason.name());
@@ -2228,22 +2246,22 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         tag.putBoolean(TAG_CREATIVE_OVERRIDE, this.creativeOverrideLocked);
     }
 
-    private void loadProduction(CompoundTag tag, HolderLookup.Provider provider) {
+    private void loadProduction(ValueInput tag) {
         this.processingSnapshot = null;
-        this.machineState = PlasticMoldingMachineState.fromSerializedName(tag.getString(TAG_MACHINE_STATE));
-        this.structureComplete = tag.getBoolean(TAG_STRUCTURE_COMPLETE);
-        this.clayLimit = tag.contains(TAG_CLAY_LIMIT)
-            ? Math.clamp(tag.getInt(TAG_CLAY_LIMIT), CLAY_LIMIT_MIN, CLAY_LIMIT_MAX)
+        this.machineState = PlasticMoldingMachineState.fromSerializedName(tag.getStringOr(TAG_MACHINE_STATE, ""));
+        this.structureComplete = tag.getBooleanOr(TAG_STRUCTURE_COMPLETE, false);
+        this.clayLimit = tag.keySet().contains(TAG_CLAY_LIMIT)
+            ? Math.clamp(tag.getIntOr(TAG_CLAY_LIMIT, 0), CLAY_LIMIT_MIN, CLAY_LIMIT_MAX)
             : DEFAULT_CLAY_LIMIT;
-        this.moldedClayBalls = Math.max(0, tag.getInt(TAG_MOLDED_CLAY));
-        this.requiredClayBalls = Math.max(this.moldedClayBalls, tag.getInt(TAG_REQUIRED_CLAY));
-        this.moldFillProgress = Math.clamp(tag.getInt(TAG_FILL_PROGRESS), 0, MOLD_FILL_TICKS);
-        this.stagingTank.readFromNBT(provider, tag.getCompound(TAG_STAGING_TANK));
-        this.batchTank.readFromNBT(provider, tag.getCompound(TAG_BATCH_TANK));
-        this.energy = Math.clamp(tag.getInt(TAG_ENERGY), 0, MoldingPowerBridge.capacity());
-        this.selectedMode = MoldingProductionMode.fromSerializedName(tag.getString(TAG_SELECTED_MODE));
-        this.cycleMode = MoldingProductionMode.fromSerializedName(tag.getString(TAG_CYCLE_MODE));
-        this.cycleFormingMode = MoldingFormingMode.fromSerializedName(tag.getString(TAG_CYCLE_FORMING_MODE));
+        this.moldedClayBalls = Math.max(0, tag.getIntOr(TAG_MOLDED_CLAY, 0));
+        this.requiredClayBalls = Math.max(this.moldedClayBalls, tag.getIntOr(TAG_REQUIRED_CLAY, 0));
+        this.moldFillProgress = Math.clamp(tag.getIntOr(TAG_FILL_PROGRESS, 0), 0, MOLD_FILL_TICKS);
+        tag.readChild(TAG_STAGING_TANK, this.stagingTank);
+        tag.readChild(TAG_BATCH_TANK, this.batchTank);
+        this.energy = Math.clamp(tag.getIntOr(TAG_ENERGY, 0), 0, MoldingPowerBridge.capacity());
+        this.selectedMode = MoldingProductionMode.fromSerializedName(tag.getStringOr(TAG_SELECTED_MODE, ""));
+        this.cycleMode = MoldingProductionMode.fromSerializedName(tag.getStringOr(TAG_CYCLE_MODE, ""));
+        this.cycleFormingMode = MoldingFormingMode.fromSerializedName(tag.getStringOr(TAG_CYCLE_FORMING_MODE, ""));
         if (this.cycleFormingMode != MoldingFormingMode.PRINTING) {
             this.printingPlan = null;
         } else {
@@ -2254,78 +2272,73 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         }
         int printingPlanSize = this.printingPlan == null ? 0 : this.printingPlan.size();
         this.printingTotal = Math.clamp(
-            tag.contains(TAG_PRINTING_TOTAL) ? tag.getInt(TAG_PRINTING_TOTAL) : 0,
+            tag.keySet().contains(TAG_PRINTING_TOTAL) ? tag.getIntOr(TAG_PRINTING_TOTAL, 0) : 0,
             0,
             printingPlanSize
         );
         this.printingProgress = Math.clamp(
-            tag.contains(TAG_PRINTING_PROGRESS) ? tag.getInt(TAG_PRINTING_PROGRESS) : 0,
+            tag.keySet().contains(TAG_PRINTING_PROGRESS) ? tag.getIntOr(TAG_PRINTING_PROGRESS, 0) : 0,
             0,
             this.printingTotal
         );
-        this.printingMaterial = FluidStack.parseOptional(
-            provider,
-            tag.getCompound(TAG_PRINTING_MATERIAL)
-        );
+        this.printingMaterial = tag.read(TAG_PRINTING_MATERIAL, FluidStack.OPTIONAL_CODEC).orElse(FluidStack.EMPTY);
         this.printingMeltConsumed = Math.clamp(
-            tag.getInt(TAG_PRINTING_MELT_CONSUMED),
+            tag.getIntOr(TAG_PRINTING_MELT_CONSUMED, 0),
             0,
             this.batchFluidCapacity()
         );
         try {
             this.printingMotionPhase = MoldingPrintingMotionPhase.valueOf(
-                tag.getString(TAG_PRINTING_MOTION_PHASE)
+                tag.getStringOr(TAG_PRINTING_MOTION_PHASE, "")
             );
         } catch (IllegalArgumentException exception) {
             this.printingMotionPhase = MoldingPrintingMotionPhase.IDLE;
         }
-        MoldingVec3 motionFrom = tag.contains(TAG_PRINTING_MOTION_FROM_X)
+        MoldingVec3 motionFrom = tag.keySet().contains(TAG_PRINTING_MOTION_FROM_X)
             ? new MoldingVec3(
-                tag.getDouble(TAG_PRINTING_MOTION_FROM_X),
-                tag.getDouble(TAG_PRINTING_MOTION_FROM_Y),
-                tag.getDouble(TAG_PRINTING_MOTION_FROM_Z)
+                tag.getDoubleOr(TAG_PRINTING_MOTION_FROM_X, 0d),
+                tag.getDoubleOr(TAG_PRINTING_MOTION_FROM_Y, 0d),
+                tag.getDoubleOr(TAG_PRINTING_MOTION_FROM_Z, 0d)
             )
             : MoldingPrinterMotion.DEFAULT_POSITION;
-        MoldingVec3 motionTo = tag.contains(TAG_PRINTING_MOTION_TO_X)
+        MoldingVec3 motionTo = tag.keySet().contains(TAG_PRINTING_MOTION_TO_X)
             ? new MoldingVec3(
-                tag.getDouble(TAG_PRINTING_MOTION_TO_X),
-                tag.getDouble(TAG_PRINTING_MOTION_TO_Y),
-                tag.getDouble(TAG_PRINTING_MOTION_TO_Z)
+                tag.getDoubleOr(TAG_PRINTING_MOTION_TO_X, 0d),
+                tag.getDoubleOr(TAG_PRINTING_MOTION_TO_Y, 0d),
+                tag.getDoubleOr(TAG_PRINTING_MOTION_TO_Z, 0d)
             )
             : motionFrom;
         this.printingMotion = new MoldingPrinterMotion(
             motionFrom,
             motionTo,
-            tag.getLong(TAG_PRINTING_MOTION_START),
-            Math.max(0, tag.getInt(TAG_PRINTING_MOTION_DURATION))
+            tag.getLongOr(TAG_PRINTING_MOTION_START, 0L),
+            Math.max(0, tag.getIntOr(TAG_PRINTING_MOTION_DURATION, 0))
         );
         this.printingMotionTicksRemaining = Math.clamp(
-            tag.getInt(TAG_PRINTING_MOTION_REMAINING),
+            tag.getIntOr(TAG_PRINTING_MOTION_REMAINING, 0),
             0,
             this.printingMotion.durationTicks()
         );
-        this.printingDischargeOpen = tag.getBoolean(TAG_PRINTING_DISCHARGE_OPEN);
+        this.printingDischargeOpen = tag.getBooleanOr(TAG_PRINTING_DISCHARGE_OPEN, false);
         try {
-            this.printingDoorState = MoldingPrintingDoorState.valueOf(tag.getString(TAG_PRINTING_DOOR_STATE));
+            this.printingDoorState = MoldingPrintingDoorState.valueOf(tag.getStringOr(TAG_PRINTING_DOOR_STATE, ""));
         } catch (IllegalArgumentException exception) {
             this.printingDoorState = this.printingDischargeOpen
                 ? MoldingPrintingDoorState.OPEN
                 : MoldingPrintingDoorState.CLOSED;
         }
-        this.printingDoorStartGameTime = tag.getLong(TAG_PRINTING_DOOR_START);
+        this.printingDoorStartGameTime = tag.getLongOr(TAG_PRINTING_DOOR_START, 0L);
         this.printingDoorTicksRemaining = Math.clamp(
-            tag.getInt(TAG_PRINTING_DOOR_REMAINING),
+            tag.getIntOr(TAG_PRINTING_DOOR_REMAINING, 0),
             0,
             PRINTING_DOOR_ANIMATION_TICKS
         );
-        this.printingDischargeProductId = tag.hasUUID(TAG_PRINTING_DISCHARGE_PRODUCT)
-            ? tag.getUUID(TAG_PRINTING_DISCHARGE_PRODUCT)
-            : null;
-        this.redstonePowered = tag.getBoolean(TAG_REDSTONE_POWERED);
-        this.typeOverrideCommitted = tag.getBoolean(TAG_TYPE_OVERRIDE);
-        this.creativeOverrideLocked = tag.getBoolean(TAG_CREATIVE_OVERRIDE);
+        this.printingDischargeProductId = tag.read(TAG_PRINTING_DISCHARGE_PRODUCT, UUIDUtil.CODEC).orElse(null);
+        this.redstonePowered = tag.getBooleanOr(TAG_REDSTONE_POWERED, false);
+        this.typeOverrideCommitted = tag.getBooleanOr(TAG_TYPE_OVERRIDE, false);
+        this.creativeOverrideLocked = tag.getBooleanOr(TAG_CREATIVE_OVERRIDE, false);
         try {
-            this.waitReason = MoldingWaitReason.valueOf(tag.getString(TAG_WAIT_REASON));
+            this.waitReason = MoldingWaitReason.valueOf(tag.getStringOr(TAG_WAIT_REASON, ""));
         } catch (IllegalArgumentException exception) {
             this.waitReason = MoldingWaitReason.NONE;
         }
@@ -2390,7 +2403,7 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         }
     }
 
-    private static final class MoldingInventory extends SimpleContainer {
+    private static class MoldingInventory extends SimpleContainer {
         private MoldingInventory() {
             super(INVENTORY_SIZE);
         }
@@ -2416,167 +2429,117 @@ public class PlasticMoldingChamberBlockEntity extends BlockEntity
         }
     }
 
-    private final class ClayItemHandler implements IItemHandler {
+    private final class ClayItemHandler extends ItemStackResourceHandler {
         @Override
-        public int getSlots() {
-            return 1;
+        protected ItemStack getStack() {
+            return inventory.getItem(CLAY_SLOT);
         }
 
         @Override
-        public ItemStack getStackInSlot(int slot) {
-            validateSlot(slot);
-            return PlasticMoldingChamberBlockEntity.this.inventory.getItem(CLAY_SLOT);
+        protected void setStack(ItemStack stack) {
+            inventory.setItem(CLAY_SLOT, stack);
         }
 
         @Override
-        public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
-            validateSlot(slot);
-            if (stack.isEmpty() || !stack.is(Items.CLAY_BALL)) return stack;
-            ItemStack current = getStackInSlot(slot);
-            if (!current.isEmpty() && !ItemStack.isSameItemSameComponents(current, stack)) return stack;
-            int accepted = Math.min(
-                stack.getCount(),
-                Math.max(0, getSlotLimit(slot) - current.getCount())
-            );
-            if (accepted <= 0) return stack;
-            if (!simulate) {
-                if (current.isEmpty()) {
-                    PlasticMoldingChamberBlockEntity.this.inventory.setItem(
-                        CLAY_SLOT,
-                        stack.copyWithCount(accepted)
-                    );
-                } else {
-                    current.grow(accepted);
-                    PlasticMoldingChamberBlockEntity.this.inventory.setChanged();
-                }
-            }
-            return stack.copyWithCount(stack.getCount() - accepted);
+        protected boolean isValid(ItemResource resource) {
+            return resource.is(Items.CLAY_BALL);
         }
 
         @Override
-        public ItemStack extractItem(int slot, int amount, boolean simulate) {
-            validateSlot(slot);
-            if (amount <= 0) return ItemStack.EMPTY;
-            ItemStack current = getStackInSlot(slot);
-            int extracted = Math.min(amount, current.getCount());
-            if (extracted <= 0) return ItemStack.EMPTY;
-            ItemStack result = current.copyWithCount(extracted);
-            if (!simulate) PlasticMoldingChamberBlockEntity.this.inventory.removeItem(CLAY_SLOT, extracted);
-            return result;
-        }
-
-        @Override
-        public int getSlotLimit(int slot) {
-            validateSlot(slot);
-            return PlasticMoldingChamberBlockEntity.this.clayLimit;
-        }
-
-        @Override
-        public boolean isItemValid(int slot, ItemStack stack) {
-            validateSlot(slot);
-            return stack.is(Items.CLAY_BALL);
-        }
-
-        private static void validateSlot(int slot) {
-            if (slot != 0) throw new RuntimeException("Slot " + slot + " not in valid range - [0,1)");
+        protected int getCapacity(ItemResource resource) {
+            return clayLimit;
         }
     }
 
-    private final class ChamberFluidHandler implements IFluidHandler {
+    private final class ChamberFluidHandler implements ResourceHandler<FluidResource> {
         @Override
-        public int getTanks() {
+        public int size() {
             return 2;
         }
 
         @Override
-        public FluidStack getFluidInTank(int tank) {
-            return switch (tank) {
-                case 0 -> PlasticMoldingChamberBlockEntity.this.stagingTank.getFluid().copy();
-                case 1 -> PlasticMoldingChamberBlockEntity.this.formingFluid();
-                default -> FluidStack.EMPTY;
-            };
+        public FluidResource getResource(int index) {
+            return index == 0 ? stagingTank.getResource(0) : FluidResource.of(formingFluid());
         }
 
         @Override
-        public int getTankCapacity(int tank) {
-            return switch (tank) {
-                case 0 -> STAGING_TANK_CAPACITY;
-                case 1 -> PlasticMoldingChamberBlockEntity.this.batchFluidCapacity();
-                default -> 0;
-            };
+        public long getAmountAsLong(int index) {
+            return index == 0 ? stagingTank.getAmountAsLong(0) : formingFluidAmount();
         }
 
         @Override
-        public boolean isFluidValid(int tank, FluidStack stack) {
-            return tank == 0 && PlasticMoldingChamberBlockEntity.this.isCompatibleStagingFluid(stack);
+        public long getCapacityAsLong(int index, FluidResource resource) {
+            return index == 0 ? STAGING_TANK_CAPACITY : batchFluidCapacity();
         }
 
         @Override
-        public int fill(FluidStack resource, FluidAction action) {
-            return PlasticMoldingChamberBlockEntity.this.stagingTank.fill(resource, action);
+        public boolean isValid(int index, FluidResource resource) {
+            return index == 0 && stagingTank.isValid(0, resource);
         }
 
         @Override
-        public FluidStack drain(FluidStack resource, FluidAction action) {
-            if (resource.isEmpty()) return FluidStack.EMPTY;
-            FluidStack batch = PlasticMoldingChamberBlockEntity.this.formingFluid();
-            if (PlasticMoldingChamberBlockEntity.this.machineState != PlasticMoldingMachineState.PROCESSING
-                && !batch.isEmpty()
-                && FluidStack.isSameFluidSameComponents(batch, resource)) {
-                return PlasticMoldingChamberBlockEntity.this.drainFormingFluid(resource, action);
+        public int insert(int index, FluidResource resource, int amount, TransactionContext tx) {
+            return index == 0 ? stagingTank.insert(0, resource, amount, tx) : 0;
+        }
+
+        @Override
+        public int extract(int index, FluidResource resource, int amount, TransactionContext tx) {
+            if (index == 0) return stagingTank.extract(0, resource, amount, tx);
+            if (index != 1 || machineState == PlasticMoldingMachineState.PROCESSING) return 0;
+            if (activeFormingMode() != MoldingFormingMode.PRINTING) return batchTank.extract(0, resource, amount, tx);
+            var component = printingComponent();
+            return component == null ? 0 : component.tank().extract(0, resource, amount, tx);
+        }
+
+        @Override
+        public int extract(FluidResource resource, int amount, TransactionContext tx) {
+            if (machineState != PlasticMoldingMachineState.PROCESSING && getResource(1).equals(resource)) {
+                return extract(1, resource, amount, tx);
             }
-            return PlasticMoldingChamberBlockEntity.this.stagingTank.drain(resource, action);
-        }
-
-        @Override
-        public FluidStack drain(int maxDrain, FluidAction action) {
-            if (maxDrain <= 0) return FluidStack.EMPTY;
-            if (PlasticMoldingChamberBlockEntity.this.machineState != PlasticMoldingMachineState.PROCESSING
-                && PlasticMoldingChamberBlockEntity.this.formingFluidAmount() > 0) {
-                return PlasticMoldingChamberBlockEntity.this.drainFormingFluid(maxDrain, action);
-            }
-            return PlasticMoldingChamberBlockEntity.this.stagingTank.drain(maxDrain, action);
+            return extract(0, resource, amount, tx);
         }
     }
 
-    private final class ChamberEnergyStorage implements IEnergyStorage {
+    private final class ChamberEnergyStorage extends SnapshotJournal<Integer> implements EnergyHandler {
         @Override
-        public int receiveEnergy(int maxReceive, boolean simulate) {
-            int accepted = Math.min(
-                Math.max(0, maxReceive),
-                MoldingPowerBridge.capacity() - PlasticMoldingChamberBlockEntity.this.energy
-            );
-            if (!simulate && accepted > 0) {
-                PlasticMoldingChamberBlockEntity.this.energy += accepted;
-                PlasticMoldingChamberBlockEntity.this.setChanged();
-                PlasticMoldingChamberBlockEntity.this.syncPowerState();
+        public long getAmountAsLong() {
+            return energy;
+        }
+
+        @Override
+        public long getCapacityAsLong() {
+            return MoldingPowerBridge.capacity();
+        }
+
+        @Override
+        public int insert(int amount, TransactionContext tx) {
+            int accepted = Math.clamp(getCapacityAsLong() - energy, 0, amount);
+            if (accepted > 0) {
+                updateSnapshots(tx);
+                energy += accepted;
             }
             return accepted;
         }
 
         @Override
-        public int extractEnergy(int maxExtract, boolean simulate) {
+        public int extract(int amount, TransactionContext tx) {
             return 0;
         }
 
         @Override
-        public int getEnergyStored() {
-            return PlasticMoldingChamberBlockEntity.this.energy;
+        protected Integer createSnapshot() {
+            return energy;
         }
 
         @Override
-        public int getMaxEnergyStored() {
-            return MoldingPowerBridge.capacity();
+        protected void revertToSnapshot(Integer snapshot) {
+            energy = snapshot;
         }
 
         @Override
-        public boolean canExtract() {
-            return false;
-        }
-
-        @Override
-        public boolean canReceive() {
-            return PlasticMoldingChamberBlockEntity.this.energy < MoldingPowerBridge.capacity();
+        protected void onRootCommit(Integer previous) {
+            setChanged();
+            syncPowerState();
         }
     }
 

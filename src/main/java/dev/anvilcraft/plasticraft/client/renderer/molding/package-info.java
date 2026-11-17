@@ -1,3 +1,5 @@
 @org.jetbrains.annotations.ApiStatus.Internal
-@javax.annotation.ParametersAreNonnullByDefault
+@NullMarked
 package dev.anvilcraft.plasticraft.client.renderer.molding;
+
+import org.jspecify.annotations.NullMarked;

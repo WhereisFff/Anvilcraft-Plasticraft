@@ -58,7 +58,7 @@ final class MoldedTrayComparatorBehavior implements MoldedTrayRedstoneBehavior {
         BlockState state
     ) {
         if (!player.getAbilities().mayBuild) return InteractionResult.PASS;
-        if (!player.level().isClientSide) {
+        if (!player.level().isClientSide()) {
             ComparatorMode mode = state.getValue(ComparatorBlock.MODE);
             runtime.setState(state.setValue(
                 ComparatorBlock.MODE,
@@ -76,7 +76,7 @@ final class MoldedTrayComparatorBehavior implements MoldedTrayRedstoneBehavior {
                 1.0F
             );
         }
-        return InteractionResult.sidedSuccess(player.level().isClientSide);
+        return InteractionResult.SUCCESS;
     }
 
     @Override
@@ -86,7 +86,7 @@ final class MoldedTrayComparatorBehavior implements MoldedTrayRedstoneBehavior {
             || !state.getValue(BlockStateProperties.POWERED)) {
             return 0;
         }
-        return Math.clamp(component.blockEntityData().getInt("OutputSignal"), 0, 15);
+        return Math.clamp(component.blockEntityData().getIntOr("OutputSignal", 0), 0, 15);
     }
 
     @Override
@@ -109,7 +109,7 @@ final class MoldedTrayComparatorBehavior implements MoldedTrayRedstoneBehavior {
     private static int currentOutput(MoldedTrayRedstoneRuntime runtime) {
         return runtime.cachedBlockEntity() instanceof ComparatorBlockEntity comparator
             ? comparator.getOutputSignal()
-            : runtime.loadedComponent().blockEntityData().getInt("OutputSignal");
+            : runtime.loadedComponent().blockEntityData().getIntOr("OutputSignal", 0);
     }
 
     private static boolean applyOutput(

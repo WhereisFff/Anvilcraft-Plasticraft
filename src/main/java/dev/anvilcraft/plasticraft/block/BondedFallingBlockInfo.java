@@ -7,7 +7,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -18,7 +18,7 @@ import java.util.Objects;
 public record BondedFallingBlockInfo(
     BlockState blockState,
     BlockPos supportPos,
-    ResourceLocation supportBlockId,
+    Identifier supportBlockId,
     boolean pistonMovable
 ) {
     private static final String TAG_STATE = "State";
@@ -66,7 +66,7 @@ public record BondedFallingBlockInfo(
         );
     }
 
-    public CompoundTag save(HolderLookup.Provider provider) {
+    public CompoundTag save() {
         CompoundTag tag = new CompoundTag();
         tag.put(TAG_STATE, NbtUtils.writeBlockState(this.blockState));
         tag.putLong(TAG_SUPPORT_POS, this.supportPos.asLong());
@@ -78,15 +78,15 @@ public record BondedFallingBlockInfo(
     public static BondedFallingBlockInfo load(CompoundTag tag, HolderLookup.Provider provider) {
         BlockState state = NbtUtils.readBlockState(
             provider.lookupOrThrow(Registries.BLOCK),
-            tag.getCompound(TAG_STATE)
+            tag.getCompoundOrEmpty(TAG_STATE)
         );
-        ResourceLocation supportBlock = ResourceLocation.tryParse(tag.getString(TAG_SUPPORT_BLOCK));
+        Identifier supportBlock = Identifier.tryParse(tag.getStringOr(TAG_SUPPORT_BLOCK, ""));
         if (supportBlock == null) supportBlock = BuiltInRegistries.BLOCK.getKey(Blocks.AIR);
         return new BondedFallingBlockInfo(
             state,
-            BlockPos.of(tag.getLong(TAG_SUPPORT_POS)),
+            BlockPos.of(tag.getLongOr(TAG_SUPPORT_POS, 0L)),
             supportBlock,
-            tag.getBoolean(TAG_PISTON_MOVABLE)
+            tag.getBooleanOr(TAG_PISTON_MOVABLE, false)
         );
     }
 }

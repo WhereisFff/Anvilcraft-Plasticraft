@@ -1,37 +1,38 @@
 package dev.anvilcraft.plasticraft.client.event;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.network.BondedPlasticHammerUsePacket;
 import dev.anvilcraft.plasticraft.network.PlasticEntityHammerUsePacket;
-import dev.dubhe.anvilcraft.client.gui.screen.AnvilHammerScreen;
-import dev.dubhe.anvilcraft.item.AnvilHammerItem;
-import net.minecraft.Util;
+import dev.dubhe.anvilcraft.item.tool.AnvilHammerItem;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.core.Direction;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.util.Util;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.EntityHitResult;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.client.network.ClientPacketDistributor;
+import org.jspecify.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
-
-import javax.annotation.Nullable;
 
 /** 将塑料实体的铁砧锤交互分为快速释放和长按环形菜单。 */
 @EventBusSubscriber(modid = AnvilcraftPlasticraft.MOD_ID, value = Dist.CLIENT)
 public final class PlasticHammerInteractionHandler {
     @Nullable
     private static PendingInteraction pending;
+
+    private static final int HOLD_DELAY_MS = 150;
 
     private PlasticHammerInteractionHandler() {
     }
@@ -105,7 +106,7 @@ public final class PlasticHammerInteractionHandler {
             return;
         }
 
-        if (Util.getMillis() - interaction.startedAtMillis < AnvilHammerScreen.DELAY) return;
+        if (Util.getMillis() - interaction.startedAtMillis < HOLD_DELAY_MS) return;
         interaction.wheelOpened = true;
         minecraft.setScreen(interaction.createScreen());
     }
@@ -114,7 +115,7 @@ public final class PlasticHammerInteractionHandler {
     public static void onKeyReleased(InputEvent.Key event) {
         if (event.getAction() != GLFW.GLFW_RELEASE) return;
         Minecraft minecraft = Minecraft.getInstance();
-        if (!minecraft.options.keyUse.matches(event.getKey(), event.getScanCode())) return;
+        if (!minecraft.options.keyUse.matches(event.getKeyEvent())) return;
         releasePendingInteraction();
     }
 
@@ -122,7 +123,7 @@ public final class PlasticHammerInteractionHandler {
     public static void onMouseReleased(InputEvent.MouseButton.Post event) {
         if (event.getAction() != GLFW.GLFW_RELEASE) return;
         Minecraft minecraft = Minecraft.getInstance();
-        if (!minecraft.options.keyUse.matchesMouse(event.getButton())) return;
+        if (!minecraft.options.keyUse.matchesMouse(new MouseButtonEvent(0, 0, event.getMouseButtonInfo()))) return;
         releasePendingInteraction();
     }
 
@@ -135,13 +136,13 @@ public final class PlasticHammerInteractionHandler {
                 screen.completeSelection();
             }
         } else if (interaction.bondedBlockPos != null) {
-            PacketDistributor.sendToServer(new BondedPlasticHammerUsePacket(
+            ClientPacketDistributor.sendToServer(new BondedPlasticHammerUsePacket(
                 interaction.bondedBlockPos,
                 interaction.hand,
                 interaction.interactionFace
             ));
         } else {
-            PacketDistributor.sendToServer(new PlasticEntityHammerUsePacket(
+            ClientPacketDistributor.sendToServer(new PlasticEntityHammerUsePacket(
                 interaction.target.getId(),
                 interaction.hand,
                 interaction.interactionFace

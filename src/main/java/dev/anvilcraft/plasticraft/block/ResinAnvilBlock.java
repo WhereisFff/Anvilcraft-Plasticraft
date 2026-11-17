@@ -4,7 +4,7 @@ import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
-import dev.dubhe.anvilcraft.block.ResinBlock;
+import dev.dubhe.anvilcraft.block.storage.ResinBlock;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -59,13 +59,13 @@ public class ResinAnvilBlock extends AbstractPlasticEntityBlock<ResinAnvilEntity
     }
 
     @Override
-    public void fallOn(Level level, BlockState state, BlockPos pos, Entity entity, float fallDistance) {
-        resinBlock().fallOn(level, state, pos, entity, fallDistance);
+    public void fallOn(Level level, BlockState state, BlockPos pos, Entity entity, double fallDistance) {
+        resinBlock().fallOn(level, state, pos, entity, (float) fallDistance);
     }
 
     @Override
-    public void updateEntityAfterFallOn(BlockGetter level, Entity entity) {
-        resinBlock().updateEntityAfterFallOn(level, entity);
+    public void updateEntityMovementAfterFallOn(BlockGetter level, Entity entity) {
+        resinBlock().updateEntityMovementAfterFallOn(level, entity);
     }
 
     @Override

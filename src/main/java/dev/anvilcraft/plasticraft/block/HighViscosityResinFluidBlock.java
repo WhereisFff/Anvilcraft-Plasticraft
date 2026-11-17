@@ -6,14 +6,15 @@ import dev.anvilcraft.plasticraft.entity.PlasticCauldrons;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
-import dev.dubhe.anvilcraft.block.FishTankBlock;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
+import dev.dubhe.anvilcraft.block.workstation.FishTankBlock;
 import dev.dubhe.anvilcraft.util.CauldronUtil;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.InsideBlockEffectApplier;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.LiquidBlock;
@@ -22,7 +23,7 @@ import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.fluids.FluidStack;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import net.neoforged.neoforge.transfer.fluid.FluidUtil;
 
 /** 接触后限制实体行动的高粘性树脂流体方块。 */
 public class HighViscosityResinFluidBlock extends LiquidBlock {
@@ -36,7 +37,7 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
     }
 
     @Override
-    public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
+    public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity, InsideBlockEffectApplier effectApplier, boolean isPrecise) {
         stickEntity(state, entity);
     }
 
@@ -47,7 +48,7 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
         }
         entity.makeStuckInBlock(state, Vec3.ZERO);
         entity.setDeltaMovement(Vec3.ZERO);
-        entity.hasImpulse = true;
+        entity.needsSync = true;
     }
 
     /** 在本体容器的真实液面内应用树脂的粘滞效果。 */
@@ -84,14 +85,14 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
     private static boolean containsPlasticMelt(Level level, BlockState state, BlockPos pos) {
         if (state.getBlock() instanceof FishTankBlock
             && level.getBlockEntity(pos) instanceof FishTankBlockEntity tank) {
-            return PlasticMaterial.isMelt(tank.getFluidHandler().getFluid());
+            return PlasticMaterial.isMelt(FluidUtil.getStack(tank.getFluidHandler(), 0));
         }
         if (state.getBlock() instanceof LargeCauldronBlock) {
             LargeCauldronBlockEntity cauldron = LargeCauldronBlockEntity.getMain(level, pos, state);
             if (cauldron == null) return false;
-            IFluidHandler fluids = cauldron.getFluidHandler();
-            for (int tank = 0; tank < fluids.getTanks(); tank++) {
-                if (PlasticMaterial.isMelt(fluids.getFluidInTank(tank))) return true;
+            var fluids = cauldron.getFluidHandler();
+            for (int tank = 0; tank < fluids.size(); tank++) {
+                if (PlasticMaterial.isMelt(FluidUtil.getStack(fluids, tank))) return true;
             }
         }
         PlasticCauldron cauldron = boundCauldron(level, pos);
@@ -110,11 +111,11 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
 
     private static boolean isEntityInsideFishTank(Level level, BlockPos pos, Entity entity) {
         if (!(level.getBlockEntity(pos) instanceof FishTankBlockEntity tank)) return false;
-        FluidStack fluid = tank.getFluidHandler().getFluid();
+        FluidStack fluid = FluidUtil.getStack(tank.getFluidHandler(), 0);
         if (!isHighViscosityResin(fluid)) return false;
 
         double fill = Mth.clamp(
-            (double) fluid.getAmount() / tank.getFluidHandler().getCapacity(),
+            (double) fluid.getAmount() / tank.getFluidHandler().getCapacityAsInt(0, tank.getFluidHandler().getResource(0)),
             0.0D,
             1.0D
         );
@@ -136,17 +137,17 @@ public class HighViscosityResinFluidBlock extends LiquidBlock {
     ) {
         LargeCauldronBlockEntity cauldron = LargeCauldronBlockEntity.getMain(level, pos, state);
         if (cauldron == null) return false;
-        IFluidHandler fluids = cauldron.getFluidHandler();
+        var fluids = cauldron.getFluidHandler();
         int totalCapacity = 0;
-        for (int tank = 0; tank < fluids.getTanks(); tank++) {
-            totalCapacity += fluids.getTankCapacity(tank);
+        for (int tank = 0; tank < fluids.size(); tank++) {
+            totalCapacity += fluids.getCapacityAsInt(tank, fluids.getResource(tank));
         }
         if (totalCapacity <= 0) return false;
 
         AABB contentArea = CauldronUtil.getInnerArea(pos, state);
         double layerMinY = contentArea.minY;
-        for (int tank = 0; tank < fluids.getTanks(); tank++) {
-            FluidStack fluid = fluids.getFluidInTank(tank);
+        for (int tank = 0; tank < fluids.size(); tank++) {
+            FluidStack fluid = FluidUtil.getStack(fluids, tank);
             if (fluid.isEmpty()) continue;
             double layerMaxY = layerMinY
                 + contentArea.getYsize() * fluid.getAmount() / totalCapacity;

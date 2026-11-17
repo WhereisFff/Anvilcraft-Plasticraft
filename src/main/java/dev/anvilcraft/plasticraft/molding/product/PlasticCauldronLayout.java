@@ -3,7 +3,7 @@ package dev.anvilcraft.plasticraft.molding.product;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.dubhe.anvilcraft.AnvilCraft;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 
 /**
@@ -44,7 +44,7 @@ public enum PlasticCauldronLayout {
     }
 
     /** 非炼药锅类型返回 {@code null}，调用方据此区分储罐与锅。 */
-    public static PlasticCauldronLayout of(ResourceLocation finalType) {
+    public static PlasticCauldronLayout of(Identifier finalType) {
         if (MoldingProductTypes.isLargeCauldron(finalType)) return LARGE;
         return MoldingProductTypes.isCauldron(finalType) ? NORMAL : null;
     }

@@ -11,8 +11,12 @@ import dev.anvilcraft.plasticraft.client.particle.ExperienceVaporParticle;
 import dev.anvilcraft.plasticraft.client.particle.FluidVaporParticle;
 import dev.anvilcraft.plasticraft.client.particle.GaseousOilFlameParticle;
 import dev.anvilcraft.plasticraft.client.renderer.AdhesivePatchRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.ClearPlasticRenderTypes;
 import dev.anvilcraft.plasticraft.client.renderer.DynamicPlasticTextureManager;
+import dev.anvilcraft.plasticraft.client.renderer.HighViscosityResinFluidExtension;
 import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticGeometryPicture;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticPaletteItemTint;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticPaletteTintManager;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticPreviewRenderTypes;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticTextureSpriteSource;
@@ -20,38 +24,34 @@ import dev.anvilcraft.plasticraft.client.renderer.UniversalPlasticItemRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.Plastic3DPrintingComponentRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.blockentity.PlasticMoldingChamberRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.entity.HardenedResinCauldronRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderHelper;
+import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingProjectionRenderTypes;
+import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingViewportRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingViewportResources;
 import dev.anvilcraft.plasticraft.client.selection.PlasticSelectionGeometry;
 import dev.anvilcraft.plasticraft.client.selection.PlasticSelectionIntegration;
 import dev.anvilcraft.plasticraft.init.PlasticraftParticles;
-import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
-import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.item.PlasticraftCreativeTabState;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.api.tooltip.HudTooltipManager;
-import net.minecraft.client.renderer.BlockEntityWithoutLevelRenderer;
-import net.minecraft.client.renderer.ItemBlockRenderTypes;
-import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.item.ItemProperties;
-import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
-import net.minecraft.world.item.DyeColor;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.level.block.Block;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
+import net.neoforged.neoforge.client.event.AddClientReloadListenersEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
-import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import net.neoforged.neoforge.client.event.RegisterColorHandlersEvent;
+import net.neoforged.neoforge.client.event.RegisterFluidModelsEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterParticleProvidersEvent;
-import net.neoforged.neoforge.client.extensions.common.IClientItemExtensions;
-import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsEvent;
+import net.neoforged.neoforge.client.event.RegisterSpecialModelRendererEvent;
+import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
 import net.neoforged.neoforge.common.NeoForge;
+
+import java.util.List;
 
 /** 注册 Plasticraft 的客户端渲染、色板和界面入口。 */
 @Mod(value = AnvilcraftPlasticraft.MOD_ID, dist = Dist.CLIENT)
@@ -67,8 +67,13 @@ public final class AnvilcraftPlasticraftClient {
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerReloadListeners);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerBlockColors);
         modEventBus.addListener(AnvilcraftPlasticraftClient::registerItemColors);
-        modEventBus.addListener(AnvilcraftPlasticraftClient::registerClientExtensions);
-        modEventBus.addListener(PlasticPreviewRenderTypes::registerShader);
+        modEventBus.addListener(AnvilcraftPlasticraftClient::registerSpecialModels);
+        modEventBus.addListener(AnvilcraftPlasticraftClient::registerFluidModels);
+        modEventBus.addListener(ClearPlasticRenderTypes::register);
+        modEventBus.addListener(PlasticPreviewRenderTypes::register);
+        modEventBus.addListener(MoldingProjectionRenderTypes::register);
+        modEventBus.addListener(MoldingViewportRenderer::register);
+        modEventBus.addListener(PlasticGeometryPicture::register);
         modEventBus.addListener(PlasticTextureSpriteSource::registerType);
         NeoForge.EVENT_BUS.addListener(AnvilcraftPlasticraftClient::clearPlasticTextureCache);
         AnvilCraftClientApiBootstrap.register();
@@ -88,147 +93,49 @@ public final class AnvilcraftPlasticraftClient {
         event.enqueueWork(() -> {
             PlasticSelectionIntegration.register();
             HudTooltipManager.INSTANCE.registerBlockTooltip(new BondedBlockTooltipProvider());
-            ItemBlockRenderTypes.setRenderLayer(
-                PlasticraftFluids.LIQUID_HIGH_VISCOSITY_RESIN.get(),
-                RenderType.translucent()
-            );
-            ItemBlockRenderTypes.setRenderLayer(
-                PlasticraftFluids.FLOWING_LIQUID_HIGH_VISCOSITY_RESIN.get(),
-                RenderType.translucent()
-            );
-            ItemBlockRenderTypes.setRenderLayer(PlasticraftFluids.HIGH_HEAT_FUEL.get(), RenderType.translucent());
-            ItemBlockRenderTypes.setRenderLayer(PlasticraftFluids.FLOWING_HIGH_HEAT_FUEL.get(), RenderType.translucent());
-            ItemBlockRenderTypes.setRenderLayer(PlasticraftFluids.PLASTIC_OIL.get(), RenderType.translucent());
-            ItemBlockRenderTypes.setRenderLayer(PlasticraftFluids.FLOWING_PLASTIC_OIL.get(), RenderType.translucent());
-            ItemBlockRenderTypes.setRenderLayer(PlasticraftFluids.CRUDE_OIL_ACID.get(), RenderType.translucent());
-            ItemBlockRenderTypes.setRenderLayer(PlasticraftFluids.FLOWING_CRUDE_OIL_ACID.get(), RenderType.translucent());
-            ItemBlockRenderTypes.setRenderLayer(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), RenderType.cutout());
-            ItemBlockRenderTypes.setRenderLayer(
-                PlasticraftFluids.FLOWING_UNIVERSAL_PLASTIC_MELT.get(),
-                RenderType.cutout()
-            );
-            ItemBlockRenderTypes.setRenderLayer(PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get(), RenderType.cutout());
-            ItemBlockRenderTypes.setRenderLayer(
-                PlasticraftFluids.FLOWING_ENGINEERING_PLASTIC_MELT.get(),
-                RenderType.cutout()
-            );
-            ItemBlockRenderTypes.setRenderLayer(
-                PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT.get(),
-                RenderType.cutout()
-            );
-            ItemBlockRenderTypes.setRenderLayer(
-                PlasticraftFluids.FLOWING_HEAT_RESISTANT_PLASTIC_MELT.get(),
-                RenderType.cutout()
-            );
-            ItemBlockRenderTypes.setRenderLayer(PlasticraftFluids.CLEAR_PLASTIC_MELT.get(), RenderType.translucent());
-            ItemBlockRenderTypes.setRenderLayer(
-                PlasticraftFluids.FLOWING_CLEAR_PLASTIC_MELT.get(),
-                RenderType.translucent()
-            );
-            ItemBlockRenderTypes.setRenderLayer(PlasticraftBlocks.CLEAR_PLASTIC.get(), RenderType.translucent());
-            ItemBlockRenderTypes.setRenderLayer(PlasticraftFluids.ELASTIC_PLASTIC_MELT.get(), RenderType.translucent());
-            ItemBlockRenderTypes.setRenderLayer(
-                PlasticraftFluids.FLOWING_ELASTIC_PLASTIC_MELT.get(), RenderType.translucent());
-            ItemBlockRenderTypes.setRenderLayer(PlasticraftBlocks.ELASTIC_PLASTIC.get(), RenderType.translucent());
-            for (PlasticMaterial material : PlasticMaterial.values()) {
-                ItemProperties.register(
-                    material.productBlock().asItem(),
-                    AnvilcraftPlasticraft.of("plastic_color"),
-                    (stack, level, entity, seed) -> PlasticMeltColor.get(stack).getId()
-                );
-            }
         });
     }
 
-    private static void registerBlockColors(RegisterColorHandlersEvent.Block event) {
+    private static void registerBlockColors(RegisterColorHandlersEvent.BlockTintSources event) {
         for (PlasticMaterial material : PlasticMaterial.values()) {
-            registerMeltCauldronColor(event, material, material.meltCauldron());
+            event.register(List.of(state -> PlasticPaletteItemTint.color(material,
+                state.getValue(UniversalPlasticMeltCauldronBlock.COLOR))), material.meltCauldron());
         }
     }
 
-    private static void registerItemColors(RegisterColorHandlersEvent.Item event) {
-        for (PlasticMaterial material : PlasticMaterial.values()) {
-            registerGranuleColor(event, material, material.granule());
-            registerMeltBucketColor(event, material, material.bucket());
+    private static void registerItemColors(RegisterColorHandlersEvent.ItemTintSources event) {
+        event.register(AnvilcraftPlasticraft.of("palette"), PlasticPaletteItemTint.CODEC);
+    }
+
+    private static void registerSpecialModels(RegisterSpecialModelRendererEvent event) {
+        event.register(AnvilcraftPlasticraft.of("plastic"), UniversalPlasticItemRenderer.Unbaked.CODEC);
+    }
+
+    private static void registerFluidModels(RegisterFluidModelsEvent event) {
+        for (var entry : PlasticraftFluids.FLUIDS.getEntries()) {
+            var fluid = entry.get();
+            var extension = (HighViscosityResinFluidExtension) IClientFluidTypeExtensions.of(fluid);
+            event.register(extension.model(), fluid);
         }
     }
 
-    private static void registerMeltCauldronColor(
-        RegisterColorHandlersEvent.Block event,
-        PlasticMaterial material,
-        Block block
-    ) {
-        event.register(
-            (state, level, pos, tintIndex) -> tintIndex == 0
-                ? materialTint(
-                    material,
-                    state.getValue(UniversalPlasticMeltCauldronBlock.COLOR)
-                )
-                : 0xFFFFFFFF,
-            block
-        );
-    }
-
-    private static void registerGranuleColor(
-        RegisterColorHandlersEvent.Item event,
-        PlasticMaterial material,
-        Item item
-    ) {
-        event.register(
-            (stack, tintIndex) -> tintIndex == 0
-                ? material.isTransparent()
-                    ? PlasticPaletteTintManager.INSTANCE.transparentTint(material, PlasticMeltColor.get(stack))
-                    : PlasticPaletteTintManager.INSTANCE.tint(material, PlasticMeltColor.get(stack))
-                : 0xFFFFFFFF,
-            item
-        );
-    }
-
-    private static void registerMeltBucketColor(
-        RegisterColorHandlersEvent.Item event,
-        PlasticMaterial material,
-        Item item
-    ) {
-        event.register(
-            (stack, tintIndex) -> tintIndex == 1
-                ? materialTint(material, PlasticMeltColor.get(stack))
-                : 0xFFFFFFFF,
-            item
-        );
-    }
-
-    private static int materialTint(PlasticMaterial material, DyeColor color) {
-        return material.isTransparent()
-            ? PlasticPaletteTintManager.INSTANCE.transparentTint(material, color)
-            : PlasticPaletteTintManager.INSTANCE.tint(material, color);
-    }
-
-    private static void registerClientExtensions(RegisterClientExtensionsEvent event) {
-        event.registerItem(new IClientItemExtensions() {
-            @Override
-            public BlockEntityWithoutLevelRenderer getCustomRenderer() {
-                return UniversalPlasticItemRenderer.getInstance();
-            }
-        }, PlasticraftBlocks.UNIVERSAL_PLASTIC.asItem(), PlasticraftBlocks.ENGINEERING_PLASTIC.asItem(),
-            PlasticraftBlocks.CLEAR_PLASTIC.asItem(), PlasticraftBlocks.HEAT_RESISTANT_PLASTIC.asItem(),
-            PlasticraftBlocks.ELASTIC_PLASTIC.asItem());
-    }
-
-    private static void registerAdditionalModels(ModelEvent.RegisterAdditional event) {
-        event.register(PlasticMoldingChamberRenderer.PRINTER_FRAME_MODEL);
-        event.register(PlasticMoldingChamberRenderer.PRINTER_GLASS_MODEL);
-        event.register(PlasticMoldingChamberRenderer.PRINTER_GUI_MODEL);
-        event.register(PlasticMoldingChamberRenderer.PRINTER_X_MODEL);
-        event.register(PlasticMoldingChamberRenderer.PRINTER_Y_MODEL);
-        event.register(PlasticMoldingChamberRenderer.PRINTER_Z_MODEL);
-        event.register(PlasticMoldingChamberRenderer.PRINTER_Z_EYE_MODEL);
-        event.register(Plastic3DPrintingComponentRenderer.EYE_MODEL);
-        event.register(Plastic3DPrintingComponentRenderer.SCREEN_MODEL);
-        event.register(PlasticMoldingChamberRenderer.PRINTER_DOOR_LEFT_MODEL);
-        event.register(PlasticMoldingChamberRenderer.PRINTER_DOOR_RIGHT_MODEL);
-        event.register(HardenedResinCauldronRenderer.OUTLET_MODEL);
-        event.register(AdhesivePatchRenderer.MODEL);
-        event.register(IgnitedFluidFlameRenderer.BLUE_FLAME_MODEL);
+    private static void registerAdditionalModels(ModelEvent.RegisterStandalone event) {
+        PlasticMoldingChamberRenderer.PRINTER_FRAME_MODEL.register(event);
+        PlasticMoldingChamberRenderer.PRINTER_GLASS_MODEL.register(event);
+        PlasticMoldingChamberRenderer.PRINTER_GUI_MODEL.register(event);
+        PlasticMoldingChamberRenderer.PRINTER_X_MODEL.register(event);
+        PlasticMoldingChamberRenderer.PRINTER_Y_MODEL.register(event);
+        PlasticMoldingChamberRenderer.PRINTER_Z_MODEL.register(event);
+        PlasticMoldingChamberRenderer.PRINTER_Z_EYE_MODEL.register(event);
+        Plastic3DPrintingComponentRenderer.EYE_MODEL.register(event);
+        Plastic3DPrintingComponentRenderer.SCREEN_MODEL.register(event);
+        PlasticMoldingChamberRenderer.PRINTER_DOOR_LEFT_MODEL.register(event);
+        PlasticMoldingChamberRenderer.PRINTER_DOOR_RIGHT_MODEL.register(event);
+        HardenedResinCauldronRenderer.OUTLET_MODEL.register(event);
+        AdhesivePatchRenderer.MODEL.register(event);
+        IgnitedFluidFlameRenderer.BLUE_FLAME_MODEL.register(event);
+        IgnitedFluidFlameRenderer.ORDINARY_FLAME_MODEL.register(event);
+        PlasticEntityRenderHelper.HAMMER_AXIS_MODEL.register(event);
     }
 
     private static void registerParticleProviders(RegisterParticleProvidersEvent event) {
@@ -244,11 +151,9 @@ public final class AnvilcraftPlasticraftClient {
         event.registerAboveAll(AnvilcraftPlasticraft.of("adhesive_bond_hud"), AdhesiveBondHud::render);
     }
 
-    private static void registerReloadListeners(RegisterClientReloadListenersEvent event) {
-        event.registerReloadListener(MoldingViewportResources.INSTANCE);
-        event.registerReloadListener(PlasticPaletteTintManager.INSTANCE);
-        event.registerReloadListener(DynamicPlasticTextureManager.INSTANCE);
-        event.registerReloadListener((ResourceManagerReloadListener) resourceManager -> {
-        });
+    private static void registerReloadListeners(AddClientReloadListenersEvent event) {
+        event.addListener(AnvilcraftPlasticraft.of("molding_viewport"), MoldingViewportResources.INSTANCE);
+        event.addListener(AnvilcraftPlasticraft.of("plastic_palette"), PlasticPaletteTintManager.INSTANCE);
+        event.addListener(AnvilcraftPlasticraft.of("dynamic_plastic"), DynamicPlasticTextureManager.INSTANCE);
     }
 }

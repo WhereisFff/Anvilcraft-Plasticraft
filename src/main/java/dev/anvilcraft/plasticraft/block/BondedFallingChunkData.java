@@ -4,13 +4,14 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.neoforged.neoforge.attachment.IAttachmentHolder;
 import net.neoforged.neoforge.attachment.IAttachmentSerializer;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -24,25 +25,27 @@ public record BondedFallingChunkData(
     private static final String TAG_POS = "Pos";
     private static final String TAG_INFO = "Info";
 
-    public static final IAttachmentSerializer<CompoundTag, BondedFallingChunkData> SERIALIZER =
+    public static final IAttachmentSerializer<BondedFallingChunkData> SERIALIZER =
         new IAttachmentSerializer<>() {
             @Override
             public BondedFallingChunkData read(
-                IAttachmentHolder holder,
-                CompoundTag tag,
-                HolderLookup.Provider provider
+                IAttachmentHolder holder, ValueInput input
             ) {
-                return BondedFallingChunkData.load(tag, provider);
+                return BondedFallingChunkData.load(input.read("value", CompoundTag.CODEC).orElseGet(CompoundTag::new), input.lookup());
             }
 
             @Override
-            public @Nullable CompoundTag write(BondedFallingChunkData data, HolderLookup.Provider provider) {
-                return data.entries.isEmpty() && data.adhesions.isEmpty() ? null : data.save(provider);
+            public boolean write(BondedFallingChunkData data, ValueOutput output) {
+                if (data.entries.isEmpty() && data.adhesions.isEmpty()) {
+                    return false;
+                }
+                output.store("value", CompoundTag.CODEC, data.save());
+                return true;
             }
         };
 
     public static final StreamCodec<RegistryFriendlyByteBuf, BondedFallingChunkData> STREAM_CODEC = StreamCodec.of(
-        (buffer, data) -> buffer.writeNbt(data.save(buffer.registryAccess())),
+        (buffer, data) -> buffer.writeNbt(data.save()),
         buffer -> {
             CompoundTag tag = buffer.readNbt();
             return tag == null ? empty() : load(tag, buffer.registryAccess());
@@ -96,13 +99,13 @@ public record BondedFallingChunkData(
         return new BondedFallingChunkData(this.entries, changed);
     }
 
-    private CompoundTag save(HolderLookup.Provider provider) {
+    private CompoundTag save() {
         CompoundTag tag = new CompoundTag();
         ListTag entriesTag = new ListTag();
         for (Map.Entry<BlockPos, BondedFallingBlockInfo> entry : this.entries.entrySet()) {
             CompoundTag entryTag = new CompoundTag();
             entryTag.putLong(TAG_POS, entry.getKey().asLong());
-            entryTag.put(TAG_INFO, entry.getValue().save(provider));
+            entryTag.put(TAG_INFO, entry.getValue().save());
             entriesTag.add(entryTag);
         }
         tag.put(TAG_ENTRIES, entriesTag);
@@ -119,20 +122,20 @@ public record BondedFallingChunkData(
 
     private static BondedFallingChunkData load(CompoundTag tag, HolderLookup.Provider provider) {
         Map<BlockPos, BondedFallingBlockInfo> entries = new LinkedHashMap<>();
-        ListTag entriesTag = tag.getList(TAG_ENTRIES, Tag.TAG_COMPOUND);
+        ListTag entriesTag = tag.getListOrEmpty(TAG_ENTRIES);
         for (int i = 0; i < entriesTag.size(); i++) {
-            CompoundTag entryTag = entriesTag.getCompound(i);
-            if (!entryTag.contains(TAG_INFO, Tag.TAG_COMPOUND)) continue;
-            BlockPos pos = BlockPos.of(entryTag.getLong(TAG_POS));
-            entries.put(pos, BondedFallingBlockInfo.load(entryTag.getCompound(TAG_INFO), provider));
+            CompoundTag entryTag = entriesTag.getCompoundOrEmpty(i);
+            if (!entryTag.contains(TAG_INFO)) continue;
+            BlockPos pos = BlockPos.of(entryTag.getLongOr(TAG_POS, 0L));
+            entries.put(pos, BondedFallingBlockInfo.load(entryTag.getCompoundOrEmpty(TAG_INFO), provider));
         }
         Map<BlockPos, BlockAdhesionState> adhesions = new LinkedHashMap<>();
-        ListTag adhesionsTag = tag.getList(TAG_ADHESIONS, Tag.TAG_COMPOUND);
+        ListTag adhesionsTag = tag.getListOrEmpty(TAG_ADHESIONS);
         for (int i = 0; i < adhesionsTag.size(); i++) {
-            CompoundTag entryTag = adhesionsTag.getCompound(i);
-            if (!entryTag.contains(TAG_INFO, Tag.TAG_COMPOUND)) continue;
-            BlockPos pos = BlockPos.of(entryTag.getLong(TAG_POS));
-            adhesions.put(pos, BlockAdhesionState.load(entryTag.getCompound(TAG_INFO)));
+            CompoundTag entryTag = adhesionsTag.getCompoundOrEmpty(i);
+            if (!entryTag.contains(TAG_INFO)) continue;
+            BlockPos pos = BlockPos.of(entryTag.getLongOr(TAG_POS, 0L));
+            adhesions.put(pos, BlockAdhesionState.load(entryTag.getCompoundOrEmpty(TAG_INFO)));
         }
         return new BondedFallingChunkData(entries, adhesions);
     }

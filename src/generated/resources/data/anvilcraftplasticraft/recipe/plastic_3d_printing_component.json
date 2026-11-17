@@ -2,30 +2,14 @@
   "type": "minecraft:crafting_shaped",
   "category": "misc",
   "key": {
-    "B": {
-      "item": "anvilcraft:large_fluid_tank"
-    },
-    "E": {
-      "item": "minecraft:ender_eye"
-    },
-    "F": {
-      "item": "anvilcraft:pipe"
-    },
-    "I": {
-      "item": "minecraft:iron_ingot"
-    },
-    "L": {
-      "item": "anvilcraft:induction_light"
-    },
-    "M": {
-      "item": "anvilcraft:magnetoelectric_core"
-    },
-    "P": {
-      "item": "anvilcraft:processor"
-    },
-    "T": {
-      "item": "anvilcraft:fluid_tank"
-    }
+    "B": "anvilcraft:large_fluid_tank",
+    "E": "minecraft:ender_eye",
+    "F": "anvilcraft:pipe",
+    "I": "minecraft:iron_ingot",
+    "L": "anvilcraft:induction_light",
+    "M": "anvilcraft:magnetoelectric_core",
+    "P": "anvilcraft:processor",
+    "T": "anvilcraft:fluid_tank"
   },
   "pattern": [
     "LEB",
@@ -33,7 +17,6 @@
     "MFI"
   ],
   "result": {
-    "count": 1,
     "id": "anvilcraftplasticraft:plastic_3d_printing_component"
   }
 }

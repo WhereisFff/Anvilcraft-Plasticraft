@@ -8,8 +8,8 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -179,7 +179,7 @@ public final class PlasticPushChain {
         Vec3 movement
     ) {
         Direction gravityDirection = carried.plasticraft$currentPushGravityDirection();
-        Vec3 gravityNormal = Vec3.atLowerCornerOf(gravityDirection.getNormal());
+        Vec3 gravityNormal = Vec3.atLowerCornerOf(gravityDirection.getUnitVec3i());
         boolean tangential = Math.abs(movement.dot(gravityNormal)) <= PlasticEntityPhysics.FACE_EPSILON;
         boolean contact = PlasticEntityPhysics.hasImmediateEntityContact(carried, carrier, gravityDirection);
         return tangential && contact;

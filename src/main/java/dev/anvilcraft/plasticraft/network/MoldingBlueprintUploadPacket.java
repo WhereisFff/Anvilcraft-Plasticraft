@@ -81,12 +81,12 @@ public record MoldingBlueprintUploadPacket(
                 this.translationConfirmed,
                 new MoldingVec3(this.translationX, this.translationY, this.translationZ)
             );
-            MinecraftServer server = player.getServer();
+            MinecraftServer server = player.level().getServer();
             if (server == null) throw new BlueprintException("server_unavailable", "Server is unavailable");
             MoldingBlueprint blueprint = MoldingBlueprint.create(
                 model,
                 player.getUUID(),
-                player.getGameProfile().getName(),
+                player.getGameProfile().name(),
                 System.currentTimeMillis()
             );
             Optional<MoldingBlueprintLibrary.StoredBlueprint> existing = MoldingBlueprintLibrary.findOwnedModel(

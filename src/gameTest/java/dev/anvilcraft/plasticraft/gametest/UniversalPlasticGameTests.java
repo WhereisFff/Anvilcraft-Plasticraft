@@ -5,8 +5,8 @@ import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltFluidBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticSolidification;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
-import dev.anvilcraft.plasticraft.entity.ClearPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.ClearPlasticBeaconInteraction;
+import dev.anvilcraft.plasticraft.entity.ClearPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
@@ -23,21 +23,20 @@ import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
-import dev.dubhe.anvilcraft.block.sliding.SlidingRailBlock;
-import dev.dubhe.anvilcraft.block.HeaterBlock;
-import dev.dubhe.anvilcraft.block.CreativeLaserBlock;
 import dev.dubhe.anvilcraft.block.entity.CreativeLaserBlockEntity;
+import dev.dubhe.anvilcraft.block.laser.CreativeLaserBlock;
+import dev.dubhe.anvilcraft.block.logistics.sliding.SlidingRailBlock;
+import dev.dubhe.anvilcraft.block.power.consumer.HeaterBlock;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.util.AccelerateManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.gametest.framework.GameTest;
-import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.item.FallingBlockEntity;
@@ -65,12 +64,13 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.BooleanOp;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
+import net.neoforged.testframework.gametest.GameTest;
 import net.neoforged.testframework.gametest.GameTestPlayer;
-import net.neoforged.neoforge.fluids.FluidStack;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 
 import java.util.List;
 
@@ -137,7 +137,7 @@ public final class UniversalPlasticGameTests {
         entity.setNoGravity(true);
         Player player = helper.makeMockPlayer(GameType.CREATIVE);
 
-        check(entity.hurt(player.damageSources().playerAttack(player), 1.0F),
+        check(entity.hurtServer(helper.getLevel(), player.damageSources().playerAttack(player), 1.0F),
             "creative attack did not destroy the plastic entity");
         check(entity.isRemoved(), "creative attack left the plastic entity alive");
         check(helper.getLevel().getEntitiesOfClass(
@@ -355,7 +355,7 @@ public final class UniversalPlasticGameTests {
         );
         placeMeltAt(helper, rainMelt, DyeColor.LIME);
         helper.setBiome(Biomes.PLAINS);
-        helper.getLevel().setWeatherParameters(0, 20, true, false);
+        helper.getLevel().getServer().setWeatherParameters(0, 20, true, false);
         helper.getLevel().setRainLevel(1.0F);
         try {
             BlockPos precipitationPos = rainMelt.above();
@@ -367,7 +367,7 @@ public final class UniversalPlasticGameTests {
                 "rain test position was below the motion-blocking heightmap"
             );
             check(
-                helper.getLevel().getBiome(precipitationPos).value().getPrecipitationAt(precipitationPos)
+                helper.getLevel().getBiome(precipitationPos).value().getPrecipitationAt(precipitationPos, helper.getLevel().getSeaLevel())
                     == Biome.Precipitation.RAIN,
                 "rain test biome did not produce rain"
             );
@@ -384,7 +384,7 @@ public final class UniversalPlasticGameTests {
             );
         } finally {
             // 天气属于整张测试维度；立即恢复，避免影响并行的其他 GameTest。
-            helper.getLevel().setWeatherParameters(6_000, 0, false, false);
+            helper.getLevel().getServer().setWeatherParameters(6_000, 0, false, false);
             helper.getLevel().setRainLevel(0.0F);
         }
 
@@ -443,7 +443,7 @@ public final class UniversalPlasticGameTests {
             new AABB(helper.absolutePos(support.above())).inflate(0.2D),
             candidate -> candidate.getType() == material.entityType()
         ).stream().findFirst().orElseThrow(() ->
-            new GameTestAssertException("placed " + material.key() + " entity was not found")
+            helper.assertionException("placed " + material.key() + " entity was not found")
         );
         entity.setNoGravity(true);
 
@@ -464,10 +464,10 @@ public final class UniversalPlasticGameTests {
         );
         check(PlasticMeltColor.get(entity.getDropStack()) == DyeColor.MAGENTA, "placed entity drop lost its colour");
 
-        CompoundTag saved = entity.saveWithoutId(new CompoundTag());
-        UniversalPlasticEntity loaded = material.entityType().create(helper.getLevel());
+        CompoundTag saved = PlasticraftTestData.save(entity);
+        UniversalPlasticEntity loaded = material.entityType().create(helper.getLevel(), EntitySpawnReason.TRIGGERED);
         check(loaded != null, material.key() + " entity could not be created for reload");
-        loaded.load(saved);
+        PlasticraftTestData.read(loaded.registryAccess(), saved, loaded::load);
         check(
             loaded.getDisplayState().getValue(DyeableMaterial.COLOR) == expectedDisplayColor,
             "saved entity display state did not preserve the material colour capability"
@@ -529,7 +529,7 @@ public final class UniversalPlasticGameTests {
                 UniversalPlasticEntity.class,
                 new AABB(occupied).inflate(0.1D)
             ).stream().findFirst().orElseThrow(() ->
-                new GameTestAssertException("universal plastic entity was not created on " + face)
+                helper.assertionException("universal plastic entity was not created on " + face)
             );
             AABB exactCollision = placed.plasticraft$getCollisionBox().bounds();
             check(placed.getOrientation().equals(expected), "universal plastic ignored clicked face " + face);
@@ -708,7 +708,7 @@ public final class UniversalPlasticGameTests {
         ResinAnvilEntity resinAnvil = helper.getLevel().getEntitiesOfClass(
             ResinAnvilEntity.class, new AABB(resinSupport.blockPosition().above()).inflate(0.1D)
         ).stream().findFirst().orElseThrow(() ->
-            new GameTestAssertException("top-face placement did not create a resin anvil entity")
+            helper.assertionException("top-face placement did not create a resin anvil entity")
         );
 
         helper.startSequence()
@@ -837,7 +837,7 @@ public final class UniversalPlasticGameTests {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         AABB lowerBounds = lower.plasticraft$getCollisionBox().bounds();
         AABB raisedBounds = raised.plasticraft$getCollisionBox().bounds();
-        player.moveTo(
+        player.snapTo(
             lowerBounds.maxX - player.getBbWidth() * 0.5D - 0.05D,
             lowerBounds.maxY,
             lowerBounds.getCenter().z
@@ -892,7 +892,7 @@ public final class UniversalPlasticGameTests {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         AABB lowerBounds = lower.plasticraft$getCollisionBox().bounds();
         AABB raisedBounds = raised.plasticraft$getCollisionBox().bounds();
-        player.moveTo(
+        player.snapTo(
             lowerBounds.maxX - player.getBbWidth() * 0.5D - 0.05D,
             lowerBounds.maxY,
             lowerBounds.getCenter().z
@@ -961,7 +961,7 @@ public final class UniversalPlasticGameTests {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         AABB lowerBounds = lower.plasticraft$getCollisionBox().bounds();
         AABB raisedBounds = raised.plasticraft$getCollisionBox().bounds();
-        player.moveTo(
+        player.snapTo(
             lowerBounds.maxX - player.getBbWidth() * 0.5D - 0.05D,
             lowerBounds.maxY,
             lowerBounds.getCenter().z
@@ -1004,7 +1004,7 @@ public final class UniversalPlasticGameTests {
 
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         AABB supportBounds = support.plasticraft$getCollisionBox().bounds();
-        player.moveTo(
+        player.snapTo(
             supportBounds.minX + player.getBbWidth() * 0.5D,
             supportBounds.maxY,
             supportBounds.getCenter().z
@@ -1040,7 +1040,7 @@ public final class UniversalPlasticGameTests {
         target.setNoGravity(true);
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         AABB targetBounds = target.plasticraft$getCollisionBox().bounds();
-        player.moveTo(
+        player.snapTo(
             targetBounds.minX - player.getBbWidth() * 0.5D,
             targetBounds.minY,
             targetBounds.getCenter().z
@@ -1125,13 +1125,13 @@ public final class UniversalPlasticGameTests {
                 check(!helper.getLevel().getBlockTicks().hasScheduledTick(absoluteObserverPos, Blocks.OBSERVER),
                     "observer retained a scheduled pulse before reload");
                 UniversalPlasticEntity previous = plastic[0];
-                CompoundTag saved = previous.saveWithoutId(new CompoundTag());
+                CompoundTag saved = PlasticraftTestData.save(previous);
                 previous.remove(Entity.RemovalReason.UNLOADED_TO_CHUNK);
                 UniversalPlasticEntity loaded = new UniversalPlasticEntity(
                     PlasticraftEntities.UNIVERSAL_PLASTIC.get(),
                     helper.getLevel()
                 );
-                loaded.load(saved);
+                PlasticraftTestData.read(loaded.registryAccess(), saved, loaded::load);
                 loaded.setNoGravity(true);
                 check(helper.getLevel().addFreshEntity(loaded), "failed to restore the saved plastic entity");
                 plastic[0] = loaded;
@@ -1175,7 +1175,7 @@ public final class UniversalPlasticGameTests {
 
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         AABB supportBounds = support.plasticraft$getCollisionBox().bounds();
-        player.moveTo(
+        player.snapTo(
             supportBounds.maxX - player.getBbWidth() * 0.5D,
             supportBounds.maxY,
             supportBounds.getCenter().z
@@ -1703,7 +1703,7 @@ public final class UniversalPlasticGameTests {
             true
         ), "bonded molded tank could not be initialized");
 
-        IFluidHandler fluids = bonded.getCapabilityFluidHandler();
+        IFluidHandler fluids = PlasticraftTestData.fluids(bonded.getCapabilityFluidHandler());
         check(fluids != null, "bonded molded tank did not expose its fluid handler");
         int capacity = fluids.getTankCapacity(0);
         int water = capacity / 2;
@@ -1741,7 +1741,7 @@ public final class UniversalPlasticGameTests {
             true
         ), "bonded molded cauldron could not be initialized");
 
-        IFluidHandler fluids = bonded.getCapabilityFluidHandler();
+        IFluidHandler fluids = PlasticraftTestData.fluids(bonded.getCapabilityFluidHandler());
         check(fluids != null, "bonded molded cauldron did not expose its fluid handler");
         int amount = Math.min(1000, fluids.getTankCapacity(0));
         check(amount > 0, "bonded molded cauldron had no usable fluid capacity");
@@ -1803,14 +1803,14 @@ public final class UniversalPlasticGameTests {
         ExtendedGameTestHelper helper,
         PlasticMaterial material,
         BlockPos relativePos,
-        ResourceLocation type,
+        Identifier type,
         String productName
     ) {
         ItemStack stack = MoldedPlasticDemoItemStacks.product(material, type).orElseThrow(
-            () -> new GameTestAssertException(material.key() + " " + productName + " demonstration stack was unavailable")
+            () -> helper.assertionException(material.key() + " " + productName + " demonstration stack was unavailable")
         );
         MoldedPlasticData data = MoldedPlasticData.get(stack).orElseThrow(
-            () -> new GameTestAssertException(material.key() + " " + productName + " demonstration stack lost molded data")
+            () -> helper.assertionException(material.key() + " " + productName + " demonstration stack lost molded data")
         );
         UniversalPlasticEntity product = material.createEntity(
             helper.getLevel(),
@@ -1890,7 +1890,7 @@ public final class UniversalPlasticGameTests {
         );
         check(PlasticMeltColor.get(drop) == color, material.key() + " cooled product lost its item colour");
         MoldedPlasticData data = MoldedPlasticData.get(drop).orElseThrow(() ->
-            new GameTestAssertException(material.key() + " cooled product has no molded data")
+            helper.assertionException(material.key() + " cooled product has no molded data")
         );
         check(data.material().getFluid() == material.melt(), material.key() + " cooled product used the wrong melt");
         check(
@@ -1974,6 +1974,6 @@ public final class UniversalPlasticGameTests {
     }
 
     private static void check(boolean condition, String message) {
-        if (!condition) throw new GameTestAssertException(message);
+        if (!condition) throw new PlasticraftTestFailure(message);
     }
 }

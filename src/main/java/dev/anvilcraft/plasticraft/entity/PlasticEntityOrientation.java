@@ -255,7 +255,7 @@ public record PlasticEntityOrientation(Direction attachmentFace, int quarterTurn
         int x = first.getStepY() * second.getStepZ() - first.getStepZ() * second.getStepY();
         int y = first.getStepZ() * second.getStepX() - first.getStepX() * second.getStepZ();
         int z = first.getStepX() * second.getStepY() - first.getStepY() * second.getStepX();
-        Direction result = Direction.fromDelta(x, y, z);
+        Direction result = Direction.getNearest(x, y, z, null);
         if (result == null) {
             throw new IllegalArgumentException("Directions must be perpendicular");
         }

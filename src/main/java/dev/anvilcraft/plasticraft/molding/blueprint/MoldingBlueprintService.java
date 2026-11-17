@@ -25,13 +25,13 @@ public final class MoldingBlueprintService {
         ItemStack currentDisk = requireDisk(chamber);
         verifyDisk(currentDisk, expectedDiskToken, overwriteConfirmed);
 
-        MinecraftServer server = player.getServer();
+        MinecraftServer server = player.level().getServer();
         if (server == null) throw failure("server_unavailable", "Server is unavailable");
         long time = System.currentTimeMillis();
         MoldingBlueprint blueprint = MoldingBlueprint.create(
             chamber.model(),
             player.getUUID(),
-            player.getGameProfile().getName(),
+            player.getGameProfile().name(),
             time
         );
         ItemStack replacement = MoldingBlueprintDisk.writeCopy(currentDisk, blueprint);
@@ -58,7 +58,7 @@ public final class MoldingBlueprintService {
     ) throws BlueprintException {
         requireSession(chamber, player, sessionId, baseRevision);
         ItemStack currentDisk = requireDisk(chamber);
-        MinecraftServer server = player.getServer();
+        MinecraftServer server = player.level().getServer();
         if (server == null) throw failure("server_unavailable", "Server is unavailable");
         MoldingBlueprint blueprint = MoldingBlueprintLibrary.read(server, fileId, fileRevision);
         boolean alreadyStored = MoldingBlueprintDisk.read(currentDisk)

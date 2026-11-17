@@ -9,12 +9,12 @@ import dev.anvilcraft.lib.v2.recipe.predicate.block.HasBlockBase;
 import dev.anvilcraft.lib.v2.recipe.util.InWorldRecipeContext;
 import dev.anvilcraft.lib.v2.recipe.util.InWorldRecipeManager;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
+import dev.anvilcraft.plasticraft.entity.MoldedLargeCauldronInteraction;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldronWorkBlockFinder;
-import dev.anvilcraft.plasticraft.entity.MoldedLargeCauldronInteraction;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
-import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
+import dev.dubhe.anvilcraft.block.workstation.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.init.recipe.ModRecipeTriggers;
 import dev.dubhe.anvilcraft.recipe.anvil.outcome.DamageAnvil;
 import dev.dubhe.anvilcraft.recipe.anvil.predicate.block.HasCauldron;
@@ -28,8 +28,12 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.fluids.FluidStack;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.fluid.FluidUtil;
+import net.neoforged.neoforge.transfer.item.ItemResource;
+import net.neoforged.neoforge.transfer.item.ItemUtil;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -37,8 +41,6 @@ import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-
-import javax.annotation.Nullable;
 
 /** 将实体间的釜冲击接入 AnvilCraft 常规世界内配方触发器。 */
 public final class CauldronImpactRecipeProcessor {
@@ -163,7 +165,7 @@ public final class CauldronImpactRecipeProcessor {
         PlasticCauldron pot,
         Vec3 potPosition
     ) {
-        InWorldRecipeManager manager = level.getRecipeManager().anvillib$getInWorldRecipeManager();
+        InWorldRecipeManager manager = level.recipeAccess().anvillib$getInWorldRecipeManager();
         int passes = pot.plasticraft$cauldronLayout().recipePasses();
         beginTargetedRecipe(pot, null);
         try {
@@ -285,11 +287,11 @@ public final class CauldronImpactRecipeProcessor {
                     return;
                 }
                 accepted = true;
-                recipe.assemble(context, context.getLevel().registryAccess());
-                NeoForge.EVENT_BUS.post(new InWorldRecipeEvent(recipe.getType(), holder.id(), recipe, context));
+                recipe.assemble(context);
+                NeoForge.EVENT_BUS.post(new InWorldRecipeEvent(recipe.getType(), holder.id().identifier(), recipe, context));
                 long batchId = context.getBatchId();
                 context.afterCommit(() -> NeoForge.EVENT_BUS.post(new InWorldRecipeCommittedEvent(
-                    recipe.getType(), holder.id(), recipe, context, batchId
+                    recipe.getType(), holder.id().identifier(), recipe, context, batchId
                 )));
             }
             if (accepted) return;
@@ -463,15 +465,15 @@ public final class CauldronImpactRecipeProcessor {
     /** 锅内物品与流体的浅快照。{@link ItemStack} 与 {@link FluidStack} 都不实现结构相等，只能逐项比较。 */
     private record CauldronState(List<ItemStack> items, List<FluidStack> fluids) {
         static CauldronState of(PlasticCauldron pot) {
-            IItemHandler itemHandler = pot.getItemHandler();
-            List<ItemStack> items = new ArrayList<>(itemHandler.getSlots());
-            for (int slot = 0; slot < itemHandler.getSlots(); slot++) {
-                items.add(itemHandler.getStackInSlot(slot).copy());
+            ResourceHandler<ItemResource> itemHandler = pot.getItemHandler();
+            List<ItemStack> items = new ArrayList<>(itemHandler.size());
+            for (int slot = 0; slot < itemHandler.size(); slot++) {
+                items.add(ItemUtil.getStack(itemHandler, slot).copy());
             }
-            IFluidHandler fluidHandler = pot.getFluidHandler();
-            List<FluidStack> fluids = new ArrayList<>(fluidHandler.getTanks());
-            for (int tank = 0; tank < fluidHandler.getTanks(); tank++) {
-                fluids.add(fluidHandler.getFluidInTank(tank).copy());
+            ResourceHandler<FluidResource> fluidHandler = pot.getFluidHandler();
+            List<FluidStack> fluids = new ArrayList<>(fluidHandler.size());
+            for (int tank = 0; tank < fluidHandler.size(); tank++) {
+                fluids.add(FluidUtil.getStack(fluidHandler, tank).copy());
             }
             return new CauldronState(items, fluids);
         }

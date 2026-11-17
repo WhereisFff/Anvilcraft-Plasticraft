@@ -8,7 +8,6 @@ import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
 import dev.dubhe.anvilcraft.init.ModParticles;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
-import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.server.level.ServerLevel;
@@ -93,7 +92,7 @@ public final class EnhancedPlasmaJetBehavior implements PlasmaJetBehavior {
     }
 
     @Override
-    public void extraParticles(PlasmaJetsBlockEntity jet, ClientLevel level) {
+    public void extraParticles(PlasmaJetsBlockEntity jet, Level level) {
         BlockPos jetPos = jet.getBlockPos();
         BlockState stateAbove = level.getBlockState(jetPos.above());
         if (!(stateAbove.getBlock() instanceof LargeCauldronBlock)
@@ -110,6 +109,7 @@ public final class EnhancedPlasmaJetBehavior implements PlasmaJetBehavior {
             level.addParticle(
                 particle,
                 true,
+                false,
                 start.x,
                 start.y,
                 start.z,

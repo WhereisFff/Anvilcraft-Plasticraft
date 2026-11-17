@@ -1,10 +1,10 @@
 {
 	"format_version": "1.21.11",
 	"credit": "Made with Blockbench",
-	"render_type": "minecraft:translucent",
+
 	"textures": {
-		"0": "anvilcraftplasticraft:block/high_viscosity_resin",
-		"particle": "anvilcraftplasticraft:block/high_viscosity_resin"
+		"0": {"sprite": "anvilcraftplasticraft:block/high_viscosity_resin", "force_translucent": true},
+		"particle": {"sprite": "anvilcraftplasticraft:block/high_viscosity_resin", "force_translucent": true}
 	},
 	"elements": [
 		{

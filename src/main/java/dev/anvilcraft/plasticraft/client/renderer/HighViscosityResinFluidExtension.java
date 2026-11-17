@@ -3,24 +3,29 @@ package dev.anvilcraft.plasticraft.client.renderer;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.dubhe.anvilcraft.util.ModClientFluidTypeExtensionImpl;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
-import net.minecraft.client.renderer.block.LiquidBlockRenderer;
+import net.minecraft.client.renderer.block.BlockAndTintGetter;
+import net.minecraft.client.renderer.block.FluidModel;
+import net.minecraft.client.renderer.block.FluidRenderer;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.resources.model.sprite.Material;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.util.Mth;
-import net.minecraft.world.level.BlockAndTintGetter;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
-import net.neoforged.neoforge.client.textures.FluidSpriteCache;
+import net.neoforged.neoforge.client.fluid.CustomFluidRenderer;
+import net.neoforged.neoforge.client.fluid.FluidTintSource;
 
 /** 使用单张 16x16 动画帧完整渲染流体的静止面与流动面。 */
-public class HighViscosityResinFluidExtension extends ModClientFluidTypeExtensionImpl {
+public class HighViscosityResinFluidExtension extends ModClientFluidTypeExtensionImpl implements FluidTintSource, CustomFluidRenderer {
+    private final Material texture;
+    private final int tintColor;
     private static final float MAX_FLUID_HEIGHT = 8.0F / 9.0F;
     private static final float FACE_OFFSET = 0.001F;
 
@@ -34,36 +39,49 @@ public class HighViscosityResinFluidExtension extends ModClientFluidTypeExtensio
         );
     }
 
-    public HighViscosityResinFluidExtension(ResourceLocation texture) {
-        super(texture, texture);
+    public HighViscosityResinFluidExtension(Identifier texture) {
+        super();
+        this.texture = new Material(texture);
+        this.tintColor = -1;
     }
 
     public HighViscosityResinFluidExtension(
-        ResourceLocation texture,
+        Identifier texture,
         int fogColor,
         float fogDistance,
         int tintColor,
         boolean opaque
     ) {
-        super(
-            texture,
-            texture,
-            fogColor,
-            fogDistance,
-            tintColor,
-            opaque
-        );
+        super(fogColor, fogDistance);
+        this.texture = new Material(texture, !opaque);
+        this.tintColor = tintColor;
+    }
+
+    public FluidModel.Unbaked model() {
+        return new FluidModel.Unbaked(this.texture.withForceTranslucent(!this.isOpaque()),
+            this.texture.withForceTranslucent(!this.isOpaque()), null, this, this);
+    }
+
+    public boolean isOpaque() {
+        return !this.texture.forceTranslucent();
+    }
+
+    @Override
+    public int color(FluidState state) {
+        return this.tintColor;
     }
 
     @Override
     public boolean renderFluid(
+        FluidRenderer renderer,
         FluidState fluidState,
         BlockAndTintGetter level,
         BlockPos pos,
-        VertexConsumer consumer,
+        FluidRenderer.Output output,
         BlockState blockState
     ) {
-        this.render(level, pos, consumer, blockState, fluidState);
+        FluidModel model = Minecraft.getInstance().getModelManager().getFluidStateModelSet().get(fluidState);
+        this.render(level, pos, output.getBuilder(model.layer()), blockState, fluidState, model.stillMaterial().sprite());
         return true;
     }
 
@@ -72,7 +90,8 @@ public class HighViscosityResinFluidExtension extends ModClientFluidTypeExtensio
         BlockPos pos,
         VertexConsumer consumer,
         BlockState blockState,
-        FluidState fluidState
+        FluidState fluidState,
+        TextureAtlasSprite sprite
     ) {
         BlockState belowState = level.getBlockState(pos.below());
         FluidState belowFluid = belowState.getFluidState();
@@ -87,41 +106,31 @@ public class HighViscosityResinFluidExtension extends ModClientFluidTypeExtensio
         FluidState eastFluid = eastState.getFluidState();
 
         boolean renderTop = !aboveState.shouldHideAdjacentFluidFace(Direction.DOWN, fluidState);
-        boolean renderBottom = LiquidBlockRenderer.shouldRenderFace(
-            level,
-            pos,
+        boolean renderBottom = FluidRenderer.shouldRenderFace(
             fluidState,
             blockState,
             Direction.DOWN,
             belowState
         ) && !isFaceOccludedByNeighbor(level, pos, Direction.DOWN, MAX_FLUID_HEIGHT, belowState);
-        boolean renderNorth = LiquidBlockRenderer.shouldRenderFace(
-            level,
-            pos,
+        boolean renderNorth = FluidRenderer.shouldRenderFace(
             fluidState,
             blockState,
             Direction.NORTH,
             northState
         );
-        boolean renderSouth = LiquidBlockRenderer.shouldRenderFace(
-            level,
-            pos,
+        boolean renderSouth = FluidRenderer.shouldRenderFace(
             fluidState,
             blockState,
             Direction.SOUTH,
             southState
         );
-        boolean renderWest = LiquidBlockRenderer.shouldRenderFace(
-            level,
-            pos,
+        boolean renderWest = FluidRenderer.shouldRenderFace(
             fluidState,
             blockState,
             Direction.WEST,
             westState
         );
-        boolean renderEast = LiquidBlockRenderer.shouldRenderFace(
-            level,
-            pos,
+        boolean renderEast = FluidRenderer.shouldRenderFace(
             fluidState,
             blockState,
             Direction.EAST,
@@ -129,15 +138,15 @@ public class HighViscosityResinFluidExtension extends ModClientFluidTypeExtensio
         );
         if (!renderTop && !renderBottom && !renderNorth && !renderSouth && !renderWest && !renderEast) return;
 
-        int tint = this.getTintColor(fluidState, level, pos);
+        int tint = this.colorInWorld(fluidState, blockState, level, pos);
         float alpha = (float) (tint >> 24 & 0xFF) / 255.0F;
         float red = (float) (tint >> 16 & 0xFF) / 255.0F;
         float green = (float) (tint >> 8 & 0xFF) / 255.0F;
         float blue = (float) (tint & 0xFF) / 255.0F;
-        float downShade = level.getShade(Direction.DOWN, true);
-        float upShade = level.getShade(Direction.UP, true);
-        float northShade = level.getShade(Direction.NORTH, true);
-        float westShade = level.getShade(Direction.WEST, true);
+        float downShade = level.cardinalLighting().down();
+        float upShade = level.cardinalLighting().up();
+        float northShade = level.cardinalLighting().north();
+        float westShade = level.cardinalLighting().west();
         Fluid fluid = fluidState.getType();
         float centerHeight = getHeight(level, fluid, pos, blockState, fluidState);
         float northEastHeight;
@@ -192,7 +201,6 @@ public class HighViscosityResinFluidExtension extends ModClientFluidTypeExtensio
         float y = (float) (pos.getY() & 15);
         float z = (float) (pos.getZ() & 15);
         float bottomOffset = renderBottom ? FACE_OFFSET : 0.0F;
-        TextureAtlasSprite sprite = FluidSpriteCache.getFluidSprites(level, pos, fluidState)[0];
 
         if (renderTop && !isFaceOccludedByNeighbor(
             level,
@@ -205,17 +213,10 @@ public class HighViscosityResinFluidExtension extends ModClientFluidTypeExtensio
             northWestHeight -= FACE_OFFSET;
             southEastHeight -= FACE_OFFSET;
             southWestHeight -= FACE_OFFSET;
-            float rawU0 = sprite.getU(0.0F);
-            float rawU1 = sprite.getU(1.0F);
-            float rawV0 = sprite.getV(0.0F);
-            float rawV1 = sprite.getV(1.0F);
-            float centerU = (rawU0 + rawU1) * 0.5F;
-            float centerV = (rawV0 + rawV1) * 0.5F;
-            float shrink = sprite.uvShrinkRatio();
-            float u0 = Mth.lerp(shrink, rawU0, centerU);
-            float u1 = Mth.lerp(shrink, rawU1, centerU);
-            float v0 = Mth.lerp(shrink, rawV0, centerV);
-            float v1 = Mth.lerp(shrink, rawV1, centerV);
+            float u0 = sprite.getU0();
+            float u1 = sprite.getU1();
+            float v0 = sprite.getV0();
+            float v1 = sprite.getV1();
             int light = getLightColor(level, pos);
             float shadedRed = upShade * red;
             float shadedGreen = upShade * green;
@@ -331,8 +332,8 @@ public class HighViscosityResinFluidExtension extends ModClientFluidTypeExtensio
     ) {
         if (!neighborState.canOcclude()) return false;
         VoxelShape fluidShape = Shapes.box(0.0D, 0.0D, 0.0D, 1.0D, height, 1.0D);
-        VoxelShape neighborShape = neighborState.getOcclusionShape(level, pos.relative(direction));
-        return Shapes.blockOccudes(fluidShape, neighborShape, direction);
+        VoxelShape neighborShape = neighborState.getOcclusionShape();
+        return Shapes.blockOccludes(fluidShape, neighborShape, direction);
     }
 
     private static float calculateAverageHeight(
@@ -407,8 +408,8 @@ public class HighViscosityResinFluidExtension extends ModClientFluidTypeExtensio
     }
 
     private static int getLightColor(BlockAndTintGetter level, BlockPos pos) {
-        int currentLight = LevelRenderer.getLightColor(level, pos);
-        int aboveLight = LevelRenderer.getLightColor(level, pos.above());
+        int currentLight = LevelRenderer.getLightCoords(level, pos);
+        int aboveLight = LevelRenderer.getLightCoords(level, pos.above());
         int blockLight = Math.max(currentLight & 0xFF, aboveLight & 0xFF);
         int skyLight = Math.max(currentLight >> 16 & 0xFF, aboveLight >> 16 & 0xFF);
         return blockLight | skyLight << 16;

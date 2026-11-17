@@ -12,17 +12,16 @@ import dev.anvilcraft.plasticraft.api.texture.PlasticTextureInput;
 import dev.anvilcraft.plasticraft.api.texture.PlasticTextureLayout;
 import dev.anvilcraft.plasticraft.item.CreativeColorVariantItem;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
-import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
+import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.minecraft.world.item.DyeColor;
 import net.neoforged.neoforge.fluids.FluidStack;
-
-import javax.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -41,7 +40,7 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
     public static final DynamicPlasticTextureManager INSTANCE = new DynamicPlasticTextureManager();
 
     private final Map<AtlasKey, ColorAtlas> atlases = new HashMap<>();
-    private final Map<AtlasKey, Map<DyeColor, ResourceLocation>> oversizedTextures = new HashMap<>();
+    private final Map<AtlasKey, Map<DyeColor, Identifier>> oversizedTextures = new HashMap<>();
     private final Map<PlasticMaterial, ResourceInputs> resources = new HashMap<>();
 
     private DynamicPlasticTextureManager() {
@@ -72,7 +71,7 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
 
         // 安全阀：堆叠后的高度超过生成器上限时退回逐色单张纹理，复杂形状不会因为超限抛异常。
         if (layout.atlasHeight() * rowCount > PlasticTextureGenerator.MAX_ATLAS_SIZE) {
-            ResourceLocation oversized = this.oversizedTextures
+            Identifier oversized = this.oversizedTextures
                 .computeIfAbsent(key, ignored -> new HashMap<>())
                 .computeIfAbsent(color, ignored -> this.createOversizedTexture(
                     shapeHash,
@@ -104,7 +103,7 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
     }
 
     /** 只需要纹理标识、不关心颜色行的调用方入口（物品模型、实体渲染器纹理契约）。 */
-    public ResourceLocation texture(MoldedPlasticData data) {
+    public Identifier texture(MoldedPlasticData data) {
         return this.textureRef(data).texture();
     }
 
@@ -118,8 +117,8 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
         for (ColorAtlas atlas : this.atlases.values()) {
             minecraft.getTextureManager().release(atlas.id);
         }
-        for (Map<DyeColor, ResourceLocation> byColor : this.oversizedTextures.values()) {
-            for (ResourceLocation texture : byColor.values()) {
+        for (Map<DyeColor, Identifier> byColor : this.oversizedTextures.values()) {
+            for (Identifier texture : byColor.values()) {
                 minecraft.getTextureManager().release(texture);
             }
         }
@@ -140,15 +139,15 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
             layout.atlasHeight() * rowCount,
             true
         );
-        ResourceLocation id = AnvilcraftPlasticraft.of(
+        Identifier id = AnvilcraftPlasticraft.of(
             "dynamic/molded_" + material.key() + "_" + shapeHash
         );
-        DynamicTexture texture = new DynamicTexture(image);
+        DynamicTexture texture = new DynamicTexture(id::toString, image);
         Minecraft.getInstance().getTextureManager().register(id, texture);
         return new ColorAtlas(id, texture, layout.atlasHeight(), rowCount);
     }
 
-    private ResourceLocation createOversizedTexture(
+    private Identifier createOversizedTexture(
         String shapeHash,
         List<PlasticSurface> surfaces,
         DyeColor color,
@@ -170,13 +169,13 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
         );
         for (int y = 0; y < image.getHeight(); y++) {
             for (int x = 0; x < image.getWidth(); x++) {
-                image.setPixelRGBA(x, y, PlasticTextureSpriteSource.swapRedBlue(generated.argbAt(x, y)));
+                image.setPixel(x, y, generated.argbAt(x, y));
             }
         }
-        ResourceLocation id = AnvilcraftPlasticraft.of(
+        Identifier id = AnvilcraftPlasticraft.of(
             "dynamic/molded_" + material.key() + "_" + shapeHash + "_" + color.getName()
         );
-        Minecraft.getInstance().getTextureManager().register(id, new DynamicTexture(image));
+        Minecraft.getInstance().getTextureManager().register(id, new DynamicTexture(id::toString, image));
         return id;
     }
 
@@ -241,7 +240,7 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
      * <p>网格 UV 仍按单色图块的 0 至 1 计算，由渲染侧施加 {@code v → (v + colorRow) / rowCount}
      * 的行偏移，因此 {@code PreparedMesh} 缓存可以继续只按形状哈希索引。</p>
      */
-    public record MoldedTextureRef(ResourceLocation texture, int colorRow, int rowCount) {
+    public record MoldedTextureRef(Identifier texture, int colorRow, int rowCount) {
         public float mapV(float v) {
             return (v + this.colorRow) / this.rowCount;
         }
@@ -249,12 +248,12 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
 
     /** 一张 (形状, 材质) 图集，纵向堆叠全部颜色行，按需填充。 */
     private static final class ColorAtlas {
-        private final ResourceLocation id;
+        private final Identifier id;
         private final DynamicTexture texture;
         private final int rowHeight;
         private final boolean[] filledRows;
 
-        private ColorAtlas(ResourceLocation id, DynamicTexture texture, int rowHeight, int rowCount) {
+        private ColorAtlas(Identifier id, DynamicTexture texture, int rowHeight, int rowCount) {
             this.id = id;
             this.texture = texture;
             this.rowHeight = rowHeight;
@@ -273,10 +272,10 @@ public final class DynamicPlasticTextureManager implements ResourceManagerReload
             int baseY = row * this.rowHeight;
             for (int y = 0; y < this.rowHeight; y++) {
                 for (int x = 0; x < image.getWidth(); x++) {
-                    image.setPixelRGBA(
+                    image.setPixel(
                         x,
                         baseY + y,
-                        PlasticTextureSpriteSource.swapRedBlue(generated.argbAt(x, y))
+                        generated.argbAt(x, y)
                     );
                 }
             }

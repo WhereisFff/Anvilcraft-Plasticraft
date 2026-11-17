@@ -108,7 +108,7 @@ public record MoldingBlueprintLibraryPacket(
     }
 
     private void sendOpen(ServerPlayer player, boolean openFolder) throws BlueprintException {
-        MinecraftServer server = player.getServer();
+        MinecraftServer server = player.level().getServer();
         if (server == null) throw new BlueprintException("server_unavailable", "Server is unavailable");
         String text = "";
         if (!this.fileId.isEmpty()) {

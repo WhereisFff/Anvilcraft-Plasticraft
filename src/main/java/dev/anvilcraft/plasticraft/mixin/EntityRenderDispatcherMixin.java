@@ -1,13 +1,12 @@
 package dev.anvilcraft.plasticraft.mixin;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.lib.v2.cube.client.CubeSelection;
-import dev.anvilcraft.lib.v2.cube.client.OutlineRenderer;
 import dev.anvilcraft.lib.v2.cube.client.SelectionPart;
 import dev.anvilcraft.plasticraft.client.selection.PlasticSelectionGeometry;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
-import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.client.renderer.debug.EntityHitboxDebugRenderer;
+import net.minecraft.gizmos.Gizmos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
@@ -17,50 +16,29 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /** 让 F3+B 显示塑料实体真实的组合碰撞体。 */
-@Mixin(EntityRenderDispatcher.class)
+@Mixin(EntityHitboxDebugRenderer.class)
 abstract class EntityRenderDispatcherMixin {
-    @Inject(method = "renderHitbox", at = @At("HEAD"), cancellable = true)
-    private static void plasticraft$renderPlasticCollisionBox(
-        PoseStack poseStack,
-        VertexConsumer buffer,
-        Entity entity,
-        float partialTick,
-        float red,
-        float green,
-        float blue,
-        CallbackInfo ci
-    ) {
-        if (!(entity instanceof AbstractPlasticEntity plastic)) return;
+    @Inject(method = "showHitboxes", at = @At("HEAD"), cancellable = true)
+    private void plasticraft$renderPlasticCollisionBox(Entity entity, float partialTick, boolean server, CallbackInfo callback) {
+        if (!(entity instanceof AbstractPlasticEntity plastic)) {
+            return;
+        }
+        Vec3 origin = entity.getPosition(partialTick);
         SelectionPart part = PlasticSelectionGeometry.get(plastic.plasticraft$getGeometry()).collision(plastic.getOrientation());
         if (part != null) {
-            poseStack.pushPose();
-            part.apply(poseStack);
-            OutlineRenderer.render(poseStack, buffer, CubeSelection.outlines().get(part.geometry()), red, green, blue, 1.0F);
-            poseStack.popPose();
+            PoseStack pose = new PoseStack();
+            part.apply(pose);
+            var outline = CubeSelection.outlines().get(part.geometry());
+            for (int line = 0; line < outline.segmentCount(); line++) {
+                Vector3f from = new Vector3f(outline.coordinate(line, 0), outline.coordinate(line, 1), outline.coordinate(line, 2));
+                Vector3f to = new Vector3f(outline.coordinate(line, 3), outline.coordinate(line, 4), outline.coordinate(line, 5));
+                pose.last().pose().transformPosition(from);
+                pose.last().pose().transformPosition(to);
+                Gizmos.line(origin.add(from.x, from.y, from.z), origin.add(to.x, to.y, to.z), server ? 0xFF00FF00 : -1);
+            }
         }
-        renderDirectionVector(poseStack, buffer, entity, partialTick);
-        ci.cancel();
-    }
-
-    private static void renderDirectionVector(
-        PoseStack poseStack,
-        VertexConsumer buffer,
-        Entity entity,
-        float partialTick
-    ) {
-        Vec3 vector = entity.getViewVector(partialTick).scale(2.0D);
-        Vector3f start = new Vector3f(0.0F, entity.getEyeHeight(), 0.0F);
-        PoseStack.Pose pose = poseStack.last();
-        buffer.addVertex(pose, start)
-            .setColor(-16776961)
-            .setNormal(pose, (float) vector.x, (float) vector.y, (float) vector.z);
-        buffer.addVertex(
-                pose,
-                (float) (start.x() + vector.x),
-                (float) (start.y() + vector.y),
-                (float) (start.z() + vector.z)
-            )
-            .setColor(-16776961)
-            .setNormal(pose, (float) vector.x, (float) vector.y, (float) vector.z);
+        Vec3 eye = origin.add(0, entity.getEyeHeight(), 0);
+        Gizmos.line(eye, eye.add(entity.getViewVector(partialTick).scale(2)), 0xFF0000FF);
+        callback.cancel();
     }
 }

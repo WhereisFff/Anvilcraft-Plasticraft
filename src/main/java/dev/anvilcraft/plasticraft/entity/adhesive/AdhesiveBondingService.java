@@ -10,15 +10,13 @@ import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
-import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
+import dev.dubhe.anvilcraft.block.workstation.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.entity.FallingGiantAnvilEntity;
-import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -41,6 +39,7 @@ import net.minecraft.world.level.material.PushReaction;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -100,7 +99,7 @@ public final class AdhesiveBondingService {
             || target.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)) {
             return false;
         }
-        return player.canInteractWithEntity(target, 0.0D);
+        return player.isWithinEntityInteractionRange(target, 0.0D);
     }
 
     public static boolean bondSelected(
@@ -225,7 +224,7 @@ public final class AdhesiveBondingService {
         target.setNoGravity(true);
         target.setDeltaMovement(Vec3.ZERO);
         target.fallDistance = 0.0F;
-        target.hasImpulse = true;
+        target.needsSync = true;
         target.hurtMarked = true;
         AdhesiveSelectionManager.clear(player);
         consumeBucket(player, hand);
@@ -258,7 +257,7 @@ public final class AdhesiveBondingService {
             SoundEvents.HONEY_BLOCK_PLACE,
             SoundSource.PLAYERS,
             1.0F,
-            0.9F + level.random.nextFloat() * 0.2F
+            0.9F + level.getRandom().nextFloat() * 0.2F
         );
         return true;
     }
@@ -279,7 +278,7 @@ public final class AdhesiveBondingService {
             || !player.getItemInHand(hand).is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())
             || !target.isAlive()
             || target == player
-            || !player.canInteractWithEntity(target, 0.0D)
+            || !player.isWithinEntityInteractionRange(target, 0.0D)
             || !hasAdhesiveOnFace(target, clickedWorldFace)) {
             return false;
         }
@@ -305,7 +304,7 @@ public final class AdhesiveBondingService {
             SoundEvents.HONEY_BLOCK_BREAK,
             SoundSource.PLAYERS,
             1.0F,
-            0.9F + level.random.nextFloat() * 0.2F
+            0.9F + level.getRandom().nextFloat() * 0.2F
         );
         return true;
     }
@@ -331,7 +330,7 @@ public final class AdhesiveBondingService {
             SoundEvents.HONEY_BLOCK_BREAK,
             SoundSource.PLAYERS,
             1.0F,
-            0.9F + level.random.nextFloat() * 0.2F
+            0.9F + level.getRandom().nextFloat() * 0.2F
         );
         return true;
     }
@@ -380,7 +379,7 @@ public final class AdhesiveBondingService {
         if (!(player.level() instanceof ServerLevel level)
             || !supportEntity.isAlive()
             || supportEntity.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
-            || !player.canInteractWithEntity(supportEntity, 0.0D)) {
+            || !player.isWithinEntityInteractionRange(supportEntity, 0.0D)) {
             return false;
         }
         Entity selected = AdhesiveSelectionManager.resolveServerSelection(player);
@@ -458,7 +457,7 @@ public final class AdhesiveBondingService {
         if (!(player.level() instanceof ServerLevel level)
             || !supportEntity.isAlive()
             || supportEntity.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
-            || !player.canInteractWithEntity(supportEntity, 0.0D)) {
+            || !player.isWithinEntityInteractionRange(supportEntity, 0.0D)) {
             return false;
         }
         Entity selected = AdhesiveSelectionManager.resolveServerSelection(player);
@@ -539,7 +538,7 @@ public final class AdhesiveBondingService {
         movingEntity.setNoGravity(true);
         movingEntity.setDeltaMovement(Vec3.ZERO);
         movingEntity.fallDistance = 0.0F;
-        movingEntity.hasImpulse = true;
+        movingEntity.needsSync = true;
         movingEntity.hurtMarked = true;
         AdhesiveSelectionManager.clear(player);
         consumeBucket(player, hand);
@@ -568,7 +567,7 @@ public final class AdhesiveBondingService {
             member.setPos(member.position().add(displacement));
             member.setDeltaMovement(Vec3.ZERO);
             member.fallDistance = 0.0F;
-            member.hasImpulse = true;
+            member.needsSync = true;
             member.hurtMarked = true;
         }
         EntityBondManager.updateLeaderOffsets(level, entity);
@@ -578,7 +577,7 @@ public final class AdhesiveBondingService {
     public static void tickAdhesiveTransit(Entity entity, boolean validateAndComplete) {
         // 跨维度传送移除旧实体后仍会触发刻后事件，此时不能再为它投影牵引碰撞形状。
         if (entity.isRemoved()) {
-            if (!entity.level().isClientSide) TRANSIT_VALIDATIONS.remove(entity);
+            if (!entity.level().isClientSide()) TRANSIT_VALIDATIONS.remove(entity);
             return;
         }
         AdhesiveTransit transit = entity.getExistingDataOrNull(PlasticraftAttachments.ADHESIVE_TRANSIT.get());
@@ -587,17 +586,17 @@ public final class AdhesiveBondingService {
 
         Entity supportEntity = resolveSupportEntity(entity, transit);
         if (transit.hasEntityTarget() && (supportEntity == null || !supportEntity.isAlive())) {
-            if (validateAndComplete && !entity.level().isClientSide) cancelTransit(entity, transit);
+            if (validateAndComplete && !entity.level().isClientSide()) cancelTransit(entity, transit);
             return;
         }
 
         if (!validateAndComplete
-            && !entity.level().isClientSide
+            && !entity.level().isClientSide()
             && applyCachedTransitProjection(entity, transit, supportEntity)) {
             return;
         }
 
-        if (validateAndComplete && !entity.level().isClientSide && !transit.hasEntityTarget()) {
+        if (validateAndComplete && !entity.level().isClientSide() && !transit.hasEntityTarget()) {
             BlockState supportState = entity.level().getBlockState(transit.supportPos());
             if (!transit.supportBlockId().equals(BuiltInRegistries.BLOCK.getKey(supportState.getBlock()))) {
                 cancelTransit(entity, transit);
@@ -609,7 +608,7 @@ public final class AdhesiveBondingService {
         double movementProgress = transit.easedProgress(entity.level().getGameTime(), 0.0F);
         Vec3 position = transit.positionAt(movementProgress, supportEntity);
         boolean reachesEndpoint = validateAndComplete
-            && !entity.level().isClientSide
+            && !entity.level().isClientSide()
             && rawProgress >= 1.0D;
         if (reachesEndpoint && transit.plastic()) {
             TRANSIT_VALIDATIONS.remove(entity);
@@ -638,7 +637,7 @@ public final class AdhesiveBondingService {
             ? transit.targetOrientation()
             : transit.startOrientation();
         if (!applyTransitProjectionSafely(entity, transit, position, movementProgress, supportEntity, orientation)) return;
-        if (validateAndComplete && !entity.level().isClientSide && rawProgress < 1.0D) {
+        if (validateAndComplete && !entity.level().isClientSide() && rawProgress < 1.0D) {
             byte appliedOrientation = entity instanceof AbstractPlasticEntity plasticEntity
                 ? plasticEntity.getOrientation().pack()
                 : orientation;
@@ -684,7 +683,7 @@ public final class AdhesiveBondingService {
         @Nullable Entity supportEntity,
         byte orientation
     ) {
-        if (entity.level().isClientSide) {
+        if (entity.level().isClientSide()) {
             applyTransitProjection(entity, desiredPosition, orientation);
             return true;
         }
@@ -935,7 +934,7 @@ public final class AdhesiveBondingService {
                     SoundEvents.HONEY_BLOCK_PLACE,
                     SoundSource.PLAYERS,
                     1.0F,
-                    0.9F + level.random.nextFloat() * 0.2F
+                    0.9F + level.getRandom().nextFloat() * 0.2F
                 );
                 return;
             }
@@ -959,7 +958,7 @@ public final class AdhesiveBondingService {
                 SoundEvents.HONEY_BLOCK_PLACE,
                 SoundSource.PLAYERS,
                 1.0F,
-                0.9F + level.random.nextFloat() * 0.2F
+                0.9F + level.getRandom().nextFloat() * 0.2F
             );
             return;
         }
@@ -975,7 +974,7 @@ public final class AdhesiveBondingService {
                 SoundEvents.HONEY_BLOCK_PLACE,
                 SoundSource.PLAYERS,
                 1.0F,
-                0.9F + level.random.nextFloat() * 0.2F
+                0.9F + level.getRandom().nextFloat() * 0.2F
             );
             return;
         }
@@ -996,7 +995,7 @@ public final class AdhesiveBondingService {
                 SoundEvents.HONEY_BLOCK_PLACE,
                 SoundSource.PLAYERS,
                 1.0F,
-                0.9F + level.random.nextFloat() * 0.2F
+                0.9F + level.getRandom().nextFloat() * 0.2F
             );
             return;
         }
@@ -1036,7 +1035,7 @@ public final class AdhesiveBondingService {
             SoundEvents.HONEY_BLOCK_PLACE,
             SoundSource.PLAYERS,
             1.0F,
-            0.9F + level.random.nextFloat() * 0.2F
+            0.9F + level.getRandom().nextFloat() * 0.2F
         );
     }
 
@@ -1060,16 +1059,16 @@ public final class AdhesiveBondingService {
         @Nullable AdhesiveTransit transit,
         boolean validateAndComplete
     ) {
-        if (entity.level().isClientSide) return false;
+        if (entity.level().isClientSide()) return false;
         CompoundTag persistentData = entity.getPersistentData();
-        if (!persistentData.contains(TAG_BLOCKIFICATION_HANDOFF, Tag.TAG_ANY_NUMERIC)) return false;
+        if (!persistentData.contains(TAG_BLOCKIFICATION_HANDOFF)) return false;
 
         if (transit == null) {
             holdAtCurrentPosition(entity);
         } else {
             holdAtTransitTarget(entity, transit);
         }
-        long blockPlacedGameTime = persistentData.getLong(TAG_BLOCKIFICATION_HANDOFF);
+        long blockPlacedGameTime = persistentData.getLongOr(TAG_BLOCKIFICATION_HANDOFF, 0L);
         if (validateAndComplete && entity.level().getGameTime() > blockPlacedGameTime) {
             persistentData.remove(TAG_BLOCKIFICATION_HANDOFF);
             entity.removeData(PlasticraftAttachments.ADHESIVE_TRANSIT);
@@ -1086,7 +1085,7 @@ public final class AdhesiveBondingService {
     }
 
     static void onBlockified(Entity entity) {
-        if (!entity.level().isClientSide) TRANSIT_VALIDATIONS.remove(entity);
+        if (!entity.level().isClientSide()) TRANSIT_VALIDATIONS.remove(entity);
         if (entity.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)) {
             entity.removeData(PlasticraftAttachments.ADHESIVE_TRANSIT);
         }
@@ -1105,7 +1104,7 @@ public final class AdhesiveBondingService {
         entity.setDeltaMovement(Vec3.ZERO);
         entity.setOnGround(false);
         entity.fallDistance = 0.0F;
-        entity.hasImpulse = true;
+        entity.needsSync = true;
         entity.hurtMarked = true;
     }
 
@@ -1135,7 +1134,7 @@ public final class AdhesiveBondingService {
             PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION.get()
         );
         if (elastic != null) {
-            if (elasticRoot == entity && validateSupport && !entity.level().isClientSide) {
+            if (elasticRoot == entity && validateSupport && !entity.level().isClientSide()) {
                 tickElasticMotion(elasticRoot, elastic);
             }
             return;
@@ -1151,7 +1150,7 @@ public final class AdhesiveBondingService {
         }
 
         if (validateSupport
-            && !entity.level().isClientSide) {
+            && !entity.level().isClientSide()) {
             boolean movedAway = elastic == null
                 && entity.position().distanceToSqr(adhesion.fixedPosition()) > 0.25D;
             boolean supportChanged = entity.level().hasChunkAt(adhesion.supportPos())
@@ -1212,7 +1211,7 @@ public final class AdhesiveBondingService {
             : current.restarted(gameTime, duration);
         blockAnchor.setData(PlasticraftAttachments.ADHESIVE_ELASTIC_MOTION, motion);
         blockAnchor.setNoGravity(true);
-        blockAnchor.hasImpulse = true;
+        blockAnchor.needsSync = true;
         blockAnchor.hurtMarked = true;
         return blockAnchor;
     }
@@ -1223,7 +1222,7 @@ public final class AdhesiveBondingService {
         } else {
             entity.push(-ratioX * strength, 0.1D, -ratioZ * strength);
         }
-        entity.hasImpulse = true;
+        entity.needsSync = true;
         entity.hurtMarked = true;
     }
 
@@ -1247,7 +1246,7 @@ public final class AdhesiveBondingService {
         entity.setDeltaMovement(velocity);
         entity.setNoGravity(true);
         entity.fallDistance = 0.0F;
-        entity.hasImpulse = true;
+        entity.needsSync = true;
         entity.hurtMarked = true;
     }
 
@@ -1263,7 +1262,7 @@ public final class AdhesiveBondingService {
         entity.setNoGravity(motion.originalNoGravity());
         entity.fallDistance = 0.0F;
         EntityBondManager.synchronizeComponent(entity);
-        entity.hasImpulse = true;
+        entity.needsSync = true;
         entity.hurtMarked = true;
     }
 
@@ -1462,7 +1461,7 @@ public final class AdhesiveBondingService {
             SoundEvents.HONEY_BLOCK_PLACE,
             SoundSource.BLOCKS,
             0.8F,
-            0.9F + level.random.nextFloat() * 0.2F
+            0.9F + level.getRandom().nextFloat() * 0.2F
         );
         return true;
     }
@@ -1679,7 +1678,7 @@ public final class AdhesiveBondingService {
         if (entity.position().distanceToSqr(fixedPosition) > 1.0E-10D) {
             entity.setPos(fixedPosition);
         }
-        entity.hasImpulse = true;
+        entity.needsSync = true;
         entity.hurtMarked = true;
     }
 
@@ -1698,7 +1697,7 @@ public final class AdhesiveBondingService {
         entity.setNoGravity(adhesion.originalNoGravity());
         entity.setDeltaMovement(Vec3.ZERO);
         entity.fallDistance = 0.0F;
-        entity.hasImpulse = true;
+        entity.needsSync = true;
         entity.hurtMarked = true;
     }
 
@@ -1729,7 +1728,7 @@ public final class AdhesiveBondingService {
         entity.setNoGravity(transit.originalNoGravity());
         entity.setDeltaMovement(Vec3.ZERO);
         entity.fallDistance = 0.0F;
-        entity.hasImpulse = true;
+        entity.needsSync = true;
         entity.hurtMarked = true;
     }
 
@@ -1770,7 +1769,7 @@ public final class AdhesiveBondingService {
             if (projectedEntity.position().distanceToSqr(member.position()) > 1.0E-10D) {
                 projectedEntity.setPos(member.position());
             }
-            projectedEntity.hasImpulse = true;
+            projectedEntity.needsSync = true;
             projectedEntity.hurtMarked = true;
         }
         EntityBondManager.updateLeaderOffsets(entity.level(), entity);

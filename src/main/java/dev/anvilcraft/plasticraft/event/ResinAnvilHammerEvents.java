@@ -89,7 +89,7 @@ public final class ResinAnvilHammerEvents {
 
         knockbackFromView(event.getTarget(), player);
         player.resetAttackStrengthTicker();
-        if (player.level().isClientSide) return;
+        if (player.level().isClientSide()) return;
 
         if (PlasticCauldrons.isCauldron(event.getTarget())) {
             event.getTarget().hurt(player.damageSources().playerAttack(player), 0.0F);
@@ -114,7 +114,7 @@ public final class ResinAnvilHammerEvents {
         ResinAnvilHammerItem.triggerAnvilImpact(player, event.getLevel(), event.getPos());
         recoilBehindView(player);
         player.currentImpulseImpactPos = player.position();
-        player.setIgnoreFallDamageFromCurrentImpulse(true);
+        player.setIgnoreFallDamageFromCurrentImpulse(true, player.position());
     }
 
     /** 反冲沿完整视线的反方向，俯仰角也会影响最终的上下速度。 */
@@ -123,13 +123,13 @@ public final class ResinAnvilHammerEvents {
             .normalize()
             .scale(-ResinAnvilHammerItem.KNOCKBACK_STRENGTH);
         player.setDeltaMovement(player.getDeltaMovement().scale(0.5D).add(recoil));
-        player.hasImpulse = true;
+        player.needsSync = true;
         player.hurtMarked = true;
     }
 
     /** 使用原版击退附魔的方向与强度换算：击退 V 对应 5 * 0.5。 */
     private static void knockbackFromView(Entity target, Player attacker) {
-        if (target.level().isClientSide) return;
+        if (target.level().isClientSide()) return;
         Entity knockbackTarget = AdhesiveBondingService.prepareKnockback(
             target,
             ResinAnvilHammerItem.KNOCKBACK_STRENGTH

@@ -27,7 +27,7 @@ final class MoldedTrayLeverBehavior implements MoldedTrayRedstoneBehavior {
         InteractionHand hand,
         BlockState state
     ) {
-        if (!player.level().isClientSide) {
+        if (!player.level().isClientSide()) {
             boolean powered = !state.getValue(BlockStateProperties.POWERED);
             runtime.setState(state.setValue(BlockStateProperties.POWERED, powered));
             runtime.host().level().playSound(
@@ -44,7 +44,7 @@ final class MoldedTrayLeverBehavior implements MoldedTrayRedstoneBehavior {
             );
             runtime.persistAndPublish();
         }
-        return InteractionResult.sidedSuccess(player.level().isClientSide);
+        return InteractionResult.SUCCESS;
     }
 
     @Override

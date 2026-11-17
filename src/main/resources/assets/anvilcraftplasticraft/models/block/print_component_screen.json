@@ -3,10 +3,10 @@
 	"credit": "Made with Blockbench",
 	"parent": "minecraft:block/block",
 	"ambientocclusion": false,
-	"render_type": "minecraft:translucent",
+
 	"textures": {
-		"2": "anvilcraftplasticraft:block/print_component_screen",
-		"particle": "anvilcraftplasticraft:block/plastic_molding_chamber"
+		"2": {"sprite": "anvilcraftplasticraft:block/print_component_screen", "force_translucent": true},
+		"particle": {"sprite": "anvilcraftplasticraft:block/plastic_molding_chamber", "force_translucent": true}
 	},
 	"elements": [
 		{

@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
 import dev.anvilcraft.lib.v2.registrum.util.CreativeTabSection;
 import dev.anvilcraft.lib.v2.registrum.util.CreativeTabSections;
 import dev.anvilcraft.lib.v2.registrum.util.CreativeVariantPickerRegistry;
@@ -13,13 +14,14 @@ import dev.anvilcraft.plasticraft.item.CreativeColorVariantItem;
 import dev.anvilcraft.plasticraft.item.PlasticraftCreativeTabState;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.Slot;
@@ -82,9 +84,9 @@ abstract class CreativeModeInventoryScreenMixin
         super(menu, inventory, title);
     }
 
-    @Inject(method = "render", at = @At("HEAD"))
+    @Inject(method = "extractRenderState", at = @At("HEAD"))
     private void plasticraft$captureBannerPointer(
-        GuiGraphics graphics,
+        GuiGraphicsExtractor graphics,
         int mouseX,
         int mouseY,
         float partialTick,
@@ -100,12 +102,10 @@ abstract class CreativeModeInventoryScreenMixin
 
     // 变体浮层覆盖横幅时由 AnvilLib 先处理点击，避免展开逻辑截断浮层交互。
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true, order = 1100)
-    private void plasticraft$pressPlasticSection(
-        double mouseX,
-        double mouseY,
-        int button,
-        CallbackInfoReturnable<Boolean> callback
-    ) {
+    private void plasticraft$pressPlasticSection(MouseButtonEvent event, boolean doubleClick, CallbackInfoReturnable<Boolean> callback) {
+        double mouseX = event.x();
+        double mouseY = event.y();
+        int button = event.button();
         if (button != 0 || !this.plasticraft$isPlasticraftTab()) {
             return;
         }
@@ -120,12 +120,10 @@ abstract class CreativeModeInventoryScreenMixin
     }
 
     @Inject(method = "mouseReleased", at = @At("HEAD"), cancellable = true, order = 1100)
-    private void plasticraft$releasePlasticSection(
-        double mouseX,
-        double mouseY,
-        int button,
-        CallbackInfoReturnable<Boolean> callback
-    ) {
+    private void plasticraft$releasePlasticSection(MouseButtonEvent event, CallbackInfoReturnable<Boolean> callback) {
+        double mouseX = event.x();
+        double mouseY = event.y();
+        int button = event.button();
         if (button != 0 || this.plasticraft$pressedMaterial == null) {
             return;
         }
@@ -140,10 +138,10 @@ abstract class CreativeModeInventoryScreenMixin
 
     @Inject(method = "mouseDragged", at = @At("HEAD"), cancellable = true)
     private void plasticraft$consumeBannerDrag(
-        double mouseX, double mouseY, int button, double dragX, double dragY,
+        MouseButtonEvent event, double dragX, double dragY,
         CallbackInfoReturnable<Boolean> callback
     ) {
-        if (button == 0 && this.plasticraft$pressedMaterial != null) {
+        if (event.button() == 0 && this.plasticraft$pressedMaterial != null) {
             callback.setReturnValue(true);
         }
     }
@@ -165,37 +163,15 @@ abstract class CreativeModeInventoryScreenMixin
         }
     }
 
-    @Inject(
-        method = "render",
-        at = @At(
-            value = "INVOKE",
-            target = "Lnet/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen;"
-                + "renderTooltip(Lnet/minecraft/client/gui/GuiGraphics;II)V"
-        ),
-        order = 900
-    )
-    private void plasticraft$renderVariantBadges(
-        GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo callback
-    ) {
-        if (selectedTab == null || selectedTab.getType() != CreativeModeTab.Type.CATEGORY) {
+    @Override
+    protected void extractSlot(GuiGraphicsExtractor graphics, Slot slot, int mouseX, int mouseY) {
+        super.extractSlot(graphics, slot, mouseX, mouseY);
+        if (selectedTab == null || selectedTab.getType() != CreativeModeTab.Type.CATEGORY || slot.container != CONTAINER || !slot.isActive()) {
             return;
         }
-        graphics.pose().pushPose();
-        try {
-            // 槽位与物品的深度偏移叠加为 250，模型表面还会向前凸出。
-            // 角标使用原版数量文字的 300 层，保持低于拖拽物品、变体浮层和提示框。
-            graphics.pose().translate(this.leftPos, this.topPos, 300);
-            for (Slot slot : this.menu.slots) {
-                if (slot.container != CONTAINER || !slot.isActive()) {
-                    continue;
-                }
-                ItemStack stack = slot.getItem();
-                if (stack.getItem() instanceof CreativeColorVariantItem provider && provider.isCreativePickerEnabled(stack)) {
-                    graphics.drawString(this.font, "+", slot.x + 10, slot.y + 1, 0xFFFFFFFF, true);
-                }
-            }
-        } finally {
-            graphics.pose().popPose();
+        ItemStack stack = slot.getItem();
+        if (stack.getItem() instanceof CreativeColorVariantItem provider && provider.isCreativePickerEnabled(stack)) {
+            graphics.text(this.font, "+", slot.x + 10, slot.y + 1, 0xFFFFFFFF, true);
         }
     }
 
@@ -210,14 +186,15 @@ abstract class CreativeModeInventoryScreenMixin
         method = "anvillib$renderSection",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/client/gui/GuiGraphics;blit("
-                + "Lnet/minecraft/resources/ResourceLocation;IIFFIIII)V"
+            target = "Lnet/minecraft/client/gui/GuiGraphicsExtractor;blit("
+                + "Lcom/mojang/blaze3d/pipeline/RenderPipeline;Lnet/minecraft/resources/Identifier;IIFFIIII)V"
         ),
         require = 1
     )
     private void plasticraft$renderBannerFrame(
-        GuiGraphics graphics,
-        ResourceLocation texture,
+        GuiGraphicsExtractor graphics,
+        RenderPipeline pipeline,
+        Identifier texture,
         int x,
         int y,
         float u,
@@ -233,6 +210,7 @@ abstract class CreativeModeInventoryScreenMixin
             || u != 0.0F || v != 0.0F) {
             original.call(
                 graphics,
+                pipeline,
                 texture,
                 x,
                 y,
@@ -251,6 +229,7 @@ abstract class CreativeModeInventoryScreenMixin
             : material.get() == this.plasticraft$hoveredMaterial ? 1 : 0;
         original.call(
             graphics,
+            pipeline,
             texture,
             x,
             y,
@@ -270,7 +249,7 @@ abstract class CreativeModeInventoryScreenMixin
             value = "INVOKE",
             target = "Lnet/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen;"
                 + "anvillib$renderBannerText("
-                + "Lnet/minecraft/client/gui/GuiGraphics;"
+                + "Lnet/minecraft/client/gui/GuiGraphicsExtractor;"
                 + "Ldev/anvilcraft/lib/v2/registrum/util/CreativeTabSection;"
                 + "IIIZ)V"
         ),
@@ -278,7 +257,7 @@ abstract class CreativeModeInventoryScreenMixin
     )
     private void plasticraft$renderBannerTextPosition(
         CreativeModeInventoryScreen screen,
-        GuiGraphics graphics,
+        GuiGraphicsExtractor graphics,
         CreativeTabSection section,
         int bannerX,
         int bannerY,
@@ -301,7 +280,7 @@ abstract class CreativeModeInventoryScreenMixin
     }
 
     @Unique
-    private Optional<PlasticMaterial> plasticraft$materialOfBanner(ResourceLocation texture) {
+    private Optional<PlasticMaterial> plasticraft$materialOfBanner(Identifier texture) {
         String path = texture.getPath();
         String prefix = "textures/gui/creative_tab/";
         String suffix = ".png";

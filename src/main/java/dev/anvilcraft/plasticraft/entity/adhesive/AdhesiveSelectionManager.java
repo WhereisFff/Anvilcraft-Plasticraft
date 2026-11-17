@@ -1,12 +1,12 @@
 package dev.anvilcraft.plasticraft.entity.adhesive;
 
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
-import javax.annotation.Nullable;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Map;
 import java.util.UUID;
@@ -86,7 +86,7 @@ public final class AdhesiveSelectionManager {
 
     private static Map<UUID, Selection> selections(Player player) {
         // 单人游戏的客户端与集成服务端共用 JVM，但一次点击在两侧各处理一次。
-        return player.level().isClientSide ? CLIENT_SELECTIONS : SERVER_SELECTIONS;
+        return player.level().isClientSide() ? CLIENT_SELECTIONS : SERVER_SELECTIONS;
     }
 
     private record Selection(UUID targetUuid, int entityId, Direction selectedFace, Vec3 position) {

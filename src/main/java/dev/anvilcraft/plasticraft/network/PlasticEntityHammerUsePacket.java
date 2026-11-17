@@ -5,7 +5,7 @@ import dev.anvilcraft.lib.v2.network.packet.IPacket;
 import dev.anvilcraft.lib.v2.network.packet.IServerboundPacket;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
-import dev.dubhe.anvilcraft.item.AnvilHammerItem;
+import dev.dubhe.anvilcraft.item.tool.AnvilHammerItem;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.core.Direction;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -43,7 +43,7 @@ public record PlasticEntityHammerUsePacket(
         Entity target = player.level().getEntity(this.entityId);
         if (!(target instanceof AbstractPlasticEntity plasticEntity)
             || !target.isAlive()
-            || !player.canInteractWithEntity(target, 0.0D)
+            || !player.isWithinEntityInteractionRange(target, 0.0D)
             || !(player.getItemInHand(this.hand).getItem() instanceof AnvilHammerItem)) {
             return;
         }

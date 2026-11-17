@@ -10,11 +10,13 @@ import dev.dubhe.anvilcraft.block.entity.AdvancedComparatorBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.ItemDetectorBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.PulseGeneratorBlockEntity;
 import dev.dubhe.anvilcraft.init.ModMenuTypes;
+import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.inventory.AdvancedComparatorMenu;
 import dev.dubhe.anvilcraft.inventory.ItemDetectorMenu;
 import dev.dubhe.anvilcraft.inventory.PulseGeneratorMenu;
-import dev.dubhe.anvilcraft.item.DiskItem;
+import dev.dubhe.anvilcraft.item.property.component.DiskData;
+import dev.dubhe.anvilcraft.item.utility.DiskItem;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -23,6 +25,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.MenuProvider;
@@ -34,6 +37,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.SignalGetter;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.TagValueInput;
+import net.minecraft.world.level.storage.TagValueOutput;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.ticks.TickPriority;
 
@@ -67,7 +72,7 @@ public final class MoldedTrayRedstoneRuntime {
     }
 
     public void tick() {
-        if (this.host.level().isClientSide || !(this.host.level() instanceof ServerLevel)) return;
+        if (this.host.level().isClientSide() || !(this.host.level() instanceof ServerLevel)) return;
         MoldedTrayComponent component = this.currentComponent();
         if (component == null) {
             MoldedTrayRedstoneScheduler.cancel(this);
@@ -177,7 +182,7 @@ public final class MoldedTrayRedstoneRuntime {
 
     InteractionResult openMenu(Player player) {
         if (!(player instanceof ServerPlayer serverPlayer) || this.blockEntity == null) {
-            return InteractionResult.sidedSuccess(player.level().isClientSide);
+            return InteractionResult.SUCCESS;
         }
         BlockPos menuPosition = MoldedTrayRedstoneNetwork.componentPosition(this.host, this.cell);
         BlockEntity menuEntity = this.blockEntity;
@@ -404,40 +409,41 @@ public final class MoldedTrayRedstoneRuntime {
         if (!(this.blockEntity instanceof IDiskCloneable cloneable)) return InteractionResult.PASS;
         if (!player.getAbilities().mayBuild) return InteractionResult.PASS;
         if (player.isShiftKeyDown()) return InteractionResult.FAIL;
-        if (player.level().isClientSide) return InteractionResult.SUCCESS;
+        if (player.level().isClientSide()) return InteractionResult.SUCCESS;
 
         ItemStack disk = player.getItemInHand(hand);
         if (DiskItem.hasDataStored(disk)) {
             CompoundTag data = DiskItem.getData(disk);
             if (!isDiskCompatible(data, this.blockEntity, cloneable)) {
-                player.displayClientMessage(
+                player.sendOverlayMessage(
                     Component.translatable("message.anvilcraft.disk.data_incompatible")
-                        .withStyle(ChatFormatting.RED),
-                    true
+                        .withStyle(ChatFormatting.RED)
                 );
                 return InteractionResult.FAIL;
             }
-            cloneable.applyDiskData(data);
-            player.displayClientMessage(
-                Component.translatable("message.anvilcraft.disk.data_applied"),
-                true
+            cloneable.applyDiskData(TagValueInput.create(ProblemReporter.DISCARDING, player.registryAccess(), data));
+            player.sendOverlayMessage(
+                Component.translatable("message.anvilcraft.disk.data_applied")
             );
         } else {
-            CompoundTag data = DiskItem.createData(disk);
+            TagValueOutput output = TagValueOutput.createWithContext(ProblemReporter.DISCARDING, player.registryAccess());
+            cloneable.storeDiskData(output);
+            output.store("StoredBlock", BuiltInRegistries.BLOCK.byNameCodec(), this.blockEntity.getBlockState().getBlock());
+            CompoundTag data = output.buildResult();
             data.putString(
                 "StoredFrom",
                 BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(this.blockEntity.getType()).toString()
             );
             CompoundTag groups = new CompoundTag();
             List<String> compatibleGroups = cloneable.getDiskCompatibleGroups();
+            groups.putInt("Size", compatibleGroups.size());
             for (int index = 0; index < compatibleGroups.size(); index++) {
-                groups.putString(Integer.toString(index), compatibleGroups.get(index));
+                groups.putString("Group" + index, compatibleGroups.get(index));
             }
             data.put("CompatibleGroups", groups);
-            cloneable.storeDiskData(data);
-            player.displayClientMessage(
-                Component.translatable("message.anvilcraft.disk.data_stored"),
-                true
+            disk.set(ModComponents.DISK_DATA, new DiskData(data));
+            player.sendOverlayMessage(
+                Component.translatable("message.anvilcraft.disk.data_stored")
             );
         }
         this.persistIfChanged();
@@ -450,12 +456,12 @@ public final class MoldedTrayRedstoneRuntime {
         IDiskCloneable cloneable
     ) {
         String targetType = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(blockEntity.getType()).toString();
-        if (targetType.equals(data.getString("StoredFrom"))) return true;
-        if (!data.contains("CompatibleGroups", CompoundTag.TAG_COMPOUND)) return false;
+        if (targetType.equals(data.getStringOr("StoredFrom", ""))) return true;
+        if (!data.contains("CompatibleGroups")) return false;
         List<String> targetGroups = cloneable.getDiskCompatibleGroups();
-        CompoundTag storedGroups = data.getCompound("CompatibleGroups");
-        return storedGroups.getAllKeys().stream()
-            .map(storedGroups::getString)
+        CompoundTag storedGroups = data.getCompoundOrEmpty("CompatibleGroups");
+        return storedGroups.keySet().stream()
+            .map(key -> storedGroups.getStringOr(key, ""))
             .anyMatch(targetGroups::contains);
     }
 
@@ -489,7 +495,7 @@ public final class MoldedTrayRedstoneRuntime {
         if (this.blockEntity != null) this.blockEntity.setBlockState(component.state());
         MoldedTrayRedstoneBehavior behavior = MoldedTrayRedstoneBehaviors.find(component.state());
         behavior.loadRuntime(this, component);
-        if (!this.host.level().isClientSide) behavior.resumeScheduledAction(this, component);
+        if (!this.host.level().isClientSide()) behavior.resumeScheduledAction(this, component);
     }
 
     private void runScheduledAction(Integer eventId) {
@@ -557,7 +563,7 @@ public final class MoldedTrayRedstoneRuntime {
         );
         BlockState sourceState = this.host.level().getBlockState(source);
         if (sourceState.hasAnalogOutputSignal()) {
-            return Math.clamp(sourceState.getAnalogOutputSignal(this.host.level(), source), 0, 15);
+            return Math.clamp(sourceState.getAnalogOutputSignal(this.host.level(), source, worldDirection), 0, 15);
         }
         if (signal >= 15 || !sourceState.isRedstoneConductor(this.host.level(), source)) {
             return Math.clamp(signal, 0, 15);
@@ -568,7 +574,7 @@ public final class MoldedTrayRedstoneRuntime {
         ItemFrame frame = this.singleItemFrame(secondary, worldDirection);
         int frameOutput = frame == null ? Integer.MIN_VALUE : frame.getAnalogOutput();
         int blockOutput = secondaryState.hasAnalogOutputSignal()
-            ? secondaryState.getAnalogOutputSignal(this.host.level(), secondary)
+            ? secondaryState.getAnalogOutputSignal(this.host.level(), secondary, worldDirection)
             : Integer.MIN_VALUE;
         int analogOutput = Math.max(frameOutput, blockOutput);
         return analogOutput == Integer.MIN_VALUE ? signal : Math.clamp(analogOutput, 0, 15);

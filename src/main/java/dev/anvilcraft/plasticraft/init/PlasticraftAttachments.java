@@ -9,7 +9,7 @@ import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
 import dev.anvilcraft.plasticraft.entity.adhesive.SlidingAdhesionData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.attachment.AttachmentType;
@@ -33,12 +33,12 @@ public final class PlasticraftAttachments {
         () -> AttachmentType.builder(() -> new EntityAdhesion(
                 BlockPos.ZERO,
                 Direction.UP,
-                ResourceLocation.fromNamespaceAndPath("minecraft", "air"),
+                Identifier.fromNamespaceAndPath("minecraft", "air"),
                 Vec3.ZERO,
                 false,
                 false
             ))
-            .serialize(EntityAdhesion.CODEC)
+            .serialize(EntityAdhesion.CODEC.fieldOf("value"))
             .sync(EntityAdhesion.STREAM_CODEC)
             .build()
     );
@@ -48,7 +48,7 @@ public final class PlasticraftAttachments {
         () -> AttachmentType.builder(() -> new AdhesiveTransit(
                 BlockPos.ZERO,
                 Direction.UP,
-                ResourceLocation.fromNamespaceAndPath("minecraft", "air"),
+                Identifier.fromNamespaceAndPath("minecraft", "air"),
                 Direction.DOWN,
                 Optional.empty(),
                 -1,
@@ -61,7 +61,7 @@ public final class PlasticraftAttachments {
                 (byte) 0,
                 (byte) 0
             ))
-            .serialize(AdhesiveTransit.CODEC)
+            .serialize(AdhesiveTransit.CODEC.fieldOf("value"))
             .sync(AdhesiveTransit.STREAM_CODEC)
             .build()
     );
@@ -69,7 +69,7 @@ public final class PlasticraftAttachments {
     public static final Supplier<AttachmentType<AdhesiveElasticMotion>> ADHESIVE_ELASTIC_MOTION = ATTACHMENTS.register(
         "adhesive_elastic_motion",
         () -> AttachmentType.builder(() -> new AdhesiveElasticMotion(Vec3.ZERO, 0L, 10, false))
-            .serialize(AdhesiveElasticMotion.CODEC)
+            .serialize(AdhesiveElasticMotion.CODEC.fieldOf("value"))
             .sync(AdhesiveElasticMotion.STREAM_CODEC)
             .build()
     );
@@ -83,7 +83,7 @@ public final class PlasticraftAttachments {
                 false,
                 List.of()
             ))
-            .serialize(EntityBondState.CODEC)
+            .serialize(EntityBondState.CODEC.fieldOf("value"))
             .sync(EntityBondState.STREAM_CODEC)
             .build()
     );

@@ -1,7 +1,7 @@
 {
   "variants": {
     "": {
-      "model": "anvilcraftplasticraft:block/plastic_molding_region"
+      "model": "minecraft:block/barrier"
     }
   }
 }

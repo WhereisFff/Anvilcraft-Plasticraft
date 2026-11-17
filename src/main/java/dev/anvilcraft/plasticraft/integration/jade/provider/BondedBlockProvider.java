@@ -7,14 +7,14 @@ import dev.anvilcraft.plasticraft.integration.jade.PlasticJadeLayout;
 import net.minecraft.ChatFormatting;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import snownee.jade.api.BlockAccessor;
 import snownee.jade.api.IBlockComponentProvider;
 import snownee.jade.api.IServerDataProvider;
 import snownee.jade.api.ITooltip;
 import snownee.jade.api.config.IPluginConfig;
-import snownee.jade.api.ui.IElementHelper;
+import snownee.jade.api.ui.JadeUI;
 
 /** 为方块化粘附物显示 Jade 状态。 */
 public enum BondedBlockProvider implements IBlockComponentProvider, IServerDataProvider<BlockAccessor> {
@@ -34,15 +34,15 @@ public enum BondedBlockProvider implements IBlockComponentProvider, IServerDataP
 
     @Override
     public void appendTooltip(ITooltip tooltip, BlockAccessor accessor, IPluginConfig config) {
-        if (accessor.getServerData().getBoolean(BONDED)) {
-            tooltip.add(IElementHelper.get().text(Component.literal("  ")
+        if (accessor.getServerData().getBooleanOr(BONDED, false)) {
+            tooltip.add(JadeUI.text(Component.literal("  ")
                 .append(Component.translatable("tooltip.anvilcraftplasticraft.bonded"))
                 .withStyle(ChatFormatting.GRAY)).tag(PlasticJadeLayout.BONDED));
         }
     }
 
     @Override
-    public ResourceLocation getUid() {
+    public Identifier getUid() {
         return AnvilcraftPlasticraft.of("bonded_block");
     }
 }

@@ -1,10 +1,10 @@
 {
 	"format_version": "1.9.0",
 	"credit": "Made with Blockbench",
-	"render_type": "minecraft:translucent",
+
 	"textures": {
-		"7": "anvilcraft:item/supercapacitor_electric",
-		"particle": "anvilcraftplasticraft:block/plastic_molding_chamber_particle"
+		"7": {"sprite": "anvilcraftplasticraft:block/supercapacitor_electric", "force_translucent": true},
+		"particle": {"sprite": "anvilcraftplasticraft:block/plastic_molding_chamber_particle", "force_translucent": true}
 	},
 	"elements": [
 		{

@@ -15,8 +15,8 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.BooleanOp;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -106,7 +106,7 @@ public final class PlasticPistonOccupancy {
                 }
 
                 Vec3 sourcePosition = occupant.position();
-                Vec3 movement = Vec3.atLowerCornerOf(movementDirection.getNormal());
+                Vec3 movement = Vec3.atLowerCornerOf(movementDirection.getUnitVec3i());
                 Vec3 targetPosition = sourcePosition.add(movement);
                 Vec3 reverseTarget = sourcePosition;
                 if (previous != null
@@ -205,7 +205,7 @@ public final class PlasticPistonOccupancy {
                 state = piston.getMovedState();
             }
             if (state.isSlimeBlock()) {
-                velocity = Vec3.atLowerCornerOf(movement.direction().getNormal());
+                velocity = Vec3.atLowerCornerOf(movement.direction().getUnitVec3i());
                 break;
             }
         }

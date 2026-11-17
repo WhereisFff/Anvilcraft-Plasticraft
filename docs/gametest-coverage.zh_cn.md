@@ -6,7 +6,7 @@
 
 ## 怎么跑
 
-使用 JDK 21。不要用 `runClient`，也不要用 Computer Use 或其它 UI 自动化启动 Minecraft 客户端。
+使用 JDK 25。不要用 `runClient`，也不要用 Computer Use 或其它 UI 自动化启动 Minecraft 客户端。
 
 Windows：
 

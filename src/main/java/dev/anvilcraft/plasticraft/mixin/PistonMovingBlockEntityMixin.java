@@ -9,6 +9,8 @@ import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.piston.PistonMovingBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.redstone.Orientation;
+import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
@@ -73,7 +75,7 @@ abstract class PistonMovingBlockEntityMixin {
             target = "Lnet/minecraft/world/level/Level;neighborChanged("
                      + "Lnet/minecraft/core/BlockPos;"
                      + "Lnet/minecraft/world/level/block/Block;"
-                     + "Lnet/minecraft/core/BlockPos;"
+                     + "Lnet/minecraft/world/level/redstone/Orientation;"
                      + ")V"
         )
     )
@@ -81,12 +83,12 @@ abstract class PistonMovingBlockEntityMixin {
         Level level,
         BlockPos pos,
         Block block,
-        BlockPos fromPos,
+        @Nullable Orientation orientation,
         Operation<Void> original
     ) {
         if (BondedPistonReactions.shouldSkipSettleNeighborUpdate(level, pos)) {
             return;
         }
-        original.call(level, pos, block, fromPos);
+        original.call(level, pos, block, orientation);
     }
 }

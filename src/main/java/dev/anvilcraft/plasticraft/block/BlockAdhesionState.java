@@ -3,14 +3,14 @@ package dev.anvilcraft.plasticraft.block;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.Objects;
 
 /** 记录一个真实方块六个面上的裸胶、方块粘合和实体粘合。 */
 public record BlockAdhesionState(
-    ResourceLocation blockId,
+    Identifier blockId,
     int patchMask,
     int blockBondMask,
     int entityBondMask,
@@ -33,7 +33,7 @@ public record BlockAdhesionState(
         invisibleMask &= patchMask | blockBondMask | entityBondMask;
     }
 
-    public BlockAdhesionState(ResourceLocation blockId, int patchMask, int blockBondMask, int entityBondMask) {
+    public BlockAdhesionState(Identifier blockId, int patchMask, int blockBondMask, int entityBondMask) {
         this(blockId, patchMask, blockBondMask, entityBondMask, 0);
     }
 
@@ -159,14 +159,14 @@ public record BlockAdhesionState(
     }
 
     public static BlockAdhesionState load(CompoundTag tag) {
-        ResourceLocation blockId = ResourceLocation.tryParse(tag.getString(TAG_BLOCK));
+        Identifier blockId = Identifier.tryParse(tag.getStringOr(TAG_BLOCK, ""));
         if (blockId == null) blockId = BuiltInRegistries.BLOCK.getDefaultKey();
         return new BlockAdhesionState(
             blockId,
-            tag.getByte(TAG_PATCHES),
-            tag.getByte(TAG_BLOCK_BONDS),
-            tag.getByte(TAG_ENTITY_BONDS),
-            tag.getByte(TAG_INVISIBLE)
+            tag.getByteOr(TAG_PATCHES, (byte) 0),
+            tag.getByteOr(TAG_BLOCK_BONDS, (byte) 0),
+            tag.getByteOr(TAG_ENTITY_BONDS, (byte) 0),
+            tag.getByteOr(TAG_INVISIBLE, (byte) 0)
         );
     }
 

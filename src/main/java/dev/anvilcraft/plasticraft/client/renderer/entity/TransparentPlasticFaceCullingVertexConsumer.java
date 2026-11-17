@@ -7,13 +7,14 @@ import dev.anvilcraft.plasticraft.client.renderer.ClearPlasticRenderTypes;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
-import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingConvexHull;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.util.FastColor;
+import net.minecraft.util.ARGB;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -430,6 +431,17 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
         return this;
     }
 
+    @Override
+    public VertexConsumer setColor(int color) {
+        return setColor(color >> 16 & 255, color >> 8 & 255, color & 255, color >>> 24);
+    }
+
+    @Override
+    public VertexConsumer setLineWidth(float width) {
+        // 此顶点流只接收四边形，线宽不属于其顶点格式。
+        return this;
+    }
+
     private Vertex requireCurrent() {
         if (this.current == null) throw new IllegalStateException("Vertex attributes were written before a vertex");
         return this.current;
@@ -530,7 +542,13 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
         int green = vertex.green;
         int blue = vertex.blue;
         if (this.shadeBlockFaces && (vertex.normalX != 0.0F || vertex.normalY != 0.0F || vertex.normalZ != 0.0F)) {
-            float shade = this.entity.level().getShade(vertex.normalX, vertex.normalY, vertex.normalZ, true);
+            var lighting = ((ClientLevel) this.entity.level()).cardinalLighting();
+            float x = vertex.normalX;
+            float y = vertex.normalY;
+            float z = vertex.normalZ;
+            float vertical = lighting.down() + (lighting.up() - lighting.down()) * (y + 1) * 0.5f;
+            float shade = Math.min(1, x * x * (x < 0 ? lighting.west() : lighting.east())
+                + y * y * vertical + z * z * (z < 0 ? lighting.north() : lighting.south()));
             red = shade(red, shade);
             green = shade(green, shade);
             blue = shade(blue, shade);
@@ -539,7 +557,7 @@ public final class TransparentPlasticFaceCullingVertexConsumer implements Vertex
             (float) vertex.x,
             (float) vertex.y,
             (float) vertex.z,
-            FastColor.ARGB32.color(
+            ARGB.color(
                 Math.clamp(vertex.alpha, 0, 255),
                 Math.clamp(red, 0, 255),
                 Math.clamp(green, 0, 255),

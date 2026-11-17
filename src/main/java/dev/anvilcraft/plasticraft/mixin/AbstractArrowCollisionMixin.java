@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.mixin;
 
 import dev.anvilcraft.plasticraft.entity.collision.BondedPlasticShapeIndex;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexCollisionResolver;
-import net.minecraft.world.entity.projectile.AbstractArrow;
+import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;

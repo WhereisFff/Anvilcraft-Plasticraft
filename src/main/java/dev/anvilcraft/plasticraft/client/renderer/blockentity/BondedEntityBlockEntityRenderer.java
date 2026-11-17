@@ -4,31 +4,33 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.client.renderer.AdhesivePatchRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.ClearPlasticEntityRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticBlockModel;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticRenderGeometry;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.client.renderer.entity.EntityRenderer;
+import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 /** 渲染方块化后的塑料实体或原始下落方块模型。 */
-public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<BondedEntityBlockEntity> {
+public class BondedEntityBlockEntityRenderer extends PlasticBlockEntityRenderer<BondedEntityBlockEntity> {
     public BondedEntityBlockEntityRenderer(BlockEntityRendererProvider.Context context) {
     }
 
     @Override
-    public void render(
+    protected void extractGeometry(
         BondedEntityBlockEntity blockEntity,
         float partialTick,
         PoseStack pose,
-        MultiBufferSource buffers,
+        PlasticRenderGeometry buffers,
         int packedLight,
         int packedOverlay
     ) {
@@ -40,7 +42,7 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
         }
         if (!blockEntity.isInitialized()) return;
         if (!blockEntity.isPlastic()) {
-            Minecraft.getInstance().getBlockRenderer().renderSingleBlock(
+            PlasticBlockModel.render(
                 blockEntity.getDisplayState(),
                 pose,
                 buffers,
@@ -59,34 +61,39 @@ public class BondedEntityBlockEntityRenderer implements BlockEntityRenderer<Bond
                 blockEntity.getAdhesiveLocalFace()
             );
             Vec3 relative = entityPosition.subtract(Vec3.atLowerCornerOf(blockEntity.getBlockPos()));
-            EntityRenderer<? super AbstractPlasticEntity> renderer = Minecraft.getInstance()
-                .getEntityRenderDispatcher()
-                .getRenderer(plasticEntity);
-            if (renderer != null) {
-                Vec3 renderOffset = renderer.getRenderOffset(plasticEntity, partialTick);
-                pose.pushPose();
-                pose.translate(relative.x + renderOffset.x, relative.y + renderOffset.y, relative.z + renderOffset.z);
-                BondedEntityBlockEntity.HammerRotationAnimation animation =
-                    blockEntity.getHammerRotationAnimation(partialTick);
-                if (animation == null) {
-                    renderer.render(plasticEntity, plasticEntity.getYRot(), partialTick, pose, buffers, packedLight);
-                } else {
-                    try (PlasticEntityRenderTransforms.RenderOverrideScope ignored =
-                             PlasticEntityRenderTransforms.overrideRotation(
-                                 plasticEntity,
-                                 animation.from(),
-                                 animation.to(),
-                                 animation.progress()
-                             )) {
-                        renderer.render(plasticEntity, plasticEntity.getYRot(), partialTick, pose, buffers, packedLight);
-                    }
+            var dispatch = Minecraft.getInstance().getEntityRenderDispatcher();
+            var renderer = dispatch.getRenderer(plasticEntity);
+            pose.pushPose();
+            pose.translate(relative.x, relative.y, relative.z);
+            var animation = blockEntity.getHammerRotationAnimation(partialTick);
+            if (animation == null) {
+                extractPlasticModel(renderer, plasticEntity, partialTick, pose, buffers, packedLight);
+            } else {
+                try (var ignored = PlasticEntityRenderTransforms.overrideRotation(
+                    plasticEntity, animation.from(), animation.to(), animation.progress())) {
+                    extractPlasticModel(renderer, plasticEntity, partialTick, pose, buffers, packedLight);
                 }
-                pose.popPose();
             }
+            pose.popPose();
         }
         if (blockEntity.isHammerDeflected()) {
             renderAdhesivePatch(blockEntity, pose, buffers, packedLight, partialTick);
         }
+    }
+
+    private static <T extends Entity, S extends EntityRenderState> void extractPlasticModel(
+        EntityRenderer<T, S> renderer, T entity, float partialTick, PoseStack pose, PlasticRenderGeometry buffers, int light
+    ) {
+        S state = renderer.createRenderState();
+        if (state instanceof PlasticRenderGeometry.EntityState plastic) {
+            plastic.packedLightOverride = light;
+        }
+        renderer.extractRenderState(entity, state, partialTick);
+        Vec3 offset = renderer.getRenderOffset(state);
+        pose.pushPose();
+        pose.translate(offset.x, offset.y, offset.z);
+        buffers.nested(pose, (parent, collector, camera) -> renderer.submit(state, parent, collector, camera));
+        pose.popPose();
     }
 
     @Override

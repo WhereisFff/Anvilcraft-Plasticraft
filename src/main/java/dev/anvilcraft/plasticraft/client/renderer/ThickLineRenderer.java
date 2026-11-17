@@ -3,7 +3,7 @@ package dev.anvilcraft.plasticraft.client.renderer;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
@@ -18,21 +18,20 @@ public final class ThickLineRenderer {
 
     public static void render(
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         List<Vec3> points,
         int color,
         double width
     ) {
         if (points.size() < 2) return;
-        RenderType renderType = RenderType.debugQuads();
+        RenderType renderType = PlasticPreviewRenderTypes.coloredQuads();
         VertexConsumer consumer = buffers.getBuffer(renderType);
         render(pose, consumer, points, color, width);
-        buffers.endBatch(renderType);
     }
 
     public static void renderSegments(
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         List<Segment> segments,
         int color,
         double width
@@ -43,14 +42,14 @@ public final class ThickLineRenderer {
     /** 独立线段可向两端延长，用于消除多段粗线在转角处的内凹端帽。 */
     public static void renderSegments(
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         List<Segment> segments,
         int color,
         double width,
         double endpointExtension
     ) {
         if (segments.isEmpty()) return;
-        RenderType renderType = RenderType.debugQuads();
+        RenderType renderType = PlasticPreviewRenderTypes.coloredQuads();
         VertexConsumer consumer = buffers.getBuffer(renderType);
         for (Segment segment : segments) {
             Vec3 from = segment.from();
@@ -64,12 +63,11 @@ public final class ThickLineRenderer {
             }
             renderSegment(pose, consumer, from, to, color, width);
         }
-        buffers.endBatch(renderType);
     }
 
     public static void renderDashed(
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         List<Vec3> points,
         int color,
         double width,
@@ -83,7 +81,7 @@ public final class ThickLineRenderer {
             return;
         }
 
-        RenderType renderType = RenderType.debugQuads();
+        RenderType renderType = PlasticPreviewRenderTypes.coloredQuads();
         VertexConsumer consumer = buffers.getBuffer(renderType);
         double patternLength = dashLength + gapLength;
         double patternPosition = positiveModulo(-phaseDistance, patternLength);
@@ -120,13 +118,12 @@ public final class ThickLineRenderer {
                 }
             }
         }
-        buffers.endBatch(renderType);
     }
 
     /** 等长双色段沿全部原始线段连续排布；双色段共用交界截面，原始线段只在整体两端封口。 */
     public static void renderAlternatingSegments(
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         List<Segment> segments,
         int firstColor,
         int secondColor,
@@ -136,7 +133,7 @@ public final class ThickLineRenderer {
         double endpointExtension
     ) {
         if (segments.isEmpty() || stripeLength <= LENGTH_EPSILON) return;
-        RenderType renderType = RenderType.debugQuads();
+        RenderType renderType = PlasticPreviewRenderTypes.coloredQuads();
         VertexConsumer consumer = buffers.getBuffer(renderType);
         double patternLength = stripeLength * 2.0D;
         double patternPosition = positiveModulo(phaseDistance, patternLength);
@@ -189,7 +186,6 @@ public final class ThickLineRenderer {
                 }
             }
         }
-        buffers.endBatch(renderType);
     }
 
     private static void render(

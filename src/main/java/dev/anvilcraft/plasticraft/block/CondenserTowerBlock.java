@@ -1,12 +1,10 @@
 package dev.anvilcraft.plasticraft.block;
 
+import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.multipart.MultiPartBlockEntity;
 import dev.dubhe.anvilcraft.block.multipart.SimpleMultiPartBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
-import dev.dubhe.anvilcraft.api.fluid.network.FluidNetworkManager;
-import dev.anvilcraft.plasticraft.block.entity.CondenserTowerBlockEntity;
-import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
@@ -26,10 +24,11 @@ import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.block.state.properties.EnumProperty;
 import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.world.level.redstone.Orientation;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /** 3x3x3 冷凝塔模块；中心部件持有该模块的流体缓存。 */
 public class CondenserTowerBlock extends SimpleMultiPartBlock<Cube3x3PartHalf>
@@ -114,25 +113,10 @@ public class CondenserTowerBlock extends SimpleMultiPartBlock<Cube3x3PartHalf>
         Level level,
         BlockPos pos,
         Block neighborBlock,
-        BlockPos neighborPos,
+        @Nullable Orientation orientation,
         boolean movedByPiston
     ) {
         if (!level.isClientSide()) refreshSeal(level, pos, state);
-    }
-
-    @Override
-    protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
-        if (!state.is(newState.getBlock())) {
-            level.invalidateCapabilities(pos);
-            if (!level.isClientSide()) {
-                FluidNetworkManager.INSTANCE.markDirty(level);
-                if (isMainPart(state)) {
-                    BlockEntity entity = level.getBlockEntity(pos);
-                    if (entity instanceof CondenserTowerBlockEntity tower) tower.dropContents();
-                }
-            }
-        }
-        super.onRemove(state, level, pos, newState, movedByPiston);
     }
 
     @Override
@@ -152,7 +136,7 @@ public class CondenserTowerBlock extends SimpleMultiPartBlock<Cube3x3PartHalf>
     }
 
     @Override
-    protected boolean propagatesSkylightDown(BlockState state, BlockGetter level, BlockPos pos) {
+    protected boolean propagatesSkylightDown(BlockState state) {
         return true;
     }
 

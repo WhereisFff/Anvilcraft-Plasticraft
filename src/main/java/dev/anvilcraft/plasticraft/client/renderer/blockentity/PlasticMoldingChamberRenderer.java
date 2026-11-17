@@ -12,30 +12,31 @@ import dev.anvilcraft.plasticraft.client.molding.scene.EditorSceneMesh;
 import dev.anvilcraft.plasticraft.client.molding.scene.EditorScenePart;
 import dev.anvilcraft.plasticraft.client.molding.scene.EditorVertex;
 import dev.anvilcraft.plasticraft.client.molding.scene.MoldingSceneBuilder;
+import dev.anvilcraft.plasticraft.client.renderer.FluidRenderOpacity;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticBlockModel;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticPreviewRenderTypes;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticRenderGeometry;
 import dev.anvilcraft.plasticraft.client.renderer.molding.MoldingProjectionRenderTypes;
 import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingFormingMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintedGeometry;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrinterMotion;
 import dev.anvilcraft.plasticraft.molding.model.MoldingModelBounds;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
-import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
-import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.Sheets;
-import net.minecraft.client.renderer.block.BlockRenderDispatcher;
-import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.client.resources.model.BakedModel;
-import net.minecraft.client.resources.model.ModelResourceLocation;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
@@ -43,6 +44,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
 import org.joml.Matrix4f;
 import org.joml.Vector3d;
 
@@ -52,33 +54,33 @@ import java.util.Optional;
 import java.util.WeakHashMap;
 
 /** 用同一世界坐标系绘制编辑投影、粘土模具和逐体素打印机构。 */
-public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<PlasticMoldingChamberBlockEntity> {
+public final class PlasticMoldingChamberRenderer extends PlasticBlockEntityRenderer<PlasticMoldingChamberBlockEntity> {
     private static final int CLEAR_PLASTIC_PREVIEW_ALPHA = 0x88000000;
-    public static final ModelResourceLocation PRINTER_FRAME_MODEL = ModelResourceLocation.standalone(
+    public static final PlasticBlockModel PRINTER_FRAME_MODEL = new PlasticBlockModel(
         AnvilcraftPlasticraft.of("block/print_warehouse")
     );
-    public static final ModelResourceLocation PRINTER_GLASS_MODEL = ModelResourceLocation.standalone(
+    public static final PlasticBlockModel PRINTER_GLASS_MODEL = new PlasticBlockModel(
         AnvilcraftPlasticraft.of("block/print_warehouse_glass")
     );
-    public static final ModelResourceLocation PRINTER_GUI_MODEL = ModelResourceLocation.standalone(
+    public static final PlasticBlockModel PRINTER_GUI_MODEL = new PlasticBlockModel(
         AnvilcraftPlasticraft.of("block/print_warehouse_gui")
     );
-    public static final ModelResourceLocation PRINTER_X_MODEL = ModelResourceLocation.standalone(
+    public static final PlasticBlockModel PRINTER_X_MODEL = new PlasticBlockModel(
         AnvilcraftPlasticraft.of("block/print_warehouse_x")
     );
-    public static final ModelResourceLocation PRINTER_Y_MODEL = ModelResourceLocation.standalone(
+    public static final PlasticBlockModel PRINTER_Y_MODEL = new PlasticBlockModel(
         AnvilcraftPlasticraft.of("block/print_warehouse_y")
     );
-    public static final ModelResourceLocation PRINTER_Z_MODEL = ModelResourceLocation.standalone(
+    public static final PlasticBlockModel PRINTER_Z_MODEL = new PlasticBlockModel(
         AnvilcraftPlasticraft.of("block/print_warehouse_z")
     );
-    public static final ModelResourceLocation PRINTER_Z_EYE_MODEL = ModelResourceLocation.standalone(
+    public static final PlasticBlockModel PRINTER_Z_EYE_MODEL = new PlasticBlockModel(
         AnvilcraftPlasticraft.of("block/print_warehouse_z_eye")
     );
-    public static final ModelResourceLocation PRINTER_DOOR_LEFT_MODEL = ModelResourceLocation.standalone(
+    public static final PlasticBlockModel PRINTER_DOOR_LEFT_MODEL = new PlasticBlockModel(
         AnvilcraftPlasticraft.of("block/print_warehouse_door_left")
     );
-    public static final ModelResourceLocation PRINTER_DOOR_RIGHT_MODEL = ModelResourceLocation.standalone(
+    public static final PlasticBlockModel PRINTER_DOOR_RIGHT_MODEL = new PlasticBlockModel(
         AnvilcraftPlasticraft.of("block/print_warehouse_door_right")
     );
     public static final MoldingVec3 PRINTER_MODEL_ORIGIN = new MoldingVec3(16.0D, 16.0D, 16.0D);
@@ -94,20 +96,19 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
     private static final float TANK_ORIGIN_X = 12.5F / 16.0F;
     private static final float TANK_ORIGIN_Y = 8.0F / 16.0F;
     private static final float TANK_ORIGIN_Z = 7.0F / 16.0F;
-    private final BlockRenderDispatcher dispatcher;
+
     private final Map<PlasticMoldingChamberBlockEntity, CachedProjection> projectionCache = new WeakHashMap<>();
     private final Map<PlasticMoldingChamberBlockEntity, CachedPrintedGeometry> printedCache = new WeakHashMap<>();
 
     public PlasticMoldingChamberRenderer(BlockEntityRendererProvider.Context context) {
-        this.dispatcher = context.getBlockRenderDispatcher();
     }
 
     @Override
-    public void render(
+    protected void extractGeometry(
         PlasticMoldingChamberBlockEntity chamber,
         float partialTick,
         PoseStack poseStack,
-        MultiBufferSource bufferSource,
+        PlasticRenderGeometry bufferSource,
         int packedLight,
         int packedOverlay
     ) {
@@ -151,19 +152,16 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
         poseStack.mulPose(Axis.YP.rotationDegrees(45.0F));
         poseStack.translate(-TANK_ORIGIN_X, -TANK_ORIGIN_Y, -TANK_ORIGIN_Z);
         FluidRenderHelper.INSTANCE.renderFluidBox(
-            fluid,
-            TANK_MIN_X,
+                FluidRenderOpacity.model(fluid).stillMaterial().sprite(), FluidResource.of(fluid),
+                TANK_MIN_X,
             TANK_MIN_Y,
             TANK_MIN_Z,
             TANK_MAX_X,
             fluidTop,
             TANK_MAX_Z,
-            bufferSource,
-            poseStack,
-            packedLight,
-            true,
-            false
-        );
+                FluidRenderOpacity.tint(fluid), bufferSource.getBuffer(FluidRenderOpacity.isOpaque(fluid) ? Sheets.cutoutBlockSheet() : Sheets.translucentBlockSheet()),
+                poseStack.last(), packedLight, true, false
+            );
         poseStack.popPose();
     }
 
@@ -262,7 +260,7 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
         }
         renderPrintedGeometry(
             bufferSource,
-            RenderType.debugQuads(),
+            PlasticPreviewRenderTypes.coloredQuads(),
             pose,
             front,
             cached.geometry,
@@ -349,7 +347,7 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
             PRINTER_Z_MODEL, moveX, moveY, moveZ
         );
         renderPrinterModel(
-            chamber, poseStack, bufferSource, packedLight, Sheets.translucentCullBlockSheet(),
+            chamber, poseStack, bufferSource, packedLight, Sheets.translucentBlockSheet(),
             PRINTER_GLASS_MODEL, 0.0D, 0.0D, 0.0D
         );
         renderPrinterModel(
@@ -375,7 +373,7 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
         MultiBufferSource bufferSource,
         int packedLight,
         RenderType renderType,
-        ModelResourceLocation modelLocation,
+        PlasticBlockModel modelLocation,
         double moveX,
         double moveY,
         double moveZ
@@ -388,13 +386,12 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
             PRINTER_MODEL_ORIGIN.z() + moveZ
         );
         BlockState state = chamber.getBlockState();
-        BakedModel model = Minecraft.getInstance().getModelManager().getModel(modelLocation);
+        BlockStateModel model = modelLocation.baked();
         poseStack.pushPose();
         poseStack.translate(origin.x, origin.y, origin.z);
-        this.dispatcher.getModelRenderer().renderModel(
+        PlasticBlockModel.render(
             poseStack.last(),
             bufferSource.getBuffer(renderType),
-            state,
             model,
             1.0F,
             1.0F,
@@ -420,18 +417,17 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
             PRINTER_MODEL_ORIGIN.y() + moveY,
             PRINTER_MODEL_ORIGIN.z() + moveZ
         );
-        BakedModel model = Minecraft.getInstance().getModelManager().getModel(PRINTER_Z_EYE_MODEL);
+        BlockStateModel model = PRINTER_Z_EYE_MODEL.baked();
         poseStack.pushPose();
         poseStack.translate(origin.x, origin.y, origin.z);
-        this.dispatcher.getModelRenderer().renderModel(
+        PlasticBlockModel.render(
             poseStack.last(),
-            bufferSource.getBuffer(RenderType.cutout()),
-            null,
+            bufferSource.getBuffer(Sheets.cutoutBlockSheet()),
             model,
             0.0F,
             0.0F,
             0.0F,
-            LightTexture.FULL_BLOCK,
+            LightCoordsUtil.pack(15, 0),
             OverlayTexture.NO_OVERLAY
         );
         poseStack.popPose();
@@ -480,11 +476,11 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
             BlockPos offset = region.subtract(chamber.getBlockPos());
             poseStack.pushPose();
             poseStack.translate(offset.getX(), offset.getY(), offset.getZ());
-            Minecraft.getInstance().getBlockRenderer().renderSingleBlock(
+            PlasticBlockModel.render(
                 Blocks.CLAY.defaultBlockState(),
                 poseStack,
                 bufferSource,
-                LevelRenderer.getLightColor(level, region),
+                LevelRenderer.getLightCoords(level, region),
                 OverlayTexture.NO_OVERLAY
             );
             poseStack.popPose();
@@ -541,7 +537,7 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
                     );
                     float brightness = level == null ? 1.0F : lightCache.computeIfAbsent(
                         worldPos,
-                        pos -> worldBrightness(LevelRenderer.getLightColor(level, pos), skyDarken)
+                        pos -> worldBrightness(LevelRenderer.getLightCoords(level, pos), skyDarken)
                     );
                     color = hologramColor(vertex.color(), brightness);
                 }
@@ -562,7 +558,7 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
         Level level = chamber.getLevel();
         int skyDarken = level == null ? 0 : level.getSkyDarken();
         Map<BlockPos, Float> lightCache = useWorldLight && level != null ? new HashMap<>() : Map.of();
-        VertexConsumer consumer = bufferSource.getBuffer(RenderType.debugQuads());
+        VertexConsumer consumer = bufferSource.getBuffer(PlasticPreviewRenderTypes.coloredQuads());
         for (EditorScenePart part : mesh.parts()) {
             for (int index : part.indices()) {
                 EditorVertex vertex = part.vertices().get(index);
@@ -577,7 +573,7 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
                 );
                 float brightness = useWorldLight && level != null ? lightCache.computeIfAbsent(
                     worldPos,
-                    pos -> worldBrightness(LevelRenderer.getLightColor(level, pos), skyDarken)
+                    pos -> worldBrightness(LevelRenderer.getLightCoords(level, pos), skyDarken)
                 ) : 1.0F;
                 consumer.addVertex(pose, (float) offset.x, (float) offset.y, (float) offset.z)
                     .setColor(modulateColor(vertex.color(), brightness));
@@ -586,8 +582,8 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
     }
 
     private static float worldBrightness(int packedLight, int skyDarken) {
-        int skyLight = Math.max(0, LightTexture.sky(packedLight) - skyDarken);
-        int light = Math.max(LightTexture.block(packedLight), skyLight);
+        int skyLight = Math.max(0, LightCoordsUtil.sky(packedLight) - skyDarken);
+        int light = Math.max(LightCoordsUtil.block(packedLight), skyLight);
         return 0.18F + 0.82F * light / 15.0F;
     }
 
@@ -606,7 +602,7 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
     }
 
     @Override
-    public boolean shouldRenderOffScreen(PlasticMoldingChamberBlockEntity chamber) {
+    public boolean shouldRenderOffScreen() {
         return true;
     }
 
@@ -646,7 +642,7 @@ public final class PlasticMoldingChamberRenderer implements BlockEntityRenderer<
         PlasticMoldingChamberBlockEntity chamber,
         Direction front
     ) {
-        Vec3 camera = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
+        Vec3 camera = Minecraft.getInstance().gameRenderer.getMainCamera().position();
         Vec3 center = PlasticMoldingChamberStructure.worldAlignedProjectionOffset(front, 24.0D, 24.0D, 24.0D)
             .add(Vec3.atLowerCornerOf(chamber.getBlockPos()));
         Vec3 direction = camera.subtract(center);

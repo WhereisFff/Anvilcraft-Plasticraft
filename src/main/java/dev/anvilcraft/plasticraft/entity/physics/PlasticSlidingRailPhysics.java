@@ -2,23 +2,23 @@ package dev.anvilcraft.plasticraft.entity.physics;
 
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.dubhe.anvilcraft.block.entity.ActivatorSlidingRailBlockEntity;
-import dev.dubhe.anvilcraft.block.sliding.ActivatorSlidingRailBlock;
-import dev.dubhe.anvilcraft.block.sliding.BaseSlidingRailBlock;
-import dev.dubhe.anvilcraft.block.sliding.DetectorSlidingRailBlock;
-import dev.dubhe.anvilcraft.block.sliding.PoweredSlidingRailBlock;
+import dev.dubhe.anvilcraft.block.logistics.sliding.ActivatorSlidingRailBlock;
+import dev.dubhe.anvilcraft.block.logistics.sliding.BaseSlidingRailBlock;
+import dev.dubhe.anvilcraft.block.logistics.sliding.DetectorSlidingRailBlock;
+import dev.dubhe.anvilcraft.block.logistics.sliding.PoweredSlidingRailBlock;
 import dev.dubhe.anvilcraft.init.block.ModBlockEntities;
 import dev.dubhe.anvilcraft.init.block.ModBlockTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.util.Mth;
+import net.minecraft.util.TriState;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.common.util.TriState;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 
@@ -115,9 +115,9 @@ public final class PlasticSlidingRailPhysics {
             return true;
         }
 
-        public void save(CompoundTag ownerTag) {
+        public void save(ValueOutput ownerTag) {
             if (this.chargingRail == null && this.passedActivatorRail == null) return;
-            CompoundTag tag = new CompoundTag();
+            ValueOutput tag = ownerTag.child("SlidingRailState");
             if (this.chargingRail != null && this.chargingDirection != null) {
                 tag.putLong("ChargingRail", this.chargingRail.asLong());
                 tag.putString("ChargingDirection", this.chargingDirection.getName());
@@ -125,23 +125,21 @@ public final class PlasticSlidingRailPhysics {
             if (this.passedActivatorRail != null) {
                 tag.putLong("PassedActivatorRail", this.passedActivatorRail.asLong());
             }
-            ownerTag.put("SlidingRailState", tag);
         }
 
-        public void load(CompoundTag ownerTag) {
+        public void load(ValueInput ownerTag) {
             this.clearCharge();
             this.passedActivatorRail = null;
-            if (!ownerTag.contains("SlidingRailState", Tag.TAG_COMPOUND)) return;
-            CompoundTag tag = ownerTag.getCompound("SlidingRailState");
-            Direction direction = Direction.byName(tag.getString("ChargingDirection"));
+            ValueInput tag = ownerTag.childOrEmpty("SlidingRailState");
+            Direction direction = Direction.byName(tag.getStringOr("ChargingDirection", ""));
             if (direction != null
                 && direction.getAxis().isHorizontal()
-                && tag.contains("ChargingRail", Tag.TAG_ANY_NUMERIC)) {
-                this.chargingRail = BlockPos.of(tag.getLong("ChargingRail"));
+                && tag.keySet().contains("ChargingRail")) {
+                this.chargingRail = BlockPos.of(tag.getLongOr("ChargingRail", 0L));
                 this.chargingDirection = direction;
             }
-            if (tag.contains("PassedActivatorRail", Tag.TAG_ANY_NUMERIC)) {
-                this.passedActivatorRail = BlockPos.of(tag.getLong("PassedActivatorRail"));
+            if (tag.keySet().contains("PassedActivatorRail")) {
+                this.passedActivatorRail = BlockPos.of(tag.getLongOr("PassedActivatorRail", 0L));
             }
         }
 
@@ -321,7 +319,7 @@ public final class PlasticSlidingRailPhysics {
         Vec3 next = new Vec3(horizontal.x, current.y, horizontal.z);
         if (next.equals(current)) return;
         entity.setDeltaMovement(next);
-        entity.hasImpulse = true;
+        entity.needsSync = true;
         entity.hurtMarked = true;
     }
 

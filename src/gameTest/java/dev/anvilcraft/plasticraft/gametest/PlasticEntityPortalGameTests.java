@@ -10,8 +10,7 @@ import dev.dubhe.anvilcraft.api.portal.PortalType;
 import dev.dubhe.anvilcraft.init.block.ModBlockTags;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import net.minecraft.core.BlockPos;
-import net.minecraft.gametest.framework.GameTest;
-import net.minecraft.gametest.framework.GameTestAssertException;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -21,6 +20,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
+import net.neoforged.testframework.gametest.GameTest;
 
 /** 塑料实体穿过传送门时不得被 AnvilCraft 转成末地尘。 */
 public final class PlasticEntityPortalGameTests {
@@ -34,8 +34,8 @@ public final class PlasticEntityPortalGameTests {
         UniversalPlasticEntity plastic = createUniversalPlastic(helper, new Vec3(3.5D, 2.0D, 3.5D));
         BlockState before = plastic.getDisplayState();
         check(before.is(ModBlockTags.END_PORTAL_UNABLE_CHANGE), "plastic display is missing the end-portal exemption tag");
-        assertPortalKeepsPlastic(helper, plastic, before, PortalType.END_PORTAL, ModBlocks.END_DUST.get());
-        assertPortalKeepsPlastic(helper, plastic, before, PortalType.NETHER_PORTAL, ModBlocks.NETHER_DUST.get());
+        assertPortalKeepsPlastic(helper, plastic, before, new PortalType(Identifier.withDefaultNamespace("end_portal")), ModBlocks.END_DUST.get());
+        assertPortalKeepsPlastic(helper, plastic, before, new PortalType(Identifier.withDefaultNamespace("nether_portal")), ModBlocks.NETHER_DUST.get());
         helper.succeed();
     }
 
@@ -53,7 +53,7 @@ public final class PlasticEntityPortalGameTests {
         NeoForge.EVENT_BUS.post(new EntityThroughPortalEvent(
             helper.getLevel(),
             sand,
-            PortalType.END_PORTAL
+            new PortalType(Identifier.withDefaultNamespace("end_portal"))
         ));
         check(sand.blockState.is(ModBlocks.END_DUST.get()), "ordinary falling sand did not become end dust");
         helper.succeed();
@@ -106,6 +106,6 @@ public final class PlasticEntityPortalGameTests {
     }
 
     private static void check(boolean condition, String message) {
-        if (!condition) throw new GameTestAssertException(message);
+        if (!condition) throw new PlasticraftTestFailure(message);
     }
 }

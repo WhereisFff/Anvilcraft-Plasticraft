@@ -17,9 +17,9 @@ public final class MoldingBlueprintDiskEvents {
     public static void onRightClickItem(PlayerInteractEvent.RightClickItem event) {
         if (!event.getEntity().isShiftKeyDown() || !MoldingBlueprintDisk.hasBlueprintData(event.getItemStack())) return;
         event.setCanceled(true);
-        event.setCancellationResult(InteractionResult.sidedSuccess(event.getLevel().isClientSide));
+        event.setCancellationResult(InteractionResult.SUCCESS);
         if (event.getEntity() instanceof ServerPlayer player && MoldingBlueprintDisk.clear(event.getItemStack())) {
-            player.displayClientMessage(Component.translatable("message.anvilcraft.disk.data_cleared"), true);
+            player.sendOverlayMessage(Component.translatable("message.anvilcraft.disk.data_cleared"));
             player.getInventory().setChanged();
             player.containerMenu.broadcastChanges();
         }

@@ -5,34 +5,34 @@ import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import dev.anvilcraft.plasticraft.init.PlasticraftRecipeTypes;
 import dev.dubhe.anvilcraft.recipe.anvil.builder.AbstractRecipeBuilder;
-import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.Item;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
+import net.minecraft.world.item.ItemStackTemplate;
+import net.minecraft.world.item.crafting.PlacementInfo;
 import net.minecraft.world.item.crafting.Recipe;
+import net.minecraft.world.item.crafting.RecipeBookCategories;
+import net.minecraft.world.item.crafting.RecipeBookCategory;
 import net.minecraft.world.item.crafting.RecipeInput;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.material.Fluid;
-import net.minecraft.world.level.material.Fluids;
 
 import java.util.Objects;
 
 /** 冷凝塔把内部虚拟气体转成真实流体的配方。 */
 public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
-    private final ResourceLocation gas;
+    private final Identifier gas;
     private final int consume;
-    private final ResourceLocation fluid;
+    private final Identifier fluid;
     private final int produce;
     private final int towerLevel;
 
-    public CondenserRecipe(ResourceLocation gas, int consume, ResourceLocation fluid, int produce, int towerLevel) {
+    public CondenserRecipe(Identifier gas, int consume, Identifier fluid, int produce, int towerLevel) {
         this.gas = Objects.requireNonNull(CondenserGas.canonicalize(gas), "gas");
         this.consume = consume;
         this.fluid = fluid;
@@ -44,7 +44,7 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
         return new Builder();
     }
 
-    public ResourceLocation gas() {
+    public Identifier gas() {
         return this.gas;
     }
 
@@ -52,7 +52,7 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
         return this.consume;
     }
 
-    public ResourceLocation fluid() {
+    public Identifier fluid() {
         return this.fluid;
     }
 
@@ -64,7 +64,7 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
         return this.towerLevel;
     }
 
-    public boolean matches(ResourceLocation gasId, int amount) {
+    public boolean matches(Identifier gasId, int amount) {
         return this.gas.equals(gasId) && amount >= this.consume;
     }
 
@@ -74,18 +74,28 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
     }
 
     @Override
-    public ItemStack assemble(Input input, HolderLookup.Provider registries) {
+    public ItemStack assemble(Input input) {
         return ItemStack.EMPTY;
     }
 
     @Override
-    public ItemStack getResultItem(HolderLookup.Provider registries) {
-        return ItemStack.EMPTY;
+    public PlacementInfo placementInfo() {
+        return PlacementInfo.NOT_PLACEABLE;
     }
 
     @Override
-    public boolean canCraftInDimensions(int width, int height) {
-        return true;
+    public RecipeBookCategory recipeBookCategory() {
+        return RecipeBookCategories.CRAFTING_MISC;
+    }
+
+    @Override
+    public boolean showNotification() {
+        return false;
+    }
+
+    @Override
+    public String group() {
+        return "";
     }
 
     @Override
@@ -104,7 +114,7 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
     }
 
     /** 配方管理器只需要气体标识和数量作为匹配输入。 */
-    public record Input(ResourceLocation gas, int amount) implements RecipeInput {
+    public record Input(Identifier gas, int amount) implements RecipeInput {
         @Override
         public ItemStack getItem(int slot) {
             return ItemStack.EMPTY;
@@ -121,50 +131,40 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
         }
     }
 
-    public static final class Serializer implements RecipeSerializer<CondenserRecipe> {
-        private static final MapCodec<CondenserRecipe> CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
-            ResourceLocation.CODEC.fieldOf("gas").forGetter(CondenserRecipe::gas),
-            Codec.INT.fieldOf("consume").forGetter(CondenserRecipe::consume),
-            ResourceLocation.CODEC.fieldOf("fluid").forGetter(CondenserRecipe::fluid),
-            Codec.INT.fieldOf("produce").forGetter(CondenserRecipe::produce),
-            Codec.INT.optionalFieldOf("tower_level", 1)
-                .forGetter(CondenserRecipe::towerLevel)
-        ).apply(instance, CondenserRecipe::new));
+    private static final MapCodec<CondenserRecipe> CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
+        Identifier.CODEC.fieldOf("gas").forGetter(CondenserRecipe::gas),
+        Codec.INT.fieldOf("consume").forGetter(CondenserRecipe::consume),
+        Identifier.CODEC.fieldOf("fluid").forGetter(CondenserRecipe::fluid),
+        Codec.INT.fieldOf("produce").forGetter(CondenserRecipe::produce),
+        Codec.INT.optionalFieldOf("tower_level", 1)
+            .forGetter(CondenserRecipe::towerLevel)
+    ).apply(instance, CondenserRecipe::new));
 
-        private static final StreamCodec<RegistryFriendlyByteBuf, CondenserRecipe> STREAM_CODEC =
-            StreamCodec.composite(
-                ResourceLocation.STREAM_CODEC,
-                CondenserRecipe::gas,
-                ByteBufCodecs.INT,
-                CondenserRecipe::consume,
-                ResourceLocation.STREAM_CODEC,
-                CondenserRecipe::fluid,
-                ByteBufCodecs.INT,
-                CondenserRecipe::produce,
-                ByteBufCodecs.INT,
-                CondenserRecipe::towerLevel,
-                CondenserRecipe::new
-            );
+    private static final StreamCodec<RegistryFriendlyByteBuf, CondenserRecipe> STREAM_CODEC =
+        StreamCodec.composite(
+            Identifier.STREAM_CODEC,
+            CondenserRecipe::gas,
+            ByteBufCodecs.INT,
+            CondenserRecipe::consume,
+            Identifier.STREAM_CODEC,
+            CondenserRecipe::fluid,
+            ByteBufCodecs.INT,
+            CondenserRecipe::produce,
+            ByteBufCodecs.INT,
+            CondenserRecipe::towerLevel,
+            CondenserRecipe::new
+        );
+    public static final RecipeSerializer<CondenserRecipe> SERIALIZER = new RecipeSerializer<>(CODEC, STREAM_CODEC);
 
-        @Override
-        public MapCodec<CondenserRecipe> codec() {
-            return CODEC;
-        }
-
-        @Override
-        public StreamCodec<RegistryFriendlyByteBuf, CondenserRecipe> streamCodec() {
-            return STREAM_CODEC;
-        }
-    }
 
     public static final class Builder extends AbstractRecipeBuilder<CondenserRecipe> {
-        private ResourceLocation gas;
-        private ResourceLocation fluid;
+        private Identifier gas;
+        private Identifier fluid;
         private int consume;
         private int produce;
         private int towerLevel = 1;
 
-        public Builder gas(ResourceLocation gas) {
+        public Builder gas(Identifier gas) {
             this.gas = gas;
             return this;
         }
@@ -174,7 +174,7 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
             return this;
         }
 
-        public Builder fluid(ResourceLocation fluid) {
+        public Builder fluid(Identifier fluid) {
             this.fluid = fluid;
             return this;
         }
@@ -195,7 +195,7 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
         }
 
         @Override
-        public void validate(ResourceLocation id) {
+        public void validate(Identifier id) {
             if (this.gas == null) {
                 throw new IllegalArgumentException("Condenser gas must not be empty, RecipeId: " + id);
             }
@@ -216,10 +216,12 @@ public final class CondenserRecipe implements Recipe<CondenserRecipe.Input> {
         }
 
         @Override
-        public Item getResult() {
-            if (this.fluid == null) return Items.AIR;
-            Fluid value = BuiltInRegistries.FLUID.get(this.fluid);
-            return value == null || value == Fluids.EMPTY ? Items.AIR : value.getBucket();
+        public ItemStackTemplate getResult() {
+            if (this.fluid == null) {
+                throw new IllegalStateException("Missing condenser output fluid");
+            }
+            Fluid value = BuiltInRegistries.FLUID.getValue(this.fluid);
+            return new ItemStackTemplate(value.getBucket());
         }
     }
 }

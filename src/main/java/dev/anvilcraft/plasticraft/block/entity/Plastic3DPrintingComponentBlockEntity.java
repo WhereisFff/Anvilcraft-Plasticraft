@@ -12,23 +12,25 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
 
 /** 保存单件打印制品所需的塑料熔体，并只允许下方成型舱驱动转移。 */
 public final class Plastic3DPrintingComponentBlockEntity extends BlockEntity {
     public static final int CAPACITY = 8192;
     private static final String TAG_TANK = "Tank";
 
-    private final FluidTank tank = new FluidTank(CAPACITY) {
+    private final PlasticFluidTank tank = new PlasticFluidTank(CAPACITY) {
         @Override
-        public boolean isFluidValid(FluidStack stack) {
-            return PlasticMaterial.isMelt(stack);
+        public boolean isValid(int index, FluidResource resource) {
+            return PlasticMaterial.isMelt(resource.toStack(1));
         }
 
         @Override
-        protected void onContentsChanged() {
+        protected void onContentsChanged(int index, FluidStack previous) {
             Plastic3DPrintingComponentBlockEntity.this.syncContents();
         }
     };
@@ -39,6 +41,10 @@ public final class Plastic3DPrintingComponentBlockEntity extends BlockEntity {
 
     public Plastic3DPrintingComponentBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
+    }
+
+    PlasticFluidTank tank() {
+        return this.tank;
     }
 
     public FluidStack fluid() {
@@ -62,22 +68,20 @@ public final class Plastic3DPrintingComponentBlockEntity extends BlockEntity {
     }
 
     @Override
-    protected void saveAdditional(CompoundTag tag, HolderLookup.Provider provider) {
-        super.saveAdditional(tag, provider);
-        tag.put(TAG_TANK, this.tank.writeToNBT(provider, new CompoundTag()));
+    protected void saveAdditional(ValueOutput tag) {
+        super.saveAdditional(tag);
+        tag.putChild(TAG_TANK, this.tank);
     }
 
     @Override
-    public void loadAdditional(CompoundTag tag, HolderLookup.Provider provider) {
-        super.loadAdditional(tag, provider);
-        this.tank.readFromNBT(provider, tag.getCompound(TAG_TANK));
+    public void loadAdditional(ValueInput tag) {
+        super.loadAdditional(tag);
+        tag.readChild(TAG_TANK, this.tank);
     }
 
     @Override
     public CompoundTag getUpdateTag(HolderLookup.Provider provider) {
-        CompoundTag tag = super.getUpdateTag(provider);
-        tag.put(TAG_TANK, this.tank.writeToNBT(provider, new CompoundTag()));
-        return tag;
+        return this.saveWithoutMetadata(provider);
     }
 
     @Override
@@ -87,7 +91,7 @@ public final class Plastic3DPrintingComponentBlockEntity extends BlockEntity {
 
     private void syncContents() {
         this.setChanged();
-        if (this.level == null || this.level.isClientSide) return;
+        if (this.level == null || this.level.isClientSide()) return;
         BlockState state = this.getBlockState();
         this.level.sendBlockUpdated(this.worldPosition, state, state, Block.UPDATE_CLIENTS);
     }

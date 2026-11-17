@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.client.renderer.molding;
 
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /** 只记录离屏目标的尺寸与幂等释放语义，不暴露任何图形 API 细节。 */
 public final class MoldingViewportTargetLifecycle<T> implements AutoCloseable {

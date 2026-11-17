@@ -14,8 +14,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -149,8 +149,8 @@ public final class AdhesivePreviewService {
         if (PREVIEWS.isEmpty()) return;
         for (PendingPreview pending : new ArrayList<>(PREVIEWS.values())) {
             if (pending == null) continue;
-            if (pending.player.getServer() != server || !pending.isUsable()) {
-                if (pending.player.getServer() == server) reject(pending);
+            if (pending.player.level().getServer() != server || !pending.isUsable()) {
+                if (pending.player.level().getServer() == server) reject(pending);
                 remove(pending);
                 continue;
             }
@@ -339,7 +339,7 @@ public final class AdhesivePreviewService {
             || target == selected
             || !target.isAlive()
             || target.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)
-            || !player.canInteractWithEntity(target, 0.0D)) {
+            || !player.isWithinEntityInteractionRange(target, 0.0D)) {
             return null;
         }
 
@@ -424,7 +424,7 @@ public final class AdhesivePreviewService {
         private final Vec3 anchorStart;
         private final long createdGameTime;
         private final AdhesivePathPlanner.PreviewTask task;
-        private @Nullable AdhesivePathPlanner.Plan result;
+        private AdhesivePathPlanner.@Nullable Plan result;
         private @Nullable Confirmation confirmation;
 
         private PendingPreview(

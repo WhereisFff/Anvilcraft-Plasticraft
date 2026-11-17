@@ -3,44 +3,45 @@ package dev.anvilcraft.plasticraft.integration.jade;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.integration.jade.provider.PlasticItemStorageProvider;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.layouts.LayoutElement;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import snownee.jade.api.Accessor;
-import snownee.jade.api.ITooltip;
 import snownee.jade.api.JadeIds;
 import snownee.jade.api.config.IWailaConfig;
-import snownee.jade.api.ui.IBoxElement;
-import snownee.jade.api.ui.IElement;
-import snownee.jade.api.ui.IElementHelper;
+import snownee.jade.api.ui.BoxElement;
+import snownee.jade.api.ui.Element;
+import snownee.jade.api.ui.JadeUI;
+import snownee.jade.impl.Tooltip;
 
 import java.util.List;
 
 /** 在各提供器完成收集后排列名称状态和成型舱能源，避免默认组件覆盖或重复插入。 */
 public final class PlasticJadeLayout {
-    public static final ResourceLocation PUSHABLE = AnvilcraftPlasticraft.of("jade_pushable");
-    public static final ResourceLocation BONDED = AnvilcraftPlasticraft.of("jade_bonded");
-    public static final ResourceLocation MACHINE_STATE = AnvilcraftPlasticraft.of("jade_machine_state");
-    public static final ResourceLocation CHAMBER_ENERGY = AnvilcraftPlasticraft.of("jade_chamber_energy");
-    private static final ResourceLocation OMITTED = AnvilcraftPlasticraft.of("jade_omitted_items");
-    private static final ResourceLocation GRID_ENERGY = ResourceLocation.fromNamespaceAndPath("anvilcraft", "power_provider");
+    public static final Identifier PUSHABLE = AnvilcraftPlasticraft.of("jade_pushable");
+    public static final Identifier BONDED = AnvilcraftPlasticraft.of("jade_bonded");
+    public static final Identifier MACHINE_STATE = AnvilcraftPlasticraft.of("jade_machine_state");
+    public static final Identifier CHAMBER_ENERGY = AnvilcraftPlasticraft.of("jade_chamber_energy");
+    private static final Identifier OMITTED = AnvilcraftPlasticraft.of("jade_omitted_items");
+    private static final Identifier GRID_ENERGY = Identifier.fromNamespaceAndPath("anvilcraft", "power_provider");
 
     private PlasticJadeLayout() {
     }
 
-    public static void finish(IBoxElement root, Accessor<?> accessor) {
-        ITooltip tooltip = root.getTooltip();
-        List<IElement> status = tooltip.get(MACHINE_STATE);
+    public static void finish(BoxElement root, Accessor<?> accessor) {
+        Tooltip tooltip = root.getTooltip();
+        List<LayoutElement> status = tooltip.get(MACHINE_STATE);
         if (status.isEmpty()) {
             status = tooltip.get(BONDED);
         }
         if (status.isEmpty()) {
             status = tooltip.get(PUSHABLE);
         }
-        List<IElement> energy = tooltip.get(CHAMBER_ENERGY);
-        int omitted = accessor.getServerData().getInt(PlasticItemStorageProvider.OMITTED);
-        int previewCount = accessor.getServerData().getInt(PlasticItemStorageProvider.PREVIEW_COUNT);
+        List<LayoutElement> energy = tooltip.get(CHAMBER_ENERGY);
+        int omitted = accessor.getServerData().getIntOr(PlasticItemStorageProvider.OMITTED, 0);
+        int previewCount = accessor.getServerData().getIntOr(PlasticItemStorageProvider.PREVIEW_COUNT, 0);
         if (previewCount > 0) {
-            int limit = IWailaConfig.get().getPlugin().getInt(accessor.showDetails()
+            int limit = IWailaConfig.get().plugin().getInt(accessor.showDetails()
                 ? JadeIds.UNIVERSAL_ITEM_STORAGE_DETAILED_AMOUNT : JadeIds.UNIVERSAL_ITEM_STORAGE_NORMAL_AMOUNT);
             omitted += Math.max(0, previewCount - limit);
         }
@@ -51,9 +52,10 @@ public final class PlasticJadeLayout {
         tooltip.remove(BONDED);
         tooltip.remove(PUSHABLE);
         int name = nameLine(tooltip);
-        for (IElement element : status) {
+        for (LayoutElement element : status) {
             if (name >= 0) {
-                tooltip.append(name, element.align(IElement.Align.RIGHT));
+                tooltip.append(name, JadeUI.spacer(0, 0).flexGrow(1));
+                tooltip.append(name, element);
             } else {
                 tooltip.add(0, element);
             }
@@ -64,7 +66,7 @@ public final class PlasticJadeLayout {
             tooltip.remove(JadeIds.UNIVERSAL_ENERGY_STORAGE);
             tooltip.remove(CHAMBER_ENERGY);
             int insertion = nameLine(tooltip) + 1;
-            for (IElement element : energy) {
+            for (LayoutElement element : energy) {
                 tooltip.add(insertion++, element);
             }
         }
@@ -72,29 +74,28 @@ public final class PlasticJadeLayout {
             int omittedCount = omitted;
             // 子框高度变化后，包含它的外层行也必须失效，否则后续模组名仍按旧高度绘制。
             tooltip.replace(JadeIds.UNIVERSAL_ITEM_STORAGE, lines -> {
-                for (List<IElement> line : lines) {
-                    for (IElement element : line) {
-                        if (element instanceof IBoxElement box) {
+                for (List<LayoutElement> line : lines) {
+                    for (LayoutElement element : line) {
+                        if (element instanceof BoxElement box) {
                             box.getTooltip().remove(OMITTED);
-                            box.getTooltip().add(IElementHelper.get().text(Component.translatable(
+                            box.getTooltip().add(JadeUI.text(Component.translatable(
                                 "tooltip.anvilcraftplasticraft.molded_more_contents", omittedCount
                             ).withStyle(ChatFormatting.GRAY)).tag(OMITTED));
-                            box.size(null);
+                            box.updateSize();
                         }
                     }
                 }
                 return lines;
             });
         }
-        root.size(null);
+        root.updateSize();
     }
 
-    private static int nameLine(ITooltip tooltip) {
+    private static int nameLine(Tooltip tooltip) {
         for (int line = 0; line < tooltip.size(); line++) {
-            for (IElement.Align align : IElement.Align.values()) {
-                if (tooltip.get(line, align).stream().anyMatch(element -> JadeIds.CORE_OBJECT_NAME.equals(element.getTag()))) {
-                    return line;
-                }
+            if (tooltip.lines.get(line).elements().stream().anyMatch(element ->
+                element instanceof Element jade && JadeIds.CORE_OBJECT_NAME.equals(jade.getTag()))) {
+                return line;
             }
         }
         return -1;

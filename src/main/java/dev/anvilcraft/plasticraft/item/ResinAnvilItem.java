@@ -2,9 +2,9 @@ package dev.anvilcraft.plasticraft.item;
 
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.ResinAnvilEntity;
-import dev.dubhe.anvilcraft.block.item.HasMobBlockItem;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
+import dev.dubhe.anvilcraft.item.block.HasMobBlockItem;
 import dev.dubhe.anvilcraft.mixin.accessor.BaseSpawnerAccessor;
 import dev.dubhe.anvilcraft.util.EntityUtil;
 import dev.dubhe.anvilcraft.util.ResentmentUtil;
@@ -14,10 +14,11 @@ import net.minecraft.core.dispenser.BlockSource;
 import net.minecraft.core.dispenser.DefaultDispenseItemBehavior;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.sounds.SoundEvent;
-import net.minecraft.util.random.SimpleWeightedRandomList;
+import net.minecraft.util.random.WeightedList;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
@@ -74,7 +75,7 @@ public class ResinAnvilItem extends AbstractPlasticEntityItem<ResinAnvilEntity> 
         // 潜行时放置捕获了生物的砧实体；对已放置实体普通空手使用会释放生物，
         // 与树脂块的流程一致。
         if (player.isShiftKeyDown()) return super.useOn(context);
-        if (context.getLevel().isClientSide) return InteractionResult.SUCCESS;
+        if (context.getLevel().isClientSide()) return InteractionResult.SUCCESS;
 
         BlockPos targetPos = context.getClickedPos().relative(context.getClickedFace());
         return releaseCapturedMob(context.getLevel(), targetPos, stack)
@@ -86,20 +87,20 @@ public class ResinAnvilItem extends AbstractPlasticEntityItem<ResinAnvilEntity> 
         Player player = context.getPlayer();
         if (player == null) return InteractionResult.PASS;
         Level level = context.getLevel();
-        if (level.isClientSide) return InteractionResult.SUCCESS;
+        if (level.isClientSide()) return InteractionResult.SUCCESS;
 
         BlockPos pos = context.getClickedPos();
         BaseSpawner spawner = blockEntity.getSpawner();
         BaseSpawnerAccessor accessor = (BaseSpawnerAccessor) spawner;
         SpawnData spawnData = accessor.invokeGetOrCreateNextSpawnData(level, level.getRandom(), pos);
         CompoundTag entityTag = spawnData.getEntityToSpawn().copy();
-        Entity entity = EntityType.loadEntityRecursive(entityTag, level, it -> it);
+        Entity entity = EntityType.loadEntityRecursive(entityTag, level, EntitySpawnReason.LOAD, it -> it);
         if (!(entity instanceof Mob mob)) return InteractionResult.FAIL;
 
         ResentmentUtil.setForcedResentment(mob, 100);
         HasMobBlockItem.saveMobInItem(level, mob, player, context.getItemInHand());
         accessor.invokeSetNextSpawnData(level, pos, new SpawnData());
-        accessor.setSpawnPotentials(SimpleWeightedRandomList.empty());
+        accessor.setSpawnPotentials(WeightedList.of());
         accessor.setDisplayEntity(null);
         blockEntity.setChanged();
         BlockState state = level.getBlockState(pos);
@@ -110,7 +111,7 @@ public class ResinAnvilItem extends AbstractPlasticEntityItem<ResinAnvilEntity> 
     private static boolean releaseCapturedMob(Level level, BlockPos pos, ItemStack stack) {
         Entity entity = HasMobBlockItem.getMobFromItem(level, stack);
         if (!(entity instanceof Mob mob)) return false;
-        mob.moveTo(pos.getCenter());
+        mob.snapTo(pos.getCenter());
         if (!level.noCollision(mob, mob.getBoundingBox().inflate(0.02D))) return false;
         if (!level.addFreshEntity(mob)) return false;
         stack.remove(ModComponents.SAVED_ENTITY);
@@ -187,7 +188,7 @@ public class ResinAnvilItem extends AbstractPlasticEntityItem<ResinAnvilEntity> 
             return InteractionResult.PASS;
         }
         HasMobBlockItem.saveMobInItem(player.level(), mob, player, stack);
-        return InteractionResult.sidedSuccess(player.level().isClientSide);
+        return InteractionResult.SUCCESS;
     }
 
 }

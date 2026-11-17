@@ -116,16 +116,14 @@ abstract class PistonBaseBlockMixin {
         method = "moveBlocks",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/world/level/Level;addDestroyBlockEffect("
-                     + "Lnet/minecraft/core/BlockPos;"
-                     + "Lnet/minecraft/world/level/block/state/BlockState;"
-                     + ")V"
+            target = "Lnet/minecraft/world/level/Level;levelEvent(ILnet/minecraft/core/BlockPos;I)V"
         )
     )
     private void plasticraft$skipBondedDestroyEffect(
         Level world,
+        int event,
         BlockPos pos,
-        BlockState state,
+        int stateId,
         Operation<Void> original,
         Level level,
         BlockPos pistonPos,
@@ -133,9 +131,9 @@ abstract class PistonBaseBlockMixin {
         boolean extending
     ) {
         Direction movementDirection = extending ? facing : facing.getOpposite();
-        if (BondedPistonReactions.shouldTreatAsPushable(world, pos, state, movementDirection)) {
+        if (BondedPistonReactions.shouldTreatAsPushable(world, pos, Block.stateById(stateId), movementDirection)) {
             return;
         }
-        original.call(world, pos, state);
+        original.call(world, event, pos, stateId);
     }
 }

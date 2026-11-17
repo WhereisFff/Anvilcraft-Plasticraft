@@ -68,14 +68,14 @@ public record MoldingEditPacket(
         if (!outcome.accepted()) return;
         if (this.command instanceof MoldingCommand.Undo || this.command instanceof MoldingCommand.Redo) {
             PacketDistributor.sendToPlayersTrackingChunk(
-                serverPlayer.serverLevel(),
-                new ChunkPos(this.chamberPos),
+                serverPlayer.level(),
+                ChunkPos.containing(this.chamberPos),
                 new MoldingProjectionSnapshotPacket(this.chamberPos, outcome.revision(), outcome.model())
             );
         } else {
             PacketDistributor.sendToPlayersTrackingChunk(
-                serverPlayer.serverLevel(),
-                new ChunkPos(this.chamberPos),
+                serverPlayer.level(),
+                ChunkPos.containing(this.chamberPos),
                 new MoldingProjectionDeltaPacket(
                     this.chamberPos,
                     this.baseRevision,

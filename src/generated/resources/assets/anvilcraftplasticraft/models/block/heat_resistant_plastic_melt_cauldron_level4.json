@@ -1,6 +1,5 @@
 {
   "parent": "minecraft:block/template_cauldron_full",
-  "render_type": "minecraft:cutout",
   "textures": {
     "bottom": "minecraft:block/cauldron_bottom",
     "content": "anvilcraftplasticraft:fluid/heat_resistant_plastic_melt",

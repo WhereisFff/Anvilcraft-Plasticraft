@@ -1,9 +1,6 @@
-@MethodsReturnNonnullByDefault
-@ParametersAreNonnullByDefault
 @Network
+@NullMarked
 package dev.anvilcraft.plasticraft.network;
 
 import dev.anvilcraft.lib.v2.network.register.Network;
-import net.minecraft.MethodsReturnNonnullByDefault;
-
-import javax.annotation.ParametersAreNonnullByDefault;
+import org.jspecify.annotations.NullMarked;

@@ -2,13 +2,14 @@ package dev.anvilcraft.plasticraft.mixin;
 
 import dev.anvilcraft.lib.v2.recipe.cache.ItemCache;
 import dev.anvilcraft.lib.v2.recipe.cache.item.ICacheElement;
-import dev.anvilcraft.lib.v2.recipe.cache.item.ItemHandlerCacheElement;
+import dev.anvilcraft.lib.v2.recipe.cache.item.ItemResourceHandlerCacheElement;
 import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
 import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.item.ItemResource;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -36,7 +37,7 @@ abstract class ItemCacheMixin {
     private Set<ICacheElement> outputs;
 
     @Shadow
-    private ItemHandlerCacheElement handlerElement(IItemHandler handler, int slot, Vec3 pos, Vec3 range) {
+    private ItemResourceHandlerCacheElement handlerElement(ResourceHandler<ItemResource> handler, int slot, Vec3 pos, Vec3 range) {
         throw new AssertionError();
     }
 
@@ -95,12 +96,12 @@ abstract class ItemCacheMixin {
         Set<ICacheElement> outputs = new LinkedHashSet<>();
         // 复用砧库的物理槽索引与范围登记，让重复扩展范围仍共用同一份事务库存。
         ItemCacheMixin access = (ItemCacheMixin) (Object) cache;
-        IItemHandler input = cauldron.getInput();
-        for (int slot = 0; slot < input.getSlots(); slot++) {
+        ResourceHandler<ItemResource> input = cauldron.getInput();
+        for (int slot = 0; slot < input.size(); slot++) {
             inputs.add(access.handlerElement(input, slot, anchor, RECIPE_CELL_RANGE));
         }
-        IItemHandler output = cauldron.getOutput();
-        for (int slot = 0; slot < output.getSlots(); slot++) {
+        ResourceHandler<ItemResource> output = cauldron.getOutput();
+        for (int slot = 0; slot < output.size(); slot++) {
             outputs.add(access.handlerElement(output, slot, anchor, RECIPE_CELL_RANGE));
         }
         return Map.entry(inputs, outputs);

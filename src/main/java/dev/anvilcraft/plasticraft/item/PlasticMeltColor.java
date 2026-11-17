@@ -70,7 +70,7 @@ public final class PlasticMeltColor {
 
     private static DyeColor get(CustomData data) {
         if (data == null) return DyeColor.WHITE;
-        return DyeColor.byName(data.copyTag().getString(COLOR_KEY), DyeColor.WHITE);
+        return DyeColor.byName(data.copyTag().getStringOr(COLOR_KEY, ""), DyeColor.WHITE);
     }
 
     private static void write(CompoundTag tag, DyeColor color) {

@@ -3,11 +3,11 @@
   "ingredients": [
     {
       "amount": 1000,
-      "fluid": "anvilcraftplasticraft:universal_plastic_melt"
+      "ingredient": "anvilcraftplasticraft:universal_plastic_melt"
     },
     {
       "amount": 1000,
-      "fluid": "minecraft:powder_snow"
+      "ingredient": "minecraft:powder_snow"
     }
   ],
   "results": [

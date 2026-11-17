@@ -11,19 +11,21 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.BlockItemStateProperties;
-import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.component.TypedEntityData;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.AttachFace;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.storage.TagValueInput;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Objects;
@@ -88,8 +90,10 @@ public final class MoldedTrayComponentSupport {
             null
         );
         if (blockEntity != null) {
-            CustomData customData = source.getOrDefault(DataComponents.BLOCK_ENTITY_DATA, CustomData.EMPTY);
-            if (!customData.isEmpty()) customData.loadInto(blockEntity, host.registryAccess());
+            var customData = source.get(DataComponents.BLOCK_ENTITY_DATA);
+            if (customData != null) {
+                customData.loadInto(blockEntity, host.registryAccess());
+            }
             blockEntity.applyComponentsFromItemStack(source);
             blockEntity.setLevel(host.level());
             blockEntityData = blockEntity.saveWithoutMetadata(host.registryAccess());
@@ -142,7 +146,7 @@ public final class MoldedTrayComponentSupport {
     ) {
         BlockEntity blockEntity = createBlockEntity(component.state(), position, level, host, cell);
         if (blockEntity == null) return null;
-        blockEntity.loadWithComponents(component.blockEntityData(), level.registryAccess());
+        blockEntity.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), component.blockEntityData()));
         blockEntity.setLevel(level);
         return blockEntity;
     }
@@ -160,8 +164,10 @@ public final class MoldedTrayComponentSupport {
         if (blockEntity instanceof PulseGeneratorBlockEntity
             || blockEntity instanceof ItemDetectorBlockEntity
             || blockEntity instanceof AdvancedComparatorBlockEntity) {
-            blockEntity.saveToItem(result, level.registryAccess());
-            CustomData.update(DataComponents.BLOCK_ENTITY_DATA, result, MoldedTrayComponentSupport::removeRuntimeData);
+            CompoundTag data = blockEntity.saveCustomOnly(level.registryAccess());
+            removeRuntimeData(data);
+            result.set(DataComponents.BLOCK_ENTITY_DATA, TypedEntityData.of(blockEntity.getType(), data));
+            result.applyComponents(blockEntity.collectComponents());
         }
         return result;
     }
@@ -202,7 +208,8 @@ public final class MoldedTrayComponentSupport {
 
     private static void removeRuntimeData(CompoundTag tag) {
         tag.remove("OutputSignal");
-        CompoundTag extraData = tag.getCompound("ExtraData");
+        CompoundTag extraData = tag.getCompoundOrEmpty("ExtraData");
+        extraData.remove("InputSignal");
         extraData.remove("Inputting");
         extraData.remove("State");
         extraData.remove("PhaseStartGameTime");

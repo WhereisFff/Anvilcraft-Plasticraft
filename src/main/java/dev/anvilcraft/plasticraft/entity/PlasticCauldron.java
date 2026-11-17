@@ -1,9 +1,9 @@
 package dev.anvilcraft.plasticraft.entity;
 
+import dev.anvilcraft.lib.v2.recipe.cache.ItemResourceHandlerCache;
 import dev.anvilcraft.plasticraft.molding.product.PlasticCauldronLayout;
-import dev.anvilcraft.lib.v2.recipe.cache.IItemHandlerCache;
 import dev.dubhe.anvilcraft.api.entity.IEntityCauldron;
-import dev.dubhe.anvilcraft.api.itemhandler.IItemHandlerHolder;
+import dev.dubhe.anvilcraft.api.itemhandler.IItemResourceHandlerHolder;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
@@ -11,8 +11,9 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.fluids.FluidStack;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 
@@ -20,7 +21,7 @@ import java.util.List;
  * 实体炼药锅的统一契约。硬化树脂炼药锅与成型塑料炼药锅共用实体实现，配方、方块实体与事件层仍只面向
  * 本接口编程，以便同一套锅语义也能代理到粘合后的方块形态。
  */
-public interface PlasticCauldron extends IItemHandlerCache, IItemHandlerHolder, IEntityCauldron {
+public interface PlasticCauldron extends ItemResourceHandlerCache, IItemResourceHandlerHolder, IEntityCauldron {
     /** 承载锅语义的实体本身；接口无法继承 {@link Entity}，跨类调用需要它兜底。 */
     AbstractPlasticEntity plasticraft$cauldronEntity();
 
@@ -37,14 +38,14 @@ public interface PlasticCauldron extends IItemHandlerCache, IItemHandlerHolder, 
     FluidStack plasticraft$bottomFluid();
 
     /** 从底层优先读写的流体句柄。 */
-    IFluidHandler plasticraft$bottomFluidAccess();
+    ResourceHandler<FluidResource> plasticraft$bottomFluidAccess();
 
     /** 当前可点燃的表层流体，大型锅覆盖为最顶层。 */
     default FluidStack plasticraft$ignitionFluid() {
         return this.plasticraft$bottomFluid();
     }
 
-    default IFluidHandler plasticraft$ignitionFluidAccess() {
+    default ResourceHandler<FluidResource> plasticraft$ignitionFluidAccess() {
         return this.plasticraft$bottomFluidAccess();
     }
 

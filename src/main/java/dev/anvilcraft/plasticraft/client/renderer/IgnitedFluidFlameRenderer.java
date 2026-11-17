@@ -2,22 +2,18 @@ package dev.anvilcraft.plasticraft.client.renderer;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.block.BlockRenderDispatcher;
-import net.minecraft.client.resources.model.BakedModel;
-import net.minecraft.client.resources.model.ModelResourceLocation;
-import net.minecraft.resources.ResourceLocation;
-import net.neoforged.neoforge.client.model.data.ModelData;
+import net.minecraft.client.renderer.Sheets;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.LightCoordsUtil;
 
 /** 使用营火动画贴图绘制可燃流体表面的火焰。 */
 public final class IgnitedFluidFlameRenderer {
-    private static final ModelResourceLocation ORDINARY_FLAME_MODEL = ModelResourceLocation.standalone(
-        ResourceLocation.fromNamespaceAndPath("anvilcraft", "block/fire_cauldron_fire4")
+    public static final PlasticBlockModel ORDINARY_FLAME_MODEL = new PlasticBlockModel(
+        Identifier.fromNamespaceAndPath("anvilcraft", "block/fire_cauldron_fire4")
     );
-    public static final ModelResourceLocation BLUE_FLAME_MODEL = ModelResourceLocation.standalone(
+    public static final PlasticBlockModel BLUE_FLAME_MODEL = new PlasticBlockModel(
         AnvilcraftPlasticraft.of("block/blue_fire")
     );
     private static final float ORDINARY_MODEL_SURFACE_Y = 15.0F / 16.0F - 0.001F;
@@ -69,27 +65,23 @@ public final class IgnitedFluidFlameRenderer {
         float surfaceY,
         float scale,
         int packedOverlay,
-        ModelResourceLocation modelLocation,
+        PlasticBlockModel modelLocation,
         float modelSurfaceY
     ) {
-        BlockRenderDispatcher dispatcher = Minecraft.getInstance().getBlockRenderer();
-        BakedModel model = dispatcher.getBlockModelShaper().getModelManager().getModel(modelLocation);
+        BlockStateModel model = modelLocation.baked();
         float centerOffset = (1.0F - scale) * 0.5F;
         poseStack.pushPose();
         poseStack.translate(centerOffset, surfaceY - modelSurfaceY * scale, centerOffset);
         poseStack.scale(scale, scale, scale);
-        dispatcher.getModelRenderer().renderModel(
+        PlasticBlockModel.render(
             poseStack.last(),
-            buffers.getBuffer(RenderType.CUTOUT),
-            null,
+            buffers.getBuffer(Sheets.cutoutBlockSheet()),
             model,
             1.0F,
             1.0F,
             1.0F,
-            LightTexture.FULL_BRIGHT,
-            packedOverlay,
-            ModelData.EMPTY,
-            RenderType.cutout()
+            LightCoordsUtil.FULL_BRIGHT,
+            packedOverlay
         );
         poseStack.popPose();
     }

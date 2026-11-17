@@ -11,7 +11,7 @@ import dev.anvilcraft.plasticraft.vapor.VaporizationOffer;
 import dev.anvilcraft.plasticraft.vapor.VaporizationSource;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.recipe.component.HasCauldronSimple;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.neoforged.neoforge.fluids.FluidStack;
 
@@ -22,13 +22,13 @@ import java.util.List;
 /** 把塑料工艺喷流配方接到气化源协议。 */
 public final class PlasmaJetVaporizationSource implements VaporizationSource {
     public static final PlasmaJetVaporizationSource INSTANCE = new PlasmaJetVaporizationSource();
-    public static final ResourceLocation ID = AnvilcraftPlasticraft.of("plasma_jets");
+    public static final Identifier ID = AnvilcraftPlasticraft.of("plasma_jets");
 
     private PlasmaJetVaporizationSource() {
     }
 
     @Override
-    public ResourceLocation id() {
+    public Identifier id() {
         return ID;
     }
 
@@ -55,7 +55,7 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
         if (inputRate <= 0) return null;
 
         List<RecipeHolder<PlasmaJetBlastingRecipe>> recipes = new ArrayList<>(
-            context.level().getRecipeManager().getAllRecipesFor(
+            context.level().recipeAccess().recipeMap().byType(
                 PlasticraftRecipeTypes.PLASMA_JET_BLASTING_TYPE.get()
             )
         );
@@ -79,7 +79,7 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
             if (units <= 0) continue;
             int inputAmount = units * inputUnit;
             int outputAmount = units * outputUnit;
-            ResourceLocation outputId = CondenserGas.canonicalize(gas.id());
+            Identifier outputId = CondenserGas.canonicalize(gas.id());
             if (outputId == null || !CondenserGas.isGas(outputId)) continue;
             return new VaporizationOffer(
                 availableInput.copyWithAmount(inputAmount),
@@ -102,7 +102,7 @@ public final class PlasmaJetVaporizationSource implements VaporizationSource {
     public void commit(VaporizationContext context, VaporizationOffer offer) {
         LargeCauldronBlockEntity cauldron = LargeCauldronVaporHost.unwrap(context.cauldron());
         if (cauldron == null) return;
-        ResourceLocation vaporType = CondenserGas.canonicalize(offer.output().type());
+        Identifier vaporType = CondenserGas.canonicalize(offer.output().type());
         if (CondenserGas.GASEOUS_EXPERIENCE.equals(vaporType)) {
             CondenserTowerProcess.emitLargeCauldronExperienceVaporParticles(
                 context.level(),

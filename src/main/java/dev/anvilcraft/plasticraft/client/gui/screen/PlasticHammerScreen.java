@@ -1,34 +1,32 @@
 package dev.anvilcraft.plasticraft.client.gui.screen;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import dev.anvilcraft.lib.v2.wheel.api.WheelSelectionEffect;
 import dev.anvilcraft.lib.v2.wheel.client.gui.component.WheelWidget;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticGeometryPicture;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticRenderGeometry;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderHelper;
 import dev.anvilcraft.plasticraft.client.renderer.entity.PlasticEntityRenderTransforms;
 import dev.anvilcraft.plasticraft.entity.AbstractPlasticEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.network.BondedPlasticHammerRotatePacket;
 import dev.anvilcraft.plasticraft.network.PlasticEntityHammerRotatePacket;
-import dev.dubhe.anvilcraft.client.support.RenderSupport;
-import javax.annotation.Nullable;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.renderer.LightTexture;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.block.BlockRenderDispatcher;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.network.PacketDistributor;
-import org.joml.Matrix4f;
+import net.neoforged.neoforge.client.network.ClientPacketDistributor;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 
@@ -81,7 +79,7 @@ public final class PlasticHammerScreen extends Screen {
             Direction direction = DIRECTIONS[i];
             sections[i] = new WheelWidget.RawSection(
                 directionLabel(direction),
-                (graphics, pose, width, height) -> this.renderDirectionIcon(graphics, pose, width, height, direction),
+                (graphics, pose, width, height) -> this.renderDirectionIcon(graphics, width, height, direction),
                 true
             );
         }
@@ -123,8 +121,7 @@ public final class PlasticHammerScreen extends Screen {
     }
 
     private void renderDirectionIcon(
-        GuiGraphics graphics,
-        PoseStack pose,
+        GuiGraphicsExtractor graphics,
         int width,
         int height,
         Direction direction
@@ -142,35 +139,29 @@ public final class PlasticHammerScreen extends Screen {
         );
         float availableSize = Math.min(width, height) * ICON_FILL_RATIO;
         float iconScale = (float) (availableSize / Math.max(1.0D, diagonal));
-        pose.pushPose();
-        pose.scale(iconScale, iconScale, iconScale);
-        pose.mulPose(new Matrix4f().scaling(1.0F, -1.0F, 1.0F));
-        if (camera.getEntity() != null) {
-            pose.mulPose(Axis.XP.rotationDegrees(camera.getEntity().getXRot()));
-            pose.mulPose(Axis.YP.rotationDegrees(camera.getEntity().getYRot() + 180.0F));
+        PoseStack pose = new PoseStack();
+        pose.scale(1, -1, -1);
+        if (camera.entity() != null) {
+            pose.mulPose(Axis.XP.rotationDegrees(camera.entity().getXRot()));
+            pose.mulPose(Axis.YP.rotationDegrees(camera.entity().getYRot() + 180.0F));
         }
         pose.translate(origin.x - center.x, origin.y - center.y, origin.z - center.z);
         PlasticEntityRenderTransforms.apply(pose, this.target, preview);
-        RenderSystem.setupGui3DDiffuseLighting(RenderSupport.L1, RenderSupport.L2);
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-        BlockRenderDispatcher dispatcher = minecraft.getBlockRenderer();
-        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
+        PlasticRenderGeometry buffers = new PlasticRenderGeometry();
         PlasticEntityRenderHelper.renderModel(
             this.target,
-            dispatcher,
             pose,
             buffers,
-            LightTexture.FULL_BLOCK
+            LightCoordsUtil.pack(15, 0)
         );
-        buffers.endLastBatch();
-        pose.popPose();
+        PlasticGeometryPicture.add(graphics, buffers, -width / 2, -height / 2, width, height, iconScale);
     }
 
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         if (this.wheel != null) {
             this.wheel.updatePointer(mouseX, mouseY);
-            this.wheel.render(graphics, mouseX, mouseY, partialTick);
+            this.wheel.extractRenderState(graphics, mouseX, mouseY, partialTick);
             this.syncSelection();
         }
     }
@@ -192,7 +183,9 @@ public final class PlasticHammerScreen extends Screen {
     }
 
     @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+    public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+        double mouseX = event.x();
+        double mouseY = event.y();
         if (this.wheel != null) {
             this.wheel.updatePointer(mouseX, mouseY);
             this.syncSelection();
@@ -221,13 +214,13 @@ public final class PlasticHammerScreen extends Screen {
         this.syncSelection();
         HammerPreview preview = this.selectedPreview();
         if (preview.valid() && this.bondedBlockPos == null) {
-            PacketDistributor.sendToServer(new PlasticEntityHammerRotatePacket(
+            ClientPacketDistributor.sendToServer(new PlasticEntityHammerRotatePacket(
                 this.target.getId(),
                 this.hand,
                 preview.orientation().attachmentFace()
             ));
         } else if (preview.valid()) {
-            PacketDistributor.sendToServer(new BondedPlasticHammerRotatePacket(
+            ClientPacketDistributor.sendToServer(new BondedPlasticHammerRotatePacket(
                 this.bondedBlockPos,
                 this.hand,
                 preview.orientation().attachmentFace()

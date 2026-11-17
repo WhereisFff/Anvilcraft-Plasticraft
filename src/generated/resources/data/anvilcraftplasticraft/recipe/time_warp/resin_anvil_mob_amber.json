@@ -12,15 +12,17 @@
         }
       ],
       "item": {
-        "items": "anvilcraftplasticraft:resin_anvil",
-        "predicates": {
-          "anvilcraft:saved_entity": {},
-          "anvillib:not": {
-            "anvilcraft:saved_entity": {
-              "is_monster": true
+        "components": {
+          "predicates": {
+            "anvilcraft:saved_entity": {},
+            "anvillib:not": {
+              "anvilcraft:saved_entity": {
+                "is_monster": true
+              }
             }
           }
-        }
+        },
+        "items": "anvilcraftplasticraft:resin_anvil"
       },
       "offset": [
         0.0,
@@ -35,15 +37,6 @@
     }
   ],
   "icon": {
-    "components": {
-      "anvilcraft:saved_entity": {
-        "isMonster": false,
-        "tag": {
-          "id": "minecraft:mooshroom"
-        }
-      }
-    },
-    "count": 1,
     "id": "anvilcraft:mob_amber_block"
   },
   "max_efficiency": 1,
@@ -79,14 +72,6 @@
   "outcomes": [
     {
       "type": "anvillib_recipe:spawn_item",
-      "components": {
-        "anvilcraft:saved_entity": {
-          "isMonster": false,
-          "tag": {
-            "id": "minecraft:mooshroom"
-          }
-        }
-      },
       "functions": [
         {
           "type": "anvillib_recipe:apply_tag_2_component",

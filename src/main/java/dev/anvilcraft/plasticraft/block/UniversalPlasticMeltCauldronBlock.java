@@ -1,13 +1,14 @@
 package dev.anvilcraft.plasticraft.block;
 
-import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
-import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
+import dev.dubhe.anvilcraft.block.cauldron.Layered4LevelCauldronBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.cauldron.CauldronInteraction;
+import net.minecraft.core.cauldron.CauldronInteractions;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.InsideBlockEffectApplier;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -28,7 +29,7 @@ public class UniversalPlasticMeltCauldronBlock extends Layered4LevelCauldronBloc
         0.25D
     );
     public static final EnumProperty<DyeColor> COLOR = EnumProperty.create("color", DyeColor.class);
-    private static final Map<PlasticMaterial, CauldronInteraction.InteractionMap> INTERACTIONS = createInteractions();
+    private static final Map<PlasticMaterial, CauldronInteraction.Dispatcher> INTERACTIONS = createInteractions();
     private final PlasticMaterial material;
 
     public UniversalPlasticMeltCauldronBlock(Properties properties, PlasticMaterial material) {
@@ -54,15 +55,15 @@ public class UniversalPlasticMeltCauldronBlock extends Layered4LevelCauldronBloc
     }
 
     @Override
-    public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
+    public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity, InsideBlockEffectApplier effectApplier, boolean isPrecise) {
         if (this.containsEntity(state, pos, entity)) entity.makeStuckInBlock(state, STICK_SPEED);
     }
 
     public static void registerInteractions() {
         for (PlasticMaterial material : PlasticMaterial.values()) {
-            CauldronInteraction.InteractionMap interactions = INTERACTIONS.get(material);
-            interactions.map().put(Items.BUCKET, (state, level, pos, player, hand, stack) ->
-                CauldronInteraction.fillBucket(
+            CauldronInteraction.Dispatcher interactions = INTERACTIONS.get(material);
+            interactions.put(Items.BUCKET, (state, level, pos, player, hand, stack) ->
+                CauldronInteractions.fillBucket(
                     state,
                     level,
                     pos,
@@ -75,9 +76,9 @@ public class UniversalPlasticMeltCauldronBlock extends Layered4LevelCauldronBloc
                     SoundEvents.BUCKET_FILL
                 )
             );
-            CauldronInteraction.EMPTY.map().put(
+            CauldronInteractions.EMPTY.put(
                 material.bucket(),
-                (state, level, pos, player, hand, stack) -> CauldronInteraction.emptyBucket(
+                (state, level, pos, player, hand, stack) -> CauldronInteractions.emptyBucket(
                     level,
                     pos,
                     player,
@@ -108,12 +109,12 @@ public class UniversalPlasticMeltCauldronBlock extends Layered4LevelCauldronBloc
             : state;
     }
 
-    private static Map<PlasticMaterial, CauldronInteraction.InteractionMap> createInteractions() {
-        Map<PlasticMaterial, CauldronInteraction.InteractionMap> result = new EnumMap<>(PlasticMaterial.class);
+    private static Map<PlasticMaterial, CauldronInteraction.Dispatcher> createInteractions() {
+        Map<PlasticMaterial, CauldronInteraction.Dispatcher> result = new EnumMap<>(PlasticMaterial.class);
         for (PlasticMaterial material : PlasticMaterial.values()) {
             result.put(
                 material,
-                CauldronInteraction.newInteractionMap("anvilcraftplasticraft_" + material.key() + "_melt")
+                new CauldronInteraction.Dispatcher()
             );
         }
         return result;

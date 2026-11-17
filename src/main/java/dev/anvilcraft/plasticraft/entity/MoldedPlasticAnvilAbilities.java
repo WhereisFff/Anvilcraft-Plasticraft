@@ -33,10 +33,10 @@ public final class MoldedPlasticAnvilAbilities {
         BlockPos centerPos,
         float fallDistance
     ) {
-        if (!entity.isMoldedGiantAnvil()) return;
+        if (!entity.isMoldedGiantAnvil() || !(entity.level() instanceof ServerLevel serverLevel)) return;
         // 巨型事件把实体类型固定为 FallingGiantAnvilEntity，直接复用公开处理器可避免伪造代理实体。
         AnvilEvent.GiantOnLand giantEvent = new AnvilEvent.GiantOnLand(
-            entity.level(),
+            serverLevel,
             centerPos.above(),
             null,
             fallDistance

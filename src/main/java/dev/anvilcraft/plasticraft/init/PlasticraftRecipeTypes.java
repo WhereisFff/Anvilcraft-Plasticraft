@@ -1,9 +1,10 @@
 package dev.anvilcraft.plasticraft.init;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import dev.anvilcraft.plasticraft.recipe.FluidFastCookingRecipe;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
+import dev.anvilcraft.plasticraft.recipe.FluidFastCookingRecipe;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
+import dev.anvilcraft.plasticraft.recipe.PlasticEnrichmentRecipe;
 import dev.anvilcraft.plasticraft.recipe.PlasticMoldingChamberRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.FastCookingRecipe;
 import net.minecraft.core.registries.Registries;
@@ -31,11 +32,11 @@ public final class PlasticraftRecipeTypes {
     );
 
     public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<FastCookingRecipe>> FLUID_FAST_COOKING =
-        SERIALIZERS.register("fluid_fast_cooking", FluidFastCookingRecipe.Serializer::new);
+        SERIALIZERS.register("fluid_fast_cooking", () -> FluidFastCookingRecipe.SERIALIZER);
     public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<PlasticMoldingChamberRecipe>>
         PLASTIC_MOLDING_CHAMBER = SERIALIZERS.register(
             "plastic_molding_chamber",
-            PlasticMoldingChamberRecipe.Serializer::new
+            () -> PlasticMoldingChamberRecipe.SERIALIZER
         );
 
     public static final DeferredHolder<RecipeType<?>, RecipeType<PlasmaJetBlastingRecipe>> PLASMA_JET_BLASTING_TYPE =
@@ -48,7 +49,7 @@ public final class PlasticraftRecipeTypes {
     public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<PlasmaJetBlastingRecipe>>
         PLASMA_JET_BLASTING_SERIALIZER = SERIALIZERS.register(
             "plasma_jet_blasting",
-            PlasmaJetBlastingRecipe.Serializer::new
+            () -> PlasmaJetBlastingRecipe.SERIALIZER
         );
 
     public static final DeferredHolder<RecipeType<?>, RecipeType<CondenserRecipe>> CONDENSER_TYPE =
@@ -59,12 +60,13 @@ public final class PlasticraftRecipeTypes {
             }
         });
     public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<CondenserRecipe>> CONDENSER_SERIALIZER =
-        SERIALIZERS.register("condenser", CondenserRecipe.Serializer::new);
+        SERIALIZERS.register("condenser", () -> CondenserRecipe.SERIALIZER);
 
     private PlasticraftRecipeTypes() {
     }
 
     public static void register(IEventBus modEventBus) {
+        SERIALIZERS.register("fluid_enrichment", () -> PlasticEnrichmentRecipe.SERIALIZER);
         TYPES.register(modEventBus);
         SERIALIZERS.register(modEventBus);
         INGREDIENT_TYPES.register(modEventBus);

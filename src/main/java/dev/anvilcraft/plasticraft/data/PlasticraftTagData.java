@@ -10,13 +10,7 @@ import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.block.ModFluidTags;
 import dev.dubhe.anvilcraft.init.item.ModItems;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.ResourceKey;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.ItemLike;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 
 /** 生成 Plasticraft 使用的方块、物品和流体标签。 */
@@ -33,21 +27,18 @@ public final class PlasticraftTagData {
     private static void registerBlockTags() {
         AnvilcraftPlasticraft.REGISTRUM.addDataGenerator(ProviderType.BLOCK_TAGS, provider -> {
             // 树脂冲击兼容标签必须包含 AnvilCraft 本体树脂块，供跨模组冲击逻辑查询。
-            provider.addTag(PlasticraftBlockTags.RESIN_SHOCK_COMPATIBLE)
-                .add(ResourceKey.create(
-                    Registries.BLOCK,
-                    BuiltInRegistries.BLOCK.getKey(ModBlocks.RESIN_BLOCK.get())
-                ));
+            provider.tag(PlasticraftBlockTags.RESIN_SHOCK_COMPATIBLE)
+                .add(ModBlocks.RESIN_BLOCK.get());
 
             // 熔融塑料接触这些含水或低温方块时，可以进入冷却凝固流程。
-            provider.addTag(PlasticraftBlockTags.PLASTIC_MELT_COOLANTS).add(
-                blockKey(Blocks.WATER),
-                blockKey(Blocks.ICE),
-                blockKey(Blocks.PACKED_ICE),
-                blockKey(Blocks.BLUE_ICE),
-                blockKey(Blocks.SNOW_BLOCK),
-                blockKey(Blocks.POWDER_SNOW),
-                blockKey(Blocks.SNOW)
+            provider.tag(PlasticraftBlockTags.PLASTIC_MELT_COOLANTS).add(
+                Blocks.WATER,
+                Blocks.ICE,
+                Blocks.PACKED_ICE,
+                Blocks.BLUE_ICE,
+                Blocks.SNOW_BLOCK,
+                Blocks.POWDER_SNOW,
+                Blocks.SNOW
             );
         });
     }
@@ -55,151 +46,143 @@ public final class PlasticraftTagData {
     private static void registerItemTags() {
         AnvilcraftPlasticraft.REGISTRUM.addDataGenerator(ProviderType.ITEM_TAGS, provider -> {
             // 树脂催化剂的材料种子；合成和锻造产生的后续制品由运行时配方闭包补齐。
-            provider.addTag(PlasticraftItemTags.RESIN_ITEMS).add(
-                itemKey(ModItems.RESIN),
-                itemKey(ModItems.HARDEND_RESIN),
-                itemKey(ModBlocks.RESIN_BLOCK),
-                itemKey(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET),
-                itemKey(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK),
-                itemKey(PlasticraftBlocks.RESIN_ANVIL),
-                itemKey(PlasticraftBlocks.HARDEND_RESIN_ANVIL),
-                itemKey(PlasticraftBlocks.HARDEND_RESIN_CAULDRON),
-                itemKey(PlasticraftItems.RESIN_ANVIL_HAMMER)
+            provider.tag(PlasticraftItemTags.RESIN_ITEMS).add(
+                ModItems.RESIN.asItem(),
+                ModItems.HARDEND_RESIN.asItem(),
+                ModBlocks.RESIN_BLOCK.asItem(),
+                PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asItem(),
+                PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem(),
+                PlasticraftBlocks.RESIN_ANVIL.asItem(),
+                PlasticraftBlocks.HARDEND_RESIN_ANVIL.asItem(),
+                PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asItem(),
+                PlasticraftItems.RESIN_ANVIL_HAMMER.asItem()
             );
 
             // 冷却物品标签供固液配方消耗；同时覆盖原版冰雪与 AnvilCraft 霜钢制品。
-            provider.addTag(PlasticraftItemTags.COLD_ITEMS).add(
-                itemKey(Blocks.ICE),
-                itemKey(Blocks.PACKED_ICE),
-                itemKey(Blocks.BLUE_ICE),
-                itemKey(Blocks.SNOW_BLOCK),
-                itemKey(Items.SNOWBALL),
-                itemKey(Blocks.SNOW),
-                itemKey(Items.POWDER_SNOW_BUCKET),
-                itemKey(ModBlocks.SLIDING_RAIL),
-                itemKey(ModBlocks.POWERED_SLIDING_RAIL),
-                itemKey(ModBlocks.ACTIVATOR_SLIDING_RAIL),
-                itemKey(ModBlocks.DETECTOR_SLIDING_RAIL),
-                itemKey(ModBlocks.SLIDING_RAIL_STOP),
-                itemKey(ModBlocks.FROST_ANVIL),
-                itemKey(ModBlocks.FROST_GRINDSTONE),
-                itemKey(ModBlocks.FROST_SMITHING_TABLE),
-                itemKey(ModBlocks.FROST_METAL_BLOCK),
-                itemKey(ModBlocks.CUT_FROST_METAL_BLOCK),
-                itemKey(ModBlocks.CUT_FROST_METAL_PILLAR),
-                itemKey(ModBlocks.CUT_FROST_METAL_SLAB),
-                itemKey(ModBlocks.CUT_FROST_METAL_STAIRS),
-                itemKey(ModBlocks.FROST_DECO_BLOCK),
-                itemKey(ModBlocks.FROST_DECO_OUTLINE),
-                itemKey(ModBlocks.FROST_GLASS),
-                itemKey(ModItems.FROST_METAL_INGOT),
-                itemKey(ModItems.FROST_METAL_NUGGET),
-                itemKey(ModItems.FROST_METAL_PICKAXE),
-                itemKey(ModItems.FROST_METAL_AXE),
-                itemKey(ModItems.FROST_METAL_SHOVEL),
-                itemKey(ModItems.FROST_METAL_HOE),
-                itemKey(ModItems.FROST_METAL_SWORD),
-                itemKey(ModItems.FROST_METAL_HEAVY_HALBERD),
-                itemKey(ModItems.FROST_METAL_RESONATOR),
-                itemKey(ModItems.FROST_METAL_UPGRADE_SMITHING_TEMPLATE)
+            provider.tag(PlasticraftItemTags.COLD_ITEMS).add(
+                Blocks.ICE.asItem(),
+                Blocks.PACKED_ICE.asItem(),
+                Blocks.BLUE_ICE.asItem(),
+                Blocks.SNOW_BLOCK.asItem(),
+                Items.SNOWBALL.asItem(),
+                Blocks.SNOW.asItem(),
+                Items.POWDER_SNOW_BUCKET.asItem(),
+                ModBlocks.SLIDING_RAIL.asItem(),
+                ModBlocks.POWERED_SLIDING_RAIL.asItem(),
+                ModBlocks.ACTIVATOR_SLIDING_RAIL.asItem(),
+                ModBlocks.DETECTOR_SLIDING_RAIL.asItem(),
+                ModBlocks.SLIDING_RAIL_STOP.asItem(),
+                ModBlocks.FROST_ANVIL.asItem(),
+                ModBlocks.FROST_GRINDSTONE.asItem(),
+                ModBlocks.FROST_SMITHING_TABLE.asItem(),
+                ModBlocks.FROST_METAL_BLOCK.asItem(),
+                ModBlocks.CUT_FROST_METAL_BLOCK.asItem(),
+                ModBlocks.CUT_FROST_METAL_PILLAR.asItem(),
+                ModBlocks.CUT_FROST_METAL_SLAB.asItem(),
+                ModBlocks.CUT_FROST_METAL_STAIRS.asItem(),
+                ModBlocks.FROST_DECO_BLOCK.asItem(),
+                ModBlocks.FROST_DECO_OUTLINE.asItem(),
+                ModBlocks.FROST_GLASS.asItem(),
+                ModItems.FROST_METAL_INGOT.asItem(),
+                ModItems.FROST_METAL_NUGGET.asItem(),
+                ModItems.FROST_METAL_PICKAXE.asItem(),
+                ModItems.FROST_METAL_AXE.asItem(),
+                ModItems.FROST_METAL_SHOVEL.asItem(),
+                ModItems.FROST_METAL_HOE.asItem(),
+                ModItems.FROST_METAL_SWORD.asItem(),
+                ModItems.FROST_METAL_HEAVY_HALBERD.asItem(),
+                ModItems.FROST_METAL_RESONATOR.asItem(),
+                ModItems.FROST_METAL_UPGRADE_SMITHING_TEMPLATE.asItem()
             );
 
             // 浮霜金属催化剂覆盖浮霜金属及其衍生制品，冰雪和滑轨仅作为冷却物品，不参与催化。
-            provider.addTag(PlasticraftItemTags.FROST_METAL_ITEMS).add(
-                itemKey(ModBlocks.FROST_ANVIL),
-                itemKey(ModBlocks.FROST_GRINDSTONE),
-                itemKey(ModBlocks.FROST_SMITHING_TABLE),
-                itemKey(ModBlocks.FROST_METAL_BLOCK),
-                itemKey(ModBlocks.CUT_FROST_METAL_BLOCK),
-                itemKey(ModBlocks.CUT_FROST_METAL_PILLAR),
-                itemKey(ModBlocks.CUT_FROST_METAL_SLAB),
-                itemKey(ModBlocks.CUT_FROST_METAL_STAIRS),
-                itemKey(ModBlocks.FROST_DECO_BLOCK),
-                itemKey(ModBlocks.FROST_DECO_OUTLINE),
-                itemKey(ModItems.FROST_METAL_INGOT),
-                itemKey(ModItems.FROST_METAL_NUGGET),
-                itemKey(ModItems.FROST_METAL_PICKAXE),
-                itemKey(ModItems.FROST_METAL_AXE),
-                itemKey(ModItems.FROST_METAL_SHOVEL),
-                itemKey(ModItems.FROST_METAL_HOE),
-                itemKey(ModItems.FROST_METAL_SWORD),
-                itemKey(ModItems.FROST_ANVIL_HAMMER),
-                itemKey(ModItems.FROST_DRAGON_ROD),
-                itemKey(ModItems.FROST_METAL_HEAVY_HALBERD),
-                itemKey(ModItems.FROST_METAL_RESONATOR),
-                itemKey(ModItems.FROST_METAL_UPGRADE_SMITHING_TEMPLATE)
+            provider.tag(PlasticraftItemTags.FROST_METAL_ITEMS).add(
+                ModBlocks.FROST_ANVIL.asItem(),
+                ModBlocks.FROST_GRINDSTONE.asItem(),
+                ModBlocks.FROST_SMITHING_TABLE.asItem(),
+                ModBlocks.FROST_METAL_BLOCK.asItem(),
+                ModBlocks.CUT_FROST_METAL_BLOCK.asItem(),
+                ModBlocks.CUT_FROST_METAL_PILLAR.asItem(),
+                ModBlocks.CUT_FROST_METAL_SLAB.asItem(),
+                ModBlocks.CUT_FROST_METAL_STAIRS.asItem(),
+                ModBlocks.FROST_DECO_BLOCK.asItem(),
+                ModBlocks.FROST_DECO_OUTLINE.asItem(),
+                ModItems.FROST_METAL_INGOT.asItem(),
+                ModItems.FROST_METAL_NUGGET.asItem(),
+                ModItems.FROST_METAL_PICKAXE.asItem(),
+                ModItems.FROST_METAL_AXE.asItem(),
+                ModItems.FROST_METAL_SHOVEL.asItem(),
+                ModItems.FROST_METAL_HOE.asItem(),
+                ModItems.FROST_METAL_SWORD.asItem(),
+                ModItems.FROST_ANVIL_HAMMER.asItem(),
+                ModItems.FROST_DRAGON_ROD.asItem(),
+                ModItems.FROST_METAL_HEAVY_HALBERD.asItem(),
+                ModItems.FROST_METAL_RESONATOR.asItem(),
+                ModItems.FROST_METAL_UPGRADE_SMITHING_TEMPLATE.asItem()
             );
 
             // 余烬金属催化剂覆盖余烬铁砧本体及其金属制品，供耐热塑料反应查询。
-            provider.addTag(PlasticraftItemTags.EMBER_METAL_ITEMS).add(
-                itemKey(ModBlocks.EMBER_ANVIL),
-                itemKey(ModBlocks.EMBER_GRINDSTONE),
-                itemKey(ModBlocks.EMBER_SMITHING_TABLE),
-                itemKey(ModBlocks.EMBER_METAL_BLOCK),
-                itemKey(ModBlocks.CUT_EMBER_METAL_BLOCK),
-                itemKey(ModBlocks.CUT_EMBER_METAL_PILLAR),
-                itemKey(ModBlocks.CUT_EMBER_METAL_SLAB),
-                itemKey(ModBlocks.CUT_EMBER_METAL_STAIRS),
-                itemKey(ModBlocks.EMBER_DECO_BLOCK),
-                itemKey(ModBlocks.EMBER_DECO_OUTLINE),
-                itemKey(ModBlocks.EMBER_GLASS),
-                itemKey(ModItems.EMBER_METAL_INGOT),
-                itemKey(ModItems.EMBER_METAL_NUGGET),
-                itemKey(ModItems.EMBER_METAL_PICKAXE),
-                itemKey(ModItems.EMBER_METAL_AXE),
-                itemKey(ModItems.EMBER_METAL_SHOVEL),
-                itemKey(ModItems.EMBER_METAL_HOE),
-                itemKey(ModItems.EMBER_METAL_SWORD),
-                itemKey(ModItems.EMBER_ANVIL_HAMMER),
-                itemKey(ModItems.EMBER_DRAGON_ROD),
-                itemKey(ModItems.EMBER_METAL_HEAVY_HALBERD),
-                itemKey(ModItems.EMBER_METAL_RESONATOR),
-                itemKey(ModItems.EMBER_METAL_UPGRADE_SMITHING_TEMPLATE)
+            provider.tag(PlasticraftItemTags.EMBER_METAL_ITEMS).add(
+                ModBlocks.EMBER_ANVIL.asItem(),
+                ModBlocks.EMBER_GRINDSTONE.asItem(),
+                ModBlocks.EMBER_SMITHING_TABLE.asItem(),
+                ModBlocks.EMBER_METAL_BLOCK.asItem(),
+                ModBlocks.CUT_EMBER_METAL_BLOCK.asItem(),
+                ModBlocks.CUT_EMBER_METAL_PILLAR.asItem(),
+                ModBlocks.CUT_EMBER_METAL_SLAB.asItem(),
+                ModBlocks.CUT_EMBER_METAL_STAIRS.asItem(),
+                ModBlocks.EMBER_DECO_BLOCK.asItem(),
+                ModBlocks.EMBER_DECO_OUTLINE.asItem(),
+                ModBlocks.EMBER_GLASS.asItem(),
+                ModItems.EMBER_METAL_INGOT.asItem(),
+                ModItems.EMBER_METAL_NUGGET.asItem(),
+                ModItems.EMBER_METAL_PICKAXE.asItem(),
+                ModItems.EMBER_METAL_AXE.asItem(),
+                ModItems.EMBER_METAL_SHOVEL.asItem(),
+                ModItems.EMBER_METAL_HOE.asItem(),
+                ModItems.EMBER_METAL_SWORD.asItem(),
+                ModItems.EMBER_ANVIL_HAMMER.asItem(),
+                ModItems.EMBER_DRAGON_ROD.asItem(),
+                ModItems.EMBER_METAL_HEAVY_HALBERD.asItem(),
+                ModItems.EMBER_METAL_RESONATOR.asItem(),
+                ModItems.EMBER_METAL_UPGRADE_SMITHING_TEMPLATE.asItem()
             );
 
-            provider.addTag(PlasticraftItemTags.ROYAL_STEEL_ITEMS).add(
-                itemKey(ModBlocks.ROYAL_ANVIL),
-                itemKey(ModBlocks.ROYAL_GRINDSTONE),
-                itemKey(ModBlocks.ROYAL_SMITHING_TABLE),
-                itemKey(ModBlocks.ROYAL_STEEL_BLOCK),
-                itemKey(ModBlocks.SMOOTH_ROYAL_STEEL_BLOCK),
-                itemKey(ModBlocks.CUT_ROYAL_STEEL_BLOCK),
-                itemKey(ModBlocks.CUT_ROYAL_STEEL_PILLAR),
-                itemKey(ModBlocks.CUT_ROYAL_STEEL_SLAB),
-                itemKey(ModBlocks.CUT_ROYAL_STEEL_STAIRS),
-                itemKey(ModItems.ROYAL_STEEL_INGOT),
-                itemKey(ModItems.ROYAL_STEEL_NUGGET),
-                itemKey(ModItems.ROYAL_STEEL_PICKAXE),
-                itemKey(ModItems.ROYAL_STEEL_AXE),
-                itemKey(ModItems.ROYAL_STEEL_SHOVEL),
-                itemKey(ModItems.ROYAL_STEEL_HOE),
-                itemKey(ModItems.ROYAL_STEEL_SWORD),
-                itemKey(ModItems.ROYAL_ANVIL_HAMMER),
-                itemKey(ModItems.ROYAL_DRAGON_ROD),
-                itemKey(ModItems.ROYAL_STEEL_UPGRADE_SMITHING_TEMPLATE)
+            provider.tag(PlasticraftItemTags.ROYAL_STEEL_ITEMS).add(
+                ModBlocks.ROYAL_ANVIL.asItem(),
+                ModBlocks.ROYAL_GRINDSTONE.asItem(),
+                ModBlocks.ROYAL_SMITHING_TABLE.asItem(),
+                ModBlocks.ROYAL_STEEL_BLOCK.asItem(),
+                ModBlocks.SMOOTH_ROYAL_STEEL_BLOCK.asItem(),
+                ModBlocks.CUT_ROYAL_STEEL_BLOCK.asItem(),
+                ModBlocks.CUT_ROYAL_STEEL_PILLAR.asItem(),
+                ModBlocks.CUT_ROYAL_STEEL_SLAB.asItem(),
+                ModBlocks.CUT_ROYAL_STEEL_STAIRS.asItem(),
+                ModItems.ROYAL_STEEL_INGOT.asItem(),
+                ModItems.ROYAL_STEEL_NUGGET.asItem(),
+                ModItems.ROYAL_STEEL_PICKAXE.asItem(),
+                ModItems.ROYAL_STEEL_AXE.asItem(),
+                ModItems.ROYAL_STEEL_SHOVEL.asItem(),
+                ModItems.ROYAL_STEEL_HOE.asItem(),
+                ModItems.ROYAL_STEEL_SWORD.asItem(),
+                ModItems.ROYAL_ANVIL_HAMMER.asItem(),
+                ModItems.ROYAL_DRAGON_ROD.asItem(),
+                ModItems.ROYAL_STEEL_UPGRADE_SMITHING_TEMPLATE.asItem()
             );
             // 浮霜玻璃作为透明塑料催化剂单独建标签，效率按玻璃种类参与半速计算。
-            provider.addTag(PlasticraftItemTags.FROST_GLASS_ITEMS).add(itemKey(ModBlocks.FROST_GLASS));
+            provider.tag(PlasticraftItemTags.FROST_GLASS_ITEMS).add(ModBlocks.FROST_GLASS.asItem());
             // 皇家玻璃作为透明塑料催化剂单独建标签，避免与皇家钢催化语义混用。
-            provider.addTag(PlasticraftItemTags.ROYAL_GLASS_ITEMS).add(itemKey(ModBlocks.TEMPERING_GLASS));
+            provider.tag(PlasticraftItemTags.ROYAL_GLASS_ITEMS).add(ModBlocks.TEMPERING_GLASS.asItem());
         });
     }
 
     private static void registerFluidTags() {
         // 高热燃料的静止与流动流体都属于 AnvilCraft 可点燃流体。
         AnvilcraftPlasticraft.REGISTRUM.addDataGenerator(ProviderType.FLUID_TAGS, provider -> provider
-            .addTag(ModFluidTags.IGNITABLE)
+            .tag(ModFluidTags.IGNITABLE)
             .add(
-                ResourceKey.create(Registries.FLUID, PlasticraftFluids.HIGH_HEAT_FUEL.getId()),
-                ResourceKey.create(Registries.FLUID, PlasticraftFluids.FLOWING_HIGH_HEAT_FUEL.getId())
+                PlasticraftFluids.HIGH_HEAT_FUEL.get(),
+                PlasticraftFluids.FLOWING_HIGH_HEAT_FUEL.get()
             ));
-    }
-
-    private static ResourceKey<Block> blockKey(Block block) {
-        return ResourceKey.create(Registries.BLOCK, BuiltInRegistries.BLOCK.getKey(block));
-    }
-
-    private static ResourceKey<Item> itemKey(ItemLike item) {
-        return ResourceKey.create(Registries.ITEM, BuiltInRegistries.ITEM.getKey(item.asItem()));
     }
 }

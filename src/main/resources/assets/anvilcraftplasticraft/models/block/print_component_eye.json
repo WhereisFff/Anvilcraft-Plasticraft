@@ -3,7 +3,7 @@
 	"credit": "Made with Blockbench",
 	"parent": "minecraft:block/block",
 	"ambientocclusion": false,
-	"render_type": "minecraft:cutout",
+
 	"textures": {
 		"1": "anvilcraftplasticraft:block/print_component",
 		"particle": "anvilcraftplasticraft:block/print_component"

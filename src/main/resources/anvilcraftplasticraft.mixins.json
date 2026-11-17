@@ -2,8 +2,9 @@
   "required": true,
   "minVersion": "0.8",
   "package": "dev.anvilcraft.plasticraft.mixin",
-  "compatibilityLevel": "JAVA_21",
+  "compatibilityLevel": "JAVA_25",
   "mixins": [
+    "PlasticJewelerTradesMixin",
     "AbstractArrowCollisionMixin",
     "AdhesiveEntityLifecycleMixin",
     "BaseLaserBlockEntityMixin",
@@ -29,7 +30,11 @@
     "PistonBaseBlockMixin",
     "PistonMovingBlockEntityMixin",
     "PistonStructureResolverMixin",
+    "PlasticEntityPickBlockMixin",
     "PlasticWorldChangeMixin",
+    "PlasticItemTransferMixin",
+    "PlasticCauldronRecipeMixin",
+    "CrateStorageCodecMixin",
     "PlasticCrateSearchMixin",
     "PlasticCrateStorageAccessMixin",
     "PlasticCrateStorageViewMixin",
@@ -42,11 +47,11 @@
     "VillagerExperienceAccessor"
   ],
   "client": [
+    "CondenserValvePreviewMixin",
     "CreativeModeInventoryScreenMixin",
     "CreativeModeInventoryScreenAccessor",
     "CreativeModeTabAccessor",
     "EntityRenderDispatcherMixin",
-    "PlasticEntityPickBlockMixin",
     "PlasticEntitySelectionMixin",
     "PlasticPlacementPreviewMixin",
     "PistonHeadRendererMixin"

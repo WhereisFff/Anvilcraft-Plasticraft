@@ -4,7 +4,9 @@ import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.transaction.Transaction;
+import org.jspecify.annotations.Nullable;
 
 /** 把铁砧工艺大型炼药锅适配到塑料工艺气化运行时。 */
 public record LargeCauldronVaporHost(LargeCauldronBlockEntity cauldron) implements VaporizationCauldron {
@@ -25,7 +27,11 @@ public record LargeCauldronVaporHost(LargeCauldronBlockEntity cauldron) implemen
 
     @Override
     public FluidStack drainVaporizationFluid(FluidStack resource, IFluidHandler.FluidAction action) {
-        return this.cauldron.getFluids().drainStoredFluid(resource, action);
+        try (var tx = Transaction.openRoot()) {
+            int amount = this.cauldron.getFluids().extract(FluidResource.of(resource), resource.getAmount(), tx);
+            if (action.execute()) tx.commit();
+            return resource.copyWithAmount(amount);
+        }
     }
 
     public static @Nullable LargeCauldronBlockEntity unwrap(VaporizationCauldron cauldron) {

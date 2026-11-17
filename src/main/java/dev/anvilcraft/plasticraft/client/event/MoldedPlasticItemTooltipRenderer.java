@@ -6,7 +6,7 @@ import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticContentSummary;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent;
 import net.minecraft.client.gui.screens.inventory.tooltip.TooltipRenderUtil;
 import net.minecraft.network.chat.Component;
@@ -19,7 +19,6 @@ import java.util.List;
 
 @EventBusSubscriber(modid = AnvilcraftPlasticraft.MOD_ID, value = Dist.CLIENT)
 public final class MoldedPlasticItemTooltipRenderer {
-    private static final int TOOLTIP_Z = 400;
     private static final int TOOLTIP_GAP = 5;
     private static final int MAIN_TOOLTIP_OFFSET = 13;
 
@@ -43,7 +42,7 @@ public final class MoldedPlasticItemTooltipRenderer {
     }
 
     private static void renderAbovePointer(
-        GuiGraphics graphics,
+        GuiGraphicsExtractor graphics,
         List<Component> lines,
         int mouseX,
         int mouseY
@@ -54,7 +53,7 @@ public final class MoldedPlasticItemTooltipRenderer {
             .map(ClientTooltipComponent::create)
             .toList();
         int width = components.stream().mapToInt(component -> component.getWidth(font)).max().orElse(0);
-        int height = components.stream().mapToInt(ClientTooltipComponent::getHeight).sum();
+        int height = components.stream().mapToInt(component -> component.getHeight(font)).sum();
         int textX = Math.clamp(
             mouseX - width / 2,
             4,
@@ -62,26 +61,13 @@ public final class MoldedPlasticItemTooltipRenderer {
         );
         int textY = Math.max(4, mouseY - height - TOOLTIP_GAP - TooltipRenderUtil.PADDING_BOTTOM);
 
-        graphics.pose().pushPose();
-        graphics.drawManaged(() -> TooltipRenderUtil.renderTooltipBackground(
-            graphics,
-            textX,
-            textY,
-            width,
-            height,
-            TOOLTIP_Z
-        ));
-        graphics.pose().translate(0.0F, 0.0F, TOOLTIP_Z);
+        graphics.nextStratum();
+        TooltipRenderUtil.extractTooltipBackground(graphics, textX, textY, width, height, null);
         int lineY = textY;
         for (ClientTooltipComponent component : components) {
-            component.renderText(font, textX, lineY, graphics.pose().last().pose(), graphics.bufferSource());
-            lineY += component.getHeight();
+            component.extractText(graphics, font, textX, lineY);
+            component.extractImage(font, textX, lineY, width, height, graphics);
+            lineY += component.getHeight(font);
         }
-        lineY = textY;
-        for (ClientTooltipComponent component : components) {
-            component.renderImage(font, textX, lineY, graphics);
-            lineY += component.getHeight();
-        }
-        graphics.pose().popPose();
     }
 }

@@ -14,11 +14,14 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.fluids.FluidStack;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.fluid.FluidUtil;
 import org.jspecify.annotations.Nullable;
 import snownee.jade.api.Accessor;
 import snownee.jade.api.BlockAccessor;
@@ -36,8 +39,8 @@ import java.util.List;
 import java.util.Locale;
 
 /** 统一塑料容器的总存量标题与流体行，共享容量只统计一次。 */
-public enum PlasticFluidStorageProvider implements IServerExtensionProvider<CompoundTag>,
-    IClientExtensionProvider<CompoundTag, FluidView> {
+public enum PlasticFluidStorageProvider implements IServerExtensionProvider<FluidView.Data>,
+    IClientExtensionProvider<FluidView.Data, FluidView> {
     INSTANCE;
 
     private static final int MAX_VISIBLE_FLUIDS = 8;
@@ -46,10 +49,10 @@ public enum PlasticFluidStorageProvider implements IServerExtensionProvider<Comp
     private static final String SHARED = "Shared";
     private static final String GAS = "Gas";
     private static final String BATCH = "Batch";
-    private static final ResourceLocation UID = AnvilcraftPlasticraft.of("fluid_storage");
+    private static final Identifier UID = AnvilcraftPlasticraft.of("fluid_storage");
 
     @Override
-    public @Nullable List<ViewGroup<CompoundTag>> getGroups(Accessor<?> accessor) {
+    public @Nullable List<ViewGroup<FluidView.Data>> getGroups(Accessor<?> accessor) {
         if (accessor instanceof EntityAccessor entityAccessor) {
             return this.entityGroups(accessor, entityAccessor.getEntity());
         }
@@ -60,13 +63,13 @@ public enum PlasticFluidStorageProvider implements IServerExtensionProvider<Comp
             return this.entityGroups(accessor, bonded.getOrCreateRenderEntity());
         }
         if (block.getBlockEntity() instanceof PlasticMoldingChamberBlockEntity chamber) {
-            IFluidHandler handler = chamber.fluidHandler();
-            List<ViewGroup<CompoundTag>> groups = new ArrayList<>();
-            for (int tank = 0; tank < handler.getTanks(); tank++) {
-                int capacity = handler.getTankCapacity(tank);
+            ResourceHandler<FluidResource> handler = chamber.fluidHandler();
+            List<ViewGroup<FluidView.Data>> groups = new ArrayList<>();
+            for (int tank = 0; tank < handler.size(); tank++) {
+                int capacity = handler.getCapacityAsInt(tank, handler.getResource(tank));
                 if (capacity > 0) {
-                    FluidStack fluid = handler.getFluidInTank(tank);
-                    ViewGroup<CompoundTag> group = new ViewGroup<>(List.of(this.fluidData(accessor, fluid, capacity)));
+                    FluidStack fluid = FluidUtil.getStack(handler, tank);
+                    ViewGroup<FluidView.Data> group = new ViewGroup<>(List.of(fluidData(fluid, capacity)));
                     group.getExtraData().putLong(TOTAL, fluid.getAmount());
                     group.getExtraData().putLong(CAPACITY, capacity);
                     group.getExtraData().putBoolean(BATCH, tank == 1);
@@ -78,21 +81,21 @@ public enum PlasticFluidStorageProvider implements IServerExtensionProvider<Comp
         if (block.getBlock() instanceof CondenserTowerBlock) {
             return this.towerGroups(block);
         }
-        IFluidHandler handler = block.getLevel().getCapability(
-            Capabilities.FluidHandler.BLOCK, block.getPosition(), Direction.UP
+        ResourceHandler<FluidResource> handler = block.getLevel().getCapability(
+            Capabilities.Fluid.BLOCK, block.getPosition(), Direction.UP
         );
-        return handler == null ? null : List.of(this.group(accessor, handler, handler.getTankCapacity(0), false));
+        return handler == null ? null : List.of(this.group(accessor, handler, handler.getCapacityAsInt(0, handler.getResource(0)), false));
     }
 
-    private @Nullable List<ViewGroup<CompoundTag>> entityGroups(Accessor<?> accessor, @Nullable Entity entity) {
+    private @Nullable List<ViewGroup<FluidView.Data>> entityGroups(Accessor<?> accessor, @Nullable Entity entity) {
         if (entity instanceof UniversalPlasticEntity plastic) {
             MoldedPlasticData data = plastic.getMoldedData().orElse(null);
             if (data == null || !MoldingProductTypes.holdsFluids(data.finalType())) {
                 return null;
             }
-            IFluidHandler handler = plastic.getMoldedFluidHandler();
+            ResourceHandler<FluidResource> handler = plastic.getMoldedFluidHandler();
             PlasticCauldronLayout layout = PlasticCauldronLayout.of(data.finalType());
-            int capacity = layout == null ? handler.getTankCapacity(0) : layout.fluidCapacity(data.capacity());
+            int capacity = layout == null ? handler.getCapacityAsInt(0, handler.getResource(0)) : layout.fluidCapacity(data.capacity());
             return List.of(this.group(accessor, handler, capacity, layout != PlasticCauldronLayout.NORMAL));
         }
         if (entity instanceof HardenedResinCauldronEntity cauldron) {
@@ -101,22 +104,22 @@ public enum PlasticFluidStorageProvider implements IServerExtensionProvider<Comp
         return null;
     }
 
-    private List<ViewGroup<CompoundTag>> towerGroups(BlockAccessor accessor) {
+    private List<ViewGroup<FluidView.Data>> towerGroups(BlockAccessor accessor) {
         CondenserTowerBlockEntity tower = CondenserTowerBlockEntity.getMain(
             accessor.getLevel(), accessor.getPosition(), accessor.getBlockState()
         );
         if (tower == null) {
             return List.of();
         }
-        List<ViewGroup<CompoundTag>> groups = new ArrayList<>();
-        ResourceLocation gas = tower.getGasId();
+        List<ViewGroup<FluidView.Data>> groups = new ArrayList<>();
+        Identifier gas = tower.getGasId();
         int gasAmount = tower.getGasAmount();
         if (!tower.getStoredFluid().isEmpty() || gas == null || gasAmount <= 0) {
             groups.add(this.group(accessor, tower.getFluidHandler(), CondenserTowerBlockEntity.CAPACITY, false));
         }
         if (gas != null && gasAmount > 0) {
-            CompoundTag view = this.fluidData(accessor, FluidStack.EMPTY, CondenserTowerBlockEntity.CAPACITY);
-            ViewGroup<CompoundTag> group = new ViewGroup<>(List.of(view));
+            FluidView.Data view = fluidData(FluidStack.EMPTY, CondenserTowerBlockEntity.CAPACITY);
+            ViewGroup<FluidView.Data> group = new ViewGroup<>(List.of(view));
             group.getExtraData().putString(GAS, "jei.anvilcraftplasticraft.gas." + gas.getPath());
             group.getExtraData().putLong(TOTAL, gasAmount);
             group.getExtraData().putLong(CAPACITY, CondenserTowerBlockEntity.CAPACITY);
@@ -125,26 +128,26 @@ public enum PlasticFluidStorageProvider implements IServerExtensionProvider<Comp
         return groups;
     }
 
-    private ViewGroup<CompoundTag> group(Accessor<?> accessor, IFluidHandler handler, long capacity, boolean shared) {
-        List<CompoundTag> fluids = new ArrayList<>();
+    private ViewGroup<FluidView.Data> group(Accessor<?> accessor, ResourceHandler<FluidResource> handler, long capacity, boolean shared) {
+        List<FluidView.Data> fluids = new ArrayList<>();
         long total = 0;
         int omitted = 0;
-        for (int tank = 0; tank < handler.getTanks(); tank++) {
-            FluidStack fluid = handler.getFluidInTank(tank);
+        for (int tank = 0; tank < handler.size(); tank++) {
+            FluidStack fluid = FluidUtil.getStack(handler, tank);
             if (fluid.isEmpty()) {
                 continue;
             }
             total += fluid.getAmount();
             if (fluids.size() < MAX_VISIBLE_FLUIDS) {
-                fluids.add(this.fluidData(accessor, fluid, capacity));
+                fluids.add(fluidData(fluid, capacity));
             } else {
                 omitted++;
             }
         }
         if (fluids.isEmpty()) {
-            fluids.add(this.fluidData(accessor, FluidStack.EMPTY, capacity));
+            fluids.add(fluidData(FluidStack.EMPTY, capacity));
         }
-        ViewGroup<CompoundTag> group = new ViewGroup<>(fluids);
+        ViewGroup<FluidView.Data> group = new ViewGroup<>(fluids);
         group.getExtraData().putLong(TOTAL, total);
         group.getExtraData().putLong(CAPACITY, capacity);
         group.getExtraData().putBoolean(SHARED, shared);
@@ -154,65 +157,41 @@ public enum PlasticFluidStorageProvider implements IServerExtensionProvider<Comp
         return group;
     }
 
-    private CompoundTag fluidData(Accessor<?> accessor, FluidStack fluid, long capacity) {
-        JadeFluidObject object = JadeFluidObject.of(fluid.getFluid(), fluid.getAmount(), fluid.getComponentsPatch());
-        CompoundTag tag = FluidView.writeDefault(object, capacity, accessor.nbtOps());
-        tag.putLong(TOTAL, fluid.getAmount());
-        tag.putBoolean("Empty", fluid.isEmpty());
-        return tag;
+    private static FluidView.Data fluidData(FluidStack fluid, long capacity) {
+        return new FluidView.Data(JadeFluidObject.of(fluid.getFluid(), fluid.getAmount(), fluid.getComponentsPatch()), capacity);
     }
 
     @Override
-    public List<ClientViewGroup<FluidView>> getClientGroups(Accessor<?> accessor, List<ViewGroup<CompoundTag>> groups) {
-        List<ClientViewGroup<FluidView>> result = ClientViewGroup.map(groups, tag -> this.createView(accessor, tag), (group, client) -> {
+    public List<ClientViewGroup<FluidView>> getClientGroups(Accessor<?> accessor, List<ViewGroup<FluidView.Data>> groups) {
+        List<ClientViewGroup<FluidView>> result = ClientViewGroup.map(groups, FluidView::readDefault, (group, client) -> {
             CompoundTag extra = group.getExtraData();
-            long total = extra.getLong(TOTAL);
-            long capacity = extra.getLong(CAPACITY);
+            long total = extra.getLongOr(TOTAL, 0);
+            long capacity = extra.getLongOr(CAPACITY, 0);
             client.title = Component.translatable(
-                extra.getBoolean(BATCH) ? "tooltip.anvilcraftplasticraft.jade.current_batch"
+                extra.getBooleanOr(BATCH, false) ? "tooltip.anvilcraftplasticraft.jade.current_batch"
                     : "tooltip.anvilcraft.large_fluid_tank.total",
                 formatAmount(total), formatAmount(capacity), percent(total, capacity)
             ).withStyle(ChatFormatting.GRAY);
             for (int index = 0; index < client.views.size(); index++) {
                 FluidView view = client.views.get(index);
-                CompoundTag tag = group.views.get(index);
+                JadeFluidObject fluid = group.views.get(index).fluids().getFirst();
                 if (extra.contains(GAS)) {
                     view.ratio = ratio(total, capacity);
-                    view.current = formatAmount(total);
-                    view.overrideText = Component.translatable(extra.getString(GAS)).withStyle(ChatFormatting.WHITE)
+                    view.current = Component.literal(formatAmount(total));
+                    view.overrideText = Component.translatable(extra.getStringOr(GAS, "")).withStyle(ChatFormatting.WHITE)
                         .append(" ").append(Component.literal(formatAmount(total)));
-                } else if (!tag.getBoolean("Empty") && view.fluidName != null) {
+                } else if (!fluid.is(Fluids.EMPTY) && view.fluidName != null) {
                     view.overrideText = view.fluidName.copy().withStyle(ChatFormatting.WHITE)
-                        .append(" ").append(Component.literal(formatAmount(tag.getLong(TOTAL))));
-                    if (extra.getBoolean(SHARED)) {
+                        .append(" ").append(Component.literal(formatAmount(fluid.getAmount())));
+                    if (extra.getBooleanOr(SHARED, false)) {
                         view.overrideText = view.overrideText.copy().append(" ").append(Component.translatable(
-                            "tooltip.anvilcraft.large_fluid_tank.share", percent(tag.getLong(TOTAL), capacity)
+                            "tooltip.anvilcraft.large_fluid_tank.share", percent(fluid.getAmount(), capacity)
                         ).withStyle(ChatFormatting.GRAY));
                     }
                 }
             }
         });
         return result.stream().filter(group -> !group.views.isEmpty()).toList();
-    }
-
-    private @Nullable FluidView createView(Accessor<?> accessor, CompoundTag tag) {
-        long capacity = tag.getLong("capacity");
-        if (capacity <= 0) {
-            return null;
-        }
-        FluidView view = FluidView.readDefault(tag, accessor.nbtOps());
-        if (view == null) {
-            throw new IllegalStateException("Unable to decode Plasticraft Jade fluid: " + tag);
-        }
-        view.current = formatAmount(tag.getLong(TOTAL));
-        view.max = formatAmount(capacity);
-        view.ratio = ratio(tag.getLong(TOTAL), capacity);
-        if (tag.getBoolean("Empty")) {
-            view.overrideText = Component.translatable(
-                "jade.fluid", FluidView.EMPTY_FLUID, Component.literal(view.max).withStyle(ChatFormatting.GRAY)
-            );
-        }
-        return view;
     }
 
     private static String formatAmount(long amount) {
@@ -228,7 +207,7 @@ public enum PlasticFluidStorageProvider implements IServerExtensionProvider<Comp
     }
 
     @Override
-    public ResourceLocation getUid() {
+    public Identifier getUid() {
         return UID;
     }
 }

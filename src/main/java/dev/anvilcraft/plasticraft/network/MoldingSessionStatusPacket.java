@@ -12,7 +12,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ChunkPos;
 import net.neoforged.neoforge.network.PacketDistributor;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.UUID;
 
@@ -55,7 +55,7 @@ public record MoldingSessionStatusPacket(
     public static void broadcast(ServerLevel level, PlasticMoldingChamberBlockEntity chamber) {
         PacketDistributor.sendToPlayersTrackingChunk(
             level,
-            new ChunkPos(chamber.getBlockPos()),
+            ChunkPos.containing(chamber.getBlockPos()),
             new MoldingSessionStatusPacket(
                 chamber.getBlockPos(),
                 chamber.writerPlayerId(),

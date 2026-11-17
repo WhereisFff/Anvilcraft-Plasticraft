@@ -4,7 +4,7 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -18,14 +18,14 @@ import java.util.UUID;
 public record EditableMoldingModel(
     int formatVersion,
     String name,
-    ResourceLocation requestedType,
+    Identifier requestedType,
     List<MoldingElement> elements,
     List<MoldingGroup> groups
 ) {
     public static final int CURRENT_FORMAT_VERSION = 3;
     public static final int MAX_ELEMENTS = 256;
     public static final int MAX_GROUPS = 128;
-    public static final ResourceLocation NORMAL_TYPE = MoldingProductTypes.NORMAL_ID;
+    public static final Identifier NORMAL_TYPE = MoldingProductTypes.NORMAL_ID;
     private static final Codec<List<MoldingElement>> ELEMENTS_CODEC = MoldingElement.CODEC.listOf()
         .validate(elements -> elements.size() <= MAX_ELEMENTS
             ? DataResult.success(elements)
@@ -38,7 +38,7 @@ public record EditableMoldingModel(
         .<EditableMoldingModel>create(instance -> instance.group(
         Codec.INT.fieldOf("format_version").forGetter(model -> model.formatVersion),
         Codec.STRING.optionalFieldOf("name", "Untitled").forGetter(model -> model.name),
-        ResourceLocation.CODEC.optionalFieldOf("requested_type", NORMAL_TYPE)
+        Identifier.CODEC.optionalFieldOf("requested_type", NORMAL_TYPE)
             .forGetter(model -> model.requestedType),
         ELEMENTS_CODEC.optionalFieldOf("elements", List.of()).forGetter(model -> model.elements),
         GROUPS_CODEC.optionalFieldOf("groups", List.of()).forGetter(model -> model.groups)
@@ -87,7 +87,7 @@ public record EditableMoldingModel(
         );
     }
 
-    public EditableMoldingModel withRequestedType(ResourceLocation replacement) {
+    public EditableMoldingModel withRequestedType(Identifier replacement) {
         return new EditableMoldingModel(
             this.formatVersion,
             this.name,

@@ -14,16 +14,17 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTankFluidGeometry;
 import dev.dubhe.anvilcraft.util.LiquidEnchantmentClientFluidTypeExtension;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.Sheets;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.Direction;
+import net.minecraft.util.ARGB;
+import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.util.Mth;
-import net.minecraft.util.FastColor;
-import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
@@ -31,8 +32,8 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
-import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /** 物品、实体和胶合方块态共用的动态制品网格渲染。 */
@@ -106,11 +107,11 @@ public final class MoldedPlasticMeshRenderer {
         RenderType renderType = deferredTransparent
             ? ClearPlasticRenderTypes.molded(textureRef.texture())
             : translucent
-                ? RenderType.entityTranslucentCull(textureRef.texture())
-                : RenderType.entityCutoutNoCull(textureRef.texture());
+                ? RenderTypes.entityTranslucentCullItemTarget(textureRef.texture())
+                : RenderTypes.entityCutout(textureRef.texture());
         if (PlasticMaterial.fromMeltOrNull(data.materialView()) == PlasticMaterial.ELASTIC) {
             renderMesh(mesh.coreVertices(data), pose, buffers.getBuffer(renderType), packedLight,
-                FastColor.ARGB32.multiply(color, 0xFFD8D8D8), true, textureRef);
+                ARGB.multiply(color, 0xFFD8D8D8), true, textureRef);
         }
         if (deferredTransparent) {
             renderDeferredTransparentMesh(
@@ -205,7 +206,7 @@ public final class MoldedPlasticMeshRenderer {
             mesh.volumeVertices,
             pose,
             consumer,
-            LightTexture.FULL_BLOCK,
+            LightCoordsUtil.pack(15, 0),
             valid ? 0xFFFFFFFF : INVALID_PREVIEW_COLOR,
             true,
             textureRef
@@ -214,7 +215,7 @@ public final class MoldedPlasticMeshRenderer {
             mesh.zeroThicknessVertices,
             pose,
             consumer,
-            LightTexture.FULL_BLOCK,
+            LightCoordsUtil.pack(15, 0),
             valid ? 0xFFFFFFFF : INVALID_PREVIEW_COLOR,
             false,
             textureRef
@@ -238,8 +239,8 @@ public final class MoldedPlasticMeshRenderer {
         RenderType renderType = deferredTransparent
             ? ClearPlasticRenderTypes.molded(textureRef.texture())
             : translucent
-                ? RenderType.entityTranslucentCull(textureRef.texture())
-                : RenderType.entityCutoutNoCull(textureRef.texture());
+                ? RenderTypes.entityTranslucentCullItemTarget(textureRef.texture())
+                : RenderTypes.entityCutout(textureRef.texture());
         renderMesh(
             outlet.vertices,
             pose,
@@ -267,7 +268,7 @@ public final class MoldedPlasticMeshRenderer {
             outlet.vertices,
             pose,
             buffers.getBuffer(renderType),
-            LightTexture.FULL_BLOCK,
+            LightCoordsUtil.pack(15, 0),
             valid ? 0xFFFFFFFF : INVALID_PREVIEW_COLOR,
             true,
             textureRef
@@ -315,12 +316,10 @@ public final class MoldedPlasticMeshRenderer {
                 deferredPass
                     ? ClearPlasticRenderTypes.moldedFluid()
                     : opaque
-                        ? RenderType.entityCutoutNoCull(InventoryMenu.BLOCK_ATLAS)
-                        : RenderType.translucent()
+                        ? RenderTypes.entityCutout(TextureAtlas.LOCATION_BLOCKS)
+                        : Sheets.translucentBlockSheet()
             );
-            TextureAtlasSprite sprite = Minecraft.getInstance()
-                .getTextureAtlas(InventoryMenu.BLOCK_ATLAS)
-                .apply(properties.getStillTexture(fluid));
+            TextureAtlasSprite sprite = FluidRenderOpacity.model(fluid).stillMaterial().sprite();
             int light = withFluidLight(packedLight, fluid);
             if (properties instanceof LiquidEnchantmentClientFluidTypeExtension extension) {
                 for (int color : extension.getLayerColors(fluid)) {
@@ -333,7 +332,7 @@ public final class MoldedPlasticMeshRenderer {
                     consumer,
                     lastPose,
                     light,
-                    properties.getTintColor(fluid)
+                    FluidRenderOpacity.tint(fluid)
                 );
             }
         }

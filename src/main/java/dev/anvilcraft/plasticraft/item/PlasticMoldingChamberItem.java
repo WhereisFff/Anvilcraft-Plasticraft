@@ -11,12 +11,14 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
-import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.component.TooltipDisplay;
+import net.minecraft.world.item.component.TypedEntityData;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
-import java.util.List;
+import java.util.function.Consumer;
+
 
 /** 在消耗物品前一次性提交控制器和全部 27 个区域部件。 */
 public class PlasticMoldingChamberItem extends BlockItem {
@@ -27,21 +29,26 @@ public class PlasticMoldingChamberItem extends BlockItem {
     }
 
     public static ItemStack setStoredEnergy(ItemStack stack, int energy) {
-        CompoundTag tag = stack.getOrDefault(DataComponents.BLOCK_ENTITY_DATA, CustomData.EMPTY).copyTag();
+        var existing = stack.get(DataComponents.BLOCK_ENTITY_DATA);
+        CompoundTag tag = existing == null ? new CompoundTag() : existing.copyTagWithoutId();
         int stored = Math.clamp(energy, 0, MoldingPowerBridge.capacity());
         if (stored == 0) {
             tag.remove(TAG_ENERGY);
         } else {
             tag.putInt(TAG_ENERGY, stored);
         }
-        BlockItem.setBlockEntityData(stack, PlasticraftBlockEntities.PLASTIC_MOLDING_CHAMBER.get(), tag);
+        if (tag.isEmpty()) {
+            stack.remove(DataComponents.BLOCK_ENTITY_DATA);
+        } else {
+            stack.set(DataComponents.BLOCK_ENTITY_DATA, TypedEntityData.of(PlasticraftBlockEntities.PLASTIC_MOLDING_CHAMBER.get(), tag));
+        }
         return stack;
     }
 
     public static int storedEnergy(ItemStack stack) {
-        CustomData data = stack.get(DataComponents.BLOCK_ENTITY_DATA);
+        var data = stack.get(DataComponents.BLOCK_ENTITY_DATA);
         if (data == null) return 0;
-        return Math.clamp(data.copyTag().getInt(TAG_ENERGY), 0, MoldingPowerBridge.capacity());
+        return Math.clamp(data.getUnsafe().getIntOr(TAG_ENERGY, 0), 0, MoldingPowerBridge.capacity());
     }
 
     @Override
@@ -57,10 +64,11 @@ public class PlasticMoldingChamberItem extends BlockItem {
     public void appendHoverText(
         ItemStack stack,
         Item.TooltipContext context,
-        List<Component> tooltip,
+        TooltipDisplay display,
+        Consumer<Component> tooltip,
         TooltipFlag flag
     ) {
-        super.appendHoverText(stack, context, tooltip, flag);
-        tooltip.add(Component.translatable("tooltip.anvilcraftplasticraft.plastic_molding_chamber").withStyle(ChatFormatting.GRAY));
+        super.appendHoverText(stack, context, display, tooltip, flag);
+        tooltip.accept(Component.translatable("tooltip.anvilcraftplasticraft.plastic_molding_chamber").withStyle(ChatFormatting.GRAY));
     }
 }

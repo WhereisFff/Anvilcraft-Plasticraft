@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.molding.model;
 
 import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,7 +19,7 @@ public final class MoldingModelStreams {
     public static void writeModel(RegistryFriendlyByteBuf buffer, EditableMoldingModel model) {
         buffer.writeVarInt(model.formatVersion());
         buffer.writeUtf(model.name(), MoldingElement.MAX_NAME_LENGTH);
-        ResourceLocation.STREAM_CODEC.encode(buffer, model.requestedType());
+        Identifier.STREAM_CODEC.encode(buffer, model.requestedType());
         buffer.writeVarInt(model.elements().size());
         for (MoldingElement element : model.elements()) writeElement(buffer, element);
         buffer.writeVarInt(model.groups().size());
@@ -29,7 +29,7 @@ public final class MoldingModelStreams {
     public static EditableMoldingModel readModel(RegistryFriendlyByteBuf buffer) {
         int formatVersion = buffer.readVarInt();
         String name = buffer.readUtf(MoldingElement.MAX_NAME_LENGTH);
-        ResourceLocation requestedType = ResourceLocation.STREAM_CODEC.decode(buffer);
+        Identifier requestedType = Identifier.STREAM_CODEC.decode(buffer);
         int elementCount = readCount(buffer, EditableMoldingModel.MAX_ELEMENTS, "molding elements");
         List<MoldingElement> elements = new ArrayList<>(elementCount);
         for (int index = 0; index < elementCount; index++) elements.add(readElement(buffer));
@@ -141,7 +141,7 @@ public final class MoldingModelStreams {
             case MoldingCommand.Redo ignored -> buffer.writeByte(9);
             case MoldingCommand.SetRequestedType setType -> {
                 buffer.writeByte(10);
-                ResourceLocation.STREAM_CODEC.encode(buffer, setType.type());
+                Identifier.STREAM_CODEC.encode(buffer, setType.type());
             }
         }
     }
@@ -173,7 +173,7 @@ public final class MoldingModelStreams {
             }
             case 8 -> new MoldingCommand.Undo();
             case 9 -> new MoldingCommand.Redo();
-            case 10 -> new MoldingCommand.SetRequestedType(ResourceLocation.STREAM_CODEC.decode(buffer));
+            case 10 -> new MoldingCommand.SetRequestedType(Identifier.STREAM_CODEC.decode(buffer));
             default -> throw new IllegalArgumentException("Invalid molding command type");
         };
     }

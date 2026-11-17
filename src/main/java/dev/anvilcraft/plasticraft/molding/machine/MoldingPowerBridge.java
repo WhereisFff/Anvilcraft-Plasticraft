@@ -1,7 +1,7 @@
 package dev.anvilcraft.plasticraft.molding.machine;
 
 import dev.dubhe.anvilcraft.AnvilCraft;
-import dev.dubhe.anvilcraft.item.SuperCapacitorItem;
+import dev.dubhe.anvilcraft.item.ingredients.SuperCapacitorItem;
 
 /** 隔离本体电力配置与容量常量，后续版本迁移只需替换此边界。 */
 public final class MoldingPowerBridge {

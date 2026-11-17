@@ -137,9 +137,14 @@
       ]
     }
   ],
-  "render_type": "minecraft:translucent",
   "textures": {
-    "particle": "anvilcraftplasticraft:block/elastic_plastic/purple",
-    "plastic": "anvilcraftplasticraft:block/elastic_plastic/purple"
+    "particle": {
+      "force_translucent": true,
+      "sprite": "anvilcraftplasticraft:block/elastic_plastic/purple"
+    },
+    "plastic": {
+      "force_translucent": true,
+      "sprite": "anvilcraftplasticraft:block/elastic_plastic/purple"
+    }
   }
 }

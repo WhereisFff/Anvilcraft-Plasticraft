@@ -3,11 +3,11 @@
   "ingredients": [
     {
       "amount": 1000,
-      "fluid": "anvilcraftplasticraft:heat_resistant_plastic_melt"
+      "ingredient": "anvilcraftplasticraft:heat_resistant_plastic_melt"
     },
     {
       "amount": 1000,
-      "fluid": "minecraft:water"
+      "ingredient": "minecraft:water"
     }
   ],
   "results": [

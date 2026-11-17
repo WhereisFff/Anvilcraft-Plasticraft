@@ -4,13 +4,12 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import dev.anvilcraft.lib.v2.cube.geometry.ConvexShape;
 import dev.anvilcraft.lib.v2.cube.geometry.SelectionGeometry;
-import net.minecraft.client.renderer.block.model.BlockModel;
-import net.minecraft.client.resources.model.BlockModelRotation;
-import net.minecraft.client.resources.model.ModelState;
-import net.minecraft.resources.ResourceLocation;
-import net.neoforged.neoforge.client.model.geometry.UnbakedGeometryHelper;
+import net.minecraft.client.resources.model.cuboid.CuboidModel;
+import net.minecraft.client.resources.model.cuboid.UnbakedCuboidGeometry;
+import net.minecraft.resources.Identifier;
 import org.joml.Matrix4d;
 
+import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -21,30 +20,45 @@ import java.util.function.Function;
 
 /** 补齐 520 尚未自动处理的复合模型与零厚度面，仅在资源重载阶段读取模型。 */
 public final class MachineModelGeometry {
-    private final Function<ResourceLocation, JsonObject> resources;
-    private final Map<ResourceLocation, JsonObject> json = new HashMap<>();
-    private final Map<ResourceLocation, BlockModel> parents = new HashMap<>();
-    private final Map<ResourceLocation, List<ConvexShape>> decoded = new HashMap<>();
+    private final Function<Identifier, JsonObject> resources;
+    private final Map<Identifier, JsonObject> json = new HashMap<>();
+    private final Map<Identifier, List<ConvexShape>> decoded = new HashMap<>();
 
-    public MachineModelGeometry(Function<ResourceLocation, JsonObject> resources) {
+    public MachineModelGeometry(Function<Identifier, JsonObject> resources) {
         this.resources = resources;
     }
 
-    public List<ConvexShape> load(ResourceLocation id) {
+    public List<ConvexShape> load(Identifier id) {
         return this.decoded.computeIfAbsent(id, key -> this.decode(this.json(key), 0));
     }
 
     private List<ConvexShape> decode(JsonObject object, int depth) {
         if (depth > 32) throw new IllegalArgumentException("Model nesting exceeds 32 levels");
-        BlockModel owner = parse(object);
-        owner.resolveParents(this::parent);
+        CuboidModel owner = parse(object);
+        var transform = owner.rootTransform();
+        Map<String, Boolean> visibility = new HashMap<>(owner.partVisibility());
+        Identifier parent = owner.parent();
+        Set<Identifier> seen = new HashSet<>();
+        while (parent != null) {
+            if (!seen.add(parent) || seen.size() > 32) {
+                throw new IllegalArgumentException("Invalid model parent chain");
+            }
+            CuboidModel ancestor = parse(this.json(parent));
+            if (transform == null) {
+                transform = ancestor.rootTransform();
+            }
+            ancestor.partVisibility().forEach(visibility::putIfAbsent);
+            parent = ancestor.parent();
+        }
         JsonObject definition = this.definition(object);
         String loader = definition.has("loader") ? definition.get("loader").getAsString() : "";
         List<ConvexShape> shapes = new ArrayList<>();
         if ("neoforge:composite".equals(loader)) {
             for (Map.Entry<String, JsonElement> child : definition.getAsJsonObject("children").entrySet()) {
-                if (owner.customData.isComponentVisible(child.getKey(), true)) {
-                    shapes.addAll(this.decode(child.getValue().getAsJsonObject(), depth + 1));
+                if (visibility.getOrDefault(child.getKey(), true)) {
+                    JsonElement model = child.getValue();
+                    JsonObject childModel = model.isJsonPrimitive() ? this.json(Identifier.parse(model.getAsString())) : model.getAsJsonObject();
+                    shapes.addAll(this.decode(childModel, depth + 1));
                 }
                 checkCount(shapes.size());
             }
@@ -52,48 +66,42 @@ public final class MachineModelGeometry {
             if (!loader.isEmpty() && !"neoforge:elements".equals(loader)) {
                 throw new IllegalArgumentException("Unsupported machine model loader: " + loader);
             }
-            checkCount(owner.getElements().size());
-            shapes.addAll(PlasticSelectionGeometry.modelElements(owner.getElements()));
+            if (parse(definition).geometry() instanceof UnbakedCuboidGeometry geometry) {
+                checkCount(geometry.elements().size());
+                shapes.addAll(PlasticSelectionGeometry.modelElements(geometry.elements()));
+            }
         }
-        if (!owner.customData.getRootTransform().isIdentity()) {
-            ModelState state = UnbakedGeometryHelper.composeRootTransformIntoModelState(
-                BlockModelRotation.X0_Y0, owner.customData.getRootTransform()
-            );
+        if (transform != null && !transform.isIdentity()) {
             double scale = PlasticSelectionGeometry.GEOMETRY_SCALE;
-            Matrix4d transform = new Matrix4d().scaling(scale).translate(0.5, 0.5, 0.5)
-                .mul(new Matrix4d(state.getRotation().getMatrix())).translate(-0.5, -0.5, -0.5).scale(1 / scale);
-            shapes = shapes.stream().map(shape -> shape.transform(transform)).toList();
+            Matrix4d matrix = new Matrix4d().scaling(scale).mul(new Matrix4d(transform.getMatrix())).scale(1 / scale);
+            shapes = shapes.stream().map(shape -> shape.transform(matrix)).toList();
         }
         return List.copyOf(shapes);
     }
 
     private JsonObject definition(JsonObject start) {
         JsonObject current = start;
-        Set<ResourceLocation> seen = new HashSet<>();
+        Set<Identifier> seen = new HashSet<>();
         while (!current.has("elements") && !current.has("loader") && current.has("parent")) {
-            ResourceLocation parent = ResourceLocation.parse(current.get("parent").getAsString());
+            Identifier parent = Identifier.parse(current.get("parent").getAsString());
             if (!seen.add(parent) || seen.size() > 32) throw new IllegalArgumentException("Invalid model parent chain");
             current = this.json(parent);
         }
         return current;
     }
 
-    private BlockModel parent(ResourceLocation id) {
-        return this.parents.computeIfAbsent(id, key -> parse(this.json(key)));
-    }
-
-    private JsonObject json(ResourceLocation id) {
+    private JsonObject json(Identifier id) {
         if (this.json.size() >= 256 && !this.json.containsKey(id)) throw new IllegalArgumentException("Too many model dependencies");
         return this.json.computeIfAbsent(id, this.resources);
     }
 
-    private static BlockModel parse(JsonObject object) {
+    private static CuboidModel parse(JsonObject object) {
         JsonObject copy = object.deepCopy();
         // 父模型、元素旋转及根变换仍交给原版解析，复合子模型由上层逐项展开。
         copy.remove("loader");
         copy.remove("children");
         copy.remove("item_render_order");
-        return BlockModel.fromString(copy.toString());
+        return CuboidModel.fromStream(new StringReader(copy.toString()));
     }
 
     private static void checkCount(int count) {

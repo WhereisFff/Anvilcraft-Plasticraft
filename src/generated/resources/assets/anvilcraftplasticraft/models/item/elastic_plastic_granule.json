@@ -1,7 +1,9 @@
 {
   "parent": "minecraft:item/generated",
-  "render_type": "minecraft:translucent",
   "textures": {
-    "layer0": "anvilcraftplasticraft:item/elastic_plastic_granule"
+    "layer0": {
+      "force_translucent": true,
+      "sprite": "anvilcraftplasticraft:item/elastic_plastic_granule"
+    }
   }
 }

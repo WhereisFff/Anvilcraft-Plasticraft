@@ -77,7 +77,7 @@ final class MoldedTrayRepeaterBehavior implements MoldedTrayRedstoneBehavior {
         BlockState state
     ) {
         if (!player.getAbilities().mayBuild) return InteractionResult.PASS;
-        if (!player.level().isClientSide) {
+        if (!player.level().isClientSide()) {
             int delay = state.getValue(RepeaterBlock.DELAY);
             runtime.setState(state.setValue(RepeaterBlock.DELAY, delay == 4 ? 1 : delay + 1));
             runtime.persistIfChanged();
@@ -90,7 +90,7 @@ final class MoldedTrayRepeaterBehavior implements MoldedTrayRedstoneBehavior {
                 1.0F
             );
         }
-        return InteractionResult.sidedSuccess(player.level().isClientSide);
+        return InteractionResult.SUCCESS;
     }
 
     @Override

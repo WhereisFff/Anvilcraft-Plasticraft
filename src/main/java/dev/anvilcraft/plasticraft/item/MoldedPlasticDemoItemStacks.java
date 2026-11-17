@@ -9,7 +9,7 @@ import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprint;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintCodec;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -31,7 +31,7 @@ public final class MoldedPlasticDemoItemStacks {
         new DemoDefinition("bracket.json", MoldingProductTypes.TRAY_ID)
     );
     // 大型塑料炼药锅只能由玩家自制大开口模型升级得到，故不列入创造栏演示制品
-    public static final List<ResourceLocation> PRODUCT_TYPES = List.of(
+    public static final List<Identifier> PRODUCT_TYPES = List.of(
         MoldingProductTypes.NORMAL_ID,
         MoldingProductTypes.CRATE_ID,
         MoldingProductTypes.TANK_ID,
@@ -57,7 +57,7 @@ public final class MoldedPlasticDemoItemStacks {
             .toList();
     }
 
-    public static Optional<ItemStack> product(PlasticMaterial material, ResourceLocation type) {
+    public static Optional<ItemStack> product(PlasticMaterial material, Identifier type) {
         if (MoldingProductTypes.NORMAL_ID.equals(type)) {
             return Optional.of(material.productStack(DyeColor.WHITE));
         }
@@ -69,7 +69,7 @@ public final class MoldedPlasticDemoItemStacks {
         return Optional.empty();
     }
 
-    public static boolean isProductType(ResourceLocation type) {
+    public static boolean isProductType(Identifier type) {
         return PRODUCT_TYPES.contains(type);
     }
 
@@ -115,7 +115,7 @@ public final class MoldedPlasticDemoItemStacks {
         }
     }
 
-    private record DemoDefinition(String fileName, ResourceLocation type) {
+    private record DemoDefinition(String fileName, Identifier type) {
     }
 
     private static final class DemoDataHolder {

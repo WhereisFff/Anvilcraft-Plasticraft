@@ -12,15 +12,15 @@ import dev.anvilcraft.plasticraft.molding.bake.MoldingTrayShapeAnalyzer;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.List;
 import java.util.Set;
 
 /** 以指定熔体数量预演实际制品类型，制造、GUI 和状态提示共用此结果。 */
 public record MoldingProductPreview(
-    ResourceLocation requestedType,
-    ResourceLocation finalType,
+    Identifier requestedType,
+    Identifier finalType,
     int capacity,
     MoldingVolumeMask formedVolume,
     MoldingFunctionalAnalysis analysis
@@ -106,7 +106,7 @@ public record MoldingProductPreview(
         boolean forced = typeOverride || creativeOverride;
         boolean retainsFunction = validation.valid()
             && (fullyFormed || !MoldingProductTypes.isTray(model.requestedType()));
-        ResourceLocation resolvedType = forced || retainsFunction
+        Identifier resolvedType = forced || retainsFunction
             ? upgradedType(model.requestedType(), analysis)
             : EditableMoldingModel.NORMAL_TYPE;
         int capacity = forced
@@ -126,7 +126,7 @@ public record MoldingProductPreview(
      * 其余类型沿用类型校验返回的容量。
      */
     private static int capacityFor(
-        ResourceLocation resolvedType,
+        Identifier resolvedType,
         MoldingFunctionalAnalysis analysis,
         MoldingTypeValidation validation
     ) {
@@ -136,8 +136,8 @@ public record MoldingProductPreview(
     }
 
     /** 请求炼药锅且开口超过阈值时升级为大型塑料炼药锅，其余类型原样返回。 */
-    private static ResourceLocation upgradedType(
-        ResourceLocation requestedType,
+    private static Identifier upgradedType(
+        Identifier requestedType,
         MoldingFunctionalAnalysis analysis
     ) {
         return MoldingProductTypes.CAULDRON_ID.equals(requestedType) && analysis.cauldronShape().large()

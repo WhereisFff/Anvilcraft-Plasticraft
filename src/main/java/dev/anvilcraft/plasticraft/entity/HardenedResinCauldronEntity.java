@@ -2,6 +2,7 @@ package dev.anvilcraft.plasticraft.entity;
 
 import dev.anvilcraft.plasticraft.entity.collision.BuiltInPlasticEntityModels;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
+import dev.anvilcraft.plasticraft.init.PlasticraftDataComponents;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
@@ -14,7 +15,7 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -27,14 +28,23 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.fluids.FluidStack;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
 import net.neoforged.neoforge.items.IItemHandler;
-import net.neoforged.neoforge.items.ItemStackHandler;
+import net.neoforged.neoforge.transfer.CombinedResourceHandler;
+import net.neoforged.neoforge.transfer.DelegatingResourceHandler;
+import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.fluid.FluidStacksResourceHandler;
+import net.neoforged.neoforge.transfer.fluid.FluidUtil;
+import net.neoforged.neoforge.transfer.item.ItemResource;
+import net.neoforged.neoforge.transfer.item.ItemStacksResourceHandler;
+import net.neoforged.neoforge.transfer.item.ItemUtil;
+import net.neoforged.neoforge.transfer.transaction.TransactionContext;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -72,76 +82,46 @@ public class HardenedResinCauldronEntity extends AbstractCauldronPlasticEntity {
     );
     private static final EntityDataAccessor<CompoundTag> DISPLAY_ITEMS = SynchedEntityData.defineId(
         HardenedResinCauldronEntity.class,
-        EntityDataSerializers.COMPOUND_TAG
+        PlasticraftDataComponents.COMPOUND_TAG
     );
     private static Supplier<ItemStack> defaultDropSupplier = () -> ItemStack.EMPTY;
 
     private final PollableItemHandler input = createInputHandler();
-    private final ItemStackHandler output = createOutputHandler();
-    private final ItemStackHandler emptyRecipeHandler = new ItemStackHandler(0);
-    private final ItemStackHandler recipeInput = createDelegatingHandler(
+    private final ItemStacksResourceHandler output = createOutputHandler();
+    private final ItemStacksResourceHandler emptyRecipeHandler = new ItemStacksResourceHandler(0);
+    private final ResourceHandler<ItemResource> recipeInput = new DelegatingResourceHandler<>(
         () -> this.processingOutput ? this.output : this.input
     );
-    private final ItemStackHandler recipeOutput = createDelegatingHandler(
+    private final ResourceHandler<ItemResource> recipeOutput = new DelegatingResourceHandler<>(
         () -> this.processingOutput ? this.emptyRecipeHandler : this.output
     );
-    private final ItemStackHandler syncedItems = new ItemStackHandler(16);
-    private final ItemStackHandler itemHandler = new ItemStackHandler(16) {
-        @Override
-        public ItemStack getStackInSlot(int slot) {
-            return slot < 8 ? HardenedResinCauldronEntity.this.output.getStackInSlot(slot)
-                : HardenedResinCauldronEntity.this.input.getStackInSlot(slot - 8);
-        }
-
-        @Override
-        public int getSlotLimit(int slot) {
-            return slot < 8 ? HardenedResinCauldronEntity.this.output.getSlotLimit(slot)
-                : HardenedResinCauldronEntity.this.input.getSlotLimit(slot - 8);
-        }
-
-        @Override
-        protected int getStackLimit(int slot, ItemStack stack) {
-            if (slot < 8) return this.getSlotLimit(slot);
-            return Math.min(this.getSlotLimit(slot), stack.getMaxStackSize());
-        }
-
-        @Override
-        public void setSize(int size) {
-        }
-
-        @Override
-        public void setStackInSlot(int slot, ItemStack stack) {
-            if (slot < 8) {
-                HardenedResinCauldronEntity.this.output.setStackInSlot(slot, stack);
-            } else {
-                HardenedResinCauldronEntity.this.input.setStackInSlot(slot - 8, stack);
+    private final ItemStacksResourceHandler syncedItems = new ItemStacksResourceHandler(16);
+    private final ResourceHandler<ItemResource> itemHandler = new CombinedResourceHandler<>(List.of(
+        new DelegatingResourceHandler<>(this.output) {
+            @Override
+            public boolean isValid(int slot, ItemResource resource) {
+                return false;
             }
-        }
 
-        @Override
-        public boolean isItemValid(int slot, ItemStack stack) {
-            return slot >= 8 && HardenedResinCauldronEntity.this.input.isItemValid(slot - 8, stack);
-        }
+            @Override
+            public int insert(int slot, ItemResource resource, int amount, TransactionContext transaction) {
+                return 0;
+            }
 
+            @Override
+            public int insert(ItemResource resource, int amount, TransactionContext transaction) {
+                return 0;
+            }
+        },
+        this.input
+    ));
+    private final FluidStacksResourceHandler fluidHandler = new FluidStacksResourceHandler(1, CAPACITY) {
         @Override
-        public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
-            if (stack.isEmpty() || !this.isItemValid(slot, stack)) return stack;
-            return HardenedResinCauldronEntity.this.input.insertItem(slot - 8, stack, simulate);
-        }
-
-        @Override
-        public ItemStack extractItem(int slot, int amount, boolean simulate) {
-            return slot < 8
-                ? HardenedResinCauldronEntity.this.output.extractItem(slot, amount, simulate)
-                : HardenedResinCauldronEntity.this.input.extractItem(slot - 8, amount, simulate);
-        }
-    };
-    private final FluidTank fluidHandler = new FluidTank(CAPACITY) {
-        @Override
-        protected void onContentsChanged() {
+        protected void onContentsChanged(int index, FluidStack previous) {
             HardenedResinCauldronEntity.this.syncFluidData();
         }
     };
+
     public static void configureDefaultDrop(Supplier<ItemStack> supplier) {
         defaultDropSupplier = Objects.requireNonNull(supplier, "supplier");
     }
@@ -166,19 +146,19 @@ public class HardenedResinCauldronEntity extends AbstractCauldronPlasticEntity {
     private PollableItemHandler createInputHandler() {
         return new PollableItemHandler(8) {
             @Override
-            protected int getEmptyOrSmallerSlot(ItemStack stack) {
+            protected int getEmptyOrSmallerSlot(ItemResource resource) {
                 int slot = -1;
                 int countInSlot = Integer.MAX_VALUE;
-                for (int i = this.getSlots() - 1; i >= 0; i--) {
-                    ItemStack stackInSlot = this.getStackInSlot(i);
+                for (int i = this.size() - 1; i >= 0; i--) {
+                    ItemStack stackInSlot = ItemUtil.getStack(this, i);
                     if (stackInSlot.isEmpty()) {
                         slot = i;
                         continue;
                     }
-                    if (!ItemStack.isSameItemSameComponents(stackInSlot, stack)) continue;
+                    if (!resource.matches(stackInSlot)) continue;
                     if (countInSlot != Integer.MAX_VALUE) return -1;
                     int stackInSlotCount = stackInSlot.getCount();
-                    if (stackInSlotCount < this.getStackLimit(i, stackInSlot)) {
+                    if (stackInSlotCount < this.getCapacityAsIntDirect(i, resource)) {
                         slot = i;
                         countInSlot = stackInSlotCount;
                     } else {
@@ -189,16 +169,16 @@ public class HardenedResinCauldronEntity extends AbstractCauldronPlasticEntity {
             }
 
             @Override
-            protected void onContentsChanged(int slot) {
+            protected void onContentsChanged(int slot, ItemStack previous) {
                 HardenedResinCauldronEntity.this.contentsChanged();
             }
         };
     }
 
-    private ItemStackHandler createOutputHandler() {
-        return new ItemStackHandler(8) {
+    private ItemStacksResourceHandler createOutputHandler() {
+        return new ItemStacksResourceHandler(8) {
             @Override
-            protected void onContentsChanged(int slot) {
+            protected void onContentsChanged(int slot, ItemStack previous) {
                 if (!HardenedResinCauldronEntity.this.autoOutputting
                     && !HardenedResinCauldronEntity.this.restoringData) {
                     HardenedResinCauldronEntity.this.tryAutoOutputResults();
@@ -208,49 +188,12 @@ public class HardenedResinCauldronEntity extends AbstractCauldronPlasticEntity {
         };
     }
 
-    private ItemStackHandler createDelegatingHandler(Supplier<ItemStackHandler> delegate) {
-        return new ItemStackHandler(0) {
-            @Override
-            public int getSlots() {
-                return delegate.get().getSlots();
-            }
-
-            @Override
-            public ItemStack getStackInSlot(int slot) {
-                return delegate.get().getStackInSlot(slot);
-            }
-
-            @Override
-            public void setStackInSlot(int slot, ItemStack stack) {
-                delegate.get().setStackInSlot(slot, stack);
-            }
-
-            @Override
-            public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
-                return delegate.get().insertItem(slot, stack, simulate);
-            }
-
-            @Override
-            public ItemStack extractItem(int slot, int amount, boolean simulate) {
-                return delegate.get().extractItem(slot, amount, simulate);
-            }
-
-            @Override
-            public int getSlotLimit(int slot) {
-                return delegate.get().getSlotLimit(slot);
-            }
-
-            @Override
-            public boolean isItemValid(int slot, ItemStack stack) {
-                return delegate.get().isItemValid(slot, stack);
-            }
-        };
-    }
-
     private void contentsChanged() {
-        this.hasImpulse = true;
+        this.needsSync = true;
         this.syncItemData();
-        if (!this.restoringData) this.bondedDataDirty = true;
+        if (!this.restoringData) {
+            this.bondedDataDirty = true;
+        }
     }
 
     @Override
@@ -306,13 +249,13 @@ public class HardenedResinCauldronEntity extends AbstractCauldronPlasticEntity {
     }
 
     private HardenedResinCauldronContents createPickContents() {
-        ItemStackHandler handler = this.getSyncedItemHandler();
+        ResourceHandler<ItemResource> handler = this.getSyncedItemHandler();
         List<HardenedResinCauldronContents.StoredItem> items = new ArrayList<>();
-        for (int slot = 0; slot < handler.getSlots(); slot++) {
-            ItemStack stack = handler.getStackInSlot(slot);
+        for (int slot = 0; slot < handler.size(); slot++) {
+            ItemStack stack = ItemUtil.getStack(handler, slot);
             if (!stack.isEmpty()) items.add(new HardenedResinCauldronContents.StoredItem(slot, stack));
         }
-        FluidStack fluid = this.level().isClientSide ? this.getSyncedFluid() : this.fluidHandler.getFluid();
+        FluidStack fluid = this.level().isClientSide() ? this.getSyncedFluid() : FluidUtil.getStack(this.fluidHandler, 0);
         return new HardenedResinCauldronContents(
             items,
             fluid,
@@ -325,13 +268,13 @@ public class HardenedResinCauldronEntity extends AbstractCauldronPlasticEntity {
         boolean previousRestoring = this.restoringData;
         this.restoringData = true;
         try {
-            for (int slot = 0; slot < this.itemHandler.getSlots(); slot++) {
-                this.itemHandler.setStackInSlot(slot, ItemStack.EMPTY);
+            for (int slot = 0; slot < this.itemHandler.size(); slot++) {
+                (slot < 8 ? this.output : this.input).set(slot % 8, ItemResource.EMPTY, 0);
             }
             for (HardenedResinCauldronContents.StoredItem item : contents.items()) {
-                this.itemHandler.setStackInSlot(item.slot(), item.stack());
+                (item.slot() < 8 ? this.output : this.input).set(item.slot() % 8, ItemResource.of(item.stack()), item.stack().getCount());
             }
-            this.fluidHandler.setFluid(contents.fluid());
+            this.fluidHandler.set(0, FluidResource.of(contents.fluid()), contents.fluid().getAmount());
             this.setOutletLocalDirection(contents.outletSide().orElse(null));
             this.anvilcraft$setIgnited(contents.ignited());
         } finally {
@@ -350,9 +293,9 @@ public class HardenedResinCauldronEntity extends AbstractCauldronPlasticEntity {
     @Override
     protected List<ItemStack> extractAllStacks() {
         List<ItemStack> stacks = new ArrayList<>();
-        for (ItemStackHandler handler : new ItemStackHandler[]{this.output, this.input}) {
-            for (int slot = 0; slot < handler.getSlots(); slot++) {
-                ItemStack extracted = handler.extractItem(slot, Integer.MAX_VALUE, false);
+        for (ItemStacksResourceHandler handler : List.of(this.output, this.input)) {
+            for (int slot = 0; slot < handler.size(); slot++) {
+                ItemStack extracted = IItemHandler.of(handler).extractItem(slot, Integer.MAX_VALUE, false);
                 if (!extracted.isEmpty()) stacks.add(extracted);
             }
         }
@@ -367,36 +310,36 @@ public class HardenedResinCauldronEntity extends AbstractCauldronPlasticEntity {
     }
 
     @Override
-    public ItemStackHandler getInput() {
+    public ResourceHandler<ItemResource> getInput() {
         return CauldronImpactRecipeProcessor.canAccessRecipeInventory(this)
             ? this.recipeInput
             : this.emptyRecipeHandler;
     }
 
     @Override
-    public ItemStackHandler getOutput() {
+    public ResourceHandler<ItemResource> getOutput() {
         return CauldronImpactRecipeProcessor.canAccessRecipeInventory(this)
             ? this.recipeOutput
             : this.emptyRecipeHandler;
     }
 
     @Override
-    public ItemStackHandler getItemHandler() {
+    public ResourceHandler<ItemResource> getItemHandler() {
         return this.itemHandler;
     }
 
     @Override
-    public FluidTank getFluidHandler() {
+    public ResourceHandler<FluidResource> getFluidHandler() {
         return this.fluidHandler;
     }
 
     @Override
-    protected IItemHandler cauldronInputHandler() {
+    protected ResourceHandler<ItemResource> cauldronInputHandler() {
         return this.input;
     }
 
     @Override
-    protected IItemHandler cauldronOutputHandler() {
+    protected ResourceHandler<ItemResource> cauldronOutputHandler() {
         return this.output;
     }
 
@@ -409,7 +352,7 @@ public class HardenedResinCauldronEntity extends AbstractCauldronPlasticEntity {
     @Override
     protected AABB cauldronFluidArea() {
         AABB box = this.getBoundingBox();
-        double fill = Math.clamp((double) this.fluidHandler.getFluidAmount() / CAPACITY, 0.0D, 1.0D);
+        double fill = Math.clamp((double) this.fluidHandler.getAmountAsInt(0) / CAPACITY, 0.0D, 1.0D);
         return new AABB(
             box.minX + FLUID_INNER_INSET,
             box.minY + FLUID_BOTTOM,
@@ -437,11 +380,11 @@ public class HardenedResinCauldronEntity extends AbstractCauldronPlasticEntity {
 
     @Override
     public FluidStack plasticraft$bottomFluid() {
-        return this.fluidHandler.getFluid();
+        return FluidUtil.getStack(this.fluidHandler, 0);
     }
 
     @Override
-    public IFluidHandler plasticraft$bottomFluidAccess() {
+    public ResourceHandler<FluidResource> plasticraft$bottomFluidAccess() {
         return this.fluidHandler;
     }
 
@@ -457,34 +400,34 @@ public class HardenedResinCauldronEntity extends AbstractCauldronPlasticEntity {
         return stack;
     }
 
-    public ItemStackHandler getSyncedItemHandler() {
-        return this.level().isClientSide ? this.syncedItems : this.itemHandler;
+    public ResourceHandler<ItemResource> getSyncedItemHandler() {
+        return this.level().isClientSide() ? this.syncedItems : this.itemHandler;
     }
 
     public List<ItemStack> getSyncedItems() {
-        ItemStackHandler handler = this.getSyncedItemHandler();
+        ResourceHandler<ItemResource> handler = this.getSyncedItemHandler();
         List<ItemStack> stacks = new ArrayList<>();
-        for (int slot = 0; slot < handler.getSlots(); slot++) {
-            ItemStack stack = handler.getStackInSlot(slot);
+        for (int slot = 0; slot < handler.size(); slot++) {
+            ItemStack stack = ItemUtil.getStack(handler, slot);
             if (!stack.isEmpty()) stacks.add(stack);
         }
         return stacks;
     }
 
     private void syncItemData() {
-        if (this.level().isClientSide) return;
+        if (this.level().isClientSide()) return;
         this.entityData.set(DISPLAY_ITEMS, this.createDisplayItemsTag(this.registryAccess()));
     }
 
     private CompoundTag createDisplayItemsTag(HolderLookup.Provider registries) {
         CompoundTag tag = new CompoundTag();
         ListTag stacks = new ListTag();
-        for (int slot = 0; slot < this.itemHandler.getSlots(); slot++) {
-            ItemStack stack = this.itemHandler.getStackInSlot(slot);
+        for (int slot = 0; slot < this.itemHandler.size(); slot++) {
+            ItemStack stack = ItemUtil.getStack(this.itemHandler, slot);
             if (stack.isEmpty()) continue;
             CompoundTag entry = new CompoundTag();
             entry.putInt("Slot", slot);
-            entry.put("Stack", stack.save(registries));
+            entry.store("Stack", ItemStack.CODEC, registries.createSerializationContext(NbtOps.INSTANCE), stack);
             stacks.add(entry);
         }
         tag.put("Stacks", stacks);
@@ -492,60 +435,57 @@ public class HardenedResinCauldronEntity extends AbstractCauldronPlasticEntity {
     }
 
     private void readSyncedItems(CompoundTag tag) {
-        for (int slot = 0; slot < this.syncedItems.getSlots(); slot++) {
-            this.syncedItems.setStackInSlot(slot, ItemStack.EMPTY);
+        for (int slot = 0; slot < this.syncedItems.size(); slot++) {
+            this.syncedItems.set(slot, ItemResource.EMPTY, 0);
         }
-        ListTag stacks = tag.getList("Stacks", Tag.TAG_COMPOUND);
-        int count = Math.min(stacks.size(), this.syncedItems.getSlots());
+        ListTag stacks = tag.getListOrEmpty("Stacks");
+        int count = Math.min(stacks.size(), this.syncedItems.size());
         for (int index = 0; index < count; index++) {
-            CompoundTag entry = stacks.getCompound(index);
-            int slot = entry.getInt("Slot");
-            if (slot < 0 || slot >= this.syncedItems.getSlots()) continue;
-            this.syncedItems.setStackInSlot(
-                slot,
-                ItemStack.parseOptional(this.registryAccess(), entry.getCompound("Stack"))
-            );
+            CompoundTag entry = stacks.getCompoundOrEmpty(index);
+            int slot = entry.getIntOr("Slot", 0);
+            if (slot < 0 || slot >= this.syncedItems.size()) continue;
+            ItemStack stack = entry.read("Stack", ItemStack.CODEC, this.registryAccess().createSerializationContext(NbtOps.INSTANCE)).orElse(ItemStack.EMPTY);
+            this.syncedItems.set(slot, ItemResource.of(stack), stack.getCount());
         }
     }
 
     private void syncFluidData() {
-        FluidStack fluid = this.fluidHandler.getFluid();
+        FluidStack fluid = FluidUtil.getStack(this.fluidHandler, 0);
         this.entityData.set(FLUID_ID, fluid.isEmpty() ? -1 : BuiltInRegistries.FLUID.getId(fluid.getFluid()));
         this.entityData.set(FLUID_AMOUNT, fluid.getAmount());
         this.entityData.set(FLUID_COLOR, PlasticMeltColor.get(fluid).getId());
-        this.hasImpulse = true;
+        this.needsSync = true;
         this.hurtMarked = true;
         if (!this.restoringData) this.bondedDataDirty = true;
     }
 
     @Override
-    protected void addAdditionalSaveData(CompoundTag tag) {
+    protected void addAdditionalSaveData(ValueOutput tag) {
         super.addAdditionalSaveData(tag);
-        HolderLookup.Provider registries = this.registryAccess();
-        tag.put("Fluid", this.fluidHandler.writeToNBT(registries, new CompoundTag()));
-        tag.put("Inputs", this.input.serializeNBT(registries));
-        tag.put("Outputs", this.output.serializeNBT(registries));
+        tag.putChild("Fluid", this.fluidHandler);
+        tag.putChild("Inputs", this.input);
+        tag.putChild("Outputs", this.output);
         tag.putBoolean("Ignited", this.anvilcraft$isIgnited());
         Direction outletSide = this.getOutletLocalDirection();
         if (outletSide != null) tag.putString("OutletSide", outletSide.getName());
     }
 
     @Override
-    protected void readAdditionalSaveData(CompoundTag tag) {
+    protected void readAdditionalSaveData(ValueInput tag) {
         this.restoringData = true;
         try {
             super.readAdditionalSaveData(tag);
-            Direction outletSide = Direction.byName(tag.getString("OutletSide"));
+            Direction outletSide = Direction.byName(tag.getStringOr("OutletSide", ""));
             this.setOutletLocalDirection(
                 outletSide != null && outletSide.getAxis().isHorizontal() ? outletSide : null
             );
             HolderLookup.Provider registries = this.registryAccess();
-            this.fluidHandler.readFromNBT(registries, tag.getCompound("Fluid"));
-            this.input.deserializeNBT(registries, tag.getCompound("Inputs"));
-            this.output.deserializeNBT(registries, tag.getCompound("Outputs"));
-            this.anvilcraft$setIgnited(tag.getBoolean("Ignited") || tag.getBoolean("ignited"));
+            tag.readChild("Fluid", this.fluidHandler);
+            tag.readChild("Inputs", this.input);
+            tag.readChild("Outputs", this.output);
+            this.anvilcraft$setIgnited(tag.getBooleanOr("Ignited", false) || tag.getBooleanOr("ignited", false));
             this.syncFluidData();
-            if (this.level().isClientSide) {
+            if (this.level().isClientSide()) {
                 // Bonded block renderers recreate this entity from its saved NBT instead
                 // of receiving the normal spawn data update, so seed their display cache.
                 this.readSyncedItems(this.createDisplayItemsTag(registries));

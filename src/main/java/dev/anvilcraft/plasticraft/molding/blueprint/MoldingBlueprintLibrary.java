@@ -7,6 +7,7 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.permissions.Permissions;
 import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.IOException;
@@ -45,7 +46,7 @@ public final class MoldingBlueprintLibrary {
     }
 
     public static List<MoldingBlueprintSummary> list(ServerPlayer player) throws BlueprintException {
-        MinecraftServer server = player.getServer();
+        MinecraftServer server = player.level().getServer();
         if (server == null) throw new BlueprintException("server_unavailable", "Server is unavailable");
         List<String> pins = readPins(server, player.getUUID());
         Set<String> pinned = Set.copyOf(pins);
@@ -148,7 +149,7 @@ public final class MoldingBlueprintLibrary {
         MoldingBlueprint copy = source.copyFor(
             copyName,
             player.getUUID(),
-            player.getGameProfile().getName(),
+            player.getGameProfile().name(),
             System.currentTimeMillis()
         );
         return saveNew(server, copy);
@@ -579,14 +580,14 @@ public final class MoldingBlueprintLibrary {
     }
 
     private static MinecraftServer requireServer(ServerPlayer player) throws BlueprintException {
-        MinecraftServer server = player.getServer();
+        MinecraftServer server = player.level().getServer();
         if (server == null) throw new BlueprintException("server_unavailable", "Server is unavailable");
         return server;
     }
 
     private static void requireManagePermission(ServerPlayer player, MoldingBlueprint blueprint)
         throws BlueprintException {
-        if (!blueprint.ownerId().equals(player.getUUID()) && !player.hasPermissions(2)) {
+        if (!blueprint.ownerId().equals(player.getUUID()) && !player.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER)) {
             throw new BlueprintException("permission_denied", "Only the blueprint owner or an administrator may change it");
         }
     }

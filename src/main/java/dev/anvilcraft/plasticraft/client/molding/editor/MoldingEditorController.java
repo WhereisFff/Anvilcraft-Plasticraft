@@ -8,9 +8,9 @@ import dev.anvilcraft.plasticraft.molding.model.MoldingElement;
 import dev.anvilcraft.plasticraft.molding.model.MoldingGroup;
 import dev.anvilcraft.plasticraft.molding.model.MoldingTransform;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import org.joml.Vector3d;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -89,7 +89,7 @@ public final class MoldingEditorController {
         return !this.clipboardElements.isEmpty();
     }
 
-    public boolean setRequestedType(ResourceLocation type) {
+    public boolean setRequestedType(Identifier type) {
         return this.submit(new MoldingCommand.SetRequestedType(type));
     }
 

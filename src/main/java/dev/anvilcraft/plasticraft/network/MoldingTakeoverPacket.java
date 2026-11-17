@@ -64,6 +64,6 @@ public record MoldingTakeoverPacket(
             serverPlayer,
             MoldingSessionSnapshotPacket.of(this.chamberPos, snapshot, "session_taken_over")
         );
-        MoldingSessionStatusPacket.broadcast(serverPlayer.serverLevel(), chamber);
+        MoldingSessionStatusPacket.broadcast(serverPlayer.level(), chamber);
     }
 }

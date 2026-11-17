@@ -52,12 +52,10 @@ import dev.dubhe.anvilcraft.saved.storage.CrateStorage;
 import dev.dubhe.anvilcraft.saved.storage.Storages;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.gametest.framework.GameTest;
-import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -76,13 +74,20 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.FluidUtil;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.fluids.capability.IFluidHandlerItem;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.network.handling.ServerPayloadContext;
+import net.neoforged.neoforge.transfer.access.ItemAccess;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.item.ItemResource;
+import net.neoforged.neoforge.transfer.item.ItemUtil;
+import net.neoforged.neoforge.transfer.transaction.Transaction;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
+import net.neoforged.testframework.gametest.GameTest;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -275,7 +280,7 @@ public final class MoldingProductGameTests {
     @EmptyTemplate(value = "3x3x3", floor = true)
     @TestHolder(description = "Inward-facing cubes can be contained cavities or walls for chests, tanks and cauldrons")
     static void negativeCubesFillContainerCavities(ExtendedGameTestHelper helper) {
-        for (ResourceLocation type : List.of(MoldingProductTypes.CRATE_ID, MoldingProductTypes.TANK_ID)) {
+        for (Identifier type : List.of(MoldingProductTypes.CRATE_ID, MoldingProductTypes.TANK_ID)) {
             checkNegativeSealedCavity(type, false);
             checkNegativeSealedCavity(type, true);
             checkNegativeSealedWalls(type);
@@ -641,7 +646,7 @@ public final class MoldingProductGameTests {
             check(StorageServerStub.load(player.getUUID(), source).capacity().spaceSize() == template.capacity(),
                 "本体仓储界面未使用成型容量");
             validateCrateRequest(player, source);
-            check(StorageServerStub.craftingStorageContents(player.getUUID(), source, 0).getFirst().getCount() == 96,
+            check(StorageServerStub.craftingStorageContents(player.getUUID(), source, 0).items().getFirst().count() == 96,
                 "仓储请求未读取自动化写入的库存");
             validateCrateRequest(player, source);
             StorageServerStub.takeStorageItem(player.getUUID(), source, 0, 0, false, new ItemStack(Items.DIAMOND));
@@ -649,33 +654,32 @@ public final class MoldingProductGameTests {
                 "界面取出与自动化库存不一致");
             player.containerMenu.setCarried(ItemStack.EMPTY);
             MoldedPlasticCrateStorage storage = items.crateStorage(false).orElseThrow();
-            storage.getItems().insertItem(new ItemStack(Items.CRAFTING_TABLE), false);
-            storage.getItems().insertItem(new ItemStack(Items.STONECUTTER), false);
+            ItemUtil.insertItemReturnRemaining(storage.getItems(), new ItemStack(Items.CRAFTING_TABLE), false, null);
+            ItemUtil.insertItemReturnRemaining(storage.getItems(), new ItemStack(Items.STONECUTTER), false, null);
             validateCrateRequest(player, source);
             check(StorageServerStub.craftingUnlock(player.getUUID(), source), "塑料板条箱未能解锁本体合成界面");
             check(storage.getRecipeBases() != null, "合成解锁状态未写入本体仓储");
-            CompoundTag saved = storage.serializeNBT(helper.getLevel().registryAccess());
-            var restored = BaseStorage.loadFromNbt(
-                storage.getId(), saved, helper.getLevel().registryAccess()
-            );
+            var ops = helper.getLevel().registryAccess().createSerializationContext(NbtOps.INSTANCE);
+            var encoded = BaseStorage.CODEC.codec().encodeStart(ops, storage).getOrThrow();
+            var restored = BaseStorage.CODEC.codec().parse(ops, encoded).getOrThrow();
             check(restored instanceof MoldedPlasticCrateStorage && restored.getRecipeBases() != null
-                && restored.getItems().getStackInSlot(0).getCount() == 32, "仓储重载丢失类型、内容或合成状态");
+                && restored.getItems().getAmountAsInt(0) == 32, "仓储重载丢失类型、内容或合成状态");
             BlockPos neighborPos = new BlockPos(3, 2, 3);
             helper.setBlock(neighborPos, ModBlocks.CRATE.getDefaultState());
-            CrateBlockEntity neighbor = (CrateBlockEntity) helper.getBlockEntity(neighborPos);
+            CrateBlockEntity neighbor = (CrateBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(neighborPos));
             neighbor.setId(UUID.randomUUID());
-            Storages.get().getOrCreate(neighbor.getId(), CrateStorage.class).getItems()
-                .insertItem(new ItemStack(Items.IRON_INGOT, 3), false);
+            ItemUtil.insertItemReturnRemaining(Storages.get().getOrCreate(neighbor.getId(), CrateStorage.class).getItems(),
+                new ItemStack(Items.IRON_INGOT, 3), false, null);
             var settings = PlayerSettings.getSetting(helper.getLevel().registryAccess(), player.getUUID()).storage();
             settings.setSearchContent("iron");
             validateCrateRequest(player, source);
-            check(StorageServerStub.craftingStorageContents(player.getUUID(), source, 0).stream()
-                .anyMatch(item -> item.is(Items.IRON_INGOT) && item.getCount() == 3),
+            check(StorageServerStub.craftingStorageContents(player.getUUID(), source, 0).items().stream()
+                .anyMatch(item -> item.stack().is(Items.IRON_INGOT) && item.count() == 3),
                 "塑料板条箱搜索未包含相邻本体板条箱");
             long neighborSource = helper.absolutePos(neighborPos).asLong();
             validateCrateRequest(player, neighborSource);
-            check(StorageServerStub.craftingStorageContents(player.getUUID(), neighborSource, 0).stream()
-                .anyMatch(item -> item.is(Items.DIAMOND) && item.getCount() == 32),
+            check(StorageServerStub.craftingStorageContents(player.getUUID(), neighborSource, 0).items().stream()
+                .anyMatch(item -> item.stack().is(Items.DIAMOND) && item.count() == 32),
                 "本体板条箱搜索未包含相邻塑料板条箱");
             settings.setSearchContent("");
             helper.setBlock(neighborPos, Blocks.AIR);
@@ -695,15 +699,21 @@ public final class MoldingProductGameTests {
             helper.setBlock(voidPos, Blocks.AIR);
             check(items.insertItem(0, new ItemStack(Items.DIAMOND), false).getCount() == 1,
                 "移除虚空物质后仍销毁溢出物品");
-            storage.getItems().extractUnlimited(0, Integer.MAX_VALUE, false);
+            try (Transaction tx = Transaction.openRoot()) {
+                storage.getItems().extract(0, storage.getItems().getResource(0), Integer.MAX_VALUE, tx);
+                tx.commit();
+            }
             check(items.insertItem(0, new ItemStack(Items.ENDER_PEARL, 801), false).getCount() == 1,
                 "16堆叠物品未按每个4单位空间计量");
             check(crate.getMoldedContentSummary().occupiedSlots() == 3200, "板条箱摘要未显示实际空间占用");
-            storage.getItems().extractUnlimited(0, Integer.MAX_VALUE, false);
+            try (Transaction tx = Transaction.openRoot()) {
+                storage.getItems().extract(0, storage.getItems().getResource(0), Integer.MAX_VALUE, tx);
+                tx.commit();
+            }
             check(items.insertItem(0, new ItemStack(Items.DIAMOND_PICKAXE, 51), false).getCount() == 1,
                 "不可堆叠物品未按每个64单位空间计量");
             check(items.extractItem(0, 2, false).getCount() == 1, "不可堆叠物品取出时超过自身堆叠上限");
-            check(storage.getItems().insertItem(new ItemStack(Items.DIAMOND, 65), false).getCount() == 1,
+            check(ItemUtil.insertItemReturnRemaining(storage.getItems(), new ItemStack(Items.DIAMOND, 65), false, null).getCount() == 1,
                 "取出不可堆叠物品后未释放64单位空间");
             long replacementSource = MoldedPlasticCrateAccess.open(player, crate, null);
             check(!new StorageServerStub.StorageAccessValidator().validate(
@@ -731,20 +741,20 @@ public final class MoldingProductGameTests {
         crate.getMoldedItemHandler().insertItem(0, new ItemStack(Items.DIAMOND, 12), false);
         UUID id = crate.getMoldedData().orElseThrow().storageId().orElseThrow();
         helper.setBlock(pos, PlasticraftBlocks.UNIVERSAL_PLASTIC.getDefaultState());
-        BondedEntityBlockEntity bonded = (BondedEntityBlockEntity) helper.getBlockEntity(pos);
+        BondedEntityBlockEntity bonded = (BondedEntityBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(pos));
         check(bonded.initialize(crate, crate.getBlockState(), Direction.UP, PlasticEntityOrientation.DEFAULT, true),
             "塑料板条箱未能保存黏合实体状态");
         crate.discard();
         UniversalPlasticEntity fixed = (UniversalPlasticEntity) bonded.getOrCreateRenderEntity();
         long source = MoldedPlasticCrateAccess.open(player, fixed, helper.absolutePos(pos));
         validateCrateRequest(player, source);
-        check(StorageServerStub.craftingStorageContents(player.getUUID(), source, 0).getFirst().getCount() == 12,
+        check(StorageServerStub.craftingStorageContents(player.getUUID(), source, 0).items().getFirst().count() == 12,
             "黏合板条箱界面丢失原库存");
-        IItemHandler automation = helper.getLevel().getCapability(Capabilities.ItemHandler.BLOCK, helper.absolutePos(pos), Direction.UP);
+        IItemHandler automation = PlasticraftTestData.items(helper.getLevel().getCapability(Capabilities.Item.BLOCK, helper.absolutePos(pos), Direction.UP));
         check(automation != null && automation.insertItem(0, new ItemStack(Items.DIAMOND, 5), false).isEmpty(),
             "黏合板条箱自动化未接入仓储");
         validateCrateRequest(player, source);
-        check(StorageServerStub.craftingStorageContents(player.getUUID(), source, 0).getFirst().getCount() == 17,
+        check(StorageServerStub.craftingStorageContents(player.getUUID(), source, 0).items().getFirst().count() == 17,
             "黏合板条箱界面缓存未收到自动化更新");
         check(fixed.getMoldedData().orElseThrow().storageId().orElseThrow().equals(id), "黏合切换改变了仓储身份");
         helper.setBlock(pos, Blocks.AIR);
@@ -761,7 +771,7 @@ public final class MoldingProductGameTests {
     private static void assertRegisteredBucketCapability(PlasticMaterial material) {
         ItemStack bucket = new ItemStack(material.bucket());
         PlasticMeltColor.set(bucket, DyeColor.CYAN);
-        IFluidHandlerItem fluids = bucket.getCapability(Capabilities.FluidHandler.ITEM);
+        IFluidHandlerItem fluids = FluidUtil.getFluidHandler(bucket).orElse(null);
         check(fluids != null, material.key() + " melt bucket has no registered fluid capability");
         FluidStack preview = fluids.drain(1_000, IFluidHandler.FluidAction.SIMULATE);
         check(preview.is(material.melt()) && preview.getAmount() == 1_000
@@ -792,13 +802,13 @@ public final class MoldingProductGameTests {
             || MoldingProductTypes.isCauldron(template.finalType());
         int inputSlot = MoldingProductTypes.isCauldron(template.finalType()) ? 8 : 0;
         if (holdsItems) {
-            IItemHandler items = stack.getCapability(Capabilities.ItemHandler.ITEM);
+            IItemHandler items = PlasticraftTestData.items(ItemAccess.forStack(stack).getCapability(Capabilities.Item.ITEM));
             check(items != null, carrier + " has no registered item inventory capability");
             check(items.insertItem(inputSlot, new ItemStack(Items.DIAMOND, 3), false).isEmpty(),
                 carrier + " registered item inventory rejected input");
         }
         if (MoldingProductTypes.holdsFluids(template.finalType())) {
-            IFluidHandlerItem fluids = stack.getCapability(Capabilities.FluidHandler.ITEM);
+            IFluidHandlerItem fluids = FluidUtil.getFluidHandler(stack).orElse(null);
             check(fluids != null, carrier + " has no registered item fluid capability");
             check(fluids.fill(moldedMaterial.copyWithAmount(500), IFluidHandler.FluidAction.EXECUTE) == 500,
                 carrier + " registered item fluid capability rejected melt");
@@ -806,8 +816,8 @@ public final class MoldingProductGameTests {
 
         UniversalPlasticEntity entity = createProduct(helper, new BlockPos(1, 2, 1), stack, material, DyeColor.CYAN);
         if (holdsItems) {
-            IItemHandler items = entity.getCapability(Capabilities.ItemHandler.ENTITY);
-            IItemHandler automation = entity.getCapability(Capabilities.ItemHandler.ENTITY_AUTOMATION, Direction.UP);
+            IItemHandler items = PlasticraftTestData.items(entity.getCapability(Capabilities.Item.ENTITY));
+            IItemHandler automation = PlasticraftTestData.items(entity.getCapability(Capabilities.Item.ENTITY_AUTOMATION, Direction.UP));
             check(items != null && automation != null, carrier + " has no registered entity inventory or automation capability");
             check(items.getStackInSlot(inputSlot).is(Items.DIAMOND) && items.getStackInSlot(inputSlot).getCount() == 3,
                 carrier + " entity capability lost the item capability contents");
@@ -817,7 +827,7 @@ public final class MoldingProductGameTests {
                 carrier + " inventory and automation capabilities did not share the same contents");
         }
         if (MoldingProductTypes.holdsFluids(template.finalType())) {
-            IFluidHandler fluids = entity.getCapability(Capabilities.FluidHandler.ENTITY, Direction.UP);
+            IFluidHandler fluids = PlasticraftTestData.fluids(entity.getCapability(Capabilities.Fluid.ENTITY, Direction.UP));
             check(fluids != null, carrier + " has no registered entity fluid capability");
             check(fluids.fill(moldedMaterial.copyWithAmount(500), IFluidHandler.FluidAction.EXECUTE) == 500,
                 carrier + " registered entity fluid capability rejected melt");
@@ -966,10 +976,10 @@ public final class MoldingProductGameTests {
         ItemStack initial = source.getPickResult();
         ItemStack complete = source.getCompletePickResult();
         MoldedPlasticData initialData = MoldedPlasticData.get(initial).orElseThrow(
-            () -> new GameTestAssertException("normal creative pick lost molded cauldron data")
+            () -> helper.assertionException("normal creative pick lost molded cauldron data")
         );
         MoldedPlasticData completeData = MoldedPlasticData.get(complete).orElseThrow(
-            () -> new GameTestAssertException("control creative pick lost molded cauldron data")
+            () -> helper.assertionException("control creative pick lost molded cauldron data")
         );
 
         check(initialData.finalType().equals(sourceData.finalType())
@@ -1100,14 +1110,14 @@ public final class MoldingProductGameTests {
             false
         ).isEmpty(), material.key() + " " + carrier + " rejected its storage cleanup marker");
         UUID storageId = entity.getMoldedData().flatMap(MoldedPlasticData::storageId).orElseThrow(() ->
-            new GameTestAssertException(material.key() + " " + carrier + " did not allocate external storage")
+            helper.assertionException(material.key() + " " + carrier + " did not allocate external storage")
         );
         var server = helper.getLevel().getServer();
         check(server != null, "game test level has no server");
         check(PlasticraftStorages.get(server).get(storageId).isPresent(),
             material.key() + " " + carrier + " storage marker was not persisted");
 
-        IFluidHandler fluids = entity.getFluidHandler();
+        IFluidHandler fluids = PlasticraftTestData.fluids(entity.getFluidHandler());
         int portion = Math.min(1000, fluids.getTankCapacity(0));
         check(portion > 0, material.key() + " " + carrier + " entity had no usable fluid capacity");
         FluidStack lava = new FluidStack(Fluids.LAVA, portion);
@@ -1158,7 +1168,80 @@ public final class MoldingProductGameTests {
         check(fluids.fill(new FluidStack(Fluids.WATER, 1000), IFluidHandler.FluidAction.EXECUTE) == 1000,
             "stacking tank rejected a valid fluid");
         check(tank.getMaxStackSize() == 1, "non-empty molded tank remained stackable");
+        checkWorldStorageTransactions(helper);
         helper.succeed();
+    }
+
+    private static void checkWorldStorageTransactions(ExtendedGameTestHelper helper) {
+        var data = completeData(cauldronModel(MoldingProductTypes.CAULDRON_ID, 17, 12, 12));
+        ItemStack product = PlasticraftBlocks.UNIVERSAL_PLASTIC.asStack();
+        MoldedPlasticData.set(product, data);
+        ItemAccess carrier = ItemAccess.forStack(product);
+        var items = new MoldedPlasticItemHandler(carrier);
+        var fluids = new MoldedPlasticFluidHandler(carrier);
+        var warehouses = PlasticraftStorages.get(helper.getLevel().getServer());
+        var iron = ItemResource.of(Items.IRON_INGOT);
+        var water = FluidResource.of(Fluids.WATER);
+        int slot = PlasticCauldronLayout.NORMAL.outputSlots();
+
+        UUID abandonedId;
+        try (var tx = Transaction.openRoot()) {
+            check(items.insert(slot, iron, 9, tx) == 9, "新仓储没有接受首批铁锭");
+            abandonedId = MoldedPlasticData.get(carrier.getResource().toStack()).orElseThrow().storageId().orElseThrow();
+            check(fluids.insert(water, 100, tx) == 100 && items.insert(slot, iron, 3, tx) == 3,
+                "两个能力未在同一载体内连续写入");
+            checkWorldStorage(carrier, warehouses, abandonedId, slot, 12, 100);
+        }
+        var empty = MoldedPlasticData.get(carrier.getResource().toStack()).orElseThrow();
+        check(warehouses.get(abandonedId).isEmpty() && empty.storageId().isEmpty() && empty.summary().isVacant(),
+            "首笔事务回滚后残留新仓储、载体编号或内容摘要");
+
+        try (var tx = Transaction.openRoot()) {
+            check(items.insert(slot, iron, 10, tx) == 10 && fluids.insert(water, 100, tx) == 100,
+                "成型锅没有同时接收物品与流体");
+            tx.commit();
+        }
+        UUID id = MoldedPlasticData.get(carrier.getResource().toStack()).orElseThrow().storageId().orElseThrow();
+        try (var tx = Transaction.openRoot()) {
+            check(items.extract(slot, iron, 2, tx) == 2 && items.extract(slot, iron, 3, tx) == 3,
+                "同一仓储编号在外层事务中无法连续抽取");
+            checkWorldStorage(carrier, warehouses, id, slot, 5, 100);
+        }
+        checkWorldStorage(carrier, warehouses, id, slot, 10, 100);
+
+        try (var tx = Transaction.openRoot()) {
+            check(items.extract(slot, iron, 2, tx) == 2, "外层事务未扣除铁锭");
+            try (var nested = Transaction.open(tx)) {
+                check(items.extract(slot, iron, 3, nested) == 3 && fluids.extract(water, 40, nested) == 40,
+                    "嵌套事务未同时扣除铁锭与水");
+                checkWorldStorage(carrier, warehouses, id, slot, 5, 60);
+            }
+            checkWorldStorage(carrier, warehouses, id, slot, 8, 100);
+            tx.commit();
+        }
+        checkWorldStorage(carrier, warehouses, id, slot, 8, 100);
+        try (var tx = Transaction.openRoot()) {
+            check(items.extract(slot, iron, 8, tx) == 8 && fluids.extract(water, 100, tx) == 100,
+                "已提交的成型锅库存无法取空");
+            tx.commit();
+        }
+        var cleared = MoldedPlasticData.get(carrier.getResource().toStack()).orElseThrow();
+        check(warehouses.get(id).isEmpty() && cleared.storageId().isEmpty() && cleared.summary().isVacant(),
+            "成型锅取空后残留世界仓储或载体摘要");
+    }
+
+    private static void checkWorldStorage(ItemAccess carrier, PlasticraftStorages warehouses, UUID id,
+                                          int slot, int iron, int water) {
+        var data = MoldedPlasticData.get(carrier.getResource().toStack()).orElseThrow();
+        var stored = warehouses.get(id).orElseThrow();
+        check(data.storageId().filter(id::equals).isPresent(), "事务改变了载体引用的仓储编号");
+        check(stored.itemInSlot(slot).is(Items.IRON_INGOT) && stored.itemInSlot(slot).getCount() == iron,
+            "世界仓储中的铁锭数量错误");
+        check(stored.fluids().size() == 1 && stored.fluids().getFirst().is(Fluids.WATER)
+            && stored.fluids().getFirst().getAmount() == water, "世界仓储中的水量错误");
+        var summary = data.summary();
+        check(summary.items().size() == 1 && summary.items().getFirst().count() == iron
+            && summary.totalFluid() == water, "载体摘要与世界仓储内容不一致");
     }
 
     @GameTest(timeoutTicks = 20)
@@ -1174,7 +1257,7 @@ public final class MoldingProductGameTests {
         check(items.insertItem(0, new ItemStack(Items.DIAMOND, 2), false).isEmpty(),
             "placed chest rejected a valid item");
         UUID storageId = MoldedPlasticData.get(stack).flatMap(MoldedPlasticData::storageId).orElseThrow(
-            () -> new GameTestAssertException("filled chest did not allocate a storage id")
+            () -> helper.assertionException("filled chest did not allocate a storage id")
         );
 
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
@@ -1192,7 +1275,7 @@ public final class MoldingProductGameTests {
             UniversalPlasticEntity.class,
             new AABB(clicked.above()).inflate(0.2D)
         ).stream().findFirst().orElseThrow(() ->
-            new GameTestAssertException("placed chest entity was not created")
+            helper.assertionException("placed chest entity was not created")
         );
         check(entity.getMoldedData().flatMap(MoldedPlasticData::storageId).equals(Optional.of(storageId)),
             "placing a filled chest allocated a new storage id");
@@ -1291,7 +1374,7 @@ public final class MoldingProductGameTests {
         var ops = helper.getLevel().registryAccess().createSerializationContext(NbtOps.INSTANCE);
         CompoundTag emptyTag = (CompoundTag) MoldedPlasticData.CODEC.encodeStart(ops, product).getOrThrow();
         check(!emptyTag.contains("storage_id"), "empty debug chest allocated a storage id");
-        check(!emptyTag.getCompound("contents").contains("items"),
+        check(!emptyTag.getCompoundOrEmpty("contents").contains("items"),
             "empty debug chest persisted an inline item list");
 
         MoldedPlasticItemHandler items = new MoldedPlasticItemHandler(
@@ -1310,10 +1393,9 @@ public final class MoldingProductGameTests {
         UUID storageId = MoldedPlasticData.get(chest).flatMap(MoldedPlasticData::storageId).orElseThrow();
         MoldedPlasticCrateStorage storage = Storages.get().get(storageId, MoldedPlasticCrateStorage.class).orElseThrow();
         check(storage.getItems().getSpaceSize() == product.capacity(), "仓储容量未使用成型容量");
-        CompoundTag stored = storage.serializeNBT(helper.getLevel().registryAccess());
-        MoldedPlasticCrateStorage restored = new MoldedPlasticCrateStorage(storageId);
-        restored.deserializeNBT(helper.getLevel().registryAccess(), stored);
-        check(restored.getItems().getStackInSlot(0).getCount() == 68, "仓储重载丢失合并物品");
+        var encoded = BaseStorage.CODEC.codec().encodeStart(ops, storage).getOrThrow();
+        var restored = (MoldedPlasticCrateStorage) BaseStorage.CODEC.codec().parse(ops, encoded).getOrThrow();
+        check(restored.getItems().getAmountAsInt(0) == 68, "仓储重载丢失合并物品");
         check(restored.getItems().getSpaceSize() == storage.getItems().getSpaceSize(), "仓储重载丢失容量");
         check(items.extractItem(0, 64, false).getCount() == 64, "板条箱未取出完整一组");
         check(items.extractItem(0, 4, false).getCount() == 4, "板条箱未取出余量");
@@ -1342,7 +1424,7 @@ public final class MoldingProductGameTests {
     }
 
     private static void checkProductName(
-        ResourceLocation type,
+        Identifier type,
         String suffixKey
     ) {
         EditableMoldingModel selectedModel;
@@ -1375,7 +1457,7 @@ public final class MoldingProductGameTests {
 
     private static void checkCapacity(
         ExtendedGameTestHelper helper,
-        ResourceLocation type,
+        Identifier type,
         int cavity,
         int expectedCapacity,
         boolean expectedValid
@@ -1626,7 +1708,7 @@ public final class MoldingProductGameTests {
         }
     }
 
-    private static EditableMoldingModel model(ResourceLocation type) {
+    private static EditableMoldingModel model(Identifier type) {
         return new EditableMoldingModel(
             EditableMoldingModel.CURRENT_FORMAT_VERSION,
             "Functional product test",
@@ -1644,7 +1726,7 @@ public final class MoldingProductGameTests {
         );
     }
 
-    private static EditableMoldingModel largeModel(ResourceLocation type) {
+    private static EditableMoldingModel largeModel(Identifier type) {
         return new EditableMoldingModel(
             EditableMoldingModel.CURRENT_FORMAT_VERSION,
             "Large functional product test",
@@ -1662,7 +1744,7 @@ public final class MoldingProductGameTests {
         );
     }
 
-    private static EditableMoldingModel anvilModel(ResourceLocation type) {
+    private static EditableMoldingModel anvilModel(Identifier type) {
         return new EditableMoldingModel(
             EditableMoldingModel.CURRENT_FORMAT_VERSION,
             "Anvil shape test",
@@ -1698,7 +1780,7 @@ public final class MoldingProductGameTests {
         );
     }
 
-    private static EditableMoldingModel trayModel(ResourceLocation type) {
+    private static EditableMoldingModel trayModel(Identifier type) {
         return new EditableMoldingModel(
             EditableMoldingModel.CURRENT_FORMAT_VERSION,
             "Tray shape test",
@@ -1713,7 +1795,7 @@ public final class MoldingProductGameTests {
      * {@code min} 是外壁最小角，{@code interiorSize} 是内腔的水平边长。
      */
     private static EditableMoldingModel cauldronModel(
-        ResourceLocation type,
+        Identifier type,
         int min,
         int interiorSize,
         int wallHeight
@@ -1737,7 +1819,7 @@ public final class MoldingProductGameTests {
         );
     }
 
-    private static void checkNegativeSealedCavity(ResourceLocation type, boolean partialFill) {
+    private static void checkNegativeSealedCavity(Identifier type, boolean partialFill) {
         EditableMoldingModel model = negativeSealedContainerModel(type, partialFill);
         var baked = MoldingModelBaker.bake(model);
         int expectedCavity = 14 * 14 * 14;
@@ -1763,7 +1845,7 @@ public final class MoldingProductGameTests {
             "manufactured inward-facing " + type.getPath() + " lost its cavity or capacity");
     }
 
-    private static void checkNegativeSealedWalls(ResourceLocation type) {
+    private static void checkNegativeSealedWalls(Identifier type) {
         EditableMoldingModel model = negativeSealedWallContainerModel(type);
         var baked = MoldingModelBaker.bake(model);
         MoldingTypeValidation validation = MoldingProductTypes.validate(type, model, baked);
@@ -1817,7 +1899,7 @@ public final class MoldingProductGameTests {
             "inward-facing cauldron walls did not retain their open cavity");
     }
 
-    private static EditableMoldingModel negativeSealedContainerModel(ResourceLocation type, boolean partialFill) {
+    private static EditableMoldingModel negativeSealedContainerModel(Identifier type, boolean partialFill) {
         List<MoldingElement> elements = new ArrayList<>(sealedContainerWalls());
         int top = partialFill ? 24 : 31;
         elements.add(MoldingElement.cube(
@@ -1834,7 +1916,7 @@ public final class MoldingProductGameTests {
         );
     }
 
-    private static EditableMoldingModel negativeSealedWallContainerModel(ResourceLocation type) {
+    private static EditableMoldingModel negativeSealedWallContainerModel(Identifier type) {
         return new EditableMoldingModel(
             EditableMoldingModel.CURRENT_FORMAT_VERSION,
             "Negative wall container",
@@ -1884,7 +1966,7 @@ public final class MoldingProductGameTests {
         );
     }
 
-    private static EditableMoldingModel zeroThicknessSealedModel(ResourceLocation type) {
+    private static EditableMoldingModel zeroThicknessSealedModel(Identifier type) {
         return new EditableMoldingModel(
             EditableMoldingModel.CURRENT_FORMAT_VERSION,
             "Zero thickness seal test",
@@ -1918,7 +2000,7 @@ public final class MoldingProductGameTests {
         ItemStack stack
     ) {
         MoldedPlasticData data = MoldedPlasticData.get(stack).orElseThrow(
-            () -> new GameTestAssertException("product stack lost molded data")
+            () -> helper.assertionException("product stack lost molded data")
         );
         BlockPos absolutePos = helper.absolutePos(occupiedPos);
         UniversalPlasticEntity entity = new UniversalPlasticEntity(
@@ -1954,7 +2036,7 @@ public final class MoldingProductGameTests {
         DyeColor color
     ) {
         MoldedPlasticData data = MoldedPlasticData.get(stack).orElseThrow(
-            () -> new GameTestAssertException("product stack lost molded data")
+            () -> helper.assertionException("product stack lost molded data")
         );
         BlockPos absolutePos = helper.absolutePos(occupiedPos);
         UniversalPlasticEntity entity = material.createEntity(
@@ -2013,6 +2095,6 @@ public final class MoldingProductGameTests {
     }
 
     private static void check(boolean condition, String message) {
-        if (!condition) throw new GameTestAssertException(message);
+        if (!condition) throw new PlasticraftTestFailure(message);
     }
 }

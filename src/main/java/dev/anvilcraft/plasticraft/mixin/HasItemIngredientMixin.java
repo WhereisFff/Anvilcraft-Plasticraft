@@ -4,7 +4,8 @@ import dev.anvilcraft.lib.v2.recipe.cache.item.ICacheInput;
 import dev.anvilcraft.lib.v2.recipe.predicate.item.HasItemIngredient;
 import dev.anvilcraft.lib.v2.recipe.util.InWorldRecipeContext;
 import dev.anvilcraft.plasticraft.recipe.PlasticMeltRecipeColor;
-import net.minecraft.world.item.DyeItem;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -21,8 +22,9 @@ abstract class HasItemIngredientMixin {
         HasItemIngredient ingredient = (HasItemIngredient) (Object) this;
         ICacheInput input = ingredient.getItem(context);
         Consumer<ItemStack> capture = stack -> {
-            if (stack.getItem() instanceof DyeItem dye) {
-                PlasticMeltRecipeColor.captureDye(context, dye.getDyeColor());
+            DyeColor color = stack.get(DataComponents.DYE);
+            if (color != null) {
+                PlasticMeltRecipeColor.captureDye(context, color);
             }
         };
         // 预检已经扣除了模拟库存，实际染料必须从尚未认领的消耗收据读取。

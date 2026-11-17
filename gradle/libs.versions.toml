@@ -1,23 +1,22 @@
 [versions]
-minecraft = "1.21.1"
-neoForge = "21.1.265"
-jei = "19.70.0.469"
-jade = "15.10.6+neoforge"
-anvillib = "2.0.0+snapshot.682"
-ageratum = "0.0.1+build.140"
-anvilcraft = "1.6.0+snapshot.2849"
-modDevGradle = "2.0.148"
+minecraft = "26.1.2"
+neoForge = "26.1.2.114"
+jei = "29.43.0.106"
+jade = "26.1.1+neoforge"
+anvillib = "2.0.0"
+ageratum = "0.0.1+build.153"
+anvilcraft = "1.6.0+pr.6866"
+modDevGradle = "2.0.147"
 
 [libraries]
-jei-common-api = { group = "mezz.jei", name = "jei-1.21.1-common-api", version.ref = "jei" }
-jei-forge-api = { group = "mezz.jei", name = "jei-1.21.1-neoforge-api", version.ref = "jei" }
-jei-forge = { group = "mezz.jei", name = "jei-1.21.1-neoforge", version.ref = "jei" }
+jei-common-api = { group = "mezz.jei", name = "jei-26.1.2-common-api", version.ref = "jei" }
+jei-forge-api = { group = "mezz.jei", name = "jei-26.1.2-neoforge-api", version.ref = "jei" }
+jei-forge = { group = "mezz.jei", name = "jei-26.1.2-neoforge", version.ref = "jei" }
 jade = { group = "maven.modrinth", name = "jade", version.ref = "jade" }
-anvillib = { group = "dev.anvilcraft.lib", name = "anvillib-neoforge-1.21.1", version.ref = "anvillib" }
-anvillib-recipe = { group = "dev.anvilcraft.lib", name = "anvillib-recipe-neoforge-1.21.1", version.ref = "anvillib" }
-anvillib-moveableEntityBlock = { group = "dev.anvilcraft.lib", name = "anvillib-moveable-entity-block-neoforge-1.21.1", version.ref = "anvillib" }
-ageratum = { group = "dev.anvilcraft.resource", name = "ageratum-neoforge-1.21.1", version.ref = "ageratum" }
-anvilcraft = { group = "dev.dubhe", name = "anvilcraft-neoforge-1.21.1", version.ref = "anvilcraft" }
+anvillib = { group = "dev.anvilcraft.lib", name = "anvillib-neoforge-26.1", version.ref = "anvillib" }
+anvillib-recipe = { group = "dev.anvilcraft.lib", name = "anvillib-recipe-neoforge-26.1", version.ref = "anvillib" }
+anvillib-moveableEntityBlock = { group = "dev.anvilcraft.lib", name = "anvillib-moveable-entity-block-neoforge-26.1", version.ref = "anvillib" }
+ageratum = { group = "dev.anvilcraft.resource", name = "ageratum-neoforge-26.1.2", version.ref = "ageratum" }
 
 [plugins]
 modDevGradle = { id = "net.neoforged.moddev", version.ref = "modDevGradle" }

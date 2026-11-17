@@ -5,6 +5,7 @@ import dev.anvilcraft.plasticraft.item.DyeableMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.dubhe.anvilcraft.init.entity.ModDamageTypes;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.ItemStack;
@@ -36,8 +37,8 @@ public final class HeatResistantPlasticEntity extends UniversalPlasticEntity {
     }
 
     @Override
-    public boolean hurt(DamageSource source, float amount) {
-        return !source.is(ModDamageTypes.LASER) && super.hurt(source, amount);
+    public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
+        return !source.is(ModDamageTypes.LASER) && super.hurtServer(level, source, amount);
     }
 
     @Override

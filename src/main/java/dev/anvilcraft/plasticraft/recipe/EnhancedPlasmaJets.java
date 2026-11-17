@@ -13,7 +13,7 @@ public final class EnhancedPlasmaJets {
     }
 
     public static boolean isEnhanced(PlasmaJetsBlockEntity jet) {
-        return jet.getAddonData().getBoolean(TAG_ENHANCED);
+        return jet.getAddonData().getBooleanOr(TAG_ENHANCED, false);
     }
 
     public static void setEnhanced(PlasmaJetsBlockEntity jet, boolean enhanced) {
@@ -27,7 +27,7 @@ public final class EnhancedPlasmaJets {
     }
 
     public static boolean usesLayeredFuel(PlasmaJetsBlockEntity jet) {
-        return jet.getAddonData().getBoolean(TAG_LAYERED_FUEL);
+        return jet.getAddonData().getBooleanOr(TAG_LAYERED_FUEL, false);
     }
 
     public static void setUsesLayeredFuel(PlasmaJetsBlockEntity jet, boolean layeredFuel) {

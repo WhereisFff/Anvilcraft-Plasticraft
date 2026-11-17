@@ -15,7 +15,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.RecipeType;
@@ -50,14 +50,14 @@ public final class PlasmaJetBlastingRecipe extends AbstractProcessRecipe<PlasmaJ
     }
 
     /** 汽化产物的虚拟气体标识与产量。 */
-    public record GasOutput(ResourceLocation id, int amount) {
+    public record GasOutput(Identifier id, int amount) {
         public static final Codec<GasOutput> CODEC = RecordCodecBuilder.create(instance -> instance.group(
-            ResourceLocation.CODEC.fieldOf("id").forGetter(GasOutput::id),
+            Identifier.CODEC.fieldOf("id").forGetter(GasOutput::id),
             Codec.INT.fieldOf("amount").forGetter(GasOutput::amount)
         ).apply(instance, GasOutput::new));
 
         public static final StreamCodec<RegistryFriendlyByteBuf, GasOutput> STREAM_CODEC = StreamCodec.composite(
-            ResourceLocation.STREAM_CODEC,
+            Identifier.STREAM_CODEC,
             GasOutput::id,
             ByteBufCodecs.VAR_INT,
             GasOutput::amount,
@@ -92,41 +92,31 @@ public final class PlasmaJetBlastingRecipe extends AbstractProcessRecipe<PlasmaJ
         return PlasticraftRecipeTypes.PLASMA_JET_BLASTING_TYPE.get();
     }
 
-    public static final class Serializer implements RecipeSerializer<PlasmaJetBlastingRecipe> {
-        private static final MapCodec<PlasmaJetBlastingRecipe> CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
-            ItemIngredientPredicate.CODEC.listOf()
-                .optionalFieldOf("ingredients", List.of())
-                .forGetter(PlasmaJetBlastingRecipe::getInputItems),
-            ChanceItemStack.CODEC.listOf()
-                .optionalFieldOf("results", List.of())
-                .forGetter(PlasmaJetBlastingRecipe::getResultItems),
-            HasCauldronSimple.CODEC.forGetter(PlasmaJetBlastingRecipe::getHasCauldron),
-            GasOutput.CODEC.optionalFieldOf("gas").forGetter(PlasmaJetBlastingRecipe::gasOutput)
-        ).apply(instance, PlasmaJetBlastingRecipe::new));
+    private static final MapCodec<PlasmaJetBlastingRecipe> CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
+        ItemIngredientPredicate.CODEC.listOf()
+            .optionalFieldOf("ingredients", List.of())
+            .forGetter(PlasmaJetBlastingRecipe::getInputItems),
+        ChanceItemStack.CODEC.listOf()
+            .optionalFieldOf("results", List.of())
+            .forGetter(PlasmaJetBlastingRecipe::getResultItems),
+        HasCauldronSimple.CODEC.forGetter(PlasmaJetBlastingRecipe::getHasCauldron),
+        GasOutput.CODEC.optionalFieldOf("gas").forGetter(PlasmaJetBlastingRecipe::gasOutput)
+    ).apply(instance, PlasmaJetBlastingRecipe::new));
 
-        private static final StreamCodec<RegistryFriendlyByteBuf, PlasmaJetBlastingRecipe> STREAM_CODEC =
-            StreamCodec.composite(
-                ItemIngredientPredicate.STREAM_CODEC.apply(ByteBufCodecs.list()),
-                PlasmaJetBlastingRecipe::getInputItems,
-                ChanceItemStack.STREAM_CODEC.apply(ByteBufCodecs.list()),
-                PlasmaJetBlastingRecipe::getResultItems,
-                HasCauldronSimple.STREAM_CODEC,
-                PlasmaJetBlastingRecipe::getHasCauldron,
-                ByteBufCodecs.optional(GasOutput.STREAM_CODEC),
-                PlasmaJetBlastingRecipe::gasOutput,
-                PlasmaJetBlastingRecipe::new
-            );
+    private static final StreamCodec<RegistryFriendlyByteBuf, PlasmaJetBlastingRecipe> STREAM_CODEC =
+        StreamCodec.composite(
+            ItemIngredientPredicate.STREAM_CODEC.apply(ByteBufCodecs.list()),
+            PlasmaJetBlastingRecipe::getInputItems,
+            ChanceItemStack.STREAM_CODEC.apply(ByteBufCodecs.list()),
+            PlasmaJetBlastingRecipe::getResultItems,
+            HasCauldronSimple.STREAM_CODEC,
+            PlasmaJetBlastingRecipe::getHasCauldron,
+            ByteBufCodecs.optional(GasOutput.STREAM_CODEC),
+            PlasmaJetBlastingRecipe::gasOutput,
+            PlasmaJetBlastingRecipe::new
+        );
+    public static final RecipeSerializer<PlasmaJetBlastingRecipe> SERIALIZER = new RecipeSerializer<>(CODEC, STREAM_CODEC);
 
-        @Override
-        public MapCodec<PlasmaJetBlastingRecipe> codec() {
-            return CODEC;
-        }
-
-        @Override
-        public StreamCodec<RegistryFriendlyByteBuf, PlasmaJetBlastingRecipe> streamCodec() {
-            return STREAM_CODEC;
-        }
-    }
 
     public static final class Builder extends SimpleAbstractBuilder<PlasmaJetBlastingRecipe, Builder> {
         private final HasCauldronSimple.Builder cauldron = HasCauldronSimple.empty();
@@ -148,7 +138,7 @@ public final class PlasmaJetBlastingRecipe extends AbstractProcessRecipe<PlasmaJ
         }
 
         public Builder cauldron(Block cauldronBlock) {
-            return this.fluid(BuiltInRegistries.FLUID.get(WrapUtils.cauldron2Fluid(cauldronBlock)));
+            return this.fluid(BuiltInRegistries.FLUID.getValue(WrapUtils.cauldron2Fluid(cauldronBlock)));
         }
 
         public Builder consume(int amount) {
@@ -161,7 +151,7 @@ public final class PlasmaJetBlastingRecipe extends AbstractProcessRecipe<PlasmaJ
             return this;
         }
 
-        public Builder gas(ResourceLocation gasId, int amount) {
+        public Builder gas(Identifier gasId, int amount) {
             this.gasOutput = Optional.of(new GasOutput(gasId, amount));
             return this;
         }
@@ -175,7 +165,7 @@ public final class PlasmaJetBlastingRecipe extends AbstractProcessRecipe<PlasmaJ
         }
 
         @Override
-        public void validate(ResourceLocation id) {
+        public void validate(Identifier id) {
             HasCauldronSimple fluid = this.cauldron.build();
             boolean declaresFluidInput = fluid.hasFluid();
             boolean hasFluidInput = declaresFluidInput && fluid.consume() > 0;

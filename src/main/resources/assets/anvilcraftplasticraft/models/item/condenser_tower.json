@@ -2,7 +2,7 @@
 	"format_version": "1.9.0",
 	"credit": "Made with Blockbench",
 	"parent": "anvilcraft:block/template_large_block",
-	"render_type": "minecraft:cutout",
+
 	"textures": {
 		"0": "anvilcraftplasticraft:block/condenser_tower_base",
 		"1": "anvilcraft:block/pipe",
@@ -335,7 +335,7 @@
 			"faces": {
 				"north": {"uv": [2.25, 0.5, 1.25, 9.75], "texture": "#0"},
 				"east": {"uv": [0.75, 0.5, 2.25, 9.75], "texture": "#0"},
-				"south": {"uv": [44, 6, 48, 42], "texture": "#0"},
+				"south": {"uv": [11, 1.5, 12, 10.5], "texture": "#0"},
 				"west": {"uv": [0.75, 0.5, 2.25, 9.75], "texture": "#0"},
 				"up": {"uv": [3.5, 0, 2, 1], "rotation": 90, "texture": "#2"},
 				"down": {"uv": [3.5, 0, 2, 1], "rotation": 90, "texture": "#2"}
@@ -371,7 +371,7 @@
 			"to": [27, 27, -1],
 			"rotation": {"angle": 0, "axis": "y", "origin": [3, 9, 16]},
 			"faces": {
-				"north": {"uv": [48, 6, 44, 42], "texture": "#0"},
+				"north": {"uv": [12, 1.5, 11, 10.5], "texture": "#0"},
 				"east": {"uv": [2.25, 0.5, 0.75, 9.75], "texture": "#0"},
 				"south": {"uv": [1.25, 0.5, 2.25, 9.75], "texture": "#0"},
 				"west": {"uv": [0.75, 0.5, 2.25, 9.75], "texture": "#0"},

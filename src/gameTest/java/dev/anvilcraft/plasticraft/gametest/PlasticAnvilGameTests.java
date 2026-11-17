@@ -46,11 +46,10 @@ import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.block.fluid.PipeBlock;
-import dev.dubhe.anvilcraft.block.item.HasMobBlockItem;
-import dev.dubhe.anvilcraft.block.sliding.ActivatorSlidingRailBlock;
-import dev.dubhe.anvilcraft.block.sliding.DetectorSlidingRailBlock;
-import dev.dubhe.anvilcraft.block.sliding.PoweredSlidingRailBlock;
-import dev.dubhe.anvilcraft.block.sliding.SlidingRailBlock;
+import dev.dubhe.anvilcraft.block.logistics.sliding.ActivatorSlidingRailBlock;
+import dev.dubhe.anvilcraft.block.logistics.sliding.DetectorSlidingRailBlock;
+import dev.dubhe.anvilcraft.block.logistics.sliding.PoweredSlidingRailBlock;
+import dev.dubhe.anvilcraft.block.logistics.sliding.SlidingRailBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.event.giantanvil.shock.GiantAnvilShockEventListener;
 import dev.dubhe.anvilcraft.event.giantanvil.shock.ShockContext;
@@ -60,7 +59,8 @@ import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.init.recipe.ModRecipeTypes;
-import dev.dubhe.anvilcraft.item.AnvilHammerItem;
+import dev.dubhe.anvilcraft.item.block.HasMobBlockItem;
+import dev.dubhe.anvilcraft.item.tool.AnvilHammerItem;
 import dev.dubhe.anvilcraft.recipe.anvil.outcome.RoyalPreferenceOutcome;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.FastCookingRecipe;
 import dev.dubhe.anvilcraft.recipe.anvil.wrap.SuperHeatingRecipe;
@@ -72,10 +72,11 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.dispenser.BlockSource;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.gametest.framework.GameTest;
-import net.minecraft.gametest.framework.GameTestAssertException;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.TagKey;
@@ -85,24 +86,26 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.EquipmentSlotGroup;
+import net.minecraft.world.entity.InsideBlockEffectApplier;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
-import net.minecraft.world.entity.animal.Cow;
+import net.minecraft.world.entity.animal.cow.Cow;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Ravager;
-import net.minecraft.world.entity.monster.Zombie;
+import net.minecraft.world.entity.monster.zombie.Zombie;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.entity.projectile.WitherSkull;
-import net.minecraft.world.entity.vehicle.Boat;
-import net.minecraft.world.entity.vehicle.Minecart;
+import net.minecraft.world.entity.projectile.hurtingprojectile.WitherSkull;
+import net.minecraft.world.entity.vehicle.boat.Boat;
+import net.minecraft.world.entity.vehicle.minecart.Minecart;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -133,6 +136,7 @@ import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
+import net.neoforged.testframework.gametest.GameTest;
 import net.neoforged.testframework.gametest.GameTestPlayer;
 
 import java.util.ArrayList;
@@ -163,7 +167,7 @@ public final class PlasticAnvilGameTests {
                 check(orientation.longAxis().getAxis() != orientation.orthogonalAxis().getAxis(), "model basis is not orthogonal");
 
                 Vec3 offset = orientation.collisionCenter(cell).subtract(cellCenter);
-                Vec3 expected = Vec3.atLowerCornerOf(face.getNormal())
+                Vec3 expected = Vec3.atLowerCornerOf(face.getUnitVec3i())
                     .scale(-PlasticEntityOrientation.ATTACHMENT_INSET);
                 check(close(offset, expected), "collision center does not preserve the requested face gaps");
             }
@@ -201,13 +205,13 @@ public final class PlasticAnvilGameTests {
         BlockPos absoluteClicked = helper.absolutePos(clicked);
         for (Direction face : Direction.values()) {
             Vec3 faceCenter = absoluteClicked.getCenter()
-                .add(Vec3.atLowerCornerOf(face.getNormal()).scale(0.5D));
+                .add(Vec3.atLowerCornerOf(face.getUnitVec3i()).scale(0.5D));
             for (Direction longAxis : Direction.values()) {
                 if (longAxis.getAxis() == face.getAxis()) continue;
                 ItemStack stack = PlasticraftBlocks.HARDEND_RESIN_ANVIL.asStack();
                 Player player = helper.makeMockPlayer(GameType.SURVIVAL);
                 BlockHitResult hit = new BlockHitResult(
-                    faceCenter.add(Vec3.atLowerCornerOf(longAxis.getNormal()).scale(0.3D)),
+                    faceCenter.add(Vec3.atLowerCornerOf(longAxis.getUnitVec3i()).scale(0.3D)),
                     face,
                     absoluteClicked,
                     false
@@ -215,7 +219,7 @@ public final class PlasticAnvilGameTests {
                 AbstractPlasticEntity candidate = ((AbstractPlasticEntityItem<?>) stack.getItem())
                     .createPlacementEntity(helper.getLevel(), player, stack, hit);
                 if (candidate == null) {
-                    throw new GameTestAssertException("放置实体构造失败：" + face + " / " + longAxis);
+                    throw new PlasticraftTestFailure("放置实体构造失败：" + face + " / " + longAxis);
                 }
                 check(helper.getLevel().getEntity(candidate.getUUID()) == null && stack.getCount() == 1,
                     "构造放置预览改变了世界或消耗了物品");
@@ -237,7 +241,7 @@ public final class PlasticAnvilGameTests {
                     )
                     .stream()
                     .findFirst()
-                    .orElseThrow(() -> new GameTestAssertException(
+                    .orElseThrow(() -> new PlasticraftTestFailure(
                         "item did not create an entity on " + face + " toward " + longAxis
                     ));
                 check(placed.position().equals(candidate.position()) && placed.getOrientation().equals(candidate.getOrientation())
@@ -378,7 +382,7 @@ public final class PlasticAnvilGameTests {
         anvil.setNoGravity(true);
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 playerPosition = helper.absoluteVec(new Vec3(2.68D, 1.98D, 2.61D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        player.snapTo(playerPosition.x, playerPosition.y, playerPosition.z);
         Vec3 start = anvil.position();
         helper.runAfterDelay(25, () -> {
             check(anvil.position().subtract(start).horizontalDistance() < 0.01D, "standing player pushed the anvil sideways");
@@ -465,7 +469,7 @@ public final class PlasticAnvilGameTests {
         );
         FishTankBlockEntity fishTank = (FishTankBlockEntity) helper.getLevel()
             .getBlockEntity(absoluteFishTankPos);
-        fishTank.getFluidHandler().fill(resin, IFluidHandler.FluidAction.EXECUTE);
+        IFluidHandler.of(fishTank.getFluidHandler()).fill(resin, IFluidHandler.FluidAction.EXECUTE);
         BlockState fishTankState = helper.getLevel().getBlockState(absoluteFishTankPos);
 
         Zombie fishTankZombie = helper.spawnWithNoFreeWill(
@@ -501,8 +505,8 @@ public final class PlasticAnvilGameTests {
         );
         LargeCauldronBlockEntity largeCauldron = (LargeCauldronBlockEntity) helper.getLevel()
             .getBlockEntity(absoluteLargeCauldronPos);
-        int tankCapacity = largeCauldron.getFluidHandler().getTankCapacity(0);
-        largeCauldron.getFluidHandler().fill(
+        int tankCapacity = IFluidHandler.of(largeCauldron.getFluidHandler()).getTankCapacity(0);
+        IFluidHandler.of(largeCauldron.getFluidHandler()).fill(
             resin.copyWithAmount(tankCapacity),
             IFluidHandler.FluidAction.EXECUTE
         );
@@ -531,7 +535,9 @@ public final class PlasticAnvilGameTests {
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         player.setDeltaMovement(Vec3.ZERO);
         player.setPos(helper.absoluteVec(new Vec3(2.5D, 1.1D, 2.5D)));
-        fishTankState.entityInside(helper.getLevel(), absoluteFishTankPos, player);
+        var fishTankStateEffects = new InsideBlockEffectApplier.StepBasedCollector();
+        fishTankState.entityInside(helper.getLevel(), absoluteFishTankPos, player, fishTankStateEffects, true);
+        fishTankStateEffects.applyAndClear(player);
         Vec3 playerStart = player.position();
         player.move(MoverType.SELF, new Vec3(1.0D, 1.0D, 1.0D));
         Vec3 playerMovement = player.position().subtract(playerStart);
@@ -545,7 +551,9 @@ public final class PlasticAnvilGameTests {
 
         player.setDeltaMovement(Vec3.ZERO);
         player.setPos(helper.absoluteVec(new Vec3(6.5D, 1.55D, 6.5D)));
-        actualLargeCauldronState.entityInside(helper.getLevel(), absoluteLargeCauldronPos, player);
+        var actualLargeCauldronStateEffects = new InsideBlockEffectApplier.StepBasedCollector();
+        actualLargeCauldronState.entityInside(helper.getLevel(), absoluteLargeCauldronPos, player, actualLargeCauldronStateEffects, true);
+        actualLargeCauldronStateEffects.applyAndClear(player);
         playerStart = player.position();
         player.move(MoverType.SELF, new Vec3(1.0D, 1.0D, 1.0D));
         playerMovement = player.position().subtract(playerStart);
@@ -563,7 +571,7 @@ public final class PlasticAnvilGameTests {
     @EmptyTemplate(value = "9x4x9", floor = true)
     @TestHolder(description = "Liquid high-viscosity resin advances every 40 ticks and stops after two blocks")
     static void highViscosityResinFlowRange(ExtendedGameTestHelper helper) {
-        BlockPos source = new BlockPos(4, 0, 4);
+        BlockPos source = new BlockPos(4, 2, 4);
         helper.setBlock(source, PlasticraftBlocks.LIQUID_HIGH_VISCOSITY_RESIN.get());
         helper.getLevel().scheduleTick(
             helper.absolutePos(source),
@@ -655,8 +663,8 @@ public final class PlasticAnvilGameTests {
             check(drops.size() == 1 && drops.getFirst().getItem().getCount() == 1,
                 "capture did not drop exactly one filled resin block, blue=" + dangerous);
             ItemStack captured = drops.getFirst().getItem();
-            ItemStack reloaded = ItemStack.parseOptional(helper.getLevel().registryAccess(),
-                (CompoundTag) captured.save(helper.getLevel().registryAccess()));
+            var ops = helper.getLevel().registryAccess().createSerializationContext(NbtOps.INSTANCE);
+            ItemStack reloaded = ItemStack.CODEC.parse(ops, ItemStack.CODEC.encodeStart(ops, captured).getOrThrow()).getOrThrow();
             Entity restored = HasMobBlockItem.getMobFromItem(helper.getLevel(), reloaded);
             check(restored instanceof WitherSkull saved && saved.isDangerous() == dangerous,
                 "saved skull lost its type or blue variant");
@@ -788,7 +796,7 @@ public final class PlasticAnvilGameTests {
             "resin anvil entities did not match the resin shock border"
         );
         ShockDropBehavior resinDrop = context.getBorderAnvilBehavior()
-            .orElseThrow(() -> new GameTestAssertException("resin anvil entities did not form a shock border"))
+            .orElseThrow(() -> new PlasticraftTestFailure("resin anvil entities did not form a shock border"))
             .dropBehavior();
         check(resinDrop == ResinShockDropBehavior.INSTANCE, "resin shock behavior lost its drop handler");
 
@@ -918,7 +926,7 @@ public final class PlasticAnvilGameTests {
             .stream()
             .filter(item -> item.getItem().is(Items.COBBLESTONE))
             .findFirst()
-            .orElseThrow(() -> new GameTestAssertException("resin shock behavior spawned no item entity"));
+            .orElseThrow(() -> new PlasticraftTestFailure("resin shock behavior spawned no item entity"));
         check(close(spawnedDrop.getDeltaMovement(), expectedVelocity), "spawned drop used the wrong launch velocity");
         check(sourceStack.getCount() == 1, "resin shock behavior consumed its input stack");
         spawnedDrop.discard();
@@ -995,11 +1003,11 @@ public final class PlasticAnvilGameTests {
         var attackDamageModifier = modifiers.stream()
             .filter(entry -> entry.attribute().equals(Attributes.ATTACK_DAMAGE))
             .findFirst()
-            .orElseThrow(() -> new GameTestAssertException("resin hammer has no attack damage modifier"));
+            .orElseThrow(() -> new PlasticraftTestFailure("resin hammer has no attack damage modifier"));
         var attackSpeedModifier = modifiers.stream()
             .filter(entry -> entry.attribute().equals(Attributes.ATTACK_SPEED))
             .findFirst()
-            .orElseThrow(() -> new GameTestAssertException("resin hammer has no attack speed modifier"));
+            .orElseThrow(() -> new PlasticraftTestFailure("resin hammer has no attack speed modifier"));
         check(
             attackDamageModifier.modifier().is(Item.BASE_ATTACK_DAMAGE_ID)
                 && attackDamageModifier.modifier().operation() == AttributeModifier.Operation.ADD_VALUE
@@ -1022,16 +1030,16 @@ public final class PlasticAnvilGameTests {
             "resin hammer tooltip attack speed is not 4"
         );
         check(
-            item.isValidRepairItem(hammer, ModItems.RESIN.asStack()),
+            hammer.isValidRepairItem(ModItems.RESIN.asStack()),
             "resin was not accepted as the resin hammer's repair material"
         );
         check(
-            !item.isValidRepairItem(hammer, new ItemStack(Items.IRON_INGOT)),
+            !hammer.isValidRepairItem(new ItemStack(Items.IRON_INGOT)),
             "the resin hammer retained the standard hammer's iron repair material"
         );
         check(item.getAnvil() == PlasticraftBlocks.RESIN_ANVIL.get(), "resin hammer impacts did not use the resin anvil");
         check(
-            item.use(helper.getLevel(), player, InteractionHand.MAIN_HAND).getResult() == InteractionResult.PASS,
+            item.use(helper.getLevel(), player, InteractionHand.MAIN_HAND) == InteractionResult.PASS,
             "using the resin hammer in air started the portable anvil action"
         );
         check(!player.isUsingItem(), "resin hammer entered a held-use state for a portable menu");
@@ -1073,7 +1081,7 @@ public final class PlasticAnvilGameTests {
     static void resinAnvilHammerKnockbackIsNonDamaging(ExtendedGameTestHelper helper) {
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         Vec3 playerPosition = helper.absoluteVec(new Vec3(3.5D, 2.0D, 1.5D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        player.snapTo(playerPosition.x, playerPosition.y, playerPosition.z);
         player.setYRot(0.0F);
         ItemStack hammer = PlasticraftItems.RESIN_ANVIL_HAMMER.asStack();
         player.setItemInHand(InteractionHand.MAIN_HAND, hammer);
@@ -1100,8 +1108,8 @@ public final class PlasticAnvilGameTests {
         AtomicInteger landingEventCount = new AtomicInteger();
         AtomicInteger resinSoundCount = new AtomicInteger();
         AtomicInteger anvilSoundCount = new AtomicInteger();
-        ResourceLocation resinImpactSound = ModBlocks.RESIN_BLOCK
-            .getDefaultState().getSoundType().getHitSound().getLocation();
+        Identifier resinImpactSound = ModBlocks.RESIN_BLOCK
+            .getDefaultState().getSoundType().getHitSound().location();
         BlockPos impactPos = target.blockPosition();
         helper.addTemporaryListener((AnvilEvent.OnLand event) -> {
             if (event.getPos().equals(impactPos.above())
@@ -1111,9 +1119,9 @@ public final class PlasticAnvilGameTests {
         });
         helper.addTemporaryListener((PlayLevelSoundEvent.AtPosition event) -> {
             if (event.getLevel() != helper.getLevel() || event.getSound() == null) return;
-            ResourceLocation sound = event.getSound().value().getLocation();
+            Identifier sound = event.getSound().value().location();
             if (sound.equals(resinImpactSound)) resinSoundCount.incrementAndGet();
-            if (sound.equals(SoundEvents.ANVIL_LAND.getLocation())) anvilSoundCount.incrementAndGet();
+            if (sound.equals(SoundEvents.ANVIL_LAND.location())) anvilSoundCount.incrementAndGet();
         });
 
         player.attack(target);
@@ -1159,7 +1167,7 @@ public final class PlasticAnvilGameTests {
     static void resinAnvilHammerDoesNotAccelerateVerticalPlasticPair(ExtendedGameTestHelper helper) {
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         Vec3 playerPosition = helper.absoluteVec(new Vec3(4.5D, 2.0D, 2.5D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        player.snapTo(playerPosition.x, playerPosition.y, playerPosition.z);
         player.setYRot(0.0F);
         player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.RESIN_ANVIL_HAMMER.asStack());
 
@@ -1258,7 +1266,7 @@ public final class PlasticAnvilGameTests {
     static void resinAnvilHammerFollowerKnockbackUsesGroundFriction(ExtendedGameTestHelper helper) {
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         Vec3 playerPosition = helper.absoluteVec(new Vec3(4.5D, 2.0D, 1.5D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        player.snapTo(playerPosition.x, playerPosition.y, playerPosition.z);
         player.setYRot(0.0F);
         player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.RESIN_ANVIL_HAMMER.asStack());
 
@@ -1332,8 +1340,8 @@ public final class PlasticAnvilGameTests {
         AtomicInteger landingEventCount = new AtomicInteger();
         AtomicInteger resinSoundCount = new AtomicInteger();
         AtomicInteger anvilSoundCount = new AtomicInteger();
-        ResourceLocation resinImpactSound = ModBlocks.RESIN_BLOCK
-            .getDefaultState().getSoundType().getHitSound().getLocation();
+        Identifier resinImpactSound = ModBlocks.RESIN_BLOCK
+            .getDefaultState().getSoundType().getHitSound().location();
         helper.addTemporaryListener((AnvilEvent.OnLand event) -> {
             if (event.getPos().equals(target.above())
                 && event.getEntity().getBlockState().is(PlasticraftBlocks.RESIN_ANVIL.get())) {
@@ -1342,9 +1350,9 @@ public final class PlasticAnvilGameTests {
         });
         helper.addTemporaryListener((PlayLevelSoundEvent.AtPosition event) -> {
             if (event.getLevel() != helper.getLevel() || event.getSound() == null) return;
-            ResourceLocation sound = event.getSound().value().getLocation();
+            Identifier sound = event.getSound().value().location();
             if (sound.equals(resinImpactSound)) resinSoundCount.incrementAndGet();
-            if (sound.equals(SoundEvents.ANVIL_LAND.getLocation())) anvilSoundCount.incrementAndGet();
+            if (sound.equals(SoundEvents.ANVIL_LAND.location())) anvilSoundCount.incrementAndGet();
         });
 
         ResinAnvilHammerEvents.leftClickBlock(new PlayerInteractEvent.LeftClickBlock(
@@ -1482,7 +1490,7 @@ public final class PlasticAnvilGameTests {
         player.setNoGravity(true);
         helper.runAfterDelay(61, () -> {
             Vec3 position = helper.absoluteVec(new Vec3(3.5D, 2.0D, 3.5D));
-            player.moveTo(position.x, position.y, position.z);
+            player.snapTo(position.x, position.y, position.z);
             player.invulnerableTime = 0;
             player.setYRot(-90.0F);
             player.setXRot(0.0F);
@@ -1524,7 +1532,7 @@ public final class PlasticAnvilGameTests {
         resinAnvil.setMagnetized(true);
         hardenedAnvil.setMagnetized(true);
         cauldron.setMagnetized(true);
-        cauldron.getInput().insertItem(0, new ItemStack(Items.COBBLESTONE, 3), false);
+        PlasticraftTestData.items(cauldron.getInput()).insertItem(0, new ItemStack(Items.COBBLESTONE, 3), false);
 
         ItemStack resinHammer = PlasticraftItems.RESIN_ANVIL_HAMMER.asStack();
         player.setItemInHand(InteractionHand.MAIN_HAND, resinHammer);
@@ -1627,13 +1635,13 @@ public final class PlasticAnvilGameTests {
         ResinAnvilEntity placed = helper.getLevel().getEntitiesOfClass(
             ResinAnvilEntity.class,
             new AABB(helper.absolutePos(support.above())).inflate(0.1D)
-        ).stream().findFirst().orElseThrow(() -> new GameTestAssertException("captured resin anvil entity was not placed"));
+        ).stream().findFirst().orElseThrow(() -> new PlasticraftTestFailure("captured resin anvil entity was not placed"));
         check(placed.hasCapturedMob(), "placed resin anvil lost its captured mob");
 
-        CompoundTag saved = placed.saveWithoutId(new CompoundTag());
+        CompoundTag saved = PlasticraftTestData.save(placed);
         placed.discard();
         ResinAnvilEntity loaded = new ResinAnvilEntity(PlasticraftEntities.RESIN_ANVIL.get(), helper.getLevel());
-        loaded.load(saved);
+        PlasticraftTestData.read(loaded.registryAccess(), saved, loaded::load);
         check(loaded.hasCapturedMob(), "captured mob component did not survive entity NBT");
         check(helper.getLevel().addFreshEntity(loaded), "failed to restore the saved resin anvil");
         player.setShiftKeyDown(false);
@@ -1680,7 +1688,7 @@ public final class PlasticAnvilGameTests {
                 helper.setBlock(cell.relative(direction), Blocks.STONE);
                 AbstractPlasticEntity product = createElasticCollisionProduct(helper, cell, form);
                 product.setNoGravity(true);
-                product.setDeltaMovement(Vec3.atLowerCornerOf(direction.getNormal()).scale(0.32D));
+                product.setDeltaMovement(Vec3.atLowerCornerOf(direction.getUnitVec3i()).scale(0.32D));
                 products.add(product);
             }
         }
@@ -1689,7 +1697,7 @@ public final class PlasticAnvilGameTests {
             for (int index = 0; index < products.size(); index++) {
                 Direction direction = directions.get(index % directions.size());
                 AbstractPlasticEntity product = products.get(index);
-                double reflectedSpeed = product.getDeltaMovement().dot(Vec3.atLowerCornerOf(direction.getNormal()));
+                double reflectedSpeed = product.getDeltaMovement().dot(Vec3.atLowerCornerOf(direction.getUnitVec3i()));
                 check(reflectedSpeed < -0.04D,
                     "elastic form " + index / directions.size() + " " + direction
                         + " block impact did not reflect velocity: " + product.getDeltaMovement());
@@ -1993,7 +2001,7 @@ public final class PlasticAnvilGameTests {
                 AbstractPlasticEntity product = forwardProducts.get(index);
                 GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
                 AABB bounds = product.plasticraft$getCollisionBox().bounds();
-                player.moveTo(
+                player.snapTo(
                     bounds.minX - player.getBbWidth() * 0.5D,
                     bounds.minY,
                     bounds.getCenter().z
@@ -2015,7 +2023,7 @@ public final class PlasticAnvilGameTests {
             helper.setBlock(new BlockPos(11, 1, 10), Blocks.STONE);
             GameTestPlayer opposingPlayer = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
             AABB potBounds = pot.plasticraft$getCollisionBox().bounds();
-            opposingPlayer.moveTo(
+            opposingPlayer.snapTo(
                 potBounds.maxX + opposingPlayer.getBbWidth() * 0.5D,
                 potBounds.minY,
                 potBounds.getCenter().z
@@ -2052,7 +2060,7 @@ public final class PlasticAnvilGameTests {
             check(state.getValue(DetectorSlidingRailBlock.POWERED), "detector rail dropped its occupied signal");
             int power = helper.getLevel()
                 .getBlockEntity(helper.absolutePos(railPos), ModBlockEntities.DETECTOR_SLIDING_RAIL.get())
-                .orElseThrow(() -> new GameTestAssertException("detector rail block entity was missing"))
+                .orElseThrow(() -> new PlasticraftTestFailure("detector rail block entity was missing"))
                 .getPower();
             check(power == 1, "one resin entity produced detector strength " + power);
             Vec3 away = helper.absoluteVec(new Vec3(7.5D, 2.0D, 3.5D));
@@ -2171,7 +2179,7 @@ public final class PlasticAnvilGameTests {
             GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
             AABB bounds = product.getBoundingBox();
             Vec3 start = new Vec3(bounds.getCenter().x, bounds.maxY + 0.45D, bounds.getCenter().z);
-            player.moveTo(start.x, start.y, start.z);
+            player.snapTo(start.x, start.y, start.z);
             player.fallDistance = 0.75F;
             player.setDeltaMovement(0.0D, -0.75D, 0.0D);
             player.move(MoverType.SELF, player.getDeltaMovement());
@@ -2182,13 +2190,13 @@ public final class PlasticAnvilGameTests {
                 name + " did not clip its player at the real surface");
             check(player.fallDistance == 0.0F, name + " did not clear the rebounding player's fall distance");
             player.setShiftKeyDown(true);
-            player.moveTo(start.x, start.y, start.z);
+            player.snapTo(start.x, start.y, start.z);
             player.setDeltaMovement(0.0D, -0.75D, 0.0D);
             player.move(MoverType.SELF, player.getDeltaMovement());
             check(player.getDeltaMovement().y <= 0.0D, name + " rebounded a sneaking player");
             if (form > 0) {
                 player.setShiftKeyDown(false);
-                player.moveTo(bounds.getCenter().x, bounds.maxY, bounds.getCenter().z);
+                player.snapTo(bounds.getCenter().x, bounds.maxY, bounds.getCenter().z);
                 for (int step = 0; step < 8; step++) {
                     double horizontal = step % 2 == 0 ? 0.12D : -0.12D;
                     Vec3 before = player.position();
@@ -2210,7 +2218,7 @@ public final class PlasticAnvilGameTests {
             state.getBlock().fallOn(helper.getLevel(), state, helper.absolutePos(pos), falling, 10.0F);
             check(close(falling.getHealth(), health), name + " block form dealt fall damage");
             falling.setDeltaMovement(0.0D, -0.75D, 0.0D);
-            state.getBlock().updateEntityAfterFallOn(helper.getLevel(), falling);
+            state.getBlock().updateEntityMovementAfterFallOn(helper.getLevel(), falling);
             check(falling.getDeltaMovement().y > (form == 0 ? 0.70D : 0.59D),
                 name + " block form did not rebound a falling entity");
             check(state.getBlock().isSlimeBlock(state), name + " block form was not marked as a slime block");
@@ -2220,13 +2228,13 @@ public final class PlasticAnvilGameTests {
                 state.getBlock().stepOn(helper.getLevel(), helper.absolutePos(pos), state, falling);
                 check(falling.getDeltaMovement().equals(walking), name + " block form slowed surface walking");
                 falling.setDeltaMovement(0.18D, -0.0784D, 0.0D);
-                state.getBlock().updateEntityAfterFallOn(helper.getLevel(), falling);
+                state.getBlock().updateEntityMovementAfterFallOn(helper.getLevel(), falling);
                 check(falling.getDeltaMovement().y == 0.0D,
                     name + " block form rebounded a resting entity");
             }
             falling.setShiftKeyDown(true);
             falling.setDeltaMovement(0.0D, -0.75D, 0.0D);
-            state.getBlock().updateEntityAfterFallOn(helper.getLevel(), falling);
+            state.getBlock().updateEntityMovementAfterFallOn(helper.getLevel(), falling);
             check(falling.getDeltaMovement().y <= 0.0D, name + " block form rebounded a sneaking entity");
         }
         helper.succeed();
@@ -2247,7 +2255,7 @@ public final class PlasticAnvilGameTests {
             support.setNoGravity(true);
             AABB bounds = support.getBoundingBox();
             GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-            player.moveTo(bounds.getCenter().x, bounds.maxY + 0.2D, bounds.getCenter().z);
+            player.snapTo(bounds.getCenter().x, bounds.maxY + 0.2D, bounds.getCenter().z);
             player.setDeltaMovement(0.0D, -0.4D, 0.0D);
             player.move(MoverType.SELF, new Vec3(0.0D, -0.75D, 0.0D));
             check(player.getDeltaMovement().y > 0.0D && player.getDeltaMovement().y <= 0.4D,
@@ -2474,7 +2482,7 @@ public final class PlasticAnvilGameTests {
         );
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         AABB bounds = anvil.plasticraft$getCollisionBox().bounds();
-        player.moveTo(
+        player.snapTo(
             bounds.minX - player.getBbWidth() * 0.5D,
             bounds.minY,
             bounds.getCenter().z
@@ -2760,21 +2768,21 @@ public final class PlasticAnvilGameTests {
         );
         check(pot.getOutletDirection() == Direction.EAST, "cauldron outlet opened on the wrong face");
         check(pot.getOutletLocalDirection() == Direction.EAST, "cauldron east outlet used the wrong local face");
-        check(isEmpty(pot.getInput()), "anvil hammer was inserted into the cauldron input");
+        check(isEmpty(PlasticraftTestData.items(pot.getInput())), "anvil hammer was inserted into the cauldron input");
         check(player.getMainHandItem() == hammer && hammer.getCount() == 1, "opening an outlet consumed the anvil hammer");
 
-        CompoundTag saved = pot.saveWithoutId(new CompoundTag());
+        CompoundTag saved = PlasticraftTestData.save(pot);
         HardenedResinCauldronEntity loaded = new HardenedResinCauldronEntity(
             PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(),
             helper.getLevel()
         );
-        loaded.load(saved);
+        PlasticraftTestData.read(loaded.registryAccess(), saved, loaded::load);
         check(loaded.getOutletDirection() == Direction.EAST, "cauldron outlet did not survive entity persistence");
 
         pot.insertRecipeOutput(new ItemStack(Items.DIAMOND, 3));
-        check(isEmpty(pot.getOutput()), "cauldron outlet retained output after finding an adjacent container");
+        check(isEmpty(PlasticraftTestData.items(pot.getOutput())), "cauldron outlet retained output after finding an adjacent container");
         check(
-            helper.getBlockEntity(new BlockPos(5, 2, 3)) instanceof Container chest
+            helper.getLevel().getBlockEntity(helper.absolutePos(new BlockPos(5, 2, 3))) instanceof Container chest
                 && countItem(chest, Items.DIAMOND) == 3,
             "cauldron outlet did not transfer output into the adjacent chest"
         );
@@ -2785,7 +2793,7 @@ public final class PlasticAnvilGameTests {
         );
         check(!pot.hasOutlet(), "clicking the same cauldron outlet face did not close it");
         pot.insertRecipeOutput(new ItemStack(Items.EMERALD, 2));
-        check(countItem(pot.getOutput(), Items.EMERALD) == 2, "closed cauldron outlet continued automatic output");
+        check(countItem(PlasticraftTestData.items(pot.getOutput()), Items.EMERALD) == 2, "closed cauldron outlet continued automatic output");
 
         check(
             pot.plasticraft$useAnvilHammer(player, InteractionHand.MAIN_HAND, Direction.WEST).consumesAction(),
@@ -2848,15 +2856,15 @@ public final class PlasticAnvilGameTests {
             "hardened resin cauldron did not share the campfire block cell");
         check(CauldronImpactRecipeProcessor.recipePotCell(pot).equals(workBlock.above()),
             "hardened resin cauldron did not map its physical-bottom campfire to the recipe work position");
-        check(pot.getInput().insertItem(0, ModItems.RESIN.asStack(), false).isEmpty(),
+        check(PlasticraftTestData.items(pot.getInput()).insertItem(0, ModItems.RESIN.asStack(), false).isEmpty(),
             "hardened resin cauldron rejected its resin recipe input");
 
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
         player.setItemInHand(InteractionHand.MAIN_HAND, ModItems.ANVIL_HAMMER.asStack());
         player.attack(pot);
-        check(countItem(pot.getInput(), ModItems.RESIN.get()) == 0,
+        check(countItem(PlasticraftTestData.items(pot.getInput()), ModItems.RESIN.get()) == 0,
             "hardened resin cauldron retained resin after the campfire hammer recipe");
-        check(countItem(pot.getOutput(), ModItems.HARDEND_RESIN.get()) == 1,
+        check(countItem(PlasticraftTestData.items(pot.getOutput()), ModItems.HARDEND_RESIN.get()) == 1,
             "hardened resin cauldron did not produce hardened resin from the campfire hammer recipe");
         player.discard();
         pot.discard();
@@ -2892,7 +2900,7 @@ public final class PlasticAnvilGameTests {
                 ),
                 "cauldron " + index + " did not cover the shared campfire work cell"
             );
-            check(pot.getInput().insertItem(0, new ItemStack(ModItems.RESIN.get(), 64), false).isEmpty(),
+            check(PlasticraftTestData.items(pot.getInput()).insertItem(0, new ItemStack(ModItems.RESIN.get(), 64), false).isEmpty(),
                 "cauldron " + index + " rejected resin input");
         }
 
@@ -2904,14 +2912,14 @@ public final class PlasticAnvilGameTests {
         for (int index = 0; index < pots.size(); index++) {
             HardenedResinCauldronEntity pot = pots.get(index);
             if (pot == struck) {
-                check(countItem(pot.getInput(), ModItems.RESIN.get()) == 0,
+                check(countItem(PlasticraftTestData.items(pot.getInput()), ModItems.RESIN.get()) == 0,
                     "struck resin cauldron retained resin after the hammer impact");
-                check(countItem(pot.getOutput(), ModItems.HARDEND_RESIN.get()) == 64,
+                check(countItem(PlasticraftTestData.items(pot.getOutput()), ModItems.HARDEND_RESIN.get()) == 64,
                     "struck resin cauldron did not turn its full resin stack into hardened resin");
             } else {
-                check(countItem(pot.getInput(), ModItems.RESIN.get()) == 64,
+                check(countItem(PlasticraftTestData.items(pot.getInput()), ModItems.RESIN.get()) == 64,
                     "unstruck resin cauldron " + index + " was processed by the hammer impact");
-                check(countItem(pot.getOutput(), ModItems.HARDEND_RESIN.get()) == 0,
+                check(countItem(PlasticraftTestData.items(pot.getOutput()), ModItems.HARDEND_RESIN.get()) == 0,
                     "unstruck resin cauldron " + index + " produced hardened resin");
             }
             pot.discard();
@@ -2949,7 +2957,7 @@ public final class PlasticAnvilGameTests {
                 ),
                 "cauldron " + index + " did not cover the shared campfire work cell"
             );
-            check(pot.getInput().insertItem(0, new ItemStack(ModItems.RESIN.get(), 64), false).isEmpty(),
+            check(PlasticraftTestData.items(pot.getInput()).insertItem(0, new ItemStack(ModItems.RESIN.get(), 64), false).isEmpty(),
                 "cauldron " + index + " rejected resin input");
         }
 
@@ -2962,14 +2970,13 @@ public final class PlasticAnvilGameTests {
             anvil,
             1.0F
         );
-        NeoForge.EVENT_BUS.post(new AnvilEvent.BeforeInWorldRecipe(event));
-        NeoForge.EVENT_BUS.post(new AnvilEvent.AfterInWorldRecipe(event));
+        NeoForge.EVENT_BUS.post(event);
 
         for (int index = 0; index < pots.size(); index++) {
             HardenedResinCauldronEntity pot = pots.get(index);
-            check(countItem(pot.getInput(), ModItems.RESIN.get()) == 0,
+            check(countItem(PlasticraftTestData.items(pot.getInput()), ModItems.RESIN.get()) == 0,
                 "cauldron " + index + " retained resin after the shared anvil impact");
-            check(countItem(pot.getOutput(), ModItems.HARDEND_RESIN.get()) == 64,
+            check(countItem(PlasticraftTestData.items(pot.getOutput()), ModItems.HARDEND_RESIN.get()) == 64,
                 "cauldron " + index + " did not turn its full resin stack into hardened resin");
             pot.discard();
         }
@@ -3001,7 +3008,7 @@ public final class PlasticAnvilGameTests {
                     pot.getBoundingBox().intersects(impactBounds) == isCenter,
                     "cauldron at " + x + ", " + z + " had the wrong exact landing-cell intersection"
                 );
-                check(pot.getInput().insertItem(0, ModItems.RESIN.asStack(), false).isEmpty(),
+                check(PlasticraftTestData.items(pot.getInput()).insertItem(0, ModItems.RESIN.asStack(), false).isEmpty(),
                     "cauldron at " + x + ", " + z + " rejected resin input");
                 pots.add(pot);
                 if (isCenter) center = pot;
@@ -3018,19 +3025,18 @@ public final class PlasticAnvilGameTests {
             anvil,
             1.0F
         );
-        NeoForge.EVENT_BUS.post(new AnvilEvent.BeforeInWorldRecipe(event));
-        NeoForge.EVENT_BUS.post(new AnvilEvent.AfterInWorldRecipe(event));
+        NeoForge.EVENT_BUS.post(event);
 
         for (HardenedResinCauldronEntity pot : pots) {
             if (pot == center) {
-                check(countItem(pot.getInput(), ModItems.RESIN.get()) == 0,
+                check(countItem(PlasticraftTestData.items(pot.getInput()), ModItems.RESIN.get()) == 0,
                     "center cauldron retained resin after the anvil impact");
-                check(countItem(pot.getOutput(), ModItems.HARDEND_RESIN.get()) == 1,
+                check(countItem(PlasticraftTestData.items(pot.getOutput()), ModItems.HARDEND_RESIN.get()) == 1,
                     "center cauldron did not produce hardened resin");
             } else {
-                check(countItem(pot.getInput(), ModItems.RESIN.get()) == 1,
+                check(countItem(PlasticraftTestData.items(pot.getInput()), ModItems.RESIN.get()) == 1,
                     "adjacent cauldron was processed outside the landing cell");
-                check(countItem(pot.getOutput(), ModItems.HARDEND_RESIN.get()) == 0,
+                check(countItem(PlasticraftTestData.items(pot.getOutput()), ModItems.HARDEND_RESIN.get()) == 0,
                     "adjacent cauldron produced a recipe result outside the landing cell");
             }
             pot.discard();
@@ -3099,7 +3105,7 @@ public final class PlasticAnvilGameTests {
         );
         source.setNoGravity(true);
         target.setNoGravity(true);
-        source.getFluidHandler().fill(
+        PlasticraftTestData.fluids(source.getFluidHandler()).fill(
             new FluidStack(Fluids.WATER, 375),
             IFluidHandler.FluidAction.EXECUTE
         );
@@ -3121,9 +3127,9 @@ public final class PlasticAnvilGameTests {
         );
 
         helper.runAfterDelay(8, () -> {
-            check(source.getFluidHandler().getFluid().isEmpty(), "pipe network did not drain the upper cauldron");
+            check(PlasticraftTestData.fluids(source.getFluidHandler()).getFluidInTank(0).isEmpty(), "pipe network did not drain the upper cauldron");
             check(
-                target.getFluidHandler().getFluidAmount() == 375,
+                PlasticraftTestData.fluids(target.getFluidHandler()).getFluidInTank(0).getAmount() == 375,
                 "pipe network did not transfer the arbitrary fluid amount"
             );
             helper.succeed();
@@ -3156,7 +3162,7 @@ public final class PlasticAnvilGameTests {
         cauldron.tick();
 
         check(
-            countItem(cauldron.getInput(), Items.LAVA_BUCKET) == 1,
+            countItem(PlasticraftTestData.items(cauldron.getInput()), Items.LAVA_BUCKET) == 1,
             "the cauldron stored the same unstackable input in more than one slot"
         );
         int remainingBuckets = helper.getLevel().getEntitiesOfClass(
@@ -3209,7 +3215,7 @@ public final class PlasticAnvilGameTests {
             new PlasticEntityOrientation(Direction.EAST, 0)
         );
         side.setNoGravity(true);
-        side.getFluidHandler().fill(new FluidStack(Fluids.WATER, HardenedResinCauldronEntity.CAPACITY), IFluidHandler.FluidAction.EXECUTE);
+        PlasticraftTestData.fluids(side.getFluidHandler()).fill(new FluidStack(Fluids.WATER, HardenedResinCauldronEntity.CAPACITY), IFluidHandler.FluidAction.EXECUTE);
 
         HardenedResinCauldronEntity magnetic = createPot(
             helper,
@@ -3218,7 +3224,7 @@ public final class PlasticAnvilGameTests {
         );
         magnetic.setNoGravity(true);
         magnetic.setMagnetized(true);
-        magnetic.getFluidHandler().fill(new FluidStack(Fluids.WATER, HardenedResinCauldronEntity.CAPACITY), IFluidHandler.FluidAction.EXECUTE);
+        PlasticraftTestData.fluids(magnetic.getFluidHandler()).fill(new FluidStack(Fluids.WATER, HardenedResinCauldronEntity.CAPACITY), IFluidHandler.FluidAction.EXECUTE);
 
         HardenedResinCauldronEntity partial = createPot(
             helper,
@@ -3226,20 +3232,20 @@ public final class PlasticAnvilGameTests {
             new PlasticEntityOrientation(Direction.DOWN, 0)
         );
         partial.setNoGravity(true);
-        partial.getFluidHandler().fill(new FluidStack(Fluids.WATER, 250), IFluidHandler.FluidAction.EXECUTE);
+        PlasticraftTestData.fluids(partial.getFluidHandler()).fill(new FluidStack(Fluids.WATER, 250), IFluidHandler.FluidAction.EXECUTE);
 
         helper.runAfterDelay(3, () -> {
             BlockPos sideTarget = BlockPos.containing(side.getBoundingBox().getCenter()).relative(Direction.EAST);
             BlockPos magneticTarget = BlockPos.containing(magnetic.getBoundingBox().getCenter()).relative(Direction.EAST);
             BlockPos partialTarget = BlockPos.containing(partial.getBoundingBox().getCenter()).relative(Direction.DOWN);
             check(helper.getLevel().getFluidState(sideTarget).isSource(), "side-facing pot did not spill a source fluid");
-            check(side.getFluidHandler().getFluid().isEmpty(), "side-facing pot retained spilled fluid");
+            check(PlasticraftTestData.fluids(side.getFluidHandler()).getFluidInTank(0).isEmpty(), "side-facing pot retained spilled fluid");
             check(
-                magnetic.getFluidHandler().getFluidAmount() == HardenedResinCauldronEntity.CAPACITY,
+                PlasticraftTestData.fluids(magnetic.getFluidHandler()).getFluidInTank(0).getAmount() == HardenedResinCauldronEntity.CAPACITY,
                 "magnetized pot spilled fluid despite being a sealed container"
             );
             check(helper.getLevel().getFluidState(magneticTarget).isEmpty(), "magnetized pot created an external fluid source");
-            check(partial.getFluidHandler().getFluid().isEmpty(), "partially filled inverted pot retained its fluid");
+            check(PlasticraftTestData.fluids(partial.getFluidHandler()).getFluidInTank(0).isEmpty(), "partially filled inverted pot retained its fluid");
             check(helper.getLevel().getFluidState(partialTarget).isEmpty(), "partial spill created a fluid block");
             helper.succeed();
         });
@@ -3255,7 +3261,7 @@ public final class PlasticAnvilGameTests {
             new PlasticEntityOrientation(Direction.DOWN, 0)
         );
         inverted.setNoGravity(true);
-        inverted.getInput().insertItem(0, new ItemStack(Items.COBBLESTONE, 2), false);
+        PlasticraftTestData.items(inverted.getInput()).insertItem(0, new ItemStack(Items.COBBLESTONE, 2), false);
         inverted.insertRecipeOutput(new ItemStack(Items.IRON_INGOT, 3));
 
         HardenedResinCauldronEntity side = createPot(
@@ -3264,7 +3270,7 @@ public final class PlasticAnvilGameTests {
             new PlasticEntityOrientation(Direction.EAST, 0)
         );
         side.setNoGravity(true);
-        side.getInput().insertItem(0, new ItemStack(Items.DIRT, 4), false);
+        PlasticraftTestData.items(side.getInput()).insertItem(0, new ItemStack(Items.DIRT, 4), false);
 
         HardenedResinCauldronEntity magneticInverted = createPot(
             helper,
@@ -3273,15 +3279,15 @@ public final class PlasticAnvilGameTests {
         );
         magneticInverted.setNoGravity(true);
         magneticInverted.setMagnetized(true);
-        magneticInverted.getInput().insertItem(0, new ItemStack(Items.DIAMOND, 5), false);
+        PlasticraftTestData.items(magneticInverted.getInput()).insertItem(0, new ItemStack(Items.DIAMOND, 5), false);
 
         check(side.shouldUseGravityAlignedItemLayout(), "side-facing pot did not select the gravity-aligned item layout");
         check(!inverted.shouldUseGravityAlignedItemLayout(), "inverted pot selected a side-wall item layout");
         check(!magneticInverted.shouldEjectStoredItems(), "magnetized inverted pot selected item ejection");
 
         helper.runAfterDelay(3, () -> {
-            check(isEmpty(inverted.getInput()), "inverted pot retained input items");
-            check(isEmpty(inverted.getOutput()), "inverted pot retained output items");
+            check(isEmpty(PlasticraftTestData.items(inverted.getInput())), "inverted pot retained input items");
+            check(isEmpty(PlasticraftTestData.items(inverted.getOutput())), "inverted pot retained output items");
             List<ItemEntity> dropped = helper.getLevel().getEntitiesOfClass(
                 ItemEntity.class,
                 inverted.getBoundingBox().inflate(2.0D)
@@ -3295,9 +3301,9 @@ public final class PlasticAnvilGameTests {
                 .mapToInt(item -> item.getItem().getCount())
                 .sum();
             check(cobblestone == 2 && iron == 3, "inverted pot did not drop all stored stacks below its opening");
-            check(countItem(side.getInput(), Items.DIRT) == 4, "side-facing pot incorrectly ejected its items");
+            check(countItem(PlasticraftTestData.items(side.getInput()), Items.DIRT) == 4, "side-facing pot incorrectly ejected its items");
             check(
-                countItem(magneticInverted.getInput(), Items.DIAMOND) == 5,
+                countItem(PlasticraftTestData.items(magneticInverted.getInput()), Items.DIAMOND) == 5,
                 "magnetized inverted pot incorrectly ejected its items"
             );
             helper.succeed();
@@ -3316,8 +3322,8 @@ public final class PlasticAnvilGameTests {
             new PlasticEntityOrientation(Direction.DOWN, 0)
         );
         blocked.setNoGravity(true);
-        blocked.getInput().insertItem(0, new ItemStack(Items.COBBLESTONE, 2), false);
-        blocked.getFluidHandler().fill(
+        PlasticraftTestData.items(blocked.getInput()).insertItem(0, new ItemStack(Items.COBBLESTONE, 2), false);
+        PlasticraftTestData.fluids(blocked.getFluidHandler()).fill(
             new FluidStack(Fluids.WATER, HardenedResinCauldronEntity.CAPACITY),
             IFluidHandler.FluidAction.EXECUTE
         );
@@ -3330,19 +3336,19 @@ public final class PlasticAnvilGameTests {
             new PlasticEntityOrientation(Direction.DOWN, 0)
         );
         partial.setNoGravity(true);
-        partial.getInput().insertItem(0, new ItemStack(Items.GOLD_INGOT, 3), false);
+        PlasticraftTestData.items(partial.getInput()).insertItem(0, new ItemStack(Items.GOLD_INGOT, 3), false);
 
         check(!blocked.shouldEjectStoredItems(), "mostly blocked pot selected item ejection");
         check(blocked.shouldUseGravityAlignedItemLayout(), "blocked pot did not select its downward-opening item layout");
         check(partial.shouldEjectStoredItems(), "mostly open pot did not find an item ejection position");
 
         helper.runAfterDelay(3, () -> {
-            check(countItem(blocked.getInput(), Items.COBBLESTONE) == 2, "blocked pot leaked its stored items");
+            check(countItem(PlasticraftTestData.items(blocked.getInput()), Items.COBBLESTONE) == 2, "blocked pot leaked its stored items");
             check(
-                blocked.getFluidHandler().getFluidAmount() == HardenedResinCauldronEntity.CAPACITY,
+                PlasticraftTestData.fluids(blocked.getFluidHandler()).getFluidInTank(0).getAmount() == HardenedResinCauldronEntity.CAPACITY,
                 "blocked pot leaked fluid while retaining items"
             );
-            check(isEmpty(partial.getInput()), "mostly open pot retained items");
+            check(isEmpty(PlasticraftTestData.items(partial.getInput())), "mostly open pot retained items");
             ItemEntity dropped = helper.getLevel().getEntitiesOfClass(
                 ItemEntity.class,
                 partial.getBoundingBox().inflate(2.0D),
@@ -3358,7 +3364,7 @@ public final class PlasticAnvilGameTests {
         });
 
         helper.runAfterDelay(6, () -> {
-            check(isEmpty(blocked.getInput()), "pot retained items after its obstruction was removed");
+            check(isEmpty(PlasticraftTestData.items(blocked.getInput())), "pot retained items after its obstruction was removed");
             int cobblestone = helper.getLevel().getEntitiesOfClass(
                 ItemEntity.class,
                 blocked.getBoundingBox().inflate(2.0D),
@@ -3378,19 +3384,19 @@ public final class PlasticAnvilGameTests {
         HardenedResinCauldronEntity original = createPot(helper, new Vec3(3.5D, 2.0D, 3.5D), PlasticEntityOrientation.DEFAULT);
         original.setNoGravity(true);
         original.setMagnetized(true);
-        original.getInput().insertItem(0, new ItemStack(Items.COBBLESTONE, 3), false);
-        original.getFluidHandler().fill(new FluidStack(Fluids.WATER, 500), IFluidHandler.FluidAction.EXECUTE);
+        PlasticraftTestData.items(original.getInput()).insertItem(0, new ItemStack(Items.COBBLESTONE, 3), false);
+        PlasticraftTestData.fluids(original.getFluidHandler()).fill(new FluidStack(Fluids.WATER, 500), IFluidHandler.FluidAction.EXECUTE);
 
-        CompoundTag saved = original.saveWithoutId(new CompoundTag());
+        CompoundTag saved = PlasticraftTestData.save(original);
         HardenedResinCauldronEntity loaded = new HardenedResinCauldronEntity(PlasticraftEntities.HARDEND_RESIN_CAULDRON.get(), helper.getLevel());
-        loaded.load(saved);
+        PlasticraftTestData.read(loaded.registryAccess(), saved, loaded::load);
         check(loaded.isMagnetized(), "pot magnetized state did not survive NBT");
-        check(loaded.getInput().getStackInSlot(0).getCount() == 3, "pot input contents did not survive NBT");
+        check(PlasticraftTestData.items(loaded.getInput()).getStackInSlot(0).getCount() == 3, "pot input contents did not survive NBT");
         check(
             loaded.getSyncedItems().stream().mapToInt(ItemStack::getCount).sum() == 3,
             "loaded pot did not rebuild its display-item sync data"
         );
-        check(loaded.getFluidHandler().getFluidAmount() == 500, "pot fluid contents did not survive NBT");
+        check(PlasticraftTestData.fluids(loaded.getFluidHandler()).getFluidInTank(0).getAmount() == 500, "pot fluid contents did not survive NBT");
         original.discard();
         helper.succeed();
     }
@@ -3424,12 +3430,12 @@ public final class PlasticAnvilGameTests {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 center = bounds.getCenter();
         double standingY = bounds.minY + 0.25D;
-        player.moveTo(center.x, bounds.maxY + 0.1D, center.z);
+        player.snapTo(center.x, bounds.maxY + 0.1D, center.z);
         player.move(MoverType.SELF, new Vec3(0.0D, -1.0D, 0.0D));
         check(Math.abs(player.getY() - standingY) < EPSILON, "player did not enter the pot and land on its floor");
         check(helper.getLevel().noCollision(player), "player could not stand inside the pot entity");
 
-        player.moveTo(bounds.minX, standingY, center.z);
+        player.snapTo(bounds.minX, standingY, center.z);
         check(!helper.getLevel().noCollision(player), "pot entity wall no longer had collision");
         helper.succeed();
     }
@@ -3719,7 +3725,9 @@ public final class PlasticAnvilGameTests {
     @TestHolder(description = "Vehicle collision overrides still participate in plastic-anvil carrier movement")
     static void vehicleOverridesCarryAnvil(ExtendedGameTestHelper helper) {
         Vec3 boatPosition = helper.absoluteVec(new Vec3(2.5D, 1.0D, 2.5D));
-        Boat boat = new Boat(helper.getLevel(), boatPosition.x, boatPosition.y, boatPosition.z);
+        Boat boat = EntityType.OAK_BOAT.create(helper.getLevel(), EntitySpawnReason.TRIGGERED);
+        check(boat != null, "failed to create boat carrier");
+        boat.snapTo(boatPosition);
         boat.setNoGravity(true);
         check(helper.getLevel().addFreshEntity(boat), "failed to add boat carrier");
         HardenedResinAnvilEntity boatAnvil = createAnvilAbsolute(
@@ -3728,12 +3736,8 @@ public final class PlasticAnvilGameTests {
         );
 
         Vec3 minecartPosition = helper.absoluteVec(new Vec3(6.5D, 1.0D, 6.5D));
-        Minecart minecart = new Minecart(
-            helper.getLevel(),
-            minecartPosition.x,
-            minecartPosition.y,
-            minecartPosition.z
-        );
+        Minecart minecart = new Minecart(EntityType.MINECART, helper.getLevel());
+        minecart.snapTo(minecartPosition);
         minecart.setNoGravity(true);
         check(helper.getLevel().addFreshEntity(minecart), "failed to add minecart carrier");
         HardenedResinAnvilEntity minecartAnvil = createAnvilAbsolute(
@@ -3871,7 +3875,7 @@ public final class PlasticAnvilGameTests {
             stacks.add(plates);
             GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
             AABB bounds = plates.getFirst().getBoundingBox();
-            player.moveTo(bounds.minX - player.getBbWidth() / 2d, bounds.minY, bounds.getCenter().z);
+            player.snapTo(bounds.minX - player.getBbWidth() / 2d, bounds.minY, bounds.getCenter().z);
             players.add(player);
         }
         helper.runAfterDelay(3, () -> {
@@ -3922,7 +3926,7 @@ public final class PlasticAnvilGameTests {
         HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(5.5D, 2.0D, 5.5D));
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         AABB bounds = anvil.plasticraft$getCollisionBox().bounds();
-        player.moveTo(
+        player.snapTo(
             bounds.minX - player.getBbWidth() * 0.5D,
             bounds.minY,
             bounds.getCenter().z
@@ -3971,7 +3975,7 @@ public final class PlasticAnvilGameTests {
             .thenIdle(3)
             .thenExecute(() -> {
                 AABB bounds = anvil.plasticraft$getCollisionBox().bounds();
-                player.moveTo(
+                player.snapTo(
                     bounds.minX - player.getBbWidth() * 0.5D,
                     bounds.minY,
                     bounds.getCenter().z
@@ -3986,7 +3990,7 @@ public final class PlasticAnvilGameTests {
                 releasedPosition[0] = anvil.position();
                 releaseVelocity[0] = anvil.getDeltaMovement();
                 Vec3 retreat = helper.absoluteVec(new Vec3(2.5D, 2.0D, 5.5D));
-                player.moveTo(retreat.x, retreat.y, retreat.z);
+                player.snapTo(retreat.x, retreat.y, retreat.z);
                 player.setDeltaMovement(Vec3.ZERO);
             })
             .thenIdle(6)
@@ -4024,7 +4028,7 @@ public final class PlasticAnvilGameTests {
 
         helper.runAfterDelay(3, () -> {
             AABB bounds = anvil.plasticraft$getCollisionBox().bounds();
-            pusher.moveTo(
+            pusher.snapTo(
                 bounds.minX - pusher.getBbWidth() * 0.5D,
                 bounds.minY,
                 bounds.getCenter().z
@@ -4079,17 +4083,17 @@ public final class PlasticAnvilGameTests {
                 AABB xBounds = xAnvil.plasticraft$getCollisionBox().bounds();
                 AABB zBounds = zAnvil.plasticraft$getCollisionBox().bounds();
                 AABB potBounds = pot.plasticraft$getCollisionBox().bounds();
-                xPlayer.moveTo(
+                xPlayer.snapTo(
                     xBounds.minX - xPlayer.getBbWidth() * 0.5D,
                     xBounds.minY,
                     xBounds.getCenter().z
                 );
-                zPlayer.moveTo(
+                zPlayer.snapTo(
                     zBounds.getCenter().x,
                     zBounds.minY,
                     zBounds.minZ - zPlayer.getBbWidth() * 0.5D
                 );
-                potPlayer.moveTo(
+                potPlayer.snapTo(
                     potBounds.minX - potPlayer.getBbWidth() * 0.5D,
                     potBounds.minY,
                     potBounds.getCenter().z
@@ -4132,7 +4136,7 @@ public final class PlasticAnvilGameTests {
 
         helper.runAfterDelay(3, () -> {
             AABB bounds = pot.plasticraft$getCollisionBox().bounds();
-            player.moveTo(
+            player.snapTo(
                 bounds.minX - player.getBbWidth() * 0.5D,
                 bounds.minY,
                 bounds.getCenter().z
@@ -4184,7 +4188,7 @@ public final class PlasticAnvilGameTests {
 
         helper.runAfterDelay(3, () -> {
             AABB bounds = pot.plasticraft$getCollisionBox().bounds();
-            player.moveTo(
+            player.snapTo(
                 bounds.minX - player.getBbWidth() * 0.5D,
                 bounds.minY,
                 bounds.getCenter().z
@@ -4229,7 +4233,7 @@ public final class PlasticAnvilGameTests {
         helper.runAfterDelay(3, () -> {
             AABB bounds = pot.plasticraft$getCollisionBox().bounds();
             Vec3 center = bounds.getCenter();
-            player.moveTo(center.x, bounds.minY + 0.25D, center.z);
+            player.snapTo(center.x, bounds.minY + 0.25D, center.z);
             player.setOnGround(true);
             Vec3 potStart = pot.position();
             double playerStartY = player.getY();
@@ -4265,7 +4269,7 @@ public final class PlasticAnvilGameTests {
         helper.runAfterDelay(3, () -> {
             AABB bounds = pot.plasticraft$getCollisionBox().bounds();
             double rimOverlap = 0.08D;
-            player.moveTo(
+            player.snapTo(
                 bounds.maxX + player.getBbWidth() * 0.5D - rimOverlap,
                 bounds.maxY,
                 bounds.getCenter().z
@@ -4319,7 +4323,7 @@ public final class PlasticAnvilGameTests {
                 "the fallen anvil was not resting on the cauldron collision shape"
             );
             AABB potBounds = pot.plasticraft$getCollisionBox().bounds();
-            player.moveTo(
+            player.snapTo(
                 potBounds.minX - player.getBbWidth() * 0.5D,
                 potBounds.minY,
                 potBounds.getCenter().z
@@ -4366,7 +4370,7 @@ public final class PlasticAnvilGameTests {
                 "the fallen anvil was not resting on the cauldron collision shape"
             );
             AABB potBounds = pot.plasticraft$getCollisionBox().bounds();
-            player.moveTo(
+            player.snapTo(
                 potBounds.getCenter().x,
                 potBounds.minY,
                 potBounds.minZ - player.getBbWidth() * 0.5D
@@ -4487,7 +4491,7 @@ public final class PlasticAnvilGameTests {
         );
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 playerPosition = helper.absoluteVec(new Vec3(4.69D, 2.0D, 5.5D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        player.snapTo(playerPosition.x, playerPosition.y, playerPosition.z);
 
         helper.runAfterDelay(3, () -> {
             double playerStart = player.getX();
@@ -4519,7 +4523,7 @@ public final class PlasticAnvilGameTests {
         HardenedResinAnvilEntity anvil = createAnvil(helper, new Vec3(5.5D, 2.0D, 5.5D));
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         AABB bounds = anvil.plasticraft$getCollisionBox().bounds();
-        player.moveTo(
+        player.snapTo(
             bounds.minX - player.getBbWidth() * 0.5D,
             bounds.minY,
             bounds.getCenter().z
@@ -4553,7 +4557,7 @@ public final class PlasticAnvilGameTests {
         );
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         AABB bounds = pot.plasticraft$getCollisionBox().bounds();
-        player.moveTo(
+        player.snapTo(
             bounds.minX - player.getBbWidth() * 0.5D,
             bounds.minY,
             bounds.getCenter().z
@@ -4601,7 +4605,7 @@ public final class PlasticAnvilGameTests {
             rear.getZ()
         );
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
-        player.moveTo(
+        player.snapTo(
             rearBounds.minX - player.getBbWidth() * 0.5D,
             rearBounds.minY,
             rearBounds.getCenter().z
@@ -4696,14 +4700,14 @@ public final class PlasticAnvilGameTests {
         player.setShiftKeyDown(true);
         player.setItemInHand(InteractionHand.MAIN_HAND, Items.ANVIL.getDefaultInstance());
         AtomicInteger placementSounds = new AtomicInteger();
-        ResourceLocation placementSound = Blocks.ANVIL.defaultBlockState()
+        Identifier placementSound = Blocks.ANVIL.defaultBlockState()
             .getSoundType()
             .getPlaceSound()
-            .getLocation();
+            .location();
         helper.addTemporaryListener((PlayLevelSoundEvent.AtPosition event) -> {
             if (event.getLevel() == helper.getLevel()
                 && event.getSound() != null
-                && event.getSound().value().getLocation().equals(placementSound)) {
+                && event.getSound().value().location().equals(placementSound)) {
                 placementSounds.incrementAndGet();
             }
         });
@@ -4735,7 +4739,7 @@ public final class PlasticAnvilGameTests {
     @TestHolder(description = "High-speed acceleration recentering uses collision and contributes to landing distance")
     static void acceleratedRecenteringCannotBypassFloor(ExtendedGameTestHelper helper) {
         AtomicInteger eventCount = new AtomicInteger();
-        float[] fallDistance = {0.0F};
+        double[] fallDistance = {0.0F};
         AccelerateManager.AccelerationEntry acceleration = new AccelerateManager.AccelerationEntry(
             helper.absolutePos(new BlockPos(2, -1, 3)),
             Direction.EAST,
@@ -4807,8 +4811,8 @@ public final class PlasticAnvilGameTests {
         helper.setBlock(new BlockPos(14, 1, 2), Blocks.RED_CONCRETE);
         AtomicInteger eventCount = new AtomicInteger();
         AtomicInteger settlingEventCount = new AtomicInteger();
-        float[] fallDistance = {0.0F};
-        float[] settlingFallDistance = {0.0F};
+        double[] fallDistance = {0.0F};
+        double[] settlingFallDistance = {0.0F};
         helper.addTemporaryListener((AnvilEvent.OnLand event) -> {
             check(event.getEntity() != resting && event.getEntity() != hovering,
                 "a resting or suspended plastic anvil processed without landing");
@@ -4878,7 +4882,7 @@ public final class PlasticAnvilGameTests {
         support.setNoGravity(true);
         HardenedResinAnvilEntity anvil = createAnvilAbsolute(helper, anvilPosition);
         Vec3 gravity = GravityManager.getNetGravityVectorForFallingBlock(anvil);
-        check(Direction.getNearest(gravity) == Direction.WEST, "test source did not create westward gravity");
+        check(Direction.getApproximateNearest(gravity) == Direction.WEST, "test source did not create westward gravity");
 
         helper.runAfterDelay(3, () -> {
             EntityType<?> supportType = support.getType();
@@ -4920,22 +4924,22 @@ public final class PlasticAnvilGameTests {
     }
 
     private static FastCookingRecipe fastCookingRecipe(ExtendedGameTestHelper helper, String path) {
-        RecipeHolder<?> holder = helper.getLevel().getRecipeManager()
-            .byKey(AnvilcraftPlasticraft.of(path))
-            .orElseThrow(() -> new GameTestAssertException(path + " recipe was not loaded"));
+        RecipeHolder<?> holder = helper.getLevel().recipeAccess()
+            .byKey(ResourceKey.create(Registries.RECIPE, AnvilcraftPlasticraft.of(path)))
+            .orElseThrow(() -> helper.assertionException(path + " recipe was not loaded"));
         check(holder.value() instanceof FastCookingRecipe, path + " did not load as a fast-cooking recipe");
         FastCookingRecipe recipe = (FastCookingRecipe) holder.value();
-        check(recipe.getType() == ModRecipeTypes.FAST_COOKING_TYPE.get(), path + " has the wrong recipe type");
+        check(recipe.getType() == ModRecipeTypes.FAST_COOKING.get(), path + " has the wrong recipe type");
         return recipe;
     }
 
     private static SuperHeatingRecipe superHeatingRecipe(ExtendedGameTestHelper helper, String path) {
-        RecipeHolder<?> holder = helper.getLevel().getRecipeManager()
-            .byKey(ResourceLocation.fromNamespaceAndPath("anvilcraft", path))
-            .orElseThrow(() -> new GameTestAssertException(path + " recipe was not loaded"));
+        RecipeHolder<?> holder = helper.getLevel().recipeAccess()
+            .byKey(ResourceKey.create(Registries.RECIPE, Identifier.fromNamespaceAndPath("anvilcraft", path)))
+            .orElseThrow(() -> helper.assertionException(path + " recipe was not loaded"));
         check(holder.value() instanceof SuperHeatingRecipe, path + " did not load as a super-heating recipe");
         SuperHeatingRecipe recipe = (SuperHeatingRecipe) holder.value();
-        check(recipe.getType() == ModRecipeTypes.SUPER_HEATING_TYPE.get(), path + " has the wrong recipe type");
+        check(recipe.getType() == ModRecipeTypes.SUPER_HEATING.get(), path + " has the wrong recipe type");
         return recipe;
     }
 
@@ -4952,7 +4956,7 @@ public final class PlasticAnvilGameTests {
         cauldron.beginRecipeProcessing();
         try {
             check(recipe.matches(context, level), "royal steel recipe did not match the hardened resin cauldron");
-            recipe.assemble(context, level.registryAccess());
+            recipe.assemble(context);
             context.accept();
         } finally {
             cauldron.finishRecipeProcessing();
@@ -5227,7 +5231,7 @@ public final class PlasticAnvilGameTests {
                 return item;
             }
         }
-        throw new GameTestAssertException("royal preference selected no item from " + candidates.location());
+        throw new PlasticraftTestFailure("royal preference selected no item from " + candidates.location());
     }
 
     private static void assertPlayerJumpsAndStepsWithHeadProduct(
@@ -5241,7 +5245,7 @@ public final class PlasticAnvilGameTests {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         double startX = slabX - 0.5D;
         Vec3 playerPosition = helper.absoluteVec(new Vec3(startX, 1.0D, 3.5D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        player.snapTo(playerPosition.x, playerPosition.y, playerPosition.z);
         Vec3 relativeProductPosition = new Vec3(startX, 1.0D + player.getBbHeight(), 3.5D);
         AbstractPlasticEntity product = productFactory.apply(relativeProductPosition);
 
@@ -5259,7 +5263,7 @@ public final class PlasticAnvilGameTests {
             check(player.getY() > playerStart.y + 0.35D, productName + " prevented the player from jumping");
             check(product.getY() > productStart.y + 0.35D, productName + " did not follow the player's jump");
 
-            player.moveTo(playerStart.x, playerStart.y, playerStart.z);
+            player.snapTo(playerStart.x, playerStart.y, playerStart.z);
             product.setPos(productStart);
             player.setDeltaMovement(Vec3.ZERO);
             product.setDeltaMovement(Vec3.ZERO);
@@ -5286,7 +5290,7 @@ public final class PlasticAnvilGameTests {
     ) {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 position = helper.absoluteVec(relativePosition);
-        player.moveTo(position.x, position.y, position.z);
+        player.snapTo(position.x, position.y, position.z);
         player.setItemSlot(
             EquipmentSlot.HEAD,
             PlasticraftItems.RESIN_ANVIL_HAMMER.asStack()
@@ -5353,7 +5357,7 @@ public final class PlasticAnvilGameTests {
         BlockPos pos = new BlockPos(3, 3, 3);
         BlockPos absolutePos = helper.absolutePos(pos);
         Vec3 blockCenter = absolutePos.getCenter();
-        Vec3 sourceCenter = blockCenter.add(Vec3.atLowerCornerOf(direction.getNormal()).scale(3.0D));
+        Vec3 sourceCenter = blockCenter.add(Vec3.atLowerCornerOf(direction.getUnitVec3i()).scale(3.0D));
         BlockPos sourceId = BlockPos.containing(sourceCenter);
         GravityManager.GravitySourceType sourceType = new GravityManager.GravitySourceType(20.0D, 8, 0.0D);
         GravityManager.GravitySourceManager.upsertSource(helper.getLevel(), sourceId, sourceCenter, sourceType);
@@ -5364,7 +5368,7 @@ public final class PlasticAnvilGameTests {
             blockCenter,
             GravityType.NORMAL
         );
-        check(Direction.getNearest(gravity) == direction, "test source did not create " + direction + " gravity: " + gravity);
+        check(Direction.getApproximateNearest(gravity) == direction, "test source did not create " + direction + " gravity: " + gravity);
 
         BlockState state = PlasticraftBlocks.HARDEND_RESIN_ANVIL.get()
             .defaultBlockState()
@@ -5414,7 +5418,7 @@ public final class PlasticAnvilGameTests {
     private static Vec3 eastFaceHit(AbstractPlasticEntity entity) {
         AABB faceBox = entity.plasticraft$getInteractionShape().toAabbs().stream()
             .max((first, second) -> Double.compare(first.maxX, second.maxX))
-            .orElseThrow(() -> new GameTestAssertException("plastic entity has no interaction shape"));
+            .orElseThrow(() -> new PlasticraftTestFailure("plastic entity has no interaction shape"));
         Vec3 center = faceBox.getCenter();
         return new Vec3(faceBox.maxX - entity.getX(), center.y - entity.getY(), center.z - entity.getZ());
     }
@@ -5470,7 +5474,7 @@ public final class PlasticAnvilGameTests {
 
     private static void check(boolean condition, String message) {
         if (!condition) {
-            throw new GameTestAssertException(message);
+            throw new PlasticraftTestFailure(message);
         }
     }
 }

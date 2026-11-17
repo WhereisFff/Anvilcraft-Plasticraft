@@ -8,7 +8,7 @@ import dev.anvilcraft.plasticraft.api.texture.PlasticTextureLayout;
 import dev.anvilcraft.plasticraft.entity.collision.BuiltInPlasticEntityModels;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
@@ -65,7 +65,7 @@ public final class UniversalPlasticShape {
     }
 
     /** 所有调用方共用同一精灵命名，防止模型与图集源各自拼接资源路径。 */
-    public static ResourceLocation sprite(DyeColor color) {
+    public static Identifier sprite(DyeColor color) {
         return AnvilcraftPlasticraft.of("block/universal_plastic/" + color.getName());
     }
 

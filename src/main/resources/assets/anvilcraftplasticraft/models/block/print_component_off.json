@@ -2,7 +2,7 @@
 	"format_version": "1.9.0",
 	"credit": "Made with Blockbench",
 	"ambientocclusion": false,
-	"render_type": "minecraft:cutout",
+
 	"textures": {
 		"0": "anvilcraftplasticraft:block/plastic_molding_chamber_off",
 		"1": "anvilcraftplasticraft:block/print_component_off",

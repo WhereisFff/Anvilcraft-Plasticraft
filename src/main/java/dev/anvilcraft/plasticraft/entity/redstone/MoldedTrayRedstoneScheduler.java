@@ -35,7 +35,7 @@ public final class MoldedTrayRedstoneScheduler {
             action = PendingAction.scheduledTick(
                 runtime,
                 markerPosition,
-                new ChunkPos(runtime.host().blockPosition()).toLong(),
+                ChunkPos.pack(runtime.host().blockPosition()),
                 level.getGameTime() + delay,
                 priority
             );
@@ -55,7 +55,7 @@ public final class MoldedTrayRedstoneScheduler {
             action = PendingAction.blockEvent(
                 runtime,
                 markerPosition,
-                new ChunkPos(runtime.host().blockPosition()).toLong(),
+                ChunkPos.pack(runtime.host().blockPosition()),
                 componentEvent,
                 token
             );
@@ -91,7 +91,7 @@ public final class MoldedTrayRedstoneScheduler {
             if (schedule == null) return;
             action = schedule.currentActions.get(runtime);
             if (action == null) return;
-            long currentChunk = new ChunkPos(runtime.host().blockPosition()).toLong();
+            long currentChunk = ChunkPos.pack(runtime.host().blockPosition());
             if (currentChunk == action.hostChunk) return;
             if (action.kind == ActionKind.SCHEDULED_TICK) {
                 remaining = (int) Math.clamp(
@@ -247,16 +247,16 @@ public final class MoldedTrayRedstoneScheduler {
         }
 
         private BlockPos allocate(ServerLevel level, BlockPos hostPosition) {
-            ChunkPos chunk = new ChunkPos(hostPosition);
-            long chunkKey = chunk.toLong();
-            int height = level.getMaxBuildHeight() - level.getMinBuildHeight();
+            ChunkPos chunk = ChunkPos.containing(hostPosition);
+            long chunkKey = chunk.pack();
+            int height = level.getMaxY() + 1 - level.getMinY();
             int slotCount = 16 * 16 * height;
             int start = Math.floorMod(this.nextSlots.getOrDefault(chunkKey, 0), slotCount);
             for (int offset = 0; offset < slotCount; offset++) {
                 int slot = (start + offset) % slotCount;
                 int localX = slot & 15;
                 int localZ = slot >> 4 & 15;
-                int y = level.getMinBuildHeight() + (slot >> 8);
+                int y = level.getMinY() + (slot >> 8);
                 BlockPos candidate = new BlockPos(
                     chunk.getMinBlockX() + localX,
                     y,

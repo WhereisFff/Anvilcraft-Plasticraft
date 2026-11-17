@@ -1,21 +1,19 @@
 package dev.anvilcraft.plasticraft.gametest;
 
-import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronContents;
+import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
-import dev.dubhe.anvilcraft.block.ChuteBlock;
 import dev.dubhe.anvilcraft.block.entity.BaseChuteBlockEntity;
+import dev.dubhe.anvilcraft.block.logistics.chute.ChuteBlock;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.gametest.framework.GameTest;
-import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.entity.vehicle.MinecartHopper;
+import net.minecraft.world.entity.vehicle.minecart.MinecartHopper;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -32,6 +30,7 @@ import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
+import net.neoforged.testframework.gametest.GameTest;
 
 /** 覆盖实体塑料容器与原版、AnvilCraft 物品运输设备之间的自动化传输。 */
 public final class PlasticEntityItemTransferGameTests {
@@ -49,7 +48,7 @@ public final class PlasticEntityItemTransferGameTests {
             "failed to fill hopper output cauldron");
         tickHopper(helper, hopperExtractPos, hopperExtract);
         check(hopperExtract.countItem(Items.DIAMOND) == 1, "hopper did not extract cauldron output");
-        check(countItem(extractCauldron.getItemHandler(), Items.DIAMOND) == 0,
+        check(countItem(IItemHandler.of(extractCauldron.getItemHandler()), Items.DIAMOND) == 0,
             "hopper-extracted item remained in cauldron");
 
         BlockPos hopperInsertPos = new BlockPos(6, 2, 3);
@@ -58,7 +57,7 @@ public final class PlasticEntityItemTransferGameTests {
         hopperInsert.setItem(0, new ItemStack(Items.IRON_INGOT));
         tickHopper(helper, hopperInsertPos, hopperInsert);
         check(hopperInsert.countItem(Items.IRON_INGOT) == 0, "hopper retained its inserted item");
-        check(countItem(insertCauldron.getItemHandler(), Items.IRON_INGOT) == 1,
+        check(countItem(IItemHandler.of(insertCauldron.getItemHandler()), Items.IRON_INGOT) == 1,
             "cauldron did not receive hopper input");
 
         HardenedResinCauldronEntity minecartCauldron = createCauldron(helper, new Vec3(10.5D, 2.0D, 3.5D));
@@ -71,7 +70,7 @@ public final class PlasticEntityItemTransferGameTests {
         check(helper.getLevel().addFreshEntity(minecart), "failed to add hopper minecart");
         check(minecart.suckInItems(), "hopper minecart reported no transfer");
         check(minecart.countItem(Items.EMERALD) == 1, "hopper minecart did not extract cauldron output");
-        check(countItem(minecartCauldron.getItemHandler(), Items.EMERALD) == 0,
+        check(countItem(IItemHandler.of(minecartCauldron.getItemHandler()), Items.EMERALD) == 0,
             "hopper-minecart item remained in cauldron");
 
         BlockPos chuteExtractPos = new BlockPos(14, 1, 3);
@@ -80,9 +79,9 @@ public final class PlasticEntityItemTransferGameTests {
         check(chuteCauldron.insertRecipeOutput(new ItemStack(Items.GOLD_INGOT)).isEmpty(),
             "failed to fill chute output cauldron");
         chuteExtract.tick();
-        check(countItem(chuteExtract.getItemHandler(), Items.GOLD_INGOT) == 1,
+        check(countItem(IItemHandler.of(chuteExtract.getItemHandler()), Items.GOLD_INGOT) == 1,
             "chute did not extract cauldron output");
-        check(countItem(chuteCauldron.getItemHandler(), Items.GOLD_INGOT) == 0,
+        check(countItem(IItemHandler.of(chuteCauldron.getItemHandler()), Items.GOLD_INGOT) == 0,
             "chute-extracted item remained in cauldron");
 
         BlockPos chuteCollectPos = new BlockPos(18, 1, 3);
@@ -99,7 +98,7 @@ public final class PlasticEntityItemTransferGameTests {
         item.setNoGravity(true);
         check(helper.getLevel().addFreshEntity(item), "failed to add loose item");
         chuteCollect.tick();
-        check(countItem(chuteCollect.getItemHandler(), Items.REDSTONE) == 1,
+        check(countItem(IItemHandler.of(chuteCollect.getItemHandler()), Items.REDSTONE) == 1,
             "empty cauldron blocked chute item collection");
         helper.succeed();
     }
@@ -118,15 +117,15 @@ public final class PlasticEntityItemTransferGameTests {
         );
         check(source.insertRecipeOutput(new ItemStack(Items.DIAMOND, 2)).isEmpty(),
             "hardened resin cauldron rejected a pick-state output item");
-        check(source.getItemHandler().insertItem(8, new ItemStack(Items.IRON_INGOT, 3), false).isEmpty(),
+        check(PlasticraftTestData.items(source.getItemHandler()).insertItem(8, new ItemStack(Items.IRON_INGOT, 3), false).isEmpty(),
             "hardened resin cauldron rejected a pick-state input item");
-        check(source.getFluidHandler().fill(new FluidStack(Fluids.WATER, 250), IFluidHandler.FluidAction.EXECUTE) == 250,
+        check(PlasticraftTestData.fluids(source.getFluidHandler()).fill(new FluidStack(Fluids.WATER, 250), IFluidHandler.FluidAction.EXECUTE) == 250,
             "hardened resin cauldron rejected a pick-state fluid");
 
         ItemStack initial = source.getPickResult();
         ItemStack complete = source.getCompletePickResult();
         HardenedResinCauldronContents contents = HardenedResinCauldronContents.get(complete).orElseThrow(
-            () -> new GameTestAssertException("control creative pick lost hardened resin cauldron contents")
+            () -> new PlasticraftTestFailure("control creative pick lost hardened resin cauldron contents")
         );
         check(PlasticItemData.getMaterial(initial).equals("hardened_resin"),
             "normal creative pick changed hardened resin material");
@@ -146,10 +145,10 @@ public final class PlasticEntityItemTransferGameTests {
             new Vec3(4.5D, 2.0D, 4.5D),
             complete
         );
-        check(restoredComplete.getItemHandler().getStackInSlot(0).is(Items.DIAMOND)
-                && restoredComplete.getItemHandler().getStackInSlot(0).getCount() == 2
-                && restoredComplete.getItemHandler().getStackInSlot(8).is(Items.IRON_INGOT)
-                && restoredComplete.getItemHandler().getStackInSlot(8).getCount() == 3,
+        check(PlasticraftTestData.items(restoredComplete.getItemHandler()).getStackInSlot(0).is(Items.DIAMOND)
+                && PlasticraftTestData.items(restoredComplete.getItemHandler()).getStackInSlot(0).getCount() == 2
+                && PlasticraftTestData.items(restoredComplete.getItemHandler()).getStackInSlot(8).is(Items.IRON_INGOT)
+                && PlasticraftTestData.items(restoredComplete.getItemHandler()).getStackInSlot(8).getCount() == 3,
             "control creative pick did not restore hardened resin cauldron items");
         check(restoredComplete.plasticraft$bottomFluid().is(Fluids.WATER)
                 && restoredComplete.plasticraft$bottomFluid().getAmount() == 250,
@@ -160,8 +159,8 @@ public final class PlasticEntityItemTransferGameTests {
             new Vec3(4.5D, 2.0D, 1.5D),
             initial
         );
-        check(restoredInitial.getItemHandler().getStackInSlot(0).isEmpty()
-                && restoredInitial.getItemHandler().getStackInSlot(8).isEmpty()
+        check(PlasticraftTestData.items(restoredInitial.getItemHandler()).getStackInSlot(0).isEmpty()
+                && PlasticraftTestData.items(restoredInitial.getItemHandler()).getStackInSlot(8).isEmpty()
                 && restoredInitial.plasticraft$bottomFluid().isEmpty(),
             "normal creative pick did not restore an empty hardened resin cauldron");
         helper.succeed();
@@ -176,8 +175,8 @@ public final class PlasticEntityItemTransferGameTests {
             .setValue(HopperBlock.FACING, facing)
             .setValue(HopperBlock.ENABLED, true);
         helper.setBlock(relativePos, state);
-        check(helper.getBlockEntity(relativePos) instanceof HopperBlockEntity, "hopper block entity was not created");
-        return (HopperBlockEntity) helper.getBlockEntity(relativePos);
+        check(helper.getLevel().getBlockEntity(helper.absolutePos(relativePos)) instanceof HopperBlockEntity, "hopper block entity was not created");
+        return (HopperBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(relativePos));
     }
 
     private static BaseChuteBlockEntity placeChute(ExtendedGameTestHelper helper, BlockPos relativePos) {
@@ -186,8 +185,8 @@ public final class PlasticEntityItemTransferGameTests {
             .setValue(ChuteBlock.FACING, Direction.DOWN)
             .setValue(ChuteBlock.ENABLED, true);
         helper.setBlock(relativePos, state);
-        check(helper.getBlockEntity(relativePos) instanceof BaseChuteBlockEntity, "chute block entity was not created");
-        return (BaseChuteBlockEntity) helper.getBlockEntity(relativePos);
+        check(helper.getLevel().getBlockEntity(helper.absolutePos(relativePos)) instanceof BaseChuteBlockEntity, "chute block entity was not created");
+        return (BaseChuteBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(relativePos));
     }
 
     private static void tickHopper(
@@ -240,6 +239,6 @@ public final class PlasticEntityItemTransferGameTests {
     }
 
     private static void check(boolean condition, String message) {
-        if (!condition) throw new GameTestAssertException(message);
+        if (!condition) throw new PlasticraftTestFailure(message);
     }
 }

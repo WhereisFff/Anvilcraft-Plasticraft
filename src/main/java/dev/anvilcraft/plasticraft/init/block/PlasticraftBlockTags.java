@@ -2,7 +2,7 @@ package dev.anvilcraft.plasticraft.init.block;
 
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 
@@ -10,7 +10,7 @@ import net.minecraft.world.level.block.Block;
 public final class PlasticraftBlockTags {
     public static final TagKey<Block> RESIN_SHOCK_COMPATIBLE = TagKey.create(
         Registries.BLOCK,
-        ResourceLocation.fromNamespaceAndPath("anvilcraft", "resin_shock_compatible")
+        Identifier.fromNamespaceAndPath("anvilcraft", "resin_shock_compatible")
     );
     public static final TagKey<Block> PLASTIC_MELT_COOLANTS = TagKey.create(
         Registries.BLOCK,

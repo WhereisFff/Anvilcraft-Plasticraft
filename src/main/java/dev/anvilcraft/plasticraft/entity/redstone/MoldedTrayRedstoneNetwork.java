@@ -466,7 +466,8 @@ public final class MoldedTrayRedstoneNetwork {
             level.updateNeighborsAtExceptFromFacing(
                 key.receiverPos(),
                 notifyingBlock,
-                key.queryDirection
+                key.queryDirection,
+                null
             );
         }
     }

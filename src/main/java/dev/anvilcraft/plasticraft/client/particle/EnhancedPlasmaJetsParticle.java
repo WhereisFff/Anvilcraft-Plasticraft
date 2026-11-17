@@ -6,6 +6,7 @@ import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleProvider;
 import net.minecraft.client.particle.SpriteSet;
 import net.minecraft.core.particles.SimpleParticleType;
+import net.minecraft.util.RandomSource;
 
 /** 使用青蓝到蓝白色阶、速度更快的强化等离子喷流粒子。 */
 public final class EnhancedPlasmaJetsParticle extends PlasmaJetsParticle {
@@ -50,7 +51,8 @@ public final class EnhancedPlasmaJetsParticle extends PlasmaJetsParticle {
             double z,
             double speedX,
             double speedY,
-            double speedZ
+            double speedZ,
+            RandomSource random
         ) {
             return new EnhancedPlasmaJetsParticle(level, x, y, z, speedX, speedY, speedZ, this.sprites);
         }

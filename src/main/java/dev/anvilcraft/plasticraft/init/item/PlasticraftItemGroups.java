@@ -11,7 +11,7 @@ import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.dubhe.anvilcraft.init.item.ModItemGroups;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.IEventBus;
@@ -24,7 +24,7 @@ import java.util.function.Predicate;
 public final class PlasticraftItemGroups {
     public static final String TITLE_KEY = "itemGroup.anvilcraftplasticraft.main";
     public static final String SECTION_TITLE_KEY_PREFIX = "creative_tab.anvilcraftplasticraft.section.";
-    public static final ResourceLocation MAIN_ID = AnvilcraftPlasticraft.of("main");
+    public static final Identifier MAIN_ID = AnvilcraftPlasticraft.of("main");
     private static final DeferredRegister<CreativeModeTab> TABS = DeferredRegister.create(
         Registries.CREATIVE_MODE_TAB,
         AnvilcraftPlasticraft.MOD_ID
@@ -87,7 +87,7 @@ public final class PlasticraftItemGroups {
 
     /** 从横幅纹理反查材料，避免依赖本地化后的横幅标题。 */
     public static Optional<PlasticMaterial> materialOfSection(CreativeTabSection section) {
-        ResourceLocation texture = section.bannerTexture();
+        Identifier texture = section.bannerTexture();
         String prefix = "textures/gui/creative_tab/";
         String suffix = ".png";
         if (!AnvilcraftPlasticraft.MOD_ID.equals(texture.getNamespace())

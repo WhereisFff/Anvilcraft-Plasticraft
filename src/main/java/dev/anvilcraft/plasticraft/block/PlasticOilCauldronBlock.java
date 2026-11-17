@@ -2,9 +2,10 @@ package dev.anvilcraft.plasticraft.block;
 
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
-import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
+import dev.dubhe.anvilcraft.block.cauldron.Layered4LevelCauldronBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.cauldron.CauldronInteraction;
+import net.minecraft.core.cauldron.CauldronInteractions;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.Items;
@@ -15,9 +16,7 @@ public class PlasticOilCauldronBlock extends Layered4LevelCauldronBlock {
     private static final double INNER_MIN = 2.0D / 16.0D;
     private static final double INNER_MAX = 14.0D / 16.0D;
     private static final double CONTENT_BOTTOM = 4.0D / 16.0D;
-    private static final CauldronInteraction.InteractionMap INTERACTIONS = CauldronInteraction.newInteractionMap(
-        "anvilcraftplasticraft_plastic_oil"
-    );
+    private static final CauldronInteraction.Dispatcher INTERACTIONS = new CauldronInteraction.Dispatcher();
 
     public PlasticOilCauldronBlock(Properties properties) {
         super(properties, INTERACTIONS);
@@ -38,14 +37,14 @@ public class PlasticOilCauldronBlock extends Layered4LevelCauldronBlock {
     }
 
     public static void registerInteractions() {
-        INTERACTIONS.map().put(Items.BUCKET, (state, level, pos, player, hand, stack) ->
-            CauldronInteraction.fillBucket(
+        INTERACTIONS.put(Items.BUCKET, (state, level, pos, player, hand, stack) ->
+            CauldronInteractions.fillBucket(
                 state, level, pos, player, hand, stack, PlasticraftItems.PLASTIC_OIL_BUCKET.asStack(),
                 PlasticraftBlocks.PLASTIC_OIL_CAULDRON.get()::isFull, SoundEvents.BUCKET_FILL
             ));
-        CauldronInteraction.EMPTY.map().put(
+        CauldronInteractions.EMPTY.put(
             PlasticraftItems.PLASTIC_OIL_BUCKET.get(),
-            (state, level, pos, player, hand, stack) -> CauldronInteraction.emptyBucket(
+            (state, level, pos, player, hand, stack) -> CauldronInteractions.emptyBucket(
                 level, pos, player, hand, stack,
                 PlasticraftBlocks.PLASTIC_OIL_CAULDRON.get().fullFilled(), SoundEvents.BUCKET_EMPTY
             ));

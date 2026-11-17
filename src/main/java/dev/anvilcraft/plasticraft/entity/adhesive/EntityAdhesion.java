@@ -6,7 +6,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.Objects;
@@ -15,12 +15,12 @@ import java.util.Objects;
 public record EntityAdhesion(
     BlockPos supportPos,
     Direction attachmentFace,
-    ResourceLocation supportBlockId,
+    Identifier supportBlockId,
     Vec3 fixedPosition,
     boolean originalNoGravity,
     boolean invisible
 ) {
-    private static final ResourceLocation DEFAULT_SUPPORT_BLOCK = ResourceLocation.fromNamespaceAndPath(
+    private static final Identifier DEFAULT_SUPPORT_BLOCK = Identifier.fromNamespaceAndPath(
         "minecraft",
         "air"
     );
@@ -28,7 +28,7 @@ public record EntityAdhesion(
     public static final Codec<EntityAdhesion> CODEC = RecordCodecBuilder.create(instance -> instance.group(
         BlockPos.CODEC.fieldOf("support_pos").forGetter(EntityAdhesion::supportPos),
         Direction.CODEC.fieldOf("attachment_face").forGetter(EntityAdhesion::attachmentFace),
-        ResourceLocation.CODEC.optionalFieldOf("support_block", DEFAULT_SUPPORT_BLOCK)
+        Identifier.CODEC.optionalFieldOf("support_block", DEFAULT_SUPPORT_BLOCK)
             .forGetter(EntityAdhesion::supportBlockId),
         Vec3.CODEC.fieldOf("fixed_position").forGetter(EntityAdhesion::fixedPosition),
         Codec.BOOL.optionalFieldOf("original_no_gravity", false).forGetter(EntityAdhesion::originalNoGravity),
@@ -39,7 +39,7 @@ public record EntityAdhesion(
         (buffer, adhesion) -> {
             BlockPos.STREAM_CODEC.encode(buffer, adhesion.supportPos);
             buffer.writeByte(adhesion.attachmentFace.get3DDataValue());
-            ResourceLocation.STREAM_CODEC.encode(buffer, adhesion.supportBlockId);
+            Identifier.STREAM_CODEC.encode(buffer, adhesion.supportBlockId);
             buffer.writeDouble(adhesion.fixedPosition.x);
             buffer.writeDouble(adhesion.fixedPosition.y);
             buffer.writeDouble(adhesion.fixedPosition.z);
@@ -49,7 +49,7 @@ public record EntityAdhesion(
         buffer -> new EntityAdhesion(
             BlockPos.STREAM_CODEC.decode(buffer),
             Direction.from3DDataValue(buffer.readUnsignedByte()),
-            ResourceLocation.STREAM_CODEC.decode(buffer),
+            Identifier.STREAM_CODEC.decode(buffer),
             new Vec3(buffer.readDouble(), buffer.readDouble(), buffer.readDouble()),
             buffer.readBoolean(),
             buffer.readBoolean()
@@ -71,7 +71,7 @@ public record EntityAdhesion(
     public EntityAdhesion(
         BlockPos supportPos,
         Direction attachmentFace,
-        ResourceLocation supportBlockId,
+        Identifier supportBlockId,
         Vec3 fixedPosition,
         boolean originalNoGravity
     ) {

@@ -11,7 +11,7 @@ import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.dubhe.anvilcraft.api.giantanvil.IShockFixedBlock;
-import dev.dubhe.anvilcraft.block.RoyalAnvilBlock;
+import dev.dubhe.anvilcraft.block.workstation.royal.RoyalAnvilBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -20,6 +20,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.InsideBlockEffectApplier;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.BlockGetter;
@@ -30,11 +31,12 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
+import net.minecraft.world.level.redstone.Orientation;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -134,14 +136,14 @@ public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity
         Level level,
         BlockPos pos,
         Block neighborBlock,
-        BlockPos neighborPos,
+        @Nullable Orientation orientation,
         boolean movedByPiston
     ) {
         if (state.getValue(BONDED)) {
             level.scheduleTick(pos, this, 1);
             return;
         }
-        super.neighborChanged(state, level, pos, neighborBlock, neighborPos, movedByPiston);
+        super.neighborChanged(state, level, pos, neighborBlock, orientation, movedByPiston);
     }
 
     @Override
@@ -151,7 +153,7 @@ public abstract class AbstractPlasticEntityBlock<E extends AbstractPlasticEntity
 
     /** 方块化的锅同样要让锅内熔体减速穿过它的实体；非锅制品由 {@link PlasticCauldrons#of} 挡掉。 */
     @Override
-    public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
+    public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity, InsideBlockEffectApplier effectApplier, boolean isPrecise) {
         if (!state.getValue(BONDED)
             || !(level.getBlockEntity(pos) instanceof BondedEntityBlockEntity bonded)) return;
         PlasticCauldron cauldron = PlasticCauldrons.of(bonded.getOrCreateRenderEntity());

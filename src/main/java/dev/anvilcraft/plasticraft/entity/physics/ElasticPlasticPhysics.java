@@ -63,7 +63,7 @@ public final class ElasticPlasticPhysics {
                 && !this.entity.isPassengerOfSameVehicle(other)
                 // 此处有意不复用船的碰撞检查：树脂会从可推动的生物实体，
                 // 以及明确提供碰撞箱的实体上反弹。
-                && (other.canBeCollidedWith() || other.isPushable())
+                && (other.canBeCollidedWith(entity) || other.isPushable())
         );
 
         int entityContacts = 0;
@@ -82,7 +82,7 @@ public final class ElasticPlasticPhysics {
         for (Direction direction : Direction.values()) {
             int directionMask = PlasticEntityPhysics.directionMask(direction);
             if ((clippedContacts & directionMask) == 0) continue;
-            Vec3 normal = Vec3.atLowerCornerOf(direction.getNormal());
+            Vec3 normal = Vec3.atLowerCornerOf(direction.getUnitVec3i());
             double incidentSpeed = requestedMovement.dot(normal);
             if (incidentSpeed <= PlasticEntityPhysics.FACE_EPSILON) continue;
 
@@ -114,7 +114,7 @@ public final class ElasticPlasticPhysics {
         }
 
         if (!result.equals(velocityAfterMove)) {
-            this.entity.hasImpulse = true;
+            this.entity.needsSync = true;
             this.entity.hurtMarked = true;
         }
         return result;
@@ -156,7 +156,7 @@ public final class ElasticPlasticPhysics {
                 )) {
                 continue;
             }
-            Vec3 normal = Vec3.atLowerCornerOf(direction.getNormal());
+            Vec3 normal = Vec3.atLowerCornerOf(direction.getUnitVec3i());
             double incidentSpeed = requestedMovement.dot(normal);
             if (this.smoothSurface) {
                 // 请求位移可能包含补偿或多次移动，不能把它当成新的动能来源。
@@ -178,7 +178,7 @@ public final class ElasticPlasticPhysics {
             collider.setDeltaMovement(colliderVelocity);
             if (this.smoothSurface) collider.setOnGround(false);
             collider.resetFallDistance();
-            collider.hasImpulse = true;
+            collider.needsSync = true;
             collider.hurtMarked = true;
         }
     }
@@ -208,14 +208,14 @@ public final class ElasticPlasticPhysics {
         Direction direction,
         double incidentSpeed
     ) {
-        Vec3 normal = Vec3.atLowerCornerOf(direction.getNormal());
+        Vec3 normal = Vec3.atLowerCornerOf(direction.getUnitVec3i());
         for (Entity other : candidates) {
             if (!contactsFace(this.entity, startBounds, other, requestedMovement, actualMovement, direction)) continue;
             double relativeSpeed = incidentSpeed - other.getDeltaMovement().dot(normal);
             if (relativeSpeed <= PlasticEntityPhysics.FACE_EPSILON) continue;
             double impulse = Math.min(MAX_ENTITY_IMPULSE, relativeSpeed * 0.45D);
             other.setDeltaMovement(other.getDeltaMovement().add(normal.scale(impulse)));
-            other.hasImpulse = true;
+            other.needsSync = true;
             other.hurtMarked = true;
         }
     }

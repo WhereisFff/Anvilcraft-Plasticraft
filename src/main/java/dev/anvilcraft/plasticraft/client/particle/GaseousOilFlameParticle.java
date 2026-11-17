@@ -3,16 +3,15 @@ package dev.anvilcraft.plasticraft.client.particle;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleProvider;
-import net.minecraft.client.particle.ParticleRenderType;
+import net.minecraft.client.particle.SingleQuadParticle;
 import net.minecraft.client.particle.SpriteSet;
-import net.minecraft.client.particle.TextureSheetParticle;
-import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.core.particles.SimpleParticleType;
+import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.util.Mth;
-import net.minecraft.world.phys.AABB;
+import net.minecraft.util.RandomSource;
 
 /** 在逸散原油的出口短暂绘制原版灵魂火贴图。 */
-public final class GaseousOilFlameParticle extends TextureSheetParticle {
+public final class GaseousOilFlameParticle extends SingleQuadParticle {
     private GaseousOilFlameParticle(
         ClientLevel level,
         double x,
@@ -22,7 +21,7 @@ public final class GaseousOilFlameParticle extends TextureSheetParticle {
         double heightScale,
         SpriteSet sprites
     ) {
-        super(level, x, y, z);
+        super(level, x, y, z, sprites.first());
         this.hasPhysics = false;
         this.lifetime = 2;
         float clampedHalfWidth = Mth.clamp((float) halfWidth, 0.16F, 0.34F);
@@ -33,22 +32,18 @@ public final class GaseousOilFlameParticle extends TextureSheetParticle {
         this.xo = this.x;
         this.yo = this.y;
         this.zo = this.z;
-        this.pickSprite(sprites);
+        this.setSprite(sprites.get(this.random));
+        this.setBoundingBox(this.getBoundingBox().inflate(0.5, 2, 0.5));
     }
 
     @Override
-    public ParticleRenderType getRenderType() {
-        return ParticleRenderType.PARTICLE_SHEET_OPAQUE;
+    protected Layer getLayer() {
+        return Layer.OPAQUE;
     }
 
     @Override
-    protected int getLightColor(float partialTick) {
-        return LightTexture.FULL_BRIGHT;
-    }
-
-    @Override
-    public AABB getRenderBoundingBox(float partialTick) {
-        return this.getBoundingBox().inflate(0.5D, 2.0D, 0.5D);
+    protected int getLightCoords(float partialTick) {
+        return LightCoordsUtil.FULL_BRIGHT;
     }
 
     public static final class Provider implements ParticleProvider<SimpleParticleType> {
@@ -67,7 +62,8 @@ public final class GaseousOilFlameParticle extends TextureSheetParticle {
             double z,
             double halfWidth,
             double heightScale,
-            double ignoredSeedOffset
+            double ignoredSeedOffset,
+            RandomSource random
         ) {
             return new GaseousOilFlameParticle(level, x, y, z, halfWidth, heightScale, this.sprites);
         }

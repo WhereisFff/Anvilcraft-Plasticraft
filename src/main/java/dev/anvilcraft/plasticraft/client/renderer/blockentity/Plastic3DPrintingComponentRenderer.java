@@ -4,31 +4,31 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.Plastic3DPrintingComponentBlock;
 import dev.anvilcraft.plasticraft.block.entity.Plastic3DPrintingComponentBlockEntity;
+import dev.anvilcraft.plasticraft.client.renderer.FluidRenderOpacity;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticBlockModel;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticRenderGeometry;
 import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.Sheets;
-import net.minecraft.client.renderer.block.BlockRenderDispatcher;
-import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.client.resources.model.BakedModel;
-import net.minecraft.client.resources.model.ModelResourceLocation;
 import net.minecraft.core.Direction;
+import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
 
 /** 在 cg 体积内绘制储存的塑料熔体；有电时再用全亮类型绘制拆出的屏幕和眼睛。 */
 public final class Plastic3DPrintingComponentRenderer
-    implements BlockEntityRenderer<Plastic3DPrintingComponentBlockEntity> {
-    public static final ModelResourceLocation EYE_MODEL = ModelResourceLocation.standalone(
+    extends PlasticBlockEntityRenderer<Plastic3DPrintingComponentBlockEntity> {
+    public static final PlasticBlockModel EYE_MODEL = new PlasticBlockModel(
         AnvilcraftPlasticraft.of("block/print_component_eye")
     );
-    public static final ModelResourceLocation SCREEN_MODEL = ModelResourceLocation.standalone(
+    public static final PlasticBlockModel SCREEN_MODEL = new PlasticBlockModel(
         AnvilcraftPlasticraft.of("block/print_component_screen")
     );
     private static final float TANK_INSET = 0.02F / 16.0F;
@@ -38,18 +38,17 @@ public final class Plastic3DPrintingComponentRenderer
     private static final float TANK_MAX_Y = 9.0F / 16.0F - TANK_INSET;
     private static final float TANK_MIN_Z = 2.0F / 16.0F + TANK_INSET;
     private static final float TANK_MAX_Z = 10.0F / 16.0F - TANK_INSET;
-    private final BlockRenderDispatcher dispatcher;
+
 
     public Plastic3DPrintingComponentRenderer(BlockEntityRendererProvider.Context context) {
-        this.dispatcher = context.getBlockRenderDispatcher();
     }
 
     @Override
-    public void render(
+    protected void extractGeometry(
         Plastic3DPrintingComponentBlockEntity component,
         float partialTick,
         PoseStack poseStack,
-        MultiBufferSource bufferSource,
+        PlasticRenderGeometry bufferSource,
         int packedLight,
         int packedOverlay
     ) {
@@ -58,8 +57,7 @@ public final class Plastic3DPrintingComponentRenderer
             component.fluid(),
             poseStack,
             bufferSource,
-            packedLight,
-            this.dispatcher
+            packedLight
         );
     }
 
@@ -68,8 +66,7 @@ public final class Plastic3DPrintingComponentRenderer
         FluidStack fluid,
         PoseStack poseStack,
         MultiBufferSource bufferSource,
-        int packedLight,
-        BlockRenderDispatcher dispatcher
+        int packedLight
     ) {
         Direction facing = state.hasProperty(Plastic3DPrintingComponentBlock.FACING)
             ? state.getValue(Plastic3DPrintingComponentBlock.FACING)
@@ -81,15 +78,15 @@ public final class Plastic3DPrintingComponentRenderer
         renderMelt(fluid, poseStack, bufferSource, packedLight);
         if (powered) {
             renderStandaloneModel(
-                poseStack, bufferSource, dispatcher, SCREEN_MODEL, Sheets.translucentCullBlockSheet()
+                poseStack, bufferSource, SCREEN_MODEL, Sheets.translucentBlockSheet()
             );
-            renderStandaloneModel(poseStack, bufferSource, dispatcher, EYE_MODEL, RenderType.cutout());
+            renderStandaloneModel(poseStack, bufferSource, EYE_MODEL, Sheets.cutoutBlockSheet());
         }
         poseStack.popPose();
     }
 
     @Override
-    public boolean shouldRenderOffScreen(Plastic3DPrintingComponentBlockEntity component) {
+    public boolean shouldRenderOffScreen() {
         return true;
     }
 
@@ -112,38 +109,33 @@ public final class Plastic3DPrintingComponentRenderer
         );
         float fluidTop = Mth.lerp(fill, TANK_MIN_Y, TANK_MAX_Y);
         FluidRenderHelper.INSTANCE.renderFluidBox(
-            fluid,
-            TANK_MIN_X,
+                FluidRenderOpacity.model(fluid).stillMaterial().sprite(), FluidResource.of(fluid),
+                TANK_MIN_X,
             TANK_MIN_Y,
             TANK_MIN_Z,
             TANK_MAX_X,
             fluidTop,
             TANK_MAX_Z,
-            bufferSource,
-            poseStack,
-            packedLight,
-            true,
-            false
-        );
+                FluidRenderOpacity.tint(fluid), bufferSource.getBuffer(FluidRenderOpacity.isOpaque(fluid) ? Sheets.cutoutBlockSheet() : Sheets.translucentBlockSheet()),
+                poseStack.last(), packedLight, true, false
+            );
     }
 
     private static void renderStandaloneModel(
         PoseStack poseStack,
         MultiBufferSource bufferSource,
-        BlockRenderDispatcher dispatcher,
-        ModelResourceLocation location,
+        PlasticBlockModel location,
         RenderType renderType
     ) {
-        BakedModel model = Minecraft.getInstance().getModelManager().getModel(location);
-        dispatcher.getModelRenderer().renderModel(
+        BlockStateModel model = location.baked();
+        PlasticBlockModel.render(
             poseStack.last(),
             bufferSource.getBuffer(renderType),
-            null,
             model,
             0.0F,
             0.0F,
             0.0F,
-            LightTexture.FULL_BLOCK,
+            LightCoordsUtil.pack(15, 0),
             OverlayTexture.NO_OVERLAY
         );
     }

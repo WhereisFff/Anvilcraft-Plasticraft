@@ -4,15 +4,15 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
+import net.minecraft.client.renderer.block.BlockAndTintGetter;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.Tag;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.component.CustomData;
-import net.minecraft.world.level.BlockAndTintGetter;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
 import net.neoforged.neoforge.fluids.FluidStack;
 
@@ -27,17 +27,17 @@ public final class UniversalPlasticMeltFluidExtension extends HighViscosityResin
         this(PlasticMaterial.UNIVERSAL, AnvilcraftPlasticraft.of("fluid/universal_plastic_melt"), true, 0xFFFFFFFF);
     }
 
-    public UniversalPlasticMeltFluidExtension(ResourceLocation texture) {
+    public UniversalPlasticMeltFluidExtension(Identifier texture) {
         this(PlasticMaterial.UNIVERSAL, texture, true, 0xFFFFFFFF);
     }
 
-    public UniversalPlasticMeltFluidExtension(ResourceLocation texture, boolean opaque, int defaultTint) {
+    public UniversalPlasticMeltFluidExtension(Identifier texture, boolean opaque, int defaultTint) {
         this(PlasticMaterial.UNIVERSAL, texture, opaque, defaultTint);
     }
 
     public UniversalPlasticMeltFluidExtension(
         PlasticMaterial material,
-        ResourceLocation texture,
+        Identifier texture,
         boolean opaque,
         int defaultTint
     ) {
@@ -53,18 +53,17 @@ public final class UniversalPlasticMeltFluidExtension extends HighViscosityResin
     }
 
     @Override
-    public int getTintColor(FluidStack stack) {
+    public int colorAsStack(FluidStack stack) {
         int tint = this.tint(PlasticMeltColor.get(stack));
         CustomData data = stack.get(DataComponents.CUSTOM_DATA);
         if (data == null) return tint;
         CompoundTag tag = data.copyTag();
-        if (!tag.contains(CATALYSIS_OPACITY_KEY, Tag.TAG_FLOAT)) return tint;
-        int alpha = Math.round((tint >>> 24) * Mth.clamp(tag.getFloat(CATALYSIS_OPACITY_KEY), 0.0F, 1.0F));
+        int alpha = Math.round((tint >>> 24) * Mth.clamp(tag.getFloatOr(CATALYSIS_OPACITY_KEY, 1f), 0.0F, 1.0F));
         return alpha << 24 | tint & 0x00FFFFFF;
     }
 
     @Override
-    public int getTintColor(FluidState state, BlockAndTintGetter getter, BlockPos pos) {
+    public int colorInWorld(FluidState state, BlockState blockState, BlockAndTintGetter getter, BlockPos pos) {
         if (getter.getBlockEntity(pos) instanceof UniversalPlasticMeltBlockEntity melt) {
             return this.tint(melt.getColor());
         }

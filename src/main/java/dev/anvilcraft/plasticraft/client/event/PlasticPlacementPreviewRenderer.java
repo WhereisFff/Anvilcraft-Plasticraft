@@ -3,30 +3,34 @@ package dev.anvilcraft.plasticraft.client.event;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticPreviewRenderTypes;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticRenderGeometry;
 import dev.anvilcraft.plasticraft.client.renderer.ThickLineRenderer;
 import dev.anvilcraft.plasticraft.config.PlasticraftClientConfig.PlacementPreviewMode;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.item.AbstractPlasticEntityItem;
-import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
+import net.minecraft.util.Util;
+import net.minecraft.util.context.ContextKey;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.client.event.ExtractLevelRenderStateEvent;
+import net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
-import javax.annotation.Nullable;
 
 /** 手持塑料制品时，在命中方块面显示与实际放置规则一致的四分区预览。 */
 @EventBusSubscriber(modid = AnvilcraftPlasticraft.MOD_ID, value = Dist.CLIENT)
@@ -53,8 +57,18 @@ public final class PlasticPlacementPreviewRenderer {
     }
 
     @SubscribeEvent
-    public static void render(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) return;
+    public static void submit(SubmitCustomGeometryEvent event) {
+        var state = event.getLevelRenderState();
+        var geometry = state.getRenderData(GEOMETRY);
+        if (geometry != null) {
+            geometry.submit(event.getPoseStack(), event.getSubmitNodeCollector(), state.cameraRenderState);
+        }
+    }
+
+    private static final ContextKey<PlasticRenderGeometry> GEOMETRY = new ContextKey<>(AnvilcraftPlasticraft.of("plastic_placement"));
+
+    @SubscribeEvent
+    public static void render(ExtractLevelRenderStateEvent event) {
         Minecraft minecraft = Minecraft.getInstance();
         LocalPlayer player = minecraft.player;
         ClientLevel level = minecraft.level;
@@ -69,9 +83,10 @@ public final class PlasticPlacementPreviewRenderer {
         BlockHitResult hit = new BlockHitResult(context.getClickLocation(), context.getClickedFace(), context.getClickedPos(), false);
         PlasticEntityOrientation orientation = item.placementOrientation(context.getItemInHand(), hit, player);
         PreviewGeometry preview = animatedPreview(hit, orientation);
-        PoseStack pose = event.getPoseStack();
-        Vec3 camera = event.getCamera().getPosition();
-        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
+        PoseStack pose = new PoseStack();
+        Vec3 camera = event.getCamera().position();
+        PlasticRenderGeometry buffers = new PlasticRenderGeometry();
+        event.getRenderState().setRenderData(GEOMETRY, buffers);
         pose.pushPose();
         pose.translate(-camera.x, -camera.y, -camera.z);
         renderCheckerboard(pose, buffers, preview);
@@ -82,7 +97,7 @@ public final class PlasticPlacementPreviewRenderer {
 
     private static void renderFaceLines(
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         FaceFrame frame
     ) {
         Vec3 first = frame.worldPosition(new FacePoint(0.5D, 0.5D));
@@ -116,7 +131,7 @@ public final class PlasticPlacementPreviewRenderer {
 
     private static void renderSelectedLines(
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         PreviewGeometry preview
     ) {
         FaceFrame frame = preview.frame();
@@ -147,15 +162,14 @@ public final class PlasticPlacementPreviewRenderer {
 
     private static void renderCheckerboard(
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         PreviewGeometry preview
     ) {
-        RenderType renderType = RenderType.debugQuads();
+        RenderType renderType = PlasticPreviewRenderTypes.coloredQuads();
         VertexConsumer consumer = buffers.getBuffer(renderType);
         for (List<FacePoint> cell : CHECKER_CELLS) {
             renderCheckerCell(pose, consumer, preview, cell);
         }
-        buffers.endBatch(renderType);
     }
 
     /** 将每个着色格切成互不重叠的白色区和绿色选区，避免共面网格互相争夺深度。 */
@@ -364,7 +378,7 @@ public final class PlasticPlacementPreviewRenderer {
     }
 
     private static Vec3 directionVector(Direction direction) {
-        return Vec3.atLowerCornerOf(direction.getNormal());
+        return Vec3.atLowerCornerOf(direction.getUnitVec3i());
     }
 
     private record FacePoint(double forward, double side) {

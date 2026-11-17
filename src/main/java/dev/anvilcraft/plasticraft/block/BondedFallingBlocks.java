@@ -1,7 +1,6 @@
 package dev.anvilcraft.plasticraft.block;
 
 import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
-import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -9,6 +8,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -161,7 +161,7 @@ public final class BondedFallingBlocks {
         BondedFallingChunkData data = chunk.getExistingDataOrNull(PlasticraftAttachments.BONDED_FALLING_BLOCKS.get());
         if (data == null) data = BondedFallingChunkData.empty();
         chunk.setData(PlasticraftAttachments.BONDED_FALLING_BLOCKS, data.with(pos, info));
-        chunk.setUnsaved(true);
+        chunk.markUnsaved();
     }
 
     public static @Nullable BondedFallingBlockInfo remove(ServerLevel level, BlockPos pos) {
@@ -336,7 +336,7 @@ public final class BondedFallingBlocks {
         } else {
             chunk.setData(PlasticraftAttachments.BONDED_FALLING_BLOCKS, data);
         }
-        chunk.setUnsaved(true);
+        chunk.markUnsaved();
     }
 
     private static void migrateLegacyBond(ServerLevel level, BlockPos pos, BondedFallingBlockInfo info) {
@@ -369,11 +369,11 @@ public final class BondedFallingBlocks {
     }
 
     private static @Nullable Direction directionBetween(BlockPos first, BlockPos second) {
-        return Direction.fromDelta(
+        return Direction.getNearest(
             second.getX() - first.getX(),
             second.getY() - first.getY(),
             second.getZ() - first.getZ()
-        );
+        , null);
     }
 
     public record MovementSnapshot(

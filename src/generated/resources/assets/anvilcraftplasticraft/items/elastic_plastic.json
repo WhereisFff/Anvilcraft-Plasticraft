@@ -1,0 +1,9 @@
+{
+  "model": {
+    "type": "minecraft:special",
+    "base": "anvilcraftplasticraft:item/elastic_plastic",
+    "model": {
+      "type": "anvilcraftplasticraft:plastic"
+    }
+  }
+}

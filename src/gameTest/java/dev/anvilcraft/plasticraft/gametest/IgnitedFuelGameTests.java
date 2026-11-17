@@ -1,7 +1,5 @@
 package dev.anvilcraft.plasticraft.gametest;
 
-import dev.anvilcraft.plasticraft.recipe.EnhancedPlasmaJets;
-import dev.anvilcraft.plasticraft.recipe.PlasmaJetAddonFuels;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.HighHeatFuelCauldronBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
@@ -10,26 +8,27 @@ import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
+import dev.anvilcraft.plasticraft.recipe.EnhancedPlasmaJets;
+import dev.anvilcraft.plasticraft.recipe.PlasmaJetAddonFuels;
 import dev.dubhe.anvilcraft.AnvilCraft;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import dev.dubhe.anvilcraft.api.heat.HeaterManager;
-import dev.dubhe.anvilcraft.block.HeaterBlock;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity.TubeWallLayer;
 import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.heatable.HeatableBlockEntity;
+import dev.dubhe.anvilcraft.block.power.consumer.HeaterBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.block.ModFluids;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.gametest.framework.GameTest;
-import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.ItemInteractionResult;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.InsideBlockEffectApplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -47,6 +46,7 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
+import net.neoforged.testframework.gametest.GameTest;
 
 import java.util.List;
 
@@ -74,7 +74,7 @@ public final class IgnitedFuelGameTests {
             layeredState,
             level,
             helper.absolutePos(layeredPos),
-            layeredTarget
+            layeredTarget, new net.minecraft.world.entity.InsideBlockEffectApplier.StepBasedCollector(), true
         );
         checkHealth(layeredTarget.getHealth(), HIGH_HEAT_TARGET_HEALTH, "layered high-heat-fuel cauldron");
 
@@ -84,15 +84,17 @@ public final class IgnitedFuelGameTests {
         check(level.getBlockEntity(absoluteFishTankPos) instanceof FishTankBlockEntity,
             "fish tank block entity was not created");
         FishTankBlockEntity fishTank = (FishTankBlockEntity) level.getBlockEntity(absoluteFishTankPos);
-        fishTank.getFluidHandler().fill(
-            new FluidStack(PlasticraftFluids.HIGH_HEAT_FUEL.get(), fishTank.getFluidHandler().getCapacity()),
+        IFluidHandler.of(fishTank.getFluidHandler()).fill(
+            new FluidStack(PlasticraftFluids.HIGH_HEAT_FUEL.get(), IFluidHandler.of(fishTank.getFluidHandler()).getTankCapacity(0)),
             IFluidHandler.FluidAction.EXECUTE
         );
         fishTank.setIgnited(true);
         var fishTarget = helper.spawnWithNoFreeWill(EntityType.CREEPER, new Vec3(7.5D, 2.1D, 3.5D));
         fishTarget.setNoGravity(true);
         fishTarget.invulnerableTime = 0;
-        fishTank.entityInsideFluidContent(level, absoluteFishTankPos, fishTarget);
+        var effects = new InsideBlockEffectApplier.StepBasedCollector();
+        fishTank.entityInsideFluidContent(level, absoluteFishTankPos, fishTarget, effects);
+        effects.applyAndClear(fishTarget);
         checkHealth(fishTarget.getHealth(), HIGH_HEAT_TARGET_HEALTH, "high-heat-fuel fish tank");
 
         HardenedResinCauldronEntity plasticCauldron = new HardenedResinCauldronEntity(
@@ -104,7 +106,7 @@ public final class IgnitedFuelGameTests {
             PlasticEntityOrientation.DEFAULT
         );
         plasticCauldron.setNoGravity(true);
-        plasticCauldron.getFluidHandler().fill(
+        PlasticraftTestData.fluids(plasticCauldron.getFluidHandler()).fill(
             new FluidStack(PlasticraftFluids.HIGH_HEAT_FUEL.get(), HardenedResinCauldronEntity.CAPACITY),
             IFluidHandler.FluidAction.EXECUTE
         );
@@ -151,7 +153,7 @@ public final class IgnitedFuelGameTests {
 
         ItemStack flintAndSteel = new ItemStack(Items.FLINT_AND_STEEL);
         player.setItemInHand(InteractionHand.MAIN_HAND, flintAndSteel);
-        ItemInteractionResult flintResult = clickedState.useItemOn(
+        InteractionResult flintResult = clickedState.useItemOn(
             flintAndSteel,
             helper.getLevel(),
             player,
@@ -166,7 +168,7 @@ public final class IgnitedFuelGameTests {
         cauldron.setIgnited(false);
         ItemStack fireCharge = new ItemStack(Items.FIRE_CHARGE);
         player.setItemInHand(InteractionHand.MAIN_HAND, fireCharge);
-        ItemInteractionResult chargeResult = clickedState.useItemOn(
+        InteractionResult chargeResult = clickedState.useItemOn(
             fireCharge,
             helper.getLevel(),
             player,
@@ -212,7 +214,7 @@ public final class IgnitedFuelGameTests {
         player.getAttribute(Attributes.MAX_HEALTH).setBaseValue(100.0D);
         player.setHealth(100.0F);
         player.setNoGravity(true);
-        player.moveTo(helper.absoluteVec(new Vec3(1.5D, 3.0D, 1.5D)));
+        player.snapTo(helper.absoluteVec(new Vec3(1.5D, 3.0D, 1.5D)));
         check(level.addFreshEntity(player), "failed to add plasma-jet damage target");
 
         int delay = 10 - (int) Math.floorMod(level.getGameTime(), 10L);
@@ -228,7 +230,7 @@ public final class IgnitedFuelGameTests {
             PlasmaJetsBlockEntity jet = (PlasmaJetsBlockEntity) level.getBlockEntity(jetPos);
             EnhancedPlasmaJets.setEnhanced(jet, true);
             EnhancedPlasmaJets.setUsesLayeredFuel(jet, true);
-            player.moveTo(jetPos.getBottomCenter());
+            player.snapTo(jetPos.getBottomCenter());
             player.clearFire();
             player.invulnerableTime = 0;
             player.setHealth(100.0F);
@@ -314,11 +316,11 @@ public final class IgnitedFuelGameTests {
                 BondedEntityBlockEntity bonded = (BondedEntityBlockEntity) level.getBlockEntity(pos);
                 check(bonded.initialize(cauldron, cauldron.getDisplayState(), Direction.UP,
                     PlasticEntityOrientation.DEFAULT, true), "fuel test could not initialize the bonded cauldron");
-                handler = bonded.getFluidHandler();
+                handler = PlasticraftTestData.fluids(bonded.getFluidHandler());
             } else {
                 cauldron.setNoGravity(true);
                 check(level.addFreshEntity(cauldron), "fuel test could not spawn the entity cauldron");
-                handler = cauldron.getFluidHandler();
+                handler = PlasticraftTestData.fluids(cauldron.getFluidHandler());
             }
             int initialAmount = Math.min(HardenedResinCauldronEntity.CAPACITY, amount * 2);
             check(handler.fill(new FluidStack(ModFluids.OIL.get(), initialAmount), IFluidHandler.FluidAction.EXECUTE)
@@ -407,6 +409,6 @@ public final class IgnitedFuelGameTests {
     }
 
     private static void check(boolean condition, String message) {
-        if (!condition) throw new GameTestAssertException(message);
+        if (!condition) throw new PlasticraftTestFailure(message);
     }
 }

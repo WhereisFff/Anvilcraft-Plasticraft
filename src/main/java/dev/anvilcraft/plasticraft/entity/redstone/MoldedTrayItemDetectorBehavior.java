@@ -17,7 +17,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.capabilities.Capabilities;
-import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.transfer.item.ItemUtil;
 
 import java.util.List;
 
@@ -64,7 +64,7 @@ final class MoldedTrayItemDetectorBehavior implements MoldedTrayRedstoneBehavior
     public int weakSignal(MoldedTrayComponent component, Direction queryDirection) {
         BlockState state = component.state();
         if (state.getValue(BlockStateProperties.HORIZONTAL_FACING) != queryDirection) return 0;
-        return Math.clamp(component.blockEntityData().getInt("OutputSignal"), 0, 15);
+        return Math.clamp(component.blockEntityData().getIntOr("OutputSignal", 0), 0, 15);
     }
 
     @Override
@@ -77,7 +77,7 @@ final class MoldedTrayItemDetectorBehavior implements MoldedTrayRedstoneBehavior
         MoldedTrayRedstoneRuntime runtime,
         MoldedTrayComponent component
     ) {
-        runtime.detectorOutput(component.blockEntityData().getInt("OutputSignal"));
+        runtime.detectorOutput(component.blockEntityData().getIntOr("OutputSignal", 0));
     }
 
     @Override
@@ -137,11 +137,11 @@ final class MoldedTrayItemDetectorBehavior implements MoldedTrayRedstoneBehavior
     }
 
     private static int countContainer(ServerLevel level, BlockPos position, Item item) {
-        IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, position, null);
+        var handler = level.getCapability(Capabilities.Item.BLOCK, position, null);
         if (handler == null) return 0;
         int count = 0;
-        for (int slot = 0; slot < handler.getSlots(); slot++) {
-            ItemStack stack = handler.getStackInSlot(slot);
+        for (int slot = 0; slot < handler.size(); slot++) {
+            ItemStack stack = ItemUtil.getStack(handler, slot);
             if (!stack.isEmpty() && (item == null || stack.is(item))) count += stack.getCount();
         }
         return count;

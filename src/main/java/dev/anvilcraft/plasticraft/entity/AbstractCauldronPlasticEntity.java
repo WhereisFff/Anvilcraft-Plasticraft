@@ -3,10 +3,10 @@ package dev.anvilcraft.plasticraft.entity;
 import dev.anvilcraft.plasticraft.block.IgnitedFluidEffects;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.block.entity.UniversalPlasticMeltBlockEntity;
-import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionBox;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityCollisionShapes;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
+import dev.anvilcraft.plasticraft.entity.physics.PlasticEntityPhysics;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
@@ -14,20 +14,19 @@ import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidNetworkManager;
 import dev.dubhe.anvilcraft.api.itemhandler.ItemHandlerUtil;
-import dev.dubhe.anvilcraft.block.HeaterBlock;
-import dev.dubhe.anvilcraft.block.PlasmaJetsBlock;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
+import dev.dubhe.anvilcraft.block.power.consumer.HeaterBlock;
+import dev.dubhe.anvilcraft.block.special.PlasmaJetsBlock;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.block.ModFluidTags;
 import dev.dubhe.anvilcraft.init.item.ModItemTags;
-import dev.dubhe.anvilcraft.item.AnvilHammerItem;
+import dev.dubhe.anvilcraft.item.tool.AnvilHammerItem;
 import dev.dubhe.anvilcraft.util.AnvilUtil;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -41,28 +40,33 @@ import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.GameEvent;
+import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.fluids.FluidStack;
-import net.neoforged.neoforge.fluids.FluidUtil;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.ResourceHandlerUtil;
+import net.neoforged.neoforge.transfer.fluid.FluidUtil;
+import net.neoforged.neoforge.transfer.item.ItemResource;
+import net.neoforged.neoforge.transfer.item.ItemUtil;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Optional;
-import javax.annotation.Nullable;
 
 /**
  * 实体炼药锅的共享实现。出料口、点燃、流体网络、物品吞吐与落砧配方接触判定对硬化树脂锅和
@@ -127,7 +131,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
     }
 
     @Override
-    protected void addAdditionalSaveData(CompoundTag tag) {
+    protected void addAdditionalSaveData(ValueOutput tag) {
         super.addAdditionalSaveData(tag);
         if (!this.plasticraft$isCauldron()) return;
         Direction outletSide = this.getOutletLocalDirection();
@@ -136,17 +140,17 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
     }
 
     @Override
-    protected void readAdditionalSaveData(CompoundTag tag) {
+    protected void readAdditionalSaveData(ValueInput tag) {
         boolean previousRestoring = this.restoringData;
         this.restoringData = true;
         try {
             super.readAdditionalSaveData(tag);
             if (!this.plasticraft$isCauldron()) return;
-            Direction outletSide = Direction.byName(tag.getString("OutletSide"));
+            Direction outletSide = Direction.byName(tag.getStringOr("OutletSide", ""));
             this.setOutletLocalDirection(
                 outletSide != null && outletSide.getAxis().isHorizontal() ? outletSide : null
             );
-            this.anvilcraft$setIgnited(tag.getBoolean("Ignited") || tag.getBoolean("ignited"));
+            this.anvilcraft$setIgnited(tag.getBooleanOr("Ignited", false) || tag.getBooleanOr("ignited", false));
         } finally {
             this.restoringData = previousRestoring;
         }
@@ -158,10 +162,10 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
     }
 
     /** 输入槽句柄。硬化树脂锅存在实体 NBT，成型塑料锅存在制品仓储，故交由宿主给出。 */
-    protected abstract IItemHandler cauldronInputHandler();
+    protected abstract ResourceHandler<ItemResource> cauldronInputHandler();
 
     /** 输出槽句柄，与 {@link #cauldronInputHandler()} 同源。 */
-    protected abstract IItemHandler cauldronOutputHandler();
+    protected abstract ResourceHandler<ItemResource> cauldronOutputHandler();
 
     /** 槽位内容变更后的同步与落库回调。 */
     protected abstract void onCauldronContentsChanged();
@@ -257,7 +261,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
     protected void setOutletLocalDirection(@Nullable Direction direction) {
         int directionId = direction == null ? -1 : direction.get3DDataValue();
         this.entityData.set(OUTLET_SIDE, directionId);
-        this.hasImpulse = true;
+        this.needsSync = true;
         this.hurtMarked = true;
         if (!this.restoringData) this.bondedDataDirty = true;
     }
@@ -278,7 +282,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
         this.stickEntitiesInPlasticMelt();
         if (this.burnIfCrossingLava(previousBox)) return;
         this.tickAdditionalState();
-        if (!this.level().isClientSide && this.plasticraft$isCauldron()) this.tickFunctionalState();
+        if (!this.level().isClientSide() && this.plasticraft$isCauldron()) this.tickFunctionalState();
     }
 
     /** 宿主追加的每刻状态推进，两侧都会执行；实体已被移除或已被熔岩烧毁时不再调用。 */
@@ -305,7 +309,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
      */
     @Override
     public final void plasticraft$tickBonded() {
-        if (this.isRemoved() || this.level().isClientSide || !this.plasticraft$isCauldron()) return;
+        if (this.isRemoved() || this.level().isClientSide() || !this.plasticraft$isCauldron()) return;
         if (this.burnIfTouchingLava()) return;
         if (this.time < Integer.MAX_VALUE) this.time++;
         this.tickCount++;
@@ -319,7 +323,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
 
     /** 锅外世界熔岩会烧毁不耐热的容器。 */
     protected boolean burnIfTouchingLava() {
-        if (!this.plasticraft$isCauldron() || this.level().isClientSide) return false;
+        if (!this.plasticraft$isCauldron() || this.level().isClientSide()) return false;
         if (!this.isTouchingWorldLava(this.getBoundingBox())) return false;
         this.burnFromWorldLava();
         return true;
@@ -327,7 +331,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
 
     /** 单帧位移可能整格跨过熔岩，按半格步长回溯采样，避免高速下漏判。 */
     protected boolean burnIfCrossingLava(AABB previousBox) {
-        if (!this.plasticraft$isCauldron() || this.level().isClientSide) return false;
+        if (!this.plasticraft$isCauldron() || this.level().isClientSide()) return false;
         AABB currentBox = this.getBoundingBox();
         Vec3 movement = currentBox.getCenter().subtract(previousBox.getCenter());
         double distance = Math.max(Math.abs(movement.x), Math.max(Math.abs(movement.y), Math.abs(movement.z)));
@@ -367,7 +371,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
 
     /** 世界熔岩烧毁容器。 */
     protected void burnFromWorldLava() {
-        if (this.level().isClientSide || this.isRemoved()) return;
+        if (this.level().isClientSide() || this.isRemoved()) return;
         this.discardPersistentContents();
         this.burnedByLava = true;
         BlockPos effectPos = BlockPos.containing(this.getBoundingBox().getCenter());
@@ -409,7 +413,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
         boolean next = ignited && this.canIgniteFluid();
         if (this.entityData.get(IGNITED) == next) return;
         this.entityData.set(IGNITED, next);
-        this.hasImpulse = true;
+        this.needsSync = true;
         this.hurtMarked = true;
         if (!this.restoringData) this.bondedDataDirty = true;
     }
@@ -428,13 +432,13 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
                 return;
             }
             if (this.anvilcraft$isIgnited()) return;
-            for (IItemHandler handler : new IItemHandler[]{this.cauldronInputHandler(), this.cauldronOutputHandler()}) {
+            for (ResourceHandler<ItemResource> handler : List.of(this.cauldronInputHandler(), this.cauldronOutputHandler())) {
                 if (handler == this.cauldronOutputHandler() && this instanceof UniversalPlasticEntity pot
                     && MoldedLargeCauldronInteraction.applies(pot)) continue;
-                for (int slot = 0; slot < handler.getSlots(); slot++) {
-                    ItemStack stack = handler.getStackInSlot(slot);
+                for (int slot = 0; slot < handler.size(); slot++) {
+                    ItemStack stack = ItemUtil.getStack(handler, slot);
                     if (stack.is(ModItemTags.FIRE_STARTER)) {
-                        handler.extractItem(slot, 1, false);
+                        IItemHandler.of(handler).extractItem(slot, 1, false);
                         this.anvilcraft$setIgnited(true);
                         return;
                     }
@@ -483,7 +487,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
     }
 
     private void unregisterFromFluidNetwork() {
-        if (this.fluidNetworkPos == null || this.level().isClientSide) return;
+        if (this.fluidNetworkPos == null || this.level().isClientSide()) return;
         FluidNetworkManager.INSTANCE.removeContainer(this.level(), this.fluidNetworkPos);
         this.fluidNetworkPos = null;
     }
@@ -515,7 +519,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
 
     private void absorbItem(ItemEntity item) {
         if (!item.anvilcraft$isAdsorbable() || item.isRemoved()) return;
-        IItemHandler input = this instanceof UniversalPlasticEntity pot && MoldedLargeCauldronInteraction.applies(pot)
+        ResourceHandler<ItemResource> input = this instanceof UniversalPlasticEntity pot && MoldedLargeCauldronInteraction.applies(pot)
             ? MoldedLargeCauldronInteraction.preferredInput(pot, MoldedLargeCauldronInteraction.inputSlot(pot, item.position()), false)
             : this.cauldronInputHandler();
         ItemStack remaining = ItemHandlerUtil.insertItem(input, item.getItem().copy(), false);
@@ -649,7 +653,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
         FluidStack fluid = this.plasticraft$bottomFluid();
         if (fluid.isEmpty()) return;
         if (fluid.getAmount() < this.cauldronFluidCapacity()) {
-            this.plasticraft$bottomFluidAccess().drain(fluid.getAmount(), IFluidHandler.FluidAction.EXECUTE);
+            IFluidHandler.of(this.plasticraft$bottomFluidAccess()).drain(fluid.getAmount(), IFluidHandler.FluidAction.EXECUTE);
             return;
         }
         BlockPos target = this.openingTargetPosition();
@@ -661,7 +665,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
                 melt.setColor(PlasticMeltColor.get(fluid));
             }
         }
-        this.plasticraft$bottomFluidAccess().drain(this.cauldronFluidCapacity(), IFluidHandler.FluidAction.EXECUTE);
+        IFluidHandler.of(this.plasticraft$bottomFluidAccess()).drain(this.cauldronFluidCapacity(), IFluidHandler.FluidAction.EXECUTE);
     }
 
     private BlockPos openingTargetPosition() {
@@ -731,7 +735,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
 
         Vec3 anvilMovement = anvilEndPosition.subtract(anvilStartPosition);
         Vec3 potMovement = potEndPosition.subtract(potStartPosition);
-        Vec3 normal = Vec3.atLowerCornerOf(anvilBottom.getNormal());
+        Vec3 normal = Vec3.atLowerCornerOf(anvilBottom.getUnitVec3i());
         Direction impactDirection = anvilMovement.dot(normal) >= -potMovement.dot(normal)
             ? anvilBottom
             : potTop;
@@ -751,7 +755,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
         Vec3 potPosition,
         Direction anvilBottom
     ) {
-        Vec3 normal = Vec3.atLowerCornerOf(anvilBottom.getNormal());
+        Vec3 normal = Vec3.atLowerCornerOf(anvilBottom.getUnitVec3i());
         Vec3 anvilCenter = anvilPosition.add(0.0D, anvil.getBbHeight() * 0.5D, 0.0D);
         Vec3 potCenter = potPosition.add(0.0D, pot.getBbHeight() * 0.5D, 0.0D);
         Vec3 anvilSurface = anvilCenter.add(normal.scale(0.5D));
@@ -857,7 +861,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
         Direction anvilBottom = anvil.getOrientation().attachmentFace().getOpposite();
         Direction openingDirection = this.getOrientation().attachmentFace();
         if (anvilBottom != openingDirection.getOpposite()) return false;
-        Vec3 bottomNormal = Vec3.atLowerCornerOf(anvilBottom.getNormal());
+        Vec3 bottomNormal = Vec3.atLowerCornerOf(anvilBottom.getUnitVec3i());
         if (requestedMovement.dot(bottomNormal) <= PlasticEntityPhysics.FACE_EPSILON) return false;
 
         AABB anvilBounds = anvil.plasticraft$getCollisionBox().bounds();
@@ -923,9 +927,9 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
         if (localSide == null
             || !player.getAbilities().mayBuild
             || !this.level().mayInteract(player, occupiedPos)) {
-            return InteractionResult.sidedSuccess(this.level().isClientSide);
+            return InteractionResult.SUCCESS;
         }
-        if (!this.level().isClientSide) {
+        if (!this.level().isClientSide()) {
             Direction current = this.getOutletLocalDirection();
             Direction changed = current == localSide ? null : localSide;
             if (changed != null) this.removeOpposingOutlet(this.resolveOutletDirection(changed));
@@ -936,7 +940,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
             );
             this.gameEvent(GameEvent.ENTITY_INTERACT, player);
         }
-        return InteractionResult.sidedSuccess(this.level().isClientSide);
+        return InteractionResult.SUCCESS;
     }
 
     @Override
@@ -948,37 +952,37 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
         if (!this.plasticraft$isCauldron()) return super.interactNormally(player, hand);
         ItemStack inHand = player.getItemInHand(hand);
         if (inHand.is(ModItemTags.ANVIL_HAMMER)) {
-            return InteractionResult.sidedSuccess(this.level().isClientSide);
+            return InteractionResult.SUCCESS;
         }
         // 原版打火石必须优先于通用物品插入逻辑处理，否则会被塞进锅内输入栏。
         if (inHand.is(Items.FLINT_AND_STEEL)) {
             if (!this.canIgniteFluid()) return InteractionResult.PASS;
-            if (!this.level().isClientSide && !this.anvilcraft$isIgnited()) {
+            if (!this.level().isClientSide() && !this.anvilcraft$isIgnited()) {
                 this.anvilcraft$setIgnited(true);
-                inHand.hurtAndBreak(1, player, LivingEntity.getSlotForHand(hand));
+                inHand.hurtAndBreak(1, player, hand.asEquipmentSlot());
                 this.level().playSound(
                     null, this.blockPosition(), SoundEvents.FLINTANDSTEEL_USE, SoundSource.BLOCKS, 1.0F, 1.0F
                 );
                 this.gameEvent(GameEvent.BLOCK_CHANGE, null);
             }
-            return InteractionResult.sidedSuccess(this.level().isClientSide);
+            return InteractionResult.SUCCESS;
         }
         if (inHand.is(ModItemTags.FIRE_STARTER) || inHand.is(ModItemTags.UNBROKEN_FIRE_STARTER)) {
             if (!this.canIgniteFluid()) return InteractionResult.PASS;
-            if (!this.level().isClientSide && !this.anvilcraft$isIgnited()) {
+            if (!this.level().isClientSide() && !this.anvilcraft$isIgnited()) {
                 this.anvilcraft$setIgnited(true);
                 if (inHand.is(ModItemTags.FIRE_STARTER) && !player.getAbilities().instabuild) inHand.shrink(1);
             }
-            return InteractionResult.sidedSuccess(this.level().isClientSide);
+            return InteractionResult.SUCCESS;
         }
         if (this instanceof UniversalPlasticEntity pot && MoldedLargeCauldronInteraction.applies(pot)) {
             return MoldedLargeCauldronInteraction.interact(pot, player, hand, relativeHit);
         }
         if (this.tryFluidInteraction(player, hand)) {
-            return InteractionResult.sidedSuccess(this.level().isClientSide);
+            return InteractionResult.SUCCESS;
         }
         if (inHand.isEmpty()) {
-            if (this.level().isClientSide) return InteractionResult.SUCCESS;
+            if (this.level().isClientSide()) return InteractionResult.SUCCESS;
             List<ItemStack> extracted = this.extractAllStacks();
             if (extracted.isEmpty()) return InteractionResult.PASS;
             for (ItemStack stack : extracted) {
@@ -986,7 +990,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
             }
             return InteractionResult.CONSUME;
         }
-        if (this.level().isClientSide) return InteractionResult.SUCCESS;
+        if (this.level().isClientSide()) return InteractionResult.SUCCESS;
         ItemStack remaining = ItemHandlerUtil.insertItem(this.cauldronInputHandler(), inHand.copy(), false);
         int inserted = inHand.getCount() - remaining.getCount();
         if (inserted <= 0) return InteractionResult.PASS;
@@ -996,8 +1000,8 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
 
     private boolean tryFluidInteraction(Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
-        boolean interacted = FluidUtil.interactWithFluidHandler(player, hand, this.getFluidHandler());
-        if (interacted && !this.level().isClientSide) {
+        boolean interacted = FluidUtil.interactWithFluidHandler(player, hand, this.blockPosition(), this.getFluidHandler());
+        if (interacted && !this.level().isClientSide()) {
             player.awardStat(Stats.ITEM_USED.get(stack.getItem()));
             this.spillFluidIfNeeded();
         }
@@ -1010,14 +1014,14 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
     }
 
     @Override
-    public boolean hurt(DamageSource source, float amount) {
-        if (!this.plasticraft$isCauldron()) return super.hurt(source, amount);
+    public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
+        if (!this.plasticraft$isCauldron()) return super.hurtServer(level, source, amount);
         if (source.getEntity() instanceof Player player
             && player.getMainHandItem().getItem() instanceof AnvilHammerItem
             // 普通铁砧锤通过 DamageTypes.FALLING_ANVIL 伤害玩家目标，directEntity 为空；树脂锤
             // 的专用攻击事件仍使用 playerAttack，因此保留 directEntity==player 这一路径。
             && (source.is(DamageTypes.FALLING_ANVIL) || source.getDirectEntity() == player)) {
-            if (!this.level().isClientSide) {
+            if (!this.level().isClientSide()) {
                 // 锤击落点只用于锁定真正被砸到的锅；配方工作格仍由锅底另行推导。
                 BlockPos impactPos = BlockPos.containing(this.getBoundingBox().getCenter());
                 CauldronImpactRecipeProcessor.beginHammerImpact(this);
@@ -1034,19 +1038,19 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
             // 不把锤击视作有效伤害，避免锅和库存掉落，也避免锤子的攻击逻辑再次消耗耐久。
             return false;
         }
-        if (this.isInvulnerableTo(source)) return false;
-        if (!this.level().isClientSide && !this.isRemoved()) {
+        if (this.isInvulnerableToBase(source)) return false;
+        if (!this.level().isClientSide() && !this.isRemoved()) {
             List<ItemStack> contents = this.dropsContentsOnDestruction()
                 ? this.extractAllStacks()
                 : List.of();
-            if (this.level().getGameRules().getBoolean(GameRules.RULE_DOENTITYDROPS)) {
+            if (level.getGameRules().get(GameRules.ENTITY_DROPS)) {
                 for (ItemStack stack : contents) {
-                    if (!stack.isEmpty()) this.spawnAtLocation(stack);
+                    if (!stack.isEmpty()) this.spawnAtLocation(level, stack);
                 }
             }
             this.discardPersistentContents();
         }
-        return super.hurt(source, amount);
+        return super.hurtServer(level, source, amount);
     }
 
     @Override
@@ -1092,7 +1096,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
         Direction closest = sides[0];
         double closestDot = -Double.MAX_VALUE;
         for (Direction side : sides) {
-            double dot = lookDirection.dot(Vec3.atLowerCornerOf(side.getNormal()));
+            double dot = lookDirection.dot(Vec3.atLowerCornerOf(side.getUnitVec3i()));
             if (dot > closestDot) {
                 closest = side;
                 closestDot = dot;
@@ -1126,34 +1130,23 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
 
     public void tryAutoOutputResults() {
         Direction outletDirection = this.getOutletDirection();
-        if (outletDirection == null || this.level().isClientSide || this.autoOutputting) return;
+        if (outletDirection == null || this.level().isClientSide() || this.autoOutputting) return;
 
         BlockPos occupiedPos = BlockPos.containing(this.getBoundingBox().getCenter());
-        List<IItemHandler> targets = this.getOutletTargets(occupiedPos.relative(outletDirection));
+        List<ResourceHandler<ItemResource>> targets = this.getOutletTargets(occupiedPos.relative(outletDirection));
         this.autoOutputting = true;
         try {
             if (targets == null || targets.isEmpty()) {
                 if (this.isOutletBlocked(outletDirection)) return;
-                for (int slot = 0; slot < this.cauldronOutputHandler().getSlots(); slot++) {
-                    ItemStack stack = this.cauldronOutputHandler().extractItem(slot, Integer.MAX_VALUE, false);
+                for (int slot = 0; slot < this.cauldronOutputHandler().size(); slot++) {
+                    ItemStack stack = IItemHandler.of(this.cauldronOutputHandler()).extractItem(slot, Integer.MAX_VALUE, false);
                     if (!stack.isEmpty()) this.popResourceFromOutlet(outletDirection, stack);
                 }
                 return;
             }
 
-            for (IItemHandler target : targets) {
-                for (int slot = 0; slot < this.cauldronOutputHandler().getSlots(); slot++) {
-                    ItemStack extracted = this.cauldronOutputHandler().extractItem(slot, Integer.MAX_VALUE, true);
-                    if (extracted.isEmpty()) continue;
-                    ItemStack remaining = ItemHandlerUtil.insertItem(target, extracted, true);
-                    if (remaining.getCount() == extracted.getCount()) continue;
-                    remaining = ItemHandlerUtil.insertItem(
-                        target,
-                        this.cauldronOutputHandler().extractItem(slot, Integer.MAX_VALUE, false),
-                        false
-                    );
-                    if (!remaining.isEmpty()) ItemHandlerUtil.insertItem(this.cauldronOutputHandler(), remaining, false);
-                }
+            for (ResourceHandler<ItemResource> target : targets) {
+                ResourceHandlerUtil.move(this.cauldronOutputHandler(), target, resource -> true, Integer.MAX_VALUE, null);
             }
         } finally {
             this.autoOutputting = false;
@@ -1161,7 +1154,7 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
         }
     }
 
-    private List<IItemHandler> getOutletTargets(BlockPos targetPos) {
+    private List<ResourceHandler<ItemResource>> getOutletTargets(BlockPos targetPos) {
         LargeCauldronBlockEntity cauldron = LargeCauldronBlockEntity.getMain(
             this.level(),
             targetPos,
@@ -1185,8 +1178,8 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
 
     private void popResourceFromOutlet(Direction outletDirection, ItemStack stack) {
         Vec3 position = this.outletCenter(outletDirection)
-            .add(Vec3.atLowerCornerOf(outletDirection.getNormal()).scale(0.25D));
-        Vec3 movement = Vec3.atLowerCornerOf(outletDirection.getNormal()).scale(0.1D);
+            .add(Vec3.atLowerCornerOf(outletDirection.getUnitVec3i()).scale(0.25D));
+        Vec3 movement = Vec3.atLowerCornerOf(outletDirection.getUnitVec3i()).scale(0.1D);
         ItemEntity item = new ItemEntity(
             this.level(),
             position.x,
@@ -1209,9 +1202,9 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
             case Y -> box.getYsize() * 0.5D;
             case Z -> box.getZsize() * 0.5D;
         };
-        Vec3 faceOffset = Vec3.atLowerCornerOf(outletDirection.getNormal()).scale(faceDistance);
+        Vec3 faceOffset = Vec3.atLowerCornerOf(outletDirection.getUnitVec3i()).scale(faceDistance);
         Vec3 heightOffset = Vec3.atLowerCornerOf(
-            this.getOrientation().attachmentFace().getNormal()
+            this.getOrientation().attachmentFace().getUnitVec3i()
         ).scale(-1.0D / 16.0D);
         return center.add(faceOffset).add(heightOffset);
     }
@@ -1242,9 +1235,9 @@ public abstract class AbstractCauldronPlasticEntity extends AbstractPlasticEntit
         return ItemHandlerUtil.insertItem(this.cauldronOutputHandler(), stack, false);
     }
 
-    protected static boolean isEmpty(IItemHandler handler) {
-        for (int slot = 0; slot < handler.getSlots(); slot++) {
-            if (!handler.getStackInSlot(slot).isEmpty()) return false;
+    protected static boolean isEmpty(ResourceHandler<ItemResource> handler) {
+        for (int slot = 0; slot < handler.size(); slot++) {
+            if (!ItemUtil.getStack(handler, slot).isEmpty()) return false;
         }
         return true;
     }

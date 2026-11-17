@@ -1,8 +1,8 @@
 package dev.anvilcraft.plasticraft.recipe;
 
 import dev.dubhe.anvilcraft.api.heat.collector.HeatCollectorManager;
-import dev.dubhe.anvilcraft.block.BurningHeaterBlock;
-import dev.dubhe.anvilcraft.block.HeaterBlock;
+import dev.dubhe.anvilcraft.block.power.consumer.HeaterBlock;
+import dev.dubhe.anvilcraft.block.workstation.BurningHeaterBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
 /** 将集热器发电功率和两种加热器状态统一换算为催化速度。 */

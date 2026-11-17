@@ -13,7 +13,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -210,7 +210,7 @@ public final class BondedPlasticShapeIndex {
             List<Entry> result = new ArrayList<>();
             for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
                 for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
-                    Map<Long, Entry> entries = this.entriesByChunk.get(ChunkPos.asLong(chunkX, chunkZ));
+                    Map<Long, Entry> entries = this.entriesByChunk.get(ChunkPos.pack(chunkX, chunkZ));
                     if (entries == null) continue;
                     for (Entry entry : entries.values()) {
                         AABB entryBounds = switch (kind) {
@@ -229,7 +229,7 @@ public final class BondedPlasticShapeIndex {
         }
 
         private static long chunkKey(BlockPos anchor) {
-            return ChunkPos.asLong(
+            return ChunkPos.pack(
                 SectionPos.blockToSectionCoord(anchor.getX()),
                 SectionPos.blockToSectionCoord(anchor.getZ())
             );

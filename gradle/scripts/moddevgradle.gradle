@@ -7,11 +7,6 @@ neoForge {
         publish file('src/main/resources/interface_injections.json')
     }
 
-    parchment {
-        minecraftVersion = project.parchment_minecraft_version
-        mappingsVersion = project.parchment_mappings_version
-    }
-
     mods {
         "${mod_id}" {
             sourceSet(sourceSets.main)
@@ -53,7 +48,7 @@ neoForge {
         }
 
         data {
-            data()
+            clientData()
             gameDirectory.value(project.layout.projectDirectory.dir('run/data'))
             programArguments.addAll(
                 '--mod', project.mod_id,

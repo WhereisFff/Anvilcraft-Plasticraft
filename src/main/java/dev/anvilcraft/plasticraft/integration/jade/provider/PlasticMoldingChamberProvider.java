@@ -7,11 +7,10 @@ import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
 import dev.dubhe.anvilcraft.api.power.PowerGrid;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
-import org.jspecify.annotations.Nullable;
+import net.minecraft.resources.Identifier;
 import snownee.jade.api.BlockAccessor;
 import snownee.jade.api.IBlockComponentProvider;
 import snownee.jade.api.IServerDataProvider;
@@ -19,8 +18,9 @@ import snownee.jade.api.ITooltip;
 import snownee.jade.api.config.IPluginConfig;
 import snownee.jade.api.ui.BoxStyle;
 import snownee.jade.api.ui.IDisplayHelper;
-import snownee.jade.api.ui.IElementHelper;
-import snownee.jade.impl.ui.SimpleProgressStyle;
+import snownee.jade.api.ui.JadeUI;
+import snownee.jade.api.view.ProgressView;
+import snownee.jade.impl.ui.ProgressElement;
 import snownee.jade.overlay.DisplayHelper;
 
 import java.util.Locale;
@@ -66,20 +66,20 @@ public enum PlasticMoldingChamberProvider implements IBlockComponentProvider, IS
         if (!tag.contains(STATE)) {
             return;
         }
-        String state = tag.getString(STATE);
-        String reason = tag.getString(WAIT_REASON);
+        String state = tag.getStringOr(STATE, "");
+        String reason = tag.getStringOr(WAIT_REASON, "");
         String statusKey = reason.isEmpty() || reason.equals("none") || reason.equals("process_ready")
             ? "screen.anvilcraftplasticraft.molding.state." + state
             : "screen.anvilcraftplasticraft.molding.wait." + reason;
-        IElementHelper helper = IElementHelper.get();
-        tooltip.add(helper.text(Component.literal("  ").append(Component.translatable(statusKey))
+
+        tooltip.add(JadeUI.text(Component.literal("  ").append(Component.translatable(statusKey))
             .withStyle(ChatFormatting.GRAY)).tag(PlasticJadeLayout.MACHINE_STATE));
         int capacity = MoldingPowerBridge.capacity();
-        int stored = tag.getInt(ENERGY);
+        int stored = tag.getIntOr(ENERGY, 0);
         Component energyText;
-        if (tag.getBoolean(GRID_WORKING)) {
+        if (tag.getBooleanOr(GRID_WORKING, false)) {
             energyText = Component.translatable(
-                "tooltip.anvilcraftplasticraft.jade.grid_power", tag.getInt(GRID_POWER)
+                "tooltip.anvilcraftplasticraft.jade.grid_power", tag.getIntOr(GRID_POWER, 0)
             ).withStyle(ChatFormatting.WHITE);
         } else {
             IDisplayHelper display = IDisplayHelper.get();
@@ -88,48 +88,56 @@ public enum PlasticMoldingChamberProvider implements IBlockComponentProvider, IS
                 .append(Component.literal(" / " + display.humanReadableNumber(capacity, "FE", false))
                     .withStyle(ChatFormatting.GRAY));
         }
-        tooltip.add(helper.progress(
-            (float) stored / capacity, energyText, new CenteredEnergyStyle().color(0xFFAA0000, 0xFF660000),
-            BoxStyle.getNestedBox(), true
-        ).tag(PlasticJadeLayout.CHAMBER_ENERGY));
-        String formingMode = tag.getString(FORMING_MODE);
+        tooltip.add(new EnergyBar((float) stored / capacity, energyText).tag(PlasticJadeLayout.CHAMBER_ENERGY));
+        String formingMode = tag.getStringOr(FORMING_MODE, "");
         if (!formingMode.isEmpty()) {
             tooltip.add(Component.translatable(
                 "screen.anvilcraftplasticraft.molding.forming",
                 Component.translatable("screen.anvilcraftplasticraft.molding.forming." + formingMode)
             ).withStyle(ChatFormatting.GRAY));
         }
-        int printingTotal = tag.getInt(PRINTING_TOTAL);
+        int printingTotal = tag.getIntOr(PRINTING_TOTAL, 0);
         if (formingMode.equals("printing") && printingTotal > 0) {
             tooltip.add(Component.translatable(
                 "screen.anvilcraftplasticraft.molding.printing_progress",
-                tag.getInt(PRINTING_PROGRESS),
+                tag.getIntOr(PRINTING_PROGRESS, 0),
                 printingTotal
             ).withStyle(ChatFormatting.GRAY));
         }
-        if (tag.getBoolean(PARTIAL_DOWNGRADE)) {
+        if (tag.getBooleanOr(PARTIAL_DOWNGRADE, false)) {
             tooltip.add(Component.translatable(
                 "tooltip.anvilcraftplasticraft.molding.partial_downgrade"
             ).withStyle(ChatFormatting.RED));
         }
     }
 
-    private static final class CenteredEnergyStyle extends SimpleProgressStyle {
+    private static final class EnergyBar extends ProgressElement {
+        private final Component label;
+
+        private EnergyBar(float progress, Component label) {
+            super(new ProgressView(ProgressView.Part.of(progress, 0xFFAA0000), null,
+                JadeUI.progressStyle(), BoxStyle.nestedBox()), Math.max(100, DisplayHelper.font().width(label) + 10), 14);
+            this.label = label;
+            this.flexGrow(1);
+        }
+
         @Override
-        public void render(GuiGraphics graphics, float x, float y, float width, float height,
-                           float progress, @Nullable Component text) {
-            super.render(graphics, x, y, width, height, progress, null);
-            if (text != null) {
-                Font font = DisplayHelper.font();
-                IDisplayHelper.get().drawText(graphics, text,
-                    x + (width - font.width(text)) / 2,
-                    y + (height - font.lineHeight) / 2, 0xFFFFFFFF);
-            }
+        public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTicks) {
+            super.extractRenderState(graphics, mouseX, mouseY, partialTicks);
+            Font font = DisplayHelper.font();
+            IDisplayHelper.get().drawText(graphics, this.label,
+                this.getX() + (this.getWidth() - font.width(this.label)) / 2f,
+                this.getY() + (this.getHeight() - font.lineHeight) / 2f, 0xFFFFFFFF);
+        }
+
+        @Override
+        public Component getNarration() {
+            return this.label;
         }
     }
 
     @Override
-    public ResourceLocation getUid() {
+    public Identifier getUid() {
         return AnvilcraftPlasticraft.of("plastic_molding_chamber");
     }
 }

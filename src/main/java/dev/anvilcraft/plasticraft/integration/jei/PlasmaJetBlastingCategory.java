@@ -24,15 +24,17 @@ import mezz.jei.api.recipe.IFocusGroup;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.recipe.category.IRecipeCategory;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
+
+import java.util.Arrays;
 
 /** 喷流灼烧配方的 JEI 页面。 */
 public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHolder<PlasmaJetBlastingRecipe>> {
@@ -118,7 +120,7 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
                 splitInputColumns
             );
             builder.addSlot(RecipeIngredientRole.INPUT, position.x() + 1, position.y() + 1)
-                .addIngredients(Ingredient.of(ingredient.getItems()));
+                .addItemStacks(Arrays.stream(ingredient.getItems()).map(ItemStackTemplate::create).toList());
         }
         if (recipe.hasFluidInput()) {
             Position position = fluidPosition(true, 1, 0, splitInputColumns);
@@ -142,7 +144,7 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
                 index,
                 splitOutputColumns
             );
-            ItemStack stack = result.stack().copy();
+            ItemStack stack = result.stack().create();
             if (result.count() instanceof ConstantValue) stack.setCount(result.getMaxCount());
             IRecipeSlotBuilder resultSlot = builder.addSlot(
                 RecipeIngredientRole.OUTPUT,
@@ -179,7 +181,7 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
     public void draw(
         RecipeHolder<PlasmaJetBlastingRecipe> holder,
         IRecipeSlotsView recipeSlotsView,
-        GuiGraphics graphics,
+        GuiGraphicsExtractor graphics,
         double mouseX,
         double mouseY
     ) {
@@ -217,15 +219,7 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
         this.arrowIn.draw(graphics, 46, 30);
         this.arrowOut.draw(graphics, 100, 29);
         this.drawPlasmaJets(graphics, PlasticraftJeiPlugin.isEnhancedRecipe(holder));
-        RenderSupport.renderBlock(
-            graphics,
-            this.largeCauldron,
-            81,
-            39,
-            10,
-            6.5F,
-            RenderSupport.SINGLE_BLOCK
-        );
+        RenderSupport.renderBlockAt(graphics, this.largeCauldron, 81, 39, 6.5f);
 
         recipe.gasOutput().ifPresent(gas -> drawVirtualFluid(
             graphics,
@@ -276,19 +270,19 @@ public final class PlasmaJetBlastingCategory implements IRecipeCategory<RecipeHo
         }
     }
 
-    private static Component virtualFluidName(ResourceLocation id) {
+    private static Component virtualFluidName(Identifier id) {
         return Component.translatable("jei.anvilcraftplasticraft.gas." + id.getPath());
     }
 
     private void drawVirtualFluid(
-        GuiGraphics graphics,
+        GuiGraphicsExtractor graphics,
         Position position,
-        ResourceLocation id
+        Identifier id
     ) {
         this.vaporDrawables.draw(graphics, id, position.x() + 1, position.y() + 1);
     }
 
-    private void drawPlasmaJets(GuiGraphics graphics, boolean enhanced) {
+    private void drawPlasmaJets(GuiGraphicsExtractor graphics, boolean enhanced) {
         IDrawable drawable = enhanced ? this.enhancedPlasmaJets : this.plasmaJets;
         drawable.draw(graphics, PLASMA_JETS_X, PLASMA_JETS_Y);
     }

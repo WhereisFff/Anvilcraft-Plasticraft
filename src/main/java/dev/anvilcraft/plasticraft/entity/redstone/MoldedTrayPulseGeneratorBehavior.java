@@ -31,12 +31,12 @@ final class MoldedTrayPulseGeneratorBehavior implements MoldedTrayRedstoneBehavi
         boolean changed = previousInputting != inputting;
         if (pulse.getStartMode() == PulseGeneratorBlockEntity.Mode.LOOP) {
             if (inputting) {
-                changed |= !pulse.isDeadlock() || pulse.isProcessing() || runtime.remainingTicks() != 0;
-                pulse.setDeadlock(true);
+                changed |= !pulse.isLocked() || pulse.isProcessing() || runtime.remainingTicks() != 0;
+                pulse.setLocked(true);
                 if (pulse.isProcessing()) pulse.setState(PulseGeneratorBlockEntity.State.DEFAULT);
                 runtime.cancelScheduledAction();
-            } else if (pulse.isDeadlock()) {
-                pulse.setDeadlock(false);
+            } else if (pulse.isLocked()) {
+                pulse.setLocked(false);
                 changed = true;
                 if (pulse.getWaitingTime() == 0) {
                     pulse.setState(PulseGeneratorBlockEntity.State.WAITING);
@@ -49,8 +49,8 @@ final class MoldedTrayPulseGeneratorBehavior implements MoldedTrayRedstoneBehavi
                 changed = true;
             }
         } else {
-            if (pulse.isDeadlock()) {
-                pulse.setDeadlock(false);
+            if (pulse.isLocked()) {
+                pulse.setLocked(false);
                 changed = true;
             }
             boolean edge = switch (pulse.getStartMode()) {
@@ -69,7 +69,7 @@ final class MoldedTrayPulseGeneratorBehavior implements MoldedTrayRedstoneBehavi
     @Override
     public void scheduledTick(MoldedTrayRedstoneRuntime runtime, BlockState state) {
         if (!(runtime.cachedBlockEntity() instanceof PulseGeneratorBlockEntity pulse)
-            || pulse.isDeadlock()) return;
+            || pulse.isLocked()) return;
         switch (pulse.getState()) {
             case WAITING -> startOutputting(runtime, pulse);
             case OUTPUTTING -> endOutputting(runtime, pulse);
@@ -94,7 +94,7 @@ final class MoldedTrayPulseGeneratorBehavior implements MoldedTrayRedstoneBehavi
         MoldedTrayComponent component
     ) {
         if (!(runtime.cachedBlockEntity() instanceof PulseGeneratorBlockEntity pulse)
-            || pulse.isDeadlock()) return;
+            || pulse.isLocked()) return;
         int remaining = component.scheduledTicks();
         if (pulse.getState() == PulseGeneratorBlockEntity.State.WAITING) {
             if (remaining > 0) runtime.scheduleTick(remaining, TickPriority.LOW);
@@ -158,7 +158,7 @@ final class MoldedTrayPulseGeneratorBehavior implements MoldedTrayRedstoneBehavi
         pulse.setState(PulseGeneratorBlockEntity.State.DEFAULT);
         updatePoweredState(runtime, pulse);
         runtime.publishNetwork();
-        if (pulse.getStartMode() == PulseGeneratorBlockEntity.Mode.LOOP && !pulse.isDeadlock()) {
+        if (pulse.getStartMode() == PulseGeneratorBlockEntity.Mode.LOOP && !pulse.isLocked()) {
             startWaiting(runtime, pulse);
         }
     }

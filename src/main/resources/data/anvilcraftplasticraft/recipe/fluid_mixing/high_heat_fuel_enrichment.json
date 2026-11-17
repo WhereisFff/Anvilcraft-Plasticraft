@@ -1,0 +1,17 @@
+{
+  "type": "anvilcraftplasticraft:fluid_enrichment",
+  "ingredients": [
+    {
+      "amount": 1,
+      "ingredient": "anvilcraftplasticraft:high_heat_fuel"
+    },
+    {
+      "amount": 1,
+      "ingredient": "anvilcraftplasticraft:crude_oil_acid"
+    }
+  ],
+  "result": {
+    "amount": 3,
+    "id": "anvilcraftplasticraft:high_heat_fuel"
+  }
+}

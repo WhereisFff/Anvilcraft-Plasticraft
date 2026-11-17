@@ -20,22 +20,20 @@ import dev.anvilcraft.plasticraft.entity.adhesive.SlidingAdhesionData;
 import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import dev.anvilcraft.plasticraft.item.ResinAnvilHammerItem;
 import dev.dubhe.anvilcraft.entity.SlidingBlockEntity;
-import javax.annotation.Nullable;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
-import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.Sheets;
-import net.minecraft.client.renderer.block.BlockRenderDispatcher;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.client.resources.model.BakedModel;
-import net.minecraft.client.resources.model.ModelResourceLocation;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.LightCoordsUtil;
+import net.minecraft.util.context.ContextKey;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.level.ChunkPos;
@@ -48,10 +46,12 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ExtractLevelRenderStateEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import org.joml.Matrix3f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -62,7 +62,7 @@ import java.util.Set;
 /** 在同步的粘合状态存在时渲染高粘性树脂胶面。 */
 @EventBusSubscriber(modid = AnvilcraftPlasticraft.MOD_ID, value = Dist.CLIENT)
 public final class AdhesivePatchRenderer {
-    public static final ModelResourceLocation MODEL = ModelResourceLocation.standalone(
+    public static final PlasticBlockModel MODEL = new PlasticBlockModel(
         AnvilcraftPlasticraft.of("block/high_viscosity_resin_adhesive")
     );
     private static final int CHUNK_RADIUS = 8;
@@ -75,33 +75,43 @@ public final class AdhesivePatchRenderer {
     private static final double OUTLINE_OFFSET = 0.004D;
     private static final int OUTLINE_ORANGE = 0xFFFF8018;
     private static final int WRAP_SEGMENTS = 6;
-    private static final RenderType STRETCHED_ADHESIVE_RENDER_TYPE = Sheets.translucentCullBlockSheet();
 
     private AdhesivePatchRenderer() {
     }
 
+    private static final ContextKey<PlasticRenderGeometry> GEOMETRY = new ContextKey<>(AnvilcraftPlasticraft.of("adhesive_patches"));
+
     @SubscribeEvent
-    public static void render(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) return;
+    public static void extract(ExtractLevelRenderStateEvent event) {
         Minecraft minecraft = Minecraft.getInstance();
-        ClientLevel level = minecraft.level;
+        ClientLevel level = event.getLevel();
         if (level == null) return;
-        PoseStack pose = event.getPoseStack();
-        Vec3 camera = event.getCamera().getPosition();
-        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
+        PoseStack pose = new PoseStack();
+        Vec3 camera = event.getCamera().position();
+        PlasticRenderGeometry buffers = new PlasticRenderGeometry();
         pose.pushPose();
         pose.translate(-camera.x, -camera.y, -camera.z);
-        float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(minecraft.isPaused());
+        float partialTick = event.getDeltaTracker().getGameTimeDeltaPartialTick(minecraft.isPaused());
         renderContents(level, pose, buffers, camera, partialTick);
         pose.popPose();
-        buffers.endBatch(RenderType.translucent());
-        buffers.endBatch(STRETCHED_ADHESIVE_RENDER_TYPE);
+        event.getRenderState().setRenderData(GEOMETRY, buffers);
+    }
+
+    @SubscribeEvent
+    public static void renderExtracted(RenderLevelStageEvent.AfterOpaqueFeatures event) {
+        var state = event.getLevelRenderState();
+        var geometry = state.getRenderData(GEOMETRY);
+        if (geometry != null) {
+            var buffers = Minecraft.getInstance().renderBuffers().bufferSource();
+            geometry.draw(event.getPoseStack(), buffers, state.cameraRenderState);
+            buffers.endBatch();
+        }
     }
 
     public static void renderContents(
         ClientLevel level,
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         Vec3 camera,
         float partialTick
     ) {
@@ -182,7 +192,7 @@ public final class AdhesivePatchRenderer {
     }
 
     private static List<Patch> blockPatches(ClientLevel level, Vec3 camera) {
-        ChunkPos cameraChunk = new ChunkPos(BlockPos.containing(camera));
+        ChunkPos cameraChunk = ChunkPos.containing(BlockPos.containing(camera));
         long gameTime = level.getGameTime();
         if (cachedLevel == level
             && cachedGameTime == gameTime
@@ -192,8 +202,8 @@ public final class AdhesivePatchRenderer {
 
         Set<Patch> patches = new HashSet<>();
         Set<BondedFace> bondedFaces = new HashSet<>();
-        for (int chunkX = cameraChunk.x - CHUNK_RADIUS; chunkX <= cameraChunk.x + CHUNK_RADIUS; chunkX++) {
-            for (int chunkZ = cameraChunk.z - CHUNK_RADIUS; chunkZ <= cameraChunk.z + CHUNK_RADIUS; chunkZ++) {
+        for (int chunkX = cameraChunk.x() - CHUNK_RADIUS; chunkX <= cameraChunk.x() + CHUNK_RADIUS; chunkX++) {
+            for (int chunkZ = cameraChunk.z() - CHUNK_RADIUS; chunkZ <= cameraChunk.z() + CHUNK_RADIUS; chunkZ++) {
                 LevelChunk chunk = level.getChunkSource().getChunk(chunkX, chunkZ, false);
                 if (chunk == null) continue;
                 BondedFallingChunkData data = chunk.getExistingDataOrNull(
@@ -233,10 +243,10 @@ public final class AdhesivePatchRenderer {
                 }
                 for (Map.Entry<BlockPos, BondedFallingBlockInfo> entry : data.entries().entrySet()) {
                     BondedFallingBlockInfo info = entry.getValue();
-                    Direction face = Direction.fromDelta(
+                    Direction face = Direction.getNearest(
                         entry.getKey().getX() - info.supportPos().getX(),
                         entry.getKey().getY() - info.supportPos().getY(),
-                        entry.getKey().getZ() - info.supportPos().getZ()
+                        entry.getKey().getZ() - info.supportPos().getZ(), null
                     );
                     BlockAdhesionState state = data.getAdhesion(entry.getKey());
                     if (face != null && (state == null || !state.hasBlockBond(face.getOpposite()))) {
@@ -261,7 +271,7 @@ public final class AdhesivePatchRenderer {
     private static void renderPatch(
         ClientLevel level,
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         BlockPos supportPos,
         Direction face
     ) {
@@ -288,7 +298,7 @@ public final class AdhesivePatchRenderer {
             pose,
             buffers,
             entity.blockPosition(),
-            LevelRenderer.getLightColor(level, entity.blockPosition())
+            LevelRenderer.getLightCoords(level, entity.blockPosition())
         );
         pose.popPose();
     }
@@ -416,7 +426,7 @@ public final class AdhesivePatchRenderer {
             pose,
             buffers,
             null,
-            STRETCHED_ADHESIVE_RENDER_TYPE,
+            Sheets.translucentBlockSheet(),
             stretchedAdhesiveLight(level, middle.add(worldOffset))
         );
         pose.popPose();
@@ -424,20 +434,20 @@ public final class AdhesivePatchRenderer {
 
     private static int stretchedAdhesiveLight(ClientLevel level, Vec3 worldPosition) {
         BlockPos center = BlockPos.containing(worldPosition);
-        int packedLight = LevelRenderer.getLightColor(level, center);
+        int packedLight = LevelRenderer.getLightCoords(level, center);
         for (Direction direction : Direction.values()) {
             packedLight = maxPackedLight(
                 packedLight,
-                LevelRenderer.getLightColor(level, center.relative(direction))
+                LevelRenderer.getLightCoords(level, center.relative(direction))
             );
         }
         return packedLight;
     }
 
     private static int maxPackedLight(int first, int second) {
-        return LightTexture.pack(
-            Math.max(LightTexture.block(first), LightTexture.block(second)),
-            Math.max(LightTexture.sky(first), LightTexture.sky(second))
+        return LightCoordsUtil.pack(
+            Math.max(LightCoordsUtil.block(first), LightCoordsUtil.block(second)),
+            Math.max(LightCoordsUtil.sky(first), LightCoordsUtil.sky(second))
         );
     }
 
@@ -462,7 +472,7 @@ public final class AdhesivePatchRenderer {
             buffers,
             supportPos,
             face,
-            LevelRenderer.getLightColor(level, lightPos)
+            LevelRenderer.getLightCoords(level, lightPos)
         );
         pose.popPose();
     }
@@ -532,7 +542,7 @@ public final class AdhesivePatchRenderer {
             progress
         ));
         Vec3 anchor = Vec3.atCenterOf(blockEntity.getSupportPos()).add(
-            Vec3.atLowerCornerOf(blockEntity.getAttachmentFace().getNormal()).scale(0.5D)
+            Vec3.atLowerCornerOf(blockEntity.getAttachmentFace().getUnitVec3i()).scale(0.5D)
         );
         Vec3 origin = Vec3.atLowerCornerOf(blockPos);
         renderWrappedAdhesive(
@@ -605,7 +615,7 @@ public final class AdhesivePatchRenderer {
     private static void renderBondedFaceOutlines(
         ClientLevel level,
         PoseStack pose,
-        MultiBufferSource.BufferSource buffers,
+        MultiBufferSource buffers,
         float partialTick
     ) {
         Minecraft minecraft = Minecraft.getInstance();
@@ -711,7 +721,7 @@ public final class AdhesivePatchRenderer {
             pose,
             buffers,
             level.getBlockState(statePos),
-            RenderType.translucent(),
+            Sheets.translucentBlockSheet(),
             packedLight
         );
     }
@@ -724,12 +734,10 @@ public final class AdhesivePatchRenderer {
         int packedLight
     ) {
         Minecraft minecraft = Minecraft.getInstance();
-        BlockRenderDispatcher dispatcher = minecraft.getBlockRenderer();
-        BakedModel model = minecraft.getModelManager().getModel(MODEL);
-        dispatcher.getModelRenderer().renderModel(
+        BlockStateModel model = MODEL.baked();
+        PlasticBlockModel.render(
             pose.last(),
             buffers.getBuffer(renderType),
-            state,
             model,
             1.0F,
             1.0F,
@@ -761,7 +769,7 @@ public final class AdhesivePatchRenderer {
     private static @Nullable PistonMovingBlockEntity findMovingPiston(
         ClientLevel level,
         BlockPos ownerPos,
-        ResourceLocation movedBlockId
+        Identifier movedBlockId
     ) {
         PistonMovingBlockEntity atDestination = matchingPiston(level, ownerPos, movedBlockId);
         if (atDestination != null) return atDestination;
@@ -795,7 +803,7 @@ public final class AdhesivePatchRenderer {
     private static @Nullable PistonMovingBlockEntity matchingPiston(
         ClientLevel level,
         BlockPos pos,
-        ResourceLocation movedBlockId
+        Identifier movedBlockId
     ) {
         if (!level.hasChunkAt(pos)) return null;
         BlockEntity blockEntity = level.getBlockEntity(pos);
@@ -821,10 +829,10 @@ public final class AdhesivePatchRenderer {
     }
 
     private static Direction cross(Direction first, Direction second) {
-        Direction result = Direction.fromDelta(
+        Direction result = Direction.getNearest(
             first.getStepY() * second.getStepZ() - first.getStepZ() * second.getStepY(),
             first.getStepZ() * second.getStepX() - first.getStepX() * second.getStepZ(),
-            first.getStepX() * second.getStepY() - first.getStepY() * second.getStepX()
+            first.getStepX() * second.getStepY() - first.getStepY() * second.getStepX(), null
         );
         if (result == null) throw new IllegalArgumentException("Directions must be perpendicular");
         return result;

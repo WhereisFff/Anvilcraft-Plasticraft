@@ -4,10 +4,16 @@ import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronContents;
 import dev.anvilcraft.plasticraft.entity.MoldedPlasticCauldronState;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
+import io.netty.buffer.ByteBuf;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.syncher.EntityDataSerializer;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredRegister;
+import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
 import java.util.function.Supplier;
 
@@ -17,6 +23,21 @@ public final class PlasticraftDataComponents {
         Registries.DATA_COMPONENT_TYPE,
         AnvilcraftPlasticraft.MOD_ID
     );
+
+    private static final DeferredRegister<EntityDataSerializer<?>> ENTITY_SERIALIZERS = DeferredRegister.create(
+        NeoForgeRegistries.ENTITY_DATA_SERIALIZERS, AnvilcraftPlasticraft.MOD_ID
+    );
+    public static final EntityDataSerializer<CompoundTag> COMPOUND_TAG = new EntityDataSerializer<>() {
+        @Override
+        public StreamCodec<ByteBuf, CompoundTag> codec() {
+            return ByteBufCodecs.COMPOUND_TAG;
+        }
+
+        @Override
+        public CompoundTag copy(CompoundTag value) {
+            return value.copy();
+        }
+    };
 
     public static final Supplier<DataComponentType<MoldedPlasticData>> MOLDED_PLASTIC = COMPONENTS.register(
         "molded_plastic",
@@ -51,5 +72,7 @@ public final class PlasticraftDataComponents {
 
     public static void register(IEventBus eventBus) {
         COMPONENTS.register(eventBus);
+        ENTITY_SERIALIZERS.register("compound_tag", () -> COMPOUND_TAG);
+        ENTITY_SERIALIZERS.register(eventBus);
     }
 }

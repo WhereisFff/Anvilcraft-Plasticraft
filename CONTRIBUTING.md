@@ -1,6 +1,6 @@
 # Contributing
 
-Use JDK 21 (JetBrains Runtime 21 is also supported) and import the repository
+Use JDK 25 (JetBrains Runtime 25 is also supported) and import the repository
 directly as a Gradle project in IDEA.
 
 Before opening a change:

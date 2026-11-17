@@ -1,5 +1,7 @@
 package dev.anvilcraft.plasticraft.recipe;
 
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.PlasticOilCauldronBlock;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
@@ -15,10 +17,6 @@ import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.core.HolderLookup;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
@@ -31,11 +29,17 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.saveddata.SavedDataType;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.event.level.ChunkWatchEvent;
 import net.neoforged.neoforge.fluids.FluidStack;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.fluid.FluidUtil;
+import net.neoforged.neoforge.transfer.item.ItemResource;
+import net.neoforged.neoforge.transfer.item.ItemUtil;
+import net.neoforged.neoforge.transfer.transaction.Transaction;
+import org.jspecify.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -43,7 +47,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
-import javax.annotation.Nullable;
 
 /** 树脂、金属和玻璃在对应温度条件下催化塑料油的通用服务端过程。 */
 public final class PlasticOilCatalysis {
@@ -268,7 +271,7 @@ public final class PlasticOilCatalysis {
     private static void tickFluidContainer(
         ServerLevel level,
         BlockPos pos,
-        IFluidHandler fluids,
+        ResourceHandler<FluidResource> fluids,
         CatalystCounts catalysts,
         double heat,
         boolean cold
@@ -408,7 +411,7 @@ public final class PlasticOilCatalysis {
         ).isEmpty();
     }
 
-    private static CatalystCounts countCatalysts(ServerLevel level, IItemHandler handler, ItemStack contactCatalyst) {
+    private static CatalystCounts countCatalysts(ServerLevel level, ResourceHandler<ItemResource> handler, ItemStack contactCatalyst) {
         Set<Item> royalSteel = new HashSet<>();
         Set<Item> frostMetal = new HashSet<>();
         Set<Item> emberMetal = new HashSet<>();
@@ -449,7 +452,7 @@ public final class PlasticOilCatalysis {
 
     private static void collectCatalysts(
         ServerLevel level,
-        IItemHandler handler,
+        ResourceHandler<ItemResource> handler,
         Set<Item> royalSteel,
         Set<Item> frostMetal,
         Set<Item> emberMetal,
@@ -457,8 +460,8 @@ public final class PlasticOilCatalysis {
         Set<Item> frostGlass,
         Set<Item> resin
     ) {
-        for (int slot = 0; slot < handler.getSlots(); slot++) {
-            ItemStack stack = handler.getStackInSlot(slot);
+        for (int slot = 0; slot < handler.size(); slot++) {
+            ItemStack stack = ItemUtil.getStack(handler, slot);
             collectCatalyst(level, stack, royalSteel, frostMetal, emberMetal, royalGlass, frostGlass, resin);
         }
     }
@@ -487,9 +490,9 @@ public final class PlasticOilCatalysis {
         }
     }
 
-    private static FluidStack findReactiveFluid(IFluidHandler handler) {
-        for (int tank = 0; tank < handler.getTanks(); tank++) {
-            FluidStack stored = handler.getFluidInTank(tank);
+    private static FluidStack findReactiveFluid(ResourceHandler<FluidResource> handler) {
+        for (int tank = 0; tank < handler.size(); tank++) {
+            FluidStack stored = FluidUtil.getStack(handler, tank);
             if (stored.is(PlasticraftFluids.PLASTIC_OIL.get())
                 || stored.is(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())) {
                 return stored.copy();
@@ -498,24 +501,13 @@ public final class PlasticOilCatalysis {
         return FluidStack.EMPTY;
     }
 
-    private static boolean transformFluid(IFluidHandler handler, FluidStack input, FluidStack output) {
-        FluidStack simulated = handler.drain(input, IFluidHandler.FluidAction.SIMULATE);
-        if (simulated.getAmount() != input.getAmount()
-            || !FluidStack.isSameFluidSameComponents(simulated, input)) return false;
-
-        FluidStack drained = handler.drain(input, IFluidHandler.FluidAction.EXECUTE);
-        if (drained.getAmount() != input.getAmount()
-            || !FluidStack.isSameFluidSameComponents(drained, input)) {
-            if (!drained.isEmpty()) handler.fill(drained, IFluidHandler.FluidAction.EXECUTE);
-            return false;
+    private static boolean transformFluid(ResourceHandler<FluidResource> handler, FluidStack input, FluidStack output) {
+        try (var tx = Transaction.openRoot()) {
+            if (handler.extract(FluidResource.of(input), input.getAmount(), tx) != input.getAmount()
+                || handler.insert(FluidResource.of(output), output.getAmount(), tx) != output.getAmount()) return false;
+            tx.commit();
+            return true;
         }
-        int filled = handler.fill(output, IFluidHandler.FluidAction.EXECUTE);
-        if (filled == output.getAmount()) return true;
-        if (filled > 0) {
-            handler.drain(output.copyWithAmount(filled), IFluidHandler.FluidAction.EXECUTE);
-        }
-        handler.fill(drained, IFluidHandler.FluidAction.EXECUTE);
-        return false;
     }
 
     private static double oilWorkPerTick(double heat, boolean cold, CatalystCounts catalysts) {
@@ -587,29 +579,23 @@ public final class PlasticOilCatalysis {
 
     /** 没有方块实体的反应位置也通过维度数据持久化进度。 */
     private static final class ProgressData extends SavedData {
-        private static final String NAME = AnvilcraftPlasticraft.MOD_ID + "_plastic_oil_catalysis";
-        private static final SavedData.Factory<ProgressData> FACTORY = new SavedData.Factory<>(
-            ProgressData::new,
-            ProgressData::load,
-            null
+        private static final SavedDataType<ProgressData> TYPE = new SavedDataType<>(
+            AnvilcraftPlasticraft.of("plastic_oil_catalysis"), ProgressData::new,
+            Codec.unboundedMap(Codec.STRING.xmap(Long::parseLong, Object::toString), Progress.CODEC)
+                .xmap(ProgressData::new, data -> data.progress)
         );
-        private final Map<Long, Progress> progress = new HashMap<>();
+        private final Map<Long, Progress> progress;
 
-        private static ProgressData get(ServerLevel level) {
-            return level.getDataStorage().computeIfAbsent(FACTORY, NAME);
+        private ProgressData() {
+            this.progress = new HashMap<>();
         }
 
-        private static ProgressData load(CompoundTag tag, HolderLookup.Provider registries) {
-            ProgressData data = new ProgressData();
-            ListTag entries = tag.getList("Entries", Tag.TAG_COMPOUND);
-            for (int index = 0; index < entries.size(); index++) {
-                CompoundTag entry = entries.getCompound(index);
-                data.progress.put(
-                    entry.getLong("Pos"),
-                    new Progress(entry.getDouble("Work"), entry.getLong("LastTick"))
-                );
-            }
-            return data;
+        private ProgressData(Map<Long, Progress> progress) {
+            this.progress = new HashMap<>(progress);
+        }
+
+        private static ProgressData get(ServerLevel level) {
+            return level.getDataStorage().computeIfAbsent(TYPE);
         }
 
         private AdvanceResult advance(ServerLevel level, BlockPos pos, long gameTime, double work) {
@@ -639,7 +625,7 @@ public final class PlasticOilCatalysis {
         private void syncChunk(ServerLevel level, ServerPlayer player, ChunkPos chunk) {
             for (Map.Entry<Long, Progress> entry : this.progress.entrySet()) {
                 BlockPos pos = BlockPos.of(entry.getKey());
-                if (pos.getX() >> 4 != chunk.x || pos.getZ() >> 4 != chunk.z) continue;
+                if (pos.getX() >> 4 != chunk.x() || pos.getZ() >> 4 != chunk.z()) continue;
                 PlasticOilCatalysisVisualSync.sendToPlayer(
                     level,
                     player,
@@ -660,22 +646,13 @@ public final class PlasticOilCatalysis {
             }
         }
 
-        @Override
-        public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
-            ListTag entries = new ListTag();
-            for (Map.Entry<Long, Progress> value : this.progress.entrySet()) {
-                CompoundTag entry = new CompoundTag();
-                entry.putLong("Pos", value.getKey());
-                entry.putDouble("Work", value.getValue().work());
-                entry.putLong("LastTick", value.getValue().lastTick());
-                entries.add(entry);
-            }
-            tag.put("Entries", entries);
-            return tag;
-        }
     }
 
     private record Progress(double work, long lastTick) {
+        private static final Codec<Progress> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+            Codec.DOUBLE.fieldOf("work").forGetter(Progress::work),
+            Codec.LONG.fieldOf("last_tick").forGetter(Progress::lastTick)
+        ).apply(instance, Progress::new));
     }
 
     private record AdvanceResult(double work, boolean complete, boolean advanced) {

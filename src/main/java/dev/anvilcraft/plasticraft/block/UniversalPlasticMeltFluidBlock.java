@@ -11,7 +11,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.InsideBlockEffectApplier;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
@@ -22,8 +23,9 @@ import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FlowingFluid;
+import net.minecraft.world.level.redstone.Orientation;
 import net.minecraft.world.phys.Vec3;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.function.Supplier;
 
@@ -48,7 +50,7 @@ public class UniversalPlasticMeltFluidBlock extends LiquidBlock implements Entit
     @Override
     protected void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean movedByPiston) {
         super.onPlace(state, level, pos, oldState, movedByPiston);
-        if (!level.isClientSide) level.scheduleTick(pos, this, 10);
+        if (!level.isClientSide()) level.scheduleTick(pos, this, 10);
     }
 
     @Override
@@ -68,19 +70,19 @@ public class UniversalPlasticMeltFluidBlock extends LiquidBlock implements Entit
         Level level,
         BlockPos pos,
         Block block,
-        BlockPos neighborPos,
+        @Nullable Orientation orientation,
         boolean movedByPiston
     ) {
-        if (!level.isClientSide) level.scheduleTick(pos, this, 1);
+        if (!level.isClientSide()) level.scheduleTick(pos, this, 1);
     }
 
     @Override
-    public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
+    public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity, InsideBlockEffectApplier effectApplier, boolean isPrecise) {
         entity.makeStuckInBlock(state, new Vec3(0.25D, 0.05D, 0.25D));
     }
 
     @Override
-    public ItemStack pickupBlock(@Nullable Player player, LevelAccessor level, BlockPos pos, BlockState state) {
+    public ItemStack pickupBlock(@Nullable LivingEntity user, LevelAccessor level, BlockPos pos, BlockState state) {
         if (state.getValue(LEVEL) != 0) return ItemStack.EMPTY;
         ItemStack bucket = new ItemStack(this.material.bucket());
         if (this.material.supportsDyeing()

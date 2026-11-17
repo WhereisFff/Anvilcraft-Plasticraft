@@ -2,15 +2,15 @@ package dev.anvilcraft.plasticraft.entity.adhesive;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,7 +22,7 @@ import java.util.UUID;
 public record AdhesiveTransit(
     BlockPos supportPos,
     Direction attachmentFace,
-    ResourceLocation supportBlockId,
+    Identifier supportBlockId,
     Direction sourceFace,
     Optional<UUID> supportEntityUuid,
     int supportEntityId,
@@ -40,7 +40,7 @@ public record AdhesiveTransit(
     public static final Codec<AdhesiveTransit> CODEC = RecordCodecBuilder.create(instance -> instance.group(
         BlockPos.CODEC.fieldOf("support_pos").forGetter(AdhesiveTransit::supportPos),
         Direction.CODEC.fieldOf("attachment_face").forGetter(AdhesiveTransit::attachmentFace),
-        ResourceLocation.CODEC.fieldOf("support_block").forGetter(AdhesiveTransit::supportBlockId),
+        Identifier.CODEC.fieldOf("support_block").forGetter(AdhesiveTransit::supportBlockId),
         Direction.CODEC.optionalFieldOf("source_face", Direction.DOWN).forGetter(AdhesiveTransit::sourceFace),
         UUIDUtil.CODEC.optionalFieldOf("support_entity").forGetter(AdhesiveTransit::supportEntityUuid),
         Codec.INT.optionalFieldOf("support_entity_id", -1).forGetter(AdhesiveTransit::supportEntityId),
@@ -59,7 +59,7 @@ public record AdhesiveTransit(
         (buffer, transit) -> {
             BlockPos.STREAM_CODEC.encode(buffer, transit.supportPos);
             buffer.writeByte(transit.attachmentFace.get3DDataValue());
-            ResourceLocation.STREAM_CODEC.encode(buffer, transit.supportBlockId);
+            Identifier.STREAM_CODEC.encode(buffer, transit.supportBlockId);
             buffer.writeByte(transit.sourceFace.get3DDataValue());
             buffer.writeBoolean(transit.supportEntityUuid.isPresent());
             transit.supportEntityUuid.ifPresent(buffer::writeUUID);
@@ -83,7 +83,7 @@ public record AdhesiveTransit(
         buffer -> {
             BlockPos supportPos = BlockPos.STREAM_CODEC.decode(buffer);
             Direction attachmentFace = Direction.from3DDataValue(buffer.readUnsignedByte());
-            ResourceLocation supportBlockId = ResourceLocation.STREAM_CODEC.decode(buffer);
+            Identifier supportBlockId = Identifier.STREAM_CODEC.decode(buffer);
             Direction sourceFace = Direction.from3DDataValue(buffer.readUnsignedByte());
             Optional<UUID> supportEntityUuid = buffer.readBoolean()
                 ? Optional.of(buffer.readUUID())

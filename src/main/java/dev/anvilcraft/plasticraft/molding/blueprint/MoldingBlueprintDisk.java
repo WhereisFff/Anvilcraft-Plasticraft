@@ -10,6 +10,7 @@ import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.item.property.component.DiskData;
 import dev.dubhe.anvilcraft.item.property.component.StoredItem;
 import dev.dubhe.anvilcraft.item.property.component.StructureDiskData;
+import net.minecraft.core.UUIDUtil;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.ItemStack;
@@ -47,19 +48,19 @@ public final class MoldingBlueprintDisk {
         // 本体扫描器会保留磁盘的其它组件；新写入的方块结构必须覆盖旧成型模型的读取与预览。
         if (!isStructureDisk(stack) || stack.has(ModComponents.STRUCTURE_DISK_DATA)) return false;
         DiskData data = stack.get(ModComponents.DISK_DATA);
-        return data != null && data.tag().contains(TAG_BLUEPRINT, CompoundTag.TAG_COMPOUND);
+        return data != null && data.tag().getCompound(TAG_BLUEPRINT).isPresent();
     }
 
     public static String previewToken(ItemStack stack) {
         if (!hasBlueprintData(stack)) return "";
         DiskData data = stack.get(ModComponents.DISK_DATA);
         if (data == null) return "";
-        CompoundTag encoded = data.tag().getCompound(TAG_BLUEPRINT);
-        if (!encoded.contains(TAG_SCHEMA, CompoundTag.TAG_INT)
-            || !encoded.contains(TAG_MODEL_HASH, CompoundTag.TAG_STRING)) {
+        CompoundTag encoded = data.tag().getCompoundOrEmpty(TAG_BLUEPRINT);
+        if (encoded.getInt(TAG_SCHEMA).isEmpty()
+            || encoded.getString(TAG_MODEL_HASH).isEmpty()) {
             return "";
         }
-        return encoded.getInt(TAG_SCHEMA) + ":" + encoded.getString(TAG_MODEL_HASH);
+        return encoded.getInt(TAG_SCHEMA).orElseThrow() + ":" + encoded.getString(TAG_MODEL_HASH).orElseThrow();
     }
 
     public static ItemStack writeCopy(ItemStack source, MoldingBlueprint blueprint) {
@@ -90,7 +91,7 @@ public final class MoldingBlueprintDisk {
         encoded.putInt(TAG_SCHEMA, SCHEMA_VERSION);
         encoded.putLong(TAG_FILE_REVISION, blueprint.fileRevision());
         encoded.putString(TAG_NAME, blueprint.name());
-        encoded.putUUID(TAG_OWNER_ID, blueprint.ownerId());
+        encoded.store(TAG_OWNER_ID, UUIDUtil.CODEC, blueprint.ownerId());
         encoded.putString(TAG_OWNER_NAME, blueprint.ownerName());
         encoded.putLong(TAG_CREATED_AT, blueprint.createdAt());
         encoded.putLong(TAG_UPDATED_AT, blueprint.updatedAt());
@@ -107,38 +108,27 @@ public final class MoldingBlueprintDisk {
     }
 
     public static Optional<MoldingBlueprint> readTag(CompoundTag data) {
-        if (!data.contains(TAG_BLUEPRINT, CompoundTag.TAG_COMPOUND)) return Optional.empty();
+        if (data.getCompound(TAG_BLUEPRINT).isEmpty()) return Optional.empty();
         try {
-            CompoundTag encoded = data.getCompound(TAG_BLUEPRINT);
-            if (encoded.getInt(TAG_SCHEMA) != SCHEMA_VERSION) return Optional.empty();
-            if (!encoded.contains(TAG_FILE_REVISION, CompoundTag.TAG_LONG)
-                || !encoded.contains(TAG_NAME, CompoundTag.TAG_STRING)
-                || !encoded.hasUUID(TAG_OWNER_ID)
-                || !encoded.contains(TAG_OWNER_NAME, CompoundTag.TAG_STRING)
-                || !encoded.contains(TAG_CREATED_AT, CompoundTag.TAG_LONG)
-                || !encoded.contains(TAG_UPDATED_AT, CompoundTag.TAG_LONG)
-                || !encoded.contains(TAG_BAKE_VERSION, CompoundTag.TAG_INT)
-                || !encoded.contains(TAG_MODEL_HASH, CompoundTag.TAG_STRING)
-                || !encoded.contains(TAG_MODEL, CompoundTag.TAG_COMPOUND)) {
-                return Optional.empty();
-            }
-            EditableMoldingModel model = MoldingModelPersistence.load(encoded.getCompound(TAG_MODEL));
-            int bakeVersion = encoded.getInt(TAG_BAKE_VERSION);
-            String hash = encoded.getString(TAG_MODEL_HASH);
+            CompoundTag encoded = data.getCompound(TAG_BLUEPRINT).orElseThrow();
+            if (encoded.getInt(TAG_SCHEMA).orElseThrow() != SCHEMA_VERSION) return Optional.empty();
+            EditableMoldingModel model = MoldingModelPersistence.load(encoded.getCompound(TAG_MODEL).orElseThrow());
+            int bakeVersion = encoded.getInt(TAG_BAKE_VERSION).orElseThrow();
+            String hash = encoded.getString(TAG_MODEL_HASH).orElseThrow();
             if (bakeVersion != MoldingModelBaker.BAKE_VERSION
                 || !MoldingModelHasher.hash(model, bakeVersion).equals(hash)) {
                 return Optional.empty();
             }
             return Optional.of(new MoldingBlueprint(
                 MoldingBlueprint.CURRENT_FORMAT_VERSION,
-                encoded.getLong(TAG_FILE_REVISION),
-                encoded.getString(TAG_NAME),
-                encoded.getUUID(TAG_OWNER_ID),
-                encoded.getString(TAG_OWNER_NAME),
+                encoded.getLong(TAG_FILE_REVISION).orElseThrow(),
+                encoded.getString(TAG_NAME).orElseThrow(),
+                encoded.read(TAG_OWNER_ID, UUIDUtil.CODEC).orElseThrow(),
+                encoded.getString(TAG_OWNER_NAME).orElseThrow(),
                 MoldingBlueprint.COORDINATE_SYSTEM,
                 model,
-                encoded.getLong(TAG_CREATED_AT),
-                encoded.getLong(TAG_UPDATED_AT),
+                encoded.getLong(TAG_CREATED_AT).orElseThrow(),
+                encoded.getLong(TAG_UPDATED_AT).orElseThrow(),
                 bakeVersion,
                 hash
             ));

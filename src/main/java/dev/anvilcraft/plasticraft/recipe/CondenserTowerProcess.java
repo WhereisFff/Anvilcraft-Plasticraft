@@ -24,9 +24,8 @@ import dev.dubhe.anvilcraft.api.block.IIgnitableCauldron;
 import dev.dubhe.anvilcraft.api.event.LargeCauldronEvent;
 import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
-import dev.dubhe.anvilcraft.api.itemhandler.ItemHandlerUtil;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
-import dev.dubhe.anvilcraft.block.Layered4LevelCauldronBlock;
+import dev.dubhe.anvilcraft.block.cauldron.Layered4LevelCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.FishTankBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.PlasmaJetsBlockEntity;
@@ -44,13 +43,13 @@ import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.npc.Villager;
-import net.minecraft.world.entity.npc.VillagerData;
-import net.minecraft.world.entity.npc.VillagerProfession;
+import net.minecraft.world.entity.npc.villager.Villager;
+import net.minecraft.world.entity.npc.villager.VillagerData;
+import net.minecraft.world.entity.npc.villager.VillagerProfession;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.BlastingRecipe;
@@ -64,9 +63,13 @@ import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.fluids.FluidStack;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import net.neoforged.neoforge.items.IItemHandler;
-import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.fluid.FluidUtil;
+import net.neoforged.neoforge.transfer.item.ItemResource;
+import net.neoforged.neoforge.transfer.item.ItemUtil;
+import net.neoforged.neoforge.transfer.transaction.Transaction;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -112,7 +115,7 @@ public final class CondenserTowerProcess {
             if (LargeCauldronVaporHost.unwrap(context.cauldron()) instanceof LargeCauldronBlockEntity cauldron) {
                 boolean backpressured = isBackpressured(context);
                 CompoundTag persistentData = cauldron.getPersistentData();
-                boolean activeBackpressure = persistentData.getBoolean(ACTIVE_BACKPRESSURE);
+                boolean activeBackpressure = persistentData.getBooleanOr(ACTIVE_BACKPRESSURE, false);
                 if (backpressured && (jets > 0 || activeBackpressure)) {
                     if (!activeBackpressure) {
                         persistentData.putBoolean(ACTIVE_BACKPRESSURE, true);
@@ -163,7 +166,11 @@ public final class CondenserTowerProcess {
             FluidStack stored = findVaporizableFluid(endpoint.handler());
             if (!stored.isEmpty()) {
                 FluidStack request = stored.copyWithAmount(Math.min(vaporizationRate, stored.getAmount()));
-                FluidStack drained = endpoint.handler().drain(request, IFluidHandler.FluidAction.EXECUTE);
+                FluidStack drained;
+                try (var tx = Transaction.openRoot()) {
+                    drained = request.copyWithAmount(endpoint.handler().extract(FluidResource.of(request), request.getAmount(), tx));
+                    tx.commit();
+                }
                 if (!drained.isEmpty()) {
                     emitSmallContainerVaporParticles(
                         level,
@@ -267,7 +274,7 @@ public final class CondenserTowerProcess {
             return 0;
         }
 
-        ResourceLocation vaporType = CondenserGas.canonicalize(vapor.type());
+        Identifier vaporType = CondenserGas.canonicalize(vapor.type());
         boolean gaseousExperience = CondenserGas.GASEOUS_EXPERIENCE.equals(vaporType);
         int remaining = vapor.amount();
         int acceptedTotal = 0;
@@ -313,7 +320,7 @@ public final class CondenserTowerProcess {
         if (vapor.isEmpty()) return;
         List<BlockPos> outlets = openVaporOutlets(context);
         if (outlets.isEmpty()) return;
-        ResourceLocation vaporType = CondenserGas.canonicalize(vapor.type());
+        Identifier vaporType = CondenserGas.canonicalize(vapor.type());
         if (vaporType == null) return;
 
         if (CondenserGas.GASEOUS_OIL.equals(vaporType)) {
@@ -362,7 +369,7 @@ public final class CondenserTowerProcess {
             if (absorber instanceof Player player) {
                 givePlayerGaseousExperience(player, share);
             } else if (absorber instanceof Villager villager) {
-                giveVillagerGaseousExperience(villager, share);
+                giveVillagerGaseousExperience(level, villager, share);
             }
         }
     }
@@ -388,14 +395,14 @@ public final class CondenserTowerProcess {
 
     private static boolean canAbsorbExperience(Villager villager) {
         return !villager.isBaby()
-            && villager.getVillagerData().getProfession() != VillagerProfession.NONE
-            && villager.getVillagerData().getProfession() != VillagerProfession.NITWIT
-            && VillagerData.canLevelUp(villager.getVillagerData().getLevel());
+            && !villager.getVillagerData().profession().is(VillagerProfession.NONE)
+            && !villager.getVillagerData().profession().is(VillagerProfession.NITWIT)
+            && VillagerData.canLevelUp(villager.getVillagerData().level());
     }
 
     private static void givePlayerGaseousExperience(Player player, int gaseousAmount) {
         CompoundTag data = player.getPersistentData();
-        int total = data.getInt(PLAYER_EXPERIENCE_REMAINDER) + gaseousAmount;
+        int total = data.getIntOr(PLAYER_EXPERIENCE_REMAINDER, 0) + gaseousAmount;
         int points = total / GASEOUS_EXPERIENCE_PER_PLAYER_XP;
         int remainder = total % GASEOUS_EXPERIENCE_PER_PLAYER_XP;
         if (remainder == 0) {
@@ -406,9 +413,9 @@ public final class CondenserTowerProcess {
         if (points > 0) player.giveExperiencePoints(points);
     }
 
-    private static void giveVillagerGaseousExperience(Villager villager, int gaseousAmount) {
+    private static void giveVillagerGaseousExperience(ServerLevel level, Villager villager, int gaseousAmount) {
         CompoundTag data = villager.getPersistentData();
-        int total = data.getInt(VILLAGER_EXPERIENCE_REMAINDER) + gaseousAmount;
+        int total = data.getIntOr(VILLAGER_EXPERIENCE_REMAINDER, 0) + gaseousAmount;
         int points = total / GASEOUS_EXPERIENCE_PER_VILLAGER_XP;
         int remainder = total % GASEOUS_EXPERIENCE_PER_VILLAGER_XP;
         if (remainder == 0) {
@@ -418,9 +425,9 @@ public final class CondenserTowerProcess {
         }
         if (points <= 0) return;
         villager.setVillagerXp(Math.min(250, villager.getVillagerXp() + points));
-        while (VillagerData.canLevelUp(villager.getVillagerData().getLevel())
-            && villager.getVillagerXp() >= VillagerData.getMaxXpPerLevel(villager.getVillagerData().getLevel())) {
-            ((VillagerExperienceAccessor) villager).plasticraft$increaseMerchantCareer();
+        while (VillagerData.canLevelUp(villager.getVillagerData().level())
+            && villager.getVillagerXp() >= VillagerData.getMaxXpPerLevel(villager.getVillagerData().level())) {
+            ((VillagerExperienceAccessor) villager).plasticraft$increaseMerchantCareer(level);
         }
     }
 
@@ -495,38 +502,39 @@ public final class CondenserTowerProcess {
         CondenserTowerBlockEntity tower,
         int towerLevel
     ) {
-        ResourceLocation gasId = tower.getGasId();
+        Identifier gasId = tower.getGasId();
         if (gasId == null || tower.getGasAmount() <= 0) return;
         Optional<CondenserRecipe> found = findCondenserRecipe(level, gasId, towerLevel)
             .filter(recipe -> recipe.matches(gasId, tower.getGasAmount()));
         if (found.isEmpty()) return;
         CondenserRecipe recipe = found.get();
-        Fluid outputFluid = BuiltInRegistries.FLUID.get(recipe.fluid());
+        Fluid outputFluid = BuiltInRegistries.FLUID.getValue(recipe.fluid());
         if (outputFluid == null || outputFluid == Fluids.EMPTY) return;
         int batches = tower.getGasAmount() / recipe.consume();
         if (batches <= 0) return;
         int requested = (int) Math.min(Integer.MAX_VALUE, (long) batches * recipe.produce());
-        int accepted = tower.getFluidHandler().fill(
-            new FluidStack(outputFluid, requested),
-            IFluidHandler.FluidAction.SIMULATE
-        );
-        batches = Math.min(batches, accepted / recipe.produce());
-        if (batches <= 0) return;
-        int consumed = batches * recipe.consume();
-        int produced = batches * recipe.produce();
-        if (tower.drainGas(gasId, consumed) != consumed) return;
-        tower.getFluidHandler().fill(
-            new FluidStack(outputFluid, produced),
-            IFluidHandler.FluidAction.EXECUTE
-        );
+        var resource = FluidResource.of(outputFluid);
+        try (var tx = Transaction.openRoot()) {
+            int accepted;
+            try (var probe = Transaction.open(tx)) {
+                accepted = tower.getFluidHandler().insert(resource, requested, probe);
+            }
+            batches = Math.min(batches, accepted / recipe.produce());
+            if (batches <= 0) return;
+            int produced = batches * recipe.produce();
+            int consumed = batches * recipe.consume();
+            if (tower.getFluidHandler().insert(resource, produced, tx) == produced && tower.drainGas(gasId, consumed) == consumed) {
+                tx.commit();
+            }
+        }
     }
 
     private static Optional<CondenserRecipe> findCondenserRecipe(
         ServerLevel level,
-        ResourceLocation gas,
+        Identifier gas,
         int towerLevel
     ) {
-        return level.getRecipeManager().getAllRecipesFor(PlasticraftRecipeTypes.CONDENSER_TYPE.get()).stream()
+        return level.recipeAccess().recipeMap().byType(PlasticraftRecipeTypes.CONDENSER_TYPE.get()).stream()
             .filter(holder -> holder.value().towerLevel() == towerLevel)
             .filter(holder -> holder.value().gas().equals(CondenserGas.canonicalize(gas)))
             .sorted(Comparator.comparing(holder -> holder.id().toString()))
@@ -541,10 +549,10 @@ public final class CondenserTowerProcess {
         int vaporizationRate,
         boolean backpressured
     ) {
-        IItemHandler input = cauldron.getInputHandler();
-        IItemHandler output = cauldron.getOutputHandler();
+        ResourceHandler<ItemResource> input = cauldron.getInputHandler();
+        ResourceHandler<ItemResource> output = cauldron.getOutputHandler();
         List<RecipeHolder<PlasmaJetBlastingRecipe>> plasmaRecipes = new ArrayList<>(
-            level.getRecipeManager().getAllRecipesFor(
+            level.recipeAccess().recipeMap().byType(
                 PlasticraftRecipeTypes.PLASMA_JET_BLASTING_TYPE.get()
             )
         );
@@ -552,8 +560,8 @@ public final class CondenserTowerProcess {
             (RecipeHolder<PlasmaJetBlastingRecipe> holder) -> holder.value().priority()
         ).reversed());
         List<RecipeHolder<SuperHeatingRecipe>> superHeatingRecipes = new ArrayList<>(
-            level.getRecipeManager().getAllRecipesFor(
-                ModRecipeTypes.SUPER_HEATING_TYPE.get()
+            level.recipeAccess().recipeMap().byType(
+                ModRecipeTypes.SUPER_HEATING.get()
             )
         );
         superHeatingRecipes.sort(Comparator.comparingInt(
@@ -571,8 +579,8 @@ public final class CondenserTowerProcess {
     private static boolean processPlasmaRecipe(
         ServerLevel level,
         LargeCauldronBlockEntity cauldron,
-        IItemHandler input,
-        IItemHandler output,
+        ResourceHandler<ItemResource> input,
+        ResourceHandler<ItemResource> output,
         List<RecipeHolder<PlasmaJetBlastingRecipe>> recipes
     ) {
         for (RecipeHolder<PlasmaJetBlastingRecipe> holder : recipes) {
@@ -595,8 +603,8 @@ public final class CondenserTowerProcess {
     private static boolean processSuperHeatingItemRecipe(
         ServerLevel level,
         LargeCauldronBlockEntity cauldron,
-        IItemHandler input,
-        IItemHandler output,
+        ResourceHandler<ItemResource> input,
+        ResourceHandler<ItemResource> output,
         List<RecipeHolder<SuperHeatingRecipe>> recipes
     ) {
         for (RecipeHolder<SuperHeatingRecipe> holder : recipes) {
@@ -618,18 +626,20 @@ public final class CondenserTowerProcess {
 
     private static boolean processVanillaItemRecipe(
         ServerLevel level,
-        IItemHandler input,
-        IItemHandler output
+        ResourceHandler<ItemResource> input,
+        ResourceHandler<ItemResource> output
     ) {
-        for (int slot = 0; slot < input.getSlots(); slot++) {
-            ItemStack stack = input.getStackInSlot(slot);
+        for (int slot = 0; slot < input.size(); slot++) {
+            ItemStack stack = ItemUtil.getStack(input, slot);
             if (stack.isEmpty()) continue;
             ItemStack result = findVanillaBlastingResult(level, stack);
             if (result.isEmpty()) result = findVanillaSmeltingResult(level, stack);
             if (result.isEmpty()) continue;
-            if (!ItemHandlerUtil.insertItem(output, result.copy(), true).isEmpty()) continue;
-            input.extractItem(slot, 1, false);
-            ItemHandlerUtil.insertItem(output, result.copy(), false);
+            try (var tx = Transaction.openRoot()) {
+                if (input.extract(slot, ItemResource.of(stack), 1, tx) != 1
+                    || output.insert(ItemResource.of(result), result.getCount(), tx) != result.getCount()) continue;
+                tx.commit();
+            }
             return true;
         }
         return false;
@@ -638,8 +648,8 @@ public final class CondenserTowerProcess {
     private static boolean applyProcess(
         ServerLevel level,
         LargeCauldronBlockEntity cauldron,
-        IItemHandler input,
-        IItemHandler output,
+        ResourceHandler<ItemResource> input,
+        ResourceHandler<ItemResource> output,
         ItemProcessDefinition definition
     ) {
         List<MatchedItem> matched = matchItems(input, definition.items());
@@ -653,19 +663,19 @@ public final class CondenserTowerProcess {
 
         List<ItemStack> results = new ArrayList<>();
         for (ChanceItemStack chance : definition.results()) {
-            ItemStack result = chance.getResult(level);
+            ItemStack result = chance.getResult(level).create();
             if (result.isEmpty()) continue;
             results.add(result);
             if (definition.royalPreferenceBonus() && isRoyalSteel(result)) results.add(result.copy());
         }
         PlasmaJetBlastingRecipe.GasOutput gasOutput = definition.gas().orElse(null);
-        List<FluidStack> fluidOutputs = definition.cauldron().transforms();
+        List<FluidStack> fluidOutputs = definition.cauldron().transforms().stream().map(template -> template.create()).toList();
         VaporizationContext vaporContext = null;
         VaporStack vaporOutput = null;
         int gasAmount = 0;
         int acceptedVapor = 0;
         if (gasOutput != null) {
-            ResourceLocation vaporType = CondenserGas.canonicalize(gasOutput.id());
+            Identifier vaporType = CondenserGas.canonicalize(gasOutput.id());
             if (vaporType == null || !CondenserGas.isGas(vaporType)) return false;
             gasAmount = gasOutput.amount();
             vaporContext = new VaporizationContext(level, new LargeCauldronVaporHost(cauldron));
@@ -682,26 +692,22 @@ public final class CondenserTowerProcess {
                 return false;
             }
         }
-        if (!fluidOutputs.isEmpty() && !canApplyFluidTransforms(
-            cauldron,
-            fluidInput,
-            definition.cauldron().consume(),
-            fluidOutputs
-        )) {
-            return false;
-        }
         if (definition.results().isEmpty() && !definition.hasFluidOutput()) return false;
-        if (!canInsertAll(output, results)) return false;
-
-        for (MatchedItem item : matched) input.extractItem(item.slot(), item.amount(), false);
-        if (fluidInput != null && definition.cauldron().consume() > 0) {
-            FluidStack drained = cauldron.getFluids().drainStoredFluid(
-                fluidInput.copyWithAmount(definition.cauldron().consume()),
-                IFluidHandler.FluidAction.EXECUTE
-            );
-            if (drained.getAmount() != definition.cauldron().consume()) return false;
+        try (var tx = Transaction.openRoot()) {
+            for (MatchedItem item : matched) {
+                if (input.extract(item.slot(), input.getResource(item.slot()), item.amount(), tx) != item.amount()) return false;
+            }
+            if (fluidInput != null && cauldron.getFluids().extract(
+                FluidResource.of(fluidInput), definition.cauldron().consume(), tx
+            ) != definition.cauldron().consume()) return false;
+            for (ItemStack item : results) {
+                if (output.insert(ItemResource.of(item), item.getCount(), tx) != item.getCount()) return false;
+            }
+            for (FluidStack fluid : fluidOutputs) {
+                if (cauldron.getFluids().insert(FluidResource.of(fluid), fluid.getAmount(), tx) != fluid.getAmount()) return false;
+            }
+            tx.commit();
         }
-        for (ItemStack result : results) ItemHandlerUtil.insertItem(output, result.copy(), false);
         if (gasOutput != null) {
             emitLargeCauldronVaporParticles(
                 level,
@@ -724,9 +730,6 @@ public final class CondenserTowerProcess {
                 );
             }
         }
-        for (FluidStack fluidOutput : fluidOutputs) {
-            cauldron.getFluids().fill(fluidOutput.copy(), IFluidHandler.FluidAction.EXECUTE);
-        }
         return true;
     }
 
@@ -736,65 +739,9 @@ public final class CondenserTowerProcess {
             && recipe.gasOutput().map(gas -> CondenserGas.isGas(CondenserGas.canonicalize(gas.id()))).orElse(false);
     }
 
-    private static boolean canApplyFluidTransforms(
-        LargeCauldronBlockEntity cauldron,
-        @Nullable FluidStack input,
-        int consume,
-        List<FluidStack> outputs
-    ) {
-        LargeCauldronFluidHandler simulated = new LargeCauldronFluidHandler(() -> {
-        });
-        simulated.setFluids(cauldron.getFluids().copyFluids());
-        if (input != null && consume > 0) {
-            FluidStack drained = simulated.drainStoredFluid(
-                input.copyWithAmount(consume),
-                IFluidHandler.FluidAction.EXECUTE
-            );
-            if (drained.getAmount() != consume) return false;
-        }
-        for (FluidStack output : outputs) {
-            if (simulated.fill(output.copy(), IFluidHandler.FluidAction.EXECUTE) != output.getAmount()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean canInsertAll(IItemHandler output, List<ItemStack> results) {
-        List<ItemStack> slots = new ArrayList<>(output.getSlots());
-        for (int slot = 0; slot < output.getSlots(); slot++) slots.add(output.getStackInSlot(slot).copy());
-        for (ItemStack result : results) {
-            if (result.isEmpty()) continue;
-            int remaining = result.getCount();
-            for (int slot = 0; slot < output.getSlots() && remaining > 0; slot++) {
-                ItemStack stored = slots.get(slot);
-                if (stored.isEmpty()
-                    || !output.isItemValid(slot, result)
-                    || !ItemStack.isSameItemSameComponents(stored, result)) continue;
-                int limit = Math.min(output.getSlotLimit(slot), stored.getMaxStackSize());
-                int inserted = Math.min(remaining, Math.max(0, limit - stored.getCount()));
-                if (inserted <= 0) continue;
-                slots.set(slot, stored.copyWithCount(stored.getCount() + inserted));
-                remaining -= inserted;
-            }
-            for (int slot = 0; slot < output.getSlots() && remaining > 0; slot++) {
-                if (!slots.get(slot).isEmpty() || !output.isItemValid(slot, result)) continue;
-                int inserted = Math.min(
-                    remaining,
-                    Math.min(output.getSlotLimit(slot), result.getMaxStackSize())
-                );
-                if (inserted <= 0) continue;
-                slots.set(slot, result.copyWithCount(inserted));
-                remaining -= inserted;
-            }
-            if (remaining > 0) return false;
-        }
-        return true;
-    }
-
-    private static boolean hasRoyalPreferredInput(ServerLevel level, IItemHandler input) {
-        for (int slot = 0; slot < input.getSlots(); slot++) {
-            ItemStack stack = input.getStackInSlot(slot);
+    private static boolean hasRoyalPreferredInput(ServerLevel level, ResourceHandler<ItemResource> input) {
+        for (int slot = 0; slot < input.size(); slot++) {
+            ItemStack stack = ItemUtil.getStack(input, slot);
             if (!stack.isEmpty() && RoyalPreferenceOutcome.RoyalPreference.isRoyalPreferred(level, stack)) return true;
         }
         return false;
@@ -806,12 +753,12 @@ public final class CondenserTowerProcess {
     }
 
     private static @Nullable List<MatchedItem> matchItems(
-        IItemHandler input,
+        ResourceHandler<ItemResource> input,
         List<ItemIngredientPredicate> predicates
     ) {
         if (predicates.isEmpty()) return List.of();
-        int[] available = new int[input.getSlots()];
-        for (int slot = 0; slot < input.getSlots(); slot++) available[slot] = input.getStackInSlot(slot).getCount();
+        int[] available = new int[input.size()];
+        for (int slot = 0; slot < input.size(); slot++) available[slot] = ItemUtil.getStack(input, slot).getCount();
         List<Integer> order = new ArrayList<>(predicates.size());
         for (int index = 0; index < predicates.size(); index++) order.add(index);
         // Assign the most constrained predicates first; the backtracking fallback handles overlapping tags.
@@ -821,20 +768,20 @@ public final class CondenserTowerProcess {
     }
 
     private static int countCandidateSlots(
-        IItemHandler input,
+        ResourceHandler<ItemResource> input,
         ItemIngredientPredicate predicate,
         int[] available
     ) {
         int count = 0;
-        for (int slot = 0; slot < input.getSlots(); slot++) {
+        for (int slot = 0; slot < input.size(); slot++) {
             if (available[slot] >= predicate.count()
-                && predicate.test(input.getStackInSlot(slot).copyWithCount(available[slot]))) count++;
+                && predicate.test(ItemUtil.getStack(input, slot).copyWithCount(available[slot]))) count++;
         }
         return count;
     }
 
     private static boolean matchItems(
-        IItemHandler input,
+        ResourceHandler<ItemResource> input,
         List<ItemIngredientPredicate> predicates,
         List<Integer> order,
         int index,
@@ -843,9 +790,9 @@ public final class CondenserTowerProcess {
     ) {
         if (index >= order.size()) return true;
         ItemIngredientPredicate predicate = predicates.get(order.get(index));
-        for (int slot = 0; slot < input.getSlots(); slot++) {
+        for (int slot = 0; slot < input.size(); slot++) {
             if (available[slot] < predicate.count()
-                || !predicate.test(input.getStackInSlot(slot).copyWithCount(available[slot]))) continue;
+                || !predicate.test(ItemUtil.getStack(input, slot).copyWithCount(available[slot]))) continue;
             available[slot] -= predicate.count();
             matched.add(new MatchedItem(slot, predicate.count()));
             if (matchItems(input, predicates, order, index + 1, available, matched)) return true;
@@ -888,33 +835,31 @@ public final class CondenserTowerProcess {
     }
 
     private static ItemStack findVanillaBlastingResult(ServerLevel level, ItemStack input) {
-        Optional<RecipeHolder<BlastingRecipe>> holder = level.getRecipeManager().getRecipeFor(
+        Optional<RecipeHolder<BlastingRecipe>> holder = level.recipeAccess().getRecipeFor(
             RecipeType.BLASTING,
             new SingleRecipeInput(input.copyWithCount(1)),
             level
         );
         return holder.map(value -> value.value().assemble(
-            new SingleRecipeInput(input.copyWithCount(1)),
-            level.registryAccess()
+            new SingleRecipeInput(input.copyWithCount(1))
         )).orElse(ItemStack.EMPTY);
     }
 
     private static ItemStack findVanillaSmeltingResult(ServerLevel level, ItemStack input) {
-        return level.getRecipeManager().getRecipeFor(
+        return level.recipeAccess().getRecipeFor(
                 RecipeType.SMELTING,
                 new SingleRecipeInput(input.copyWithCount(1)),
                 level
             )
             .map(value -> value.value().assemble(
-                new SingleRecipeInput(input.copyWithCount(1)),
-                level.registryAccess()
+                new SingleRecipeInput(input.copyWithCount(1))
             ))
             .orElse(ItemStack.EMPTY);
     }
 
-    private static FluidStack findVaporizableFluid(IFluidHandler handler) {
-        for (int tank = 0; tank < handler.getTanks(); tank++) {
-            FluidStack stored = handler.getFluidInTank(tank);
+    private static FluidStack findVaporizableFluid(ResourceHandler<FluidResource> handler) {
+        for (int tank = 0; tank < handler.size(); tank++) {
+            FluidStack stored = FluidUtil.getStack(handler, tank);
             if (stored.is(ModFluidTags.OIL)) return stored.copy();
         }
         return FluidStack.EMPTY;
@@ -953,7 +898,7 @@ public final class CondenserTowerProcess {
         }
         if (level.getBlockEntity(pos) instanceof FishTankBlockEntity tank) {
             float fill = Math.clamp(
-                (float) tank.getFluidHandler().getFluidAmount() / tank.getFluidHandler().getCapacity(),
+                (float) tank.getFluidHandler().getAmountAsLong(0) / tank.getFluidHandler().getCapacityAsLong(0, tank.getFluidHandler().getResource(0)),
                 0.0F,
                 1.0F
             );
@@ -1084,7 +1029,7 @@ public final class CondenserTowerProcess {
     private static void emitOutletVaporParticles(
         ServerLevel level,
         List<BlockPos> outlets,
-        ResourceLocation vaporType,
+        Identifier vaporType,
         FluidStack sourceFluid,
         int escapingAmount
     ) {
@@ -1117,7 +1062,7 @@ public final class CondenserTowerProcess {
     }
 
     private static ParticleOptions outletVaporParticle(
-        ResourceLocation vaporType,
+        Identifier vaporType,
         FluidStack sourceFluid,
         int escapingAmount
     ) {
@@ -1132,7 +1077,7 @@ public final class CondenserTowerProcess {
             : DynamicFluidVaporParticleOptions.atOutlet(particleFluid, escapingAmount);
     }
 
-    private static FluidStack fallbackVaporFluid(ResourceLocation vaporType) {
+    private static FluidStack fallbackVaporFluid(Identifier vaporType) {
         if (CondenserGas.GASEOUS_WATER.equals(vaporType)) return new FluidStack(Fluids.WATER, 1);
         if (CondenserGas.GASEOUS_OIL.equals(vaporType)) return new FluidStack(ModFluids.OIL.get(), 1);
         if (CondenserGas.GASEOUS_EXPERIENCE.equals(vaporType)) return new FluidStack(ModFluids.EXP_FLUID.get(), 1);

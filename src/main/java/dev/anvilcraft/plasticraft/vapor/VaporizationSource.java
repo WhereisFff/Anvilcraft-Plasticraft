@@ -1,12 +1,12 @@
 package dev.anvilcraft.plasticraft.vapor;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.neoforged.neoforge.fluids.FluidStack;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /** 发现一种气化方式并创建精确、可回滚的处理报价。 */
 public interface VaporizationSource {
-    ResourceLocation id();
+    Identifier id();
 
     default int priority() {
         return 0;

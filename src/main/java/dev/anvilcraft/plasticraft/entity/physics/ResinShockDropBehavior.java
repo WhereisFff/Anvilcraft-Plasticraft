@@ -5,18 +5,18 @@ import dev.dubhe.anvilcraft.api.giantanvil.ShockDropBehavior;
 import dev.dubhe.anvilcraft.event.giantanvil.shock.ShockContext;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.GameRules;
+import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.phys.Vec3;
 
 /** 将树脂铁砧撼地产生的掉落物以四十五度方向抛到范围外。 */
 public enum ResinShockDropBehavior implements ShockDropBehavior {
     INSTANCE;
 
-    private static final ResourceLocation ID = AnvilcraftPlasticraft.of("resin_shock_drop");
+    private static final Identifier ID = AnvilcraftPlasticraft.of("resin_shock_drop");
     private static final double ITEM_GRAVITY = 0.04D;
     private static final double AIR_DRAG = 0.98D;
     private static final double OUTSIDE_MARGIN = 0.25D;
@@ -25,7 +25,7 @@ public enum ResinShockDropBehavior implements ShockDropBehavior {
     private static final int MAX_FLIGHT_TICKS = 200;
 
     @Override
-    public ResourceLocation id() {
+    public Identifier id() {
         return ID;
     }
 
@@ -33,7 +33,7 @@ public enum ResinShockDropBehavior implements ShockDropBehavior {
     public void drop(ShockContext context, BlockPos pos, ItemStack stack) {
         if (!(context.level() instanceof ServerLevel level)
             || stack.isEmpty()
-            || !level.getGameRules().getBoolean(GameRules.RULE_DOBLOCKDROPS)) {
+            || !level.getGameRules().get(GameRules.BLOCK_DROPS)) {
             return;
         }
         Vec3 origin = Vec3.atCenterOf(pos);

@@ -2,12 +2,13 @@ package dev.anvilcraft.plasticraft.integration.jei;
 
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
-import dev.anvilcraft.plasticraft.recipe.PlasticCatalysisHeat;
-import dev.anvilcraft.plasticraft.recipe.PlasticCatalysisCold;
-import dev.anvilcraft.plasticraft.recipe.ResinCatalysts;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
+import dev.anvilcraft.plasticraft.recipe.PlasticCatalysisCold;
+import dev.anvilcraft.plasticraft.recipe.PlasticCatalysisHeat;
+import dev.anvilcraft.plasticraft.recipe.ResinCatalysts;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -71,9 +72,9 @@ public record PlasticMeltCatalysisRecipe(
 
     public Ingredient catalystIngredient() {
         if (this.catalyst.equals(PlasticraftItemTags.RESIN_ITEMS) && Minecraft.getInstance().level != null) {
-            return Ingredient.of(ResinCatalysts.items(Minecraft.getInstance().level).stream().map(ItemStack::new));
+            return Ingredient.of(ResinCatalysts.items(Minecraft.getInstance().level).stream());
         }
-        return Ingredient.of(this.catalyst);
+        return Ingredient.of(Minecraft.getInstance().level.registryAccess().lookupOrThrow(Registries.ITEM).getOrThrow(this.catalyst));
     }
 
     public List<ItemStack> environmentStacks() {

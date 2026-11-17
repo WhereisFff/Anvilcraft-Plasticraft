@@ -3,6 +3,7 @@ package dev.anvilcraft.plasticraft.mixin;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexCollisionResolver;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.phys.AABB;
@@ -19,16 +20,17 @@ abstract class ServerGamePacketListenerMixin {
     @Shadow
     public ServerPlayer player;
 
-    @Inject(method = "isPlayerCollidingWithAnythingNew", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "isEntityCollidingWithAnythingNew", at = @At("HEAD"), cancellable = true)
     private void plasticraft$validateAgainstExactPlastic(
         LevelReader reader,
+        Entity entity,
         AABB previousBox,
         double x,
         double y,
         double z,
         CallbackInfoReturnable<Boolean> cir
     ) {
-        if (!(reader instanceof Level level)) return;
+        if (entity != this.player || !(reader instanceof Level level)) return;
         AABB targetBox = this.player.getBoundingBox().move(
             x - this.player.getX(),
             y - this.player.getY(),

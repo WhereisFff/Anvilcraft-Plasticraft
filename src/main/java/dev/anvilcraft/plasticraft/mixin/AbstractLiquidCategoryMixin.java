@@ -11,7 +11,7 @@ import mezz.jei.api.gui.drawable.IDrawable;
 import mezz.jei.api.gui.ingredient.IRecipeSlotsView;
 import mezz.jei.api.recipe.IFocusGroup;
 import mezz.jei.api.recipe.RecipeIngredientRole;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.RecipeHolder;
@@ -63,7 +63,7 @@ abstract class AbstractLiquidCategoryMixin {
     private void plasticraft$drawDyedMeltSlot(
         RecipeHolder<?> recipeHolder,
         IRecipeSlotsView recipeSlotsView,
-        GuiGraphics guiGraphics,
+        GuiGraphicsExtractor guiGraphics,
         double mouseX,
         double mouseY,
         CallbackInfo ci
@@ -73,8 +73,8 @@ abstract class AbstractLiquidCategoryMixin {
     }
 
     private static DyeRecipe plasticraft$getDyeRecipe(RecipeHolder<?> recipeHolder) {
-        if (!recipeHolder.id().getNamespace().equals(AnvilcraftPlasticraft.MOD_ID)) return null;
-        String path = recipeHolder.id().getPath();
+        if (!recipeHolder.id().identifier().getNamespace().equals(AnvilcraftPlasticraft.MOD_ID)) return null;
+        String path = recipeHolder.id().identifier().getPath();
         for (PlasticMaterial material : PlasticMaterial.values()) {
             String prefix = DYE_RECIPE_PREFIX + material.key() + "_melt_";
             if (!path.startsWith(prefix)) continue;

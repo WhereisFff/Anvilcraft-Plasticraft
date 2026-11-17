@@ -12,6 +12,8 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 
 public class UniversalPlasticMeltBlockEntity extends BlockEntity {
     private DyeColor color = DyeColor.WHITE;
@@ -38,15 +40,15 @@ public class UniversalPlasticMeltBlockEntity extends BlockEntity {
     }
 
     @Override
-    protected void saveAdditional(CompoundTag tag, HolderLookup.Provider provider) {
-        super.saveAdditional(tag, provider);
+    protected void saveAdditional(ValueOutput tag) {
+        super.saveAdditional(tag);
         tag.putString("Color", this.color.getName());
     }
 
     @Override
-    protected void loadAdditional(CompoundTag tag, HolderLookup.Provider provider) {
-        super.loadAdditional(tag, provider);
-        this.color = DyeColor.byName(tag.getString("Color"), DyeColor.WHITE);
+    protected void loadAdditional(ValueInput tag) {
+        super.loadAdditional(tag);
+        this.color = DyeColor.byName(tag.getStringOr("Color", ""), DyeColor.WHITE);
     }
 
     @Override

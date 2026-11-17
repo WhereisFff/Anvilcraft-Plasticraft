@@ -1,7 +1,6 @@
 package dev.anvilcraft.plasticraft.client.renderer;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.pipeline.RenderTarget;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
@@ -12,16 +11,15 @@ import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
-import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.util.context.ContextKey;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ExtractLevelRenderStateEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 
 import java.util.ArrayList;
@@ -56,86 +54,76 @@ public final class ClearPlasticEntityRenderer {
         return true;
     }
 
+    private static final ContextKey<PlasticRenderGeometry> CONTENTS = new ContextKey<>(AnvilcraftPlasticraft.of("clear_contents"));
+    private static final ContextKey<List<PlasticRenderGeometry>> SHELLS = new ContextKey<>(AnvilcraftPlasticraft.of("clear_shells"));
+
     @SubscribeEvent
-    public static void renderLevel(RenderLevelStageEvent event) {
-        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
-            renderOpaqueFluidPrepass(event);
-            return;
-        }
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
-        Minecraft minecraft = Minecraft.getInstance();
-        ClientLevel level = minecraft.level;
-        if (level == null) {
-            DEFERRED_BLOCK_ENTITIES.clear();
-            return;
-        }
-
-        float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(minecraft.isPaused());
-        Vec3 camera = event.getCamera().getPosition();
-        PoseStack pose = event.getPoseStack();
-        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
-        EntityRenderDispatcher dispatcher = minecraft.getEntityRenderDispatcher();
-        pose.pushPose();
-        pose.translate(-camera.x, -camera.y, -camera.z);
-        ClearPlasticRenderTypes.beginDeferredPass(camera, partialTick);
-        dispatcher.setRenderShadow(false);
-        try {
-            List<DeferredPlastic> plastics = collectPlastics(level, partialTick, camera);
-            // 距离在收集时就算好；交给比较器每次比较时再算等于把包围盒运算乘上排序的比较次数。
-            plastics.sort(Comparator.comparingDouble(DeferredPlastic::cameraDistance).reversed());
-            for (DeferredPlastic plastic : plastics) {
-                renderPlastic(event, pose, buffers, dispatcher, plastic.entity, plastic.partialTick);
-            }
-            // 逐实体刷写会把批次数量钉死在实体数量上。共享同一图集的相邻实体交给 BufferSource 自然合批：
-            // RenderType 切换（例如壳体与内部流体交替）本就会强制刷写，因此绘制顺序仍是排序后的由远及近。
-            buffers.endBatch();
-        } finally {
-            dispatcher.setRenderShadow(true);
-            ClearPlasticRenderTypes.endDeferredPass();
-            pose.popPose();
-            DEFERRED_BLOCK_ENTITIES.clear();
-        }
-    }
-
-    /** 在半透明目标复制主深度前绘制不透明内容，延迟锅壳据此只覆盖位于液面前方的像素。 */
-    private static void renderOpaqueFluidPrepass(RenderLevelStageEvent event) {
-        Minecraft minecraft = Minecraft.getInstance();
-        ClientLevel level = minecraft.level;
-        if (level == null) {
-            DEFERRED_BLOCK_ENTITIES.clear();
-            return;
-        }
-        float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(minecraft.isPaused());
-        Vec3 camera = event.getCamera().getPosition();
+    public static void extract(ExtractLevelRenderStateEvent event) {
+        ClientLevel level = event.getLevel();
+        Vec3 camera = event.getCamera().position();
+        float partialTick = event.getDeltaTracker().getGameTimeDeltaPartialTick(Minecraft.getInstance().isPaused());
+        var dispatcher = Minecraft.getInstance().getEntityRenderDispatcher();
         List<DeferredPlastic> plastics = collectPlastics(level, partialTick, camera);
-        // 没有透明塑料时不必绑定目标，也不必为延迟阶段复制一次全屏深度。
-        if (plastics.isEmpty()) return;
-        PoseStack pose = event.getPoseStack();
-        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
-        EntityRenderDispatcher dispatcher = minecraft.getEntityRenderDispatcher();
-        pose.pushPose();
-        pose.translate(-camera.x, -camera.y, -camera.z);
-        minecraft.getMainRenderTarget().bindWrite(false);
-        try {
-            for (DeferredPlastic plastic : plastics) {
-                renderOpaqueFluidContents(event, pose, buffers, dispatcher, plastic.entity, plastic.partialTick);
+        DEFERRED_BLOCK_ENTITIES.clear();
+        if (plastics.isEmpty()) {
+            return;
+        }
+        plastics.sort(Comparator.comparingDouble(DeferredPlastic::cameraDistance).reversed());
+        PlasticRenderGeometry contents = new PlasticRenderGeometry();
+        List<PlasticRenderGeometry> shells = new ArrayList<>();
+        for (DeferredPlastic entry : plastics) {
+            UniversalPlasticEntity plastic = entry.entity;
+            Vec3 position = plastic.getPosition(entry.partialTick);
+            if (!event.getFrustum().isVisible(plastic.getBoundingBox().move(position.subtract(plastic.position())))) {
+                continue;
             }
-            buffers.endBatch(RenderType.cutout());
-            buffers.endBatch(RenderType.entityCutoutNoCull(InventoryMenu.BLOCK_ATLAS));
-            syncItemEntityDepth(minecraft);
-        } finally {
-            pose.popPose();
+            if (!(dispatcher.getRenderer(plastic) instanceof UniversalPlasticEntityRenderer renderer)) {
+                continue;
+            }
+            PoseStack pose = new PoseStack();
+            pose.translate(position.x - camera.x, position.y - camera.y, position.z - camera.z);
+            int light = UniversalPlasticEntityRenderer.packedLight(plastic);
+            renderer.renderOpaqueFluidContents(plastic, entry.partialTick, pose, contents, light);
+            PlasticRenderGeometry shell = new PlasticRenderGeometry();
+            ClearPlasticRenderTypes.beginDeferredPass(camera, entry.partialTick);
+            try {
+                renderer.extractGeometry(plastic, entry.partialTick, pose, shell, light);
+            } finally {
+                ClearPlasticRenderTypes.endDeferredPass();
+            }
+            shells.add(shell);
+        }
+        event.getRenderState().setRenderData(CONTENTS, contents);
+        event.getRenderState().setRenderData(SHELLS, shells);
+    }
+
+    @SubscribeEvent
+    public static void renderContents(RenderLevelStageEvent.AfterOpaqueFeatures event) {
+        var state = event.getLevelRenderState();
+        var contents = state.getRenderData(CONTENTS);
+        if (contents != null) {
+            var minecraft = Minecraft.getInstance();
+            var buffers = minecraft.renderBuffers().bufferSource();
+            contents.draw(event.getPoseStack(), buffers, state.cameraRenderState);
+            buffers.endBatch();
+            var itemTarget = minecraft.levelRenderer.getItemEntityTarget();
+            if (itemTarget != null) {
+                itemTarget.copyDepthFrom(minecraft.getMainRenderTarget());
+            }
         }
     }
 
-    /** 延迟阶段的锅内物品绘制到 ITEM_ENTITY_TARGET；预绘后重新复制主深度使其遮挡关系更新。 */
-    private static void syncItemEntityDepth(Minecraft minecraft) {
-        RenderTarget mainTarget = minecraft.getMainRenderTarget();
-        RenderTarget itemTarget = minecraft.levelRenderer.getItemEntityTarget();
-        if (itemTarget != null) {
-            itemTarget.copyDepthFrom(mainTarget);
+    @SubscribeEvent
+    public static void renderShells(RenderLevelStageEvent.AfterTranslucentBlocks event) {
+        var state = event.getLevelRenderState();
+        var shells = state.getRenderData(SHELLS);
+        if (shells != null) {
+            var buffers = Minecraft.getInstance().renderBuffers().bufferSource();
+            for (var shell : shells) {
+                shell.draw(event.getPoseStack(), buffers, state.cameraRenderState);
+            }
+            buffers.endBatch();
         }
-        mainTarget.bindWrite(false);
     }
 
     private static List<DeferredPlastic> collectPlastics(ClientLevel level, float partialTick, Vec3 camera) {
@@ -163,67 +151,6 @@ public final class ClearPlasticEntityRenderer {
         return bounds.getCenter().distanceToSqr(camera);
     }
 
-    private static boolean renderPlastic(
-        RenderLevelStageEvent event,
-        PoseStack pose,
-        MultiBufferSource buffers,
-        EntityRenderDispatcher dispatcher,
-        UniversalPlasticEntity plastic,
-        float partialTick
-    ) {
-        Vec3 position = plastic.getPosition(partialTick);
-        AABB bounds = plastic.getBoundingBox().move(position.subtract(plastic.position()));
-        if (!event.getFrustum().isVisible(bounds)) return false;
-
-        pose.pushPose();
-        pose.translate(position.x, position.y, position.z);
-        try {
-            dispatcher.render(
-                plastic,
-                0.0D,
-                0.0D,
-                0.0D,
-                plastic.getYRot(),
-                partialTick,
-                pose,
-                buffers,
-                UniversalPlasticEntityRenderer.packedLight(plastic)
-            );
-            return true;
-        } finally {
-            pose.popPose();
-        }
-    }
-
-    private static void renderOpaqueFluidContents(
-        RenderLevelStageEvent event,
-        PoseStack pose,
-        MultiBufferSource buffers,
-        EntityRenderDispatcher dispatcher,
-        UniversalPlasticEntity plastic,
-        float partialTick
-    ) {
-        Vec3 position = plastic.getPosition(partialTick);
-        AABB bounds = plastic.getBoundingBox().move(position.subtract(plastic.position()));
-        if (!event.getFrustum().isVisible(bounds)
-            || !(dispatcher.getRenderer(plastic) instanceof UniversalPlasticEntityRenderer renderer)) {
-            return;
-        }
-        pose.pushPose();
-        pose.translate(position.x, position.y, position.z);
-        try {
-            renderer.renderOpaqueFluidContents(
-                plastic,
-                partialTick,
-                pose,
-                buffers,
-                UniversalPlasticEntityRenderer.packedLight(plastic)
-            );
-        } finally {
-            pose.popPose();
-        }
-    }
-
     private static UniversalPlasticEntity queuedPlastic(BondedEntityBlockEntity blockEntity, ClientLevel level) {
         if (blockEntity.isRemoved()
             || blockEntity.getLevel() != level
@@ -239,7 +166,7 @@ public final class ClearPlasticEntityRenderer {
         PlasticMaterial material = PlasticMaterial.fromProductBlock(blockEntity.getBlockState()).orElseThrow();
         UniversalPlasticEntity proxy = STATIC_BLOCK_PROXIES.get(blockEntity);
         if (proxy == null || proxy.level() != level || proxy.getType() != material.entityType()) {
-            proxy = material.entityType().create(level);
+            proxy = material.entityType().create(level, EntitySpawnReason.LOAD);
             if (proxy == null) return null;
             STATIC_BLOCK_PROXIES.put(blockEntity, proxy);
         }

@@ -1,6 +1,5 @@
 package dev.anvilcraft.plasticraft.gametest;
 
-import io.netty.buffer.Unpooled;
 import dev.anvilcraft.plasticraft.block.AbstractPlasticEntityBlock;
 import dev.anvilcraft.plasticraft.block.entity.BondedEntityBlockEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
@@ -30,30 +29,28 @@ import dev.anvilcraft.plasticraft.molding.type.MoldingProductPreview;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.anvilcraft.plasticraft.molding.type.MoldingTrayIconModel;
 import dev.anvilcraft.plasticraft.molding.type.MoldingTypeValidation;
-import dev.dubhe.anvilcraft.block.AdvancedComparatorBlock;
+import dev.dubhe.anvilcraft.block.entity.AdvancedComparatorBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.ItemDetectorBlockEntity;
 import dev.dubhe.anvilcraft.block.entity.PulseGeneratorBlockEntity;
-import dev.dubhe.anvilcraft.block.entity.AdvancedComparatorBlockEntity;
+import dev.dubhe.anvilcraft.block.utility.redstone.AdvancedComparatorBlock;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
+import io.netty.buffer.Unpooled;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.gametest.framework.GameTest;
-import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.level.GameType;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -61,8 +58,8 @@ import net.minecraft.world.level.block.ComparatorBlock;
 import net.minecraft.world.level.block.ComposterBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.AttachFace;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.ComparatorMode;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -72,6 +69,7 @@ import net.neoforged.neoforge.network.connection.ConnectionType;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
+import net.neoforged.testframework.gametest.GameTest;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -212,7 +210,7 @@ public final class MoldedPlasticTrayGameTests {
                 data
             );
             AABB geometryBounds = tray.getBoundingBox();
-            check(tray.hurt(helper.getLevel().damageSources().generic(), 1.0F),
+            check(tray.hurtServer(helper.getLevel(), helper.getLevel().damageSources().generic(), 1.0F),
                 "offset tray rejected destruction damage on " + attachmentFace);
             List<ItemEntity> drops = helper.getLevel().getEntitiesOfClass(
                 ItemEntity.class,
@@ -316,7 +314,7 @@ public final class MoldedPlasticTrayGameTests {
         CompoundTag legacyData = ((CompoundTag) MoldedPlasticData.CODEC.encodeStart(ops, currentData)
             .getOrThrow()).copy();
         legacyData.putInt("format_version", 4);
-        CompoundTag legacyContents = legacyData.getCompound("contents");
+        CompoundTag legacyContents = legacyData.getCompound("contents").orElseThrow();
         legacyContents.remove("tray_components");
         legacyContents.put(
             "tray_component",
@@ -330,9 +328,9 @@ public final class MoldedPlasticTrayGameTests {
             "format four tray component was not migrated to the center cell");
         CompoundTag migratedEncoding = (CompoundTag) MoldedPlasticData.CODEC.encodeStart(ops, migratedData)
             .getOrThrow();
-        check(migratedEncoding.getInt("format_version") == MoldedPlasticData.CURRENT_FORMAT_VERSION,
+        check(migratedEncoding.getInt("format_version").orElseThrow() == MoldedPlasticData.CURRENT_FORMAT_VERSION,
             "migrated molded plastic was written with its legacy format version");
-        CompoundTag migratedContents = migratedEncoding.getCompound("contents");
+        CompoundTag migratedContents = migratedEncoding.getCompound("contents").orElseThrow();
         check(migratedContents.contains("tray_components") && !migratedContents.contains("tray_component"),
             "migrated tray contents were written with the legacy component field");
 
@@ -431,12 +429,9 @@ public final class MoldedPlasticTrayGameTests {
                     "tray extraction left its redstone port in the network");
 
                 ItemStack extracted = findInventoryItem(player, ModBlocks.PULSE_GENERATOR.get());
-                CompoundTag extractedData = extracted.getOrDefault(
-                    DataComponents.BLOCK_ENTITY_DATA,
-                    CustomData.EMPTY
-                ).copyTag();
-                CompoundTag extraData = extractedData.getCompound("ExtraData");
-                check(extraData.getInt("WaitingTime") == 0 && extraData.getInt("SignalDuration") == 5,
+                CompoundTag extractedData = extracted.get(DataComponents.BLOCK_ENTITY_DATA).copyTagWithoutId();
+                CompoundTag extraData = extractedData.getCompound("ExtraData").orElseThrow();
+                check(extraData.getInt("WaitingTime").orElseThrow() == 0 && extraData.getInt("SignalDuration").orElseThrow() == 5,
                     "tray extraction lost pulse generator configuration");
                 check(!extractedData.contains("OutputSignal")
                         && !extraData.contains("Inputting")
@@ -683,7 +678,7 @@ public final class MoldedPlasticTrayGameTests {
         BlockState bondedState = PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState()
             .setValue(AbstractPlasticEntityBlock.BONDED, true);
         helper.setBlock(occupied, bondedState);
-        check(helper.getBlockEntity(occupied) instanceof BondedEntityBlockEntity bonded
+        check(helper.getLevel().getBlockEntity(helper.absolutePos(occupied)) instanceof BondedEntityBlockEntity bonded
                 && bonded.initialize(
                     original,
                     original.getDisplayState(),
@@ -692,7 +687,7 @@ public final class MoldedPlasticTrayGameTests {
                     false
                 ),
             "failed to create the blockified tray snapshot");
-        BondedEntityBlockEntity bonded = (BondedEntityBlockEntity) helper.getBlockEntity(occupied);
+        BondedEntityBlockEntity bonded = (BondedEntityBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(occupied));
         check(bonded.getOrCreateRenderEntity() instanceof UniversalPlasticEntity clone,
             "blockified tray did not restore its functional entity");
         UniversalPlasticEntity clone = (UniversalPlasticEntity) bonded.getOrCreateRenderEntity();
@@ -931,7 +926,7 @@ public final class MoldedPlasticTrayGameTests {
         check(updated.state().getValue(ComparatorBlock.MODE) == ComparatorMode.SUBTRACT,
             "tray comparator did not change to subtract mode");
         check(!updated.state().getValue(BlockStateProperties.POWERED)
-                && updated.blockEntityData().getInt("OutputSignal") == 0,
+                && updated.blockEntityData().getInt("OutputSignal").orElseThrow() == 0,
             "tray comparator deferred its mode-dependent output refresh");
         helper.succeed();
     }
@@ -960,7 +955,7 @@ public final class MoldedPlasticTrayGameTests {
         level.setBlockAndUpdate(input, Blocks.REDSTONE_BLOCK.defaultBlockState());
         tray.getMoldedTrayRuntime().tick();
         check(scheduledTicks(tray) == 2, "tray comparator did not schedule its two-tick delay");
-        check(trayComponent(tray).blockEntityData().getInt("OutputSignal") == 0,
+        check(trayComponent(tray).blockEntityData().getInt("OutputSignal").orElseThrow() == 0,
             "tray comparator changed output before its scheduled tick");
 
         helper.startSequence()
@@ -970,13 +965,13 @@ public final class MoldedPlasticTrayGameTests {
                     input,
                     Blocks.COMPOSTER.defaultBlockState().setValue(ComposterBlock.LEVEL, 7)
                 );
-                check(trayComponent(tray).blockEntityData().getInt("OutputSignal") == 0,
+                check(trayComponent(tray).blockEntityData().getInt("OutputSignal").orElseThrow() == 0,
                     "tray comparator changed output before the pending scheduled tick");
             })
             .thenIdle(2)
             .thenExecute(() -> {
                 MoldedTrayComponent updated = trayComponent(tray);
-                check(updated.blockEntityData().getInt("OutputSignal") == 7,
+                check(updated.blockEntityData().getInt("OutputSignal").orElseThrow() == 7,
                     "tray comparator did not resample input during its scheduled tick");
                 check(updated.state().getValue(BlockStateProperties.POWERED),
                     "tray comparator did not publish its scheduled output");
@@ -1577,9 +1572,9 @@ public final class MoldedPlasticTrayGameTests {
 
         BlockState displayState = PlasticraftBlocks.UNIVERSAL_PLASTIC.get().defaultBlockState();
         helper.setBlock(occupied, displayState.setValue(AbstractPlasticEntityBlock.BONDED, true));
-        check(helper.getBlockEntity(occupied) instanceof BondedEntityBlockEntity,
+        check(helper.getLevel().getBlockEntity(helper.absolutePos(occupied)) instanceof BondedEntityBlockEntity,
             "bonded tray test did not create bonded storage");
-        BondedEntityBlockEntity bonded = (BondedEntityBlockEntity) helper.getBlockEntity(occupied);
+        BondedEntityBlockEntity bonded = (BondedEntityBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(occupied));
         check(bonded.initialize(
             collidable,
             displayState,
@@ -1789,11 +1784,8 @@ public final class MoldedPlasticTrayGameTests {
             blockEntity,
             helper.getLevel()
         );
-        CompoundTag extractedData = extracted.getOrDefault(
-            DataComponents.BLOCK_ENTITY_DATA,
-            CustomData.EMPTY
-        ).copyTag().getCompound("ExtraData");
-        check(extractedData.getInt("HighLimit") == 10 && extractedData.getInt("LowLimit") == 5,
+        CompoundTag extractedData = extracted.get(DataComponents.BLOCK_ENTITY_DATA).copyTagWithoutId().getCompound("ExtraData").orElseThrow();
+        check(extractedData.getInt("HighLimit").orElseThrow() == 10 && extractedData.getInt("LowLimit").orElseThrow() == 5,
             "advanced comparator extraction lost its configured thresholds");
         check(!extractedData.contains("InputSignal"),
             "advanced comparator extraction leaked its transient input signal");
@@ -2029,13 +2021,13 @@ public final class MoldedPlasticTrayGameTests {
             ItemStack stack = player.getInventory().getItem(slot);
             if (stack.is(block.asItem())) return stack;
         }
-        throw new GameTestAssertException("extracted tray component was not returned to the player");
+        throw new PlasticraftTestFailure("extracted tray component was not returned to the player");
     }
 
     private static int detectorOutput(UniversalPlasticEntity tray) {
         return tray.getMoldedData()
             .flatMap(data -> data.contents().trayComponent())
-            .map(component -> component.blockEntityData().getInt("OutputSignal"))
+            .flatMap(component -> component.blockEntityData().getInt("OutputSignal"))
             .orElseThrow();
     }
 
@@ -2096,7 +2088,7 @@ public final class MoldedPlasticTrayGameTests {
                 if (orientation.worldDirection(localDirection) == worldDirection) return orientation;
             }
         }
-        throw new GameTestAssertException(
+        throw new PlasticraftTestFailure(
             "no plastic orientation maps " + localDirection + " to " + worldDirection
         );
     }
@@ -2106,6 +2098,6 @@ public final class MoldedPlasticTrayGameTests {
     }
 
     private static void check(boolean condition, String message) {
-        if (!condition) throw new GameTestAssertException(message);
+        if (!condition) throw new PlasticraftTestFailure(message);
     }
 }

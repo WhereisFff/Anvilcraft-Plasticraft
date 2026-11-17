@@ -1,0 +1,19 @@
+{
+  "model": {
+    "type": "minecraft:range_dispatch",
+    "entries": [
+      {
+        "model": {
+          "type": "minecraft:model",
+          "model": "anvilcraftplasticraft:item/hardend_resin_anvil_magnetic"
+        },
+        "threshold": 1.0
+      }
+    ],
+    "fallback": {
+      "type": "minecraft:model",
+      "model": "anvilcraftplasticraft:item/hardend_resin_anvil"
+    },
+    "property": "minecraft:custom_model_data"
+  }
+}

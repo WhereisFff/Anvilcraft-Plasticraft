@@ -4,9 +4,9 @@ import dev.anvilcraft.lib.v2.recipe.util.InWorldRecipeContext;
 import dev.anvilcraft.lib.v2.recipe.util.InWorldRecipeData;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.block.UniversalPlasticMeltCauldronBlock;
+import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.material.PlasticMaterial;
-import dev.anvilcraft.plasticraft.entity.PlasticCauldron;
 import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import net.minecraft.core.BlockPos;
@@ -15,8 +15,11 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.fluids.FluidStack;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.fluid.FluidUtil;
+import net.neoforged.neoforge.transfer.transaction.Transaction;
+import org.jspecify.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.List;
@@ -34,7 +37,7 @@ public final class PlasticMeltRecipeColor {
 
     public static void captureCauldron(InWorldRecipeContext context, Vec3 offset) {
         BlockPos pos = BlockPos.containing(context.getPos().add(offset));
-        IFluidHandler handler = fluidHandler(context, pos);
+        ResourceHandler<FluidResource> handler = fluidHandler(context, pos);
         if (handler == null) return;
         FluidStack melt = findMelt(handler);
         if (melt.isEmpty()) return;
@@ -89,11 +92,11 @@ public final class PlasticMeltRecipeColor {
             if (changed) cauldron.getFluids().setFluids(fluids);
             return;
         }
-        IFluidHandler handler = fluidHandler(context, pos);
+        ResourceHandler<FluidResource> handler = fluidHandler(context, pos);
         if (handler != null) recolorFirstMelt(handler, data.material, data.dyeColor);
     }
 
-    private static @Nullable IFluidHandler fluidHandler(InWorldRecipeContext context, BlockPos pos) {
+    private static @Nullable ResourceHandler<FluidResource> fluidHandler(InWorldRecipeContext context, BlockPos pos) {
         PlasticCauldron target = CauldronImpactRecipeProcessor.activeRecipeTarget();
         if (target != null && target.level() == context.getLevel()
             && pos.equals(CauldronImpactRecipeProcessor.activeRecipeTargetCell())) return target.getFluidHandler();
@@ -110,36 +113,32 @@ public final class PlasticMeltRecipeColor {
         return PlasticMeltColor.get(melt);
     }
 
-    private static FluidStack findMelt(IFluidHandler handler) {
-        for (int tank = 0; tank < handler.getTanks(); tank++) {
-            FluidStack fluid = handler.getFluidInTank(tank);
+    private static FluidStack findMelt(ResourceHandler<FluidResource> handler) {
+        for (int tank = 0; tank < handler.size(); tank++) {
+            FluidStack fluid = FluidUtil.getStack(handler, tank);
             if (PlasticMaterial.isMelt(fluid)) return fluid.copy();
         }
         return FluidStack.EMPTY;
     }
 
-    private static FluidStack findMelt(IFluidHandler handler, PlasticMaterial material) {
-        for (int tank = 0; tank < handler.getTanks(); tank++) {
-            FluidStack fluid = handler.getFluidInTank(tank);
+    private static FluidStack findMelt(ResourceHandler<FluidResource> handler, PlasticMaterial material) {
+        for (int tank = 0; tank < handler.size(); tank++) {
+            FluidStack fluid = FluidUtil.getStack(handler, tank);
             if (fluid.is(material.melt())) return fluid.copy();
         }
         return FluidStack.EMPTY;
     }
 
-    private static void recolorFirstMelt(IFluidHandler handler, PlasticMaterial material, DyeColor color) {
+    private static void recolorFirstMelt(ResourceHandler<FluidResource> handler, PlasticMaterial material, DyeColor color) {
         FluidStack melt = findMelt(handler, material);
         if (melt.isEmpty()) return;
         FluidStack replacement = melt.copy();
         if (material.supportsDyeing()) PlasticMeltColor.set(replacement, color);
-        FluidStack drained = handler.drain(melt, IFluidHandler.FluidAction.EXECUTE);
-        if (drained.getAmount() != melt.getAmount()) {
-            if (!drained.isEmpty()) handler.fill(drained, IFluidHandler.FluidAction.EXECUTE);
-            return;
-        }
-        int filled = handler.fill(replacement, IFluidHandler.FluidAction.EXECUTE);
-        if (filled != replacement.getAmount()) {
-            if (filled > 0) handler.drain(replacement.copyWithAmount(filled), IFluidHandler.FluidAction.EXECUTE);
-            handler.fill(drained, IFluidHandler.FluidAction.EXECUTE);
+        try (var tx = Transaction.openRoot()) {
+            if (handler.extract(FluidResource.of(melt), melt.getAmount(), tx) == melt.getAmount()
+                && handler.insert(FluidResource.of(replacement), replacement.getAmount(), tx) == replacement.getAmount()) {
+                tx.commit();
+            }
         }
     }
 

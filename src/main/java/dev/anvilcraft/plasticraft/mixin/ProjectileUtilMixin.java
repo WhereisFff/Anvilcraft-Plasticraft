@@ -11,7 +11,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -64,6 +64,30 @@ abstract class ProjectileUtilMixin {
         return shooter instanceof Projectile && target instanceof ShapedCollisionEntity shaped
             ? PlasticProjectileCollision.contains(shaped, point)
             : bounds.contains(point);
+    }
+
+    @Redirect(
+        method = "getManyEntityHitResult(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/entity/Entity;"
+            + "Lnet/minecraft/world/phys/Vec3;Lnet/minecraft/world/phys/Vec3;Lnet/minecraft/world/phys/AABB;"
+            + "Ljava/util/function/Predicate;FLnet/minecraft/world/level/ClipContext$Block;Z)Ljava/util/Collection;",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/phys/AABB;clip(Lnet/minecraft/world/phys/Vec3;Lnet/minecraft/world/phys/Vec3;)Ljava/util/Optional;")
+    )
+    private static Optional<Vec3> plasticraft$clipMultipleTargets(
+        AABB bounds, Vec3 start, Vec3 end, @Local(ordinal = 1) Entity target, @Local(argsOnly = true) Entity shooter
+    ) {
+        return plasticraft$clipRealSurface(bounds, start, end, target, shooter);
+    }
+
+    @Redirect(
+        method = "getManyEntityHitResult(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/entity/Entity;"
+            + "Lnet/minecraft/world/phys/Vec3;Lnet/minecraft/world/phys/Vec3;Lnet/minecraft/world/phys/AABB;"
+            + "Ljava/util/function/Predicate;FLnet/minecraft/world/level/ClipContext$Block;Z)Ljava/util/Collection;",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/phys/AABB;contains(Lnet/minecraft/world/phys/Vec3;)Z")
+    )
+    private static boolean plasticraft$containsMultipleTargets(
+        AABB bounds, Vec3 point, @Local(ordinal = 1) Entity target, @Local(argsOnly = true) Entity shooter
+    ) {
+        return plasticraft$containsRealSurface(bounds, point, target, shooter);
     }
 
     // 原版此重载只返回目标中心，塑料命中还需保留真实表面位置供后续命中处理使用。

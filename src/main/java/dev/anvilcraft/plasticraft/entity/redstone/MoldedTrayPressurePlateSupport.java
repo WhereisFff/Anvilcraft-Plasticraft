@@ -9,9 +9,10 @@ import dev.dubhe.anvilcraft.block.plate.TimeCountedPressurePlateBlock;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.TagKey;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -28,6 +29,7 @@ import net.minecraft.world.level.block.WeightedPressurePlateBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.storage.TagValueInput;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -42,7 +44,7 @@ final class MoldedTrayPressurePlateSupport {
     private static final double TOUCH_HEIGHT = 4.0D / 16.0D;
     private static final TagKey<EntityType<?>> UNDEAD = TagKey.create(
         Registries.ENTITY_TYPE,
-        ResourceLocation.withDefaultNamespace("undead")
+        Identifier.withDefaultNamespace("undead")
     );
 
     private MoldedTrayPressurePlateSupport() {
@@ -118,13 +120,13 @@ final class MoldedTrayPressurePlateSupport {
             entity -> true
         ).isEmpty();
         CompoundTag data = counter.saveWithoutMetadata(host.registryAccess());
-        int ticks = data.getInt("tick");
+        int ticks = data.getIntOr("tick", 0);
         int maximum = Math.max(0, plate.needTick * 15);
         if (occupied && ticks < maximum) ticks++;
         else if (!occupied && ticks > 0) ticks--;
         data.putInt("tick", ticks);
         data.putInt("NeedTick", plate.needTick);
-        counter.loadWithComponents(data, host.registryAccess());
+        counter.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, host.registryAccess(), data));
         counter.setLevel(host.level());
         counter.setChanged();
         return Math.clamp(ticks / (plate.needTick == 0 ? 1 : plate.needTick), 0, 15);
@@ -166,7 +168,7 @@ final class MoldedTrayPressurePlateSupport {
                 host,
                 bounds,
                 Entity.class,
-                entity -> entity.getType().is(UNDEAD)
+                entity -> entity.is(UNDEAD)
             ), 0, 15);
         }
         if (block == ModBlocks.URANIUM_PRESSURE_PLATE.get()) {
@@ -186,7 +188,11 @@ final class MoldedTrayPressurePlateSupport {
             for (Player player : entities(host, bounds, Player.class, MoldedTrayPressurePlateSupport::canTrigger)) {
                 Inventory inventory = player.getInventory();
                 int occupied = 0;
-                for (ItemStack stack : inventory.items) if (!stack.isEmpty()) occupied++;
+                for (ItemStack stack : inventory.getNonEquipmentItems()) {
+                    if (!stack.isEmpty()) {
+                        occupied++;
+                    }
+                }
                 maximum = Math.max(maximum, occupied / (float) inventory.getContainerSize());
             }
             return Math.clamp((int) (maximum * 15.0F), 0, 15);

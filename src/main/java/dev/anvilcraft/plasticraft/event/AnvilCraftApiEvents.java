@@ -16,14 +16,13 @@ import dev.anvilcraft.plasticraft.recipe.CauldronImpactRecipeProcessor;
 import dev.anvilcraft.plasticraft.recipe.PlasticOilCatalysis;
 import dev.anvilcraft.plasticraft.vapor.LargeCauldronVaporHost;
 import dev.anvilcraft.plasticraft.vapor.VaporizationManager;
-import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.api.event.FishTankEvent;
 import dev.dubhe.anvilcraft.api.event.GiantAnvilEvent;
 import dev.dubhe.anvilcraft.api.event.LargeCauldronEvent;
 import dev.dubhe.anvilcraft.api.event.SlidingBlockEvent;
-import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
+import dev.dubhe.anvilcraft.block.workstation.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.entity.SlidingBlockEntity;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.block.ModFluidTags;
@@ -32,8 +31,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.ItemInteractionResult;
-import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
@@ -44,14 +42,13 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.fluids.FluidStack;
+import org.apache.commons.lang3.tuple.Triple;
 
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-
-import org.apache.commons.lang3.tuple.Triple;
 
 /** 监听铁砧工艺生命周期事件。 */
 @EventBusSubscriber(modid = AnvilcraftPlasticraft.MOD_ID)
@@ -60,20 +57,6 @@ public final class AnvilCraftApiEvents {
         new IdentityHashMap<>();
 
     private AnvilCraftApiEvents() {
-    }
-
-    @SubscribeEvent
-    public static void beforeInWorldRecipe(AnvilEvent.BeforeInWorldRecipe event) {
-        if (event.getLanding().getLevel() instanceof ServerLevel level) {
-            CauldronImpactRecipeProcessor.beginEventRecipeProcessing(level, event.getLanding());
-        }
-    }
-
-    @SubscribeEvent
-    public static void afterInWorldRecipe(AnvilEvent.AfterInWorldRecipe event) {
-        if (event.getLanding().getLevel() instanceof ServerLevel) {
-            CauldronImpactRecipeProcessor.finishEventRecipeProcessing();
-        }
     }
 
     @SubscribeEvent
@@ -173,14 +156,14 @@ public final class AnvilCraftApiEvents {
         Player player = event.getPlayer();
         InteractionHand hand = event.getHand();
         if (cauldron.isIgnited()) {
-            event.setResult(ItemInteractionResult.sidedSuccess(level.isClientSide()));
+            event.setResult(InteractionResult.SUCCESS);
             event.setCanceled(true);
             return;
         }
         if (!level.isClientSide()) {
             cauldron.setIgnited(true);
             if (flintAndSteel) {
-                stack.hurtAndBreak(1, player, LivingEntity.getSlotForHand(hand));
+                stack.hurtAndBreak(1, player, hand.asEquipmentSlot());
             } else if (!player.getAbilities().instabuild) {
                 stack.shrink(1);
             }
@@ -191,7 +174,7 @@ public final class AnvilCraftApiEvents {
                 SoundSource.BLOCKS
             );
         }
-        event.setResult(ItemInteractionResult.sidedSuccess(level.isClientSide()));
+        event.setResult(InteractionResult.SUCCESS);
         event.setCanceled(true);
     }
 

@@ -8,7 +8,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /** 协调一个气化源、顶层流体和炼药锅正上方的消费者。仅在服务器线程调用。 */
 public final class VaporizationManager {

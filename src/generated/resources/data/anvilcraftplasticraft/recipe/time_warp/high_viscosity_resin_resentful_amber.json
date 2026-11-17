@@ -12,12 +12,14 @@
         }
       ],
       "item": {
-        "items": "anvilcraftplasticraft:high_viscosity_resin_block",
-        "predicates": {
-          "anvilcraft:saved_entity": {
-            "is_monster": true
+        "components": {
+          "predicates": {
+            "anvilcraft:saved_entity": {
+              "is_monster": true
+            }
           }
-        }
+        },
+        "items": "anvilcraftplasticraft:high_viscosity_resin_block"
       },
       "offset": [
         0.0,
@@ -32,15 +34,6 @@
     }
   ],
   "icon": {
-    "components": {
-      "anvilcraft:saved_entity": {
-        "isMonster": true,
-        "tag": {
-          "id": "minecraft:zombie"
-        }
-      }
-    },
-    "count": 1,
     "id": "anvilcraft:resentful_amber_block"
   },
   "max_efficiency": 1,

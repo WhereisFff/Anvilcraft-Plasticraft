@@ -2,11 +2,13 @@ package dev.anvilcraft.plasticraft.molding.product;
 
 import dev.anvilcraft.plasticraft.molding.product.storage.MoldedPlasticStorageHandle;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
-import dev.dubhe.anvilcraft.api.fluid.LargeCauldronFluidHandler;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.fluids.FluidStack;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.fluids.capability.IFluidHandlerItem;
+import net.neoforged.neoforge.transfer.TransferPreconditions;
+import net.neoforged.neoforge.transfer.access.ItemAccess;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.transaction.TransactionContext;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,10 +23,16 @@ import java.util.function.Supplier;
  * 与 AnvilCraft 大型炼药锅的分层顺序一致。储罐不限层数，炼药锅按
  * {@link PlasticCauldronLayout} 限制层数与单层容量。
  */
-public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
+public final class MoldedPlasticFluidHandler implements MoldedFluidLayers, IFluidHandlerItem {
     private final MoldedPlasticStorageHandle handle;
     private final Supplier<ItemStack> container;
-    private final IFluidHandler bottomAccess = new BottomLayerView();
+    private final MoldedFluidLayers bottomAccess = new LayeredAccess(true, 0);
+    private final MoldedFluidLayers topAccess = new LayeredAccess(false, Integer.MAX_VALUE);
+
+    public MoldedPlasticFluidHandler(ItemAccess access) {
+        this.handle = new MoldedPlasticStorageHandle(access);
+        this.container = () -> access.getResource().toStack(access.getAmount());
+    }
 
     public MoldedPlasticFluidHandler(
         Supplier<Optional<MoldedPlasticData>> data,
@@ -38,7 +46,11 @@ public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
         Consumer<MoldedPlasticData> update,
         Supplier<ItemStack> container
     ) {
-        this.handle = new MoldedPlasticStorageHandle(data, update);
+        this(new MoldedPlasticStorageHandle(data, update), container);
+    }
+
+    public MoldedPlasticFluidHandler(MoldedPlasticStorageHandle handle, Supplier<ItemStack> container) {
+        this.handle = handle;
         this.container = container;
     }
 
@@ -67,17 +79,17 @@ public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
     }
 
     /** 只作用于最底层的句柄，对齐大型炼药锅 {@code bottomAccess()} 的扣量方向。 */
-    public IFluidHandler bottomAccess() {
+    public MoldedFluidLayers bottomAccess() {
         return this.bottomAccess;
     }
 
-    public IFluidHandler topAccess() {
+    public MoldedFluidLayers topAccess() {
         // 顶部视图始终从当前最高层抽取，不缓存可配置的总容量。
-        return new LayeredAccess(Integer.MAX_VALUE);
+        return this.topAccess;
     }
 
-    public IFluidHandler sideAccess(int accessibleAmount) {
-        return new LayeredAccess(accessibleAmount);
+    public MoldedFluidLayers sideAccess(int accessibleAmount) {
+        return new LayeredAccess(false, accessibleAmount);
     }
 
     public List<FluidStack> copyFluids() {
@@ -91,66 +103,6 @@ public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
             data.withContents(new MoldedPlasticContents(List.of(), compact, data.contents().trayComponents()));
             this.handle.setFluids(compact);
         });
-    }
-
-    /** 视图每次读取最新仓储，复用本体按点击高度选层及向下查找的规则。 */
-    private final class LayeredAccess implements IFluidHandler {
-        private final int accessibleAmount;
-
-        private LayeredAccess(int accessibleAmount) {
-            this.accessibleAmount = accessibleAmount;
-        }
-
-        private LargeCauldronFluidHandler snapshot() {
-            LargeCauldronFluidHandler handler = new LargeCauldronFluidHandler(() -> {});
-            handler.setFluids(MoldedPlasticFluidHandler.this.handle.fluids());
-            return handler;
-        }
-
-        private IFluidHandler view(LargeCauldronFluidHandler handler) {
-            return handler.sideAccess(this.accessibleAmount);
-        }
-
-        @Override
-        public int getTanks() {
-            return MoldedPlasticFluidHandler.this.getTanks();
-        }
-
-        @Override
-        public FluidStack getFluidInTank(int tank) {
-            return this.view(this.snapshot()).getFluidInTank(tank);
-        }
-
-        @Override
-        public int getTankCapacity(int tank) {
-            return MoldedPlasticFluidHandler.this.getTankCapacity(tank);
-        }
-
-        @Override
-        public boolean isFluidValid(int tank, FluidStack stack) {
-            return MoldedPlasticFluidHandler.this.isFluidValid(tank, stack);
-        }
-
-        @Override
-        public int fill(FluidStack resource, FluidAction action) {
-            return MoldedPlasticFluidHandler.this.fill(resource, action);
-        }
-
-        @Override
-        public FluidStack drain(FluidStack resource, FluidAction action) {
-            LargeCauldronFluidHandler handler = this.snapshot();
-            FluidStack result = this.view(handler).drain(resource, action);
-            if (action.execute() && !result.isEmpty()) MoldedPlasticFluidHandler.this.setFluids(handler.copyFluids());
-            return result;
-        }
-
-        @Override
-        public FluidStack drain(int amount, FluidAction action) {
-            LargeCauldronFluidHandler handler = this.snapshot();
-            FluidStack result = this.view(handler).drain(amount, action);
-            if (action.execute() && !result.isEmpty()) MoldedPlasticFluidHandler.this.setFluids(handler.copyFluids());
-            return result;
-        }
     }
 
     @Override
@@ -173,8 +125,10 @@ public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
     public boolean isFluidValid(int tank, FluidStack stack) {
         if (stack == null || stack.isEmpty() || tank < 0 || tank >= this.getTanks()) return false;
         List<FluidStack> fluids = this.handle.fluids();
-        return fluids.stream().anyMatch(stored -> FluidStack.isSameFluidSameComponents(stored, stack))
-            || fluids.size() < this.getTanks();
+        if (tank < fluids.size()) {
+            return FluidStack.isSameFluidSameComponents(fluids.get(tank), stack);
+        }
+        return tank == fluids.size() && fluids.stream().noneMatch(stored -> FluidStack.isSameFluidSameComponents(stored, stack));
     }
 
     public void discardFluids() {
@@ -182,16 +136,22 @@ public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
     }
 
     @Override
-    public int fill(FluidStack resource, FluidAction action) {
-        return this.fillInternal(resource, action, false);
+    public int insert(int index, FluidResource resource, int amount, TransactionContext tx) {
+        TransferPreconditions.checkNonEmptyNonNegative(resource, amount);
+        if (!this.isFluidValid(index, resource.toStack(1))) {
+            return 0;
+        }
+        return this.insert(resource, amount, false, tx);
     }
 
-    /**
-     * 按容器形态分别实现储罐和炼药锅的填充语义。炼药锅的普通入口从顶部追加，
-     * {@code bottomAccess()} 则把新层放到底部；储罐继续使用整个容器的总容量。
-     */
-    private int fillInternal(FluidStack resource, FluidAction action, boolean atBottom) {
-        if (resource == null || resource.isEmpty()) return 0;
+    @Override
+    public int insert(FluidResource resource, int amount, TransactionContext tx) {
+        return this.insert(resource, amount, false, tx);
+    }
+
+    private int insert(FluidResource fluid, int amount, boolean atBottom, TransactionContext tx) {
+        TransferPreconditions.checkNonEmptyNonNegative(fluid, amount);
+        FluidStack resource = fluid.toStack(amount);
         Optional<MoldedPlasticData> current = this.handle.data();
         if (current.isEmpty() || !MoldingProductTypes.holdsFluids(current.orElseThrow().finalType())) return 0;
         MoldedPlasticData value = current.orElseThrow();
@@ -206,6 +166,7 @@ public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
         }
         int accepted;
         if (layout == null) {
+            if (match < 0 && fluids.size() >= MoldedPlasticContents.MAX_STORED_FLUIDS) return 0;
             // 储罐保持原有的共享总容量；每种流体可以占一个有序层。
             int totalCapacity = Math.multiplyExact(value.capacity(), 1000);
             long total = fluids.stream().mapToLong(FluidStack::getAmount).sum();
@@ -217,54 +178,50 @@ public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
             accepted = Math.min(resource.getAmount(), layerCapacity(value) - stored);
         }
         if (accepted <= 0) return 0;
-        if (action.execute()) {
-            FluidStack filled = match < 0
+        int layer = match;
+        return this.handle.transfer(tx, nested -> {
+            FluidStack filled = layer < 0
                 ? resource.copyWithAmount(accepted)
-                : fluids.get(match).copyWithAmount(fluids.get(match).getAmount() + accepted);
-            if (match >= 0) fluids.remove(match);
+                : fluids.get(layer).copyWithAmount(fluids.get(layer).getAmount() + accepted);
+            if (layer >= 0) fluids.remove(layer);
             if (atBottom) {
                 fluids.addFirst(filled);
-            } else if (match >= 0) {
-                fluids.add(match, filled);
+            } else if (layer >= 0) {
+                fluids.add(layer, filled);
             } else {
                 fluids.add(filled);
             }
             this.handle.setFluids(fluids);
-        }
-        return accepted;
+            return accepted;
+        });
     }
 
     @Override
-    public FluidStack drain(FluidStack resource, FluidAction action) {
-        if (resource == null || resource.isEmpty()) return FluidStack.EMPTY;
-        List<FluidStack> fluids = this.handle.fluids();
-        for (int index = fluids.size() - 1; index >= 0; index--) {
-            FluidStack stored = fluids.get(index);
-            if (!FluidStack.isSameFluidSameComponents(stored, resource)) continue;
-            return this.drainIndex(index, Math.min(resource.getAmount(), stored.getAmount()), action);
+    public int extract(int index, FluidResource resource, int amount, TransactionContext tx) {
+        TransferPreconditions.checkNonEmptyNonNegative(resource, amount);
+        List<FluidStack> fluids = new ArrayList<>(this.handle.fluids());
+        if (index < 0 || index >= fluids.size() || !resource.matches(fluids.get(index))) {
+            return 0;
         }
-        return FluidStack.EMPTY;
+        FluidStack stored = fluids.get(index);
+        int extracted = Math.min(amount, stored.getAmount());
+        if (extracted <= 0) {
+            return 0;
+        }
+        return this.handle.transfer(tx, nested -> {
+            if (extracted == stored.getAmount()) {
+                fluids.remove(index);
+            } else {
+                fluids.set(index, stored.copyWithAmount(stored.getAmount() - extracted));
+            }
+            this.handle.setFluids(fluids);
+            return extracted;
+        });
     }
 
     @Override
     public FluidStack drain(int amount, FluidAction action) {
-        if (amount <= 0) return FluidStack.EMPTY;
-        List<FluidStack> fluids = this.handle.fluids();
-        return fluids.isEmpty()
-            ? FluidStack.EMPTY
-            : this.drainIndex(fluids.size() - 1, Math.min(amount, fluids.getLast().getAmount()), action);
-    }
-
-    private FluidStack drainIndex(int index, int amount, FluidAction action) {
-        List<FluidStack> fluids = new ArrayList<>(this.handle.fluids());
-        FluidStack stored = fluids.get(index);
-        FluidStack extracted = stored.copyWithAmount(amount);
-        if (action.execute()) {
-            fluids.set(index, stored.copyWithAmount(stored.getAmount() - amount));
-            fluids.removeIf(FluidStack::isEmpty);
-            this.handle.setFluids(fluids);
-        }
-        return extracted;
+        return this.topAccess.drain(amount, action);
     }
 
     /** 储罐共享整体容量，炼药锅按层均分。 */
@@ -275,61 +232,75 @@ public final class MoldedPlasticFluidHandler implements IFluidHandlerItem {
             : layout.fluidLayerCapacity(data.capacity());
     }
 
-    /** 以底层优先顺序暴露分层流体能力，与大型炼药锅的 bottomAccess 保持一致。 */
-    private final class BottomLayerView implements IFluidHandler {
+    private final class LayeredAccess implements MoldedFluidLayers {
+        private final boolean bottom;
+        private final int height;
+
+        private LayeredAccess(boolean bottom, int height) {
+            this.bottom = bottom;
+            this.height = height;
+        }
+
+        private int layer(int index) {
+            if (this.bottom) {
+                return index;
+            }
+            List<FluidStack> fluids = MoldedPlasticFluidHandler.this.handle.fluids();
+            long sum = 0;
+            for (int layer = 0; layer < fluids.size(); layer++) {
+                sum += fluids.get(layer).getAmount();
+                if (sum >= this.height) {
+                    return layer - index;
+                }
+            }
+            return fluids.size() - 1 - index;
+        }
+
         @Override
         public int getTanks() {
             return MoldedPlasticFluidHandler.this.getTanks();
         }
 
         @Override
-        public FluidStack getFluidInTank(int tank) {
-            return MoldedPlasticFluidHandler.this.getFluidInTank(tank);
+        public FluidStack getFluidInTank(int index) {
+            return MoldedPlasticFluidHandler.this.getFluidInTank(this.layer(index));
         }
 
         @Override
-        public int getTankCapacity(int tank) {
-            return MoldedPlasticFluidHandler.this.getTankCapacity(tank);
+        public int getTankCapacity(int index) {
+            return MoldedPlasticFluidHandler.this.getTankCapacity(index);
         }
 
         @Override
-        public boolean isFluidValid(int tank, FluidStack stack) {
-            return MoldedPlasticFluidHandler.this.isFluidValid(tank, stack);
-        }
-
-        @Override
-        public int fill(FluidStack resource, FluidAction action) {
-            return MoldedPlasticFluidHandler.this.fillInternal(resource, action, true);
-        }
-
-        @Override
-        public FluidStack drain(FluidStack resource, FluidAction action) {
-            if (resource == null || resource.isEmpty()) return FluidStack.EMPTY;
-            List<FluidStack> fluids = MoldedPlasticFluidHandler.this.handle.fluids();
-            for (int index = 0; index < fluids.size(); index++) {
-                FluidStack stored = fluids.get(index);
-                if (FluidStack.isSameFluidSameComponents(stored, resource)) {
-                    return MoldedPlasticFluidHandler.this.drainIndex(
-                        index,
-                        Math.min(resource.getAmount(), stored.getAmount()),
-                        action
-                    );
-                }
+        public boolean isFluidValid(int index, FluidStack resource) {
+            if (index < 0 || index >= this.getTanks() || resource.isEmpty()) {
+                return false;
             }
-            return FluidStack.EMPTY;
+            int physical = this.layer(index);
+            if (MoldedPlasticFluidHandler.this.handle.fluids().isEmpty()) {
+                return index == 0;
+            }
+            return physical >= 0 && MoldedPlasticFluidHandler.this.isFluidValid(physical, resource);
         }
 
         @Override
-        public FluidStack drain(int amount, FluidAction action) {
-            if (amount <= 0) return FluidStack.EMPTY;
-            List<FluidStack> fluids = MoldedPlasticFluidHandler.this.handle.fluids();
-            if (fluids.isEmpty()) return FluidStack.EMPTY;
-            FluidStack bottom = fluids.getFirst();
-            return MoldedPlasticFluidHandler.this.drainIndex(
-                0,
-                Math.min(amount, bottom.getAmount()),
-                action
-            );
+        public int insert(int index, FluidResource resource, int amount, TransactionContext tx) {
+            TransferPreconditions.checkNonEmptyNonNegative(resource, amount);
+            if (!this.isFluidValid(index, resource.toStack(1))) {
+                return 0;
+            }
+            int physical = Math.max(0, this.layer(index));
+            return MoldedPlasticFluidHandler.this.insert(physical, resource, amount, tx);
+        }
+
+        @Override
+        public int insert(FluidResource resource, int amount, TransactionContext tx) {
+            return MoldedPlasticFluidHandler.this.insert(resource, amount, this.bottom, tx);
+        }
+
+        @Override
+        public int extract(int index, FluidResource resource, int amount, TransactionContext tx) {
+            return MoldedPlasticFluidHandler.this.extract(this.layer(index), resource, amount, tx);
         }
     }
 }

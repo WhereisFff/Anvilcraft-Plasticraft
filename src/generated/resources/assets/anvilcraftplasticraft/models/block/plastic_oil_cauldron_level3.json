@@ -1,9 +1,11 @@
 {
   "parent": "anvilcraft:block/template_cauldron_level3of4",
-  "render_type": "minecraft:translucent",
   "textures": {
     "bottom": "minecraft:block/cauldron_bottom",
-    "content": "anvilcraftplasticraft:fluid/plastic_oil",
+    "content": {
+      "force_translucent": true,
+      "sprite": "anvilcraftplasticraft:fluid/plastic_oil"
+    },
     "inside": "minecraft:block/cauldron_inner",
     "particle": "minecraft:block/cauldron_side",
     "side": "minecraft:block/cauldron_side",

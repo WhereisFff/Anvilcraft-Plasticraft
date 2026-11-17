@@ -11,19 +11,19 @@ import dev.anvilcraft.plasticraft.molding.product.PlasticCauldronLayout;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import net.minecraft.ChatFormatting;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
+import org.jspecify.annotations.Nullable;
 import snownee.jade.api.EntityAccessor;
 import snownee.jade.api.IEntityComponentProvider;
 import snownee.jade.api.IServerDataProvider;
 import snownee.jade.api.ITooltip;
 import snownee.jade.api.config.IPluginConfig;
+import snownee.jade.api.ui.Element;
 import snownee.jade.api.ui.IDisplayHelper;
-import snownee.jade.api.ui.IElement;
-import snownee.jade.api.ui.IElementHelper;
+import snownee.jade.api.ui.JadeUI;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,7 +35,7 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
     private static final String PUSHABLE_KEY = "pushable";
     private static final String MAGNETIZED_KEY = "magnetized";
     private static final String MOLDED_SUMMARY_KEY = "molded_summary";
-    private static final ResourceLocation UID = AnvilcraftPlasticraft.of("hardend_resin_anvil");
+    private static final Identifier UID = AnvilcraftPlasticraft.of("hardend_resin_anvil");
 
     @Override
     public void appendServerData(CompoundTag tag, EntityAccessor accessor) {
@@ -53,14 +53,14 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
     }
 
     @Override
-    public IElement getIcon(
+    public @Nullable Element getIcon(
         EntityAccessor accessor,
         IPluginConfig config,
-        IElement currentIcon
+        @Nullable Element currentIcon
     ) {
         if (!(accessor.getEntity() instanceof AbstractPlasticEntity plastic)) return currentIcon;
         ItemStack picked = plastic.getPickResult();
-        return picked.isEmpty() ? currentIcon : IElementHelper.get().item(picked);
+        return picked.isEmpty() ? currentIcon : JadeUI.item(picked);
     }
 
     @Override
@@ -70,22 +70,22 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
         }
 
         CompoundTag data = accessor.getServerData();
-        if (data.getBoolean(PUSHABLE_KEY)) {
-            tooltip.add(IElementHelper.get().text(Component.literal("  ")
+        if (data.getBooleanOr(PUSHABLE_KEY, false)) {
+            tooltip.add(JadeUI.text(Component.literal("  ")
                 .append(Component.translatable("tooltip.anvilcraftplasticraft.jade.pushable"))
                 .withStyle(ChatFormatting.GRAY)).tag(PlasticJadeLayout.PUSHABLE));
         }
-        if (data.getBoolean(MAGNETIZED_KEY)) {
+        if (data.getBooleanOr(MAGNETIZED_KEY, false)) {
             tooltip.add(Component.translatable("tooltip.anvilcraftplasticraft.magnetized"));
         }
 
         boolean moldedSummary = accessor.getEntity() instanceof UniversalPlasticEntity
-            && data.contains(MOLDED_SUMMARY_KEY, Tag.TAG_COMPOUND);
+            && data.getCompound(MOLDED_SUMMARY_KEY).isPresent();
         if (moldedSummary) {
             appendMoldedSummary(
                 tooltip,
                 MoldedPlasticContentSummary.fromTag(
-                    data.getCompound(MOLDED_SUMMARY_KEY),
+                    data.getCompoundOrEmpty(MOLDED_SUMMARY_KEY),
                     accessor.getEntity().registryAccess()
                 )
             );
@@ -94,17 +94,17 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
         // 成型制品的槽位内容已由摘要列出，只有硬化树脂锅需要实体同步列表兜底
         PlasticCauldron pot = moldedSummary ? null : PlasticCauldrons.of(accessor.getEntity());
         if (pot != null) {
-            IElementHelper helper = IElementHelper.get();
+
             List<ItemStack> items = pot.getSyncedItems();
             if (!items.isEmpty()) {
                 for (ItemStack stack : items) {
-                    List<IElement> itemElements = new ArrayList<>(2);
-                    itemElements.add(helper.smallItem(stack));
-                    itemElements.add(helper.text(Component.translatable(
+                    List<Element> itemElements = new ArrayList<>(2);
+                    itemElements.add(JadeUI.smallItem(stack));
+                    itemElements.add(JadeUI.text(Component.translatable(
                         "tooltip.anvilcraftplasticraft.jade.item_count",
                         IDisplayHelper.get().stripColor(stack.getHoverName()),
                         stack.getCount()
-                    ).withStyle(ChatFormatting.GRAY)).message(null));
+                    ).withStyle(ChatFormatting.GRAY)));
                     tooltip.add(itemElements);
                 }
             }
@@ -118,15 +118,15 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
     }
 
     private static void appendItems(ITooltip tooltip, MoldedPlasticContentSummary summary) {
-        IElementHelper helper = IElementHelper.get();
+
         for (MoldedPlasticContentSummary.ItemEntry item : summary.items()) {
-            List<IElement> elements = new ArrayList<>(2);
-            elements.add(helper.smallItem(item.stack()));
-            elements.add(helper.text(Component.translatable(
+            List<Element> elements = new ArrayList<>(2);
+            elements.add(JadeUI.smallItem(item.stack()));
+            elements.add(JadeUI.text(Component.translatable(
                 "tooltip.anvilcraftplasticraft.jade.item_count",
                 IDisplayHelper.get().stripColor(item.stack().getHoverName()),
                 item.count()
-            ).withStyle(ChatFormatting.GRAY)).message(null));
+            ).withStyle(ChatFormatting.GRAY)));
             tooltip.add(elements);
         }
         appendOmitted(tooltip, summary.omittedItemTypes());
@@ -142,7 +142,7 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
     }
 
     @Override
-    public ResourceLocation getUid() {
+    public Identifier getUid() {
         return UID;
     }
 }

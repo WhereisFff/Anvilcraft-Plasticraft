@@ -4,7 +4,7 @@ import dev.anvilcraft.plasticraft.molding.bake.BakedMoldingModel;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingFunctionalAnalysis;
 import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 /** 可扩展的成型制品功能类型策略。 */
 public interface MoldingProductType {
@@ -15,7 +15,7 @@ public interface MoldingProductType {
         TRAY
     }
 
-    ResourceLocation id();
+    Identifier id();
 
     String translationKey();
 

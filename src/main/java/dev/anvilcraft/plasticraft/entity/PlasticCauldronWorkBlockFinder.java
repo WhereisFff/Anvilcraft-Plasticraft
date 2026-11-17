@@ -7,11 +7,11 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.function.Function;
-import javax.annotation.Nullable;
 
 /**
  * 从锅的实际重力面查询工作方块。中心射线优先，随后才检查整个底面覆盖到的方块，
@@ -153,7 +153,7 @@ public final class PlasticCauldronWorkBlockFinder {
                 gravityDirection.getAxisDirection() == Direction.AxisDirection.NEGATIVE ? bounds.minZ : bounds.maxZ
             );
         };
-        Vec3 outward = Vec3.atLowerCornerOf(gravityDirection.getNormal()).scale(PlasticEntityPhysics.FACE_EPSILON);
+        Vec3 outward = Vec3.atLowerCornerOf(gravityDirection.getUnitVec3i()).scale(PlasticEntityPhysics.FACE_EPSILON);
         return BlockPos.containing(bottomFaceCenter.add(outward));
     }
 }

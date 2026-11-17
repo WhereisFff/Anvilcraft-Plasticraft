@@ -11,8 +11,10 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.fluids.FluidStack;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.transaction.Transaction;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -54,12 +56,12 @@ public final class HardenedResinCauldronSupport {
         PlasticCauldron cauldron = find(level, pos);
         if (cauldron == null) return OptionalInt.empty();
         int amount = AnvilCraft.CONFIG.machines.plasmaJets.fishTankConsumeAmount;
-        IFluidHandler handler = cauldron.plasticraft$ignitionFluidAccess();
-        FluidStack available = handler.drain(amount, IFluidHandler.FluidAction.SIMULATE);
-        if (!available.is(ModFluidTags.OIL) || available.getAmount() != amount) return OptionalInt.empty();
-        if (!simulate) {
-            FluidStack drained = handler.drain(available, IFluidHandler.FluidAction.EXECUTE);
-            if (!FluidStack.matches(drained, available)) return OptionalInt.empty();
+        ResourceHandler<FluidResource> handler = cauldron.plasticraft$ignitionFluidAccess();
+        FluidStack oil = cauldron.plasticraft$ignitionFluid();
+        if (!oil.is(ModFluidTags.OIL)) return OptionalInt.empty();
+        try (var tx = Transaction.openRoot()) {
+            if (handler.extract(FluidResource.of(oil), amount, tx) != amount) return OptionalInt.empty();
+            if (!simulate) tx.commit();
         }
         return OptionalInt.of(AnvilCraft.CONFIG.machines.plasmaJets.fishTankExtraDuration);
     }
@@ -69,12 +71,12 @@ public final class HardenedResinCauldronSupport {
         if (cauldron == null) return null;
         FluidStack available = cauldron.plasticraft$ignitionFluid();
         if (amount <= 0 || !available.is(PlasticraftFluids.HIGH_HEAT_FUEL.get()) || available.getAmount() < amount) return false;
-        IFluidHandler handler = cauldron.plasticraft$ignitionFluidAccess();
-        FluidStack request = available.copyWithAmount(amount);
-        FluidStack simulated = handler.drain(request, IFluidHandler.FluidAction.SIMULATE);
-        if (!FluidStack.matches(simulated, request)) return false;
-        FluidStack drained = handler.drain(request, IFluidHandler.FluidAction.EXECUTE);
-        return FluidStack.matches(drained, request);
+        ResourceHandler<FluidResource> handler = cauldron.plasticraft$ignitionFluidAccess();
+        try (var tx = Transaction.openRoot()) {
+            if (handler.extract(FluidResource.of(available), amount, tx) != amount) return false;
+            tx.commit();
+            return true;
+        }
     }
 
     public static Integer fluidAmount(Level level, BlockPos pos) {

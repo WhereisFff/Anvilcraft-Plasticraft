@@ -9,9 +9,9 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
 import dev.dubhe.anvilcraft.api.giantanvil.IShockEntity;
 import dev.dubhe.anvilcraft.api.giantanvil.ShockAnvilBehavior;
-import dev.dubhe.anvilcraft.block.item.HasMobBlockItem;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
+import dev.dubhe.anvilcraft.item.block.HasMobBlockItem;
 import dev.dubhe.anvilcraft.util.BlockMiningEffect;
 import net.minecraft.core.Direction;
 import net.minecraft.sounds.SoundEvent;
@@ -145,7 +145,7 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
         if (!held.isEmpty() || !this.hasCapturedMob()) {
             return InteractionResult.PASS;
         }
-        if (this.level().isClientSide) return InteractionResult.SUCCESS;
+        if (this.level().isClientSide()) return InteractionResult.SUCCESS;
         return this.releaseCapturedMob(player, this.getOrientation().attachmentFace())
             ? InteractionResult.CONSUME
             : InteractionResult.FAIL;
@@ -159,8 +159,8 @@ public class ResinAnvilEntity extends AbstractPlasticEntity implements ElasticCo
 
         Vec3 center = this.getBoundingBox().getCenter();
         double offset = 0.55D + Math.max(mob.getBbWidth(), mob.getBbHeight()) * 0.5D;
-        Vec3 target = center.add(Vec3.atLowerCornerOf(releaseFace.getNormal()).scale(offset));
-        mob.moveTo(target.x, target.y, target.z, mob.getYRot(), mob.getXRot());
+        Vec3 target = center.add(Vec3.atLowerCornerOf(releaseFace.getUnitVec3i()).scale(offset));
+        mob.snapTo(target.x, target.y, target.z, mob.getYRot(), mob.getXRot());
         mob.setDeltaMovement(Vec3.ZERO);
         if (!this.level().noCollision(mob, mob.getBoundingBox().inflate(0.02D))) return false;
         if (!this.level().addFreshEntity(mob)) return false;

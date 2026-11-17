@@ -4,12 +4,13 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.item.ModItems;
-import dev.dubhe.anvilcraft.item.AnvilHammerItem;
+import dev.dubhe.anvilcraft.item.tool.AnvilHammerItem;
 import dev.dubhe.anvilcraft.util.TriggerUtil;
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlotGroup;
@@ -42,21 +43,21 @@ public class ResinAnvilHammerItem extends AnvilHammerItem {
         .build();
 
     public ResinAnvilHammerItem(Properties properties) {
-        super(properties);
+        super(properties.repairable(ModItems.RESIN.get()));
     }
 
     /** 发布树脂铁砧落地事件，并使用树脂击打音效替代原版铁砧落地音效。 */
     public static boolean triggerAnvilImpact(Player player, Level level, BlockPos impactPos) {
-        if (level.isClientSide) return false;
+        if (!(level instanceof ServerLevel serverLevel)) return false;
         ItemStack hammerStack = player.getMainHandItem();
         if (!(hammerStack.getItem() instanceof ResinAnvilHammerItem hammer)) return false;
-        if (player.getCooldowns().isOnCooldown(hammer)) return false;
+        if (player.getCooldowns().isOnCooldown(hammerStack)) return false;
 
-        player.getCooldowns().addCooldown(hammer, 5);
+        player.getCooldowns().addCooldown(hammerStack, 5);
         FallingBlockEntity dummyAnvil = new FallingBlockEntity(EntityType.FALLING_BLOCK, level);
         dummyAnvil.blockState = hammer.getAnvil().defaultBlockState();
         NeoForge.EVENT_BUS.post(new AnvilEvent.OnLand(
-            level,
+            serverLevel,
             impactPos.above(),
             dummyAnvil,
             player.fallDistance
@@ -69,7 +70,7 @@ public class ResinAnvilHammerItem extends AnvilHammerItem {
             0.8F,
             0.9F + player.getRandom().nextFloat() * 0.2F
         );
-        hammerStack.hurtAndBreak(1, player, LivingEntity.getSlotForHand(InteractionHand.MAIN_HAND));
+        hammerStack.hurtAndBreak(1, player, InteractionHand.MAIN_HAND.asEquipmentSlot());
         TriggerUtil.anvilHammerClickBlock(level, impactPos, "left_click");
         return true;
     }
@@ -82,24 +83,18 @@ public class ResinAnvilHammerItem extends AnvilHammerItem {
 
     /** 防止绕过常规玩家攻击入口的调用重新触发本体铁砧坠落伤害。 */
     @Override
-    public boolean hurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker) {
-        stack.hurtAndBreak(1, attacker, LivingEntity.getSlotForHand(InteractionHand.MAIN_HAND));
-        return true;
+    public void hurtEnemy(ItemStack stack, LivingEntity target, LivingEntity attacker) {
+        stack.hurtAndBreak(1, attacker, InteractionHand.MAIN_HAND.asEquipmentSlot());
     }
 
     @Override
-    public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand usedHand) {
-        return InteractionResultHolder.pass(player.getItemInHand(usedHand));
+    public InteractionResult use(Level level, Player player, InteractionHand usedHand) {
+        return InteractionResult.PASS;
     }
 
     @Override
     public ItemStack finishUsingItem(ItemStack stack, Level level, LivingEntity livingEntity) {
         return stack;
-    }
-
-    @Override
-    public boolean isValidRepairItem(ItemStack stack, ItemStack repairCandidate) {
-        return repairCandidate.is(ModItems.RESIN.get());
     }
 
     @Override

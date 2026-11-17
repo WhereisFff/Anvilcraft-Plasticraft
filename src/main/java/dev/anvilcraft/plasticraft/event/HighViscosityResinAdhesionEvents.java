@@ -10,6 +10,7 @@ import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.TriState;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
@@ -18,7 +19,6 @@ import net.minecraft.world.entity.player.Player;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.common.util.TriState;
 import net.neoforged.neoforge.event.entity.EntityTeleportEvent;
 import net.neoforged.neoforge.event.entity.EntityTravelToDimensionEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
@@ -36,7 +36,7 @@ public final class HighViscosityResinAdhesionEvents {
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void knockbackStartsAdhesiveRebound(LivingKnockBackEvent event) {
-        if (event.getEntity().level().isClientSide || !hasAdhesive(event.getEntity())) return;
+        if (event.getEntity().level().isClientSide() || !hasAdhesive(event.getEntity())) return;
         double resistance = event.getEntity().getAttributeValue(
             Attributes.KNOCKBACK_RESISTANCE
         );
@@ -72,7 +72,7 @@ public final class HighViscosityResinAdhesionEvents {
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void interactEntity(PlayerInteractEvent.EntityInteract event) {
-        if (event.getEntity().level().isClientSide
+        if (event.getEntity().level().isClientSide()
             || event.getEntity().isShiftKeyDown()
             || !event.getItemStack().is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) {
             return;
@@ -89,7 +89,7 @@ public final class HighViscosityResinAdhesionEvents {
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void interactEntitySpecific(PlayerInteractEvent.EntityInteractSpecific event) {
-        if (event.getEntity().level().isClientSide
+        if (event.getEntity().level().isClientSide()
             || event.getEntity().isShiftKeyDown()
             || !event.getItemStack().is(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.get())) {
             return;
@@ -115,7 +115,7 @@ public final class HighViscosityResinAdhesionEvents {
             event.setUseItem(TriState.FALSE);
             return;
         }
-        if (event.getEntity().level().isClientSide) return;
+        if (event.getEntity().level().isClientSide()) return;
         boolean bonded = AdhesivePreviewService.confirmBlock(
             event.getEntity(),
             event.getHand(),
@@ -151,7 +151,7 @@ public final class HighViscosityResinAdhesionEvents {
             AdhesiveSelectionManager.clear(event.getEntity());
             return;
         }
-        if (!event.getEntity().level().isClientSide) {
+        if (!event.getEntity().level().isClientSide()) {
             var selected = AdhesiveSelectionManager.resolveServerSelection(event.getEntity());
             if (selected == null || selected.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT)) {
                 AdhesiveSelectionManager.clear(event.getEntity());

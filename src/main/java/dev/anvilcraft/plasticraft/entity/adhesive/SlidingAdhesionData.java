@@ -5,7 +5,7 @@ import dev.anvilcraft.plasticraft.block.BondedFallingBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,7 +18,7 @@ public record SlidingAdhesionData(List<Part> parts) {
             buffer.writeVarInt(data.parts.size());
             for (Part part : data.parts) {
                 BlockPos.STREAM_CODEC.encode(buffer, part.relativePos);
-                ResourceLocation.STREAM_CODEC.encode(buffer, part.state.blockId());
+                Identifier.STREAM_CODEC.encode(buffer, part.state.blockId());
                 buffer.writeByte(part.state.patchMask());
                 buffer.writeByte(part.state.blockBondMask());
                 buffer.writeByte(part.state.entityBondMask());
@@ -31,7 +31,7 @@ public record SlidingAdhesionData(List<Part> parts) {
             for (int index = 0; index < size; index++) {
                 BlockPos relativePos = BlockPos.STREAM_CODEC.decode(buffer);
                 BlockAdhesionState state = new BlockAdhesionState(
-                    ResourceLocation.STREAM_CODEC.decode(buffer),
+                    Identifier.STREAM_CODEC.decode(buffer),
                     buffer.readUnsignedByte(),
                     buffer.readUnsignedByte(),
                     buffer.readUnsignedByte(),

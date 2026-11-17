@@ -4,57 +4,52 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
 import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
+import dev.anvilcraft.plasticraft.client.renderer.FluidRenderOpacity;
 import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticBlockModel;
 import dev.anvilcraft.plasticraft.client.renderer.PlasticOilCatalysisRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticRenderGeometry;
 import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.dubhe.anvilcraft.api.itemhandler.ItemHandlerUtil;
 import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.Sheets;
-import net.minecraft.client.renderer.block.BlockRenderDispatcher;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
 import net.minecraft.client.renderer.culling.Frustum;
-import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.client.resources.model.BakedModel;
-import net.minecraft.client.resources.model.ModelResourceLocation;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
-import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
 import org.joml.Quaternionf;
 
 import java.util.List;
 
 /** 渲染带朝向的釜模型及其同步流体表面。 */
-public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinCauldronEntity> {
-    public static final ModelResourceLocation OUTLET_MODEL = ModelResourceLocation.standalone(
+public class HardenedResinCauldronRenderer extends PlasticEntityRenderer<HardenedResinCauldronEntity> {
+    public static final PlasticBlockModel OUTLET_MODEL = new PlasticBlockModel(
         AnvilcraftPlasticraft.of("block/hardend_resin_cauldron_outlet")
     );
-    private final BlockRenderDispatcher dispatcher;
+
     private final RandomSource random = RandomSource.create();
 
     public HardenedResinCauldronRenderer(EntityRendererProvider.Context context) {
         super(context);
-        this.shadowRadius = 0.0F;
-        this.dispatcher = context.getBlockRenderDispatcher();
     }
 
     @Override
-    public void render(
+    public void extractGeometry(
         HardenedResinCauldronEntity entity,
-        float yaw,
         float partialTick,
         PoseStack pose,
-        MultiBufferSource buffers,
+        PlasticRenderGeometry buffers,
         int packedLight
     ) {
         PlasticHammerScreen.HammerPreview preview = PlasticHammerScreen.getPreview(entity);
@@ -63,7 +58,6 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
             PlasticEntityRenderTransforms.applyPreview(pose, entity, preview.orientation());
             PlasticEntityRenderHelper.renderHammerPreviewModel(
                 entity,
-                this.dispatcher,
                 pose,
                 buffers,
                 preview.valid()
@@ -72,9 +66,8 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
             pose.popPose();
             pose.pushPose();
             PlasticEntityRenderTransforms.applyWorldAlignedPreview(pose, entity);
-            PlasticEntityRenderHelper.renderHammerAxis(entity, this.dispatcher, pose, buffers);
+            PlasticEntityRenderHelper.renderHammerAxis(entity, pose, buffers);
             pose.popPose();
-            super.render(entity, yaw, partialTick, pose, buffers, packedLight);
             return;
         }
         FluidStack fluid = entity.getSyncedFluid();
@@ -87,7 +80,7 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
             && entity.getOrientation().attachmentFace() == Direction.DOWN;
         pose.pushPose();
         PlasticEntityRenderTransforms.apply(pose, entity, partialTick);
-        PlasticEntityRenderHelper.renderBlock(entity, this.dispatcher, pose, buffers, packedLight);
+        PlasticEntityRenderHelper.renderBlock(entity, pose, buffers, packedLight);
         this.renderOutlet(entity, pose, buffers, packedLight, false, true);
         flush(buffers);
         if (!items.isEmpty() && !gravityAlignedItems && !entity.shouldEjectStoredItems()) {
@@ -98,18 +91,15 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
             float innerMin = 0.126F;
             float innerMax = 0.874F;
             FluidRenderHelper.INSTANCE.renderFluidBox(
-                fluid,
+                FluidRenderOpacity.model(fluid).stillMaterial().sprite(), FluidResource.of(fluid),
                 innerMin,
                 fluidBottom,
                 innerMin,
                 innerMax,
                 fluidTop,
                 innerMax,
-                buffers,
-                pose,
-                packedLight,
-                true,
-                false
+                FluidRenderOpacity.tint(fluid), buffers.getBuffer(FluidRenderOpacity.isOpaque(fluid) ? Sheets.cutoutBlockSheet() : Sheets.translucentBlockSheet()),
+                pose.last(), packedLight, true, false
             );
             PlasticOilCatalysisRenderer.renderContainerOverlay(
                 entity.level(),
@@ -156,7 +146,6 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
             flush(buffers);
             pose.popPose();
         }
-        super.render(entity, yaw, partialTick, pose, buffers, packedLight);
     }
 
     private void renderOutlet(
@@ -182,12 +171,11 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
         pose.translate(0.5D, 0.5D, 0.5D);
         pose.mulPose(Axis.YP.rotationDegrees(rotation));
         pose.translate(-0.5D, -0.5D, -0.5D);
-        BakedModel model = Minecraft.getInstance().getModelManager().getModel(OUTLET_MODEL);
+        BlockStateModel model = OUTLET_MODEL.baked();
         if (preview) {
             PlasticEntityRenderHelper.renderHammerPreviewModel(
                 entity.getDisplayState(),
                 model,
-                this.dispatcher,
                 pose,
                 buffers,
                 previewValid
@@ -195,10 +183,9 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
             pose.popPose();
             return;
         }
-        this.dispatcher.getModelRenderer().renderModel(
+        PlasticBlockModel.render(
             pose.last(),
             buffers.getBuffer(Sheets.cutoutBlockSheet()),
-            entity.getDisplayState(),
             model,
             1.0F,
             1.0F,
@@ -261,7 +248,7 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
                         (this.random.nextFloat() - 0.5F) * spread
                     );
                 }
-                Minecraft.getInstance().getItemRenderer().renderStatic(
+                PlasticRenderGeometry.item(
                     stack,
                     ItemDisplayContext.GROUND,
                     packedLight,
@@ -278,10 +265,6 @@ public class HardenedResinCauldronRenderer extends EntityRenderer<HardenedResinC
         }
     }
 
-    @Override
-    public ResourceLocation getTextureLocation(HardenedResinCauldronEntity entity) {
-        return InventoryMenu.BLOCK_ATLAS;
-    }
 
     @Override
     public boolean shouldRender(

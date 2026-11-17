@@ -9,9 +9,9 @@ import net.minecraft.core.Direction;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
-import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
@@ -26,8 +26,8 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import org.jspecify.annotations.Nullable;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -1618,13 +1618,13 @@ public final class AdhesivePathPlanner {
 
     private static boolean isDangerousPathType(@Nullable PathType pathType) {
         return pathType == PathType.LAVA
-            || pathType == PathType.DAMAGE_FIRE
-            || pathType == PathType.DANGER_FIRE
-            || pathType == PathType.DAMAGE_OTHER
-            || pathType == PathType.DANGER_OTHER
+            || pathType == PathType.FIRE
+            || pathType == PathType.FIRE_IN_NEIGHBOR
+            || pathType == PathType.DAMAGING
+            || pathType == PathType.DAMAGING_IN_NEIGHBOR
             || pathType == PathType.DAMAGE_CAUTIOUS
             || pathType == PathType.POWDER_SNOW
-            || pathType == PathType.DANGER_POWDER_SNOW;
+            || pathType == PathType.ON_TOP_OF_POWDER_SNOW;
     }
 
     private static final class PathCheckCache {
@@ -1802,16 +1802,16 @@ public final class AdhesivePathPlanner {
 
             int minX = Mth.floor(searchBounds.minX);
             int maxX = Mth.floor(searchBounds.maxX);
-            int minY = Math.max(level.getMinBuildHeight(), Mth.floor(searchBounds.minY) - 1);
-            int maxY = Math.min(level.getMaxBuildHeight() - 1, Mth.floor(searchBounds.maxY));
+            int minY = Math.max(level.getMinY(), Mth.floor(searchBounds.minY) - 1);
+            int maxY = Math.min(level.getMaxY(), Mth.floor(searchBounds.maxY));
             int minZ = Mth.floor(searchBounds.minZ);
             int maxZ = Mth.floor(searchBounds.maxZ);
             if (minX > maxX || minY > maxY || minZ > maxZ) return null;
 
             int captureMinX = minX - NEIGHBOR_PADDING;
             int captureMaxX = maxX + NEIGHBOR_PADDING;
-            int captureMinY = Math.max(level.getMinBuildHeight(), minY - NEIGHBOR_PADDING);
-            int captureMaxY = Math.min(level.getMaxBuildHeight() - 1, maxY + NEIGHBOR_PADDING);
+            int captureMinY = Math.max(level.getMinY(), minY - NEIGHBOR_PADDING);
+            int captureMaxY = Math.min(level.getMaxY(), maxY + NEIGHBOR_PADDING);
             int captureMinZ = minZ - NEIGHBOR_PADDING;
             int captureMaxZ = maxZ + NEIGHBOR_PADDING;
             // 线程边界只传递不可变 BlockState 快照，碰撞形状和危险地形分析留在搜索线程执行。
@@ -1948,7 +1948,7 @@ public final class AdhesivePathPlanner {
                 maxY,
                 minZ,
                 maxZ,
-                level.getMinBuildHeight(),
+                level.getMinY(),
                 level.getHeight(),
                 states
             );
@@ -1958,7 +1958,7 @@ public final class AdhesivePathPlanner {
                 for (int z = minZ; z <= maxZ; z++) {
                     int chunkX = x >> 4;
                     int chunkZ = z >> 4;
-                    long chunkKey = ChunkPos.asLong(chunkX, chunkZ);
+                    long chunkKey = ChunkPos.pack(chunkX, chunkZ);
                     LevelChunk chunk = chunks.get(chunkKey);
                     if (chunk == null) {
                         cursor.set(x, minY, z);
@@ -2009,7 +2009,7 @@ public final class AdhesivePathPlanner {
         }
 
         @Override
-        public int getMinBuildHeight() {
+        public int getMinY() {
             return this.minBuildHeight;
         }
 

@@ -16,7 +16,6 @@ import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import net.minecraft.world.level.block.state.properties.EnumProperty;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
@@ -26,7 +25,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 /** 无物理碰撞但保持选取、交互和区域占用的轻量部件。 */
 public class PlasticMoldingRegionBlock extends Block {
     public static final MapCodec<PlasticMoldingRegionBlock> CODEC = simpleCodec(PlasticMoldingRegionBlock::new);
-    public static final DirectionProperty FACING = BlockStateProperties.HORIZONTAL_FACING;
+    public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
     public static final EnumProperty<MoldingRegionPart> PART = EnumProperty.create("part", MoldingRegionPart.class);
     private static final int VALIDATION_DELAY = 40;
 
@@ -59,12 +58,12 @@ public class PlasticMoldingRegionBlock extends Block {
             && level.getBlockEntity(controller) instanceof PlasticMoldingChamberBlockEntity chamber) {
             chamber.openMenu(serverPlayer);
         }
-        return InteractionResult.sidedSuccess(level.isClientSide);
+        return InteractionResult.SUCCESS;
     }
 
     @Override
     public BlockState playerWillDestroy(Level level, BlockPos pos, BlockState state, Player player) {
-        if (!level.isClientSide && PlasticMoldingChamberStructure.isValidPart(level, pos, state)) {
+        if (!level.isClientSide() && PlasticMoldingChamberStructure.isValidPart(level, pos, state)) {
             BlockPos controller = PlasticMoldingChamberStructure.controllerPos(
                 pos,
                 state.getValue(FACING),
@@ -84,7 +83,7 @@ public class PlasticMoldingRegionBlock extends Block {
         boolean movedByPiston
     ) {
         super.onPlace(state, level, pos, oldState, movedByPiston);
-        if (!level.isClientSide) level.scheduleTick(pos, this, VALIDATION_DELAY);
+        if (!level.isClientSide()) level.scheduleTick(pos, this, VALIDATION_DELAY);
     }
 
     @Override
@@ -155,7 +154,7 @@ public class PlasticMoldingRegionBlock extends Block {
     }
 
     @Override
-    protected VoxelShape getOcclusionShape(BlockState state, BlockGetter level, BlockPos pos) {
+    protected VoxelShape getOcclusionShape(BlockState state) {
         return Shapes.empty();
     }
 

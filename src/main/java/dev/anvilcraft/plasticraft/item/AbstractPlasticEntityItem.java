@@ -12,7 +12,6 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.stats.Stats;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
@@ -72,16 +71,16 @@ public abstract class AbstractPlasticEntityItem<E extends AbstractPlasticEntity>
     }
 
     @Override
-    public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
+    public InteractionResult use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
         HitResult hit = getPlayerPOVHitResult(level, player, ClipContext.Fluid.ANY);
         if (!(hit instanceof BlockHitResult blockHit) || hit.getType() == HitResult.Type.MISS) {
-            return InteractionResultHolder.pass(stack);
+            return InteractionResult.PASS;
         }
         InteractionResult result = this.placeFromHit(level, player, stack, blockHit);
         return result.consumesAction()
-            ? InteractionResultHolder.sidedSuccess(stack, level.isClientSide)
-            : InteractionResultHolder.fail(stack);
+            ? InteractionResult.SUCCESS
+            : InteractionResult.FAIL;
     }
 
     @Override
@@ -108,7 +107,7 @@ public abstract class AbstractPlasticEntityItem<E extends AbstractPlasticEntity>
             return InteractionResult.FAIL;
         }
 
-        if (!level.isClientSide) {
+        if (!level.isClientSide()) {
             if (!level.addFreshEntity(entity)) {
                 return InteractionResult.FAIL;
             }
@@ -128,7 +127,7 @@ public abstract class AbstractPlasticEntityItem<E extends AbstractPlasticEntity>
         if (player != null) {
             player.awardStat(Stats.ITEM_USED.get(this));
         }
-        return InteractionResult.sidedSuccess(level.isClientSide);
+        return InteractionResult.SUCCESS;
     }
 
     /** 构造尚未加入世界的放置实体，预览与实际放置共用形状、材料和朝向。 */

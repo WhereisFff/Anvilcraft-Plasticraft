@@ -76,7 +76,7 @@ public final class PlasticFluidPhysics {
         double y = Mth.clamp(velocity.y * 0.55D + error * 0.12D, -0.18D, 0.18D);
         if (Math.abs(error) < 0.01D && Math.abs(y) < 0.01D) y = 0.0D;
         item.setDeltaMovement(velocity.x * 0.9D, y, velocity.z * 0.9D);
-        item.hasImpulse = true;
+        item.needsSync = true;
         item.hurtMarked = true;
     }
 

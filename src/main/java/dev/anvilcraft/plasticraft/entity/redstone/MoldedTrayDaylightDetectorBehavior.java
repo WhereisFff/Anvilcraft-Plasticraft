@@ -3,8 +3,10 @@ package dev.anvilcraft.plasticraft.entity.redstone;
 import dev.anvilcraft.plasticraft.molding.product.MoldedTrayComponent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.attribute.EnvironmentAttributes;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Blocks;
@@ -33,12 +35,12 @@ final class MoldedTrayDaylightDetectorBehavior implements MoldedTrayRedstoneBeha
         BlockState state
     ) {
         if (!player.getAbilities().mayBuild) return InteractionResult.PASS;
-        if (!player.level().isClientSide) {
+        if (!player.level().isClientSide()) {
             runtime.setState(state.cycle(BlockStateProperties.INVERTED));
             updateSignal(runtime, runtime.state());
             runtime.persistAndPublish();
         }
-        return InteractionResult.sidedSuccess(player.level().isClientSide);
+        return InteractionResult.SUCCESS;
     }
 
     @Override
@@ -59,7 +61,7 @@ final class MoldedTrayDaylightDetectorBehavior implements MoldedTrayRedstoneBeha
         BlockPos position = MoldedTrayRedstoneNetwork.componentCell(runtime.host(), runtime.cell(), Direction.UP);
         int target = runtime.host().level().getBrightness(LightLayer.SKY, position)
             - runtime.host().level().getSkyDarken();
-        float sunAngle = runtime.host().level().getSunAngle(1.0F);
+        float sunAngle = runtime.host().level().environmentAttributes().getValue(EnvironmentAttributes.SUN_ANGLE, position) * Mth.DEG_TO_RAD;
         if (state.getValue(BlockStateProperties.INVERTED)) {
             target = 15 - target;
         } else if (target > 0) {

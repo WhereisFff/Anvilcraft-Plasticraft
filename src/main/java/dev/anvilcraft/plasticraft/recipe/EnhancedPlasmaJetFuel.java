@@ -9,7 +9,9 @@ import dev.dubhe.anvilcraft.api.fluid.network.FluidContainerLookup;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.fluids.FluidStack;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.fluid.FluidUtil;
+import net.neoforged.neoforge.transfer.transaction.Transaction;
 
 /** 强化喷流燃料识别与消耗的公共游戏逻辑。 */
 public final class EnhancedPlasmaJetFuel {
@@ -44,8 +46,8 @@ public final class EnhancedPlasmaJetFuel {
         if (entityResult != null) return entityResult;
         FluidContainerLookup.Result endpoint = FluidContainerLookup.find(level, pos, null);
         if (endpoint == null) return false;
-        for (int tank = 0; tank < endpoint.handler().getTanks(); tank++) {
-            if (endpoint.handler().getFluidInTank(tank).is(PlasticraftFluids.HIGH_HEAT_FUEL.get())) return true;
+        for (int tank = 0; tank < endpoint.handler().size(); tank++) {
+            if (FluidUtil.getStack(endpoint.handler(), tank).is(PlasticraftFluids.HIGH_HEAT_FUEL.get())) return true;
         }
         return false;
     }
@@ -60,10 +62,11 @@ public final class EnhancedPlasmaJetFuel {
         FluidContainerLookup.Result endpoint = FluidContainerLookup.find(level, pos, null);
         if (endpoint == null) return false;
         FluidStack request = new FluidStack(PlasticraftFluids.HIGH_HEAT_FUEL.get(), CONSUMPTION_PER_TICK);
-        FluidStack simulated = endpoint.handler().drain(request, IFluidHandler.FluidAction.SIMULATE);
-        if (!FluidStack.matches(simulated, request)) return false;
-        FluidStack drained = endpoint.handler().drain(request, IFluidHandler.FluidAction.EXECUTE);
-        return FluidStack.matches(drained, request);
+        try (var tx = Transaction.openRoot()) {
+            if (endpoint.handler().extract(FluidResource.of(request), request.getAmount(), tx) != request.getAmount()) return false;
+            tx.commit();
+            return true;
+        }
     }
 
     public enum FuelMode {

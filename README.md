@@ -3,8 +3,8 @@
 <img src="src/main/resources/icon.png" width="128" height="128" alt="塑料工艺图标">
 
 [![Build](https://github.com/WhereisFff/Anvilcraft-Plasticraft/actions/workflows/ci.yml/badge.svg)](https://github.com/WhereisFff/Anvilcraft-Plasticraft/actions/workflows/ci.yml)
-![Minecraft 1.21.1](https://img.shields.io/badge/Minecraft-1.21.1-62B47A)
-![NeoForge 21.1](https://img.shields.io/badge/NeoForge-21.1-E78A3A)
+![Minecraft 26.1.2](https://img.shields.io/badge/Minecraft-26.1.2-62B47A)
+![NeoForge 26.1](https://img.shields.io/badge/NeoForge-26.1-E78A3A)
 [![License: LGPL-3.0-or-later](https://img.shields.io/badge/License-LGPL--3.0--or--later-4C7EAF)](LICENSE)
 
 **铁砧工艺：塑料工艺（Anvilcraft: Plasticraft）** 是一个正在开发中的
@@ -25,16 +25,16 @@
 
 | 项目 | 版本 / 说明 |
 | --- | --- |
-| Minecraft | 1.21.1 |
-| 模组加载器 | NeoForge 21.1.238+ |
-| 前置模组 | AnvilCraft 1.6.0+snapshot.2842 或更新版本、AnvilLib 2.0.0+snapshot.649 或更新版本 |
+| Minecraft | 26.1.2 |
+| 模组加载器 | NeoForge 26.1.2.114+ |
+| 前置模组 | AnvilCraft 1.6.0+pr.6866（正式砧库适配构建）或其后兼容版本、AnvilLib 2.0.0 正式版 |
 | 可选模组 | JEI、Jade、Ageratum |
 
-将构建产物和所需前置模组放入游戏实例的 `mods` 目录。
+将构建产物和所需前置模组放入游戏实例的 `mods` 目录。铁砧工艺使用 [PR #6195 的构件](https://github.com/Anvil-Dev/AnvilCraft/actions/runs/44121186919)，Gradle 会下载并校验该 JAR。已有同版本本地文件时，可通过 `-Panvilcraft_jar=<路径>` 指定。
 
 ## 构建与开发
 
-项目使用 JDK 21 和 Gradle 9.7.1 Wrapper，依赖版本与 AnvilCraft 的 Minecraft 1.21.1 分支对齐：
+项目使用 JDK 25 和 Gradle 9.7.1 Wrapper，依赖版本与 AnvilCraft 的 Minecraft 26.1.2 分支对齐。
 
 ```powershell
 .\gradlew.bat build

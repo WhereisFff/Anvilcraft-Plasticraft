@@ -58,23 +58,15 @@ public final class PlasticraftLanguageData {
             PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "heat_resistant_plastic.tooltip",
             "Heat-resistant plastic melt, granules and molded products; click the banner to expand or fold all 16 colors"
         );
-        provider.add("item.anvilcraftplasticraft.hardend_resin_anvil", "Hardened Resin Anvil");
-        provider.add("item.anvilcraftplasticraft.hardend_resin_cauldron", "Hardened Resin Cauldron");
-        provider.add("item.anvilcraftplasticraft.resin_anvil", "Resin Anvil");
-        provider.add("item.anvilcraftplasticraft.universal_plastic", "Universal Plastic Block");
         provider.add("material.anvilcraftplasticraft.universal_plastic", "Universal Plastic");
-        provider.add("item.anvilcraftplasticraft.engineering_plastic", "Engineering Plastic Block");
         provider.add("material.anvilcraftplasticraft.engineering_plastic", "Engineering Plastic");
-        provider.add("item.anvilcraftplasticraft.heat_resistant_plastic", "Heat-Resistant Plastic Block");
         provider.add("material.anvilcraftplasticraft.heat_resistant_plastic", "Heat-Resistant Plastic");
-        provider.add("item.anvilcraftplasticraft.clear_plastic", "Clear Plastic Block");
         provider.add("material.anvilcraftplasticraft.clear_plastic", "Clear Plastic");
         provider.add(PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "elastic_plastic", "Elastic Plastic");
         provider.add(
             PlasticraftItemGroups.SECTION_TITLE_KEY_PREFIX + "elastic_plastic.tooltip",
             "Elastic plastic melt, granules and bouncy molded products; click the banner to expand or fold all 16 colors"
         );
-        provider.add("item.anvilcraftplasticraft.elastic_plastic", "Elastic Plastic Block");
         provider.add("material.anvilcraftplasticraft.elastic_plastic", "Elastic Plastic");
         provider.add("tooltip.anvilcraftplasticraft.molded_feature.elastic", ", elastic");
         provider.add(

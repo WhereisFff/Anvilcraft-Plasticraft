@@ -1,44 +1,25 @@
 package dev.anvilcraft.plasticraft.client.particle;
 
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import com.mojang.blaze3d.vertex.Tesselator;
-import com.mojang.blaze3d.vertex.VertexFormat;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleProvider;
-import net.minecraft.client.particle.ParticleRenderType;
 import net.minecraft.client.particle.SingleQuadParticle;
-import net.minecraft.client.renderer.GameRenderer;
-import net.minecraft.client.renderer.LightTexture;
-import net.minecraft.client.renderer.texture.TextureManager;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.core.particles.SimpleParticleType;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.data.AtlasIds;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
 
 /** 使用原版经验球图集、缓慢上浮并轻微摆动的气态经验粒子。 */
 public final class ExperienceVaporParticle extends SingleQuadParticle {
     private static final int SMALL_ICON_COUNT = 3;
-    private static final ResourceLocation TEXTURE = ResourceLocation.withDefaultNamespace(
-        "textures/entity/experience_orb.png"
+    private static final Identifier TEXTURE = Identifier.withDefaultNamespace(
+        "textures/entity/experience/experience_orb.png"
     );
-    private static final ParticleRenderType RENDER_TYPE = new ParticleRenderType() {
-        @Override
-        public BufferBuilder begin(Tesselator tesselator, TextureManager textureManager) {
-            RenderSystem.depthMask(true);
-            RenderSystem.setShader(GameRenderer::getParticleShader);
-            RenderSystem.setShaderTexture(0, TEXTURE);
-            RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
-            return tesselator.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.PARTICLE);
-        }
-
-        @Override
-        public String toString() {
-            return "EXPERIENCE_VAPOR";
-        }
-    };
+    private static final Layer RENDER_TYPE = new Layer(true, TEXTURE, RenderPipelines.TRANSLUCENT_PARTICLE);
 
     private final float u0;
     private final float u1;
@@ -58,7 +39,7 @@ public final class ExperienceVaporParticle extends SingleQuadParticle {
         double speedZ,
         boolean outlet
     ) {
-        super(level, x, y, z);
+        super(level, x, y, z, Minecraft.getInstance().getAtlasManager().getAtlasOrThrow(AtlasIds.PARTICLES).missingSprite());
         this.outlet = outlet;
         this.pressurized = !outlet && speedY < 0.01D;
         this.hasPhysics = false;
@@ -100,12 +81,12 @@ public final class ExperienceVaporParticle extends SingleQuadParticle {
     }
 
     @Override
-    protected int getLightColor(float partialTick) {
-        return LightTexture.FULL_BRIGHT;
+    protected int getLightCoords(float partialTick) {
+        return LightCoordsUtil.FULL_BRIGHT;
     }
 
     @Override
-    public ParticleRenderType getRenderType() {
+    protected Layer getLayer() {
         return RENDER_TYPE;
     }
 
@@ -145,7 +126,8 @@ public final class ExperienceVaporParticle extends SingleQuadParticle {
             double z,
             double speedX,
             double speedY,
-            double speedZ
+            double speedZ,
+            RandomSource random
         ) {
             return new ExperienceVaporParticle(level, x, y, z, speedX, speedY, speedZ, this.outlet);
         }

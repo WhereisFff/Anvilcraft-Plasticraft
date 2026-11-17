@@ -9,6 +9,8 @@ import net.minecraft.world.item.component.CustomModelData;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.EnumProperty;
 
+import java.util.List;
+
 /**
  * 可提供调色板的材料共用的小型纯数据能力。
  *
@@ -25,7 +27,7 @@ public final class DyeableMaterial {
     public static DyeColor getColor(ItemStack stack) {
         CustomData data = stack.get(DataComponents.CUSTOM_DATA);
         if (data == null || !data.contains(COLOR_KEY)) return DyeColor.WHITE;
-        return DyeColor.byName(data.copyTag().getString(COLOR_KEY), DyeColor.WHITE);
+        return DyeColor.byName(data.copyTag().getStringOr(COLOR_KEY, ""), DyeColor.WHITE);
     }
 
     public static void setColor(ItemStack stack, DyeColor color) {
@@ -70,6 +72,6 @@ public final class DyeableMaterial {
      * 零表示普通变体，一表示磁性变体。
      */
     public static void setModelVariant(ItemStack stack, int variant) {
-        stack.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(variant));
+        stack.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(List.of((float) variant), List.of(), List.of(), List.of()));
     }
 }

@@ -1,9 +1,9 @@
 package dev.anvilcraft.plasticraft.mixin;
 
 import dev.anvilcraft.plasticraft.block.HighViscosityResinFluidBlock;
+import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondManager;
 import dev.anvilcraft.plasticraft.entity.adhesive.EntityBondState;
-import dev.anvilcraft.plasticraft.entity.adhesive.AdhesiveBondingService;
 import dev.anvilcraft.plasticraft.init.PlasticraftAttachments;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
@@ -30,7 +30,7 @@ abstract class EntityHighViscosityResinMixin {
             || entity.hasData(PlasticraftAttachments.ENTITY_ADHESION)
                 && !AdhesiveBondingService.isElasticMotion(entity)) {
             entity.setDeltaMovement(Vec3.ZERO);
-            entity.hasImpulse = true;
+            entity.needsSync = true;
             return Vec3.ZERO;
         }
         EntityBondState bonds = entity.getExistingDataOrNull(PlasticraftAttachments.ENTITY_BONDS.get());
@@ -38,7 +38,7 @@ abstract class EntityHighViscosityResinMixin {
             && !bonds.leaderUuid().equals(entity.getUUID())
             && !AdhesiveBondingService.isElasticMotion(entity)) {
             entity.setDeltaMovement(Vec3.ZERO);
-            entity.hasImpulse = true;
+            entity.needsSync = true;
             return Vec3.ZERO;
         }
         if (movement.equals(Vec3.ZERO)) return movement;
@@ -46,7 +46,7 @@ abstract class EntityHighViscosityResinMixin {
         if (entity instanceof Player) return movement;
         if (!HighViscosityResinFluidBlock.isEntityTouching(entity)) return movement;
         entity.setDeltaMovement(Vec3.ZERO);
-        entity.hasImpulse = true;
+        entity.needsSync = true;
         return Vec3.ZERO;
     }
 }

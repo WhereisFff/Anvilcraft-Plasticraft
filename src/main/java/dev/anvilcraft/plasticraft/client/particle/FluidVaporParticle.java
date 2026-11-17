@@ -1,19 +1,19 @@
 package dev.anvilcraft.plasticraft.client.particle;
 
+import dev.anvilcraft.plasticraft.client.renderer.FluidRenderOpacity;
 import dev.anvilcraft.plasticraft.particle.DynamicFluidVaporParticleOptions;
 import dev.anvilcraft.plasticraft.particle.FluidVaporParticleOptions;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleProvider;
-import net.minecraft.client.particle.ParticleRenderType;
+import net.minecraft.client.particle.SingleQuadParticle;
 import net.minecraft.client.particle.SpriteSet;
-import net.minecraft.client.particle.TextureSheetParticle;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.material.Fluids;
-import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
 import net.neoforged.neoforge.fluids.FluidStack;
 
 /** 使用源流体颜色，并按实际气化速率调整寿命与扩散距离的蒸气粒子。 */
-public final class FluidVaporParticle extends TextureSheetParticle {
+public final class FluidVaporParticle extends SingleQuadParticle {
     private final SpriteSet sprites;
     private final float baseAlpha;
 
@@ -31,7 +31,7 @@ public final class FluidVaporParticle extends TextureSheetParticle {
         double speedZ,
         SpriteSet sprites
     ) {
-        super(level, x, y, z);
+        super(level, x, y, z, sprites.first());
         this.sprites = sprites;
         this.hasPhysics = false;
         float intensity = Math.clamp(vaporizationRate / 50.0F, 0.1F, 1.0F);
@@ -59,7 +59,7 @@ public final class FluidVaporParticle extends TextureSheetParticle {
     private void setFluidColor(FluidStack fluid) {
         int tint = fluid.is(Fluids.WATER) || fluid.is(Fluids.FLOWING_WATER)
             ? 0xFFFFFFFF
-            : IClientFluidTypeExtensions.of(fluid.getFluid()).getTintColor(fluid);
+            : FluidRenderOpacity.tint(fluid);
         this.setColor(
             (float) (tint >> 16 & 0xFF) / 255.0F,
             (float) (tint >> 8 & 0xFF) / 255.0F,
@@ -68,8 +68,8 @@ public final class FluidVaporParticle extends TextureSheetParticle {
     }
 
     @Override
-    public ParticleRenderType getRenderType() {
-        return ParticleRenderType.PARTICLE_SHEET_TRANSLUCENT;
+    protected Layer getLayer() {
+        return Layer.TRANSLUCENT;
     }
 
     @Override
@@ -96,7 +96,8 @@ public final class FluidVaporParticle extends TextureSheetParticle {
             double z,
             double speedX,
             double speedY,
-            double speedZ
+            double speedZ,
+            RandomSource random
         ) {
             return new FluidVaporParticle(
                 options.fluid(),
@@ -131,7 +132,8 @@ public final class FluidVaporParticle extends TextureSheetParticle {
             double z,
             double speedX,
             double speedY,
-            double speedZ
+            double speedZ,
+            RandomSource random
         ) {
             return new FluidVaporParticle(
                 options.fluid(),

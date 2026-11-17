@@ -1,15 +1,18 @@
 package dev.anvilcraft.plasticraft.client.renderer;
 
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.pipeline.DepthStencilState;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.platform.CompareOp;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
-import net.minecraft.Util;
-import net.minecraft.client.renderer.GameRenderer;
-import net.minecraft.client.renderer.RenderStateShard;
-import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.rendertype.OutputTarget;
+import net.minecraft.client.renderer.rendertype.RenderSetup;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.texture.TextureAtlas;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.Util;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.client.event.RegisterRenderPipelinesEvent;
 
 import java.util.function.Function;
 
@@ -19,78 +22,32 @@ public final class ClearPlasticRenderTypes {
     private static Vec3 deferredCamera = Vec3.ZERO;
     private static float deferredPartialTick;
 
-    private static final RenderType BLOCK = RenderType.create(
-        AnvilcraftPlasticraft.MOD_ID + ":clear_plastic_block",
-        DefaultVertexFormat.BLOCK,
-        VertexFormat.Mode.QUADS,
-        786432,
-        false,
-        true,
-        RenderType.CompositeState.builder()
-            .setLightmapState(RenderStateShard.LIGHTMAP)
-            .setShaderState(new RenderStateShard.ShaderStateShard(GameRenderer::getRendertypeTranslucentMovingBlockShader))
-            .setTextureState(new RenderStateShard.TextureStateShard(TextureAtlas.LOCATION_BLOCKS, false, true))
-            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-            .setOutputState(RenderStateShard.TRANSLUCENT_TARGET)
-            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
-            .createCompositeState(true)
-    );
-    private static final RenderType FLUID = RenderType.create(
-        AnvilcraftPlasticraft.MOD_ID + ":clear_plastic_fluid",
-        DefaultVertexFormat.BLOCK,
-        VertexFormat.Mode.QUADS,
-        1536,
-        false,
-        true,
-        RenderType.CompositeState.builder()
-            .setShaderState(new RenderStateShard.ShaderStateShard(GameRenderer::getRendertypeTranslucentMovingBlockShader))
-            .setTextureState(new RenderStateShard.TextureStateShard(TextureAtlas.LOCATION_BLOCKS, false, true))
-            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-            .setOutputState(RenderStateShard.TRANSLUCENT_TARGET)
-            .setLightmapState(RenderStateShard.LIGHTMAP)
-            // 内部流体写入深度后，只有位于其前方的透明外壳会继续参与 alpha 混合。
-            .setWriteMaskState(RenderStateShard.COLOR_DEPTH_WRITE)
-            .createCompositeState(true)
-    );
-    private static final RenderType MOLDED_FLUID = RenderType.create(
-        AnvilcraftPlasticraft.MOD_ID + ":clear_plastic_molded_fluid",
-        DefaultVertexFormat.NEW_ENTITY,
-        VertexFormat.Mode.QUADS,
-        1536,
-        false,
-        true,
-        RenderType.CompositeState.builder()
-            .setShaderState(new RenderStateShard.ShaderStateShard(
-                GameRenderer::getRendertypeItemEntityTranslucentCullShader
-            ))
-            .setTextureState(new RenderStateShard.TextureStateShard(TextureAtlas.LOCATION_BLOCKS, false, true))
-            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-            .setOutputState(RenderStateShard.TRANSLUCENT_TARGET)
-            .setLightmapState(RenderStateShard.LIGHTMAP)
-            .setOverlayState(RenderStateShard.OVERLAY)
-            .setWriteMaskState(RenderStateShard.COLOR_DEPTH_WRITE)
-            .createCompositeState(true)
-    );
-    private static final Function<ResourceLocation, RenderType> MOLDED = Util.memoize(texture -> RenderType.create(
-        AnvilcraftPlasticraft.MOD_ID + ":clear_plastic_molded",
-        DefaultVertexFormat.NEW_ENTITY,
-        VertexFormat.Mode.QUADS,
-        1536,
-        true,
-        true,
-        RenderType.CompositeState.builder()
-            .setShaderState(new RenderStateShard.ShaderStateShard(
-                GameRenderer::getRendertypeItemEntityTranslucentCullShader
-            ))
-            .setTextureState(new RenderStateShard.TextureStateShard(texture, false, false))
-            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-            .setOutputState(RenderStateShard.TRANSLUCENT_TARGET)
-            .setLightmapState(RenderStateShard.LIGHTMAP)
-            .setOverlayState(RenderStateShard.OVERLAY)
-            .setCullState(RenderStateShard.CULL)
-            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
-            .createCompositeState(true)
-    ));
+    private static final RenderPipeline BLOCK_SHELL = shell("clear_block", RenderPipelines.TRANSLUCENT_BLOCK);
+    private static final RenderPipeline MOLDED_SHELL = shell("clear_molded", RenderPipelines.ENTITY_TRANSLUCENT_CULL);
+    private static final RenderType BLOCK = type("clear_block", BLOCK_SHELL, TextureAtlas.LOCATION_BLOCKS, false);
+    private static final RenderType FLUID = type("clear_fluid", RenderPipelines.TRANSLUCENT_BLOCK, TextureAtlas.LOCATION_BLOCKS, false);
+    private static final RenderType MOLDED_FLUID = type("molded_fluid", RenderPipelines.ENTITY_TRANSLUCENT_CULL, TextureAtlas.LOCATION_BLOCKS, true);
+    private static final Function<Identifier, RenderType> MOLDED = Util.memoize(texture -> type("clear_molded", MOLDED_SHELL, texture, true));
+
+    private static RenderPipeline shell(String name, RenderPipeline base) {
+        return base.toBuilder().withLocation(AnvilcraftPlasticraft.of("pipeline/" + name))
+            .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, false)).build();
+    }
+
+    private static RenderType type(String name, RenderPipeline pipeline, Identifier texture, boolean overlay) {
+        var setup = RenderSetup.builder(pipeline).withTexture("Sampler0", texture).useLightmap().sortOnUpload()
+            .setOutputTarget(OutputTarget.ITEM_ENTITY_TARGET);
+        if (overlay) {
+            setup.useOverlay();
+        }
+        return RenderType.create("anvilcraftplasticraft:" + name, setup.createRenderSetup());
+    }
+
+    public static void register(RegisterRenderPipelinesEvent event) {
+        event.registerPipeline(BLOCK_SHELL);
+        event.registerPipeline(MOLDED_SHELL);
+    }
+
     private ClearPlasticRenderTypes() {
     }
 
@@ -106,7 +63,7 @@ public final class ClearPlasticRenderTypes {
         return MOLDED_FLUID;
     }
 
-    public static RenderType molded(ResourceLocation texture) {
+    public static RenderType molded(Identifier texture) {
         return MOLDED.apply(texture);
     }
 

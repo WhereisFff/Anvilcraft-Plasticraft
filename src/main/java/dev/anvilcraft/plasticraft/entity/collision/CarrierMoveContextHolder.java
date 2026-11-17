@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.entity.collision;
 
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 public interface CarrierMoveContextHolder {
     @Nullable

@@ -10,14 +10,14 @@ import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintLibrary;
 import dev.anvilcraft.plasticraft.molding.model.MoldingVec3;
 import dev.anvilcraft.plasticraft.network.MoldingBlueprintListRequestPacket;
 import dev.anvilcraft.plasticraft.network.MoldingBlueprintUploadPacket;
-import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.util.Util;
 import net.minecraft.world.entity.player.Player;
-import net.neoforged.neoforge.network.PacketDistributor;
-import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.client.network.ClientPacketDistributor;
+import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -174,7 +174,7 @@ public final class MoldingBlueprintClientFiles {
             }
             if (context.listRefreshNeeded) {
                 context.listRefreshNeeded = false;
-                PacketDistributor.sendToServer(new MoldingBlueprintListRequestPacket(
+                ClientPacketDistributor.sendToServer(new MoldingBlueprintListRequestPacket(
                     context.chamberPos,
                     context.sessionId
                 ));
@@ -268,7 +268,7 @@ public final class MoldingBlueprintClientFiles {
         MoldingVec3 translation
     ) {
         context.inFlight.put(path, stamp);
-        PacketDistributor.sendToServer(new MoldingBlueprintUploadPacket(
+        ClientPacketDistributor.sendToServer(new MoldingBlueprintUploadPacket(
             context.chamberPos,
             context.sessionId,
             path.getFileName().toString(),

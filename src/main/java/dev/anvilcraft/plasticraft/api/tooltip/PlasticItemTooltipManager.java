@@ -19,11 +19,11 @@ import dev.dubhe.anvilcraft.init.item.ModComponents;
 import dev.dubhe.anvilcraft.item.property.component.SavedEntity;
 import dev.dubhe.anvilcraft.util.ResentmentUtil;
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.Item;
@@ -40,8 +40,8 @@ import java.util.Map;
 public final class PlasticItemTooltipManager {
     public static final String DEMONSTRATION_TOOLTIP_KEY =
         "tooltip.anvilcraftplasticraft.molded_demonstration.shift";
-    private static final Map<ResourceLocation, String> NORMAL = new LinkedHashMap<>();
-    private static final Map<ResourceLocation, String> SHIFT = new LinkedHashMap<>();
+    private static final Map<Identifier, String> NORMAL = new LinkedHashMap<>();
+    private static final Map<Identifier, String> SHIFT = new LinkedHashMap<>();
     private static boolean initialized;
 
     private PlasticItemTooltipManager() {
@@ -199,12 +199,12 @@ public final class PlasticItemTooltipManager {
         );
     }
 
-    private static void registerNormal(ResourceLocation itemId, String description) {
+    private static void registerNormal(Identifier itemId, String description) {
         NORMAL.put(itemId, description);
     }
 
     private static void register(
-        ResourceLocation itemId,
+        Identifier itemId,
         String normalDescription,
         String shiftDescription
     ) {
@@ -213,13 +213,13 @@ public final class PlasticItemTooltipManager {
     }
 
     public static void addTooltip(ItemStack stack, Item.TooltipContext context, List<Component> tooltip) {
-        ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        Identifier itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         boolean specializedMoldedProduct = MoldedPlasticData.get(stack)
             .map(data -> !MoldingProductTypes.NORMAL_ID.equals(data.finalType()))
             .orElse(false);
         boolean demonstrationModel = specializedMoldedProduct
             && PlasticItemData.isDemonstrationModel(stack);
-        boolean shiftDown = Screen.hasShiftDown();
+        boolean shiftDown = Minecraft.getInstance().hasShiftDown();
         boolean showShiftHint = SHIFT.containsKey(itemId) || demonstrationModel || MoldingBlueprintDisk.hasBlueprintData(stack);
         int dynamicTooltipIndex = 1;
         if (showShiftHint) {
@@ -280,7 +280,7 @@ public final class PlasticItemTooltipManager {
                     : "tooltip.anvilcraftplasticraft.molding.structure_disk.too_large_for_chamber"
             ).withStyle(fitsChamber ? ChatFormatting.GREEN : ChatFormatting.RED));
         });
-        if (Screen.hasShiftDown() && MoldingBlueprintDisk.hasBlueprintData(stack)) {
+        if (Minecraft.getInstance().hasShiftDown() && MoldingBlueprintDisk.hasBlueprintData(stack)) {
             dynamicTooltip.add(Component.translatable("tooltip.anvilcraft.item.disk.clear").withStyle(ChatFormatting.GRAY));
         }
         if (stack.getItem() instanceof AbstractPlasticEntityItem<?>) {
@@ -404,19 +404,19 @@ public final class PlasticItemTooltipManager {
         return lines.length;
     }
 
-    public static String getTranslationKey(ResourceLocation itemId) {
+    public static String getTranslationKey(Identifier itemId) {
         return "tooltip.%s.item.%s".formatted(itemId.getNamespace(), itemId.getPath());
     }
 
-    public static String getTranslationKeyShift(ResourceLocation itemId) {
+    public static String getTranslationKeyShift(Identifier itemId) {
         return getTranslationKey(itemId) + ".shift";
     }
 
-    public static Map<ResourceLocation, String> getNormalMap() {
+    public static Map<Identifier, String> getNormalMap() {
         return Collections.unmodifiableMap(NORMAL);
     }
 
-    public static Map<ResourceLocation, String> getShiftMap() {
+    public static Map<Identifier, String> getShiftMap() {
         return Collections.unmodifiableMap(SHIFT);
     }
 }

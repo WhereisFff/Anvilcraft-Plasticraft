@@ -16,6 +16,12 @@ import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.inventory.PlasticMoldingChamberMenu;
 import dev.anvilcraft.plasticraft.item.PlasticMeltColor;
 import dev.anvilcraft.plasticraft.item.PlasticMoldingChamberItem;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingConvexFace;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingConvexHull;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingPreparedHull;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
+import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
 import dev.anvilcraft.plasticraft.molding.blueprint.BlueprintException;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprint;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintCodec;
@@ -24,20 +30,14 @@ import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintImporter;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintLibrary;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintService;
 import dev.anvilcraft.plasticraft.molding.blueprint.MoldingBlueprintSummary;
-import dev.anvilcraft.plasticraft.molding.bake.MoldingConvexFace;
-import dev.anvilcraft.plasticraft.molding.bake.MoldingConvexHull;
-import dev.anvilcraft.plasticraft.molding.bake.MoldingModelBaker;
-import dev.anvilcraft.plasticraft.molding.bake.MoldingPreparedHull;
-import dev.anvilcraft.plasticraft.molding.bake.MoldingQuad;
-import dev.anvilcraft.plasticraft.molding.bake.MoldingVolumeMask;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingFormingMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingMachineAction;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintedGeometry;
-import dev.anvilcraft.plasticraft.molding.machine.MoldingProcessSnapshot;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrinterMotion;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingPlan;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPrintingVoxel;
+import dev.anvilcraft.plasticraft.molding.machine.MoldingProcessSnapshot;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingProductionMode;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingWaitReason;
 import dev.anvilcraft.plasticraft.molding.model.EditableMoldingModel;
@@ -56,14 +56,14 @@ import dev.dubhe.anvilcraft.item.property.component.StoredItem;
 import dev.dubhe.anvilcraft.item.property.component.StructureDiskData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.gametest.framework.GameTest;
-import net.minecraft.gametest.framework.GameTestAssertException;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingInput;
@@ -82,9 +82,13 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.item.ItemResource;
+import net.neoforged.neoforge.transfer.transaction.Transaction;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
+import net.neoforged.testframework.gametest.GameTest;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -179,11 +183,11 @@ public final class PlasticMoldingChamberGameTests {
             Direction right = PlasticMoldingChamberStructure.right(placement.front());
             Direction back = PlasticMoldingChamberStructure.back(placement.front());
             check(
-                positiveX.subtract(origin).distanceTo(Vec3.atLowerCornerOf(right.getNormal())) <= EPSILON,
+                positiveX.subtract(origin).distanceTo(Vec3.atLowerCornerOf(right.getUnitVec3i())) <= EPSILON,
                 "local +X was mirrored away from the chamber right side"
             );
             check(
-                positiveZ.subtract(origin).distanceTo(Vec3.atLowerCornerOf(back.getNormal())) <= EPSILON,
+                positiveZ.subtract(origin).distanceTo(Vec3.atLowerCornerOf(back.getUnitVec3i())) <= EPSILON,
                 "local +Z was mirrored away from the chamber back side"
             );
         }
@@ -242,7 +246,7 @@ public final class PlasticMoldingChamberGameTests {
             instanceof PlasticMoldingChamberBlockEntity result
             ? result
             : null;
-        if (chamber == null) throw new GameTestAssertException("session test chamber block entity was missing");
+        if (chamber == null) throw new PlasticraftTestFailure("session test chamber block entity was missing");
 
         ServerPlayer firstPlayer = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         firstPlayer.setPos(controller.getCenter());
@@ -321,7 +325,7 @@ public final class PlasticMoldingChamberGameTests {
         check(chamber.requiredClayBalls() == 0, "editable chamber retained a clay reservation");
         check(chamber.clayLimit() == 256, "clay limit did not default to 256");
         check(chamber.setClayLimit(64, chamber.revision()).accepted(), "clay refill limit was rejected");
-        check(chamber.energyStorage().receiveEnergy(MoldingPowerBridge.capacity(), false)
+        check(PlasticraftTestData.energy(chamber.energyStorage()).receiveEnergy(MoldingPowerBridge.capacity(), false)
             == MoldingPowerBridge.capacity(), "energy buffer did not accept one super-capacitor charge");
         chamber.inventory().setItem(
             PlasticMoldingChamberBlockEntity.CLAY_SLOT,
@@ -339,7 +343,7 @@ public final class PlasticMoldingChamberGameTests {
                 && chamber.moldFillFraction(0.0F) == chamber.moldFillFraction(0.75F),
             "missing clay pause did not retain exactly one complete layer");
         assertRegionShapes(chamber, 1);
-        ItemStack refillRemainder = chamber.clayItemHandler().insertItem(
+        ItemStack refillRemainder = PlasticraftTestData.items(chamber.clayItemHandler()).insertItem(
             0,
             new ItemStack(Items.CLAY_BALL, 64),
             false
@@ -351,7 +355,7 @@ public final class PlasticMoldingChamberGameTests {
         check(chamber.moldFillFraction(0.0F) == 2.0F / 3.0F,
             "second complete layer did not render as two thirds");
         assertRegionShapes(chamber, 2);
-        check(chamber.clayItemHandler().insertItem(0, new ItemStack(Items.CLAY_BALL, 64), false).getCount() == 30,
+        check(PlasticraftTestData.items(chamber.clayItemHandler()).insertItem(0, new ItemStack(Items.CLAY_BALL, 64), false).getCount() == 30,
             "third-layer refill exceeded the configured slot limit");
         tick(chamber, 1);
         check(chamber.machineState() == PlasticMoldingMachineState.MOLD_READY,
@@ -360,7 +364,17 @@ public final class PlasticMoldingChamberGameTests {
             "multi-refill mold did not preserve the exact clay requirement");
         assertRegionShapes(chamber, 3);
 
-        IFluidHandler fluids = chamber.fluidHandler();
+        var fluidPort = chamber.fluidHandler();
+        var resin = FluidResource.of(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get());
+        try (var transaction = Transaction.openRoot()) {
+            check(fluidPort.insert(0, resin, 500, transaction) == 500, "暂存槽拒绝了试算中的熔体");
+            try (var nested = Transaction.open(transaction)) {
+                check(fluidPort.extract(0, resin, 200, nested) == 200, "嵌套事务无法取出本次加入的熔体");
+            }
+            check(chamber.stagingFluidAmount() == 500, "嵌套事务回滚后暂存槽数量错误");
+        }
+        check(chamber.stagingFluidAmount() == 0, "未提交的熔体进入了成型舱暂存槽");
+        IFluidHandler fluids = PlasticraftTestData.fluids(chamber.fluidHandler());
         FluidStack melt = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 8000);
         check(fluids.fill(melt, IFluidHandler.FluidAction.EXECUTE) == 8000,
             "staging tank did not accept 8 B of plastic melt");
@@ -377,7 +391,7 @@ public final class PlasticMoldingChamberGameTests {
         check(fluids.fill(redMelt, IFluidHandler.FluidAction.EXECUTE) == 0,
             "staging tank mixed a different batch colour");
         MoldingProcessSnapshot snapshot = chamber.beginProcessing().orElseThrow(
-            () -> new GameTestAssertException("process-ready chamber refused a snapshot")
+            () -> new PlasticraftTestFailure("process-ready chamber refused a snapshot")
         );
         int afterBegin = chamber.energyStored();
         check(chamber.finishProcessing(snapshot, false), "failed processing snapshot did not roll back");
@@ -453,11 +467,11 @@ public final class PlasticMoldingChamberGameTests {
             PlasticMoldingChamberBlockEntity.CLAY_SLOT,
             new ItemStack(Items.CLAY_BALL, 202)
         );
-        chamber.energyStorage().receiveEnergy(MoldingPowerBridge.capacity(), false);
+        PlasticraftTestData.energy(chamber.energyStorage()).receiveEnergy(MoldingPowerBridge.capacity(), false);
         check(chamber.requestLock().accepted(), "batch return model did not lock");
         tick(chamber, PlasticMoldingChamberBlockEntity.MOLD_FILL_TICKS);
 
-        IFluidHandler fluids = chamber.fluidHandler();
+        IFluidHandler fluids = PlasticraftTestData.fluids(chamber.fluidHandler());
         FluidStack melt = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 8000);
         check(fluids.fill(melt, IFluidHandler.FluidAction.EXECUTE) == 8000,
             "batch return staging tank did not fill");
@@ -491,7 +505,7 @@ public final class PlasticMoldingChamberGameTests {
             PlasticMoldingChamberBlockEntity.CLAY_SLOT,
             new ItemStack(Items.CLAY_BALL, 64)
         );
-        chamber.energyStorage().receiveEnergy(MoldingPowerBridge.energyPerWorkingTick(), false);
+        PlasticraftTestData.energy(chamber.energyStorage()).receiveEnergy(MoldingPowerBridge.energyPerWorkingTick(), false);
         ServerPlayer blocker = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         blocker.setPos(PlasticMoldingChamberStructure.regionBounds(
             chamber.getBlockPos(),
@@ -530,12 +544,12 @@ public final class PlasticMoldingChamberGameTests {
         PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
         check(chamber.replaceEditableModel(cubeModel(48.0D), chamber.revision()).accepted(),
             "maximum model was rejected");
-        chamber.energyStorage().receiveEnergy(MoldingPowerBridge.capacity(), false);
+        PlasticraftTestData.energy(chamber.energyStorage()).receiveEnergy(MoldingPowerBridge.capacity(), false);
         check(chamber.requestLock().accepted(), "maximum model did not lock");
         tick(chamber, PlasticMoldingChamberBlockEntity.MOLD_FILL_TICKS);
         check(chamber.batchFluidCapacity() == 27648, "maximum model batch capacity was not 27648 mB");
 
-        IFluidHandler fluids = chamber.fluidHandler();
+        IFluidHandler fluids = PlasticraftTestData.fluids(chamber.fluidHandler());
         FluidStack melt = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 8000);
         check(fluids.fill(melt, IFluidHandler.FluidAction.EXECUTE) == 8000,
             "maximum model staging tank did not fill");
@@ -561,39 +575,40 @@ public final class PlasticMoldingChamberGameTests {
         PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
         check(chamber.clayLimit() == 256, "clay limit did not default to 256");
         ItemStack fullStack = new ItemStack(Items.CLAY_BALL, 256);
-        check(chamber.clayItemHandler().insertItem(0, fullStack, false).isEmpty(),
+        check(PlasticraftTestData.items(chamber.clayItemHandler()).insertItem(0, fullStack, false).isEmpty(),
             "clay capability retained the item default stack limit");
-        check(chamber.clayItemHandler().getStackInSlot(0).getCount() == 256,
+        check(PlasticraftTestData.items(chamber.clayItemHandler()).getStackInSlot(0).getCount() == 256,
             "clay capability did not retain 256 balls");
         ItemStack synchronizedStack = new ItemStack(Items.CLAY_BALL, 256);
         var synchronizedInventory = PlasticMoldingChamberBlockEntity.createInventory();
         synchronizedInventory.setItem(PlasticMoldingChamberBlockEntity.CLAY_SLOT, synchronizedStack);
         check(synchronizedInventory.getItem(PlasticMoldingChamberBlockEntity.CLAY_SLOT).getCount() == 256,
             "client-side menu inventory truncated a synchronized clay stack to 64");
-        check(chamber.clayItemHandler().insertItem(0, new ItemStack(Items.CLAY_BALL), false).getCount() == 1,
+        check(PlasticraftTestData.items(chamber.clayItemHandler()).insertItem(0, new ItemStack(Items.CLAY_BALL), false).getCount() == 1,
             "clay capability exceeded its default 256-ball limit");
         PlasticMoldingChamberBlockEntity fullRestored = new PlasticMoldingChamberBlockEntity(
             PlasticraftBlockEntities.PLASTIC_MOLDING_CHAMBER.get(),
             chamber.getBlockPos(),
             chamber.getBlockState()
         );
-        fullRestored.loadWithComponents(
-            chamber.saveWithoutMetadata(helper.getLevel().registryAccess()),
-            helper.getLevel().registryAccess()
-        );
+        PlasticraftTestData.read(helper.getLevel().registryAccess(), chamber.saveWithoutMetadata(helper.getLevel().registryAccess()), fullRestored::loadWithComponents);
         check(fullRestored.inventory().getItem(PlasticMoldingChamberBlockEntity.CLAY_SLOT).getCount() == 256,
             "save/load truncated the 256-ball clay stack");
-        chamber.clayItemHandler().extractItem(0, 256, false);
+        try (var tx = Transaction.openRoot()) {
+            check(chamber.clayItemHandler().extract(0, ItemResource.of(Items.CLAY_BALL), 256, tx) == 256,
+                "黏土端口未能取出完整的超大堆叠");
+            tx.commit();
+        }
         check(chamber.setClayLimit(1, chamber.revision()).accepted(), "valid clay limit was rejected");
-        ItemStack remainder = chamber.clayItemHandler().insertItem(
+        ItemStack remainder = PlasticraftTestData.items(chamber.clayItemHandler()).insertItem(
             0,
             new ItemStack(Items.CLAY_BALL, 2),
             false
         );
-        check(remainder.getCount() == 1 && chamber.clayItemHandler().getStackInSlot(0).getCount() == 1,
+        check(remainder.getCount() == 1 && PlasticraftTestData.items(chamber.clayItemHandler()).getStackInSlot(0).getCount() == 1,
             "clay capability inserted a second ball above limit one");
         ItemStack nonClay = new ItemStack(Items.STONE, 1);
-        check(ItemStack.matches(chamber.clayItemHandler().insertItem(0, nonClay, false), nonClay),
+        check(ItemStack.matches(PlasticraftTestData.items(chamber.clayItemHandler()).insertItem(0, nonClay, false), nonClay),
             "clay filter accepted another item");
 
         PlasticMoldingChamberBlockEntity restored = new PlasticMoldingChamberBlockEntity(
@@ -601,10 +616,7 @@ public final class PlasticMoldingChamberGameTests {
             chamber.getBlockPos(),
             chamber.getBlockState()
         );
-        restored.handleUpdateTag(
-            chamber.getUpdateTag(helper.getLevel().registryAccess()),
-            helper.getLevel().registryAccess()
-        );
+        PlasticraftTestData.read(helper.getLevel().registryAccess(), chamber.getUpdateTag(helper.getLevel().registryAccess()), restored::handleUpdateTag);
         check(restored.clayLimit() == 1, "client/reload tag lost the clay slot limit");
 
         check(chamber.replaceEditableModel(cubeModel(8.0D), chamber.revision()).accepted(),
@@ -675,7 +687,7 @@ public final class PlasticMoldingChamberGameTests {
             PlasticMoldingChamberBlockEntity.CLAY_SLOT,
             new ItemStack(Items.CLAY_BALL, 64)
         );
-        chamber.energyStorage().receiveEnergy(MoldingPowerBridge.capacity(), false);
+        PlasticraftTestData.energy(chamber.energyStorage()).receiveEnergy(MoldingPowerBridge.capacity(), false);
         check(
             helper.getLevel().getBlockState(chamber.getBlockPos().above())
                 .getValue(Plastic3DPrintingComponentBlock.POWERED),
@@ -685,7 +697,7 @@ public final class PlasticMoldingChamberGameTests {
         check(chamber.requiredClayBalls() == 0 && chamber.moldedClayBalls() == 0,
             "printing reserved clay");
         check(chamber.batchFluidCapacity() == 333, "printing model did not calculate its full 333 mB batch");
-        check(chamber.fluidHandler().fill(
+        check(PlasticraftTestData.fluids(chamber.fluidHandler()).fill(
             new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 333),
             IFluidHandler.FluidAction.EXECUTE
         ) == 333, "printing staging tank rejected its melt");
@@ -1069,7 +1081,7 @@ public final class PlasticMoldingChamberGameTests {
         Plastic3DPrintingComponentBlockEntity component = helper.getLevel().getBlockEntity(
             chamber.getBlockPos().above()
         ) instanceof Plastic3DPrintingComponentBlockEntity result ? result : null;
-        if (component == null) throw new GameTestAssertException("printing component block entity was missing");
+        if (component == null) throw new PlasticraftTestFailure("printing component block entity was missing");
         FluidStack fullComponent = new FluidStack(
             PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(),
             Plastic3DPrintingComponentBlockEntity.CAPACITY
@@ -1173,7 +1185,7 @@ public final class PlasticMoldingChamberGameTests {
         );
         ItemStack disk = chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.DISK_SLOT);
         MoldingBlueprint embedded = MoldingBlueprintDisk.read(disk).orElseThrow(
-            () -> new GameTestAssertException("stored disk did not contain a valid embedded blueprint")
+            () -> new PlasticraftTestFailure("stored disk did not contain a valid embedded blueprint")
         );
         check(MoldingBlueprintDisk.hasBlueprintData(disk),
             "stored structure disk was missing the lightweight molding blueprint marker");
@@ -1183,7 +1195,7 @@ public final class PlasticMoldingChamberGameTests {
         check(embedded.ownerId().equals(player.getUUID()), "disk owner was not the player who clicked store");
         check(embedded.modelHash().equals(chamber.bakedModel().modelHash()), "disk hash did not match the locked model");
         MoldingBlueprint shared = MoldingBlueprintLibrary.read(
-            player.getServer(),
+            player.level().getServer(),
             stored.selectedFileId(),
             stored.fileRevision()
         );
@@ -1215,7 +1227,7 @@ public final class PlasticMoldingChamberGameTests {
                 "sneak-use left data or a display item on the cleared structure disk in " + hand);
             check(MoldingBlueprintDisk.read(originalDisk).orElseThrow().modelHash().equals(embedded.modelHash()),
                 "clearing a copied disk changed the original embedded model");
-            check(MoldingBlueprintLibrary.read(player.getServer(), stored.selectedFileId(), stored.fileRevision())
+            check(MoldingBlueprintLibrary.read(player.level().getServer(), stored.selectedFileId(), stored.fileRevision())
                     .modelHash().equals(embedded.modelHash()),
                 "clearing a disk deleted or changed its shared model");
             player.setItemInHand(hand, ItemStack.EMPTY);
@@ -1243,7 +1255,7 @@ public final class PlasticMoldingChamberGameTests {
             true
         );
         check(MoldingBlueprintDisk.read(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.DISK_SLOT))
-                .orElseThrow(() -> new GameTestAssertException("confirmed store erased the disk blueprint"))
+                .orElseThrow(() -> new PlasticraftTestFailure("confirmed store erased the disk blueprint"))
                 .modelHash().equals(chamber.bakedModel().modelHash()),
             "confirmed store did not replace the disk model");
         MoldingBlueprintLibrary.delete(player, overwritten.selectedFileId(), overwritten.fileRevision());
@@ -1269,7 +1281,7 @@ public final class PlasticMoldingChamberGameTests {
 
         MoldingBlueprintLibrary.delete(player, stored.selectedFileId(), stored.fileRevision());
         FluidStack melt = new FluidStack(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 500);
-        check(chamber.fluidHandler().fill(melt, IFluidHandler.FluidAction.EXECUTE) == 500,
+        check(PlasticraftTestData.fluids(chamber.fluidHandler()).fill(melt, IFluidHandler.FluidAction.EXECUTE) == 500,
             "staging tank rejected the disk-load preservation fluid");
         String diskToken = MoldingBlueprintDisk.stateToken(restoredDisk);
         BlueprintException confirmation = expectBlueprintFailure(() -> MoldingBlueprintService.loadDiskModel(
@@ -1297,7 +1309,7 @@ public final class PlasticMoldingChamberGameTests {
         MoldingBlueprint oversizedBlueprint = MoldingBlueprint.create(
             oversizedModel,
             player.getUUID(),
-            player.getGameProfile().getName(),
+            player.getGameProfile().name(),
             System.currentTimeMillis()
         );
         ItemStack blockStructureDisk = originalDisk.copy();
@@ -1459,18 +1471,18 @@ public final class PlasticMoldingChamberGameTests {
     @EmptyTemplate(value = "15x7x15", floor = true)
     @TestHolder(description = "Crafted chambers inherit full or empty super-capacitor energy")
     static void craftingInheritsSuperCapacitorEnergy(ExtendedGameTestHelper helper) {
-        CraftingRecipe recipe = helper.getLevel().getRecipeManager()
-            .byKey(AnvilcraftPlasticraft.of("plastic_molding_chamber"))
+        CraftingRecipe recipe = helper.getLevel().recipeAccess()
+            .byKey(ResourceKey.create(Registries.RECIPE, AnvilcraftPlasticraft.of("plastic_molding_chamber")))
             .filter(holder -> holder.value() instanceof CraftingRecipe)
             .map(holder -> (CraftingRecipe) holder.value())
-            .orElseThrow(() -> new GameTestAssertException("plastic molding chamber recipe was not loaded"));
+            .orElseThrow(() -> new PlasticraftTestFailure("plastic molding chamber recipe was not loaded"));
         CraftingInput chargedInput = moldingChamberCraftingInput(ModItems.SUPER_CAPACITOR.asStack());
         CraftingInput emptyInput = moldingChamberCraftingInput(ModItems.SUPER_CAPACITOR_EMPTY.asStack());
         check(recipe.matches(chargedInput, helper.getLevel()), "charged super-capacitor recipe did not match");
         check(recipe.matches(emptyInput, helper.getLevel()), "empty super-capacitor recipe did not match");
 
-        ItemStack chargedResult = recipe.assemble(chargedInput, helper.getLevel().registryAccess());
-        ItemStack emptyResult = recipe.assemble(emptyInput, helper.getLevel().registryAccess());
+        ItemStack chargedResult = recipe.assemble(chargedInput);
+        ItemStack emptyResult = recipe.assemble(emptyInput);
         check(chargedResult.is(PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.asItem()),
             "charged recipe produced the wrong item");
         check(emptyResult.is(PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.asItem()),
@@ -1564,7 +1576,7 @@ public final class PlasticMoldingChamberGameTests {
             "Creative Generator did not commit both overrides");
         check(chamber.inventory().getItem(PlasticMoldingChamberBlockEntity.RESOURCE_SLOT).getCount() == 2,
             "Creative Generator was consumed before processing began");
-        check(chamber.energyStorage().receiveEnergy(MoldingPowerBridge.capacity(), false)
+        check(PlasticraftTestData.energy(chamber.energyStorage()).receiveEnergy(MoldingPowerBridge.capacity(), false)
                 == MoldingPowerBridge.capacity(),
             "creative processing test could not charge the chamber");
 
@@ -1573,7 +1585,7 @@ public final class PlasticMoldingChamberGameTests {
             "creative override without melt did not reach process-ready state");
         check(chamber.batchFluidAmount() == 0, "creative override unexpectedly filled the forming batch");
         MoldingProcessSnapshot snapshot = chamber.beginProcessing().orElseThrow(
-            () -> new GameTestAssertException("creative override refused a processing snapshot without melt")
+            () -> new PlasticraftTestFailure("creative override refused a processing snapshot without melt")
         );
         check(snapshot.creativeOverride() && snapshot.typeOverride(),
             "creative processing snapshot lost its overrides");
@@ -1591,36 +1603,36 @@ public final class PlasticMoldingChamberGameTests {
     @TestHolder(description = "Vertical faces expose only fluid while GUI cursor buckets ignore the main hand")
     static void verticalFluidCapabilitiesAndCursorBucket(ExtendedGameTestHelper helper) {
         PlasticMoldingChamberBlockEntity chamber = placeChamber(helper, new BlockPos(4, 2, 2));
-        IFluidHandler top = helper.getLevel().getCapability(
-            Capabilities.FluidHandler.BLOCK,
+        IFluidHandler top = PlasticraftTestData.fluids(helper.getLevel().getCapability(
+            Capabilities.Fluid.BLOCK,
             chamber.getBlockPos(),
             Direction.UP
-        );
-        IFluidHandler bottom = helper.getLevel().getCapability(
-            Capabilities.FluidHandler.BLOCK,
+        ));
+        IFluidHandler bottom = PlasticraftTestData.fluids(helper.getLevel().getCapability(
+            Capabilities.Fluid.BLOCK,
             chamber.getBlockPos(),
             Direction.DOWN
-        );
-        IFluidHandler horizontal = helper.getLevel().getCapability(
-            Capabilities.FluidHandler.BLOCK,
+        ));
+        IFluidHandler horizontal = PlasticraftTestData.fluids(helper.getLevel().getCapability(
+            Capabilities.Fluid.BLOCK,
             chamber.getBlockPos(),
             Direction.NORTH
-        );
-        IItemHandler topItems = helper.getLevel().getCapability(
-            Capabilities.ItemHandler.BLOCK,
+        ));
+        IItemHandler topItems = PlasticraftTestData.items(helper.getLevel().getCapability(
+            Capabilities.Item.BLOCK,
             chamber.getBlockPos(),
             Direction.UP
-        );
-        IItemHandler bottomItems = helper.getLevel().getCapability(
-            Capabilities.ItemHandler.BLOCK,
+        ));
+        IItemHandler bottomItems = PlasticraftTestData.items(helper.getLevel().getCapability(
+            Capabilities.Item.BLOCK,
             chamber.getBlockPos(),
             Direction.DOWN
-        );
-        IItemHandler horizontalItems = helper.getLevel().getCapability(
-            Capabilities.ItemHandler.BLOCK,
+        ));
+        IItemHandler horizontalItems = PlasticraftTestData.items(helper.getLevel().getCapability(
+            Capabilities.Item.BLOCK,
             chamber.getBlockPos(),
             Direction.NORTH
-        );
+        ));
         check(top != null, "top face did not expose the chamber fluid capability");
         check(bottom != null, "bottom face did not expose the chamber fluid capability");
         check(horizontal == null, "horizontal face exposed the chamber fluid capability");
@@ -1680,18 +1692,18 @@ public final class PlasticMoldingChamberGameTests {
             "Pin First " + suffix,
             cubeModel(6.0D).withName("Pin First " + suffix),
             owner.getUUID(),
-            owner.getGameProfile().getName(),
+            owner.getGameProfile().name(),
             System.currentTimeMillis()
         );
         MoldingBlueprint second = MoldingBlueprint.create(
             "Pin Second " + suffix,
             cubeModel(7.0D).withName("Pin Second " + suffix),
             owner.getUUID(),
-            owner.getGameProfile().getName(),
+            owner.getGameProfile().name(),
             System.currentTimeMillis()
         );
-        MoldingBlueprintLibrary.StoredBlueprint firstFile = MoldingBlueprintLibrary.saveNew(owner.getServer(), first);
-        MoldingBlueprintLibrary.StoredBlueprint secondFile = MoldingBlueprintLibrary.saveNew(owner.getServer(), second);
+        MoldingBlueprintLibrary.StoredBlueprint firstFile = MoldingBlueprintLibrary.saveNew(owner.level().getServer(), first);
+        MoldingBlueprintLibrary.StoredBlueprint secondFile = MoldingBlueprintLibrary.saveNew(owner.level().getServer(), second);
         MoldingBlueprintLibrary.StoredBlueprint currentFirst = firstFile;
         MoldingBlueprintLibrary.StoredBlueprint copy = null;
         try {
@@ -1723,7 +1735,7 @@ public final class PlasticMoldingChamberGameTests {
             check(copy.blueprint().modelHash().equals(firstFile.blueprint().modelHash()), "shared copy changed model content");
             check(!copy.fileId().equals(firstFile.fileId()), "shared copy overwrote its source file");
             BlueprintException unsafe = expectBlueprintFailure(() ->
-                MoldingBlueprintLibrary.read(owner.getServer(), "../escape.json", 0L)
+                MoldingBlueprintLibrary.read(owner.level().getServer(), "../escape.json", 0L)
             );
             check(unsafe.reason().equals("unsafe_filename"), "path traversal did not return a filename error");
 
@@ -1764,12 +1776,12 @@ public final class PlasticMoldingChamberGameTests {
             ));
             check(taken.reason().equals("blueprint_name_taken"), "conflicting rename did not report a taken filename");
 
-            Path root = MoldingBlueprintLibrary.libraryRoot(owner.getServer());
+            Path root = MoldingBlueprintLibrary.libraryRoot(owner.level().getServer());
             String diskRenamedId = "disk-renamed-" + suffix + ".json";
             Files.move(root.resolve(renamed.fileId()), root.resolve(diskRenamedId), StandardCopyOption.ATOMIC_MOVE);
             currentFirst = new MoldingBlueprintLibrary.StoredBlueprint(
                 diskRenamedId,
-                MoldingBlueprintLibrary.read(owner.getServer(), diskRenamedId, 0L)
+                MoldingBlueprintLibrary.read(owner.level().getServer(), diskRenamedId, 0L)
             );
             check(MoldingBlueprintLibrary.list(owner).stream().anyMatch(summary -> summary.fileId().equals(diskRenamedId)),
                 "list did not pick up a filesystem rename");
@@ -1976,7 +1988,7 @@ public final class PlasticMoldingChamberGameTests {
             "production test chamber placement failed");
         PlasticMoldingChamberBlockEntity chamber = helper.getLevel().getBlockEntity(controller)
             instanceof PlasticMoldingChamberBlockEntity result ? result : null;
-        if (chamber == null) throw new GameTestAssertException("production test chamber block entity was missing");
+        if (chamber == null) throw helper.assertionException("production test chamber block entity was missing");
         tick(chamber, 1);
         check(chamber.structureComplete(), "production test chamber structure was incomplete");
         return chamber;
@@ -2060,7 +2072,7 @@ public final class PlasticMoldingChamberGameTests {
         } catch (BlueprintException exception) {
             return exception;
         }
-        throw new GameTestAssertException("Expected blueprint operation to fail");
+        throw new PlasticraftTestFailure("Expected blueprint operation to fail");
     }
 
     private static int summaryIndex(List<MoldingBlueprintSummary> summaries, String fileId) {
@@ -2071,7 +2083,7 @@ public final class PlasticMoldingChamberGameTests {
     }
 
     private static void check(boolean condition, String message) {
-        if (!condition) throw new GameTestAssertException(message);
+        if (!condition) throw new PlasticraftTestFailure(message);
     }
 
     private static EditableMoldingModel rotatedCube(
@@ -2191,7 +2203,7 @@ public final class PlasticMoldingChamberGameTests {
                     if (onPlane(cap.first(), origin, normal)
                         && onPlane(cap.second(), origin, normal)
                         && onPlane(cap.third(), origin, normal)) {
-                        throw new GameTestAssertException(label + " placed a voxel cap on an original hull face");
+                        throw new PlasticraftTestFailure(label + " placed a voxel cap on an original hull face");
                     }
                 }
             }

@@ -1,13 +1,11 @@
 package dev.anvilcraft.plasticraft.client.renderer.molding;
 
-import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.plasticraft.client.molding.editor.ViewportTransform;
 import dev.anvilcraft.plasticraft.client.renderer.AntialiasedGuiLineRenderer;
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticGuiQuad;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import org.joml.Vector2f;
 import org.joml.Vector3d;
-import org.joml.Vector3f;
 
 /** 在小型 GUI 区域内绘制与建模相机朝向同步的正交方向立方体。 */
 public final class MoldingOrientationCubeRenderer {
@@ -40,7 +38,7 @@ public final class MoldingOrientationCubeRenderer {
     }
 
     public static void render(
-        GuiGraphics graphics,
+        GuiGraphicsExtractor graphics,
         ViewportTransform transform,
         double x,
         double y,
@@ -70,16 +68,13 @@ public final class MoldingOrientationCubeRenderer {
         double scale = Math.min(contentWidth / (maxX - minX), contentHeight / (maxY - minY));
         double centerX = x + width * 0.5D - (minX + maxX) * 0.5D * scale;
         double centerY = y + height * 0.5D - (minY + maxY) * 0.5D * scale;
-        MultiBufferSource.BufferSource buffers = graphics.bufferSource();
-        addFrontFaces(graphics, buffers, projected, frontCorner, centerX, centerY, scale);
-        graphics.flush();
+        addFrontFaces(graphics, projected, frontCorner, centerX, centerY, scale);
         for (Edge edge : EDGES) {
             if (edge.includes(rearCorner)) continue;
             Vector3d from = projected[edge.from];
             Vector3d to = projected[edge.to];
             AntialiasedGuiLineRenderer.add(
                 graphics,
-                buffers,
                 centerX + from.x * scale,
                 centerY + from.y * scale,
                 centerX + to.x * scale,
@@ -90,12 +85,10 @@ public final class MoldingOrientationCubeRenderer {
                 LINE_WIDTH * 0.5D
             );
         }
-        graphics.flush();
     }
 
     private static void addFrontFaces(
-        GuiGraphics graphics,
-        MultiBufferSource.BufferSource buffers,
+        GuiGraphicsExtractor graphics,
         Vector3d[] projected,
         int frontCorner,
         double centerX,
@@ -104,7 +97,6 @@ public final class MoldingOrientationCubeRenderer {
     ) {
         addFace(
             graphics,
-            buffers,
             projected,
             (frontCorner & 1) == 0 ? new int[] {0, 2, 6, 4} : new int[] {1, 5, 7, 3},
             centerX,
@@ -114,7 +106,6 @@ public final class MoldingOrientationCubeRenderer {
         );
         addFace(
             graphics,
-            buffers,
             projected,
             (frontCorner & 2) == 0 ? new int[] {0, 4, 5, 1} : new int[] {2, 3, 7, 6},
             centerX,
@@ -124,7 +115,6 @@ public final class MoldingOrientationCubeRenderer {
         );
         addFace(
             graphics,
-            buffers,
             projected,
             (frontCorner & 4) == 0 ? new int[] {0, 1, 3, 2} : new int[] {4, 6, 7, 5},
             centerX,
@@ -135,8 +125,7 @@ public final class MoldingOrientationCubeRenderer {
     }
 
     private static void addFace(
-        GuiGraphics graphics,
-        MultiBufferSource.BufferSource buffers,
+        GuiGraphicsExtractor graphics,
         Vector3d[] projected,
         int[] corners,
         double centerX,
@@ -144,17 +133,12 @@ public final class MoldingOrientationCubeRenderer {
         double scale,
         int color
     ) {
-        VertexConsumer consumer = buffers.getBuffer(RenderType.guiOverlay());
-        for (int index = corners.length - 1; index >= 0; index--) {
-            Vector3d point = projected[corners[index]];
-            Vector3f transformed = graphics.pose().last().pose().transformPosition(
-                (float) (centerX + point.x * scale),
-                (float) (centerY + point.y * scale),
-                0.0F,
-                new Vector3f()
-            );
-            consumer.addVertex(transformed.x, transformed.y, transformed.z).setColor(color);
+        Vector2f[] points = new Vector2f[4];
+        for (int index = 0; index < corners.length; index++) {
+            Vector3d point = projected[corners[corners.length - 1 - index]];
+            points[index] = new Vector2f((float) (centerX + point.x * scale), (float) (centerY + point.y * scale));
         }
+        PlasticGuiQuad.add(graphics, points, color, color, color, color);
     }
 
     private record Edge(int from, int to) {

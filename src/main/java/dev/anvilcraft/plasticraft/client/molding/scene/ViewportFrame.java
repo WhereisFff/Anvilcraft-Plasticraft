@@ -2,8 +2,8 @@ package dev.anvilcraft.plasticraft.client.molding.scene;
 
 import dev.anvilcraft.plasticraft.client.molding.editor.ViewportTransform;
 import net.minecraft.world.level.block.state.BlockState;
-import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
+import org.jspecify.annotations.Nullable;
 
 public record ViewportFrame(
     EditorSceneMesh scene,

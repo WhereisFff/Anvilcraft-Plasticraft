@@ -9,7 +9,7 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.projectile.ThrownPotion;
+import net.minecraft.world.entity.projectile.throwableitemprojectile.AbstractThrownPotion;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.alchemy.PotionContents;
@@ -18,7 +18,7 @@ import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
 
 /** 将飞溅范围内的高粘性树脂胶永久标记为不可见。 */
 public final class AdhesiveInvisibilityService {
-    private static final double HORIZONTAL_RANGE = ThrownPotion.SPLASH_RANGE;
+    private static final double HORIZONTAL_RANGE = AbstractThrownPotion.SPLASH_RANGE;
     private static final double VERTICAL_RANGE = 2.0D;
     private static final double RANGE_SQR = HORIZONTAL_RANGE * HORIZONTAL_RANGE;
 
@@ -26,7 +26,7 @@ public final class AdhesiveInvisibilityService {
     }
 
     public static void projectileImpact(ProjectileImpactEvent event) {
-        if (!(event.getProjectile() instanceof ThrownPotion potion)
+        if (!(event.getProjectile() instanceof AbstractThrownPotion potion)
             || !(potion.level() instanceof ServerLevel level)
             || !isInvisibilityPotion(potion.getItem())) {
             return;
@@ -118,7 +118,7 @@ public final class AdhesiveInvisibilityService {
     }
 
     private static Vec3 blockFaceCenter(BlockPos pos, Direction face) {
-        return Vec3.atCenterOf(pos).add(Vec3.atLowerCornerOf(face.getNormal()).scale(0.5D));
+        return Vec3.atCenterOf(pos).add(Vec3.atLowerCornerOf(face.getUnitVec3i()).scale(0.5D));
     }
 
     private static boolean withinSplash(Vec3 impact, Vec3 point) {

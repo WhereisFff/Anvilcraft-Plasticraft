@@ -11,6 +11,7 @@ import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.api.giantanvil.IShockEntity;
 import dev.dubhe.anvilcraft.api.giantanvil.ShockAnvilBehavior;
 import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.stats.Stats;
 import net.minecraft.util.Mth;
@@ -20,6 +21,7 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySelector;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -82,7 +84,7 @@ public class HardenedResinAnvilEntity extends AbstractPlasticEntity implements I
 
     @Override
     protected InteractionResult interactNormally(Player player, InteractionHand hand) {
-        if (this.level().isClientSide) return InteractionResult.SUCCESS;
+        if (this.level().isClientSide()) return InteractionResult.SUCCESS;
         if (!(player instanceof ServerPlayer serverPlayer)) return InteractionResult.PASS;
         HardenedResinAnvilMenu.open(serverPlayer, this);
         player.awardStat(Stats.INTERACT_WITH_ANVIL);
@@ -93,7 +95,7 @@ public class HardenedResinAnvilEntity extends AbstractPlasticEntity implements I
     @Override
     protected void onEntityImpact(Entity support, Direction impactDirection, float impactSpeed) {
         super.onEntityImpact(support, impactDirection, impactSpeed);
-        if (this.level().isClientSide
+        if (!(this.level() instanceof ServerLevel level) || !(support instanceof LivingEntity living)
             || !EntitySelector.NO_CREATIVE_OR_SPECTATOR.test(support)
             || !EntitySelector.LIVING_ENTITY_STILL_ALIVE.test(support)) {
             return;
@@ -102,15 +104,15 @@ public class HardenedResinAnvilEntity extends AbstractPlasticEntity implements I
         if (damage <= 0.0F) return;
 
         DamageSource source = this.damageSources().anvil(this);
-        if (support.isInvulnerableTo(source)) return;
+        if (living.isInvulnerableTo(level, source)) return;
         NeoForge.EVENT_BUS.post(new AnvilEvent.HurtEntity(
             this,
             PlasticEntityPhysics.landingPosition(this, impactDirection),
-            this.level(),
+            level,
             support,
             damage
         ));
-        support.hurt(source, damage);
+        living.hurtServer(level, source, damage);
     }
 
     /** 五格自由落体从一伤害起步，树脂铁砧锤的 2.5 速度恰好落在十伤害档。 */

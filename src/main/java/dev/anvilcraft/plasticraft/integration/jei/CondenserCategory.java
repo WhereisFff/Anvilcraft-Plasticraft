@@ -17,7 +17,7 @@ import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
@@ -25,7 +25,7 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /** 冷凝收集的 JEI 页面：虚拟气体从左侧进入，冷凝塔从顶部收集并输出液体。 */
 public final class CondenserCategory implements IRecipeCategory<RecipeHolder<CondenserRecipe>> {
@@ -83,7 +83,7 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
         IFocusGroup focuses
     ) {
         CondenserRecipe recipe = holder.value();
-        Fluid fluid = BuiltInRegistries.FLUID.get(recipe.fluid());
+        Fluid fluid = BuiltInRegistries.FLUID.getValue(recipe.fluid());
         if (fluid == null || fluid == Fluids.EMPTY) return;
         builder.addSlot(RecipeIngredientRole.OUTPUT, 120, 24)
             .addFluidStack(fluid, recipe.produce());
@@ -106,7 +106,7 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
     public void draw(
         RecipeHolder<CondenserRecipe> holder,
         IRecipeSlotsView recipeSlotsView,
-        GuiGraphics graphics,
+        GuiGraphicsExtractor graphics,
         double mouseX,
         double mouseY
     ) {
@@ -115,10 +115,10 @@ public final class CondenserCategory implements IRecipeCategory<RecipeHolder<Con
         this.vaporDrawables.draw(graphics, recipe.gas(), 16, 24);
         this.arrowIn.draw(graphics, 48, 30);
         this.arrowOut.draw(graphics, 96, 29);
-        RenderSupport.renderBlock(graphics, this.tower, 81, 33, 10, 7.0F, RenderSupport.SINGLE_BLOCK);
+        RenderSupport.renderBlockAt(graphics, this.tower, 81, 33, 7f);
 
         Component output = Component.literal(recipe.produce() + " mB");
-        graphics.drawCenteredString(Minecraft.getInstance().font, output, 128, 45, 0xFFFFFFFF);
+        graphics.centeredText(Minecraft.getInstance().font, output, 128, 45, 0xFFFFFFFF);
     }
 
     @Override

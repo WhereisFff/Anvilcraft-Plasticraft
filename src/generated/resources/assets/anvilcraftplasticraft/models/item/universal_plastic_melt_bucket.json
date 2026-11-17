@@ -1,5 +1,0 @@
-{
-  "parent": "neoforge:item/bucket_drip",
-  "fluid": "anvilcraftplasticraft:universal_plastic_melt",
-  "loader": "neoforge:fluid_container"
-}

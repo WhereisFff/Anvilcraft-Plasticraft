@@ -3,14 +3,20 @@
   "ingredients": [
     {
       "components": {
-        "minecraft:custom_model_data": 1
-      },
-      "items": "anvilcraftplasticraft:resin_anvil",
-      "predicates": {
-        "anvillib:not": {
-          "anvilcraft:saved_entity": {}
+        "components": {
+          "minecraft:custom_model_data": {
+            "floats": [
+              1.0
+            ]
+          }
+        },
+        "predicates": {
+          "anvillib:not": {
+            "anvilcraft:saved_entity": {}
+          }
         }
-      }
+      },
+      "items": "anvilcraftplasticraft:resin_anvil"
     }
   ],
   "results": [
@@ -20,7 +26,11 @@
           "Magnetized": 1,
           "PlasticMaterial": "hardened_resin"
         },
-        "minecraft:custom_model_data": 1
+        "minecraft:custom_model_data": {
+          "floats": [
+            1.0
+          ]
+        }
       },
       "id": "anvilcraftplasticraft:hardend_resin_anvil"
     }

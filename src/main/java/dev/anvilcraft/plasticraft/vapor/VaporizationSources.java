@@ -1,6 +1,6 @@
 package dev.anvilcraft.plasticraft.vapor;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -11,14 +11,14 @@ import java.util.Objects;
 
 /** 大型炼药锅气化方法的全局注册表。 */
 public final class VaporizationSources {
-    private static final Map<ResourceLocation, VaporizationSource> SOURCES = new LinkedHashMap<>();
+    private static final Map<Identifier, VaporizationSource> SOURCES = new LinkedHashMap<>();
 
     private VaporizationSources() {
     }
 
     public static synchronized void register(VaporizationSource source) {
         Objects.requireNonNull(source, "source");
-        ResourceLocation id = Objects.requireNonNull(source.id(), "source.id()");
+        Identifier id = Objects.requireNonNull(source.id(), "source.id()");
         if (SOURCES.putIfAbsent(id, source) != null) {
             throw new IllegalArgumentException("A vaporization source is already registered as " + id);
         }

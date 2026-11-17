@@ -7,18 +7,18 @@ import dev.anvilcraft.plasticraft.entity.HardenedResinCauldronEntity;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlockEntities;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
+import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
+import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
+import dev.anvilcraft.plasticraft.recipe.CondenserGas;
+import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
 import dev.anvilcraft.plasticraft.recipe.EnhancedPlasmaJets;
+import dev.anvilcraft.plasticraft.recipe.EscapingVaporEffects;
 import dev.anvilcraft.plasticraft.vapor.IVaporConsumer;
 import dev.anvilcraft.plasticraft.vapor.LargeCauldronVaporHost;
 import dev.anvilcraft.plasticraft.vapor.VaporAction;
 import dev.anvilcraft.plasticraft.vapor.VaporCapabilities;
 import dev.anvilcraft.plasticraft.vapor.VaporStack;
 import dev.anvilcraft.plasticraft.vapor.VaporizationContext;
-import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
-import dev.anvilcraft.plasticraft.init.entity.PlasticraftEntities;
-import dev.anvilcraft.plasticraft.recipe.CondenserGas;
-import dev.anvilcraft.plasticraft.recipe.CondenserTowerProcess;
-import dev.anvilcraft.plasticraft.recipe.EscapingVaporEffects;
 import dev.dubhe.anvilcraft.api.event.AnvilEvent;
 import dev.dubhe.anvilcraft.block.LargeCauldronBlock;
 import dev.dubhe.anvilcraft.block.entity.LargeCauldronBlockEntity;
@@ -33,17 +33,17 @@ import dev.dubhe.anvilcraft.recipe.anvil.outcome.RoyalPreferenceOutcome;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.gametest.framework.GameTest;
-import net.minecraft.gametest.framework.GameTestAssertException;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.entity.npc.Villager;
-import net.minecraft.world.entity.npc.VillagerProfession;
+import net.minecraft.world.entity.npc.villager.Villager;
+import net.minecraft.world.entity.npc.villager.VillagerProfession;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -70,9 +70,11 @@ import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
+import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
+import net.neoforged.testframework.gametest.GameTest;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -294,13 +296,13 @@ public final class CondenserTowerGameTests {
         );
         check(vaporConsumer != null, "tower bottom center did not expose vapor capability");
         check(vaporConsumer.receiveVapor(
-                new VaporStack(ResourceLocation.fromNamespaceAndPath("test", "custom_vapor"), 250),
+                new VaporStack(Identifier.fromNamespaceAndPath("test", "custom_vapor"), 250),
                 VaporAction.SIMULATE,
                 new VaporizationContext((ServerLevel) helper.getLevel(), new LargeCauldronVaporHost(cauldron))
             ) == 250,
             "tower did not simulate accepting an addon-defined vapor");
         check(first.getGasAmount() == 0, "simulating vapor input changed the tower gas buffer");
-        check(first.getFluidHandler().getTankCapacity(0) == TOWER_CAPACITY,
+        check(PlasticraftTestData.fluids(first.getFluidHandler()).getTankCapacity(0) == TOWER_CAPACITY,
             "tower tank capacity is not 64 buckets");
         check(first.collect(new FluidStack(Fluids.WATER, 1_000)) == 1_000,
             "tower tank did not accept its internal collection API");
@@ -309,17 +311,17 @@ public final class CondenserTowerGameTests {
         BlockState bottomNorthState = helper.getLevel().getBlockState(bottomNorth);
         check(CondenserTowerBlockEntity.getMain(helper.getLevel(), bottomNorth, bottomNorthState) == first,
             "a non-center tower part did not resolve the main storage block entity");
-        IFluidHandler outward = CondenserTowerBlockEntity.capability(
+        IFluidHandler outward = PlasticraftTestData.fluids(CondenserTowerBlockEntity.capability(
             helper.getLevel(), bottomNorth, bottomNorthState, null, Direction.NORTH
-        );
-        IFluidHandler inward = CondenserTowerBlockEntity.capability(
+        ));
+        IFluidHandler inward = PlasticraftTestData.fluids(CondenserTowerBlockEntity.capability(
             helper.getLevel(), bottomNorth, bottomNorthState, null, Direction.SOUTH
-        );
+        ));
         BlockPos oldTopNorth = towerBase.offset(0, 2, -1);
         BlockState oldTopNorthState = helper.getLevel().getBlockState(oldTopNorth);
-        IFluidHandler oldTop = CondenserTowerBlockEntity.capability(
+        IFluidHandler oldTop = PlasticraftTestData.fluids(CondenserTowerBlockEntity.capability(
             helper.getLevel(), oldTopNorth, oldTopNorthState, null, Direction.NORTH
-        );
+        ));
         check(outward != null, "bottom north interface did not expose an outward fluid handler");
         check(inward == null, "bottom north interface exposed an inward fluid handler");
         check(oldTop == null, "old top north interface still exposed a fluid handler");
@@ -336,22 +338,22 @@ public final class CondenserTowerGameTests {
             first.getBlockPos(),
             first.getBlockState()
         );
-        restored.loadAdditional(updateTag, helper.getLevel().registryAccess());
+        PlasticraftTestData.read(helper.getLevel().registryAccess(), updateTag, restored::loadAdditional);
         check(restored.getStoredFluid().is(Fluids.WATER)
                 && restored.getStoredFluid().getAmount() == 750,
             "tower client update tag did not preserve the displayed storage amount");
 
-        check(helper.getLevel().getRecipeManager()
-                .byKey(AnvilcraftPlasticraft.of("condenser/gaseous_water_to_water")).isPresent(),
+        check(helper.getLevel().recipeAccess()
+                .byKey(ResourceKey.create(Registries.RECIPE, AnvilcraftPlasticraft.of("condenser/gaseous_water_to_water"))).isPresent(),
             "condenser collection recipe was not loaded");
-        check(helper.getLevel().getRecipeManager()
-                .byKey(AnvilcraftPlasticraft.of("condenser/gaseous_experience_to_experience_fluid")).isPresent(),
+        check(helper.getLevel().recipeAccess()
+                .byKey(ResourceKey.create(Registries.RECIPE, AnvilcraftPlasticraft.of("condenser/gaseous_experience_to_experience_fluid"))).isPresent(),
             "gaseous-experience condensation recipe was not loaded");
 
         setJet(helper.getLevel(), cauldronMain.below(2));
         check(first.collectGas(CondenserGas.GASEOUS_WATER, 250) == 250,
             "tower did not accept gaseous water");
-        check(first.getFluidHandler().fill(
+        check(PlasticraftTestData.fluids(first.getFluidHandler()).fill(
                 new FluidStack(Fluids.WATER, 250),
                 IFluidHandler.FluidAction.SIMULATE
             ) == 250,
@@ -375,7 +377,7 @@ public final class CondenserTowerGameTests {
         BlockPos base = new BlockPos(5, 2, 5);
         LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
         setJet(helper.getLevel(), cauldron.getBlockPos().below(2));
-        cauldron.getFluids().fill(
+        IFluidHandler.of(cauldron.getFluids()).fill(
             new FluidStack(ModFluids.EXP_FLUID.get(), 20),
             IFluidHandler.FluidAction.EXECUTE
         );
@@ -444,7 +446,7 @@ public final class CondenserTowerGameTests {
         Player lowerPlayer = addMockPlayer(helper, context.outletPos());
         Player topPlayer = addMockPlayer(helper, tower.getBlockPos().above(5).east(3));
         setJet(helper.getLevel(), cauldron.getBlockPos().below(2));
-        cauldron.getFluids().fill(
+        IFluidHandler.of(cauldron.getFluids()).fill(
             new FluidStack(ModFluids.EXP_FLUID.get(), 10),
             IFluidHandler.FluidAction.EXECUTE
         );
@@ -453,7 +455,7 @@ public final class CondenserTowerGameTests {
         check(tower.getGasAmount() == TOWER_CAPACITY && topPlayer.totalExperience == 0,
             "vapor escaped before the condenser gas buffer became full");
         CondenserTowerProcess.tickLargeCauldron((ServerLevel) helper.getLevel(), cauldron);
-        cauldron.getFluids().fill(
+        IFluidHandler.of(cauldron.getFluids()).fill(
             new FluidStack(ModFluids.EXP_FLUID.get(), 5),
             IFluidHandler.FluidAction.EXECUTE
         );
@@ -477,15 +479,15 @@ public final class CondenserTowerGameTests {
         LargeCauldronBlockEntity cauldron = placeLargeCauldron(helper, base);
         VaporizationContext context = new VaporizationContext((ServerLevel) helper.getLevel(), new LargeCauldronVaporHost(cauldron));
         Villager villager = new Villager(EntityType.VILLAGER, helper.getLevel());
-        villager.setVillagerData(villager.getVillagerData().setProfession(VillagerProfession.FARMER));
-        villager.moveTo(context.outletPos().getCenter());
+        villager.setVillagerData(villager.getVillagerData().withProfession(helper.getLevel().registryAccess(), VillagerProfession.FARMER));
+        villager.snapTo(context.outletPos().getCenter());
         check(helper.getLevel().addFreshEntity(villager), "failed to add the experience-absorbing villager");
 
         CondenserTowerProcess.absorbEscapingExperienceVapor(context, 63_999);
-        check(villager.getVillagerData().getLevel() == 4,
+        check(villager.getVillagerData().level() == 4,
             "the villager reached master before absorbing a full 64 B");
         CondenserTowerProcess.absorbEscapingExperienceVapor(context, 1);
-        check(villager.getVillagerData().getLevel() == 5 && villager.getVillagerXp() == 250,
+        check(villager.getVillagerData().level() == 5 && villager.getVillagerXp() == 250,
             "the villager did not reach master at exactly 64 B of gaseous experience");
         helper.succeed();
     }
@@ -666,7 +668,7 @@ public final class CondenserTowerGameTests {
             PlasticEntityOrientation.DEFAULT
         );
         pot.setNoGravity(true);
-        pot.getFluidHandler().fill(
+        PlasticraftTestData.fluids(pot.getFluidHandler()).fill(
             new FluidStack(ModFluids.OIL.get(), 1_000),
             IFluidHandler.FluidAction.EXECUTE
         );
@@ -681,8 +683,8 @@ public final class CondenserTowerGameTests {
         check(pot.anvilcraft$isIgnited(), "flint and steel did not ignite the oil-filled cauldron");
         check(flintAndSteel.getCount() == 1 && flintAndSteel.getDamageValue() == 1,
             "flint and steel was consumed or damaged incorrectly");
-        for (int slot = 0; slot < pot.getInput().getSlots(); slot++) {
-            check(pot.getInput().getStackInSlot(slot).isEmpty(),
+        for (int slot = 0; slot < PlasticraftTestData.items(pot.getInput()).getSlots(); slot++) {
+            check(PlasticraftTestData.items(pot.getInput()).getStackInSlot(slot).isEmpty(),
                 "flint and steel was inserted into cauldron input slot " + slot);
         }
         helper.succeed();
@@ -726,15 +728,15 @@ public final class CondenserTowerGameTests {
 
     private static Player addMockPlayer(ExtendedGameTestHelper helper, BlockPos feetPos) {
         Player player = helper.makeMockPlayer(GameType.SURVIVAL);
-        player.moveTo(feetPos.getCenter().subtract(0.0D, 0.5D, 0.0D));
+        player.snapTo(feetPos.getCenter().subtract(0.0D, 0.5D, 0.0D));
         check(helper.getLevel().addFreshEntity(player), "failed to add a vapor-absorbing mock player");
         return player;
     }
 
     private static int outputCount(LargeCauldronBlockEntity cauldron, Item item) {
         int count = 0;
-        for (int slot = 0; slot < cauldron.getOutputHandler().getSlots(); slot++) {
-            ItemStack stack = cauldron.getOutputHandler().getStackInSlot(slot);
+        for (int slot = 0; slot < cauldron.getOutputHandler().size(); slot++) {
+            ItemStack stack = IItemHandler.of(cauldron.getOutputHandler()).getStackInSlot(slot);
             if (stack.is(item)) count += stack.getCount();
         }
         return count;
@@ -747,7 +749,7 @@ public final class CondenserTowerGameTests {
                 return item;
             }
         }
-        throw new GameTestAssertException("royal preference selected no gem block");
+        throw new PlasticraftTestFailure("royal preference selected no gem block");
     }
 
     @GameTest(timeoutTicks = 20)
@@ -900,14 +902,14 @@ public final class CondenserTowerGameTests {
     }
 
     private static void check(boolean condition, String message) {
-        if (!condition) throw new GameTestAssertException(message);
+        if (!condition) throw new PlasticraftTestFailure(message);
     }
 
     /** 避免测试辅助方法中的重复强制转换掩盖结构未成功放置。 */
     private static final class BlockEntityLookup {
         private static void requireLargeCauldron(Level level, BlockPos pos) {
             if (!(level.getBlockEntity(pos) instanceof LargeCauldronBlockEntity)) {
-                throw new GameTestAssertException("large cauldron main block entity was not created");
+                throw new PlasticraftTestFailure("large cauldron main block entity was not created");
             }
         }
     }

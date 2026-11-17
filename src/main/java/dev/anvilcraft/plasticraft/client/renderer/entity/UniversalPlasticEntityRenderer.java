@@ -4,43 +4,39 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.anvilcraft.plasticraft.client.gui.screen.PlasticHammerScreen;
 import dev.anvilcraft.plasticraft.client.renderer.ClearPlasticRenderTypes;
-import dev.anvilcraft.plasticraft.client.renderer.DynamicPlasticTextureManager;
 import dev.anvilcraft.plasticraft.client.renderer.FluidRenderOpacity;
 import dev.anvilcraft.plasticraft.client.renderer.IgnitedFluidFlameRenderer;
-import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer.FluidLayerRenderPass;
 import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer.PreparedTankFluids;
-import dev.anvilcraft.plasticraft.client.renderer.PlasticOilCatalysisRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.MoldedPlasticMeshRenderer;
 import dev.anvilcraft.plasticraft.client.renderer.MoldedTrayComponentRenderer;
-import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticOilCatalysisRenderer;
+import dev.anvilcraft.plasticraft.client.renderer.PlasticRenderGeometry;
 import dev.anvilcraft.plasticraft.entity.MoldedLargeCauldronInteraction;
+import dev.anvilcraft.plasticraft.entity.UniversalPlasticEntity;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.molding.product.MoldedPlasticData;
 import dev.anvilcraft.plasticraft.molding.product.PlasticCauldronLayout;
 import dev.anvilcraft.plasticraft.molding.type.MoldingProductTypes;
 import dev.dubhe.anvilcraft.client.support.FluidRenderHelper;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.block.BlockRenderDispatcher;
-import net.minecraft.client.renderer.entity.EntityRenderer;
+import net.minecraft.client.renderer.Sheets;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.util.RandomSource;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
 import org.joml.Matrix3f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -50,28 +46,25 @@ import java.util.Map;
 import java.util.WeakHashMap;
 
 /** 只读取实体已同步显示状态的通用塑料实体渲染器。 */
-public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlasticEntity> {
+public class UniversalPlasticEntityRenderer extends PlasticEntityRenderer<UniversalPlasticEntity> {
     private static final double LIGHT_SAMPLE_OFFSET = 1.0E-4D;
     private static final Vec3 WORLD_UP = new Vec3(0.0D, 1.0D, 0.0D);
     private static final Map<UniversalPlasticEntity, GravitySample> GRAVITY_SAMPLES = new WeakHashMap<>();
     private static final Map<UniversalPlasticEntity, FluidMeshSample> FLUID_MESH_SAMPLES = new WeakHashMap<>();
     private static final Map<UniversalPlasticEntity, LightSample> LIGHT_SAMPLES = new WeakHashMap<>();
-    private final BlockRenderDispatcher dispatcher;
+
     private final RandomSource random = RandomSource.create();
 
     public UniversalPlasticEntityRenderer(EntityRendererProvider.Context context) {
         super(context);
-        this.shadowRadius = 0.0F;
-        this.dispatcher = context.getBlockRenderDispatcher();
     }
 
     @Override
-    public void render(
+    public void extractGeometry(
         UniversalPlasticEntity entity,
-        float yaw,
         float partialTick,
         PoseStack pose,
-        MultiBufferSource buffers,
+        PlasticRenderGeometry buffers,
         int packedLight
     ) {
         PlasticHammerScreen.HammerPreview preview = PlasticHammerScreen.getPreview(entity);
@@ -80,7 +73,6 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
             PlasticEntityRenderTransforms.applyPreview(pose, entity, preview.orientation());
             PlasticEntityRenderHelper.renderHammerPreviewModel(
                 entity,
-                this.dispatcher,
                 pose,
                 buffers,
                 preview.valid()
@@ -100,15 +92,13 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
             pose.popPose();
             pose.pushPose();
             PlasticEntityRenderTransforms.applyWorldAlignedPreview(pose, entity);
-            PlasticEntityRenderHelper.renderHammerAxis(entity, this.dispatcher, pose, buffers);
+            PlasticEntityRenderHelper.renderHammerAxis(entity, pose, buffers);
             pose.popPose();
-            super.render(entity, yaw, partialTick, pose, buffers, packedLight);
             return;
         }
         boolean deferredPass = ClearPlasticRenderTypes.isDeferredPassActive();
         boolean transparent = PlasticEntityRenderHelper.isTransparent(entity);
         if (transparent && isLiveWorldEntity(entity) && !deferredPass) {
-            super.render(entity, yaw, partialTick, pose, buffers, packedLight);
             return;
         }
         OptionalRenderData renderData = OptionalRenderData.of(entity.getMoldedData().orElse(null));
@@ -140,13 +130,12 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
                 if (deferredTransparentContents && !tankFluids.isEmpty()) flush(buffers);
             }
             // 流体先写深度，透明壳体随后只会覆盖位于液面前方的像素。
-            PlasticEntityRenderHelper.renderModel(entity, this.dispatcher, pose, buffers, packedLight);
+            PlasticEntityRenderHelper.renderModel(entity, pose, buffers, packedLight);
         }
         MoldedPlasticData trayData = renderData.data();
         if (trayData != null && MoldingProductTypes.isTray(trayData.finalType())) {
             MoldedTrayComponentRenderer.render(
                 trayData,
-                this.dispatcher,
                 entity.plasticraft$getTrayBlockEntities(),
                 partialTick,
                 pose,
@@ -160,7 +149,6 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
             // 侧放或倒置的锅中物品要服从世界重力，不能继续乘上锅壳的离散旋转。
             this.renderCauldronGravityItems(entity, renderData.data(), pose, buffers, packedLight);
         }
-        if (!deferredPass) super.render(entity, yaw, partialTick, pose, buffers, packedLight);
     }
 
     /** 在延迟透明壳开始前写入不透明流体深度，使后侧壳体和内壁通过深度测试自然被遮挡。 */
@@ -241,11 +229,11 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
                 );
                 flush(buffers);
             }
-            PlasticEntityRenderHelper.renderModel(entity, this.dispatcher, pose, buffers, packedLight);
+            PlasticEntityRenderHelper.renderModel(entity, pose, buffers, packedLight);
             this.renderOutlet(entity, data, pose, buffers, packedLight);
             if (hasContents) flush(buffers);
         } else {
-            PlasticEntityRenderHelper.renderModel(entity, this.dispatcher, pose, buffers, packedLight);
+            PlasticEntityRenderHelper.renderModel(entity, pose, buffers, packedLight);
             this.renderOutlet(entity, data, pose, buffers, packedLight);
             if (hasContents) flush(buffers);
             if (renderStoredItems) {
@@ -320,51 +308,42 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
                 if (deferredTransparent) {
                     VertexConsumer consumer = buffers.getBuffer(ClearPlasticRenderTypes.fluid());
                     FluidRenderHelper.INSTANCE.renderFluidBox(
-                        fluid,
-                        metrics.minX(),
+                FluidRenderOpacity.model(fluid).stillMaterial().sprite(), FluidResource.of(fluid),
+                metrics.minX(),
                         layerBottom,
                         metrics.minZ(),
                         metrics.maxX(),
                         layerTop,
                         metrics.maxZ(),
-                        consumer,
-                        pose,
-                        packedLight,
-                        true,
-                        false
-                    );
+                FluidRenderOpacity.tint(fluid), consumer,
+                pose.last(), packedLight, true, false
+            );
                 } else if (renderPass == FluidLayerRenderPass.OPAQUE_ONLY) {
                     // 预绘必须写入主目标深度；FluidRenderHelper 的 buffers 重载会自行选择 translucent。
-                    VertexConsumer consumer = buffers.getBuffer(RenderType.cutout());
+                    VertexConsumer consumer = buffers.getBuffer(Sheets.cutoutBlockSheet());
                     FluidRenderHelper.INSTANCE.renderFluidBox(
-                        fluid,
-                        metrics.minX(),
+                FluidRenderOpacity.model(fluid).stillMaterial().sprite(), FluidResource.of(fluid),
+                metrics.minX(),
                         layerBottom,
                         metrics.minZ(),
                         metrics.maxX(),
                         layerTop,
                         metrics.maxZ(),
-                        consumer,
-                        pose,
-                        packedLight,
-                        true,
-                        false
-                    );
+                FluidRenderOpacity.tint(fluid), consumer,
+                pose.last(), packedLight, true, false
+            );
                 } else {
                     FluidRenderHelper.INSTANCE.renderFluidBox(
-                        fluid,
-                        metrics.minX(),
+                FluidRenderOpacity.model(fluid).stillMaterial().sprite(), FluidResource.of(fluid),
+                metrics.minX(),
                         layerBottom,
                         metrics.minZ(),
                         metrics.maxX(),
                         layerTop,
                         metrics.maxZ(),
-                        buffers,
-                        pose,
-                        packedLight,
-                        true,
-                        false
-                    );
+                FluidRenderOpacity.tint(fluid), buffers.getBuffer(FluidRenderOpacity.isOpaque(fluid) ? Sheets.cutoutBlockSheet() : Sheets.translucentBlockSheet()),
+                pose.last(), packedLight, true, false
+            );
                 }
             }
             if (renderOverlays) {
@@ -455,7 +434,7 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
                         (this.random.nextFloat() - 0.5F) * spread
                     );
                 }
-                Minecraft.getInstance().getItemRenderer().renderStatic(
+                PlasticRenderGeometry.item(
                     stack,
                     ItemDisplayContext.GROUND,
                     packedLight,
@@ -492,7 +471,7 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
             for (int copy = 0; copy < copies; copy++) {
                 pose.pushPose();
                 pose.translate(copy * 0.015F, copy * 0.02F, 0);
-                Minecraft.getInstance().getItemRenderer().renderStatic(stack, ItemDisplayContext.GROUND,
+                PlasticRenderGeometry.item(stack, ItemDisplayContext.GROUND,
                     light, OverlayTexture.NO_OVERLAY, pose, buffers, entity.level(), slot);
                 pose.popPose();
             }
@@ -620,12 +599,6 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
         }
     }
 
-    @Override
-    public ResourceLocation getTextureLocation(UniversalPlasticEntity entity) {
-        return entity.getMoldedData()
-            .map(DynamicPlasticTextureManager.INSTANCE::texture)
-            .orElse(InventoryMenu.BLOCK_ATLAS);
-    }
 
     @Override
     protected int getSkyLightLevel(UniversalPlasticEntity entity, BlockPos ignored) {
@@ -639,7 +612,7 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
 
     public static int packedLight(UniversalPlasticEntity entity) {
         LightSample sample = lightSample(entity);
-        return LightTexture.pack(entity.isOnFire() ? 15 : sample.blockLight, sample.skyLight);
+        return LightCoordsUtil.pack(entity.isOnFire() ? 15 : sample.blockLight, sample.skyLight);
     }
 
     /**
@@ -692,7 +665,7 @@ public class UniversalPlasticEntityRenderer extends EntityRenderer<UniversalPlas
     }
 
     private static boolean isLiveWorldEntity(UniversalPlasticEntity entity) {
-        return entity.level().isClientSide && entity.level().getEntity(entity.getId()) == entity;
+        return entity.level().isClientSide() && entity.level().getEntity(entity.getId()) == entity;
     }
 
     private static int brightness(

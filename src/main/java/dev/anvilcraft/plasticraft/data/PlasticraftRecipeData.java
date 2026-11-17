@@ -1,9 +1,9 @@
 package dev.anvilcraft.plasticraft.data;
 
 import dev.anvilcraft.lib.v2.recipe.data.advancement.predicate.item.NotPredicate;
-import dev.anvilcraft.lib.v2.recipe.init.LibItemSubPredicates;
+import dev.anvilcraft.lib.v2.recipe.init.LibDataComponentPredicates;
 import dev.anvilcraft.lib.v2.registrum.providers.ProviderType;
-import dev.anvilcraft.lib.v2.registrum.providers.RegistrumRecipeProvider;
+import dev.anvilcraft.lib.v2.registrum.providers.generators.RegistrumRecipeProvider;
 import dev.anvilcraft.lib.v2.util.predicate.BlockStatePredicate;
 import dev.anvilcraft.lib.v2.util.predicate.ItemIngredientPredicate;
 import dev.anvilcraft.plasticraft.AnvilcraftPlasticraft;
@@ -12,20 +12,20 @@ import dev.anvilcraft.plasticraft.init.block.PlasticraftBlocks;
 import dev.anvilcraft.plasticraft.init.block.PlasticraftFluids;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItemTags;
 import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
-import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.item.PlasticItemData;
+import dev.anvilcraft.plasticraft.material.PlasticMaterial;
 import dev.anvilcraft.plasticraft.recipe.CondenserGas;
 import dev.anvilcraft.plasticraft.recipe.CondenserRecipe;
 import dev.anvilcraft.plasticraft.recipe.FluidFastCookingRecipe;
 import dev.anvilcraft.plasticraft.recipe.PlasmaJetBlastingRecipe;
 import dev.anvilcraft.plasticraft.recipe.PlasticMoldingChamberRecipe;
-import dev.dubhe.anvilcraft.block.CorruptedBeaconBlock;
 import dev.dubhe.anvilcraft.block.fluid.PipeBlock;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
+import dev.dubhe.anvilcraft.block.workstation.CorruptedBeaconBlock;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import dev.dubhe.anvilcraft.init.block.ModFluids;
 import dev.dubhe.anvilcraft.init.item.ModComponents;
-import dev.dubhe.anvilcraft.init.item.ModItemSubPredicates;
+import dev.dubhe.anvilcraft.init.item.ModDataComponentPredicates;
 import dev.dubhe.anvilcraft.init.item.ModItems;
 import dev.dubhe.anvilcraft.init.recipe.ModRecipeTriggers;
 import dev.dubhe.anvilcraft.item.property.predicate.ItemSavedEntityPredicate;
@@ -39,25 +39,23 @@ import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockConversionRecipe;
 import dev.dubhe.anvilcraft.recipe.multiblock.MultiblockRecipe;
 import net.minecraft.advancements.Advancement;
 import net.minecraft.advancements.AdvancementHolder;
-import net.minecraft.advancements.AdvancementRequirements;
-import net.minecraft.advancements.AdvancementRewards;
+import net.minecraft.advancements.criterion.DataComponentMatchers;
 import net.minecraft.core.Direction;
-import net.minecraft.core.component.DataComponentPredicate;
+import net.minecraft.core.component.DataComponentExactPredicate;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.data.recipes.RecipeCategory;
 import net.minecraft.data.recipes.RecipeOutput;
-import net.minecraft.data.recipes.ShapedRecipeBuilder;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.DyeColor;
-import net.minecraft.world.item.DyeItem;
-import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomModelData;
-import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.ShapedRecipe;
-import net.minecraft.world.item.crafting.ShapedRecipePattern;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -65,9 +63,8 @@ import net.minecraft.world.level.block.state.properties.Half;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.conditions.ICondition;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -82,18 +79,18 @@ public final class PlasticraftRecipeData {
 
     private static void generateRecipes(RegistrumRecipeProvider provider) {
         // 有序合成：用树脂块构成砧面、树脂构成砧腰和底座，产出弹性树脂铁砧。
-        ShapedRecipeBuilder.shaped(RecipeCategory.BUILDING_BLOCKS, PlasticraftBlocks.RESIN_ANVIL.asItem())
+        provider.shaped(RecipeCategory.BUILDING_BLOCKS, PlasticraftBlocks.RESIN_ANVIL.asItem())
             .pattern("BBB")
             .pattern(" R ")
             .pattern("RRR")
             .define('B', Ingredient.of(ModBlocks.RESIN_BLOCK.get()))
             .define('R', Ingredient.of(ModItems.RESIN.get()))
-            .unlockedBy("has_resin", RegistrumRecipeProvider.has(ModItems.RESIN))
-            .unlockedBy("has_resin_block", RegistrumRecipeProvider.has(ModBlocks.RESIN_BLOCK))
-            .save(provider, AnvilcraftPlasticraft.of("resin_anvil"));
+            .unlockedBy("has_resin", provider.has(ModItems.RESIN))
+            .unlockedBy("has_resin_block", provider.has(ModBlocks.RESIN_BLOCK))
+            .save(provider);
 
         // 有序合成：将树脂砧、避雷针和硬化树脂竖直组合，产出树脂铁砧锤。
-        ShapedRecipeBuilder.shaped(
+        provider.shaped(
             RecipeCategory.TOOLS,
             PlasticraftItems.RESIN_ANVIL_HAMMER.get()
         )
@@ -103,52 +100,34 @@ public final class PlasticraftRecipeData {
             .define('A', Ingredient.of(PlasticraftBlocks.RESIN_ANVIL.asItem()))
             .define('L', Ingredient.of(Items.LIGHTNING_ROD))
             .define('R', Ingredient.of(ModItems.HARDEND_RESIN.get()))
-            .unlockedBy("has_resin_anvil", RegistrumRecipeProvider.has(PlasticraftBlocks.RESIN_ANVIL.asItem()))
-            .unlockedBy("has_hardend_resin", RegistrumRecipeProvider.has(ModItems.HARDEND_RESIN))
-            .save(provider, AnvilcraftPlasticraft.of("resin_anvil_hammer"));
+            .unlockedBy("has_resin_anvil", provider.has(PlasticraftBlocks.RESIN_ANVIL.asItem()))
+            .unlockedBy("has_hardend_resin", provider.has(ModItems.HARDEND_RESIN))
+            .save(provider);
 
-        // 有序合成：以磁铁锭替代普通树脂砧的中心树脂，直接产出带磁化数据的树脂砧。
-        // 原版 builder 无法给结果写入自定义组件，因此在这里显式构造配方和解锁进度。
-        Map<Character, Ingredient> key = new LinkedHashMap<>();
-        key.put('B', Ingredient.of(ModBlocks.RESIN_BLOCK.get()));
-        key.put('I', Ingredient.of(ModItems.MAGNET_INGOT.get()));
-        key.put('R', Ingredient.of(ModItems.RESIN.get()));
-        ResourceLocation magneticId = AnvilcraftPlasticraft.of("magnetic_resin_anvil");
-        ItemStack magneticResult = PlasticraftBlocks.RESIN_ANVIL.asStack();
-        PlasticItemData.setMaterial(magneticResult, "resin");
-        PlasticItemData.setMagnetized(magneticResult, true);
-        ShapedRecipe magneticRecipe = new ShapedRecipe(
-            "",
-            CraftingBookCategory.BUILDING,
-            ShapedRecipePattern.of(key, List.of("BBB", " I ", "RRR")),
-            magneticResult
-        );
-        Advancement.Builder advancement = provider.advancement()
-            .addCriterion("has_resin", RegistrumRecipeProvider.has(ModItems.RESIN))
-            .addCriterion("has_resin_block", RegistrumRecipeProvider.has(ModBlocks.RESIN_BLOCK))
-            .addCriterion("has_magnet_ingot", RegistrumRecipeProvider.has(ModItems.MAGNET_INGOT))
-            .rewards(AdvancementRewards.Builder.recipe(magneticId))
-            .requirements(AdvancementRequirements.Strategy.OR);
-        provider.accept(
-            magneticId,
-            magneticRecipe,
-            advancement.build(magneticId.withPrefix("recipes/building_blocks/"))
-        );
+        ItemStackTemplate magneticResult = PlasticItemData.resinProductTemplate(PlasticraftBlocks.RESIN_ANVIL, "resin", true);
+        provider.shaped(RecipeCategory.BUILDING_BLOCKS, magneticResult)
+            .pattern("BBB")
+            .pattern(" I ")
+            .pattern("RRR")
+            .define('B', ModBlocks.RESIN_BLOCK)
+            .define('I', ModItems.MAGNET_INGOT)
+            .define('R', ModItems.RESIN)
+            .unlockedBy("has_resin", provider.has(ModItems.RESIN))
+            .unlockedBy("has_resin_block", provider.has(ModBlocks.RESIN_BLOCK))
+            .unlockedBy("has_magnet_ingot", provider.has(ModItems.MAGNET_INGOT))
+            .save(provider, AnvilcraftPlasticraft.of("magnetic_resin_anvil").toString());
 
         // 快速烹饪：未磁化且未捕获生物的树脂砧受热后，转化为普通硬化树脂砧。
         // 自定义模型数据用于让普通与磁化输入互斥，避免两份配方同时匹配。
         ItemIngredientPredicate ordinaryInput = resinAnvilVariant(0);
-        ItemStack ordinaryOutput = PlasticraftBlocks.HARDEND_RESIN_ANVIL.asStack();
-        PlasticItemData.setMaterial(ordinaryOutput, "hardened_resin");
+        ItemStackTemplate ordinaryOutput = PlasticItemData.resinProductTemplate(PlasticraftBlocks.HARDEND_RESIN_ANVIL, "hardened_resin", false);
         FastCookingRecipe.builder()
             .requires(ordinaryInput)
             .result(ordinaryOutput)
             .save(provider, AnvilcraftPlasticraft.of("fast_cooking/harden_resin_anvil"));
 
         // 快速烹饪：磁化且未捕获生物的树脂砧受热后，保留磁化状态并完成硬化。
-        ItemStack magneticOutput = PlasticraftBlocks.HARDEND_RESIN_ANVIL.asStack();
-        PlasticItemData.setMaterial(magneticOutput, "hardened_resin");
-        PlasticItemData.setMagnetized(magneticOutput, true);
+        ItemStackTemplate magneticOutput = PlasticItemData.resinProductTemplate(PlasticraftBlocks.HARDEND_RESIN_ANVIL, "hardened_resin", true);
         FastCookingRecipe.builder()
             .requires(resinAnvilVariant(1))
             .result(magneticOutput)
@@ -162,22 +141,22 @@ public final class PlasticraftRecipeData {
             .requires(ModItems.RESIN.get(), 4)
             .requires(Items.SLIME_BALL, 4)
             .requires(ModItems.LIME_POWDER.get())
-            .unlockedBy("has_resin", RegistrumRecipeProvider.has(ModItems.RESIN))
-            .unlockedBy("has_slime_ball", RegistrumRecipeProvider.has(Items.SLIME_BALL))
-            .unlockedBy("has_lime_powder", RegistrumRecipeProvider.has(ModItems.LIME_POWDER))
-            .save(provider, AnvilcraftPlasticraft.of("fast_cooking/liquid_high_viscosity_resin"));
+            .unlockedBy("has_resin", provider.has(ModItems.RESIN))
+            .unlockedBy("has_slime_ball", provider.has(Items.SLIME_BALL))
+            .unlockedBy("has_lime_powder", provider.has(ModItems.LIME_POWDER))
+            .save(provider, ResourceKey.create(Registries.RECIPE, AnvilcraftPlasticraft.of("fast_cooking/liquid_high_viscosity_resin")));
 
         // 有序合成：用七份硬化树脂围成釜体，产出普通硬化树脂釜。
-        ShapedRecipeBuilder.shaped(RecipeCategory.DECORATIONS, PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asItem())
+        provider.shaped(RecipeCategory.DECORATIONS, PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asItem())
             .pattern("H H")
             .pattern("H H")
             .pattern("HHH")
             .define('H', Ingredient.of(ModItems.HARDEND_RESIN.get()))
-            .unlockedBy("has_hardend_resin", RegistrumRecipeProvider.has(ModItems.HARDEND_RESIN))
-            .save(provider, AnvilcraftPlasticraft.of("hardend_resin_cauldron"));
+            .unlockedBy("has_hardend_resin", provider.has(ModItems.HARDEND_RESIN))
+            .save(provider);
 
         // 有序合成：以储罐、结构扫描仪和超级电容器构成核心，输出继承电容器的满电或空电状态。
-        ShapedRecipeBuilder.shaped(RecipeCategory.MISC, PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.asItem())
+        provider.shaped(RecipeCategory.MISC, PlasticraftBlocks.PLASTIC_MOLDING_CHAMBER.asItem())
             .pattern(" P ")
             .pattern("TSC")
             .pattern(" P ")
@@ -188,14 +167,14 @@ public final class PlasticraftRecipeData {
                 ModItems.SUPER_CAPACITOR.get(),
                 ModItems.SUPER_CAPACITOR_EMPTY.get()
             ))
-            .unlockedBy("has_fluid_tank", RegistrumRecipeProvider.has(ModBlocks.FLUID_TANK))
-            .unlockedBy("has_structure_scanner", RegistrumRecipeProvider.has(ModBlocks.STRUCTURE_SCANNER))
-            .unlockedBy("has_supercapacitor", RegistrumRecipeProvider.has(ModItems.SUPER_CAPACITOR))
-            .unlockedBy("has_empty_supercapacitor", RegistrumRecipeProvider.has(ModItems.SUPER_CAPACITOR_EMPTY))
-            .save(moldingChamberRecipeOutput(provider), AnvilcraftPlasticraft.of("plastic_molding_chamber"));
+            .unlockedBy("has_fluid_tank", provider.has(ModBlocks.FLUID_TANK))
+            .unlockedBy("has_structure_scanner", provider.has(ModBlocks.STRUCTURE_SCANNER))
+            .unlockedBy("has_supercapacitor", provider.has(ModItems.SUPER_CAPACITOR))
+            .unlockedBy("has_empty_supercapacitor", provider.has(ModItems.SUPER_CAPACITOR_EMPTY))
+            .save(moldingChamberRecipeOutput(provider));
 
         // 有序合成：用电感灯、末影之眼、储罐、处理器、磁电核心、管道和铁锭制作 3D 打印组件。
-        ShapedRecipeBuilder.shaped(RecipeCategory.MISC, PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.asItem())
+        provider.shaped(RecipeCategory.MISC, PlasticraftBlocks.PLASTIC_3D_PRINTING_COMPONENT.asItem())
             .pattern("LEB")
             .pattern("PT ")
             .pattern("MFI")
@@ -207,22 +186,20 @@ public final class PlasticraftRecipeData {
             .define('M', ModBlocks.MAGNETO_ELECTRIC_CORE_BLOCK.get())
             .define('F', ModItems.PIPE.get())
             .define('I', Items.IRON_INGOT)
-            .unlockedBy("has_processor", RegistrumRecipeProvider.has(ModItems.PROCESSOR))
-            .save(provider, AnvilcraftPlasticraft.of("plastic_3d_printing_component"));
+            .unlockedBy("has_processor", provider.has(ModItems.PROCESSOR))
+            .save(provider);
 
         // 有序合成：在硬化树脂釜两侧加入磁铁锭，直接产出带磁化数据的硬化树脂釜。
-        ItemStack magneticCauldron = PlasticraftBlocks.HARDEND_RESIN_CAULDRON.asStack();
-        PlasticItemData.setMaterial(magneticCauldron, "hardened_resin");
-        PlasticItemData.setMagnetized(magneticCauldron, true);
-        ShapedRecipeBuilder.shaped(RecipeCategory.DECORATIONS, magneticCauldron)
+        ItemStackTemplate magneticCauldron = PlasticItemData.resinProductTemplate(PlasticraftBlocks.HARDEND_RESIN_CAULDRON, "hardened_resin", true);
+        provider.shaped(RecipeCategory.DECORATIONS, magneticCauldron)
             .pattern("M M")
             .pattern("H H")
             .pattern("HHH")
             .define('M', Ingredient.of(ModItems.MAGNET_INGOT.get()))
             .define('H', Ingredient.of(ModItems.HARDEND_RESIN.get()))
-            .unlockedBy("has_hardend_resin", RegistrumRecipeProvider.has(ModItems.HARDEND_RESIN))
-            .unlockedBy("has_magnet_ingot", RegistrumRecipeProvider.has(ModItems.MAGNET_INGOT))
-            .save(provider, AnvilcraftPlasticraft.of("magnetic_hardend_resin_cauldron"));
+            .unlockedBy("has_hardend_resin", provider.has(ModItems.HARDEND_RESIN))
+            .unlockedBy("has_magnet_ingot", provider.has(ModItems.MAGNET_INGOT))
+            .save(provider, AnvilcraftPlasticraft.of("magnetic_hardend_resin_cauldron").toString());
 
         // 多方块合成：按从下到上的顺序搭建树脂底座、直管接口、黄铜玻璃塔壁和铜活板门，压缩为冷凝塔物品。
         MultiblockRecipe.builder("anvilcraftplasticraft:condenser_tower", 1)
@@ -326,7 +303,7 @@ public final class PlasticraftRecipeData {
         return new RecipeOutput() {
             @Override
             public void accept(
-                ResourceLocation id,
+                ResourceKey<Recipe<?>> id,
                 Recipe<?> recipe,
                 @Nullable AdvancementHolder advancement,
                 ICondition... conditions
@@ -335,6 +312,11 @@ public final class PlasticraftRecipeData {
                     throw new IllegalArgumentException("Plastic molding chamber recipe must be shaped");
                 }
                 output.accept(id, new PlasticMoldingChamberRecipe(shaped), advancement, conditions);
+            }
+
+            @Override
+            public void includeRootAdvancement() {
+                output.includeRootAdvancement();
             }
 
             @Override
@@ -372,7 +354,7 @@ public final class PlasticraftRecipeData {
         CondenserRecipe.builder()
             .gas(CondenserGas.GASEOUS_WATER)
             .consume(50)
-            .fluid(ResourceLocation.fromNamespaceAndPath("minecraft", "water"))
+            .fluid(Identifier.fromNamespaceAndPath("minecraft", "water"))
             .produce(50)
             .save(provider, AnvilcraftPlasticraft.of("condenser/gaseous_water_to_water"));
 
@@ -413,57 +395,42 @@ public final class PlasticraftRecipeData {
     }
 
     private static void generateFluidMixingRecipes(RegistrumRecipeProvider provider) {
-        // 流体混合配方：高热燃料与原油精华按 1:1 混合，并按最大可消费量增产为三倍高热燃料。
-        FluidMixingRecipe.builder()
-            .requires(PlasticraftFluids.HIGH_HEAT_FUEL.get(), 1)
-            .requires(PlasticraftFluids.CRUDE_OIL_ACID.get(), 1)
-            .result(PlasticraftFluids.HIGH_HEAT_FUEL.get(), 3)
-            .consumeMaximum()
-            .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/high_heat_fuel_enrichment"));
-
-        // 流体混合配方：塑料油与原油精华按 1:1 混合，并按最大可消费量增产为三倍塑料油。
-        FluidMixingRecipe.builder()
-            .requires(PlasticraftFluids.PLASTIC_OIL.get(), 1)
-            .requires(PlasticraftFluids.CRUDE_OIL_ACID.get(), 1)
-            .result(PlasticraftFluids.PLASTIC_OIL.get(), 3)
-            .consumeMaximum()
-            .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/plastic_oil_enrichment"));
-
+        // 带流体产物的两条增产配方使用数据包 JSON，避免数据生成阶段构造需要完整注册组件的 FluidStack。
         // 流体混合配方：一桶通用塑料熔体与一桶水冷却混合，凝固为 16 个通用塑料颗粒。
-        FluidMixingRecipe.builder()
+        FluidMixingRecipe.builder(provider.getRegistries().lookupOrThrow(Registries.FLUID))
             .requires(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 1000)
             .requires(Fluids.WATER, 1000)
             .result(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/universal_plastic_melt_with_water"));
 
         // 流体混合配方：一桶通用塑料熔体与一桶细雪冷却混合，同样凝固为 16 个塑料颗粒。
-        FluidMixingRecipe.builder()
+        FluidMixingRecipe.builder(provider.getRegistries().lookupOrThrow(Registries.FLUID))
             .requires(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get(), 1000)
             .requires(ModFluids.POWDER_SNOW.get(), 1000)
             .result(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/universal_plastic_melt_with_powder_snow"));
 
         // 流体混合配方：一桶工程塑料熔体与一桶水冷却混合，凝固为 16 个工程塑料颗粒。
-        FluidMixingRecipe.builder()
+        FluidMixingRecipe.builder(provider.getRegistries().lookupOrThrow(Registries.FLUID))
             .requires(PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get(), 1000)
             .requires(Fluids.WATER, 1000)
             .result(PlasticraftItems.ENGINEERING_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/engineering_plastic_melt_with_water"));
 
         // 流体混合配方：一桶工程塑料熔体与一桶细雪冷却混合，同样凝固为 16 个工程塑料颗粒。
-        FluidMixingRecipe.builder()
+        FluidMixingRecipe.builder(provider.getRegistries().lookupOrThrow(Registries.FLUID))
             .requires(PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get(), 1000)
             .requires(ModFluids.POWDER_SNOW.get(), 1000)
             .result(PlasticraftItems.ENGINEERING_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/engineering_plastic_melt_with_powder_snow"));
 
-        FluidMixingRecipe.builder()
+        FluidMixingRecipe.builder(provider.getRegistries().lookupOrThrow(Registries.FLUID))
             .requires(PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT.get(), 1000)
             .requires(Fluids.WATER, 1000)
             .result(PlasticraftItems.HEAT_RESISTANT_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/heat_resistant_plastic_melt_with_water"));
 
-        FluidMixingRecipe.builder()
+        FluidMixingRecipe.builder(provider.getRegistries().lookupOrThrow(Registries.FLUID))
             .requires(PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT.get(), 1000)
             .requires(ModFluids.POWDER_SNOW.get(), 1000)
             .result(PlasticraftItems.HEAT_RESISTANT_PLASTIC_GRANULE, 16)
@@ -471,27 +438,27 @@ public final class PlasticraftRecipeData {
                 "fluid_mixing/heat_resistant_plastic_melt_with_powder_snow"
             ));
 
-        FluidMixingRecipe.builder()
+        FluidMixingRecipe.builder(provider.getRegistries().lookupOrThrow(Registries.FLUID))
             .requires(PlasticraftFluids.CLEAR_PLASTIC_MELT.get(), 1000)
             .requires(Fluids.WATER, 1000)
             .result(PlasticraftItems.CLEAR_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/clear_plastic_melt_with_water"));
 
-        FluidMixingRecipe.builder()
+        FluidMixingRecipe.builder(provider.getRegistries().lookupOrThrow(Registries.FLUID))
             .requires(PlasticraftFluids.CLEAR_PLASTIC_MELT.get(), 1000)
             .requires(ModFluids.POWDER_SNOW.get(), 1000)
             .result(PlasticraftItems.CLEAR_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/clear_plastic_melt_with_powder_snow"));
 
         // 流体混合配方：一桶弹性塑料熔体与一桶水冷却混合，凝固为 16 个弹性塑料颗粒。
-        FluidMixingRecipe.builder()
+        FluidMixingRecipe.builder(provider.getRegistries().lookupOrThrow(Registries.FLUID))
             .requires(PlasticraftFluids.ELASTIC_PLASTIC_MELT.get(), 1000)
             .requires(Fluids.WATER, 1000)
             .result(PlasticraftItems.ELASTIC_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("fluid_mixing/elastic_plastic_melt_with_water"));
 
         // 流体混合配方：一桶弹性塑料熔体与一桶细雪冷却混合，同样凝固为 16 个弹性塑料颗粒。
-        FluidMixingRecipe.builder()
+        FluidMixingRecipe.builder(provider.getRegistries().lookupOrThrow(Registries.FLUID))
             .requires(PlasticraftFluids.ELASTIC_PLASTIC_MELT.get(), 1000)
             .requires(ModFluids.POWDER_SNOW.get(), 1000)
             .result(PlasticraftItems.ELASTIC_PLASTIC_GRANULE, 16)
@@ -503,7 +470,7 @@ public final class PlasticraftRecipeData {
         SolidLiquidRecipe.builder()
             .cauldron(PlasticraftFluids.UNIVERSAL_PLASTIC_MELT.get())
             .consume(1000)
-            .requires(PlasticraftItemTags.COLD_ITEMS)
+            .requires(provider.getItems(), PlasticraftItemTags.COLD_ITEMS)
             .result(PlasticraftItems.UNIVERSAL_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("solid_liquid/cool_universal_plastic_melt"));
 
@@ -511,20 +478,20 @@ public final class PlasticraftRecipeData {
         SolidLiquidRecipe.builder()
             .cauldron(PlasticraftFluids.ENGINEERING_PLASTIC_MELT.get())
             .consume(1000)
-            .requires(PlasticraftItemTags.COLD_ITEMS)
+            .requires(provider.getItems(), PlasticraftItemTags.COLD_ITEMS)
             .result(PlasticraftItems.ENGINEERING_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("solid_liquid/cool_engineering_plastic_melt"));
         SolidLiquidRecipe.builder()
             .cauldron(PlasticraftFluids.CLEAR_PLASTIC_MELT.get())
             .consume(1000)
-            .requires(PlasticraftItemTags.COLD_ITEMS)
+            .requires(provider.getItems(), PlasticraftItemTags.COLD_ITEMS)
             .result(PlasticraftItems.CLEAR_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("solid_liquid/cool_clear_plastic_melt"));
 
         SolidLiquidRecipe.builder()
             .cauldron(PlasticraftFluids.HEAT_RESISTANT_PLASTIC_MELT.get())
             .consume(1000)
-            .requires(PlasticraftItemTags.COLD_ITEMS)
+            .requires(provider.getItems(), PlasticraftItemTags.COLD_ITEMS)
             .result(PlasticraftItems.HEAT_RESISTANT_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("solid_liquid/cool_heat_resistant_plastic_melt"));
 
@@ -532,7 +499,7 @@ public final class PlasticraftRecipeData {
         SolidLiquidRecipe.builder()
             .cauldron(PlasticraftFluids.ELASTIC_PLASTIC_MELT.get())
             .consume(1000)
-            .requires(PlasticraftItemTags.COLD_ITEMS)
+            .requires(provider.getItems(), PlasticraftItemTags.COLD_ITEMS)
             .result(PlasticraftItems.ELASTIC_PLASTIC_GRANULE, 16)
             .save(provider, AnvilcraftPlasticraft.of("solid_liquid/cool_elastic_plastic_melt"));
 
@@ -552,10 +519,10 @@ public final class PlasticraftRecipeData {
     ) {
         // 固液染色配方：为当前塑料材料的 16 种染料逐一生成只改组件颜色、不改变熔体数量的配方。
         for (DyeColor color : DyeColor.values()) {
-            DyeItem dye = DyeItem.byColor(color);
+            var dye = BuiltInRegistries.ITEM.getValue(Identifier.withDefaultNamespace(color.getName() + "_dye"));
             SolidLiquidRecipe.Builder dyeBuilder = new SolidLiquidRecipe.Builder() {
                 @Override
-                public void validate(ResourceLocation id) {
+                public void validate(Identifier id) {
                 }
             };
             dyeBuilder
@@ -570,13 +537,12 @@ public final class PlasticraftRecipeData {
     private static ItemIngredientPredicate resinAnvilVariant(int modelVariant) {
         return ItemIngredientPredicate.Builder.item()
             .of(PlasticraftBlocks.RESIN_ANVIL.asItem())
-            .hasComponents(DataComponentPredicate.builder()
-                .expect(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(modelVariant))
+            .hasComponents(DataComponentMatchers.Builder.components()
+                .exact(DataComponentExactPredicate.builder()
+                    .expect(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(List.of((float) modelVariant), List.of(), List.of(), List.of()))
                 .build())
-            .withSubPredicate(
-                LibItemSubPredicates.NOT.get(),
-                NotPredicate.of(ModItemSubPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.any())
-            )
+                .partial(LibDataComponentPredicates.NOT.get(), NotPredicate.of(ModDataComponentPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.any()))
+                .build())
             .build();
     }
 
@@ -588,22 +554,21 @@ public final class PlasticraftRecipeData {
             .result(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK)
             .unlockedBy(
                 "has_liquid_high_viscosity_resin_bucket",
-                RegistrumRecipeProvider.has(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET)
+                provider.has(PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET)
             )
-            .save(provider, AnvilcraftPlasticraft.of("time_warp/high_viscosity_resin_block"));
+            .save(provider, ResourceKey.create(Registries.RECIPE, AnvilcraftPlasticraft.of("time_warp/high_viscosity_resin_block")));
 
         // 时间扭曲配方：未捕获生物的树脂砧随时间完全琥珀化，转化为普通琥珀块。
         TimeWarpRecipe.builder()
             .requires(ItemIngredientPredicate.Builder.item()
                 .of(PlasticraftBlocks.RESIN_ANVIL.asItem())
-                .withSubPredicate(
-                    LibItemSubPredicates.NOT.get(),
-                    NotPredicate.of(ModItemSubPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.any())
-                )
+                .hasComponents(new DataComponentMatchers(
+                    DataComponentExactPredicate.EMPTY, Map.of(LibDataComponentPredicates.NOT.get(), NotPredicate.of(ModDataComponentPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.any()))
+                ))
                 .build())
             .result(ModBlocks.AMBER_BLOCK)
-            .unlockedBy("has_resin_anvil", RegistrumRecipeProvider.has(PlasticraftBlocks.RESIN_ANVIL.asItem()))
-            .save(provider, AnvilcraftPlasticraft.of("time_warp/resin_anvil_to_amber"));
+            .unlockedBy("has_resin_anvil", provider.has(PlasticraftBlocks.RESIN_ANVIL.asItem()))
+            .save(provider, ResourceKey.create(Registries.RECIPE, AnvilcraftPlasticraft.of("time_warp/resin_anvil_to_amber")));
 
         // 扩展世界配方：树脂砧捕获非敌对生物后，在点亮的腐化信标和釜结构上受砧击，
         // 保存生物组件并生成对应的生物琥珀块。
@@ -617,20 +582,19 @@ public final class PlasticraftRecipeData {
                 .of(PlasticraftBlocks.RESIN_ANVIL.asItem())
                 .offset(0.0, -0.375, 0.0)
                 .range(0.75, 0.75, 0.75)
-                .with(ModItemSubPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.any())
-                .with(
-                    LibItemSubPredicates.NOT.get(),
-                    NotPredicate.of(ModItemSubPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.monster())
-                )
+                .has(new DataComponentMatchers(DataComponentExactPredicate.EMPTY, Map.of(
+                    ModDataComponentPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.any(),
+                    LibDataComponentPredicates.NOT.get(), NotPredicate.of(ModDataComponentPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.monster())
+                )))
                 .saveComponent(ModComponents.SAVED_ENTITY, AnvilcraftPlasticraft.of("saved_entity")))
             .spawnItem(builder -> builder
                 .item(ModBlocks.MOB_AMBER_BLOCK)
                 .offset(0.0, -0.75, 0.0)
                 .applyComponent(ModComponents.SAVED_ENTITY, AnvilcraftPlasticraft.of("saved_entity")))
             .maxEfficiency(1)
-            .unlockedBy("has_resin_anvil", RegistrumRecipeProvider.has(PlasticraftBlocks.RESIN_ANVIL.asItem()))
+            .unlockedBy("has_resin_anvil", provider.has(PlasticraftBlocks.RESIN_ANVIL.asItem()))
             .group("time_warp")
-            .icon(ModBlocks.MOB_AMBER_BLOCK.asStack())
+            .icon(new ItemStackTemplate(ModBlocks.MOB_AMBER_BLOCK.asItem()))
             .save(provider, AnvilcraftPlasticraft.of("resin_anvil_mob_amber"));
 
         // 扩展世界配方：树脂砧捕获敌对生物后，在相同结构上受砧击，
@@ -645,33 +609,34 @@ public final class PlasticraftRecipeData {
                 .of(PlasticraftBlocks.RESIN_ANVIL.asItem())
                 .offset(0.0, -0.375, 0.0)
                 .range(0.75, 0.75, 0.75)
-                .with(ModItemSubPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.monster())
+                .has(new DataComponentMatchers(DataComponentExactPredicate.EMPTY, Map.of(
+                    ModDataComponentPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.monster()
+                )))
                 .saveComponent(ModComponents.SAVED_ENTITY, AnvilcraftPlasticraft.of("saved_entity")))
             .out(new ResentmentAmberOutcome(
                 new Vec3(0.0, -0.75, 0.0),
                 AnvilcraftPlasticraft.of("saved_entity")
             ))
             .maxEfficiency(1)
-            .unlockedBy("has_resin_anvil", RegistrumRecipeProvider.has(PlasticraftBlocks.RESIN_ANVIL.asItem()))
+            .unlockedBy("has_resin_anvil", provider.has(PlasticraftBlocks.RESIN_ANVIL.asItem()))
             .group("time_warp")
-            .icon(ModBlocks.RESENTFUL_AMBER_BLOCK.asStack())
+            .icon(new ItemStackTemplate(ModBlocks.RESENTFUL_AMBER_BLOCK.asItem()))
             .save(provider, AnvilcraftPlasticraft.of("resin_anvil_resentful_amber"));
 
         // 时间扭曲配方：未捕获生物的高黏度树脂块随时间完全琥珀化，转化为普通琥珀块。
         TimeWarpRecipe.builder()
             .requires(ItemIngredientPredicate.Builder.item()
                 .of(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
-                .withSubPredicate(
-                    LibItemSubPredicates.NOT.get(),
-                    NotPredicate.of(ModItemSubPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.any())
-                )
+                .hasComponents(new DataComponentMatchers(
+                    DataComponentExactPredicate.EMPTY, Map.of(LibDataComponentPredicates.NOT.get(), NotPredicate.of(ModDataComponentPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.any()))
+                ))
                 .build())
             .result(ModBlocks.AMBER_BLOCK)
             .unlockedBy(
                 "has_high_viscosity_resin_block",
-                RegistrumRecipeProvider.has(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
+                provider.has(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
             )
-            .save(provider, AnvilcraftPlasticraft.of("time_warp/high_viscosity_resin_to_amber"));
+            .save(provider, ResourceKey.create(Registries.RECIPE, AnvilcraftPlasticraft.of("time_warp/high_viscosity_resin_to_amber")));
 
         // 扩展世界配方：高黏度树脂块捕获非敌对生物后，在点亮的腐化信标和釜结构上受砧击，
         // 保存生物组件并生成对应的生物琥珀块。
@@ -685,10 +650,9 @@ public final class PlasticraftRecipeData {
                 .of(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
                 .offset(0.0, -0.375, 0.0)
                 .range(0.75, 0.75, 0.75)
-                .with(
-                    LibItemSubPredicates.NOT.get(),
-                    NotPredicate.of(ModItemSubPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.monster())
-                )
+                .has(new DataComponentMatchers(DataComponentExactPredicate.EMPTY, Map.of(
+                    LibDataComponentPredicates.NOT.get(), NotPredicate.of(ModDataComponentPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.monster())
+                )))
                 .saveComponent(ModComponents.SAVED_ENTITY, AnvilcraftPlasticraft.of("saved_entity")))
             .spawnItem(builder -> builder
                 .item(ModBlocks.MOB_AMBER_BLOCK)
@@ -697,10 +661,10 @@ public final class PlasticraftRecipeData {
             .maxEfficiency(1)
             .unlockedBy(
                 "has_high_viscosity_resin_block",
-                RegistrumRecipeProvider.has(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
+                provider.has(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
             )
             .group("time_warp")
-            .icon(ModBlocks.MOB_AMBER_BLOCK.asStack())
+            .icon(new ItemStackTemplate(ModBlocks.MOB_AMBER_BLOCK.asItem()))
             .save(provider, AnvilcraftPlasticraft.of("high_viscosity_resin_mob_amber"));
 
         // 扩展世界配方：高黏度树脂块捕获敌对生物后，在相同结构上受砧击，
@@ -715,7 +679,9 @@ public final class PlasticraftRecipeData {
                 .of(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
                 .offset(0.0, -0.375, 0.0)
                 .range(0.75, 0.75, 0.75)
-                .with(ModItemSubPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.monster())
+                .has(new DataComponentMatchers(DataComponentExactPredicate.EMPTY, Map.of(
+                    ModDataComponentPredicates.SAVED_ENTITY.get(), ItemSavedEntityPredicate.monster()
+                )))
                 .saveComponent(ModComponents.SAVED_ENTITY, AnvilcraftPlasticraft.of("saved_entity")))
             .out(new ResentmentAmberOutcome(
                 new Vec3(0.0, -0.75, 0.0),
@@ -724,10 +690,10 @@ public final class PlasticraftRecipeData {
             .maxEfficiency(1)
             .unlockedBy(
                 "has_high_viscosity_resin_block",
-                RegistrumRecipeProvider.has(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
+                provider.has(PlasticraftBlocks.HIGH_VISCOSITY_RESIN_BLOCK.asItem())
             )
             .group("time_warp")
-            .icon(ModBlocks.RESENTFUL_AMBER_BLOCK.asStack())
+            .icon(new ItemStackTemplate(ModBlocks.RESENTFUL_AMBER_BLOCK.asItem()))
             .save(provider, AnvilcraftPlasticraft.of("high_viscosity_resin_resentful_amber"));
     }
 }

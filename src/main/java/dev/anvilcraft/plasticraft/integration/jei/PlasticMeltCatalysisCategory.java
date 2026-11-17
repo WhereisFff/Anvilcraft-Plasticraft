@@ -19,10 +19,10 @@ import mezz.jei.api.recipe.RecipeType;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -77,7 +77,7 @@ public final class PlasticMeltCatalysisCategory implements IRecipeCategory<Plast
     }
 
     @Override
-    public ResourceLocation getRegistryName(PlasticMeltCatalysisRecipe recipe) {
+    public Identifier getRegistryName(PlasticMeltCatalysisRecipe recipe) {
         return AnvilcraftPlasticraft.of("jei/plastic_melt_catalysis/"
             + BuiltInRegistries.FLUID.getKey(recipe.output()).getPath() + "/" + recipe.catalyst().location().getPath());
     }
@@ -93,14 +93,14 @@ public final class PlasticMeltCatalysisCategory implements IRecipeCategory<Plast
             List.of(new FluidStack(recipe.output(), FluidType.BUCKET_VOLUME))
         ).setCustomRenderer(NeoForgeTypes.FLUID_STACK, FLUID_RENDERER).setSlotName(OUTPUT_FLUID);
         if (!recipe.environmentBlocks().isEmpty()) {
-            builder.addSlot(RecipeIngredientRole.CATALYST, 24, Math.round(ENVIRONMENT_Y))
+            builder.addSlot(RecipeIngredientRole.CRAFTING_STATION, 24, Math.round(ENVIRONMENT_Y))
                 .setSlotName(ENVIRONMENT)
                 .setCustomRenderer(VanillaTypes.ITEM_STACK, new CatalysisBlockRenderer<>(
                     stack -> environmentTooltip(recipe, stack)
                 ))
                 .addItemStacks(recipe.environmentStacks());
         }
-        builder.addSlot(RecipeIngredientRole.CATALYST, 80, 48)
+        builder.addSlot(RecipeIngredientRole.CRAFTING_STATION, 80, 48)
             .addIngredients(recipe.catalystIngredient())
             .addRichTooltipCallback((slotView, tooltip) -> {
                 tooltip.add(Component.translatable(TEXT_PREFIX + "not_consumed"));
@@ -112,7 +112,7 @@ public final class PlasticMeltCatalysisCategory implements IRecipeCategory<Plast
     public void draw(
         PlasticMeltCatalysisRecipe recipe,
         IRecipeSlotsView recipeSlotsView,
-        GuiGraphics graphics,
+        GuiGraphicsExtractor graphics,
         double mouseX,
         double mouseY
     ) {
@@ -126,17 +126,17 @@ public final class PlasticMeltCatalysisCategory implements IRecipeCategory<Plast
             ));
         drawFluid(recipeSlotsView, INPUT_FLUID, graphics, 24);
         drawFluid(recipeSlotsView, OUTPUT_FLUID, graphics, 120);
-        graphics.drawWordWrap(font, Component.translatable(TEXT_PREFIX + "catalyst", recipe.frost() ? 50 : 100),
+        graphics.textWithWordWrap(font, Component.translatable(TEXT_PREFIX + "catalyst", recipe.frost() ? 50 : 100),
             104, 46, 68, 0xFF404040);
-        graphics.drawCenteredString(font, "1000 mB", 40, 4, 0xFFFFFFFF);
-        graphics.drawCenteredString(font, "1000 mB", 136, 4, 0xFFFFFFFF);
+        graphics.centeredText(font, "1000 mB", 40, 4, 0xFFFFFFFF);
+        graphics.centeredText(font, "1000 mB", 136, 4, 0xFFFFFFFF);
         if (recipe.environmentBlocks().isEmpty()) {
-            graphics.drawWordWrap(font, Component.translatable(TEXT_PREFIX + recipe.environment()), 4, 48, 70, 0xFF404040);
+            graphics.textWithWordWrap(font, Component.translatable(TEXT_PREFIX + recipe.environment()), 4, 48, 70, 0xFF404040);
         }
-        graphics.drawCenteredString(font, Component.translatable(TEXT_PREFIX + "details"), 88, DETAILS_Y, 0xFF808080);
+        graphics.centeredText(font, Component.translatable(TEXT_PREFIX + "details"), 88, DETAILS_Y, 0xFF808080);
     }
 
-    private static void drawFluid(IRecipeSlotsView slots, String name, GuiGraphics graphics, int x) {
+    private static void drawFluid(IRecipeSlotsView slots, String name, GuiGraphicsExtractor graphics, int x) {
         slots.findSlotByName(name)
             .flatMap(slot -> slot.getDisplayedIngredient(NeoForgeTypes.FLUID_STACK))
             .ifPresent(fluid -> CatalysisBlockRenderer.drawBlock(

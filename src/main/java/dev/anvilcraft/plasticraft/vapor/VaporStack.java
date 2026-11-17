@@ -1,11 +1,11 @@
 package dev.anvilcraft.plasticraft.vapor;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 
 import java.util.Objects;
 
 /** 未注册的虚拟气体，数量以毫桶计。 */
-public record VaporStack(ResourceLocation type, int amount) {
+public record VaporStack(Identifier type, int amount) {
     public VaporStack {
         Objects.requireNonNull(type, "type");
         if (amount < 0) throw new IllegalArgumentException("Vapor amount must not be negative");

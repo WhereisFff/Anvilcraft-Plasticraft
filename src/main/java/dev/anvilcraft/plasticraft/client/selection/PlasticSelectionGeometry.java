@@ -9,17 +9,17 @@ import dev.anvilcraft.lib.v2.cube.geometry.SelectionGeometry;
 import dev.anvilcraft.plasticraft.entity.PlasticEntityOrientation;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticConvexShape;
 import dev.anvilcraft.plasticraft.entity.collision.PlasticEntityGeometry;
+import net.minecraft.client.renderer.block.dispatch.BlockModelRotation;
+import net.minecraft.client.resources.model.cuboid.CuboidModelElement;
+import net.minecraft.client.resources.model.cuboid.CuboidRotation;
 import net.minecraft.core.BlockPos;
-import net.minecraft.client.renderer.block.model.BlockElement;
-import net.minecraft.client.renderer.block.model.BlockElementRotation;
-import net.minecraft.client.resources.model.BlockModelRotation;
 import net.minecraft.core.Direction;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
-import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -72,11 +72,11 @@ public final class PlasticSelectionGeometry {
         return built;
     }
 
-    static List<ConvexShape> modelElements(List<BlockElement> elements) {
-        List<BlockElement> scaled = new ArrayList<>(elements.size());
-        for (BlockElement element : elements) {
-            Vector3f from = new Vector3f(element.from);
-            Vector3f to = new Vector3f(element.to);
+    static List<ConvexShape> modelElements(List<CuboidModelElement> elements) {
+        List<CuboidModelElement> scaled = new ArrayList<>(elements.size());
+        for (CuboidModelElement element : elements) {
+            Vector3f from = new Vector3f(element.from());
+            Vector3f to = new Vector3f(element.to());
             for (int axis = 0; axis < 3; axis++) {
                 if (Math.abs(to.get(axis) - from.get(axis)) < MIN_SELECTION_THICKNESS * 16) {
                     float center = (to.get(axis) + from.get(axis)) * 0.5F;
@@ -84,13 +84,13 @@ public final class PlasticSelectionGeometry {
                     to.setComponent(axis, center + (float) MIN_SELECTION_THICKNESS * 8);
                 }
             }
-            BlockElementRotation rotation = element.rotation == null ? null : new BlockElementRotation(
-                new Vector3f(element.rotation.origin()).mul(GEOMETRY_SCALE), element.rotation.axis(),
-                element.rotation.angle(), element.rotation.rescale()
+            CuboidRotation rotation = element.rotation() == null ? null : new CuboidRotation(
+                new Vector3f(element.rotation().origin()).mul(GEOMETRY_SCALE), element.rotation().value(),
+                element.rotation().rescale(), element.rotation().transform()
             );
-            scaled.add(new BlockElement(from.mul(GEOMETRY_SCALE), to.mul(GEOMETRY_SCALE), element.faces, rotation, element.shade));
+            scaled.add(new CuboidModelElement(from.mul(GEOMETRY_SCALE), to.mul(GEOMETRY_SCALE), element.faces(), rotation, element.shade(), element.lightEmission(), element.faceData()));
         }
-        return elements.isEmpty() ? List.of() : CubeModelDecoder.decode(scaled, BlockModelRotation.X0_Y0);
+        return elements.isEmpty() ? List.of() : CubeModelDecoder.decode(scaled, BlockModelRotation.IDENTITY);
     }
 
     private static SelectionGeometry voxelGeometry(VoxelShape shape) {

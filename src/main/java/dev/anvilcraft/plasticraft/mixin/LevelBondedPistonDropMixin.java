@@ -4,12 +4,11 @@ import dev.anvilcraft.plasticraft.block.piston.BondedPistonReactions;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
+import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-
-import javax.annotation.Nullable;
 
 /** 胶粘 DESTROY 方块随活塞移动时，禁止邻接更新打碎它或播放破坏粒子。 */
 @Mixin(Level.class)

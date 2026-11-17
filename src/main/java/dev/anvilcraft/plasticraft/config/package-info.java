@@ -1,4 +1,4 @@
-@javax.annotation.ParametersAreNonnullByDefault
-@net.minecraft.MethodsReturnNonnullByDefault
-@net.minecraft.FieldsAreNonnullByDefault
+@NullMarked
 package dev.anvilcraft.plasticraft.config;
+
+import org.jspecify.annotations.NullMarked;

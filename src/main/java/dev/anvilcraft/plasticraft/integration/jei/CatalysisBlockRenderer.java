@@ -1,15 +1,14 @@
 package dev.anvilcraft.plasticraft.integration.jei;
 
-import com.mojang.blaze3d.platform.Lighting;
 import dev.dubhe.anvilcraft.client.support.RenderSupport;
 import mezz.jei.api.ingredients.IIngredientRenderer;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.block.state.BlockState;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.function.Function;
@@ -21,15 +20,12 @@ record CatalysisBlockRenderer<T>(Function<T, List<Component>> tooltip) implement
     static final float STACK_Y_OFFSET = SCALE * (float) Math.cos(Math.PI / 6);
 
     @Override
-    public void render(GuiGraphics graphics, T ingredient) {
+    public void render(GuiGraphicsExtractor graphics, T ingredient) {
         // JEI 会按成分类型批量绘制，模型留给分类先画环境、再画流体，避免遮挡顺序被打乱。
     }
 
-    static void drawBlock(GuiGraphics graphics, BlockState state, float x, float y, float depth) {
-        graphics.flush();
-        RenderSupport.renderBlock(graphics, state, x + 16, y + 10, depth, SCALE, RenderSupport.SINGLE_BLOCK);
-        graphics.flush();
-        Lighting.setupFor3DItems();
+    static void drawBlock(GuiGraphicsExtractor graphics, BlockState state, float x, float y, float depth) {
+        RenderSupport.renderBlockAt(graphics, state, x + 16, y + 10, SCALE);
     }
 
     @Override

@@ -2,9 +2,9 @@ package dev.anvilcraft.plasticraft.recipe;
 
 import dev.dubhe.anvilcraft.api.plasma.PlasmaJetFuelHandler;
 import net.minecraft.core.BlockPos;
+import net.minecraft.util.TriState;
 import net.minecraft.world.level.Level;
-import net.neoforged.neoforge.common.util.TriState;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.OptionalInt;
 

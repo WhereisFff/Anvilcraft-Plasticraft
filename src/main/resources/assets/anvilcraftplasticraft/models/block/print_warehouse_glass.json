@@ -2,10 +2,10 @@
 	"format_version": "1.9.0",
 	"credit": "Made with Blockbench",
 	"ambientocclusion": false,
-	"render_type": "minecraft:translucent",
+
 	"textures": {
-		"4": "anvilcraftplasticraft:block/print_warehouse",
-		"particle": "anvilcraftplasticraft:block/print_warehouse"
+		"4": {"sprite": "anvilcraftplasticraft:block/print_warehouse", "force_translucent": true},
+		"particle": {"sprite": "anvilcraftplasticraft:block/print_warehouse", "force_translucent": true}
 	},
 	"elements": [
 		{

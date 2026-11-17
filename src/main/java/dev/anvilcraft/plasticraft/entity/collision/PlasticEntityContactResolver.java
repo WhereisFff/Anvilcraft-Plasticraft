@@ -4,7 +4,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Objects;
@@ -52,7 +52,7 @@ public final class PlasticEntityContactResolver {
             probeMovement
         );
         if (contact == null) return null;
-        Vec3 gravity = Vec3.atLowerCornerOf(gravityDirection.getNormal());
+        Vec3 gravity = Vec3.atLowerCornerOf(gravityDirection.getUnitVec3i());
         double alignment = -gravity.dot(contact.normal());
         if (alignment <= CONTACT_EPSILON) return null;
         return new SupportContact(
@@ -76,7 +76,7 @@ public final class PlasticEntityContactResolver {
         Objects.requireNonNull(targetGravityDirection, "targetGravityDirection");
         Objects.requireNonNull(requestedMovement, "requestedMovement");
 
-        Vec3 gravity = Vec3.atLowerCornerOf(targetGravityDirection.getNormal());
+        Vec3 gravity = Vec3.atLowerCornerOf(targetGravityDirection.getUnitVec3i());
         Vec3 lateralMovement = requestedMovement.subtract(gravity.scale(requestedMovement.dot(gravity)));
         if (lateralMovement.lengthSqr() <= CONTACT_EPSILON * CONTACT_EPSILON) return null;
         List<PlasticConvexShape> pusherShapes = PlasticConvexCollisionResolver.collisionShapes(
@@ -130,7 +130,7 @@ public final class PlasticEntityContactResolver {
         );
         for (Direction direction : Direction.values()) {
             if (direction.getAxis() == gravityDirection.getAxis()) continue;
-            Vec3 movement = Vec3.atLowerCornerOf(direction.getNormal()).scale(probeDistance);
+            Vec3 movement = Vec3.atLowerCornerOf(direction.getUnitVec3i()).scale(probeDistance);
             List<PlasticConvexShape> secondShapes = PlasticConvexCollisionResolver.collisionShapes(
                 second,
                 second.getBoundingBox(),
@@ -143,7 +143,7 @@ public final class PlasticEntityContactResolver {
                 movement
             );
             if (contact == null) continue;
-            Vec3 gravity = Vec3.atLowerCornerOf(gravityDirection.getNormal());
+            Vec3 gravity = Vec3.atLowerCornerOf(gravityDirection.getUnitVec3i());
             Vec3 lateralNormal = contact.normal().subtract(gravity.scale(contact.normal().dot(gravity)));
             if (lateralNormal.lengthSqr() > CONTACT_EPSILON * CONTACT_EPSILON) return true;
         }

@@ -34,17 +34,15 @@ import dev.anvilcraft.plasticraft.init.item.PlasticraftItems;
 import dev.anvilcraft.plasticraft.inventory.HardenedResinAnvilMenu;
 import dev.anvilcraft.plasticraft.network.BondedPlasticHammerRotatePacket;
 import dev.anvilcraft.plasticraft.network.PlasticEntityHammerRotatePacket;
-import dev.dubhe.anvilcraft.block.GiantAnvilBlock;
-import dev.dubhe.anvilcraft.block.sliding.ISlidingRail;
+import dev.dubhe.anvilcraft.block.logistics.sliding.ISlidingRail;
 import dev.dubhe.anvilcraft.block.state.Cube3x3PartHalf;
+import dev.dubhe.anvilcraft.block.workstation.GiantAnvilBlock;
 import dev.dubhe.anvilcraft.entity.FallingGiantAnvilEntity;
 import dev.dubhe.anvilcraft.entity.SlidingBlockEntity;
 import dev.dubhe.anvilcraft.init.block.ModBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.gametest.framework.GameTest;
-import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
@@ -53,9 +51,9 @@ import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.entity.monster.Zombie;
-import net.minecraft.world.entity.projectile.Snowball;
-import net.minecraft.world.entity.projectile.ThrownPotion;
+import net.minecraft.world.entity.monster.zombie.Zombie;
+import net.minecraft.world.entity.projectile.throwableitemprojectile.Snowball;
+import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownSplashPotion;
 import net.minecraft.world.inventory.AnvilMenu;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -81,14 +79,15 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.common.CommonHooks;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.util.BlockSnapshot;
-import net.neoforged.neoforge.event.level.BlockEvent;
-import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
 import net.neoforged.neoforge.event.entity.EntityTravelToDimensionEvent;
+import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
+import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.testframework.annotation.TestHolder;
 import net.neoforged.testframework.gametest.EmptyTemplate;
 import net.neoforged.testframework.gametest.ExtendedGameTestHelper;
+import net.neoforged.testframework.gametest.GameTest;
 import net.neoforged.testframework.gametest.GameTestPlayer;
 
 import java.util.ArrayList;
@@ -179,7 +178,7 @@ public final class AdhesiveBondingGameTests {
 
     private static void throwInvisibilityPotion(ExtendedGameTestHelper helper, BlockPos supportPos, Item item) {
         Vec3 impact = Vec3.atCenterOf(supportPos).add(0.0D, 0.5D, 0.0D);
-        ThrownPotion potion = new ThrownPotion(helper.getLevel(), impact.x, impact.y, impact.z);
+        ThrownSplashPotion potion = new ThrownSplashPotion(helper.getLevel(), impact.x, impact.y, impact.z, new ItemStack(Items.SPLASH_POTION));
         potion.setItem(PotionContents.createItemStack(item, Potions.INVISIBILITY));
         AdhesiveInvisibilityService.projectileImpact(new ProjectileImpactEvent(
             potion,
@@ -379,7 +378,7 @@ public final class AdhesiveBondingGameTests {
             "falling giant anvil could not be selected for an entity bond"
         );
         Vec3 entityBondPlayerPosition = helper.absoluteVec(new Vec3(7.5D, 3.0D, 3.5D));
-        player.moveTo(entityBondPlayerPosition.x, entityBondPlayerPosition.y, entityBondPlayerPosition.z);
+        player.snapTo(entityBondPlayerPosition.x, entityBondPlayerPosition.y, entityBondPlayerPosition.z);
         check(AdhesiveBondingService.bondSelectedToEntity(
             player,
             InteractionHand.MAIN_HAND,
@@ -1511,7 +1510,7 @@ public final class AdhesiveBondingGameTests {
         plastic.setNoGravity(true);
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 playerPosition = helper.absoluteVec(new Vec3(3.69D, 3.0D, 3.5D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        player.snapTo(playerPosition.x, playerPosition.y, playerPosition.z);
         player.setOnGround(true);
         Vec3 start = plastic.position();
 
@@ -1847,7 +1846,7 @@ public final class AdhesiveBondingGameTests {
 
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 playerPosition = helper.absoluteVec(new Vec3(4.5D, 2.0D, 2.70D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        player.snapTo(playerPosition.x, playerPosition.y, playerPosition.z);
         helper.runAfterDelay(3, () -> {
             double playerStart = player.getZ();
             double newestStart = newestFollower.getZ();
@@ -1891,7 +1890,7 @@ public final class AdhesiveBondingGameTests {
 
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 playerPosition = helper.absoluteVec(new Vec3(4.70D, 2.0D, 4.5D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        player.snapTo(playerPosition.x, playerPosition.y, playerPosition.z);
         helper.runAfterDelay(3, () -> {
             double playerStart = player.getX();
             double followerStart = follower.getX();
@@ -1921,7 +1920,7 @@ public final class AdhesiveBondingGameTests {
     static void playerCarriesBondedPlasticFollowerOnHead(ExtendedGameTestHelper helper) {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 playerPosition = helper.absoluteVec(new Vec3(4.5D, 2.0D, 3.5D));
-        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z);
+        player.snapTo(playerPosition.x, playerPosition.y, playerPosition.z);
         double productY = 2.0D + player.getBbHeight() - 3.0D / 16.0D;
         HardenedResinCauldronEntity follower = createCauldron(helper, new Vec3(4.5D, productY, 3.5D));
         HardenedResinCauldronEntity leader = createCauldron(helper, new Vec3(5.5D, productY, 3.5D));
@@ -2115,7 +2114,7 @@ public final class AdhesiveBondingGameTests {
             "block-transit obstacle source could not be selected"
         );
         Vec3 supportPlayerPosition = helper.absoluteVec(new Vec3(7.5D, 2.0D, 1.5D));
-        player.moveTo(supportPlayerPosition.x, supportPlayerPosition.y, supportPlayerPosition.z);
+        player.snapTo(supportPlayerPosition.x, supportPlayerPosition.y, supportPlayerPosition.z);
         check(
             AdhesiveBondingService.bondSelected(
                 player,
@@ -2161,7 +2160,7 @@ public final class AdhesiveBondingGameTests {
             "entity-transit obstacle source could not be selected"
         );
         Vec3 supportPlayerPosition = helper.absoluteVec(new Vec3(7.5D, 2.0D, 1.5D));
-        player.moveTo(supportPlayerPosition.x, supportPlayerPosition.y, supportPlayerPosition.z);
+        player.snapTo(supportPlayerPosition.x, supportPlayerPosition.y, supportPlayerPosition.z);
         check(
             AdhesiveBondingService.bondSelectedToEntity(
                 player,
@@ -2285,7 +2284,7 @@ public final class AdhesiveBondingGameTests {
             check(EntityBondManager.hasBonds(source), "plastic pair did not remain as bonded entities");
             check(EntityBondManager.hasBonds(target), "plastic target did not retain its entity bond");
             Vec3 nearSupport = helper.absoluteVec(new Vec3(7.0D, 3.0D, 1.5D));
-            player.moveTo(nearSupport.x, nearSupport.y, nearSupport.z);
+            player.snapTo(nearSupport.x, nearSupport.y, nearSupport.z);
             player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack());
             check(
                 AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, target, Direction.EAST),
@@ -2393,7 +2392,7 @@ public final class AdhesiveBondingGameTests {
         for (var dimension : List.of(Level.NETHER, Level.END)) {
             for (boolean noGravity : List.of(false, true)) {
                 HardenedResinAnvilEntity moving = createTransitingAnvil(helper, noGravity);
-                String phase = dimension.location() + ", originalNoGravity=" + noGravity;
+                String phase = dimension.identifier() + ", originalNoGravity=" + noGravity;
                 Vec3 departure = moving.position();
                 NeoForge.EVENT_BUS.post(new EntityTravelToDimensionEvent(moving, dimension));
                 check(!moving.hasData(PlasticraftAttachments.ADHESIVE_TRANSIT), phase + ": transit survived travel");
@@ -2553,7 +2552,7 @@ public final class AdhesiveBondingGameTests {
                 "fixed plastic block is missing its bonded state"
             );
             check(
-                helper.getBlockEntity(occupied) instanceof BondedEntityBlockEntity bonded
+                helper.getLevel().getBlockEntity(helper.absolutePos(occupied)) instanceof BondedEntityBlockEntity bonded
                     && bonded.isInitialized()
                     && bonded.isPlastic()
                     && bonded.getPlasticOrientation().attachmentFace() == Direction.EAST,
@@ -2574,7 +2573,7 @@ public final class AdhesiveBondingGameTests {
                         HardenedResinAnvilEntity.class,
                         new AABB(helper.absolutePos(occupied)).inflate(1.0D)
                     ).stream().findFirst()
-                        .orElseThrow(() -> new GameTestAssertException("plastic entity was not restored"));
+                        .orElseThrow(() -> helper.assertionException("plastic entity was not restored"));
                     check(
                         restored.getOrientation().attachmentFace() == Direction.EAST,
                         "restored plastic entity lost its bonded orientation"
@@ -2612,7 +2611,7 @@ public final class AdhesiveBondingGameTests {
             Direction.UP
         ), "hardened anvil bonding failed");
         player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack());
-        player.moveTo(helper.absoluteVec(new Vec3(7.5D, 3.0D, 4.5D)));
+        player.snapTo(helper.absoluteVec(new Vec3(7.5D, 3.0D, 4.5D)));
         check(AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, resin), "resin anvil selection failed");
         check(AdhesiveBondingService.bondSelected(
             player,
@@ -2824,12 +2823,12 @@ public final class AdhesiveBondingGameTests {
             );
             check(player.getMainHandItem().is(Items.BUCKET), "water transfer did not return an empty bucket");
             check(
-                fixedCauldron.getFluidHandler().getFluid().is(Fluids.WATER)
-                    && fixedCauldron.getFluidHandler().getFluidAmount() == HardenedResinCauldronEntity.CAPACITY,
+                PlasticraftTestData.fluids(fixedCauldron.getFluidHandler()).getFluidInTank(0).is(Fluids.WATER)
+                    && PlasticraftTestData.fluids(fixedCauldron.getFluidHandler()).getFluidInTank(0).getAmount() == HardenedResinCauldronEntity.CAPACITY,
                 "fixed plastic pot did not retain the transferred water"
             );
             check(
-                fixedCauldron.getFluidHandler().drain(
+                PlasticraftTestData.fluids(fixedCauldron.getFluidHandler()).drain(
                     HardenedResinCauldronEntity.CAPACITY,
                     IFluidHandler.FluidAction.EXECUTE
                 ).getAmount() == HardenedResinCauldronEntity.CAPACITY,
@@ -2882,7 +2881,7 @@ public final class AdhesiveBondingGameTests {
         ), "floor pot bonding failed");
         player.setItemInHand(InteractionHand.MAIN_HAND, PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack());
         Vec3 wallPlayerPosition = helper.absoluteVec(new Vec3(7.5D, 3.0D, 4.5D));
-        player.moveTo(wallPlayerPosition.x, wallPlayerPosition.y, wallPlayerPosition.z);
+        player.snapTo(wallPlayerPosition.x, wallPlayerPosition.y, wallPlayerPosition.z);
         check(AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, wallEntity), "wall pot selection failed");
         check(AdhesiveBondingService.bondSelected(
             player,
@@ -2914,7 +2913,7 @@ public final class AdhesiveBondingGameTests {
             );
             Vec3 standingPosition = Vec3.atLowerCornerOf(helper.absolutePos(floorCauldron))
                 .add(0.5D, 0.34D, 0.5D);
-            player.moveTo(standingPosition.x, standingPosition.y, standingPosition.z);
+            player.snapTo(standingPosition.x, standingPosition.y, standingPosition.z);
             check(helper.getLevel().noCollision(player), "player could not stand inside the floor-bonded pot");
 
             VoxelShape wallShape = helper.getBlockState(wallCauldron).getCollisionShape(
@@ -3180,7 +3179,7 @@ public final class AdhesiveBondingGameTests {
             "rounded-detour source could not be selected"
         );
         Vec3 supportPlayerPosition = helper.absoluteVec(new Vec3(6.5D, 2.0D, 1.5D));
-        player.moveTo(supportPlayerPosition.x, supportPlayerPosition.y, supportPlayerPosition.z);
+        player.snapTo(supportPlayerPosition.x, supportPlayerPosition.y, supportPlayerPosition.z);
         check(
             AdhesiveBondingService.bondSelected(
                 player,
@@ -3213,7 +3212,7 @@ public final class AdhesiveBondingGameTests {
             AdhesiveBondingService.select(player, InteractionHand.MAIN_HAND, moving, Direction.EAST),
             "async-preview source could not be selected"
         );
-        player.moveTo(
+        player.snapTo(
             helper.absoluteVec(new Vec3(6.5D, 2.0D, 1.5D)).x,
             helper.absoluteVec(new Vec3(6.5D, 2.0D, 1.5D)).y,
             helper.absoluteVec(new Vec3(6.5D, 2.0D, 1.5D)).z
@@ -3279,7 +3278,7 @@ public final class AdhesiveBondingGameTests {
             "moving-preview source could not be selected"
         );
         Vec3 supportPlayerPosition = helper.absoluteVec(new Vec3(6.5D, 2.0D, 1.5D));
-        player.moveTo(supportPlayerPosition.x, supportPlayerPosition.y, supportPlayerPosition.z);
+        player.snapTo(supportPlayerPosition.x, supportPlayerPosition.y, supportPlayerPosition.z);
         AdhesivePreviewService.requestBlock(
             player,
             2,
@@ -3326,7 +3325,7 @@ public final class AdhesiveBondingGameTests {
             "refresh-preview source could not be selected"
         );
         Vec3 supportPlayerPosition = helper.absoluteVec(new Vec3(8.5D, 2.0D, 1.5D));
-        player.moveTo(supportPlayerPosition.x, supportPlayerPosition.y, supportPlayerPosition.z);
+        player.snapTo(supportPlayerPosition.x, supportPlayerPosition.y, supportPlayerPosition.z);
         AdhesivePreviewService.requestBlock(
             player,
             3,
@@ -3658,7 +3657,7 @@ public final class AdhesiveBondingGameTests {
         );
 
         Vec3 nearSupport = helper.absoluteVec(new Vec3(20.5D, 2.0D, 2.0D));
-        player.moveTo(nearSupport.x, nearSupport.y, nearSupport.z);
+        player.snapTo(nearSupport.x, nearSupport.y, nearSupport.z);
 
         AdhesivePathPlanner.Plan plan = AdhesivePathPlanner.plan(
             helper.getLevel(),
@@ -3767,12 +3766,12 @@ public final class AdhesiveBondingGameTests {
             check(helper.getBlockState(movedFirst).is(Blocks.MOVING_PISTON), "first block did not start moving");
             check(helper.getBlockState(movedSecond).is(Blocks.MOVING_PISTON), "bonded block started late");
             check(
-                helper.getBlockEntity(movedFirst) instanceof PistonMovingBlockEntity firstMoving
+                helper.getLevel().getBlockEntity(helper.absolutePos(movedFirst)) instanceof PistonMovingBlockEntity firstMoving
                     && firstMoving.getMovedState().is(Blocks.STONE),
                 "first moving block did not preserve its render state"
             );
             check(
-                helper.getBlockEntity(movedSecond) instanceof PistonMovingBlockEntity secondMoving
+                helper.getLevel().getBlockEntity(helper.absolutePos(movedSecond)) instanceof PistonMovingBlockEntity secondMoving
                     && secondMoving.getMovedState().is(Blocks.GLASS),
                 "bonded moving block did not preserve its render state"
             );
@@ -3802,12 +3801,12 @@ public final class AdhesiveBondingGameTests {
                     check(helper.getBlockState(first).is(Blocks.MOVING_PISTON), "first block did not start retracting");
                     check(helper.getBlockState(second).is(Blocks.MOVING_PISTON), "bonded block was not retracted");
                     check(
-                        helper.getBlockEntity(first) instanceof PistonMovingBlockEntity firstMoving
+                        helper.getLevel().getBlockEntity(helper.absolutePos(first)) instanceof PistonMovingBlockEntity firstMoving
                             && firstMoving.getMovedState().is(Blocks.STONE),
                         "retracting first block did not preserve its render state"
                     );
                     check(
-                        helper.getBlockEntity(second) instanceof PistonMovingBlockEntity secondMoving
+                        helper.getLevel().getBlockEntity(helper.absolutePos(second)) instanceof PistonMovingBlockEntity secondMoving
                             && secondMoving.getMovedState().is(Blocks.GLASS),
                         "retracting bonded block did not preserve its render state"
                     );
@@ -4057,12 +4056,12 @@ public final class AdhesiveBondingGameTests {
             check(helper.getBlockState(movedSupport).is(Blocks.MOVING_PISTON), "lever support did not start moving");
             check(helper.getBlockState(movedLever).is(Blocks.MOVING_PISTON), "bonded lever did not start moving");
             check(
-                helper.getBlockEntity(movedSupport) instanceof PistonMovingBlockEntity supportMoving
+                helper.getLevel().getBlockEntity(helper.absolutePos(movedSupport)) instanceof PistonMovingBlockEntity supportMoving
                     && supportMoving.getMovedState().is(Blocks.STONE),
                 "moving lever support did not preserve its render state"
             );
             check(
-                helper.getBlockEntity(movedLever) instanceof PistonMovingBlockEntity leverMoving
+                helper.getLevel().getBlockEntity(helper.absolutePos(movedLever)) instanceof PistonMovingBlockEntity leverMoving
                     && leverMoving.getMovedState().is(Blocks.LEVER),
                 "bonded lever did not keep a moving-piston render state"
             );
@@ -4156,7 +4155,7 @@ public final class AdhesiveBondingGameTests {
         SlidingBlockEntity sliding = helper.getLevel().getEntitiesOfClass(
             SlidingBlockEntity.class,
             new AABB(helper.absolutePos(origin)).inflate(3.0D)
-        ).stream().findFirst().orElseThrow(() -> new GameTestAssertException("sliding block entity was not created"));
+        ).stream().findFirst().orElseThrow(() -> helper.assertionException("sliding block entity was not created"));
         check(sliding.getBlockCount() == 2, "sliding resolver omitted a bonded block");
 
         helper.runAfterDelay(16, () -> {
@@ -4445,9 +4444,9 @@ public final class AdhesiveBondingGameTests {
     }
 
     private static Snowball spawnStuckSnowball(ExtendedGameTestHelper helper, Vec3 relativePosition) {
-        Snowball snowball = new Snowball(helper.getLevel(), 0.0D, 0.0D, 0.0D);
+        Snowball snowball = new Snowball(helper.getLevel(), 0, 0, 0, new ItemStack(Items.SNOWBALL));
         Vec3 position = helper.absoluteVec(relativePosition);
-        snowball.moveTo(position.x, position.y, position.z);
+        snowball.snapTo(position.x, position.y, position.z);
         snowball.setNoGravity(true);
         snowball.setDeltaMovement(Vec3.ZERO);
         check(helper.getLevel().addFreshEntity(snowball), "failed to add snowball");
@@ -4457,7 +4456,7 @@ public final class AdhesiveBondingGameTests {
     private static GameTestPlayer bucketPlayer(ExtendedGameTestHelper helper, Vec3 relativePosition) {
         GameTestPlayer player = helper.makeTickingMockServerPlayerInLevel(GameType.SURVIVAL);
         Vec3 position = helper.absoluteVec(relativePosition);
-        player.moveTo(position.x, position.y, position.z);
+        player.snapTo(position.x, position.y, position.z);
         player.setItemInHand(
             InteractionHand.MAIN_HAND,
             PlasticraftItems.LIQUID_HIGH_VISCOSITY_RESIN_BUCKET.asStack()
@@ -4581,10 +4580,10 @@ public final class AdhesiveBondingGameTests {
     }
 
     private static BondedEntityBlockEntity bondedBlockEntity(ExtendedGameTestHelper helper, BlockPos relativePos) {
-        if (helper.getBlockEntity(relativePos) instanceof BondedEntityBlockEntity bonded && bonded.isInitialized()) {
+        if (helper.getLevel().getBlockEntity(helper.absolutePos(relativePos)) instanceof BondedEntityBlockEntity bonded && bonded.isInitialized()) {
             return bonded;
         }
-        throw new GameTestAssertException("bonded block entity was missing at " + relativePos);
+        throw helper.assertionException("bonded block entity was missing at " + relativePos);
     }
 
     private static BlockHitResult blockHit(ExtendedGameTestHelper helper, BlockPos relativePos) {
@@ -4602,8 +4601,8 @@ public final class AdhesiveBondingGameTests {
 
     private static int countItem(HardenedResinCauldronEntity cauldron, Item item) {
         int count = 0;
-        for (int slot = 0; slot < cauldron.getItemHandler().getSlots(); slot++) {
-            ItemStack stack = cauldron.getItemHandler().getStackInSlot(slot);
+        for (int slot = 0; slot < PlasticraftTestData.items(cauldron.getItemHandler()).getSlots(); slot++) {
+            ItemStack stack = PlasticraftTestData.items(cauldron.getItemHandler()).getStackInSlot(slot);
             if (stack.is(item)) count += stack.getCount();
         }
         return count;
@@ -4623,6 +4622,6 @@ public final class AdhesiveBondingGameTests {
     }
 
     private static void check(boolean condition, String message) {
-        if (!condition) throw new GameTestAssertException(message);
+        if (!condition) throw new PlasticraftTestFailure(message);
     }
 }
