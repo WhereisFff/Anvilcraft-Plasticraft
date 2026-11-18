@@ -1,69 +1,3 @@
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
-import java.nio.file.Files
-import java.security.MessageDigest
-import java.time.Duration
-import java.util.zip.ZipFile
-
-// 上游正式砧库适配尚在 PR #6195；发布对应 Maven 构件后移除 CI 归档提取，恢复铁砧工艺 Maven 依赖。
-@CacheableTask
-abstract class PrepareAnvilCraft extends DefaultTask {
-    @Input
-    abstract Property<String> getArtifactUrl()
-
-    @Input
-    abstract Property<String> getExpectedSha256()
-
-    @OutputFile
-    abstract RegularFileProperty getJarFile()
-
-    @TaskAction
-    void prepare() {
-        File target = jarFile.get().asFile
-        def client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL)
-            .connectTimeout(Duration.ofSeconds(30)).build()
-        def request = HttpRequest.newBuilder(URI.create(artifactUrl.get())).timeout(Duration.ofMinutes(3)).build()
-        def archive = temporaryDir.toPath().resolve('anvilcraft.zip')
-        def response = client.send(request, HttpResponse.BodyHandlers.ofFile(archive))
-        if (response.statusCode() != 200) {
-            throw new GradleException("无法下载铁砧工艺 PR #6195 的构建（HTTP ${response.statusCode()}）")
-        }
-        new ZipFile(archive.toFile()).withCloseable { zip ->
-            def entry = zip.getEntry(target.name)
-            if (entry == null) {
-                throw new GradleException("铁砧工艺构建缺少 ${target.name}")
-            }
-            byte[] jar = zip.getInputStream(entry).withCloseable { it.bytes }
-            String digest = MessageDigest.getInstance('SHA-256').digest(jar).encodeHex().toString()
-            if (digest != expectedSha256.get()) {
-                throw new GradleException("铁砧工艺 PR #6195 的 JAR 校验失败：${digest}")
-            }
-            Files.createDirectories(target.toPath().parent)
-            Files.write(target.toPath(), jar)
-        }
-    }
-}
-
-def localAnvilCraft = providers.gradleProperty('anvilcraft_jar')
-def anvilCraftDependency
-if (localAnvilCraft.present) {
-    File jar = file(localAnvilCraft.get())
-    if (!jar.isFile()) {
-        throw new GradleException("找不到指定的铁砧工艺 JAR：${jar}")
-    }
-    anvilCraftDependency = files(jar)
-} else {
-    def prepareAnvilCraft = tasks.register('prepareAnvilCraft', PrepareAnvilCraft) {
-        artifactUrl.set('https://nightly.link/Anvil-Dev/AnvilCraft/actions/artifacts/14345636426.zip')
-        expectedSha256.set('bf4bfb07584b6ad0ef0b0e5c9f6547c233bf8051ec2823fa33279fa4d31f7640')
-        jarFile.set(layout.buildDirectory.file(
-            "dependencies/anvilcraft-neoforge-${libs.versions.minecraft.get()}-${libs.versions.anvilcraft.get()}.jar"
-        ))
-    }
-    anvilCraftDependency = files(prepareAnvilCraft.flatMap { it.jarFile })
-}
-
 dependencies {
     gameTestImplementation("net.neoforged:testframework:${libs.versions.neoForge.get()}") { transitive = false }
 
@@ -75,7 +9,17 @@ dependencies {
     interfaceInjectionData(libs.anvillib.recipe)
     interfaceInjectionData(libs.anvillib.moveableEntityBlock)
 
-    implementation(anvilCraftDependency)
+    def localAnvilCraft = providers.gradleProperty('anvilcraft_jar')
+    if (localAnvilCraft.present) {
+        File jar = file(localAnvilCraft.get())
+        if (!jar.isFile()) {
+            throw new GradleException("找不到指定的铁砧工艺 JAR：${jar}")
+        }
+        implementation(files(jar))
+    } else {
+        implementation(libs.anvilcraft) { transitive = false }
+        interfaceInjectionData(libs.anvilcraft) { transitive = false }
+    }
 
     // 显式指定本地运行的可选集成版本，覆盖本体内嵌的旧版本；这些依赖不打入发布的 JAR。
     compileOnly(libs.ageratum)

@@ -5,10 +5,11 @@ jei = "29.43.0.106"
 jade = "26.1.1+neoforge"
 anvillib = "2.0.0"
 ageratum = "0.0.1+build.153"
-anvilcraft = "1.6.0+pr.6866"
+anvilcraft = "1.6.0+snapshot.2956"
 modDevGradle = "2.0.147"
 
 [libraries]
+anvilcraft = { group = "dev.dubhe", name = "anvilcraft-neoforge-26.1.2", version.ref = "anvilcraft" }
 jei-common-api = { group = "mezz.jei", name = "jei-26.1.2-common-api", version.ref = "jei" }
 jei-forge-api = { group = "mezz.jei", name = "jei-26.1.2-neoforge-api", version.ref = "jei" }
 jei-forge = { group = "mezz.jei", name = "jei-26.1.2-neoforge", version.ref = "jei" }

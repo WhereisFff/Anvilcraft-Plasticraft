@@ -27,10 +27,10 @@
 | --- | --- |
 | Minecraft | 26.1.2 |
 | 模组加载器 | NeoForge 26.1.2.114+ |
-| 前置模组 | AnvilCraft 1.6.0+pr.6866（正式砧库适配构建）或其后兼容版本、AnvilLib 2.0.0 正式版 |
+| 前置模组 | AnvilCraft 1.6.0+snapshot.2952 或更新版本、AnvilLib 2.0.0 正式版 |
 | 可选模组 | JEI、Jade、Ageratum |
 
-将构建产物和所需前置模组放入游戏实例的 `mods` 目录。铁砧工艺使用 [PR #6195 的构件](https://github.com/Anvil-Dev/AnvilCraft/actions/runs/44121186919)，Gradle 会下载并校验该 JAR。已有同版本本地文件时，可通过 `-Panvilcraft_jar=<路径>` 指定。
+将构建产物和所需前置模组放入游戏实例的 `mods` 目录。Gradle 默认从 Maven 仓库解析铁砧工艺。
 
 ## 构建与开发
 
