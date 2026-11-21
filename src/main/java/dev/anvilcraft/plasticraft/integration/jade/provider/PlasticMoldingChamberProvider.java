@@ -6,22 +6,22 @@ import dev.anvilcraft.plasticraft.integration.jade.PlasticJadeLayout;
 import dev.anvilcraft.plasticraft.molding.machine.MoldingPowerBridge;
 import dev.dubhe.anvilcraft.api.power.PowerGrid;
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.Mth;
 import snownee.jade.api.BlockAccessor;
 import snownee.jade.api.IBlockComponentProvider;
 import snownee.jade.api.IServerDataProvider;
 import snownee.jade.api.ITooltip;
+import snownee.jade.api.JadeIds;
 import snownee.jade.api.config.IPluginConfig;
 import snownee.jade.api.ui.BoxStyle;
+import snownee.jade.api.ui.Element;
 import snownee.jade.api.ui.IDisplayHelper;
 import snownee.jade.api.ui.JadeUI;
 import snownee.jade.api.view.ProgressView;
-import snownee.jade.impl.ui.ProgressElement;
-import snownee.jade.overlay.DisplayHelper;
 
 import java.util.Locale;
 
@@ -68,6 +68,10 @@ public enum PlasticMoldingChamberProvider implements IServerDataProvider<BlockAc
     public enum Client implements IBlockComponentProvider {
         INSTANCE;
 
+        private static final Element ENERGY_FILL = JadeUI.horizontalTiledSprite(
+            RenderPipelines.GUI_TEXTURED, JadeIds.JADE("energy_progress"), 16, 16
+        );
+
         @Override
         public void appendTooltip(ITooltip tooltip, BlockAccessor accessor, IPluginConfig config) {
             CompoundTag tag = accessor.getServerData();
@@ -91,12 +95,14 @@ public enum PlasticMoldingChamberProvider implements IServerDataProvider<BlockAc
                 ).withStyle(ChatFormatting.WHITE);
             } else {
                 IDisplayHelper display = IDisplayHelper.get();
-                energyText = Component.literal(display.humanReadableNumber(stored, "FE", false))
-                    .withStyle(ChatFormatting.WHITE)
-                    .append(Component.literal(" / " + display.humanReadableNumber(capacity, "FE", false))
-                        .withStyle(ChatFormatting.GRAY));
+                energyText = Component.translatable("jade.fe",
+                    ChatFormatting.WHITE + display.humanReadableNumber(stored, "FE", false),
+                    display.humanReadableNumber(capacity, "FE", false));
             }
-            tooltip.add(new EnergyBar((float) stored / capacity, energyText).tag(PlasticJadeLayout.CHAMBER_ENERGY));
+            tooltip.add(JadeUI.progress(new ProgressView(
+                ProgressView.Part.of(Mth.clamp((float) stored / capacity, 0, 1), ENERGY_FILL),
+                energyText, JadeUI.progressStyle(), BoxStyle.nestedBox()
+            )).tag(PlasticJadeLayout.CHAMBER_ENERGY));
             String formingMode = tag.getStringOr(FORMING_MODE, "");
             if (!formingMode.isEmpty()) {
                 tooltip.add(Component.translatable(
@@ -116,31 +122,6 @@ public enum PlasticMoldingChamberProvider implements IServerDataProvider<BlockAc
                 tooltip.add(Component.translatable(
                     "tooltip.anvilcraftplasticraft.molding.partial_downgrade"
                 ).withStyle(ChatFormatting.RED));
-            }
-        }
-
-        private static final class EnergyBar extends ProgressElement {
-            private final Component label;
-
-            private EnergyBar(float progress, Component label) {
-                super(new ProgressView(ProgressView.Part.of(progress, 0xFFAA0000), null,
-                    JadeUI.progressStyle(), BoxStyle.nestedBox()), Math.max(100, DisplayHelper.font().width(label) + 10), 14);
-                this.label = label;
-                this.flexGrow(1);
-            }
-
-            @Override
-            public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTicks) {
-                super.extractRenderState(graphics, mouseX, mouseY, partialTicks);
-                Font font = DisplayHelper.font();
-                IDisplayHelper.get().drawText(graphics, this.label,
-                    this.getX() + (this.getWidth() - font.width(this.label)) / 2f,
-                    this.getY() + (this.getHeight() - font.lineHeight) / 2f, 0xFFFFFFFF);
-            }
-
-            @Override
-            public Component getNarration() {
-                return this.label;
             }
         }
 
