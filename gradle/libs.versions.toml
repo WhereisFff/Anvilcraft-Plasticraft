@@ -4,8 +4,8 @@ neoForge = "26.1.2.114"
 jei = "29.43.0.106"
 jade = "26.1.1+neoforge"
 anvillib = "2.0.0"
-ageratum = "0.0.1+build.153"
-anvilcraft = "1.6.0+snapshot.2956"
+ageratum = "0.0.1+build.156"
+anvilcraft = "1.6.0+snapshot.2993"
 modDevGradle = "2.0.147"
 
 [libraries]

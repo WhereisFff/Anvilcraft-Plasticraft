@@ -46,3 +46,4 @@ trigger: always-on
 
 - 除非明确要求，否则不考虑旧存档兼容，也不添加迁移代码或旧 NBT 读取逻辑。
 - 编写或修改 GameTest 前必须先阅读并遵守 `docs/gametest-coverage.zh_cn.md`。
+- 你是这个代码库的长期维护者，时刻确保代码的整洁、规范和无过度设计。

@@ -391,13 +391,13 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         this.titleLabelY = 2;
         this.inventoryLabelY = -1000;
         createNumericFields();
-        this.leftSearch = createSearchBox("screen.anvilcraftplasticraft.molding.search_type");
+        this.leftSearch = createOverlaySearchBox("screen.anvilcraftplasticraft.molding.search_type");
         this.leftSearch.setResponder(ignored -> this.typeScrollRow = 0);
-        this.rightSearch = createSearchBox("screen.anvilcraftplasticraft.molding.search_json");
+        this.rightSearch = createOverlaySearchBox("screen.anvilcraftplasticraft.molding.search_json");
         this.rightSearch.setResponder(ignored -> this.blueprintScrollRow = 0);
         this.leftSearch.setValue(typeQuery);
         this.rightSearch.setValue(blueprintQuery);
-        this.outlinerSearch = createSearchBox("screen.anvilcraftplasticraft.molding.workspace.search");
+        this.outlinerSearch = createSearchBox(Component.translatable("screen.anvilcraftplasticraft.molding.workspace.search"));
         this.outlinerSearch.setResponder(ignored -> this.outlinerScroll = 0);
         this.outlinerSearch.setValue(outlineQuery);
         this.typeScrollRow = previousTypeScroll;
@@ -3467,11 +3467,17 @@ public class PlasticMoldingChamberScreen extends AbstractContainerScreen<Plastic
         }
     }
 
-    private EditBox createSearchBox(String hintKey) {
-        EditBox box = new VerticallyOffsetEditBox(this.font, 60, 11, Component.translatable(hintKey));
+    private EditBox createOverlaySearchBox(String hintKey) {
+        EditBox box = createSearchBox(Component.translatable(hintKey).withStyle(ChatFormatting.WHITE));
+        box.setTextColor(0xFFFFFFFF);
+        return box;
+    }
+
+    private EditBox createSearchBox(Component hint) {
+        EditBox box = new VerticallyOffsetEditBox(this.font, 60, 11, hint);
         box.setMaxLength(32);
         box.setBordered(false);
-        box.setHint(Component.translatable(hintKey));
+        box.setHint(hint);
         return box;
     }
 
