@@ -29,7 +29,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** 为 Jade 指向的可移动 Plasticraft 实体添加简要状态信息。 */
-public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDataProvider<EntityAccessor> {
+public enum PlasticEntityProvider implements IServerDataProvider<EntityAccessor> {
     INSTANCE;
 
     private static final String PUSHABLE_KEY = "pushable";
@@ -53,96 +53,105 @@ public enum PlasticEntityProvider implements IEntityComponentProvider, IServerDa
     }
 
     @Override
-    public @Nullable Element getIcon(
-        EntityAccessor accessor,
-        IPluginConfig config,
-        @Nullable Element currentIcon
-    ) {
-        if (!(accessor.getEntity() instanceof AbstractPlasticEntity plastic)) return currentIcon;
-        ItemStack picked = plastic.getPickResult();
-        return picked.isEmpty() ? currentIcon : JadeUI.item(picked);
+    public Identifier getUid() {
+        return UID;
     }
 
-    @Override
-    public void appendTooltip(ITooltip tooltip, EntityAccessor accessor, IPluginConfig config) {
-        if (!(accessor.getEntity() instanceof AbstractPlasticEntity)) {
-            return;
+    public enum Client implements IEntityComponentProvider {
+        INSTANCE;
+
+        @Override
+        public @Nullable Element getIcon(
+            EntityAccessor accessor,
+            IPluginConfig config,
+            @Nullable Element currentIcon
+        ) {
+            if (!(accessor.getEntity() instanceof AbstractPlasticEntity plastic)) return currentIcon;
+            ItemStack picked = plastic.getPickResult();
+            return picked.isEmpty() ? currentIcon : JadeUI.item(picked);
         }
 
-        CompoundTag data = accessor.getServerData();
-        if (data.getBooleanOr(PUSHABLE_KEY, false)) {
-            tooltip.add(JadeUI.text(Component.literal("  ")
-                .append(Component.translatable("tooltip.anvilcraftplasticraft.jade.pushable"))
-                .withStyle(ChatFormatting.GRAY)).tag(PlasticJadeLayout.PUSHABLE));
-        }
-        if (data.getBooleanOr(MAGNETIZED_KEY, false)) {
-            tooltip.add(Component.translatable("tooltip.anvilcraftplasticraft.magnetized"));
-        }
+        @Override
+        public void appendTooltip(ITooltip tooltip, EntityAccessor accessor, IPluginConfig config) {
+            if (!(accessor.getEntity() instanceof AbstractPlasticEntity)) {
+                return;
+            }
 
-        boolean moldedSummary = accessor.getEntity() instanceof UniversalPlasticEntity
-            && data.getCompound(MOLDED_SUMMARY_KEY).isPresent();
-        if (moldedSummary) {
-            appendMoldedSummary(
-                tooltip,
-                MoldedPlasticContentSummary.fromTag(
-                    data.getCompoundOrEmpty(MOLDED_SUMMARY_KEY),
-                    accessor.getEntity().registryAccess()
-                )
-            );
-        }
+            CompoundTag data = accessor.getServerData();
+            if (data.getBooleanOr(PUSHABLE_KEY, false)) {
+                tooltip.add(JadeUI.text(Component.literal("  ")
+                    .append(Component.translatable("tooltip.anvilcraftplasticraft.jade.pushable"))
+                    .withStyle(ChatFormatting.GRAY)).tag(PlasticJadeLayout.PUSHABLE));
+            }
+            if (data.getBooleanOr(MAGNETIZED_KEY, false)) {
+                tooltip.add(Component.translatable("tooltip.anvilcraftplasticraft.magnetized"));
+            }
 
-        // 成型制品的槽位内容已由摘要列出，只有硬化树脂锅需要实体同步列表兜底
-        PlasticCauldron pot = moldedSummary ? null : PlasticCauldrons.of(accessor.getEntity());
-        if (pot != null) {
+            boolean moldedSummary = accessor.getEntity() instanceof UniversalPlasticEntity
+                && data.getCompound(MOLDED_SUMMARY_KEY).isPresent();
+            if (moldedSummary) {
+                appendMoldedSummary(
+                    tooltip,
+                    MoldedPlasticContentSummary.fromTag(
+                        data.getCompoundOrEmpty(MOLDED_SUMMARY_KEY),
+                        accessor.getEntity().registryAccess()
+                    )
+                );
+            }
 
-            List<ItemStack> items = pot.getSyncedItems();
-            if (!items.isEmpty()) {
-                for (ItemStack stack : items) {
-                    List<Element> itemElements = new ArrayList<>(2);
-                    itemElements.add(JadeUI.smallItem(stack));
-                    itemElements.add(JadeUI.text(Component.translatable(
-                        "tooltip.anvilcraftplasticraft.jade.item_count",
-                        IDisplayHelper.get().stripColor(stack.getHoverName()),
-                        stack.getCount()
-                    ).withStyle(ChatFormatting.GRAY)));
-                    tooltip.add(itemElements);
+            // 成型制品的槽位内容已由摘要列出，只有硬化树脂锅需要实体同步列表兜底
+            PlasticCauldron pot = moldedSummary ? null : PlasticCauldrons.of(accessor.getEntity());
+            if (pot != null) {
+
+                List<ItemStack> items = pot.getSyncedItems();
+                if (!items.isEmpty()) {
+                    for (ItemStack stack : items) {
+                        List<Element> itemElements = new ArrayList<>(2);
+                        itemElements.add(JadeUI.smallItem(stack));
+                        itemElements.add(JadeUI.text(Component.translatable(
+                            "tooltip.anvilcraftplasticraft.jade.item_count",
+                            IDisplayHelper.get().stripColor(stack.getHoverName()),
+                            stack.getCount()
+                        ).withStyle(ChatFormatting.GRAY)));
+                        tooltip.add(itemElements);
+                    }
                 }
             }
         }
-    }
 
-    private static void appendMoldedSummary(ITooltip tooltip, MoldedPlasticContentSummary summary) {
-        if (PlasticCauldronLayout.of(summary.type()) != null) {
-            appendItems(tooltip, summary);
+        private static void appendMoldedSummary(ITooltip tooltip, MoldedPlasticContentSummary summary) {
+            if (PlasticCauldronLayout.of(summary.type()) != null) {
+                appendItems(tooltip, summary);
+            }
         }
-    }
 
-    private static void appendItems(ITooltip tooltip, MoldedPlasticContentSummary summary) {
+        private static void appendItems(ITooltip tooltip, MoldedPlasticContentSummary summary) {
 
-        for (MoldedPlasticContentSummary.ItemEntry item : summary.items()) {
-            List<Element> elements = new ArrayList<>(2);
-            elements.add(JadeUI.smallItem(item.stack()));
-            elements.add(JadeUI.text(Component.translatable(
-                "tooltip.anvilcraftplasticraft.jade.item_count",
-                IDisplayHelper.get().stripColor(item.stack().getHoverName()),
-                item.count()
-            ).withStyle(ChatFormatting.GRAY)));
-            tooltip.add(elements);
+            for (MoldedPlasticContentSummary.ItemEntry item : summary.items()) {
+                List<Element> elements = new ArrayList<>(2);
+                elements.add(JadeUI.smallItem(item.stack()));
+                elements.add(JadeUI.text(Component.translatable(
+                    "tooltip.anvilcraftplasticraft.jade.item_count",
+                    IDisplayHelper.get().stripColor(item.stack().getHoverName()),
+                    item.count()
+                ).withStyle(ChatFormatting.GRAY)));
+                tooltip.add(elements);
+            }
+            appendOmitted(tooltip, summary.omittedItemTypes());
         }
-        appendOmitted(tooltip, summary.omittedItemTypes());
-    }
 
-    private static void appendOmitted(ITooltip tooltip, int count) {
-        if (count > 0) {
-            tooltip.add(Component.translatable(
-                "tooltip.anvilcraftplasticraft.molded_more_contents",
-                count
-            ).withStyle(ChatFormatting.DARK_GRAY));
+        private static void appendOmitted(ITooltip tooltip, int count) {
+            if (count > 0) {
+                tooltip.add(Component.translatable(
+                    "tooltip.anvilcraftplasticraft.molded_more_contents",
+                    count
+                ).withStyle(ChatFormatting.DARK_GRAY));
+            }
         }
-    }
 
-    @Override
-    public Identifier getUid() {
-        return UID;
+        @Override
+        public Identifier getUid() {
+            return PlasticEntityProvider.INSTANCE.getUid();
+        }
     }
 }

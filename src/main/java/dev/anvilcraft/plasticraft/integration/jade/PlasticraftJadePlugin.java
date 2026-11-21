@@ -47,15 +47,15 @@ public final class PlasticraftJadePlugin implements IWailaPlugin {
 
     @Override
     public void registerClient(IWailaClientRegistration registration) {
-        registration.registerEntityIcon(PlasticEntityProvider.INSTANCE, AbstractPlasticEntity.class);
-        registration.registerEntityComponent(PlasticEntityProvider.INSTANCE, AbstractPlasticEntity.class);
-        registration.registerEntityComponent(BondedEntityProvider.INSTANCE, Entity.class);
-        registration.registerBlockComponent(BondedBlockProvider.INSTANCE, Block.class);
+        registration.registerEntityIcon(PlasticEntityProvider.Client.INSTANCE, AbstractPlasticEntity.class);
+        registration.registerEntityComponent(PlasticEntityProvider.Client.INSTANCE, AbstractPlasticEntity.class);
+        registration.registerEntityComponent(BondedEntityProvider.Client.INSTANCE, Entity.class);
+        registration.registerBlockComponent(BondedBlockProvider.Client.INSTANCE, Block.class);
         registration.registerItemStorageClient(PlasticItemStorageProvider.INSTANCE);
         registration.registerFluidStorageClient(PlasticFluidStorageProvider.INSTANCE);
         registration.addTooltipCollectedCallback(PlasticJadeLayout::finish);
         registration.registerBlockComponent(
-            PlasticMoldingChamberProvider.INSTANCE,
+            PlasticMoldingChamberProvider.Client.INSTANCE,
             PlasticMoldingChamberBlock.class
         );
     }

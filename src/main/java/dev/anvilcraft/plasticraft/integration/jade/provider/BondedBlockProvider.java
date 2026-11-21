@@ -17,7 +17,7 @@ import snownee.jade.api.config.IPluginConfig;
 import snownee.jade.api.ui.JadeUI;
 
 /** 为方块化粘附物显示 Jade 状态。 */
-public enum BondedBlockProvider implements IBlockComponentProvider, IServerDataProvider<BlockAccessor> {
+public enum BondedBlockProvider implements IServerDataProvider<BlockAccessor> {
     INSTANCE;
 
     private static final String BONDED = "bonded";
@@ -33,16 +33,25 @@ public enum BondedBlockProvider implements IBlockComponentProvider, IServerDataP
     }
 
     @Override
-    public void appendTooltip(ITooltip tooltip, BlockAccessor accessor, IPluginConfig config) {
-        if (accessor.getServerData().getBooleanOr(BONDED, false)) {
-            tooltip.add(JadeUI.text(Component.literal("  ")
-                .append(Component.translatable("tooltip.anvilcraftplasticraft.bonded"))
-                .withStyle(ChatFormatting.GRAY)).tag(PlasticJadeLayout.BONDED));
-        }
-    }
-
-    @Override
     public Identifier getUid() {
         return AnvilcraftPlasticraft.of("bonded_block");
+    }
+
+    public enum Client implements IBlockComponentProvider {
+        INSTANCE;
+
+        @Override
+        public void appendTooltip(ITooltip tooltip, BlockAccessor accessor, IPluginConfig config) {
+            if (accessor.getServerData().getBooleanOr(BONDED, false)) {
+                tooltip.add(JadeUI.text(Component.literal("  ")
+                    .append(Component.translatable("tooltip.anvilcraftplasticraft.bonded"))
+                    .withStyle(ChatFormatting.GRAY)).tag(PlasticJadeLayout.BONDED));
+            }
+        }
+
+        @Override
+        public Identifier getUid() {
+            return BondedBlockProvider.INSTANCE.getUid();
+        }
     }
 }

@@ -26,7 +26,7 @@ import snownee.jade.overlay.DisplayHelper;
 import java.util.Locale;
 
 /** 名称右侧显示生产状态，电网供电与电池存量共用一条能源进度条。 */
-public enum PlasticMoldingChamberProvider implements IBlockComponentProvider, IServerDataProvider<BlockAccessor> {
+public enum PlasticMoldingChamberProvider implements IServerDataProvider<BlockAccessor> {
     INSTANCE;
 
     private static final String STATE = "state";
@@ -61,83 +61,92 @@ public enum PlasticMoldingChamberProvider implements IBlockComponentProvider, IS
     }
 
     @Override
-    public void appendTooltip(ITooltip tooltip, BlockAccessor accessor, IPluginConfig config) {
-        CompoundTag tag = accessor.getServerData();
-        if (!tag.contains(STATE)) {
-            return;
-        }
-        String state = tag.getStringOr(STATE, "");
-        String reason = tag.getStringOr(WAIT_REASON, "");
-        String statusKey = reason.isEmpty() || reason.equals("none") || reason.equals("process_ready")
-            ? "screen.anvilcraftplasticraft.molding.state." + state
-            : "screen.anvilcraftplasticraft.molding.wait." + reason;
-
-        tooltip.add(JadeUI.text(Component.literal("  ").append(Component.translatable(statusKey))
-            .withStyle(ChatFormatting.GRAY)).tag(PlasticJadeLayout.MACHINE_STATE));
-        int capacity = MoldingPowerBridge.capacity();
-        int stored = tag.getIntOr(ENERGY, 0);
-        Component energyText;
-        if (tag.getBooleanOr(GRID_WORKING, false)) {
-            energyText = Component.translatable(
-                "tooltip.anvilcraftplasticraft.jade.grid_power", tag.getIntOr(GRID_POWER, 0)
-            ).withStyle(ChatFormatting.WHITE);
-        } else {
-            IDisplayHelper display = IDisplayHelper.get();
-            energyText = Component.literal(display.humanReadableNumber(stored, "FE", false))
-                .withStyle(ChatFormatting.WHITE)
-                .append(Component.literal(" / " + display.humanReadableNumber(capacity, "FE", false))
-                    .withStyle(ChatFormatting.GRAY));
-        }
-        tooltip.add(new EnergyBar((float) stored / capacity, energyText).tag(PlasticJadeLayout.CHAMBER_ENERGY));
-        String formingMode = tag.getStringOr(FORMING_MODE, "");
-        if (!formingMode.isEmpty()) {
-            tooltip.add(Component.translatable(
-                "screen.anvilcraftplasticraft.molding.forming",
-                Component.translatable("screen.anvilcraftplasticraft.molding.forming." + formingMode)
-            ).withStyle(ChatFormatting.GRAY));
-        }
-        int printingTotal = tag.getIntOr(PRINTING_TOTAL, 0);
-        if (formingMode.equals("printing") && printingTotal > 0) {
-            tooltip.add(Component.translatable(
-                "screen.anvilcraftplasticraft.molding.printing_progress",
-                tag.getIntOr(PRINTING_PROGRESS, 0),
-                printingTotal
-            ).withStyle(ChatFormatting.GRAY));
-        }
-        if (tag.getBooleanOr(PARTIAL_DOWNGRADE, false)) {
-            tooltip.add(Component.translatable(
-                "tooltip.anvilcraftplasticraft.molding.partial_downgrade"
-            ).withStyle(ChatFormatting.RED));
-        }
-    }
-
-    private static final class EnergyBar extends ProgressElement {
-        private final Component label;
-
-        private EnergyBar(float progress, Component label) {
-            super(new ProgressView(ProgressView.Part.of(progress, 0xFFAA0000), null,
-                JadeUI.progressStyle(), BoxStyle.nestedBox()), Math.max(100, DisplayHelper.font().width(label) + 10), 14);
-            this.label = label;
-            this.flexGrow(1);
-        }
-
-        @Override
-        public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTicks) {
-            super.extractRenderState(graphics, mouseX, mouseY, partialTicks);
-            Font font = DisplayHelper.font();
-            IDisplayHelper.get().drawText(graphics, this.label,
-                this.getX() + (this.getWidth() - font.width(this.label)) / 2f,
-                this.getY() + (this.getHeight() - font.lineHeight) / 2f, 0xFFFFFFFF);
-        }
-
-        @Override
-        public Component getNarration() {
-            return this.label;
-        }
-    }
-
-    @Override
     public Identifier getUid() {
         return AnvilcraftPlasticraft.of("plastic_molding_chamber");
+    }
+
+    public enum Client implements IBlockComponentProvider {
+        INSTANCE;
+
+        @Override
+        public void appendTooltip(ITooltip tooltip, BlockAccessor accessor, IPluginConfig config) {
+            CompoundTag tag = accessor.getServerData();
+            if (!tag.contains(STATE)) {
+                return;
+            }
+            String state = tag.getStringOr(STATE, "");
+            String reason = tag.getStringOr(WAIT_REASON, "");
+            String statusKey = reason.isEmpty() || reason.equals("none") || reason.equals("process_ready")
+                ? "screen.anvilcraftplasticraft.molding.state." + state
+                : "screen.anvilcraftplasticraft.molding.wait." + reason;
+
+            tooltip.add(JadeUI.text(Component.literal("  ").append(Component.translatable(statusKey))
+                .withStyle(ChatFormatting.GRAY)).tag(PlasticJadeLayout.MACHINE_STATE));
+            int capacity = MoldingPowerBridge.capacity();
+            int stored = tag.getIntOr(ENERGY, 0);
+            Component energyText;
+            if (tag.getBooleanOr(GRID_WORKING, false)) {
+                energyText = Component.translatable(
+                    "tooltip.anvilcraftplasticraft.jade.grid_power", tag.getIntOr(GRID_POWER, 0)
+                ).withStyle(ChatFormatting.WHITE);
+            } else {
+                IDisplayHelper display = IDisplayHelper.get();
+                energyText = Component.literal(display.humanReadableNumber(stored, "FE", false))
+                    .withStyle(ChatFormatting.WHITE)
+                    .append(Component.literal(" / " + display.humanReadableNumber(capacity, "FE", false))
+                        .withStyle(ChatFormatting.GRAY));
+            }
+            tooltip.add(new EnergyBar((float) stored / capacity, energyText).tag(PlasticJadeLayout.CHAMBER_ENERGY));
+            String formingMode = tag.getStringOr(FORMING_MODE, "");
+            if (!formingMode.isEmpty()) {
+                tooltip.add(Component.translatable(
+                    "screen.anvilcraftplasticraft.molding.forming",
+                    Component.translatable("screen.anvilcraftplasticraft.molding.forming." + formingMode)
+                ).withStyle(ChatFormatting.GRAY));
+            }
+            int printingTotal = tag.getIntOr(PRINTING_TOTAL, 0);
+            if (formingMode.equals("printing") && printingTotal > 0) {
+                tooltip.add(Component.translatable(
+                    "screen.anvilcraftplasticraft.molding.printing_progress",
+                    tag.getIntOr(PRINTING_PROGRESS, 0),
+                    printingTotal
+                ).withStyle(ChatFormatting.GRAY));
+            }
+            if (tag.getBooleanOr(PARTIAL_DOWNGRADE, false)) {
+                tooltip.add(Component.translatable(
+                    "tooltip.anvilcraftplasticraft.molding.partial_downgrade"
+                ).withStyle(ChatFormatting.RED));
+            }
+        }
+
+        private static final class EnergyBar extends ProgressElement {
+            private final Component label;
+
+            private EnergyBar(float progress, Component label) {
+                super(new ProgressView(ProgressView.Part.of(progress, 0xFFAA0000), null,
+                    JadeUI.progressStyle(), BoxStyle.nestedBox()), Math.max(100, DisplayHelper.font().width(label) + 10), 14);
+                this.label = label;
+                this.flexGrow(1);
+            }
+
+            @Override
+            public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTicks) {
+                super.extractRenderState(graphics, mouseX, mouseY, partialTicks);
+                Font font = DisplayHelper.font();
+                IDisplayHelper.get().drawText(graphics, this.label,
+                    this.getX() + (this.getWidth() - font.width(this.label)) / 2f,
+                    this.getY() + (this.getHeight() - font.lineHeight) / 2f, 0xFFFFFFFF);
+            }
+
+            @Override
+            public Component getNarration() {
+                return this.label;
+            }
+        }
+
+        @Override
+        public Identifier getUid() {
+            return PlasticMoldingChamberProvider.INSTANCE.getUid();
+        }
     }
 }
